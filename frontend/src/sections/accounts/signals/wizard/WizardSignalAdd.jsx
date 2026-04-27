@@ -816,9 +816,7 @@ export default function WizardSignalAdd({
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>
-          <DialogTitle>Discard staged signals?</DialogTitle>
-        </DialogTitle>
+        <DialogTitle>Discard staged signals?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
             You have {totalStaged} staged signal

@@ -43,10 +43,21 @@ class SignalFilter(django_filters.FilterSet):
 
     Type-specific filters (silently ignored when field absent on model):
       role, influence_level — PeopleSignal
-      what, dimension       — PainSignal (canonical axes)
+      what, dimension       — PainSignal + ObjectiveSignal (shared canonical
+                              axes since Wave A)
+      scope_level           — ObjectiveSignal (Wave B — renamed from
+                              goal_level)
       category              — TechStackSignal
-      goal_level            — ObjectiveSignal
       satisfaction          — TechStackSignal
+
+    Silently-absent fields on ObjectiveSignal (Wave B):
+      - signal_category is shadow-overridden to None on the concrete
+        ObjectiveSignal model. The `signal_category` filter declared
+        here still works for People / Pain / TechStack; on Objective
+        querysets, django-filters finds no matching field and falls
+        back to a no-op (tolerated via the dynamic Meta.model rebinding
+        in BaseSignalViewSet.filter_queryset()). No behavioural change
+        needed here.
 
     Note — Pain-side fields removed in Sprint 1.6:
       pain_level, human_impact, impacted_contact no longer exist on
@@ -103,7 +114,7 @@ class SignalFilter(django_filters.FilterSet):
     # TYPE-SPECIFIC — ObjectiveSignal
     # -------------------------------------------------------------------------
 
-    goal_level = CharInFilter(field_name='goal_level', lookup_expr='in')
+    scope_level = CharInFilter(field_name='scope_level', lookup_expr='in')
 
     # -------------------------------------------------------------------------
     # TYPE-SPECIFIC — TechStackSignal
@@ -128,7 +139,7 @@ class SignalFilter(django_filters.FilterSet):
             # lives on PainImpactFilter, not here)
             'what', 'dimension',
             # ObjectiveSignal
-            'goal_level',
+            'scope_level',
             # TechStackSignal
             'category', 'satisfaction',
         ]

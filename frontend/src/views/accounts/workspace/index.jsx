@@ -29,6 +29,7 @@ import AccountContactsTab from "sections/accounts/contacts/AccountContactsTab";
 import DecisionCycleTab from "sections/accounts/workspace/DecisionCycleTab";
 import AccountActivitiesTab from "sections/accounts/activities/AccountActivitiesTab";
 import AccountSignalsTab from "sections/accounts/workspace/AccountSignalsTab";
+import AccountQualificationTab from "sections/accounts/workspace/AccountQualificationTab";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -230,7 +231,18 @@ function TabContent({
   const [mountedTabs, setMountedTabs] = useState(new Set());
 
   useEffect(() => {
-    if (["decision-cycle", "activities", "contacts", "signals"].includes(tab)) {
+    // Tabs that own SWR fetches and benefit from staying mounted
+    // across tab switches — avoids refetch loops and preserves their
+    // local state (filters, drawer position, scroll).
+    if (
+      [
+        "decision-cycle",
+        "activities",
+        "contacts",
+        "signals",
+        "qualification",
+      ].includes(tab)
+    ) {
       setMountedTabs((prev) => {
         if (prev.has(tab)) return prev;
         const next = new Set(prev);
@@ -243,6 +255,11 @@ function TabContent({
   return (
     <>
       {/* KeepAlive tabs: mounted once, hidden with CSS when inactive */}
+      {mountedTabs.has("qualification") && (
+        <Box sx={{ display: tab === "qualification" ? "block" : "none" }}>
+          <AccountQualificationTab accountId={accountId} />
+        </Box>
+      )}
       {mountedTabs.has("decision-cycle") && (
         <Box sx={{ display: tab === "decision-cycle" ? "block" : "none" }}>
           <DecisionCycleTab
@@ -274,12 +291,6 @@ function TabContent({
         <TabPlaceholder
           title="Overview"
           description="Account overview and key information will be displayed here."
-        />
-      )}
-      {tab === "qualification" && (
-        <TabPlaceholder
-          title="Qualification"
-          description="Account qualification data and signals will be displayed here."
         />
       )}
     </>

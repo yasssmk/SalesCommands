@@ -5,8 +5,27 @@ Serializers for ObjectiveSignal.
 Stack:
   ObjectiveSignalListSerializer   — lightweight list view
   ObjectiveSignalDetailSerializer — full detail with corroboration_count
-  ObjectiveSignalCreateSerializer — write path, enforces source_contact + source_activity
-  ObjectiveSignalUpdateSerializer — restricted PATCH
+  ObjectiveSignalCreateSerializer — write path, enforces scope-conditional
+                                    target requirements
+  ObjectiveSignalUpdateSerializer — restricted PATCH, canonical axes
+                                    rewritable (canonical_key recomputed
+                                    by model.save())
+
+Wave B notes:
+  - `goal_level`, `measurement_method`, `signal_category` are gone.
+    `scope_level` is the new scope axis (shared ScopeLevel enum).
+    `what` × `dimension` are the canonical axes (shared with Pain since
+    Wave A).
+  - `signal_category` is shadow-overridden to None on the model, so it
+    is neither stored nor exposed on ObjectiveSignal. Inherited base
+    serializer lists that include `signal_category` / `signal_category_display`
+    are filtered out by the Meta.fields overrides below.
+  - Scope-conditional rules (mirror of model.clean()):
+      PERSONAL   → target_contact required, target_department forbidden
+      DEPARTMENT → target_department required, target_contact forbidden
+      BUSINESS   → neither target_contact nor target_department
+    Enforced in Create (strict) and Update (merged-state on partial
+    payloads — same pattern as PainImpact).
 """
 
 from rest_framework import serializers
@@ -14,118 +33,210 @@ from rest_framework import serializers
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
-from ..constants import GoalLevel
+from ..constants import ScopeLevel
 from ..models import ObjectiveSignal
 from .base_serializer import (
-    BaseSignalListSerializer,
-    BaseSignalDetailSerializer,
     BaseSignalCreateSerializer,
+    BaseSignalDetailSerializer,
+    BaseSignalListSerializer,
     BaseSignalUpdateSerializer,
 )
+
+
+# =============================================================================
+# HELPERS — shared display-field logic
+# =============================================================================
+#
+# List and Detail expose the same display fields for the canonical axes
+# and scope. A small mixin keeps the two serializers aligned when the
+# schema evolves.
+# =============================================================================
+
+
+class _ObjectiveDisplayMixin:
+    """Shared SerializerMethodField implementations for Objective serializers."""
+
+    def get_what_display(self, obj):
+        return obj.get_what_display() if obj.what else None
+
+    def get_dimension_display(self, obj):
+        return obj.get_dimension_display() if obj.dimension else None
+
+    def get_scope_level_display(self, obj):
+        return obj.get_scope_level_display() if obj.scope_level else None
+
+    def get_target_contact(self, obj):
+        c = obj.target_contact
+        if not c:
+            return None
+        return {
+            'id':         str(c.id),
+            'first_name': c.first_name,
+            'last_name':  c.last_name,
+            'job_title':  getattr(c, 'job_title', None),
+        }
+
+    def get_target_department(self, obj):
+        d = obj.target_department
+        if not d:
+            return None
+        return {
+            'id':   str(d.id),
+            'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
+        }
+
+
+# =============================================================================
+# SCOPE VALIDATION HELPER
+# =============================================================================
+
+def _validate_scope_consistency(scope_level, target_contact, target_department):
+    """
+    Enforce scope-conditional target requirements.
+
+    Mirror of ObjectiveSignal.clean() — called by Create (strict) and
+    Update (merged-state). Raises StandardizedValidationError on the
+    first offending field for a clean API error payload.
+
+    Args:
+        scope_level:        Resolved scope value (ScopeLevel or None).
+        target_contact:     Resolved target_contact (Contact or None).
+        target_department:  Resolved target_department (StandardDepartment or None).
+
+    Rules:
+      PERSONAL   → target_contact required, target_department forbidden
+      DEPARTMENT → target_department required, target_contact forbidden
+      BUSINESS   → neither allowed
+    """
+    if scope_level == ScopeLevel.PERSONAL:
+        if not target_contact:
+            raise StandardizedValidationError({
+                'target_contact': SignalErrorMessages.OBJECTIVE_PERSONAL_REQUIRES_CONTACT,
+            })
+        if target_department:
+            raise StandardizedValidationError({
+                'target_department': SignalErrorMessages.OBJECTIVE_PERSONAL_NO_DEPT,
+            })
+
+    elif scope_level == ScopeLevel.DEPARTMENT:
+        if not target_department:
+            raise StandardizedValidationError({
+                'target_department': SignalErrorMessages.OBJECTIVE_DEPT_REQUIRES_DEPT,
+            })
+        if target_contact:
+            raise StandardizedValidationError({
+                'target_contact': SignalErrorMessages.OBJECTIVE_DEPT_NO_CONTACT,
+            })
+
+    elif scope_level == ScopeLevel.BUSINESS:
+        if target_contact:
+            raise StandardizedValidationError({
+                'target_contact': SignalErrorMessages.OBJECTIVE_BUSINESS_NO_CONTACT,
+            })
+        if target_department:
+            raise StandardizedValidationError({
+                'target_department': SignalErrorMessages.OBJECTIVE_BUSINESS_NO_DEPT,
+            })
 
 
 # =============================================================================
 # LIST
 # =============================================================================
 
-class ObjectiveSignalListSerializer(BaseSignalListSerializer):
+class ObjectiveSignalListSerializer(_ObjectiveDisplayMixin, BaseSignalListSerializer):
     """
     Lightweight serializer for ObjectiveSignal list endpoints.
 
-    Adds goal-specific fields: summary, goal_level,
-    target_contact, target_department.
-    corroboration_count excluded for performance — detail only.
+    Exposes the canonical axes (what × dimension), the scope axis, the
+    narrative summary, the target (contact or department — exactly one
+    will be non-null per scope_level), and the target_date.
+
+    corroboration_count is excluded here for performance — Detail only.
+
+    signal_category is dropped from the base fields because the model
+    shadow-overrides it to None for Objective.
     """
 
-    goal_level_display = serializers.SerializerMethodField()
-    target_contact     = serializers.SerializerMethodField()
-    target_department  = serializers.SerializerMethodField()
+    what_display        = serializers.SerializerMethodField()
+    dimension_display   = serializers.SerializerMethodField()
+    scope_level_display = serializers.SerializerMethodField()
+    target_contact      = serializers.SerializerMethodField()
+    target_department   = serializers.SerializerMethodField()
 
     class Meta(BaseSignalListSerializer.Meta):
         model = ObjectiveSignal
-        fields = BaseSignalListSerializer.Meta.fields + [
+
+        # Drop signal_category / signal_category_display from the inherited
+        # field list — the model shadows them to None. All other base list
+        # fields are kept as-is.
+        _base_fields = [
+            f for f in BaseSignalListSerializer.Meta.fields
+            if f not in ('signal_category', 'signal_category_display')
+        ]
+
+        fields = _base_fields + [
+            # Canonical axes
+            'what',        'what_display',
+            'dimension',   'dimension_display',
+            # Scope
+            'scope_level', 'scope_level_display',
+            # Narrative
             'summary',
-            'goal_level', 'goal_level_display',
+            # Target (conditional on scope_level)
             'target_contact',
             'target_department',
+            # Timeline
+            'target_date',
         ]
         read_only_fields = fields
-
-    def get_goal_level_display(self, obj):
-        return obj.get_goal_level_display()
-
-    def get_target_contact(self, obj):
-        c = obj.target_contact
-        if not c:
-            return None
-        return {
-            'id':         str(c.id),
-            'first_name': c.first_name,
-            'last_name':  c.last_name,
-            'job_title':  getattr(c, 'job_title', None),
-        }
-
-    def get_target_department(self, obj):
-        d = obj.target_department
-        if not d:
-            return None
-        return {
-            'id':   str(d.id),
-            'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
-        }
 
 
 # =============================================================================
 # DETAIL
 # =============================================================================
 
-class ObjectiveSignalDetailSerializer(BaseSignalDetailSerializer):
+class ObjectiveSignalDetailSerializer(_ObjectiveDisplayMixin, BaseSignalDetailSerializer):
     """
     Full detail serializer for ObjectiveSignal retrieve endpoints.
 
     Inherits corroboration_count from BaseSignalDetailSerializer.
-    Adds success_criteria, measurement_method, notes on top of list fields.
+    Adds success_criteria + notes on top of the list payload.
+
+    signal_category is dropped from the base fields (shadow override on
+    the model).
     """
 
-    goal_level_display = serializers.SerializerMethodField()
-    target_contact     = serializers.SerializerMethodField()
-    target_department  = serializers.SerializerMethodField()
+    what_display        = serializers.SerializerMethodField()
+    dimension_display   = serializers.SerializerMethodField()
+    scope_level_display = serializers.SerializerMethodField()
+    target_contact      = serializers.SerializerMethodField()
+    target_department   = serializers.SerializerMethodField()
 
     class Meta(BaseSignalDetailSerializer.Meta):
         model = ObjectiveSignal
-        fields = BaseSignalDetailSerializer.Meta.fields + [
+
+        _base_fields = [
+            f for f in BaseSignalDetailSerializer.Meta.fields
+            if f not in ('signal_category', 'signal_category_display')
+        ]
+
+        fields = _base_fields + [
+            # Canonical axes
+            'what',        'what_display',
+            'dimension',   'dimension_display',
+            # Scope
+            'scope_level', 'scope_level_display',
+            # Narrative
             'summary',
-            'goal_level', 'goal_level_display',
+            'success_criteria',
+            'notes',
+            # Target (conditional)
             'target_contact',
             'target_department',
-            'success_criteria',
-            'measurement_method',
-            'notes',
+            # Timeline
+            'target_date',
         ]
         read_only_fields = fields
-
-    def get_goal_level_display(self, obj):
-        return obj.get_goal_level_display()
-
-    def get_target_contact(self, obj):
-        c = obj.target_contact
-        if not c:
-            return None
-        return {
-            'id':         str(c.id),
-            'first_name': c.first_name,
-            'last_name':  c.last_name,
-            'job_title':  getattr(c, 'job_title', None),
-        }
-
-    def get_target_department(self, obj):
-        d = obj.target_department
-        if not d:
-            return None
-        return {
-            'id':   str(d.id),
-            'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
-        }
 
 
 # =============================================================================
@@ -137,50 +248,95 @@ class ObjectiveSignalCreateSerializer(BaseSignalCreateSerializer):
     Write serializer for ObjectiveSignal creation.
 
     signal_type is fixed to 'objective' via HiddenField.
-    source_contact and source_activity are required — enforced in validate().
+
+    Required fields:
+      - what
+      - dimension
+      - scope_level
+      - summary
+
+    Optional fields:
+      - success_criteria, notes
+      - target_date
+      - target_contact, target_department (constrained by scope_level)
+      - source_activity (optional for MVP — see model docstring)
+
+    Scope-conditional rules (mirror of ObjectiveSignal.clean()):
+      - PERSONAL   → target_contact required, target_department forbidden
+      - DEPARTMENT → target_department required, target_contact forbidden
+      - BUSINESS   → neither target_contact nor target_department
+
+    signal_category is dropped from the base fields (shadow override on
+    the model). source_department stays inherited — it comes from
+    source_contact.standard_department via BaseSignal.save() fallback
+    and can still be set explicitly.
     """
 
     signal_type = serializers.HiddenField(default='objective')
 
     class Meta(BaseSignalCreateSerializer.Meta):
         model = ObjectiveSignal
-        fields = BaseSignalCreateSerializer.Meta.fields + [
+
+        # Drop signal_category from the inherited writable fields —
+        # the model has no such column.
+        _base_fields = [
+            f for f in BaseSignalCreateSerializer.Meta.fields
+            if f != 'signal_category'
+        ]
+
+        fields = _base_fields + [
+            # Canonical axes
+            'what',
+            'dimension',
+            # Scope
+            'scope_level',
+            # Narrative
             'summary',
-            'goal_level',
             'success_criteria',
-            'measurement_method',
+            'notes',
+            # Target (conditional)
             'target_contact',
             'target_department',
-            'notes',
+            # Timeline
+            'target_date',
         ]
+
+        # Strip signal_category from extra_kwargs too — referencing a
+        # non-declared field would raise a config error at class load.
+        _base_extra_kwargs = {
+            k: v for k, v in BaseSignalCreateSerializer.Meta.extra_kwargs.items()
+            if k != 'signal_category'
+        }
+
         extra_kwargs = {
-            **BaseSignalCreateSerializer.Meta.extra_kwargs,
-            'summary':            {'required': True},
-            'goal_level':         {'required': True},
-            'success_criteria':   {'required': False, 'allow_blank': True},
-            'measurement_method': {'required': False, 'allow_blank': True},
-            'target_contact':     {'required': False, 'allow_null': True},
-            'target_department':  {'required': False, 'allow_null': True},
-            'notes':              {'required': False, 'allow_blank': True},
+            **_base_extra_kwargs,
+            'what':              {'required': True},
+            'dimension':         {'required': True},
+            'scope_level':       {'required': True},
+            'summary':           {'required': True},
+            'success_criteria':  {'required': False, 'allow_blank': True},
+            'notes':             {'required': False, 'allow_blank': True},
+            'target_contact':    {'required': False, 'allow_null': True},
+            'target_department': {'required': False, 'allow_null': True},
+            'target_date':       {'required': False, 'allow_null': True},
         }
 
     def validate(self, attrs):
         """
-        Enforce required context fields before base validation.
+        Enforce scope-conditional target rules, then delegate to base.
 
-        source_contact and source_activity are required for ObjectiveSignal —
-        an objective must always be anchored to a known contact and activity.
+        `target_contact` and `target_department` default to None when
+        absent from the payload — the helper handles both "missing" and
+        "explicit null" the same way, which matches the model-level
+        clean() semantics.
         """
-        if not attrs.get('source_contact'):
-            raise StandardizedValidationError(
-                SignalErrorMessages.SOURCE_CONTACT_REQUIRED
-            )
+        _validate_scope_consistency(
+            scope_level=attrs.get('scope_level'),
+            target_contact=attrs.get('target_contact'),
+            target_department=attrs.get('target_department'),
+        )
 
-        if not attrs.get('source_activity'):
-            raise StandardizedValidationError(
-                SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
-            )
-
+        # Delegate to base for cross-account source_contact check + client_id
         return super().validate(attrs)
 
 
@@ -192,32 +348,115 @@ class ObjectiveSignalUpdateSerializer(BaseSignalUpdateSerializer):
     """
     Restricted PATCH serializer for ObjectiveSignal.
 
-    Allowed fields beyond base: summary, goal_level, success_criteria,
-    measurement_method, target_contact, target_department, notes.
-    canonical_key is writable — reps can assign the grouping slug manually.
+    Allowed beyond base fields:
+      - what, dimension     (canonical axes — canonical_key recomputed by
+                             model.save())
+      - scope_level         (triggers scope-conditional merged-state check)
+      - summary, success_criteria, notes
+      - target_contact, target_department
+      - target_date
+
+    Merged-state scope validation:
+      When the payload changes `scope_level`, `target_contact`, or
+      `target_department`, we merge the partial payload with the
+      current instance state and run the same scope-consistency check
+      as Create. This is the pattern used by PainImpact.update().
+
+      Example — switching a BUSINESS objective to PERSONAL:
+        PATCH { scope_level: 'PERSONAL' }          → rejected
+                                                      (missing target_contact)
+        PATCH { scope_level: 'PERSONAL',
+                target_contact: <uuid> }           → accepted
+
+    canonical_key itself is NOT writable — it is derived from
+    what × dimension by model.save().
+
+    signal_category is dropped (shadow override on the model).
     """
 
     class Meta(BaseSignalUpdateSerializer.Meta):
         model = ObjectiveSignal
-        fields = BaseSignalUpdateSerializer.Meta.fields + [
+
+        # Drop signal_category from the inherited writable fields.
+        _base_fields = [
+            f for f in BaseSignalUpdateSerializer.Meta.fields
+            if f != 'signal_category'
+        ]
+
+        fields = _base_fields + [
+            # Canonical axes
+            'what',
+            'dimension',
+            # Scope
+            'scope_level',
+            # Narrative
             'summary',
-            'goal_level',
             'success_criteria',
-            'measurement_method',
+            'notes',
+            # Target (conditional)
             'target_contact',
             'target_department',
-            'notes',
-            'canonical_key',
+            # Timeline
+            'target_date',
         ]
-        extra_kwargs = {
-            **BaseSignalUpdateSerializer.Meta.extra_kwargs,
-            'summary':            {'required': False},
-            'goal_level':         {'required': False},
-            'success_criteria':   {'required': False, 'allow_blank': True},
-            'measurement_method': {'required': False, 'allow_blank': True},
-            'target_contact':     {'required': False, 'allow_null': True},
-            'target_department':  {'required': False, 'allow_null': True},
-            'notes':              {'required': False, 'allow_blank': True},
-            'canonical_key':      {'required': False, 'allow_null': True,
-                                   'allow_blank': True},
+
+        _base_extra_kwargs = {
+            k: v for k, v in BaseSignalUpdateSerializer.Meta.extra_kwargs.items()
+            if k != 'signal_category'
         }
+
+        extra_kwargs = {
+            **_base_extra_kwargs,
+            'what':              {'required': False},
+            'dimension':         {'required': False},
+            'scope_level':       {'required': False},
+            'summary':           {'required': False},
+            'success_criteria':  {'required': False, 'allow_blank': True},
+            'notes':             {'required': False, 'allow_blank': True},
+            'target_contact':    {'required': False, 'allow_null': True},
+            'target_department': {'required': False, 'allow_null': True},
+            'target_date':       {'required': False, 'allow_null': True},
+        }
+
+    def validate(self, attrs):
+        """
+        Merged-state scope consistency check on partial payload.
+
+        Only runs when at least one of scope_level / target_contact /
+        target_department is touched — otherwise the instance is
+        already in a valid state and nothing to re-check.
+        """
+        instance = self.instance
+
+        touched_scope_fields = any(
+            field in attrs
+            for field in ('scope_level', 'target_contact', 'target_department')
+        )
+
+        if touched_scope_fields and instance is not None:
+            # Merge: for fields NOT in attrs, fall back to the instance
+            # current value. For fields IN attrs, use the new value —
+            # including explicit None (the caller is clearing the field).
+            merged_scope = (
+                attrs['scope_level']
+                if 'scope_level' in attrs
+                else instance.scope_level
+            )
+            merged_target_contact = (
+                attrs['target_contact']
+                if 'target_contact' in attrs
+                else instance.target_contact
+            )
+            merged_target_department = (
+                attrs['target_department']
+                if 'target_department' in attrs
+                else instance.target_department
+            )
+
+            _validate_scope_consistency(
+                scope_level=merged_scope,
+                target_contact=merged_target_contact,
+                target_department=merged_target_department,
+            )
+
+        return super().validate(attrs)

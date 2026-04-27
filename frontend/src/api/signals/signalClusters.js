@@ -60,13 +60,52 @@ const endpoints = {
 // ==============================|| URL BUILDER ||============================== //
 
 /**
+ * Normalise a signal_type input (string | string[]) to the CSV form
+ * expected by the backend (`pain` or `pain,objective`).
+ *
+ * Returns null/empty input as-is so the caller can decide whether to
+ * append the param at all.
+ *
+ *   normaliseSignalType('pain')                   → 'pain'
+ *   normaliseSignalType(['pain'])                 → 'pain'
+ *   normaliseSignalType(['pain', 'objective'])    → 'pain,objective'
+ *   normaliseSignalType([])                       → null
+ *   normaliseSignalType(null | undefined | '')    → null
+ *
+ * Empty tokens (e.g. ['pain', ''] or 'pain,,') are dropped silently —
+ * the backend treats them the same and a missing token carries no intent.
+ *
+ * @param {string|string[]|null|undefined} input
+ * @returns {string|null}
+ */
+function normaliseSignalType(input) {
+  if (input == null || input === "") return null;
+
+  if (Array.isArray(input)) {
+    const cleaned = input
+      .map((t) => (t == null ? "" : String(t).trim()))
+      .filter(Boolean);
+    if (cleaned.length === 0) return null;
+    return cleaned.join(",");
+  }
+
+  const trimmed = String(input).trim();
+  return trimmed || null;
+}
+
+/**
  * Build the cluster list URL with query params.
  *
  * Supported params (aligned with backend SignalClusterListView):
  *   - account           (UUID, required)
- *   - signal_type       (default 'pain')
+ *   - signal_type       (string CSV — default 'pain' applied by callers)
  *   - decision_cycle    (UUID, optional)
  *   - include_archived  (bool, default false)
+ *
+ * `signalType` may be a single value ('pain') or an array
+ * (['pain', 'objective']). Arrays are serialised as a comma-separated
+ * list — the backend's _parse_signal_type accepts that form for the
+ * list endpoint.
  *
  * @param {string} baseUrl
  * @param {Object} params
@@ -80,9 +119,15 @@ function buildListUrl(baseUrl, params = {}) {
   if (accountId) {
     query.append("account", accountId);
   }
-  if (signalType) {
-    query.append("signal_type", signalType);
+
+  // signalType arrives already normalised by the caller (the hook calls
+  // normaliseSignalType before passing). Defensive normalisation here is
+  // cheap and keeps the builder robust against direct callers.
+  const normalisedType = normaliseSignalType(signalType);
+  if (normalisedType) {
+    query.append("signal_type", normalisedType);
   }
+
   if (decisionCycleId) {
     query.append("decision_cycle", decisionCycleId);
   }
@@ -141,9 +186,25 @@ function revalidateClusterCaches() {
  * which lets callers render loading/empty states without spurious
  * network calls.
  *
+ * signalType polymorphism
+ * -----------------------
+ * `options.signalType` accepts either:
+ *   - a single string ('pain')                         → most callers
+ *   - an array of strings (['pain', 'objective'])      → Qualification tab
+ *
+ * Arrays are serialised as CSV in the URL (`signal_type=pain,objective`)
+ * — the backend's _parse_signal_type accepts that form for list calls.
+ *
+ * Cache key stability
+ * -------------------
+ * The hook normalises signalType to a stable CSV string before computing
+ * the SWR key. Identical inputs (whether passed as a string or an array)
+ * therefore produce the same cache entry — no spurious refetches when a
+ * caller passes a fresh array instance on each render.
+ *
  * @param {string} accountId - Account UUID (required for fetch to run)
  * @param {Object} [options]
- * @param {string} [options.signalType='pain']
+ * @param {string|string[]} [options.signalType='pain']
  * @param {string} [options.decisionCycleId]
  * @param {boolean} [options.includeArchived=false]
  * @returns {Object} { clusters, clustersCount, clustersLoading,
@@ -161,17 +222,39 @@ export function useGetClustersByAccount(accountId, options = {}) {
 
   const enabled = Boolean(accountId && isValidUUID(accountId));
 
+  // Normalise signalType to a stable CSV string.
+  //
+  // This serves two purposes:
+  //   1. Single source of truth for the URL builder AND for the memo
+  //      dependency list — guarantees identical inputs (string 'pain' vs
+  //      array ['pain']) hit the same SWR cache entry.
+  //   2. Avoids referential instability when the caller passes a fresh
+  //      array on each render (e.g. `signalType={[type]}`).
+  //
+  // Falls back to 'pain' (the documented default) when the input
+  // normalises to null — preserves the previous default behaviour.
+  const normalisedSignalType = useMemo(
+    () => normaliseSignalType(signalType) ?? "pain",
+    [signalType],
+  );
+
   const urlWithParams = useMemo(
     () =>
       enabled
         ? buildListUrl(endpoints.list, {
             accountId,
-            signalType,
+            signalType: normalisedSignalType,
             decisionCycleId,
             includeArchived,
           })
         : null,
-    [enabled, accountId, signalType, decisionCycleId, includeArchived],
+    [
+      enabled,
+      accountId,
+      normalisedSignalType,
+      decisionCycleId,
+      includeArchived,
+    ],
   );
 
   const swrKey = tenantKey(urlWithParams, tenantId);

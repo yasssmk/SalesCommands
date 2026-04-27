@@ -95,11 +95,110 @@ class ActivityDecisionStepSerializer(serializers.ModelSerializer):
 
 class ActivityMinimalSerializer(serializers.ModelSerializer):
     """Minimal serializer for previous/next activity references."""
-    
     class Meta:
         model = Activity
         fields = ['id', 'title', 'activity_type', 'status']
         read_only_fields = fields
+
+
+class ActivityCompactSerializer(serializers.ModelSerializer):
+    """
+    Compact activity representation for cross-module embedding.
+
+    Purpose:
+        Lightweight, read-only Activity payload designed to be nested inside
+        OTHER modules' serializers (Signals today, potentially Campaigns,
+        Decision Cycles, etc. later). It answers the "which CRM conversation
+        is this anchored to?" question without dragging the full Activity
+        detail payload into every signal read.
+
+    Payload contract:
+        {
+            "id":            UUID string,
+            "type_display":  Human-readable activity type
+                             (e.g. "Phone Call", "Meeting", "Email"),
+            "subject":       Activity title (Activity.title),
+            "occurred_at":   ISO-8601 datetime, or null. Derived from:
+                             1. completed_at (if set — the moment the
+                                activity actually took place),
+                             2. else combination of scheduled_date +
+                                scheduled_time (planned moment),
+                             3. else null (activity has neither an
+                                execution nor a scheduled moment yet).
+            "contacts":      List of compact contacts on this activity:
+                             [{id, first_name, last_name, job_title}, ...]
+        }
+
+    Performance notes:
+        - Callers SHOULD prefetch_related('contacts') and
+          select_related on the parent FK to avoid N+1.
+        - The M2M `contacts` iteration uses an evaluated queryset;
+          if the caller already prefetched, no extra query runs.
+        - Intentionally NOT ClientScopeManager.SerializerMixin — this
+          serializer is read-only and consumed via nesting; client
+          scoping is the caller's responsibility (already handled by
+          the parent ViewSet's ClientScopeManager).
+
+    Wave A note:
+        Added to enrich `source_activity` in BaseSignalDetailSerializer.
+        Reusable by the Objective port in Wave B.
+    """
+
+    type_display = serializers.SerializerMethodField(read_only=True)
+    subject = serializers.CharField(source='title', read_only=True)
+    occurred_at = serializers.SerializerMethodField(read_only=True)
+    contacts = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Activity
+        fields = ['id', 'type_display', 'subject', 'occurred_at', 'contacts']
+        read_only_fields = fields
+
+    def get_type_display(self, obj):
+        """Human-readable activity type (from TextChoices labels)."""
+        return obj.get_activity_type_display() if obj.activity_type else None
+
+    def get_occurred_at(self, obj):
+        """
+        Best-effort ISO-8601 timestamp for "when did this happen".
+
+        Priority:
+          1. completed_at — the activity actually took place.
+          2. scheduled_date + scheduled_time — the planned moment.
+             Time defaults to 00:00 when only a date is known.
+          3. None — no execution nor scheduling data yet.
+        """
+        if obj.completed_at:
+            return obj.completed_at.isoformat()
+
+        if obj.scheduled_date:
+            # Django returns datetime.date + datetime.time when both set.
+            # We combine into a naive ISO string. TZ is left to the caller
+            # since Activity.scheduled_date / _time are naive by design.
+            from datetime import datetime, time
+            time_part = obj.scheduled_time or time(0, 0)
+            combined = datetime.combine(obj.scheduled_date, time_part)
+            return combined.isoformat()
+
+        return None
+
+    def get_contacts(self, obj):
+        """
+        Compact list of contacts attached to this activity.
+
+        Shape per entry: {id, first_name, last_name, job_title}.
+        Empty list when the activity has no linked contacts.
+        """
+        return [
+            {
+                'id': str(contact.id),
+                'first_name': contact.first_name,
+                'last_name': contact.last_name,
+                'job_title': getattr(contact, 'job_title', None),
+            }
+            for contact in obj.contacts.all()
+        ]
+
 
 
 # ============================================================================

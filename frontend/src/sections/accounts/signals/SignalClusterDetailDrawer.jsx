@@ -1,29 +1,34 @@
 // frontend/src/sections/accounts/signals/SignalClusterDetailDrawer.jsx
 /**
- * SignalClusterDetailDrawer — drill-down view for a Pain cluster.
+ * SignalClusterDetailDrawer — drill-down view for a signal cluster.
  *
- * Opens on click of a SignalClusterCard. Displays:
- *   - Header with cluster identity, priority, freshness, stats
- *   - Archive / unarchive action in the header
- *   - A panel of rich aggregated stats (metrics, linked DCs, human impacts)
- *   - The cluster's member signals as PainCards with full CRUD
+ * Opens on click of a SignalClusterCard. Type-agnostic — handles both
+ * Pain and Objective clusters. Branching is driven by
+ * `clusterSummary.signal_type`:
+ *
+ *   Pain      → impact CRUD via AddPainImpactDialog, max_impact_level
+ *               chip, human_impacts + metrics aggregation, member cards
+ *               are PainCard.
+ *   Objective → no impact CRUD, max_scope_level chip, target_dates
+ *               section, member cards are ObjectiveCard.
  *
  * Self-contained modal state
  * --------------------------
- * The drawer owns its own dialogs (AddPainImpactDialog, SignalEditDialog,
- * AlertSignalReject) and routes the PainCard callbacks to them. This keeps
- * the parent (AccountSignalsTab) thin — it only needs to provide accountId,
- * choices, and a callback when something happens so it can revalidate its
- * own cluster list.
+ * The drawer owns its own dialogs (SignalEditDialog, AlertSignalReject,
+ * and AddPainImpactDialog for Pain only) and routes the member cards'
+ * callbacks to them. This keeps the parent (AccountQualificationTab /
+ * AccountSignalsTab during transition) thin — it only needs to provide
+ * accountId, choices, and a callback when something happens so it can
+ * revalidate its own cluster list.
  *
  * Cache flow
  * ----------
  * Any signal/impact mutation from the members revalidates the shared
- * "pain" and "pain-impacts" caches (handled by painImpacts.js /
- * signals.js). Since the cluster endpoint shares the same backend cache
- * tag, the drawer's own cluster detail fetch automatically refreshes on
- * next focus or next mutation. We also call mutateCluster() explicitly
- * for immediate UI feedback after each action.
+ * caches (handled by painImpacts.js / signals.js). Since the cluster
+ * endpoint shares the same backend cache tag, the drawer's own cluster
+ * detail fetch automatically refreshes on next focus or next mutation.
+ * We also call mutateCluster() explicitly for immediate UI feedback
+ * after each action.
  */
 
 "use client";
@@ -32,6 +37,9 @@ import PropTypes from "prop-types";
 import { useCallback, useMemo, useState } from "react";
 
 // material-ui
+import Accordion from "@mui/material/Accordion";
+import AccordionDetails from "@mui/material/AccordionDetails";
+import AccordionSummary from "@mui/material/AccordionSummary";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
@@ -46,13 +54,16 @@ import Typography from "@mui/material/Typography";
 
 // ant-design icons
 import AlertOutlined from "@ant-design/icons/AlertOutlined";
+import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import DownOutlined from "@ant-design/icons/DownOutlined";
 import InboxOutlined from "@ant-design/icons/InboxOutlined";
-import UndoOutlined from "@ant-design/icons/UndoOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
+import UndoOutlined from "@ant-design/icons/UndoOutlined";
 import UserOutlined from "@ant-design/icons/UserOutlined";
 
 // project imports
+import ObjectiveCard from "components/cards/signals/ObjectiveCard";
 import PainCard from "components/cards/signals/PainCard";
 import AddPainImpactDialog from "./pain/AddPainImpactDialog";
 import AlertSignalReject from "./AlertSignalReject";
@@ -75,6 +86,9 @@ import {
   resolveHumanImpact,
   resolveImpactLevel,
   resolvePriority,
+  resolveScopeLevel,
+  resolveSignalTypeVisuals,
+  resolveTargetDateUrgency,
 } from "sections/accounts/signals/signalClusters";
 
 // ==============================|| CONSTANTS ||============================== //
@@ -82,7 +96,7 @@ import {
 /**
  * Drawer width — responsive.
  * xs (mobile) full-width, sm/md tablet ~560px, lg+ 640px for comfortable
- * nested PainCard reading without feeling cramped.
+ * nested member card reading without feeling cramped.
  */
 const DRAWER_WIDTH = { xs: "100%", sm: 560, md: 640 };
 
@@ -153,6 +167,405 @@ StatCell.propTypes = {
   hint: PropTypes.string,
 };
 
+// ==============================|| BY-LEVEL ACCORDION ||============================== //
+
+/**
+ * Format a contact's display name from the by_level payload shape.
+ *
+ *   { first_name: 'Marie', last_name: 'Durand', job_title: 'CFO' }
+ *   → "Marie Durand · CFO"
+ *
+ * Job title is folded in only when present. Returns "Unknown contact"
+ * as a defensive fallback so a malformed entry never renders as blank.
+ */
+function formatByLevelContact(contact) {
+  if (!contact) return "Unknown contact";
+  const fullName =
+    `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
+  const base = fullName || "Unknown contact";
+  return contact.job_title ? `${base} · ${contact.job_title}` : base;
+}
+
+/**
+ * One entry row inside a DEPARTMENT or PERSONAL accordion section.
+ *
+ * Renders: scope-colored bullet + entity name + impact_count chip +
+ * parent-pains count chip. Compact single-line layout that wraps on
+ * narrow widths.
+ */
+function ByLevelEntryRow({ name, impactCount, parentPainsCount, color, icon }) {
+  const Icon = icon;
+  return (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      flexWrap="wrap"
+      useFlexGap
+      sx={{ py: 0.5 }}
+    >
+      <Box
+        sx={{
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          bgcolor: `${color}.main`,
+          flexShrink: 0,
+        }}
+      />
+      {Icon && <Icon style={{ fontSize: 12, color: "#8c8c8c" }} />}
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={name}
+      >
+        {name}
+      </Typography>
+      <Tooltip title="Impacts recorded at this level">
+        <Chip
+          label={`${impactCount} impact${impactCount === 1 ? "" : "s"}`}
+          size="small"
+          variant="outlined"
+          sx={{ fontSize: "0.62rem", height: 18 }}
+        />
+      </Tooltip>
+      <Tooltip title="Number of parent pain observations contributing">
+        <Chip
+          label={`From ${parentPainsCount} pain${parentPainsCount === 1 ? "" : "s"}`}
+          size="small"
+          variant="outlined"
+          sx={{
+            fontSize: "0.62rem",
+            height: 18,
+            color: "text.disabled",
+          }}
+        />
+      </Tooltip>
+    </Stack>
+  );
+}
+
+ByLevelEntryRow.propTypes = {
+  name: PropTypes.string.isRequired,
+  impactCount: PropTypes.number.isRequired,
+  parentPainsCount: PropTypes.number.isRequired,
+  color: PropTypes.string.isRequired,
+  icon: PropTypes.elementType,
+};
+
+/**
+ * ByLevelAccordion — Pain-only breakdown of a cluster's VALIDATED
+ * PainImpacts grouped by ScopeLevel.
+ *
+ * The backend's by_level payload (Wave A) tells the rep at which
+ * organisational layer the pain has been documented and which parent
+ * pain observations contributed. This component renders that as a
+ * three-section MUI Accordion:
+ *
+ *   BUSINESS   — single fixed entry (always rendered, even at zero)
+ *   DEPARTMENT — one entry per impacted department
+ *   PERSONAL   — one entry per impacted contact
+ *
+ * Sections without entries (empty DEPARTMENT or PERSONAL dicts) are
+ * skipped entirely. BUSINESS is always present in the payload —
+ * impact_count may legitimately be zero, in which case the accordion
+ * summary states the absence and the details panel is not rendered.
+ *
+ * Visual rules:
+ *   - BUSINESS expanded by default (broadest scope, most likely useful)
+ *   - DEPARTMENT / PERSONAL collapsed by default
+ *   - Bullet color follows the same scope palette as PainImpact rows
+ *     (warning / info / error)
+ *
+ * @param {Object} byLevel - Cluster `by_level` payload. May be null.
+ */
+function ByLevelAccordion({ byLevel }) {
+  // Defensive: backend always emits the key for Pain detail, but we
+  // don't want a missing field to break the drawer. Render nothing.
+  if (!byLevel || typeof byLevel !== "object") {
+    return null;
+  }
+
+  const business = byLevel.BUSINESS ?? { impact_count: 0, parent_pain_ids: [] };
+  const departmentEntries = Object.entries(byLevel.DEPARTMENT ?? {});
+  const personalEntries = Object.entries(byLevel.PERSONAL ?? {});
+
+  // Sort each non-business bucket by impact_count desc so the most
+  // impacted entity surfaces first. Stable (preserves backend tie order).
+  departmentEntries.sort(
+    (a, b) => (b[1]?.impact_count ?? 0) - (a[1]?.impact_count ?? 0),
+  );
+  personalEntries.sort(
+    (a, b) => (b[1]?.impact_count ?? 0) - (a[1]?.impact_count ?? 0),
+  );
+
+  const businessImpactCount = business.impact_count ?? 0;
+  const businessParentCount = Array.isArray(business.parent_pain_ids)
+    ? business.parent_pain_ids.length
+    : 0;
+  const businessHasContent = businessImpactCount > 0;
+
+  return (
+    <Box sx={{ mx: 2.5, mb: 2 }}>
+      <Typography
+        variant="caption"
+        color="text.disabled"
+        fontWeight={500}
+        sx={{ display: "block", mb: 0.75 }}
+      >
+        BREAKDOWN BY LEVEL
+      </Typography>
+
+      {/* ==================== BUSINESS ==================== */}
+      <Accordion
+        defaultExpanded={businessHasContent}
+        disableGutters
+        elevation={0}
+        sx={{
+          border: "1px solid",
+          borderColor: "divider",
+          borderRadius: 1,
+          mb: 0.5,
+          "&:before": { display: "none" },
+        }}
+      >
+        <AccordionSummary
+          expandIcon={<DownOutlined style={{ fontSize: 11 }} />}
+          sx={{
+            minHeight: 36,
+            "& .MuiAccordionSummary-content": { my: 0.5 },
+          }}
+        >
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ flex: 1 }}
+          >
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                bgcolor: "warning.main",
+              }}
+            />
+            <Typography variant="body2" fontWeight={600}>
+              Business
+            </Typography>
+            <Typography variant="caption" color="text.disabled">
+              {businessHasContent
+                ? `${businessImpactCount} impact${
+                    businessImpactCount === 1 ? "" : "s"
+                  } from ${businessParentCount} pain${
+                    businessParentCount === 1 ? "" : "s"
+                  }`
+                : "No business-level impact yet"}
+            </Typography>
+          </Stack>
+        </AccordionSummary>
+        {businessHasContent && (
+          <AccordionDetails sx={{ pt: 0, pb: 1 }}>
+            {/*
+              Business is a flat scope — there's no entity to break down
+              by. We surface the same metrics as the summary in the
+              detail body so the open / closed state stays informative.
+            */}
+            <Typography variant="caption" color="text.secondary">
+              {businessImpactCount} business-level impact
+              {businessImpactCount === 1 ? "" : "s"} recorded across{" "}
+              {businessParentCount} parent pain
+              {businessParentCount === 1 ? "" : "s"} in this cluster.
+            </Typography>
+          </AccordionDetails>
+        )}
+      </Accordion>
+
+      {/* ==================== DEPARTMENT ==================== */}
+      {departmentEntries.length > 0 && (
+        <Accordion
+          disableGutters
+          elevation={0}
+          sx={{
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            mb: 0.5,
+            "&:before": { display: "none" },
+          }}
+        >
+          <AccordionSummary
+            expandIcon={<DownOutlined style={{ fontSize: 11 }} />}
+            sx={{
+              minHeight: 36,
+              "& .MuiAccordionSummary-content": { my: 0.5 },
+            }}
+          >
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ flex: 1 }}
+            >
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: "info.main",
+                }}
+              />
+              <Typography variant="body2" fontWeight={600}>
+                Department
+              </Typography>
+              <Typography variant="caption" color="text.disabled">
+                {departmentEntries.length} department
+                {departmentEntries.length === 1 ? "" : "s"} impacted
+              </Typography>
+            </Stack>
+          </AccordionSummary>
+          <AccordionDetails sx={{ pt: 0, pb: 1 }}>
+            <Stack divider={<Divider flexItem />}>
+              {departmentEntries.map(([deptId, entry]) => {
+                const deptName =
+                  entry?.department?.name ?? "Unknown department";
+                const impactCount = entry?.impact_count ?? 0;
+                const parentCount = Array.isArray(entry?.parent_pain_ids)
+                  ? entry.parent_pain_ids.length
+                  : 0;
+                return (
+                  <ByLevelEntryRow
+                    key={deptId}
+                    name={deptName}
+                    impactCount={impactCount}
+                    parentPainsCount={parentCount}
+                    color="info"
+                    icon={TeamOutlined}
+                  />
+                );
+              })}
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
+      )}
+
+      {/* ==================== PERSONAL ==================== */}
+      {personalEntries.length > 0 && (
+        <Accordion
+          disableGutters
+          elevation={0}
+          sx={{
+            border: "1px solid",
+            borderColor: "divider",
+            borderRadius: 1,
+            "&:before": { display: "none" },
+          }}
+        >
+          <AccordionSummary
+            expandIcon={<DownOutlined style={{ fontSize: 11 }} />}
+            sx={{
+              minHeight: 36,
+              "& .MuiAccordionSummary-content": { my: 0.5 },
+            }}
+          >
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+              sx={{ flex: 1 }}
+            >
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: "error.main",
+                }}
+              />
+              <Typography variant="body2" fontWeight={600}>
+                Personal
+              </Typography>
+              <Typography variant="caption" color="text.disabled">
+                {personalEntries.length} contact
+                {personalEntries.length === 1 ? "" : "s"} impacted
+              </Typography>
+            </Stack>
+          </AccordionSummary>
+          <AccordionDetails sx={{ pt: 0, pb: 1 }}>
+            <Stack divider={<Divider flexItem />}>
+              {personalEntries.map(([contactId, entry]) => {
+                const contactName = formatByLevelContact(entry?.contact);
+                const impactCount = entry?.impact_count ?? 0;
+                const parentCount = Array.isArray(entry?.parent_pain_ids)
+                  ? entry.parent_pain_ids.length
+                  : 0;
+                return (
+                  <ByLevelEntryRow
+                    key={contactId}
+                    name={contactName}
+                    impactCount={impactCount}
+                    parentPainsCount={parentCount}
+                    color="error"
+                    icon={UserOutlined}
+                  />
+                );
+              })}
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
+      )}
+    </Box>
+  );
+}
+
+ByLevelAccordion.propTypes = {
+  byLevel: PropTypes.shape({
+    BUSINESS: PropTypes.shape({
+      impact_count: PropTypes.number,
+      parent_pain_ids: PropTypes.arrayOf(PropTypes.string),
+    }),
+    DEPARTMENT: PropTypes.objectOf(
+      PropTypes.shape({
+        impact_count: PropTypes.number,
+        parent_pain_ids: PropTypes.arrayOf(PropTypes.string),
+        department: PropTypes.shape({
+          id: PropTypes.string,
+          name: PropTypes.string,
+        }),
+      }),
+    ),
+    PERSONAL: PropTypes.objectOf(
+      PropTypes.shape({
+        impact_count: PropTypes.number,
+        parent_pain_ids: PropTypes.arrayOf(PropTypes.string),
+        contact: PropTypes.shape({
+          id: PropTypes.string,
+          first_name: PropTypes.string,
+          last_name: PropTypes.string,
+          job_title: PropTypes.string,
+        }),
+      }),
+    ),
+  }),
+};
+
+ByLevelAccordion.defaultProps = {
+  byLevel: null,
+};
+
 // ==============================|| DRAWER ||============================== //
 
 /**
@@ -162,6 +575,8 @@ StatCell.propTypes = {
  * @param {Function} onClose           - () => void
  * @param {Object}   clusterSummary    - Cluster list item (has canonical_key,
  *                                        used to trigger the detail fetch).
+ *                                        Must carry signal_type for the
+ *                                        type-agnostic branching.
  *                                        May be null when drawer is closed.
  * @param {string}   accountId         - Account UUID
  * @param {Object}   choices           - From useGetSignalChoices()
@@ -179,10 +594,22 @@ export default function SignalClusterDetailDrawer({
   choicesLoading,
   onClusterChange,
 }) {
+  // ==============================|| TYPE BRANCHING ||============================== //
+
+  /**
+   * Resolve cluster type once. Defaults to 'pain' for backward
+   * compatibility with any caller that forgets signal_type — the
+   * legacy Pain-only behaviour stays the safe default.
+   */
+  const signalType = clusterSummary?.signal_type ?? "pain";
+  const isPain = signalType === "pain";
+  const isObjective = signalType === "objective";
+
+  const typeVisuals = resolveSignalTypeVisuals(signalType);
+
   // ==============================|| DETAIL FETCH ||============================== //
 
   const canonicalKey = clusterSummary?.canonical_key ?? null;
-  const signalType = clusterSummary?.signal_type ?? "pain";
 
   const { cluster, clusterLoading, clusterError, mutateCluster } =
     useGetClusterDetail(accountId, canonicalKey, { signalType });
@@ -196,7 +623,20 @@ export default function SignalClusterDetailDrawer({
   const isArchived = Boolean(display?.is_archived);
   const freshness = resolveFreshness(display?.freshness_status);
   const priority = resolvePriority(display?.priority_bucket);
-  const maxLevel = resolveImpactLevel(display?.max_impact_level);
+
+  // Pain-specific
+  const maxImpactLevel = resolveImpactLevel(display?.max_impact_level);
+
+  // Objective-specific
+  const maxScopeLevel = resolveScopeLevel(display?.max_scope_level);
+  const targetUrgency = useMemo(
+    () =>
+      resolveTargetDateUrgency(
+        display?.target_dates,
+        display?.has_target_date_soon,
+      ),
+    [display?.target_dates, display?.has_target_date_soon],
+  );
 
   const FreshnessIcon = freshness.icon;
   const PriorityIcon = priority.icon;
@@ -209,25 +649,33 @@ export default function SignalClusterDetailDrawer({
   const firstObservedDate = formatShortDate(display?.first_observed_at);
   const lastConfirmedDate = formatShortDate(display?.last_confirmed_at);
 
-  /** Deduplicated member signals coming from the detail payload. */
+  /**
+   * Deduplicated member signals coming from the detail payload.
+   * The backend serializer field is `members` for both signal types.
+   */
   const members = useMemo(
     () => (Array.isArray(cluster?.members) ? cluster.members : []),
     [cluster?.members],
   );
 
-  /** Metrics — free-text list from all VALIDATED impacts. */
+  /** Pain-only — metrics free-text list from VALIDATED impacts. */
   const metrics = useMemo(
     () => (Array.isArray(display?.metrics) ? display.metrics : []),
     [display?.metrics],
   );
 
-  /** Human impacts — aggregated by type, sorted desc by count. */
+  /** Pain-only — human impacts aggregated by type. */
   const humanImpacts = useMemo(
     () => (Array.isArray(display?.human_impacts) ? display.human_impacts : []),
     [display?.human_impacts],
   );
 
-  /** Linked decision cycle count. */
+  /** Objective-only — sorted target dates. */
+  const targetDates = useMemo(
+    () => (Array.isArray(display?.target_dates) ? display.target_dates : []),
+    [display?.target_dates],
+  );
+
   const linkedCyclesCount = Array.isArray(display?.decision_cycle_ids)
     ? display.decision_cycle_ids.length
     : 0;
@@ -357,7 +805,13 @@ export default function SignalClusterDetailDrawer({
     [notifyChange],
   );
 
-  // ==============================|| IMPACT HANDLERS ||============================== //
+  // ==============================|| IMPACT HANDLERS — PAIN ONLY ||============================== //
+  //
+  // These handlers are bound to PainCard's onAddImpact / onEditImpact /
+  // onDeleteImpact props. They never run for Objective members because
+  // ObjectiveCard does not have impact-related callbacks. The dialog
+  // they drive (AddPainImpactDialog) is also rendered conditionally
+  // (isPain &&) so it never mounts for Objective clusters.
 
   const handleAddImpact = useCallback((painSignalId) => {
     setImpactDialog({
@@ -408,7 +862,7 @@ export default function SignalClusterDetailDrawer({
 
   const renderHeader = () => (
     <Box sx={{ px: 2.5, pt: 2, pb: 1.5 }}>
-      {/* Top row: close button */}
+      {/* Top row: chips + close button */}
       <Stack
         direction="row"
         justifyContent="space-between"
@@ -422,9 +876,10 @@ export default function SignalClusterDetailDrawer({
           flexWrap="wrap"
           useFlexGap
         >
+          {/* Type chip — colored per signal_type */}
           <Chip
-            label="Pain"
-            color="error"
+            label={typeVisuals.label}
+            color={typeVisuals.color}
             size="small"
             variant="outlined"
             sx={{ fontSize: "0.68rem", height: 20 }}
@@ -552,6 +1007,21 @@ export default function SignalClusterDetailDrawer({
 
   // ==============================|| RENDER: STATS PANEL ||============================== //
 
+  /**
+   * Stats panel content branches by signal_type. The Paper container is
+   * shared so the visual rhythm of the drawer body stays uniform.
+   *
+   * Pain stats:
+   *   - Max level chip + Impacted contacts + Decision cycles
+   *   - First observed / Last confirmed
+   *   - Human impacts chips
+   *   - Metrics list
+   *
+   * Objective stats:
+   *   - Max scope chip + Distinct contacts + Decision cycles
+   *   - First observed / Last confirmed
+   *   - Target dates section with urgency badge (if applicable)
+   */
   const renderStats = () => (
     <Paper
       variant="outlined"
@@ -563,7 +1033,7 @@ export default function SignalClusterDetailDrawer({
         bgcolor: "background.default",
       }}
     >
-      {/* Top row: 4 stat cells */}
+      {/* ============== TOP ROW: type-specific scope/level + counts ============== */}
       <Stack
         direction="row"
         spacing={3}
@@ -571,54 +1041,81 @@ export default function SignalClusterDetailDrawer({
         useFlexGap
         sx={{ mb: 1.5 }}
       >
-        <StatCell
-          label="Max level"
-          value={
-            display?.max_impact_level ? (
-              <Chip
-                label={maxLevel.label}
-                color={maxLevel.color}
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.68rem", height: 20 }}
-              />
-            ) : (
-              "—"
-            )
-          }
-        />
-        <StatCell
-          label="Impacted contacts"
-          value={display?.impacted_contacts_count ?? 0}
-        />
-        <StatCell
-          label="Max level"
-          value={
-            display?.max_impact_level ? (
-              <Chip
-                label={maxLevel.label}
-                color={maxLevel.color}
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.68rem", height: 20 }}
-              />
-            ) : (
-              <Typography variant="body2" color="text.disabled">
-                —
-              </Typography>
-            )
-          }
-        />
-        <StatCell label="Decision cycles" value={linkedCyclesCount} />
+        {isPain && (
+          <>
+            <StatCell
+              label="Max level"
+              value={
+                display?.max_impact_level ? (
+                  <Chip
+                    label={maxImpactLevel.label}
+                    color={maxImpactLevel.color}
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontSize: "0.68rem", height: 20 }}
+                  />
+                ) : (
+                  <Typography variant="body2" color="text.disabled">
+                    —
+                  </Typography>
+                )
+              }
+            />
+            <StatCell
+              label="Impacted contacts"
+              value={display?.impacted_contacts_count ?? 0}
+            />
+            <StatCell label="Decision cycles" value={linkedCyclesCount} />
+          </>
+        )}
+
+        {isObjective && (
+          <>
+            <StatCell
+              label="Max scope"
+              value={
+                display?.max_scope_level ? (
+                  <Chip
+                    label={maxScopeLevel.label}
+                    color={maxScopeLevel.color}
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontSize: "0.68rem", height: 20 }}
+                  />
+                ) : (
+                  <Typography variant="body2" color="text.disabled">
+                    —
+                  </Typography>
+                )
+              }
+            />
+            <StatCell
+              label="Distinct contacts"
+              value={display?.distinct_contacts_count ?? 0}
+            />
+            <StatCell label="Decision cycles" value={linkedCyclesCount} />
+          </>
+        )}
       </Stack>
 
-      {/* Lifecycle row */}
+      {/* ============== LIFECYCLE ROW (universal) ============== */}
       <Stack
         direction="row"
         spacing={3}
         flexWrap="wrap"
         useFlexGap
-        sx={{ mb: humanImpacts.length || metrics.length ? 1.5 : 0 }}
+        sx={{
+          // Bottom margin only when there is a type-specific section below.
+          mb: shouldRenderTypeSpecificSection({
+            isPain,
+            humanImpacts,
+            metrics,
+            isObjective,
+            targetDates,
+          })
+            ? 1.5
+            : 0,
+        }}
       >
         {firstObservedDate && (
           <StatCell label="First observed" value={firstObservedDate} />
@@ -628,8 +1125,8 @@ export default function SignalClusterDetailDrawer({
         )}
       </Stack>
 
-      {/* Human impacts */}
-      {humanImpacts.length > 0 && (
+      {/* ============== PAIN: Human impacts ============== */}
+      {isPain && humanImpacts.length > 0 && (
         <Stack spacing={0.75} sx={{ mb: metrics.length ? 1.5 : 0 }}>
           <Typography variant="caption" color="text.disabled" fontWeight={500}>
             Human impacts
@@ -651,8 +1148,8 @@ export default function SignalClusterDetailDrawer({
         </Stack>
       )}
 
-      {/* Metrics */}
-      {metrics.length > 0 && (
+      {/* ============== PAIN: Metrics ============== */}
+      {isPain && metrics.length > 0 && (
         <Stack spacing={0.75}>
           <Typography variant="caption" color="text.disabled" fontWeight={500}>
             Metrics observed
@@ -674,58 +1171,109 @@ export default function SignalClusterDetailDrawer({
           </Stack>
         </Stack>
       )}
+
+      {/* ============== OBJECTIVE: Target dates ============== */}
+      {isObjective && targetDates.length > 0 && (
+        <Stack spacing={0.75}>
+          <Stack
+            direction="row"
+            spacing={1}
+            alignItems="center"
+            justifyContent="space-between"
+            flexWrap="wrap"
+            useFlexGap
+          >
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              fontWeight={500}
+            >
+              Target dates
+            </Typography>
+            {targetUrgency && (
+              <Chip
+                icon={<CalendarOutlined style={{ fontSize: 11 }} />}
+                label={targetUrgency.label}
+                color={targetUrgency.color}
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: "0.62rem", height: 18 }}
+              />
+            )}
+          </Stack>
+          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+            {targetDates.map((dateStr, idx) => (
+              // ISO strings can repeat across distinct objectives in the
+              // same cluster — index disambiguates while preserving order.
+              // eslint-disable-next-line react/no-array-index-key
+              <Chip
+                key={`${idx}-${dateStr}`}
+                label={dateStr}
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: "0.62rem", height: 18 }}
+              />
+            ))}
+          </Stack>
+        </Stack>
+      )}
     </Paper>
   );
 
   // ==============================|| RENDER: MEMBERS ||============================== //
 
-  const renderMembers = () => {
-    // Header with count
-    return (
-      <Box sx={{ px: 2.5, pb: 3 }}>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Signals in this cluster
-          </Typography>
-          {members.length > 0 && (
-            <Chip
-              label={members.length}
-              size="small"
-              variant="outlined"
-              sx={{ height: 18, fontSize: "0.62rem" }}
-            />
-          )}
-        </Stack>
-
-        {clusterLoading && !cluster && (
-          <Stack alignItems="center" py={3}>
-            <CircularProgress size={20} />
-          </Stack>
-        )}
-
-        {clusterError && (
-          <Stack alignItems="center" spacing={1} py={3}>
-            <AlertOutlined style={{ fontSize: 24, color: "#ff4d4f" }} />
-            <Typography variant="body2" color="error">
-              Failed to load cluster details.
-            </Typography>
-          </Stack>
-        )}
-
-        {cluster && members.length === 0 && (
-          <Typography
-            variant="body2"
-            color="text.disabled"
-            sx={{ fontStyle: "italic", py: 1.5 }}
-          >
-            No signals to display. All previous members may have been deleted or
-            rejected.
-          </Typography>
-        )}
-
+  const renderMembers = () => (
+    <Box sx={{ px: 2.5, pb: 3 }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+        <Typography variant="subtitle2" fontWeight={600}>
+          Signals in this cluster
+        </Typography>
         {members.length > 0 && (
-          <Stack spacing={1.5}>
-            {members.map((member) => (
+          <Chip
+            label={members.length}
+            size="small"
+            variant="outlined"
+            sx={{ height: 18, fontSize: "0.62rem" }}
+          />
+        )}
+      </Stack>
+
+      {clusterLoading && !cluster && (
+        <Stack alignItems="center" py={3}>
+          <CircularProgress size={20} />
+        </Stack>
+      )}
+
+      {clusterError && (
+        <Stack alignItems="center" spacing={1} py={3}>
+          <AlertOutlined style={{ fontSize: 24, color: "#ff4d4f" }} />
+          <Typography variant="body2" color="error">
+            Failed to load cluster details.
+          </Typography>
+        </Stack>
+      )}
+
+      {cluster && members.length === 0 && (
+        <Typography
+          variant="body2"
+          color="text.disabled"
+          sx={{ fontStyle: "italic", py: 1.5 }}
+        >
+          No signals to display. All previous members may have been deleted or
+          rejected.
+        </Typography>
+      )}
+
+      {/*
+        Member rendering branches on signal_type. The lifecycle handlers
+        (validate / reject / edit / delete) are shared — they accept the
+        signalType parameter and route to the right backend endpoint via
+        signals.js. Impact handlers are bound only on PainCard.
+      */}
+      {members.length > 0 && (
+        <Stack spacing={1.5}>
+          {isPain &&
+            members.map((member) => (
               <PainCard
                 key={member.id}
                 pain={member}
@@ -739,11 +1287,23 @@ export default function SignalClusterDetailDrawer({
                 onDeleteImpact={handleDeleteImpact}
               />
             ))}
-          </Stack>
-        )}
-      </Box>
-    );
-  };
+
+          {isObjective &&
+            members.map((member) => (
+              <ObjectiveCard
+                key={member.id}
+                objective={member}
+                choices={choices}
+                onValidate={handleValidate}
+                onReject={handleRejectOpen}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            ))}
+        </Stack>
+      )}
+    </Box>
+  );
 
   // ==============================|| RENDER ||============================== //
 
@@ -771,13 +1331,26 @@ export default function SignalClusterDetailDrawer({
             {renderHeader()}
             <Divider />
             <Box sx={{ pt: 2 }}>{renderStats()}</Box>
+
+            {/*
+              By-level breakdown — Pain only. The backend doesn't compute
+              by_level for Objective clusters (see SignalClusterService.
+              get_cluster_detail), so cluster?.by_level is undefined for
+              Objective and the section vanishes naturally. Wrapped in
+              isPain && for explicit intent, but the inner null-guard
+              would also handle it.
+            */}
+            {isPain && cluster?.by_level && (
+              <ByLevelAccordion byLevel={cluster.by_level} />
+            )}
+
             <Divider sx={{ mx: 2.5 }} />
             <Box sx={{ pt: 2 }}>{renderMembers()}</Box>
           </>
         )}
       </Drawer>
 
-      {/* ==================== MEMBER MODALS ==================== */}
+      {/* ==================== MEMBER MODALS — universal ==================== */}
 
       <SignalEditDialog
         open={editModal.open}
@@ -798,16 +1371,48 @@ export default function SignalClusterDetailDrawer({
         signalType={rejectModal.signalType}
       />
 
-      <AddPainImpactDialog
-        open={impactDialog.open}
-        onClose={handleImpactDialogClose}
-        onSuccess={handleImpactDialogSuccess}
-        painSignalId={impactDialog.painSignalId}
-        accountId={accountId}
-        initialImpact={impactDialog.initialImpact}
-      />
+      {/* ==================== IMPACT DIALOG — Pain only ==================== */}
+      {/*
+        Conditional mount: AddPainImpactDialog never mounts for Objective
+        clusters. The handlers above are equally guarded by the fact that
+        ObjectiveCard simply does not have onAddImpact / onEditImpact /
+        onDeleteImpact in its prop surface — they cannot be triggered.
+      */}
+      {isPain && (
+        <AddPainImpactDialog
+          open={impactDialog.open}
+          onClose={handleImpactDialogClose}
+          onSuccess={handleImpactDialogSuccess}
+          painSignalId={impactDialog.painSignalId}
+          accountId={accountId}
+          initialImpact={impactDialog.initialImpact}
+        />
+      )}
     </>
   );
+}
+
+// ==============================|| LAYOUT HELPER ||============================== //
+
+/**
+ * Decide whether the stats panel has a type-specific section below the
+ * lifecycle row, so the lifecycle row's bottom margin can be set
+ * accordingly. Centralised so the render() body stays uncluttered.
+ */
+function shouldRenderTypeSpecificSection({
+  isPain,
+  humanImpacts,
+  metrics,
+  isObjective,
+  targetDates,
+}) {
+  if (isPain) {
+    return humanImpacts.length > 0 || metrics.length > 0;
+  }
+  if (isObjective) {
+    return targetDates.length > 0;
+  }
+  return false;
 }
 
 // ==============================|| PROP TYPES ||============================== //

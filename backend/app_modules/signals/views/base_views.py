@@ -44,11 +44,10 @@ from ..constants import (
     SignalCategory,
     PeopleRole,
     InfluenceLevel,
-    PainWhat,
-    PainDimension,
+    SignalWhat,
+    SignalDimension,
     HumanImpact,
-    ImpactLevel,
-    GoalLevel,
+    ScopeLevel,
     TechCategory,
     Satisfaction,
 )
@@ -147,7 +146,15 @@ class BaseSignalViewSet(
     # =========================================================================
 
     def get_queryset(self):
-        """Client-scoped queryset with select_related tuned per action."""
+        """
+        Client-scoped queryset with select_related and prefetch_related
+        tuned per action.
+
+        Detail actions also prefetch `source_activity__contacts` so that
+        BaseSignalDetailSerializer.get_source_activity (enriched via
+        ActivityCompactSerializer since Wave A) resolves the activity's
+        contacts without issuing an extra query per signal.
+        """
         qs = super().get_queryset()
         qs = self.apply_owner_scope_filter(qs)
 
@@ -167,6 +174,11 @@ class BaseSignalViewSet(
                 'validated_by',
                 'last_modified_by',
                 'requested_by',
+            ).prefetch_related(
+                # source_activity exposes its linked contacts through the
+                # enriched compact serializer — prefetch keeps detail reads
+                # at a bounded number of queries.
+                'source_activity__contacts',
             )
 
         return qs
@@ -423,23 +435,32 @@ class SignalChoicesView(APIView):
     {
       "success": true,
       "data": {
-        "status":           [...],
-        "source":           [...],
-        "signal_category":  [...],
-        "people_roles":     [...],
-        "influence_levels": [...],
-        "pain_whats":       [...],
-        "pain_dimensions":  [...],
-        "human_impacts":    [...],
-        "impact_levels":    [...],
-        "goal_levels":      [...],
-        "tech_categories":  [...],
-        "satisfaction":     [...],
+        "status":            [...],
+        "source":            [...],
+        "signal_category":   [...],
+        "people_roles":      [...],
+        "influence_levels":  [...],
+        "signal_whats":      [...],   # shared across Pain (today) and
+                                        # Objective (Wave B)
+        "signal_dimensions": [...],   # shared across Pain (today) and
+                                        # Objective (Wave B)
+        "human_impacts":     [...],
+        "scope_levels":      [...],   # PainImpact scope today; will also
+                                        # drive ObjectiveSignal in Wave B
+        "tech_categories":   [...],
+        "satisfaction":      [...],
       }
     }
 
+    Wave A renames (destructive, no back-compat):
+      - pain_whats       → signal_whats
+      - pain_dimensions  → signal_dimensions
+      - impact_levels    → scope_levels
+      - goal_levels      → removed. Objective will adopt scope_levels in
+                           Wave B when the ObjectiveSignal port lands.
+
     Notes:
-      - impact_levels drives PainImpact creation (BUSINESS / DEPARTMENT /
+      - scope_levels drives PainImpact creation (BUSINESS / DEPARTMENT /
         PERSONAL) — see PainImpact model docstring.
       - The legacy pain_levels key (and the underlying PainLevel enum)
         was removed in Sprint 1.22 once it had no remaining consumers.
@@ -455,17 +476,16 @@ class SignalChoicesView(APIView):
         return Response({
             'success': True,
             'data': {
-                'status':           _choices(SignalStatus),
-                'source':           _choices(SignalSource),
-                'signal_category':  _choices(SignalCategory),
-                'people_roles':     _choices(PeopleRole),
-                'influence_levels': _choices(InfluenceLevel),
-                'pain_whats':       _choices(PainWhat),
-                'pain_dimensions':  _choices(PainDimension),
-                'human_impacts':    _choices(HumanImpact),
-                'impact_levels':    _choices(ImpactLevel),
-                'goal_levels':      _choices(GoalLevel),
-                'tech_categories':  _choices(TechCategory),
-                'satisfaction':     _choices(Satisfaction),
+                'status':            _choices(SignalStatus),
+                'source':            _choices(SignalSource),
+                'signal_category':   _choices(SignalCategory),
+                'people_roles':      _choices(PeopleRole),
+                'influence_levels':  _choices(InfluenceLevel),
+                'signal_whats':      _choices(SignalWhat),
+                'signal_dimensions': _choices(SignalDimension),
+                'human_impacts':     _choices(HumanImpact),
+                'scope_levels':      _choices(ScopeLevel),
+                'tech_categories':   _choices(TechCategory),
+                'satisfaction':      _choices(Satisfaction),
             },
         })

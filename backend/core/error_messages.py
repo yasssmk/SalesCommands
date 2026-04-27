@@ -426,6 +426,36 @@ class SignalErrorMessages:
         "Impacted contact must belong to the same account as the parent pain."
     )
 
+    # -----------------------------------------------------------------
+    # ObjectiveSignal-specific — scope-conditional target requirements.
+    # Introduced in Wave B (Objective port).
+    #
+    # Scope rules (mirror of ObjectiveSignal.clean()):
+    #   PERSONAL   → target_contact required, target_department forbidden
+    #   DEPARTMENT → target_department required, target_contact forbidden
+    #   BUSINESS   → neither target_contact nor target_department
+    # -----------------------------------------------------------------
+    OBJECTIVE_PERSONAL_REQUIRES_CONTACT = _(
+        "Personal objectives require a target contact."
+    )
+    OBJECTIVE_PERSONAL_NO_DEPT = _(
+        "Personal objectives must not specify a target department. "
+        "Use a department-scoped objective instead."
+    )
+    OBJECTIVE_DEPT_REQUIRES_DEPT = _(
+        "Department objectives require a target department."
+    )
+    OBJECTIVE_DEPT_NO_CONTACT = _(
+        "Department objectives must not specify a target contact. "
+        "Use a personal-scoped objective instead."
+    )
+    OBJECTIVE_BUSINESS_NO_CONTACT = _(
+        "Business objectives must not specify a target contact."
+    )
+    OBJECTIVE_BUSINESS_NO_DEPT = _(
+        "Business objectives must not specify a target department."
+    )
+
     CLUSTER_ACCOUNT_REQUIRED = _(
         "An account is required to query signal clusters."
     )

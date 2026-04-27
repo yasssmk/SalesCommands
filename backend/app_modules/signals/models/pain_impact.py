@@ -1,4 +1,5 @@
 # app_modules/signals/models/pain_impact.py
+
 """
 PainImpact — tangible proof or human manifestation of a Pain.
 
@@ -13,7 +14,7 @@ A PainSignal can have 0..N PainImpacts — a Pain can exist without
 any documented proof yet, and can accumulate Impacts over time as the
 AE gathers evidence across calls.
 
-Three mutually-exclusive Impact levels, answering different sales
+Three mutually-exclusive ScopeLevel values, answering different sales
 questions:
 
   BUSINESS   — "How much does it cost the company overall?"
@@ -44,6 +45,12 @@ Note — Lifecycle and source fields:
   corroboration. Its truth-value is tied to the parent Pain. It only
   tracks: client_id (multi-tenant), created_by / updated_by / timestamps
   (audit), and the business fields described above.
+
+ScopeLevel vocabulary:
+  The `level` field is typed by ScopeLevel (shared with future
+  ObjectiveSignal — see constants.py). Enum values on disk
+  (BUSINESS / DEPARTMENT / PERSONAL) are unchanged — only the Python
+  class name differs from the legacy ImpactLevel identifier.
 """
 
 from django.core.exceptions import ValidationError
@@ -53,7 +60,7 @@ from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 
-from ..constants import HumanImpact, ImpactLevel
+from ..constants import HumanImpact, ScopeLevel
 
 
 class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -62,7 +69,7 @@ class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
     Schema summary:
       pain_signal       : FK to PainSignal (required, CASCADE)
-      level             : ImpactLevel (BUSINESS / DEPARTMENT / PERSONAL)
+      level             : ScopeLevel (BUSINESS / DEPARTMENT / PERSONAL)
       impacted_department : FK StandardDepartment (required if DEPARTMENT)
       impacted_contact    : FK Contact (required if PERSONAL)
       human_impact      : HumanImpact enum (optional, PERSONAL only)
@@ -96,7 +103,7 @@ class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
     level = models.CharField(
         max_length=20,
-        choices=ImpactLevel.choices,
+        choices=ScopeLevel.choices,
         verbose_name=_('Impact Level'),
         help_text=_(
             'The scope of this impact: BUSINESS (company-wide), '
@@ -211,7 +218,7 @@ class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
     def clean(self):
         """
-        Enforce ImpactLevel-based conditional requirements and cross-account
+         Enforce ScopeLevel-based conditional requirements and cross-account
         scoping.
 
         Rules:
@@ -237,7 +244,7 @@ class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
             raise ValidationError(errors)
 
         # Rules 2-4 — level-driven field presence
-        if self.level == ImpactLevel.BUSINESS:
+        if self.level == ScopeLevel.BUSINESS:
             if self.impacted_department_id:
                 errors['impacted_department'] = _(
                     'Business impacts must not specify an impacted department.'
@@ -251,7 +258,7 @@ class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
                     'Human impact is only meaningful on personal impacts.'
                 )
 
-        elif self.level == ImpactLevel.DEPARTMENT:
+        elif self.level == ScopeLevel.DEPARTMENT:
             if not self.impacted_department_id:
                 errors['impacted_department'] = _(
                     'Department impacts require an impacted department.'
@@ -266,7 +273,7 @@ class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
                     'Human impact is only meaningful on personal impacts.'
                 )
 
-        elif self.level == ImpactLevel.PERSONAL:
+        elif self.level == ScopeLevel.PERSONAL:
             if not self.impacted_contact_id:
                 errors['impacted_contact'] = _(
                     'Personal impacts require an impacted contact.'
@@ -304,14 +311,14 @@ class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # =========================================================================
 
     def __str__(self):
-        if self.level == ImpactLevel.BUSINESS:
+        if self.level == ScopeLevel.BUSINESS:
             target = 'Business-wide'
-        elif self.level == ImpactLevel.DEPARTMENT:
+        elif self.level == ScopeLevel.DEPARTMENT:
             target = (
                 f"Dept {self.impacted_department_id}"
                 if self.impacted_department_id else 'Dept (unset)'
             )
-        elif self.level == ImpactLevel.PERSONAL:
+        elif self.level == ScopeLevel.PERSONAL:
             target = (
                 f"Contact {self.impacted_contact_id}"
                 if self.impacted_contact_id else 'Contact (unset)'

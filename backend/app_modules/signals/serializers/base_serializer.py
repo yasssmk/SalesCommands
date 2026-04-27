@@ -11,6 +11,15 @@ Serializer map:
   BaseSignalCreateSerializer — write path, routes signal_type to SignalManager
   BaseSignalUpdateSerializer — restricted PATCH, routes edits through edit()
   SignalLLMSerializer        — read-only compact format for LLM prompt injection
+
+Shadow override support
+-----------------------
+Concrete signal types may shadow-override inherited base fields to None on
+the model (e.g. ObjectiveSignal.signal_category = None since Wave B). The
+base Meta.fields list still declares `signal_category` so that the other
+3 types (People / Pain / TechStack) continue to expose it normally. Types
+that shadow-override are expected to filter the inherited field out of
+their own Meta.fields via list/dict comprehensions.
 """
 
 from django.utils import timezone
@@ -191,10 +200,35 @@ class BaseSignalDetailSerializer(BaseSignalListSerializer):
         return {'id': str(a.id), 'company_name': a.company_name}
 
     def get_source_activity(self, obj):
+        """
+        Enriched source activity payload.
+
+        Returns an ActivityCompactSerializer payload (id + type_display +
+        subject + occurred_at + contacts) when the signal is anchored to
+        a CRM conversation, or None otherwise.
+
+        Performance:
+            The caller ViewSet is expected to have applied
+            select_related('source_activity') and
+            prefetch_related('source_activity__contacts') so that this
+            method triggers no additional queries. See
+            BaseSignalViewSet.get_queryset for the detail action.
+
+        History:
+            Wave A introduced the enriched payload shape — previously
+            the payload was just {'id': str(act.id)}. Wave B brought
+            ObjectiveSignal onto this hierarchy so the enriched
+            payload now applies uniformly across all 4 signal types
+            (People / Pain / Objective / TechStack).
+        """
         act = obj.source_activity
         if not act:
             return None
-        return {'id': str(act.id)}
+        # Lazy import avoids a circular dependency between the signals
+        # and activities modules at startup time — mirrors the pattern
+        # used by get_corroboration_count above.
+        from app_modules.activities.serializers import ActivityCompactSerializer
+        return ActivityCompactSerializer(act, context=self.context).data
 
     def get_decision_cycle(self, obj):
         dc = obj.decision_cycle
@@ -351,10 +385,25 @@ class BaseSignalUpdateSerializer(
                          account. These go through dedicated action
                          endpoints (validate/, reject/).
 
+    Canonical axes rewritable (since Wave A/B):
+        For PainSignal (Wave A) and ObjectiveSignal (Wave B), the
+        canonical axes `what` / `dimension` ARE rewritable via PATCH
+        — their concrete Update serializers add these fields to
+        Meta.fields. The model's save() recomputes canonical_key from
+        the new axes automatically; `canonical_key` itself is NOT
+        writable via the serializer.
+
     Concrete serializers extend Meta.fields with their own typed fields.
     Value-like changes (summary, notes, etc.) are routed through
     SignalManager.edit() inside update() so the original_value snapshot
     and LLM_MODIFIED flip are enforced consistently.
+
+    Shadow-override note:
+        signal_category is declared here as a writable base field.
+        ObjectiveSignal shadow-overrides it to None on the model since
+        Wave B — its concrete Update serializer filters the field out
+        of Meta.fields and extra_kwargs. Other signal types retain
+        normal write access to signal_category.
     """
 
     class Meta:

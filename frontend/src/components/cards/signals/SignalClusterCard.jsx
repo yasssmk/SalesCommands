@@ -1,18 +1,23 @@
 // frontend/src/components/cards/signals/SignalClusterCard.jsx
 /**
- * SignalClusterCard — list item for a Pain signal cluster.
+ * SignalClusterCard — list item for a signal cluster.
  *
- * A cluster is the aggregation of all PainSignals sharing the same
- * canonical_key on an account. This card is the primary surface in the
- * new Pain tab: it summarises the cluster at a glance and opens the
- * drill-down drawer on click.
+ * A cluster is the aggregation of all signals (Pain or Objective)
+ * sharing the same canonical_key on an account. This card is the
+ * primary surface in the Qualification tab: it summarises the cluster
+ * at a glance and opens the drill-down drawer on click.
+ *
+ * Type-agnostic by design — Pain and Objective render through the same
+ * component. Branching is driven by `cluster.signal_type` (`pain` |
+ * `objective`) to switch palette and to decide which stats appear in
+ * the stats row.
  *
  * Visual hierarchy (top to bottom):
- *   1. Header    — type chip, priority bucket, canonical axes, created date
+ *   1. Header    — type chip, priority bucket, canonical axes, archived
  *   2. Summary   — consolidated "most recent VALIDATED" text
  *   3. Alert     — "N signals need validation" when PENDING members exist
- *   4. Stats     — contacts count, impacted count, max level, metrics
- *   5. Human     — aggregated human impact chips ("FRUSTRATION ×3", ...)
+ *   4. Stats     — type-specific (Pain → impacts; Objective → scope/target)
+ *   5. Type-specific extras — Pain: human_impacts chips
  *   6. Footer    — freshness badge + last confirmed date + DC indicator
  *
  * Interaction:
@@ -41,6 +46,7 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // ant-design icons
+import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import InboxOutlined from "@ant-design/icons/InboxOutlined";
 import MoreOutlined from "@ant-design/icons/MoreOutlined";
 import UndoOutlined from "@ant-design/icons/UndoOutlined";
@@ -54,6 +60,9 @@ import {
   resolveHumanImpact,
   resolveImpactLevel,
   resolvePriority,
+  resolveScopeLevel,
+  resolveSignalTypeVisuals,
+  resolveTargetDateUrgency,
 } from "sections/accounts/signals/signalClusters";
 
 // ==============================|| HELPERS ||============================== //
@@ -77,9 +86,11 @@ function formatShortDate(iso) {
 
 /**
  * Truncate a string to max chars with ellipsis.
- * Used for the summary line (3-line clamp handled in CSS) and metric chips.
+ * Used for metric chips where free-text values can be arbitrarily long
+ * and need to fit a card preview line. The full value is exposed via
+ * the chip's tooltip.
  */
-function truncate(str, max = 140) {
+function truncate(str, max = 40) {
   if (!str) return null;
   return str.length > max ? `${str.slice(0, max)}…` : str;
 }
@@ -104,18 +115,45 @@ export default function SignalClusterCard({
 
   const [menuAnchor, setMenuAnchor] = useState(null);
 
+  // ==============================|| TYPE BRANCHING ||============================== //
+
+  /**
+   * Resolve type once at the top — every downstream branch reads from
+   * `isPain` / `isObjective` rather than re-checking signal_type.
+   *
+   * If a future signal_type ships, the visual fallback ("Cluster" /
+   * default palette) renders without crash.
+   */
+  const signalType = cluster.signal_type;
+  const typeVisuals = resolveSignalTypeVisuals(signalType);
+  const isPain = signalType === "pain";
+  const isObjective = signalType === "objective";
+
   // ==============================|| DERIVED ||============================== //
 
   const isArchived = Boolean(cluster.is_archived);
 
   const freshness = resolveFreshness(cluster.freshness_status);
   const priority = resolvePriority(cluster.priority_bucket);
-  const maxLevel = resolveImpactLevel(cluster.max_impact_level);
 
   const FreshnessIcon = freshness.icon;
   const PriorityIcon = priority.icon;
 
-  /** Canonical axes label — "Operations × Time" */
+  // Pain-specific resolutions
+  const maxImpactLevel = resolveImpactLevel(cluster.max_impact_level);
+
+  // Objective-specific resolutions
+  const maxScopeLevel = resolveScopeLevel(cluster.max_scope_level);
+  const targetUrgency = useMemo(
+    () =>
+      resolveTargetDateUrgency(
+        cluster.target_dates,
+        cluster.has_target_date_soon,
+      ),
+    [cluster.target_dates, cluster.has_target_date_soon],
+  );
+
+  /** Canonical axes label — "Operations × Time" (or "Growth × Cost") */
   const canonicalText = useMemo(() => {
     if (!cluster.what_display || !cluster.dimension_display) return null;
     return `${cluster.what_display} × ${cluster.dimension_display}`;
@@ -124,9 +162,13 @@ export default function SignalClusterCard({
   const lastConfirmedDate = formatShortDate(cluster.last_confirmed_at);
 
   /**
-   * Human impacts chips — "FRUSTRATION ×3, OVERLOAD ×1".
+   * Human impacts chips — Pain-only.
    * Capped to 3 visible entries so the card footprint stays bounded;
    * additional entries collapse into a "+N more" chip.
+   *
+   * For Objective, cluster.human_impacts is always [] (backend symmetry
+   * — see _build_objective_cluster). The visible/remainder both end up
+   * at zero, and the chip row is skipped in render.
    */
   const humanChips = useMemo(() => {
     const all = Array.isArray(cluster.human_impacts)
@@ -138,6 +180,21 @@ export default function SignalClusterCard({
   }, [cluster.human_impacts]);
 
   /**
+   * Metrics preview chips — Pain-only.
+   * Same capping strategy as human_impacts: 3 visible + a "+N more"
+   * chip when there are extra metrics. Each metric is truncated for
+   * the chip label; the full text is exposed via the chip tooltip.
+   *
+   * For Objective, cluster.metrics is always [] (backend symmetry).
+   */
+  const metricsPreview = useMemo(() => {
+    const all = Array.isArray(cluster.metrics) ? cluster.metrics : [];
+    const visible = all.slice(0, 3);
+    const remainder = all.length - visible.length;
+    return { visible, remainder };
+  }, [cluster.metrics]);
+
+  /**
    * Linked DC indicator — shown when the cluster references at least one
    * decision cycle. A simple count ("N DC") keeps the card readable —
    * the drawer shows full names on drill-down.
@@ -147,18 +204,31 @@ export default function SignalClusterCard({
     : 0;
 
   /**
-   * Border emphasis — cluster priority drives the "weight" of the card
-   * border so a busy list still highlights HIGH items at a glance.
-   * PENDING signals push the border to warning.light regardless of
-   * priority to mirror PainCard's existing convention.
+   * Border emphasis — drives the "weight" of the card border so a busy
+   * list still highlights HIGH items at a glance.
+   *
+   * Branching:
+   *   - Archived: muted (divider) — visual de-emphasis takes precedence
+   *   - PENDING members: warning.light (universal across types — mirrors
+   *     PainCard / ObjectiveCard convention)
+   *   - HIGH priority: type-specific accent (Pain=error.light, Obj=info.light)
+   *   - MEDIUM: warning.light (type-agnostic, neutral middle ground)
+   *   - else: divider
    */
   const borderColor = useMemo(() => {
     if (isArchived) return "divider";
     if (cluster.has_pending_signals) return "warning.light";
-    if (cluster.priority_bucket === "HIGH") return "error.light";
+    if (cluster.priority_bucket === "HIGH") {
+      return isObjective ? "info.light" : "error.light";
+    }
     if (cluster.priority_bucket === "MEDIUM") return "warning.light";
     return "divider";
-  }, [isArchived, cluster.has_pending_signals, cluster.priority_bucket]);
+  }, [
+    isArchived,
+    isObjective,
+    cluster.has_pending_signals,
+    cluster.priority_bucket,
+  ]);
 
   // ==============================|| MENU HANDLERS ||============================== //
 
@@ -245,7 +315,7 @@ export default function SignalClusterCard({
     >
       {/* ==================== HEADER ==================== */}
       <Stack direction="row" spacing={1} alignItems="flex-start">
-        {/* Left: chips + canonical + date */}
+        {/* Left: chips + canonical + archived marker */}
         <Stack
           direction="row"
           spacing={0.75}
@@ -254,9 +324,10 @@ export default function SignalClusterCard({
           useFlexGap
           sx={{ flex: 1, minWidth: 0 }}
         >
+          {/* Type chip — colored per signal_type */}
           <Chip
-            label="Pain"
-            color="error"
+            label={typeVisuals.label}
+            color={typeVisuals.color}
             size="small"
             variant="outlined"
             sx={{ fontSize: "0.68rem", height: 20 }}
@@ -277,11 +348,11 @@ export default function SignalClusterCard({
             />
           </Tooltip>
 
-          {/* Canonical axes */}
+          {/* Canonical axes — colored per signal_type to match the type chip */}
           {canonicalText && (
             <Chip
               label={canonicalText}
-              color="error"
+              color={typeVisuals.color}
               variant="outlined"
               size="small"
               sx={{ fontSize: "0.68rem", height: 20 }}
@@ -385,7 +456,13 @@ export default function SignalClusterCard({
         </Stack>
       )}
 
-      {/* ==================== STATS ROW ==================== */}
+      {/* ==================== STATS ROW (TYPE-SPECIFIC) ==================== */}
+      {/*
+        Stats are type-branched. Common atoms (distinct contacts,
+        confirmation count) appear in both branches; type-specific atoms
+        appear only in their branch. Keeping the two render paths side by
+        side rather than computing a unified row keeps the intent legible.
+      */}
       <Stack
         direction="row"
         spacing={2}
@@ -394,8 +471,14 @@ export default function SignalClusterCard({
         useFlexGap
         sx={{ mt: 1.5 }}
       >
-        {/* Distinct contacts (confirmation breadth) */}
-        <Tooltip title="Distinct contacts who confirmed this pain">
+        {/* Distinct contacts — both types */}
+        <Tooltip
+          title={
+            isObjective
+              ? "Distinct contacts who set this objective"
+              : "Distinct contacts who confirmed this pain"
+          }
+        >
           <Stack direction="row" spacing={0.5} alignItems="center">
             <TeamOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
             <Typography variant="caption" color="text.secondary">
@@ -404,22 +487,24 @@ export default function SignalClusterCard({
           </Stack>
         </Tooltip>
 
-        {/* Impacted contacts */}
-        <Tooltip title="Contacts personally impacted">
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
-            <Typography variant="caption" color="text.secondary">
-              {cluster.impacted_contacts_count ?? 0}
-            </Typography>
-          </Stack>
-        </Tooltip>
+        {/* PAIN: impacted contacts (PainImpact at PERSONAL scope) */}
+        {isPain && (
+          <Tooltip title="Contacts personally impacted">
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+              <Typography variant="caption" color="text.secondary">
+                {cluster.impacted_contacts_count ?? 0}
+              </Typography>
+            </Stack>
+          </Tooltip>
+        )}
 
-        {/* Max impact level */}
-        {cluster.max_impact_level && (
+        {/* PAIN: max impact level */}
+        {isPain && cluster.max_impact_level && (
           <Tooltip title="Highest observed impact level">
             <Chip
-              label={maxLevel.label}
-              color={maxLevel.color}
+              label={maxImpactLevel.label}
+              color={maxImpactLevel.color}
               size="small"
               variant="outlined"
               sx={{ fontSize: "0.62rem", height: 18 }}
@@ -427,15 +512,48 @@ export default function SignalClusterCard({
           </Tooltip>
         )}
 
-        {/* Confirmation count */}
+        {/* OBJECTIVE: max scope level */}
+        {isObjective && cluster.max_scope_level && (
+          <Tooltip title="Highest observed scope level">
+            <Chip
+              label={maxScopeLevel.label}
+              color={maxScopeLevel.color}
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: "0.62rem", height: 18 }}
+            />
+          </Tooltip>
+        )}
+
+        {/* OBJECTIVE: target date urgency badge */}
+        {isObjective && targetUrgency && (
+          <Tooltip
+            title={
+              targetUrgency.earliestDate
+                ? `Earliest target: ${targetUrgency.earliestDate}`
+                : "Target date"
+            }
+          >
+            <Chip
+              icon={<CalendarOutlined style={{ fontSize: 11 }} />}
+              label={targetUrgency.label}
+              color={targetUrgency.color}
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: "0.62rem", height: 18 }}
+            />
+          </Tooltip>
+        )}
+
+        {/* Confirmation count — both types */}
         <Typography variant="caption" color="text.disabled">
           {cluster.confirmation_count ?? 0} confirmation
           {(cluster.confirmation_count ?? 0) === 1 ? "" : "s"}
         </Typography>
       </Stack>
 
-      {/* ==================== HUMAN IMPACTS CHIPS ==================== */}
-      {humanChips.visible.length > 0 && (
+      {/* ==================== HUMAN IMPACTS CHIPS — PAIN ONLY ==================== */}
+      {isPain && humanChips.visible.length > 0 && (
         <Stack
           direction="row"
           spacing={0.5}
@@ -462,6 +580,61 @@ export default function SignalClusterCard({
           {humanChips.remainder > 0 && (
             <Chip
               label={`+${humanChips.remainder} more`}
+              size="small"
+              variant="outlined"
+              sx={{
+                fontSize: "0.62rem",
+                height: 18,
+                color: "text.disabled",
+              }}
+            />
+          )}
+        </Stack>
+      )}
+
+      {/* ==================== METRICS CHIPS — PAIN ONLY ==================== */}
+      {/*
+        Quantitative evidence preview. Each metric is free-text on the
+        backend (e.g. "120k$/year", "15h/week", "3 FTE wasted on manual
+        reconciliation"). Truncated to fit the card; full value in the
+        tooltip. Drawer shows the complete list with no truncation.
+      */}
+      {isPain && metricsPreview.visible.length > 0 && (
+        <Stack
+          direction="row"
+          spacing={0.5}
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mt: 0.75 }}
+        >
+          {metricsPreview.visible.map((metric, idx) => (
+            <Tooltip
+              // Metrics are free-text — duplicates across a cluster are
+              // legitimate (different parents may report identical
+              // numbers). Index disambiguates while preserving order.
+              // eslint-disable-next-line react/no-array-index-key
+              key={`${idx}-${metric.slice(0, 16)}`}
+              title={metric}
+              placement="top"
+            >
+              <Chip
+                label={truncate(metric, 40)}
+                size="small"
+                variant="outlined"
+                sx={{
+                  fontSize: "0.62rem",
+                  height: 18,
+                  color: "text.secondary",
+                  // Italic to visually distinguish from human_impacts chips
+                  // ("evidence" vs "feeling") on the same card.
+                  fontStyle: "italic",
+                }}
+              />
+            </Tooltip>
+          ))}
+          {metricsPreview.remainder > 0 && (
+            <Chip
+              label={`+${metricsPreview.remainder} more`}
               size="small"
               variant="outlined"
               sx={{
@@ -548,11 +721,25 @@ SignalClusterCard.propTypes = {
     has_pending_signals: PropTypes.bool,
     pending_count: PropTypes.number,
 
-    // Stats
+    // Stats — common
     confirmation_count: PropTypes.number,
     distinct_contacts_count: PropTypes.number,
+
+    // Stats — Pain-specific
     impacted_contacts_count: PropTypes.number,
     max_impact_level: PropTypes.string,
+    human_impacts: PropTypes.arrayOf(
+      PropTypes.shape({
+        type: PropTypes.string.isRequired,
+        count: PropTypes.number.isRequired,
+      }),
+    ),
+    metrics: PropTypes.arrayOf(PropTypes.string),
+
+    // Stats — Objective-specific (Wave B)
+    max_scope_level: PropTypes.string,
+    target_dates: PropTypes.arrayOf(PropTypes.string),
+    has_target_date_soon: PropTypes.bool,
 
     // Lifecycle
     first_observed_at: PropTypes.string,
@@ -562,15 +749,6 @@ SignalClusterCard.propTypes = {
     // Priority
     priority_score: PropTypes.number,
     priority_bucket: PropTypes.string,
-
-    // Impacts aggregation
-    human_impacts: PropTypes.arrayOf(
-      PropTypes.shape({
-        type: PropTypes.string.isRequired,
-        count: PropTypes.number.isRequired,
-      }),
-    ),
-    metrics: PropTypes.arrayOf(PropTypes.string),
 
     // Linking
     decision_cycle_ids: PropTypes.arrayOf(PropTypes.string),

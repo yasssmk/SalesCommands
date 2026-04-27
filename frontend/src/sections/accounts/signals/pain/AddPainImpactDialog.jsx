@@ -26,7 +26,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useId } from "react";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 
@@ -229,6 +229,23 @@ export default function AddPainImpactDialog({
 }) {
   const isEditMode = Boolean(initialImpact);
 
+  /**
+   * Stable, instance-unique DOM id for the DialogTitle. React.useId()
+   * generates a value that is unique within the React tree and stable
+   * across renders, so multiple instances of this dialog can coexist
+   * in the DOM (e.g. one mounted by AccountSignalsTab and another by
+   * SignalClusterDetailDrawer when both tabs are KeepAlive-mounted)
+   * without colliding on the legacy hardcoded `pain-impact-dialog-title`
+   * identifier.
+   *
+   * The `-title` suffix is appended manually because useId() values
+   * cannot be reused for multiple elements; if we ever need a separate
+   * id for DialogContent (aria-describedby) we'll derive it from the
+   * same base with a different suffix.
+   */
+  const reactId = useId();
+  const titleId = `${reactId}-title`;
+
   // ==============================|| DATA ||============================== //
 
   const { standardDepartments } = useGetContactChoices();
@@ -391,9 +408,9 @@ export default function AddPainImpactDialog({
       onClose={handleClose}
       maxWidth="sm"
       fullWidth
-      aria-labelledby="pain-impact-dialog-title"
+      aria-labelledby={titleId}
     >
-      <DialogTitle id="pain-impact-dialog-title">
+      <DialogTitle id={titleId}>
         <Stack
           direction="row"
           justifyContent="space-between"

@@ -341,24 +341,36 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *
  * Response shape (from backend):
  * {
- *   status:           [...],   // SignalStatus   (lifecycle shared by all types)
- *   source:           [...],   // SignalSource   (MANUAL / LLM_* / EXTERNAL_RESEARCH)
- *   signal_category:  [...],   // SignalCategory (legacy, being deprecated)
- *   people_roles:     [...],   // PeopleRole
- *   influence_levels: [...],   // InfluenceLevel
- *   pain_whats:       [...],   // PainWhat       (1st axis of pain canonical_key)
- *   pain_dimensions:  [...],   // PainDimension  (2nd axis of pain canonical_key)
- *   human_impacts:    [...],   // HumanImpact    (orthogonal axis on PainImpact)
- *   impact_levels:    [...],   // ImpactLevel    (BUSINESS / DEPARTMENT / PERSONAL)
- *   goal_levels:      [...],   // GoalLevel      (ObjectiveSignal)
- *   tech_categories:  [...],   // TechCategory
- *   satisfaction:     [...],   // Satisfaction
+ *   status:            [...],   // SignalStatus    (lifecycle shared by all types)
+ *   source:            [...],   // SignalSource    (MANUAL / LLM_* / EXTERNAL_RESEARCH)
+ *   signal_category:   [...],   // SignalCategory  (legacy, being deprecated)
+ *   people_roles:      [...],   // PeopleRole
+ *   influence_levels:  [...],   // InfluenceLevel
+ *   signal_whats:      [...],   // SignalWhat      (1st axis of canonical_key —
+ *                                                   shared Pain today + Objective
+ *                                                   in Wave B)
+ *   signal_dimensions: [...],   // SignalDimension (2nd axis of canonical_key —
+ *                                                   same shared scope)
+ *   human_impacts:     [...],   // HumanImpact     (orthogonal axis on PainImpact)
+ *   scope_levels:      [...],   // ScopeLevel      (BUSINESS / DEPARTMENT /
+ *                                                   PERSONAL — drives PainImpact
+ *                                                   scope today; will also drive
+ *                                                   ObjectiveSignal in Wave B)
+ *   tech_categories:   [...],   // TechCategory
+ *   satisfaction:      [...],   // Satisfaction
  * }
  *
  * Notes:
- *   - pain_whats × pain_dimensions form the canonical_key "pain:<what>:<dimension>"
- *     on PainSignal. See InlinePainForm for rendering.
- *   - impact_levels drives PainImpact creation — see AddPainImpactDialog.
+ *   - signal_whats × signal_dimensions form the canonical_key
+ *     "pain:<what>:<dimension>" on PainSignal (and "objective:<what>:<dimension>"
+ *     in Wave B). See InlinePainForm for rendering.
+ *   - scope_levels drives PainImpact creation — see AddPainImpactDialog.
+ *
+ * Wave A renames (destructive, no back-compat):
+ *   - pain_whats      → signal_whats
+ *   - pain_dimensions → signal_dimensions
+ *   - impact_levels   → scope_levels
+ *   - goal_levels     → removed (Objective will adopt scope_levels in Wave B)
  *
  * @returns {Object} { choices, choicesLoading, choicesError, mutateChoices }
  */

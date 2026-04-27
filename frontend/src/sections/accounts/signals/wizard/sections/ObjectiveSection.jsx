@@ -3,15 +3,26 @@
  * ObjectiveSection — wizard section for capturing ObjectiveSignals.
  *
  * Responsibilities:
- *   - Display list of staged objective signals with toggle VALIDATED / REJECTED
+ *   - Display list of staged objective signals with Include / Exclude toggle
  *   - "+ Add Objective" button reveals InlineObjectiveForm inline
  *   - Calls onAdd(payload) to stage a new signal in the wizard
- *   - Calls onToggleStatus(_key) to flip a staged signal between VALIDATED / REJECTED
+ *   - Calls onToggleStatus(_key) to flip a staged signal between
+ *     VALIDATED / REJECTED
+ *   - Supports in-place edit via editingKey — when non-null, replaces
+ *     the matching staged card with the inline form pre-filled
  *
  * Staged signal shape (managed by WizardSignalAdd):
  *   { _key: string, _status: 'VALIDATED'|'REJECTED', ...payload }
  *
- * choices is used locally to resolve goal_level display labels.
+ * Wave B alignment:
+ *   - StagedObjectiveCard renders canonical axes chip (what × dimension)
+ *     + scope_level chip, consuming choices.signal_whats /
+ *     signal_dimensions (shared canonical enums since Wave A).
+ *   - target_date urgency surfaced as a discrete chip when applicable.
+ *   - Scope chip colors aligned with ObjectiveCard's palette
+ *     (BUSINESS=warning, DEPARTMENT=info, PERSONAL=error).
+ *   - No reference to choices.goal_levels (removed in Wave B — was a
+ *     latent bug in the previous implementation).
  */
 
 "use client";
@@ -41,24 +52,48 @@ import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import InlineObjectiveForm from "../forms/InlineObjectiveForm";
 import { buildEditInitialValues } from "../forms/buildEditInitialValues";
 
-// ==============================|| HELPERS ||============================== //
+// ==============================|| CONSTANTS ||============================== //
 
 /**
- * Resolve a display label from a choices array by value.
- *
- * @param {Array<{value: string, label: string}>} options
- * @param {string} value
- * @returns {string}
+ * Visual tag per ScopeLevel — mirrors ObjectiveCard's palette to keep
+ * the visual language consistent between wizard staging and final
+ * card display.
  */
+const SCOPE_LEVEL_CONFIG = {
+  BUSINESS: { color: "warning", label: "Business" },
+  DEPARTMENT: { color: "info", label: "Department" },
+  PERSONAL: { color: "error", label: "Personal" },
+};
+
+// ==============================|| HELPERS ||============================== //
+
 function resolveLabel(options, value) {
   if (!value || !options) return value ?? "—";
   return options.find((o) => o.value === value)?.label ?? value;
 }
 
+function formatShortDate(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return null;
+  }
+}
+
 // ==============================|| STAGED OBJECTIVE CARD ||============================== //
 
 /**
- * StagedObjectiveCard — displays a single staged ObjectiveSignal with a VALIDATED/REJECTED toggle.
+ * StagedObjectiveCard — displays a single staged ObjectiveSignal with
+ * an Include / Exclude toggle.
+ *
+ * Aligned with StagedPainCard's ergonomics: toggle flips status, edit
+ * reopens the inline form in place, remove drops the entry from the
+ * wizard's staged list entirely.
  */
 function StagedObjectiveCard({
   signal,
@@ -69,9 +104,22 @@ function StagedObjectiveCard({
 }) {
   const isRejected = signal._status === "REJECTED";
 
-  const goalLevelLabel = useMemo(
-    () => resolveLabel(choices?.goal_levels, signal.goal_level),
-    [choices, signal.goal_level],
+  // Canonical axes labels resolved from shared enums
+  const whatLabel = useMemo(
+    () => resolveLabel(choices?.signal_whats, signal.what),
+    [choices, signal.what],
+  );
+  const dimensionLabel = useMemo(
+    () => resolveLabel(choices?.signal_dimensions, signal.dimension),
+    [choices, signal.dimension],
+  );
+
+  const scopeCfg = SCOPE_LEVEL_CONFIG[signal.scope_level];
+
+  // Target date label — "31 Oct 2026"
+  const targetDateLabel = useMemo(
+    () => formatShortDate(signal.target_date),
+    [signal.target_date],
   );
 
   return (
@@ -106,31 +154,35 @@ function StagedObjectiveCard({
             {signal.summary || "—"}
           </Typography>
 
-          {/* Goal level chip */}
-          {signal.goal_level && (
-            <Box>
+          {/* Canonical + scope chips row */}
+          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+            {signal.what && signal.dimension && (
               <Chip
-                label={goalLevelLabel}
+                label={`${whatLabel} × ${dimensionLabel}`}
                 size="small"
                 color={isRejected ? "default" : "info"}
                 variant="outlined"
                 sx={{ fontSize: "0.65rem", height: 20 }}
               />
-            </Box>
-          )}
+            )}
+            {scopeCfg && (
+              <Chip
+                label={scopeCfg.label}
+                size="small"
+                color={isRejected ? "default" : scopeCfg.color}
+                variant="outlined"
+                sx={{ fontSize: "0.65rem", height: 20 }}
+              />
+            )}
+          </Stack>
 
-          {/* Success criteria — truncated */}
-          {signal.success_criteria && (
+          {/* Target date — if present */}
+          {targetDateLabel && (
             <Typography
               variant="caption"
               color={isRejected ? "text.disabled" : "text.secondary"}
-              sx={{
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
             >
-              ✓ {signal.success_criteria}
+              Target: {targetDateLabel}
             </Typography>
           )}
         </Stack>
@@ -183,8 +235,15 @@ StagedObjectiveCard.propTypes = {
     _key: PropTypes.string.isRequired,
     _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
     summary: PropTypes.string,
-    goal_level: PropTypes.string,
+    what: PropTypes.string,
+    dimension: PropTypes.string,
+    scope_level: PropTypes.oneOf(["BUSINESS", "DEPARTMENT", "PERSONAL"]),
+    target_date: PropTypes.string,
+    target_contact: PropTypes.object,
+    target_department: PropTypes.string,
     success_criteria: PropTypes.string,
+    notes: PropTypes.string,
+    source_activity: PropTypes.object,
   }).isRequired,
   choices: PropTypes.object,
   onToggleStatus: PropTypes.func.isRequired,
@@ -215,11 +274,17 @@ function EmptyState() {
  * @param {Array}    stagedSignals    - Staged objective signals managed by WizardSignalAdd
  * @param {Function} onAdd            - (payload: Object) => void
  * @param {Function} onToggleStatus   - (_key: string) => void
+ * @param {Function} onEdit           - (_key: string) => void — enter edit mode for this signal
+ * @param {Function} onUpdate         - (_key: string, payload: Object) => void
+ * @param {Function} onRemove         - (_key: string) => void
+ * @param {string}   editingKey       - _key currently being edited (or null)
+ * @param {Function} onCancelEdit     - () => void
  * @param {Object}   choices          - From useGetSignalChoices()
  * @param {boolean}  choicesLoading
  * @param {string}   accountId
- * @param {Object}   defaultContact   - Full contact object to pre-fill source_contact
- * @param {Function} onFormOpenChange  - Notifies the wizard when inline form opens/closes
+ * @param {Object}   defaultContact   - Unused by Objective form — forwarded for parity
+ * @param {Function} onFormOpenChange - Notifies the wizard when inline form opens/closes
+ * @param {boolean}  hasActivityContext - True if wizard was opened from an Activity
  */
 export default function ObjectiveSection({
   stagedSignals,
@@ -298,9 +363,9 @@ export default function ObjectiveSection({
       {/* ---- No activity context warning ---- */}
       {!hasActivityContext && (
         <Alert severity="warning" sx={{ fontSize: "0.8rem" }}>
-          Objective signals should be linked to a conversation. Open this wizard
-          from an <strong>Activity</strong> to automatically attach them to a
-          call or meeting.
+          Objective signals are stronger when linked to a conversation. Open
+          this wizard from an <strong>Activity</strong> to automatically attach
+          them to a call or meeting.
         </Alert>
       )}
 
@@ -393,8 +458,15 @@ ObjectiveSection.propTypes = {
       _key: PropTypes.string.isRequired,
       _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
       summary: PropTypes.string,
-      goal_level: PropTypes.string,
+      what: PropTypes.string,
+      dimension: PropTypes.string,
+      scope_level: PropTypes.oneOf(["BUSINESS", "DEPARTMENT", "PERSONAL"]),
+      target_date: PropTypes.string,
+      target_contact: PropTypes.object,
+      target_department: PropTypes.string,
       success_criteria: PropTypes.string,
+      notes: PropTypes.string,
+      source_activity: PropTypes.object,
     }),
   ).isRequired,
   onAdd: PropTypes.func.isRequired,

@@ -11,16 +11,21 @@ Lifecycle / cross-cutting:
   SignalCategory — high-level commercial category (optional tagging)
 
 Model-specific:
-  PeopleRole     — stakeholder role for PeopleSignal
-  InfluenceLevel — stakeholder influence level for PeopleSignal
-  PainWhat       — domain axis for PainSignal (part of canonical_key)
-  PainDimension  — friction axis for PainSignal (part of canonical_key)
-  HumanImpact    — orthogonal human impact axis for PainImpact (optional,
-                   only meaningful at PERSONAL level)
-  ImpactLevel    — scope level of a PainImpact (BUSINESS / DEPARTMENT / PERSONAL)
-  GoalLevel      — organisational scope of the objective for ObjectiveSignal
-  TechCategory   — technology category for TechStackSignal
-  Satisfaction   — satisfaction level for TechStackSignal
+  PeopleRole      — stakeholder role for PeopleSignal
+  InfluenceLevel  — stakeholder influence level for PeopleSignal
+  SignalWhat      — domain axis for canonical-keyed signals (Pain, and
+                    Objective once Wave B ships). First component of the
+                    canonical_key.
+  SignalDimension — friction / outcome axis for canonical-keyed signals.
+                    Second component of the canonical_key.
+  HumanImpact     — orthogonal human impact axis for PainImpact (optional,
+                    only meaningful at PERSONAL scope level)
+  ScopeLevel      — organisational scope of the evidence
+                    (BUSINESS / DEPARTMENT / PERSONAL). Used by PainImpact
+                    today; will also drive ObjectiveSignal scope once the
+                    Objective port lands (Wave B).
+  TechCategory    — technology category for TechStackSignal
+  Satisfaction    — satisfaction level for TechStackSignal
 
 Cluster aggregation (Sprint 2):
   SignalClusterType — enumeration of signal types that support clustering
@@ -33,13 +38,31 @@ Thresholds (cluster aggregation):
   PRIORITY_HIGH_THRESHOLD   — minimum score for HIGH bucket
   PRIORITY_MEDIUM_THRESHOLD — minimum score for MEDIUM bucket
 
-Removed vs. previous version:
-  - SignalStatus.MERGED      (merge operation removed from the module)
-  - QualificationField       (replaced by dedicated structured models)
-  - TechStackField           (replaced by rich fields on TechStackSignal)
-  - PainCategory             (replaced by the canonical pair PainWhat × PainDimension)
-  - PainLevel                (replaced by ImpactLevel on PainImpact — Pain is
-                              now a pure diagnosis, scope lives on PainImpact)
+Removed vs. previous versions:
+  - SignalStatus.MERGED   (merge operation removed from the module)
+  - QualificationField    (replaced by dedicated structured models)
+  - TechStackField        (replaced by rich fields on TechStackSignal)
+  - PainCategory          (replaced by the canonical pair
+                           SignalWhat × SignalDimension)
+  - PainLevel             (replaced by ScopeLevel on PainImpact — Pain is
+                           now a pure diagnosis, scope lives on PainImpact)
+
+Renamed in Wave A (backend refactor prep for the Objective port):
+  - PainWhat      → SignalWhat       (shared across Pain and Objective)
+  - PainDimension → SignalDimension  (shared across Pain and Objective)
+  - ImpactLevel   → ScopeLevel       (shared across PainImpact and — Wave B —
+                                      ObjectiveSignal)
+
+Dropped in Wave A:
+  - GoalLevel — superseded by the shared ScopeLevel. Objective will
+                adopt ScopeLevel during the Wave B port.
+
+The canonical_key format is unchanged:
+  - PainSignal:      "pain:<SignalWhat>:<SignalDimension>"
+  - ObjectiveSignal: "objective:<SignalWhat>:<SignalDimension>"  (Wave B)
+
+Enum values (DB strings) are strictly unchanged by Wave A — only the
+Python class names change.
 """
 
 
@@ -163,32 +186,41 @@ class InfluenceLevel(models.TextChoices):
 
 
 # =============================================================================
-# PAIN SIGNAL — enums
+# SIGNAL CANONICAL AXES — enums  (shared by Pain and Objective)
 # =============================================================================
 #
-# Pain signals are anchored on two orthogonal axes that together form the
-# canonical_key used to group observations:
+# Canonical-keyed signals are anchored on two orthogonal axes that
+# together form the canonical_key used to group observations on an account:
 #
-#     canonical_key = "pain:<PainWhat>:<PainDimension>"
+#     canonical_key = "<signal_type>:<SignalWhat>:<SignalDimension>"
 #
-# PainWhat      — the domain of the pain (what area of the business it affects)
-# PainDimension — the friction experienced in that domain
+# Examples:
+#     "pain:OPS:TIME"
+#     "objective:GROWTH:COST"   (Wave B — not yet emitted)
+#
+# SignalWhat      — the domain of the signal (what area of the business it affects)
+# SignalDimension — the friction or outcome experienced in that domain
 #
 # 5 × 5 = 25 possible canonical slots — enough expressiveness to describe any
-# B2B pain without fragmenting the cluster space.
+# B2B pain or objective without fragmenting the cluster space.
 #
 # Impact-level data (BUSINESS / DEPARTMENT / PERSONAL scope, metrics,
 # human consequences) lives on PainImpact — a separate model attached to
-# PainSignal. See the PainImpact docstring for details. ImpactLevel and
+# PainSignal. See the PainImpact docstring for details. ScopeLevel and
 # HumanImpact (below) describe the PainImpact side of the picture.
 # =============================================================================
 
 
-class PainWhat(models.TextChoices):
+class SignalWhat(models.TextChoices):
     """
-    Domain axis of the pain — what area of the business is affected.
+    Domain axis of a canonical-keyed signal — what area of the business
+    is affected.
 
-    First component of the canonical_key: "pain:<what>:<dimension>".
+    First component of the canonical_key: "<type>:<what>:<dimension>".
+
+    Used by:
+      - PainSignal.what          (today)
+      - ObjectiveSignal.what     (Wave B)
 
     OPS    — operations, processes, execution bottlenecks
     TECH   — technology, systems, technical debt, integrations
@@ -203,11 +235,15 @@ class PainWhat(models.TextChoices):
     GROWTH = 'GROWTH', _('Growth / Revenue')
 
 
-class PainDimension(models.TextChoices):
+class SignalDimension(models.TextChoices):
     """
-    Friction axis of the pain — the nature of the difficulty experienced.
+    Friction / outcome axis of a canonical-keyed signal.
 
-    Second component of the canonical_key: "pain:<what>:<dimension>".
+    Second component of the canonical_key: "<type>:<what>:<dimension>".
+
+    Used by:
+      - PainSignal.dimension         (today)
+      - ObjectiveSignal.dimension    (Wave B)
 
     TIME    — slowness, latency, time spent, speed constraints
     COST    — budget overruns, financial waste, cost pressure
@@ -226,10 +262,10 @@ class HumanImpact(models.TextChoices):
     """
     Personal consequence on an individual — the human side of a pain.
 
-    Used on PainImpact at PERSONAL level (optional). Not part of any
-    canonical_key. When set, the parent PainImpact must have
-    level=PERSONAL and a non-null impacted_contact (enforced in
-    PainImpact.clean()).
+    Used on PainImpact at PERSONAL scope level (optional). Not part of
+    any canonical_key. When set, the parent PainImpact must have
+    level=ScopeLevel.PERSONAL and a non-null impacted_contact
+    (enforced in PainImpact.clean()).
 
     FRUSTRATION  — ongoing irritation, annoyance, dissatisfaction
     OVERLOAD     — workload pressure, too much to handle
@@ -244,13 +280,22 @@ class HumanImpact(models.TextChoices):
     DEMOTIVATION = 'DEMOTIVATION', _('Demotivation')
     CONFLICT     = 'CONFLICT',     _('Conflict')
 
-class ImpactLevel(models.TextChoices):
-    """
-    Scope level of a PainImpact — the three mutually-exclusive angles
-    under which a pain can be documented as evidence.
 
-    Each level corresponds to a distinct sales question and drives
-    conditional field requirements on PainImpact (see model clean()):
+# =============================================================================
+# SCOPE LEVEL — enum  (shared by PainImpact and — Wave B — Objective)
+# =============================================================================
+
+class ScopeLevel(models.TextChoices):
+    """
+    Organisational scope level — the three mutually-exclusive angles
+    under which evidence (or a goal) can be anchored.
+
+    Used by:
+      - PainImpact.level              — scope of a documented pain impact
+      - ObjectiveSignal.goal_level    — scope of an objective (Wave B)
+
+    On PainImpact, each level drives conditional field requirements
+    (see PainImpact.clean()) and maps to a distinct sales question:
 
       BUSINESS   — "How much does it cost the company overall?"
                    CFO-level evidence. metric + notes.
@@ -259,28 +304,9 @@ class ImpactLevel(models.TextChoices):
       PERSONAL   — "Who personally bears this pain?"
                    Champion-level evidence. impacted_contact + metric (opt)
                    + human_impact (opt) + notes.
-    """
-    BUSINESS   = 'BUSINESS',   _('Business')
-    DEPARTMENT = 'DEPARTMENT', _('Department')
-    PERSONAL   = 'PERSONAL',   _('Personal')
 
-
-
-# =============================================================================
-# OBJECTIVE SIGNAL — enums
-# =============================================================================
-
-class GoalLevel(models.TextChoices):
-    """
-    Organisational scope of the objective in an ObjectiveSignal.
-
-    Mirrors PainLevel intentionally — both describe at which layer of the
-    organisation the signal applies. Kept as a separate enum so they can
-    evolve independently.
-
-    BUSINESS   — company-wide strategic goal
-    DEPARTMENT — departmental objective
-    PERSONAL   — individual goal or KPI
+    On ObjectiveSignal (Wave B), the same three levels describe at which
+    layer of the organisation the objective applies.
     """
     BUSINESS   = 'BUSINESS',   _('Business')
     DEPARTMENT = 'DEPARTMENT', _('Department')
@@ -346,8 +372,8 @@ class Satisfaction(models.TextChoices):
 # The enums below describe cluster-level attributes (freshness, priority)
 # that are computed on read — never stored on signal rows.
 #
-# Only PainSignal is clustered in Sprint 2. The SignalClusterType enum is
-# intentionally extensible so later sprints can add Objective / TechStack
+# Only PainSignal is actively clustered today. SignalClusterType is
+# intentionally extensible so later waves can add Objective / TechStack
 # clustering without introducing a second enum.
 # =============================================================================
 
@@ -356,18 +382,19 @@ class SignalClusterType(models.TextChoices):
     """
     Signal types that support cluster aggregation.
 
-    In Sprint 2 only PAIN is actively aggregated. PEOPLE, OBJECTIVE, and
-    TECH_STACK are reserved for future sprints — kept in the enum so the
-    same SignalClusterArchival table can serve them without a schema change.
+    In the current sprint only PAIN is actively aggregated. PEOPLE,
+    OBJECTIVE, and TECH_STACK are reserved — kept in the enum so the
+    same SignalClusterArchival table can serve them without a schema
+    change when their respective waves ship.
 
     The string values intentionally match the keys used in
     SignalDataService._SIGNAL_TYPE_MAP (people / pain / objective /
     tech_stack) so the same identifier travels through all layers.
     """
     PAIN       = 'pain',       _('Pain')
-    PEOPLE     = 'people',     _('People')       # reserved — not aggregated in Sprint 2
-    OBJECTIVE  = 'objective',  _('Objective')    # reserved — not aggregated in Sprint 2
-    TECH_STACK = 'tech_stack', _('Tech Stack')   # reserved — not aggregated in Sprint 2
+    PEOPLE     = 'people',     _('People')       # reserved — not aggregated yet
+    OBJECTIVE  = 'objective',  _('Objective')    # reserved — activates in Wave B
+    TECH_STACK = 'tech_stack', _('Tech Stack')   # reserved — not aggregated yet
 
 
 class FreshnessStatus(models.TextChoices):

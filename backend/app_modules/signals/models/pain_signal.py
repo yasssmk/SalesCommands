@@ -39,7 +39,7 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 
 from .base_model import BaseSignal
-from ..constants import PainWhat, PainDimension
+from ..constants import SignalWhat, SignalDimension
 
 
 class PainSignal(BaseSignal):
@@ -47,8 +47,8 @@ class PainSignal(BaseSignal):
     Concrete signal for a qualitative pain diagnosis.
 
     Structure:
-      - what      : domain of the pain (PainWhat enum, required)
-      - dimension : friction experienced (PainDimension enum, required)
+      - what      : domain of the pain (SignalWhat enum, required)
+      - dimension : friction experienced (SignalDimension enum, required)
       - summary   : free-text description of the pain (required)
       - source_quote : optional verbatim excerpt from the transcript
       - notes   : optional additional context
@@ -71,14 +71,14 @@ class PainSignal(BaseSignal):
 
     what = models.CharField(
         max_length=20,
-        choices=PainWhat.choices,
+        choices=SignalWhat.choices,
         verbose_name=_('What'),
         help_text=_('Domain axis of the pain (first component of canonical_key)')
     )
 
     dimension = models.CharField(
         max_length=20,
-        choices=PainDimension.choices,
+        choices=SignalDimension.choices,
         verbose_name=_('Dimension'),
         help_text=_('Friction axis of the pain (second component of canonical_key)')
     )

@@ -111,26 +111,80 @@ def _parse_account_id(request, *, source='query'):
     return account_id
 
 
-def _parse_signal_type(request, *, source='query'):
+def _parse_signal_type(request, *, source='query', allow_list: bool = False):
     """
     Extract 'signal_type' from the request, defaulting to 'pain'.
 
-    Validates the value against SignalClusterType. Sprint 2 only
-    aggregates Pain — but the value is validated generically so that
-    later sprints can extend the service without touching this code.
+    Two modes controlled by `allow_list`:
+      - allow_list=False (default, used by Detail / Archive / Unarchive):
+          Returns a single string. A CSV input is rejected — a detail
+          is always about one signal_type.
+      - allow_list=True (used by List):
+          Accepts either a single value ('pain') or a CSV list
+          ('pain,objective'). Returns a list of strings. The deeper
+          validation and deduplication are performed by the service
+          layer (SignalClusterService._assert_signal_types_supported).
+
+    Validation performed here is kept purposefully shallow: we only
+    check that each token is a known SignalClusterType value. The
+    service is the single source of truth for which types are
+    actually *supported* for aggregation. This mirrors how the service
+    treats Objective (valid type but yields no clusters yet).
+
+    Args:
+        request:     DRF request object.
+        source:      'query' for GET endpoints, 'body' for POST endpoints.
+        allow_list:  When True, accepts CSV input and returns a list.
+
+    Returns:
+        str when allow_list=False, list[str] when allow_list=True.
 
     Raises:
-        StandardizedValidationError if provided but invalid.
+        StandardizedValidationError if any provided value is not a
+        valid SignalClusterType.
     """
     container = request.query_params if source == 'query' else request.data
-    signal_type = container.get('signal_type') or SignalClusterType.PAIN.value
-    if signal_type not in _VALID_CLUSTER_TYPES:
+    raw_value = container.get('signal_type')
+
+    # Default to 'pain' when the caller omits the param entirely.
+    if not raw_value:
+        return [SignalClusterType.PAIN.value] if allow_list else (
+            SignalClusterType.PAIN.value
+        )
+
+    if allow_list:
+        # Split on comma and strip whitespace. Empty tokens (e.g. from a
+        # trailing comma) are dropped silently — they carry no intent.
+        tokens = [t.strip() for t in raw_value.split(',') if t.strip()]
+        if not tokens:
+            # Treat "signal_type=" or "signal_type=,," as missing.
+            return [SignalClusterType.PAIN.value]
+
+        for token in tokens:
+            if token not in _VALID_CLUSTER_TYPES:
+                raise StandardizedValidationError(
+                    SignalErrorMessages.CLUSTER_SIGNAL_TYPE_INVALID.format(
+                        signal_type=token,
+                    )
+                )
+        return tokens
+
+    # Single-value mode (Detail / Archive / Unarchive). A comma here is
+    # a caller mistake — reject rather than silently picking the first.
+    if ',' in raw_value:
         raise StandardizedValidationError(
             SignalErrorMessages.CLUSTER_SIGNAL_TYPE_INVALID.format(
-                signal_type=signal_type,
+                signal_type=raw_value,
             )
         )
-    return signal_type
+
+    if raw_value not in _VALID_CLUSTER_TYPES:
+        raise StandardizedValidationError(
+            SignalErrorMessages.CLUSTER_SIGNAL_TYPE_INVALID.format(
+                signal_type=raw_value,
+            )
+        )
+    return raw_value
 
 
 def _parse_bool(value, *, default=False):
@@ -168,7 +222,13 @@ class SignalClusterListView(BaseAPIView):
         logger.info('signal_cluster_list_requested', extra=ctx)
 
         account_id         = _parse_account_id(request, source='query')
-        signal_type        = _parse_signal_type(request, source='query')
+        # List accepts either a single signal_type or a CSV list so the
+        # frontend can fetch mixed Pain+Objective clusters in one call
+        # once Wave B lands. SignalClusterService.list_clusters_for_account
+        # is the final authority on which types yield results.
+        signal_type        = _parse_signal_type(
+            request, source='query', allow_list=True,
+        )
         decision_cycle_id  = request.query_params.get('decision_cycle') or None
         include_archived   = _parse_bool(
             request.query_params.get('include_archived'),

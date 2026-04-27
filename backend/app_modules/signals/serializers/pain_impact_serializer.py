@@ -29,7 +29,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
-from ..constants import ImpactLevel
+from ..constants import ScopeLevel
 from ..models import PainImpact, PainSignal
 
 
@@ -293,7 +293,7 @@ class PainImpactCreateSerializer(
             )
 
         # Rule 3 — level-driven presence
-        if level == ImpactLevel.BUSINESS:
+        if level == ScopeLevel.BUSINESS:
             if impacted_department:
                 raise StandardizedValidationError(
                     SignalErrorMessages.IMPACT_BUSINESS_NO_DEPT
@@ -307,7 +307,7 @@ class PainImpactCreateSerializer(
                     SignalErrorMessages.IMPACT_BUSINESS_NO_HUMAN
                 )
 
-        elif level == ImpactLevel.DEPARTMENT:
+        elif level == ScopeLevel.DEPARTMENT:
             if not impacted_department:
                 raise StandardizedValidationError(
                     SignalErrorMessages.IMPACT_DEPT_REQUIRES_DEPT
@@ -321,7 +321,7 @@ class PainImpactCreateSerializer(
                     SignalErrorMessages.IMPACT_BUSINESS_NO_HUMAN
                 )
 
-        elif level == ImpactLevel.PERSONAL:
+        elif level == ScopeLevel.PERSONAL:
             if not impacted_contact:
                 raise StandardizedValidationError(
                     SignalErrorMessages.IMPACT_PERSONAL_REQUIRES_CONTACT
@@ -417,7 +417,7 @@ class PainImpactUpdateSerializer(
                 SignalErrorMessages.IMPACT_LEVEL_REQUIRED
             )
 
-        if level == ImpactLevel.BUSINESS:
+        if level == ScopeLevel.BUSINESS:
             if impacted_department:
                 raise StandardizedValidationError(
                     SignalErrorMessages.IMPACT_BUSINESS_NO_DEPT
@@ -431,7 +431,7 @@ class PainImpactUpdateSerializer(
                     SignalErrorMessages.IMPACT_BUSINESS_NO_HUMAN
                 )
 
-        elif level == ImpactLevel.DEPARTMENT:
+        elif level == ScopeLevel.DEPARTMENT:
             if not impacted_department:
                 raise StandardizedValidationError(
                     SignalErrorMessages.IMPACT_DEPT_REQUIRES_DEPT
@@ -445,7 +445,7 @@ class PainImpactUpdateSerializer(
                     SignalErrorMessages.IMPACT_BUSINESS_NO_HUMAN
                 )
 
-        elif level == ImpactLevel.PERSONAL:
+        elif level == ScopeLevel.PERSONAL:
             if not impacted_contact:
                 raise StandardizedValidationError(
                     SignalErrorMessages.IMPACT_PERSONAL_REQUIRES_CONTACT

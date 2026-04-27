@@ -1,12 +1,39 @@
 # app_modules/signals/models/objective_signal.py
 """
-ObjectiveSignal — concrete signal for goal data.
+ObjectiveSignal — concrete signal for business objectives.
 
-Captures a goal observed at an account during a conversation.
-One signal = one objective, scoped to an organisational level.
+An ObjectiveSignal captures a structured goal observed at an account
+during a conversation. Unlike PainSignal which describes a problem,
+ObjectiveSignal describes a desired outcome.
 
-source_contact and source_activity are required — enforced in clean().
-canonical_key is not auto-computed — set manually or by LLM.
+Canonical key (auto-computed in save()):
+    canonical_key = "objective:<what>:<dimension>"
+
+The canonical_key enables cluster aggregation across multiple observations
+of the same objective on the same account — regardless of who reported it
+or when. Objective clusters share the same backend plumbing as Pain
+clusters (see SignalClusterService). The UI renders ObjectiveSignals as
+individual cards for MVP; cluster consumption is reserved for the
+Pre-call Game Plan LLM pipeline.
+
+Scope-conditional requirements (enforced in clean()):
+  - scope_level = PERSONAL   → target_contact required, target_department forbidden
+  - scope_level = DEPARTMENT → target_department required, target_contact forbidden
+  - scope_level = BUSINESS   → neither target_contact nor target_department
+
+signal_category is inherited from BaseSignal as a general-purpose tag;
+it is intentionally shadow-overridden to None here so it is neither
+stored nor exposed for ObjectiveSignal. See Wave B decision A4 — the
+field will be retired from BaseSignal once People and TechStack are
+refactored.
+
+Wave B notes:
+  - This is a destructive rewrite of the legacy ObjectiveSignal. All
+    previous fields (goal_level, measurement_method, horizon,
+    source_contact, impacted_contact) are removed. Migration 1.2 drops
+    and recreates the underlying table.
+  - The field `scope_level` replaces `goal_level` and adopts the shared
+    ScopeLevel enum introduced in Wave A.
 """
 
 from django.core.exceptions import ValidationError
@@ -16,55 +43,101 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 
 from .base_model import BaseSignal
-from ..constants import GoalLevel
+from ..constants import ScopeLevel, SignalDimension, SignalWhat
 
 
 class ObjectiveSignal(BaseSignal):
     """
-    Concrete signal for goal data.
+    Concrete signal for a business objective.
 
-    Captures an objective expressed by a contact during a conversation,
-    including its organisational scope, success criteria, measurement
-    method, the person driving it, and free-text notes.
+    Structure:
+      - Canonical axes: what × dimension (drive canonical_key)
+      - Scope axis:     scope_level (BUSINESS / DEPARTMENT / PERSONAL)
+      - Descriptive:    summary (required), success_criteria (optional),
+                        target_date (optional), notes (optional)
+      - Target:         target_contact (PERSONAL) or target_department
+                        (DEPARTMENT), conditional
 
-    source_contact and source_activity are required (validated in clean()).
-    canonical_key is not auto-computed — assigned manually or by LLM.
+    Cluster identity:
+      canonical_key = "objective:<what>:<dimension>" — auto-computed in save().
+
+    Signal-category suppression:
+      signal_category is set to None at the class level to shadow the
+      field inherited from BaseSignal. This prevents the column from
+      being created in the concrete table and ensures the filter
+      (which still declares it at the SignalFilter level) simply returns
+      no match on ObjectiveSignal — the dynamic filter-model rebinding
+      in BaseSignalViewSet.filter_queryset() tolerates absent fields.
     """
 
     # =========================================================================
-    # GOAL DESCRIPTION
+    # SHADOW OVERRIDE — drop signal_category for this signal type
+    # =========================================================================
+    # Abstract fields from BaseSignal can be shadowed by assigning `None`
+    # on the concrete subclass. Django treats this as "this field does
+    # not exist on the concrete model" — no column is created, no
+    # get_FIELD_display, no serialization.
+    signal_category = None
+
+    # =========================================================================
+    # CANONICAL AXES (required — form canonical_key)
+    # =========================================================================
+
+    what = models.CharField(
+        max_length=20,
+        choices=SignalWhat.choices,
+        verbose_name=_('What'),
+        help_text=_('Domain axis of the objective (first component of canonical_key)')
+    )
+
+    dimension = models.CharField(
+        max_length=20,
+        choices=SignalDimension.choices,
+        verbose_name=_('Dimension'),
+        help_text=_('Outcome axis of the objective (second component of canonical_key)')
+    )
+
+    # =========================================================================
+    # SCOPE (required — drives conditional target requirements)
+    # =========================================================================
+
+    scope_level = models.CharField(
+        max_length=20,
+        choices=ScopeLevel.choices,
+        verbose_name=_('Scope Level'),
+        help_text=_('Organisational scope of the objective (BUSINESS / DEPARTMENT / PERSONAL)')
+    )
+
+    # =========================================================================
+    # DESCRIPTIVE
     # =========================================================================
 
     summary = models.TextField(
         verbose_name=_('Summary'),
-        help_text=_('The goal described in plain language')
+        help_text=_('The objective described in plain language (e.g. "Reduce onboarding time by 30%")')
     )
-
-    goal_level = models.CharField(
-        max_length=20,
-        choices=GoalLevel.choices,
-        verbose_name=_('Goal Level'),
-        help_text=_('Organisational scope of the objective')
-    )
-
-    # =========================================================================
-    # MEASUREMENT
-    # =========================================================================
 
     success_criteria = models.TextField(
         blank=True,
         verbose_name=_('Success Criteria'),
-        help_text=_('How success is defined for this objective')
+        help_text=_('How success is defined — KPIs, thresholds, measurement method')
     )
 
-    measurement_method = models.TextField(
+    target_date = models.DateField(
+        null=True,
         blank=True,
-        verbose_name=_('Measurement Method'),
-        help_text=_('How progress toward this objective will be measured')
+        verbose_name=_('Target Date'),
+        help_text=_('When this objective should be achieved')
+    )
+
+    notes = models.TextField(
+        blank=True,
+        verbose_name=_('Notes'),
+        help_text=_('Additional qualitative context (source quotes, caveats, etc.)')
     )
 
     # =========================================================================
-    # TARGET — who is driving the goal
+    # TARGET — conditional on scope_level
     # =========================================================================
 
     target_contact = models.ForeignKey(
@@ -74,7 +147,7 @@ class ObjectiveSignal(BaseSignal):
         null=True,
         blank=True,
         verbose_name=_('Target Contact'),
-        help_text=_('Contact driving this objective')
+        help_text=_('Contact driving this objective — required when scope_level=PERSONAL')
     )
 
     target_department = models.ForeignKey(
@@ -84,17 +157,7 @@ class ObjectiveSignal(BaseSignal):
         null=True,
         blank=True,
         verbose_name=_('Target Department'),
-        help_text=_('Department driving this objective')
-    )
-
-    # =========================================================================
-    # CONTEXT
-    # =========================================================================
-
-    notes = models.TextField(
-        blank=True,
-        verbose_name=_('Notes'),
-        help_text=_('Additional context about this objective')
+        help_text=_('Department driving this objective — required when scope_level=DEPARTMENT')
     )
 
     # =========================================================================
@@ -110,10 +173,41 @@ class ObjectiveSignal(BaseSignal):
         verbose_name_plural = _('Objective Signals')
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['account'],    name='objsig_account_idx'),
-            models.Index(fields=['goal_level'], name='objsig_goal_level_idx'),
-            models.Index(fields=['status'],     name='objsig_status_idx'),
+            models.Index(fields=['account'],     name='objsig_account_idx'),
+            models.Index(fields=['what'],        name='objsig_what_idx'),
+            models.Index(fields=['dimension'],   name='objsig_dimension_idx'),
+            models.Index(fields=['scope_level'], name='objsig_scope_level_idx'),
+            models.Index(fields=['status'],      name='objsig_status_idx'),
+            # Composite index for cluster lookups by canonical_key scoped to account.
+            # Serves SignalClusterService.list_clusters_for_account for Objective
+            # (activated in Phase 4 of the Wave B port).
+            models.Index(
+                fields=['account', 'canonical_key'],
+                name='objsig_account_canon_idx',
+            ),
         ]
+
+    # =========================================================================
+    # SAVE — canonical_key auto-computation
+    # =========================================================================
+
+    def save(self, *args, **kwargs):
+        """
+        Compute canonical_key before delegating to BaseSignal.save().
+
+        canonical_key = "objective:<what>:<dimension>"
+
+        Both what and dimension are required; the key is always set on
+        a fully-constructed instance. BaseSignal.save() then applies
+        shared business rules (MANUAL → VALIDATED, source_department
+        inherit from source_contact).
+        """
+        if self.what and self.dimension:
+            self.canonical_key = f"objective:{self.what}:{self.dimension}"
+        else:
+            self.canonical_key = None
+
+        super().save(*args, **kwargs)
 
     # =========================================================================
     # VALIDATION
@@ -121,24 +215,60 @@ class ObjectiveSignal(BaseSignal):
 
     def clean(self):
         """
-        Enforce required context fields for ObjectiveSignal.
+        Enforce ObjectiveSignal-specific scope-conditional constraints.
 
-        source_contact and source_activity are required — an objective
-        must always be anchored to a known contact and a CRM activity.
+        Rules:
+          1. scope_level = PERSONAL
+                → target_contact required
+                → target_department forbidden
+          2. scope_level = DEPARTMENT
+                → target_department required
+                → target_contact forbidden
+          3. scope_level = BUSINESS
+                → neither target_contact nor target_department
+
+        Note (Wave B decision 3):
+          The "at least one of source_activity / decision_cycle / campaign"
+          rule is intentionally NOT enforced here for MVP. source_activity
+          remains optional and is the only context link exposed by the UI.
+          decision_cycle and campaign remain available as nullable fields
+          inherited from BaseSignal for future integrations.
         """
         super().clean()
 
         errors = {}
 
-        if not self.source_contact_id:
-            errors['source_contact'] = _(
-                'An objective signal must be linked to a source contact.'
-            )
+        if self.scope_level == ScopeLevel.PERSONAL:
+            if not self.target_contact_id:
+                errors['target_contact'] = _(
+                    'Personal objectives require a target contact.'
+                )
+            if self.target_department_id:
+                errors['target_department'] = _(
+                    'Personal objectives must not specify a target department. '
+                    'Use a department-scoped objective instead.'
+                )
 
-        if not self.source_activity_id:
-            errors['source_activity'] = _(
-                'An objective signal must be linked to a source activity.'
-            )
+        elif self.scope_level == ScopeLevel.DEPARTMENT:
+            if not self.target_department_id:
+                errors['target_department'] = _(
+                    'Department objectives require a target department.'
+                )
+            if self.target_contact_id:
+                errors['target_contact'] = _(
+                    'Department objectives must not specify a target contact. '
+                    'Use a personal-scoped objective instead.'
+                )
+
+        elif self.scope_level == ScopeLevel.BUSINESS:
+            if self.target_contact_id:
+                errors['target_contact'] = _(
+                    'Business objectives must not specify a target contact.'
+                )
+            if self.target_department_id:
+                errors['target_department'] = _(
+                    'Business objectives must not specify a target department.'
+                )
 
         if errors:
             raise ValidationError(errors)
@@ -150,6 +280,7 @@ class ObjectiveSignal(BaseSignal):
     def __str__(self):
         return (
             f"ObjectiveSignal | "
-            f"{self.get_goal_level_display()} | "
+            f"{self.get_what_display()} × {self.get_dimension_display()} | "
+            f"{self.get_scope_level_display()} | "
             f"{self.get_status_display()}"
         )

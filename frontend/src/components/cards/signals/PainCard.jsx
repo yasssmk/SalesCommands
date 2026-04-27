@@ -49,31 +49,15 @@ import EditOutlined from "@ant-design/icons/EditOutlined";
 import MoreOutlined from "@ant-design/icons/MoreOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
+// project imports
+import { resolveImpactLevel } from "sections/accounts/signals/signalClusters";
+
 // ==============================|| STATUS CONFIG ||============================== //
 
 const STATUS_CONFIG = {
   PENDING: { color: "warning", label: "Pending" },
   VALIDATED: { color: "success", label: "Validated" },
   REJECTED: { color: "error", label: "Rejected" },
-};
-
-// ==============================|| IMPACT LEVEL CONFIG ||============================== //
-
-/**
- * Visual tag per ImpactLevel — drives bullet color + chip label.
- *
- * Colors chosen to signal scope visually at a glance:
- *   BUSINESS   — warning (yellow/orange) — global / strategic concern
- *   DEPARTMENT — info    (blue)          — team-level concern
- *   PERSONAL   — error   (red)           — individual human concern
- *
- * These colors are independent from the Pain itself (which is always
- * "error" in the broader signal type palette).
- */
-const IMPACT_LEVEL_CONFIG = {
-  BUSINESS: { color: "warning", label: "Business" },
-  DEPARTMENT: { color: "info", label: "Department" },
-  PERSONAL: { color: "error", label: "Personal" },
 };
 
 // ==============================|| HELPERS ||============================== //
@@ -150,10 +134,7 @@ function formatImpactLine(impact, choices) {
  * the edit icon. This avoids accidental triggers when reading dense lists.
  */
 function ImpactRow({ impact, choices, onEdit, onDelete }) {
-  const levelCfg = IMPACT_LEVEL_CONFIG[impact.level] ?? {
-    color: "default",
-    label: impact.level || "Impact",
-  };
+  const levelCfg = resolveImpactLevel(impact.level);
 
   const line = formatImpactLine(impact, choices);
 
@@ -360,10 +341,14 @@ export default function PainCard({
     : null;
 
   /** Canonical axes chip text — "Operations × Time" */
+  // choices.signal_whats / signal_dimensions expose the shared
+  // canonical-axis enums since Wave A. Pain's `what` and `dimension`
+  // model fields are unchanged — only the source of display labels
+  // differs. Same applies when a Pain is rendered inside a cluster.
   const canonicalText = useMemo(() => {
-    const whatLabel = resolveLabel(choices?.pain_whats, pain.what);
+    const whatLabel = resolveLabel(choices?.signal_whats, pain.what);
     const dimensionLabel = resolveLabel(
-      choices?.pain_dimensions,
+      choices?.signal_dimensions,
       pain.dimension,
     );
     if (!whatLabel || !dimensionLabel) return null;

@@ -98,20 +98,53 @@ function buildPainInitialValues(signal) {
 /**
  * @param {Object} signal - ObjectiveSignal read object
  * @returns {Object}
+ *
+ * Objective is a flat structured goal — no child sub-resource, no impacts.
+ * This builder mirrors exactly the fields exposed by the 4-section
+ * InlineObjectiveForm (Wave B):
+ *
+ *   S1 — Goal:    summary, what, dimension
+ *   S2 — Scope:   scope_level + conditional target_contact OR target_department
+ *   S3 — Success: success_criteria, target_date, notes
+ *   S4 — Source:  source_activity
+ *
+ * Removed in Wave B (destructive rewrite — no backward-compat):
+ *   - goal_level          → replaced by scope_level (shared ScopeLevel enum)
+ *   - measurement_method  → merged conceptually into success_criteria / notes
+ *   - source_contact      → not exposed in Objective form (not in 4 sections)
+ *   - source_department   → not exposed in Objective form
+ *   - source_quote        → merged into notes (decision 2 — Wave B plan)
+ *   - signal_category     → shadow-overridden to None on the model
+ *
+ * Field shape notes:
+ *   - target_contact passed whole — AsyncContactSelect expects the full
+ *     option object as its value prop, not a UUID string.
+ *   - target_department extracted to its id for MUI Select value binding.
+ *   - source_activity passed whole — AsyncActivitySelect same pattern as
+ *     AsyncContactSelect.
+ *   - target_date kept as ISO yyyy-mm-dd string (backend DateField
+ *     serialises to that format natively; HTML5 <input type="date">
+ *     binds directly to the string).
  */
 function buildObjectiveInitialValues(signal) {
   return {
+    // S1 — Goal
     summary: signal.summary ?? "",
-    goal_level: signal.goal_level ?? "",
-    source_contact: signal.source_contact ?? null,
-    success_criteria: signal.success_criteria ?? "",
-    measurement_method: signal.measurement_method ?? "",
+    what: signal.what ?? "",
+    dimension: signal.dimension ?? "",
+
+    // S2 — Scope + conditional target
+    scope_level: signal.scope_level ?? "",
     target_contact: signal.target_contact ?? null,
     target_department: signal.target_department?.id ?? "",
+
+    // S3 — Success
+    success_criteria: signal.success_criteria ?? "",
+    target_date: signal.target_date ?? "",
     notes: signal.notes ?? "",
-    source_department: signal.source_department?.id ?? "",
-    source_quote: signal.source_quote ?? "",
-    signal_category: signal.signal_category ?? "",
+
+    // S4 — Source
+    source_activity: signal.source_activity ?? null,
   };
 }
 

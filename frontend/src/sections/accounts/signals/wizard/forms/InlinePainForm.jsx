@@ -197,13 +197,18 @@ export default function InlinePainForm({
         source_activity: values.source_activity,
       };
 
-      // Optional extras
-      if (values.source_quote && values.source_quote.trim()) {
-        payload.source_quote = values.source_quote.trim();
-      }
-      if (values.notes && values.notes.trim()) {
-        payload.notes = values.notes.trim();
-      }
+      // source_quote is nullable at the DB level — null is the explicit
+      // "clear this field" signal.
+      payload.source_quote =
+        values.source_quote && values.source_quote.trim()
+          ? values.source_quote.trim()
+          : null;
+
+      // notes is NOT NULL with default '' — emit empty string to clear.
+      // Sending null would be rejected by DRF (allow_null is False on
+      // non-nullable TextField by default).
+      payload.notes =
+        values.notes && values.notes.trim() ? values.notes.trim() : "";
 
       onAdd(payload);
       resetForm({ values: buildInitialValues(defaultContact) });
@@ -230,9 +235,9 @@ export default function InlinePainForm({
 
   /** Human-readable preview sentence ("Operations × Time problem") */
   const axisPreview = useMemo(() => {
-    const whatLabel = resolveLabel(choices?.pain_whats, formik.values.what);
+    const whatLabel = resolveLabel(choices?.signal_whats, formik.values.what);
     const dimensionLabel = resolveLabel(
-      choices?.pain_dimensions,
+      choices?.signal_dimensions,
       formik.values.dimension,
     );
     if (!whatLabel || !dimensionLabel) return null;
@@ -301,6 +306,13 @@ export default function InlinePainForm({
           />
 
           {/* What × Dimension side by side */}
+          {/*
+            Options come from choices.signal_whats and choices.signal_dimensions
+            (shared enums, backend exposes these since Wave A). The model
+            fields are still `what` and `dimension` — we only renamed the
+            source of enum options, not the fields. The canonical_key
+            stored on the row remains "pain:<what>:<dimension>".
+          */}
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
             <FormControl
               fullWidth
@@ -318,7 +330,7 @@ export default function InlinePainForm({
                 onBlur={formik.handleBlur}
                 label="Domain *"
               >
-                {(choices?.pain_whats ?? []).map((opt) => (
+                {(choices?.signal_whats ?? []).map((opt) => (
                   <MenuItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </MenuItem>
@@ -347,7 +359,7 @@ export default function InlinePainForm({
                 onBlur={formik.handleBlur}
                 label="Dimension *"
               >
-                {(choices?.pain_dimensions ?? []).map((opt) => (
+                {(choices?.signal_dimensions ?? []).map((opt) => (
                   <MenuItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </MenuItem>
@@ -555,10 +567,15 @@ export default function InlinePainForm({
 
 InlinePainForm.propTypes = {
   choices: PropTypes.shape({
-    pain_whats: PropTypes.arrayOf(
+    /**
+     * Shared canonical-axis enums exposed by the backend since Wave A.
+     * The model fields are still `what` and `dimension`, only the source
+     * of options changed (pain_whats → signal_whats, etc.).
+     */
+    signal_whats: PropTypes.arrayOf(
       PropTypes.shape({ value: PropTypes.string, label: PropTypes.string }),
     ),
-    pain_dimensions: PropTypes.arrayOf(
+    signal_dimensions: PropTypes.arrayOf(
       PropTypes.shape({ value: PropTypes.string, label: PropTypes.string }),
     ),
   }),
