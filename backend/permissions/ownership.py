@@ -199,6 +199,15 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
         'assigned_to_user': '-',                    # Not applicable
         'account_fk': '-',                           # Not applicable
     },
+
+    'tech_catalog': {
+        'client_account_fk': 'client_id',           # TechCatalog.client_id
+        'owner_user': '-',                          # No per-record owner
+        'owner_team': '-',                          # No team ownership
+        'created_by': 'created_by_id',              # ModuleBaseModel.created_by
+        'assigned_to_user': '-',                    # Not applicable
+        'account_fk': '-',                           # Not applicable (no Account FK)
+    },
 }
 
 # Ownership Types by Module
@@ -221,6 +230,7 @@ OWNERSHIP_TYPES = {
     'pipelines': 'opportunity',   # Inherits from opportunity (buying process)
     'templates': 'none',          # No ownership
     'products': 'none',          # No ownership
+    'tech_catalog': 'none',       # Tenant-level master catalog (admin-curated)
 }
 
 

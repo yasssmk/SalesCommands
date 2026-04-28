@@ -219,6 +219,7 @@ INSTALLED_APPS = [
     'app_modules.core_modules',
     'app_modules.campaigns',
     'app_modules.signals',
+    'app_modules.tech_catalog',  # Tenant-level technology master catalog
     'apps.signals',
     'apps.campaign',
     'apps.opportunities',
@@ -703,6 +704,7 @@ PERMISSIONS_CONFIG = {
         'templates': False,     # Email/doc templates
         'users': True,         # User management
         'products': False,      # Product catalog
+        'tech_catalog': True,   # Tenant-level technology master catalog
     }
 }
 

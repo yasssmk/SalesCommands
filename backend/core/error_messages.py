@@ -475,6 +475,14 @@ class SignalErrorMessages:
         "This signal cluster is not archived."
     )
 
+class TechCatalogErrorMessages:
+    """Error messages for the TechCatalog module."""
+
+    # Field-level validation
+    NAME_REQUIRED       = _("Name is required.")
+    ALIASES_NOT_LIST    = _("Aliases must be a list of strings.")
+    ALIAS_NOT_STRING    = _("Each alias must be a string.")
+
 
 class OpportunityErrorMessages:
     """Opportunity and Pipeline specific error messages"""
