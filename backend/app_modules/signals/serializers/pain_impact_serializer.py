@@ -233,6 +233,22 @@ class PainImpactCreateSerializer(
     perform_create() calls save(user=..., client_id=...) directly.
     """
 
+    impacted_department = serializers.PrimaryKeyRelatedField(
+        queryset=PainImpact._meta.get_field('impacted_department').related_model.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    impacted_contact = serializers.PrimaryKeyRelatedField(
+        queryset=PainImpact._meta.get_field('impacted_contact').related_model.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    human_impact = serializers.ChoiceField(
+        choices=PainImpact._meta.get_field('human_impact').choices,
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = PainImpact
         fields = [
@@ -245,14 +261,14 @@ class PainImpactCreateSerializer(
             'notes',
         ]
         extra_kwargs = {
-            'pain_signal':         {'required': True},
-            'level':               {'required': True},
-            'impacted_department': {'required': False, 'allow_null': True},
-            'impacted_contact':    {'required': False, 'allow_null': True},
-            'human_impact':        {'required': False, 'allow_null': True},
-            'metric':              {'required': False, 'allow_blank': True},
-            'notes':               {'required': False, 'allow_blank': True},
+            'pain_signal': {'required': True},
+            'level':       {'required': True},
+            'metric':      {'required': False, 'allow_blank': True},
+            'notes':       {'required': False, 'allow_blank': True},
+            # impacted_department, impacted_contact, human_impact are
+            # declared explicitly above and intentionally absent here.
         }
+        validators = []
 
     # -------------------------------------------------------------------------
     # GLOBAL VALIDATION
@@ -374,6 +390,24 @@ class PainImpactUpdateSerializer(
     impacted_contact: <uuid>}.
     """
 
+    # See PainImpactCreateSerializer for the rationale on explicit
+    # FK / choice field declarations. Same reasoning applies on PATCH.
+    impacted_department = serializers.PrimaryKeyRelatedField(
+        queryset=PainImpact._meta.get_field('impacted_department').related_model.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    impacted_contact = serializers.PrimaryKeyRelatedField(
+        queryset=PainImpact._meta.get_field('impacted_contact').related_model.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    human_impact = serializers.ChoiceField(
+        choices=PainImpact._meta.get_field('human_impact').choices,
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = PainImpact
         fields = [
@@ -385,13 +419,13 @@ class PainImpactUpdateSerializer(
             'notes',
         ]
         extra_kwargs = {
-            'level':               {'required': False},
-            'impacted_department': {'required': False, 'allow_null': True},
-            'impacted_contact':    {'required': False, 'allow_null': True},
-            'human_impact':        {'required': False, 'allow_null': True},
-            'metric':              {'required': False, 'allow_blank': True},
-            'notes':               {'required': False, 'allow_blank': True},
+            'level':  {'required': False},
+            'metric': {'required': False, 'allow_blank': True},
+            'notes':  {'required': False, 'allow_blank': True},
+            # impacted_department, impacted_contact, human_impact are
+            # declared explicitly above and intentionally absent here.
         }
+        validators = []
 
     def validate(self, attrs):
         """
