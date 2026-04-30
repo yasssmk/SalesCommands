@@ -1,22 +1,22 @@
 // frontend/src/sections/businessData/techCatalog/TechCatalogModal.jsx
-'use client';
+"use client";
 
-import PropTypes from 'prop-types';
-import { useMemo } from 'react';
+import PropTypes from "prop-types";
+import { useMemo } from "react";
 
 // material-ui
-import Box from '@mui/material/Box';
-import Modal from '@mui/material/Modal';
-import Stack from '@mui/material/Stack';
+import Box from "@mui/material/Box";
+import Modal from "@mui/material/Modal";
+import Stack from "@mui/material/Stack";
 
 // project imports
-import FormTechCatalogAdd from './FormTechCatalogAdd';
-import FormTechCatalogEdit from './FormTechCatalogEdit';
-import MainCard from 'components/MainCard';
-import CircularWithPath from 'components/@extended/progress/CircularWithPath';
+import FormTechCatalogAdd from "./FormTechCatalogAdd";
+import FormTechCatalogEdit from "./FormTechCatalogEdit";
+import MainCard from "components/MainCard";
+import CircularWithPath from "components/@extended/progress/CircularWithPath";
 
 // api
-import { useGetTechCatalogEntries } from 'api/admin/techCatalog';
+import { useGetTechCatalogEntries } from "api/businessData/techCatalog";
 
 // ==============================|| TECH CATALOG MODAL ||============================== //
 
@@ -65,7 +65,7 @@ export default function TechCatalogModal({ open, modalToggler, entry }) {
           aria-labelledby="modal-tech-catalog-label"
           aria-describedby="modal-tech-catalog-description"
           sx={{
-            '& .MuiPaper-root:focus': { outline: 'none' },
+            "& .MuiPaper-root:focus": { outline: "none" },
           }}
         >
           <MainCard
@@ -73,8 +73,8 @@ export default function TechCatalogModal({ open, modalToggler, entry }) {
               width: `calc(100% - 48px)`,
               minWidth: 340,
               maxWidth: 720,
-              height: 'auto',
-              maxHeight: 'calc(100vh - 48px)',
+              height: "auto",
+              maxHeight: "calc(100vh - 48px)",
             }}
             modal
             content={false}
@@ -82,11 +82,11 @@ export default function TechCatalogModal({ open, modalToggler, entry }) {
             {/* Native scroll container — see AccountModal for the same pattern */}
             <Box
               sx={{
-                maxHeight: 'calc(100vh - 48px)',
-                overflowY: 'auto',
-                WebkitOverflowScrolling: 'touch',
-                overscrollBehavior: 'contain',
-                '& > :last-child': { marginBottom: 0, paddingBottom: 0 },
+                maxHeight: "calc(100vh - 48px)",
+                overflowY: "auto",
+                WebkitOverflowScrolling: "touch",
+                overscrollBehavior: "contain",
+                "& > :last-child": { marginBottom: 0, paddingBottom: 0 },
               }}
             >
               {loading ? (

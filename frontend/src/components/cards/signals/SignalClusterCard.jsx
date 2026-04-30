@@ -55,6 +55,7 @@ import UserOutlined from "@ant-design/icons/UserOutlined";
 import WarningOutlined from "@ant-design/icons/WarningOutlined";
 
 // project imports
+// project imports
 import {
   resolveFreshness,
   resolveHumanImpact,
@@ -63,6 +64,7 @@ import {
   resolveScopeLevel,
   resolveSignalTypeVisuals,
   resolveTargetDateUrgency,
+  resolveUsageScope,
 } from "sections/accounts/signals/signalClusters";
 
 // ==============================|| HELPERS ||============================== //
@@ -95,6 +97,30 @@ function truncate(str, max = 40) {
   return str.length > max ? `${str.slice(0, max)}…` : str;
 }
 
+/**
+ * Build the canonical display label for a TechStack cluster from its
+ * tech_catalog_entry payload. Mirrors TechStackCard.getCatalogLabel —
+ * kept local to avoid an extra cross-file import for what's a simple
+ * concatenation.
+ *
+ *   { company_name: "Salesforce", product_name: "Sales Cloud" }
+ *     → "Salesforce Sales Cloud"
+ *   { company_name: "Notion", product_name: "Notion" }
+ *     → "Notion"
+ *
+ * Defensive fallback to "Unknown tool" — a malformed cluster payload
+ * should never crash the card.
+ */
+function getCatalogLabel(entry) {
+  if (!entry) return "Unknown tool";
+  const company = entry.company_name?.trim() || "";
+  const product = entry.product_name?.trim() || "";
+  if (!company && !product) return "Unknown tool";
+  if (!company) return product;
+  if (!product || product === company) return company;
+  return `${company} ${product}`;
+}
+
 // ==============================|| SIGNAL CLUSTER CARD ||============================== //
 
 /**
@@ -119,15 +145,25 @@ export default function SignalClusterCard({
 
   /**
    * Resolve type once at the top — every downstream branch reads from
-   * `isPain` / `isObjective` rather than re-checking signal_type.
-   *
-   * If a future signal_type ships, the visual fallback ("Cluster" /
-   * default palette) renders without crash.
+   * `isPain` / `isObjective` / `isTechStack` rather than re-checking
+   * signal_type. Three types are clustered today; if a future signal_type
+   * ships, the visual fallback ("Cluster" / default palette) renders
+   * without crash.
    */
   const signalType = cluster.signal_type;
   const typeVisuals = resolveSignalTypeVisuals(signalType);
   const isPain = signalType === "pain";
   const isObjective = signalType === "objective";
+  const isTechStack = signalType === "tech_stack";
+
+  /**
+   * Strategic flags from the TechStack catalog entry — only meaningful
+   * when the cluster is a TechStack. Resolved here once for downstream
+   * use in border emphasis, header chips, and the canonical chip palette.
+   */
+  const techCatalogEntry = isTechStack ? cluster.tech_catalog_entry : null;
+  const isCompetitor = Boolean(techCatalogEntry?.is_competitor);
+  const isIntegrationTarget = Boolean(techCatalogEntry?.is_integration_target);
 
   // ==============================|| DERIVED ||============================== //
 
@@ -153,11 +189,50 @@ export default function SignalClusterCard({
     [cluster.target_dates, cluster.has_target_date_soon],
   );
 
-  /** Canonical axes label — "Operations × Time" (or "Growth × Cost") */
+  // TechStack-specific resolutions
+  const scopeSummary = isTechStack ? cluster.scope_summary : null;
+  const lifecycle = isTechStack ? cluster.lifecycle : null;
+  const departmentsUsing = useMemo(() => {
+    if (!isTechStack) return [];
+    const list = scopeSummary?.departments_using;
+    return Array.isArray(list) ? list : [];
+  }, [isTechStack, scopeSummary]);
+
+  /**
+   * Related Pain clusters cross-referencing this tool — TechStack-only.
+   * Capped to 3 visible; remainder collapses into a "+N more" chip.
+   * Each entry carries { canonical_key, summary, priority_bucket,
+   * confirmation_count } from the backend payload.
+   */
+  const relatedPainClustersPreview = useMemo(() => {
+    if (!isTechStack) return { visible: [], remainder: 0 };
+    const all = Array.isArray(cluster.related_pain_clusters)
+      ? cluster.related_pain_clusters
+      : [];
+    const visible = all.slice(0, 3);
+    return { visible, remainder: all.length - visible.length };
+  }, [isTechStack, cluster.related_pain_clusters]);
+
+  /**
+   * Canonical text — type-aware:
+   *   - Pain / Objective : "Operations × Time"   (what × dimension)
+   *   - TechStack        : "Salesforce Sales Cloud"   (vendor product)
+   *
+   * Returns null when the source fields are missing so the chip is
+   * suppressed entirely rather than rendered with placeholders.
+   */
   const canonicalText = useMemo(() => {
+    if (isTechStack) {
+      return getCatalogLabel(techCatalogEntry);
+    }
     if (!cluster.what_display || !cluster.dimension_display) return null;
     return `${cluster.what_display} × ${cluster.dimension_display}`;
-  }, [cluster.what_display, cluster.dimension_display]);
+  }, [
+    isTechStack,
+    techCatalogEntry,
+    cluster.what_display,
+    cluster.dimension_display,
+  ]);
 
   const lastConfirmedDate = formatShortDate(cluster.last_confirmed_at);
 
@@ -205,30 +280,52 @@ export default function SignalClusterCard({
 
   /**
    * Border emphasis — drives the "weight" of the card border so a busy
-   * list still highlights HIGH items at a glance.
+   * list still highlights commercially relevant items at a glance.
    *
-   * Branching:
-   *   - Archived: muted (divider) — visual de-emphasis takes precedence
-   *   - PENDING members: warning.light (universal across types — mirrors
-   *     PainCard / ObjectiveCard convention)
-   *   - HIGH priority: type-specific accent (Pain=error.light, Obj=info.light)
-   *   - MEDIUM: warning.light (type-agnostic, neutral middle ground)
-   *   - else: divider
+   * Branching (priority order, top wins):
+   *   1. Archived              → divider (muted; visual de-emphasis wins)
+   *   2. Pending members       → warning.light (universal — needs validation)
+   *   3. TechStack competitor  → error.main (strong commercial signal,
+   *                              priority over priority bucket: a
+   *                              competitor cluster is always worth
+   *                              noticing in the list, even if its
+   *                              priority_score happens to be LOW)
+   *   4. TechStack integration → info.main (partner signal, opportunity
+   *                              for technical alignment)
+   *   5. HIGH priority         → type-specific accent
+   *                              (Pain=error.light, Obj=info.light,
+   *                               TechStack=primary.light)
+   *   6. MEDIUM priority       → warning.light (type-agnostic)
+   *   7. default               → divider
    */
   const borderColor = useMemo(() => {
     if (isArchived) return "divider";
     if (cluster.has_pending_signals) return "warning.light";
+    if (isTechStack && isCompetitor) return "error.main";
+    if (isTechStack && isIntegrationTarget) return "info.main";
     if (cluster.priority_bucket === "HIGH") {
-      return isObjective ? "info.light" : "error.light";
+      if (isObjective) return "info.light";
+      if (isTechStack) return "primary.light";
+      return "error.light"; // Pain (default — first type clustered)
     }
     if (cluster.priority_bucket === "MEDIUM") return "warning.light";
     return "divider";
   }, [
     isArchived,
     isObjective,
+    isTechStack,
+    isCompetitor,
+    isIntegrationTarget,
     cluster.has_pending_signals,
     cluster.priority_bucket,
   ]);
+
+  /**
+   * Border thickness — 2px for TechStack strategic flags so they
+   * visually outweigh standard 1px borders on neighbouring cards.
+   */
+  const borderWidth =
+    isTechStack && (isCompetitor || isIntegrationTarget) ? "2px" : "1px";
 
   // ==============================|| MENU HANDLERS ||============================== //
 
@@ -294,7 +391,7 @@ export default function SignalClusterCard({
       onKeyDown={handleKeyDown}
       aria-label={`Open cluster ${canonicalText ?? cluster.canonical_key}`}
       sx={{
-        border: "1px solid",
+        border: `${borderWidth} solid`,
         borderColor,
         borderRadius: 1.5,
         p: 2,
@@ -348,15 +445,46 @@ export default function SignalClusterCard({
             />
           </Tooltip>
 
-          {/* Canonical axes — colored per signal_type to match the type chip */}
+          {/* Canonical axes — colored per signal_type to match the type chip.
+              For Pain/Objective this reads "Operations × Time"; for TechStack
+              it reads "{vendor} {product}" — see canonicalText derivation. */}
           {canonicalText && (
             <Chip
               label={canonicalText}
               color={typeVisuals.color}
               variant="outlined"
               size="small"
-              sx={{ fontSize: "0.68rem", height: 20 }}
+              sx={{
+                fontSize: "0.68rem",
+                height: 20,
+                fontWeight: isTechStack ? 500 : 400,
+              }}
             />
+          )}
+
+          {/* TechStack strategic flags — competitor / integration target.
+              Earn their own chips (in addition to border emphasis) so the
+              rep can spot them mid-list without focusing on the card. */}
+          {isTechStack && isCompetitor && (
+            <Tooltip title="This vendor competes with us">
+              <Chip
+                label="Competitor"
+                color="error"
+                size="small"
+                sx={{ fontSize: "0.62rem", height: 18 }}
+              />
+            </Tooltip>
+          )}
+          {isTechStack && isIntegrationTarget && (
+            <Tooltip title="This vendor is an integration target">
+              <Chip
+                label="Integration"
+                color="info"
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: "0.62rem", height: 18 }}
+              />
+            </Tooltip>
           )}
 
           {/* Archived marker */}
@@ -471,12 +599,15 @@ export default function SignalClusterCard({
         useFlexGap
         sx={{ mt: 1.5 }}
       >
-        {/* Distinct contacts — both types */}
+        {/* Distinct contacts — universal across types.
+            Tooltip text adapts per type for accurate phrasing. */}
         <Tooltip
           title={
             isObjective
               ? "Distinct contacts who set this objective"
-              : "Distinct contacts who confirmed this pain"
+              : isTechStack
+                ? "Distinct contacts who mentioned this tool"
+                : "Distinct contacts who confirmed this pain"
           }
         >
           <Stack direction="row" spacing={0.5} alignItems="center">
@@ -545,7 +676,53 @@ export default function SignalClusterCard({
           </Tooltip>
         )}
 
-        {/* Confirmation count — both types */}
+        {/* TECHSTACK: company-wide indicator (boolean badge — collapses
+            individual department chips into a single broad-reach signal) */}
+        {isTechStack && scopeSummary?.is_company_wide && (
+          <Tooltip title="Used company-wide across multiple departments">
+            <Chip
+              label="Company-wide"
+              color="success"
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: "0.62rem", height: 18 }}
+            />
+          </Tooltip>
+        )}
+
+        {/* TECHSTACK: renewal-soon urgency badge */}
+        {isTechStack && cluster.has_renewal_soon && (
+          <Tooltip title="Renewal date is within 90 days">
+            <Chip
+              icon={<CalendarOutlined style={{ fontSize: 11 }} />}
+              label="Renewal soon"
+              color="warning"
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: "0.62rem", height: 18 }}
+            />
+          </Tooltip>
+        )}
+
+        {/* TECHSTACK: discontinued badge — strong negative signal */}
+        {isTechStack && lifecycle?.is_discontinued && (
+          <Tooltip
+            title={
+              lifecycle.discontinued_date
+                ? `Discontinued ${lifecycle.discontinued_date}`
+                : "Tool no longer in use"
+            }
+          >
+            <Chip
+              label="Discontinued"
+              color="error"
+              size="small"
+              sx={{ fontSize: "0.62rem", height: 18 }}
+            />
+          </Tooltip>
+        )}
+
+        {/* Confirmation count — universal */}
         <Typography variant="caption" color="text.disabled">
           {cluster.confirmation_count ?? 0} confirmation
           {(cluster.confirmation_count ?? 0) === 1 ? "" : "s"}
@@ -635,6 +812,106 @@ export default function SignalClusterCard({
           {metricsPreview.remainder > 0 && (
             <Chip
               label={`+${metricsPreview.remainder} more`}
+              size="small"
+              variant="outlined"
+              sx={{
+                fontSize: "0.62rem",
+                height: 18,
+                color: "text.disabled",
+              }}
+            />
+          )}
+        </Stack>
+      )}
+
+      {/* ==================== DEPARTMENTS USING — TECHSTACK ONLY ==================== */}
+      {/*
+        Compact list of departments using the tool. Skipped entirely when
+        is_company_wide is true (the company-wide chip in the stats row
+        already conveys the broader picture — listing every department
+        would be noise). Capped to 3 chips + "+N more" remainder, mirror
+        of the human_impacts / metrics caps for visual rhythm.
+      */}
+      {isTechStack &&
+        !scopeSummary?.is_company_wide &&
+        departmentsUsing.length > 0 && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ mt: 1 }}
+          >
+            {departmentsUsing.slice(0, 3).map((dept) => {
+              const cfg = resolveUsageScope("DEPARTMENT");
+              return (
+                <Chip
+                  key={dept.id}
+                  label={dept.name}
+                  size="small"
+                  color={cfg.color}
+                  variant="outlined"
+                  sx={{
+                    fontSize: "0.62rem",
+                    height: 18,
+                    color: "text.secondary",
+                  }}
+                />
+              );
+            })}
+            {departmentsUsing.length > 3 && (
+              <Chip
+                label={`+${departmentsUsing.length - 3} more`}
+                size="small"
+                variant="outlined"
+                sx={{
+                  fontSize: "0.62rem",
+                  height: 18,
+                  color: "text.disabled",
+                }}
+              />
+            )}
+          </Stack>
+        )}
+
+      {/* ==================== RELATED PAIN CLUSTERS — TECHSTACK ONLY ==================== */}
+      {/*
+        Mini-list of Pain clusters cross-referencing this tool. Strong
+        commercial cue: a competitor tool with 3 related Pain clusters
+        on the same account is a textbook displacement opportunity.
+        Capped to 3 visible + "+N more". Each chip surfaces the Pain
+        cluster's summary truncated; the drawer shows full content.
+      */}
+      {isTechStack && relatedPainClustersPreview.visible.length > 0 && (
+        <Stack
+          direction="row"
+          spacing={0.5}
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mt: 0.75 }}
+        >
+          {relatedPainClustersPreview.visible.map((painCluster) => (
+            <Tooltip
+              key={painCluster.canonical_key}
+              title={painCluster.summary || "Related Pain"}
+              placement="top"
+            >
+              <Chip
+                label={`Pain · ${truncate(painCluster.summary, 30) || painCluster.canonical_key}`}
+                size="small"
+                color="error"
+                variant="outlined"
+                sx={{
+                  fontSize: "0.62rem",
+                  height: 18,
+                  fontStyle: "italic",
+                }}
+              />
+            </Tooltip>
+          ))}
+          {relatedPainClustersPreview.remainder > 0 && (
+            <Chip
+              label={`+${relatedPainClustersPreview.remainder} more pain${relatedPainClustersPreview.remainder === 1 ? "" : "s"}`}
               size="small"
               variant="outlined"
               sx={{
@@ -740,6 +1017,41 @@ SignalClusterCard.propTypes = {
     max_scope_level: PropTypes.string,
     target_dates: PropTypes.arrayOf(PropTypes.string),
     has_target_date_soon: PropTypes.bool,
+
+    // Stats — TechStack-specific (Sprint TechStack)
+    tech_catalog_entry: PropTypes.shape({
+      id: PropTypes.string,
+      company_name: PropTypes.string,
+      product_name: PropTypes.string,
+      is_competitor: PropTypes.bool,
+      is_integration_target: PropTypes.bool,
+    }),
+    lifecycle: PropTypes.shape({
+      usage_start_year: PropTypes.number,
+      renewal_date: PropTypes.string,
+      cost_description: PropTypes.string,
+      is_discontinued: PropTypes.bool,
+      discontinued_date: PropTypes.string,
+    }),
+    scope_summary: PropTypes.shape({
+      is_company_wide: PropTypes.bool,
+      departments_using: PropTypes.arrayOf(
+        PropTypes.shape({
+          id: PropTypes.string.isRequired,
+          name: PropTypes.string.isRequired,
+        }),
+      ),
+      summary_text: PropTypes.string,
+    }),
+    has_renewal_soon: PropTypes.bool,
+    related_pain_clusters: PropTypes.arrayOf(
+      PropTypes.shape({
+        canonical_key: PropTypes.string.isRequired,
+        summary: PropTypes.string,
+        priority_bucket: PropTypes.string,
+        confirmation_count: PropTypes.number,
+      }),
+    ),
 
     // Lifecycle
     first_observed_at: PropTypes.string,

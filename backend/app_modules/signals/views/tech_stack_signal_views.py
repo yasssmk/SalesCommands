@@ -3,8 +3,21 @@
 TechStackSignalViewSet — CRUD + validate/reject for TechStackSignal.
 
 Inherits all shared logic from BaseSignalViewSet.
-No extra select_related beyond the base chain — TechStackSignal has no
-target_contact or target_department FK.
+
+Sprint TechStack notes:
+  * The model was rewritten in Sprint TechStack (catalog FK + structured
+    lifecycle fields) — see app_modules/signals/models/tech_stack_signal.py
+    for the full architecture.
+  * `invalidate_cluster_tag = True` is set: TechStackSignal participates
+    in the cluster model since this sprint (clusters grouped by
+    canonical_key = "techstack:<catalog_entry_id>" on an account). Every
+    write therefore mutates cluster membership, lifecycle stats, or
+    priority — must bust SIGNAL_CLUSTERS_CACHE_TAG in addition to
+    SIGNALS_CACHE_TAG. Same stance as PainSignalViewSet and
+    ObjectiveSignalViewSet.
+  * Search now traverses the catalog FK so the rep can search by
+    company / product name without dragging the catalog ID through the
+    UI.
 """
 
 from ..models import TechStackSignal
@@ -30,6 +43,17 @@ class TechStackSignalViewSet(BaseSignalViewSet):
       DELETE /tech-stack/{id}/             → destroy
       POST   /tech-stack/{id}/validate/    → validate_signal
       POST   /tech-stack/{id}/reject/      → reject_signal
+
+    Cluster cache invalidation:
+      TechStackSignal participates in the cluster model since Sprint
+      TechStack — clusters are grouped by canonical_key
+      = "techstack:<tech_catalog_entry.id>" on an account. Every write
+      on this ViewSet therefore mutates cluster membership, lifecycle
+      stats (usage_start_year, renewal_date, cost_description, ...) or
+      priority. The `invalidate_cluster_tag = True` flag below
+      instructs BaseSignalViewSet to bust SIGNAL_CLUSTERS_CACHE_TAG in
+      addition to SIGNALS_CACHE_TAG after every create / update /
+      delete / validate / reject.
     """
 
     queryset                = TechStackSignal.objects.all()
@@ -39,4 +63,32 @@ class TechStackSignalViewSet(BaseSignalViewSet):
     create_serializer_class = TechStackSignalCreateSerializer
     update_serializer_class = TechStackSignalUpdateSerializer
 
-    search_fields = ['tech_name', 'usage', 'limitations']
+    # TechStackSignal participates in the cluster model (see class docstring).
+    # Writes here must bust the signal_clusters cache tag.
+    invalidate_cluster_tag = True
+
+    # Search across narrative fields and the catalog FK's text columns,
+    # so a rep typing "Salesforce" in the search box hits matching
+    # signals without needing the catalog UUID.
+    search_fields = [
+        'notes',
+        'cost_description',
+        'tech_catalog_entry__company_name',
+        'tech_catalog_entry__product_name',
+    ]
+
+    def get_queryset(self):
+        """
+        Extend base queryset with TechStackSignal-specific select_related.
+
+        Adds tech_catalog_entry (always meaningful — drives canonical_key
+        and the compact catalog payload exposed by the serializers) and
+        usage_department (often null but exposed compactly when set;
+        prefetching avoids N+1 on list views).
+        """
+        qs = super().get_queryset()
+        qs = qs.select_related(
+            'tech_catalog_entry',
+            'usage_department',
+        )
+        return qs

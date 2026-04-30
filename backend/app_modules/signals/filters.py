@@ -6,20 +6,36 @@ Shared across all 4 signal types — the view's filter_queryset() dynamically
 binds SignalFilter.Meta.model to the concrete queryset model before
 django-filters runs its assertion check.
 
-Type-specific filters (role, what, dimension, goal_level, etc.) that do not
-exist on a given model are silently harmless — django-filter ignores unknown
-field lookups via the dynamic model binding. This is the established pattern
-in this codebase.
+Type-specific filters (role, what, dimension, scope_level, tech_catalog_entry,
+etc.) that do not exist on a given model are silently harmless — django-filter
+ignores unknown field lookups via the dynamic model binding. This is the
+established pattern in this codebase.
 
 PainImpact is NOT handled here. It has its own PainImpactFilter defined in
 views/pain_impact_views.py, since impacts are a distinct resource with a
 separate CRUD surface (/pain-impacts/).
+
+Sprint TechStack — filter changes:
+  REMOVED:
+    - category     (TechCategory enum dropped — categorisation moved to TechCatalog)
+    - satisfaction (Satisfaction enum dropped — replaced by structured lifecycle)
+  ADDED (TechStackSignal):
+    - tech_catalog_entry      (UUID — anchor by catalog entry)
+    - usage_scope             (CSV — TEAM, DEPARTMENT, COMPANY, UNKNOWN)
+    - usage_department        (UUID — department using the tool)
+    - is_discontinued         (bool)
+    - renewal_date_after      (date >= filter)
+    - renewal_date_before     (date <= filter)
+    - is_competitor           (bool, via FK traversal to TechCatalog)
+    - is_integration_target   (bool, via FK traversal to TechCatalog)
+  ADDED (PainSignal cross-reference):
+    - related_techstack       (UUID — Pains cross-referencing a catalog entry)
 """
 
 import django_filters
-from django_filters import BaseInFilter, CharFilter, UUIDFilter
+from django_filters import BaseInFilter, BooleanFilter, CharFilter, DateFilter, UUIDFilter
 
-from .models import PeopleSignal
+from .models import PainSignal
 
 
 class CharInFilter(BaseInFilter, CharFilter):
@@ -124,22 +140,32 @@ class SignalFilter(django_filters.FilterSet):
     satisfaction = CharInFilter(field_name='satisfaction', lookup_expr='in')
 
     class Meta:
-        # PeopleSignal used as reference model — the view's filter_queryset()
-        # rebinds Meta.model to the correct concrete model before the
-        # django-filters assertion runs.
-        model  = PeopleSignal
-        fields = [
-            # Base — all types
-            'status', 'source', 'signal_category', 'canonical_key',
-            'account', 'source_contact', 'source_activity',
-            'source_department', 'decision_cycle', 'campaign',
-            # PeopleSignal
-            'role', 'influence_level',
-            # PainSignal — canonical axes only (impact-level data filtering
-            # lives on PainImpactFilter, not here)
-            'what', 'dimension',
-            # ObjectiveSignal
-            'scope_level',
-            # TechStackSignal
-            'category', 'satisfaction',
-        ]
+        # PainSignal used as the reference model — chosen for stability:
+        # it is the structural pivot of the cluster system and not slated
+        # for removal. The reference model is only used to satisfy
+        # django-filter's class-definition check; the view's
+        # `filter_queryset()` rebinds Meta.model to the actual concrete
+        # model before any filtering runs.
+        #
+        # `fields` is intentionally EMPTY:
+        #   * Every filter in this FilterSet is declared explicitly as a
+        #     class attribute above (UUIDFilter, CharInFilter, BooleanFilter,
+        #     DateFilter, etc.).
+        #   * `Meta.fields` is only used by django-filter to AUTO-GENERATE
+        #     filters for model fields not declared explicitly. We do not
+        #     want any auto-generation — we want full control over each
+        #     filter's lookup_expr and field_name.
+        #   * Listing field names in `Meta.fields` also triggers a
+        #     model-presence check at class-definition time. Since this
+        #     FilterSet is shared across multiple concrete signal models
+        #     with overlapping but non-identical field sets, no single
+        #     reference model would satisfy the check — hence the empty
+        #     list.
+        #
+        # The dynamic Meta.model rebind in BaseSignalViewSet.filter_queryset()
+        # ensures the FilterSet correctly targets the concrete model at
+        # query time. Filters whose field_name does not resolve on the
+        # actual queryset model are silently no-op, which is the desired
+        # cross-type behaviour.
+        model  = PainSignal
+        fields = []

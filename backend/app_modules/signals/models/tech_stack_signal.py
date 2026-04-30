@@ -1,17 +1,107 @@
 # app_modules/signals/models/tech_stack_signal.py
 """
-TechStackSignal — concrete signal for technology stack data.
+TechStackSignal — concrete signal for tools used by an account.
 
-Captures structured intelligence about a tool used by the account,
-as expressed during a conversation.
+Captures structured intelligence about a single tool observed at an
+account, anchored to a tenant-level master catalog entry (TechCatalog).
+The catalog FK is the cluster identity: every observation of the same
+tool on the same account aggregates into a single cluster, regardless
+of who reported it or when.
 
-One signal = one tool observation on one account.
-tech_name holds the tool name as mentioned in the transcript — free text,
-no FK to any TechStack entity.
+Canonical key (auto-computed in save()):
+    canonical_key = "techstack:<tech_catalog_entry.id>"
 
-source_contact and source_activity are required — enforced in clean().
-canonical_key is auto-computed in save() as "tech:{tech_name.lower().strip()}"
-when tech_name is not empty.
+Because TechCatalog is tenant-level and the FK is scoped accordingly,
+the canonical_key is automatically tenant-deduplicated — no risk of
+two tenants producing colliding keys for distinct catalog entries.
+
+Architectural alignment with Pain / Objective
+---------------------------------------------
+TechStackSignal follows the same canonical-cluster pattern as Pain and
+Objective:
+
+  * Inherits from BaseSignal (shared lifecycle, audit, source tracking).
+  * canonical_key is auto-computed in save() before delegating to
+    BaseSignal.save() which applies the MANUAL → VALIDATED rule.
+  * Conditional validation lives in clean() and is mirrored by the
+    Create / Update serializers (merged-state pattern as on
+    PainImpact / ObjectiveSignal).
+  * Cluster aggregation is delegated entirely to SignalClusterService
+    via the shared dispatch — see _list_techstack_clusters_for_account
+    in Phase 6.
+
+Shadow-overrides (vs BaseSignal)
+--------------------------------
+TechStackSignal narrows the BaseSignal field set by shadow-overriding
+several inherited fields to `None`. Each override has a precise reason:
+
+  * source_contact = None
+        A tool used at an account is not "owned" by a single contact.
+        Contacts who mentioned the tool are derivable from
+        source_activity.contacts when source_activity is set. Storing
+        a single source_contact would force an arbitrary choice and
+        risk desynchronisation if the activity evolves.
+
+  * source_department = None
+        Same rationale as source_contact — derivable from the activity
+        (and never confused with usage_department, which describes WHO
+        USES the tool, not WHO MENTIONED it).
+
+  * decision_cycle = None
+        A tool is account-level, not deal-level. Salesforce is used by
+        an account independently of which decision cycle is in flight.
+        The Pain ↔ TechStack indirection (PainSignal.related_techstack)
+        is the proper way to relate a deal to a tool.
+
+  * campaign = None
+        Same logic — a campaign targets accounts, not their internal
+        tooling.
+
+  * signal_category = None
+        Aligned with ObjectiveSignal (Wave B). The legacy
+        signal_category field is being phased out across all signal
+        types — TechStack does not opt in.
+
+The MUST-keep inherited fields are: account, source_activity (optional),
+canonical_key, source_quote, source, status, validated_*, audit
+(created_by / updated_by / etc.), language_original, requested_by,
+metadata, is_inferred, confidence, original_value.
+
+Validation rules (enforced in clean() AND in Create/Update serializers)
+----------------------------------------------------------------------
+  1. tech_catalog_entry is required.
+       Without the catalog FK, the canonical_key cannot be computed and
+       cluster aggregation falls apart. Rejected at clean() time.
+
+  2. usage_scope = DEPARTMENT  →  usage_department REQUIRED.
+     usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}  →  usage_department
+                                                       FORBIDDEN.
+
+  3. is_discontinued = True  →  discontinued_date REQUIRED.
+     is_discontinued = False (default)  →  discontinued_date FORBIDDEN.
+
+The (2) and (3) pairs use the merged-state validation pattern in their
+matching serializers — see TechStackSignalUpdateSerializer in Phase 4.1.
+
+Status creation rule
+--------------------
+TechStackSignal does not override BaseSignal.save()'s source-driven
+status logic:
+
+  * source = MANUAL              → status forced to VALIDATED
+  * source = LLM_EXTRACTED       → status starts PENDING
+  * source = LLM_MODIFIED        → status starts PENDING
+  * source = EXTERNAL_RESEARCH   → status starts PENDING (rep validates)
+
+This matches the rule already in effect across Pain and Objective —
+no divergence introduced by this sprint.
+
+Multi-mentions are expected
+---------------------------
+There is intentionally NO UniqueConstraint on (account, tech_catalog_entry).
+Multiple signals for the same tool on the same account are the corroboration
+mechanism: each call where Salesforce comes up adds one signal, and the
+cluster service rolls them up. Mirror of the Pain/Objective stance.
 """
 
 from django.core.exceptions import ValidationError
@@ -21,94 +111,172 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 
 from .base_model import BaseSignal
-from ..constants import TechCategory, Satisfaction
+from ..constants import UsageScope
 
 
 class TechStackSignal(BaseSignal):
     """
-    Concrete signal for technology stack data.
+    Concrete signal for a tool used by an account.
 
-    Captures what tool the account uses, how they use it, how satisfied
-    they are, what its limitations are, and when the contract renews.
+    Cluster identity:
+        canonical_key = "techstack:<tech_catalog_entry.id>"
+        — auto-computed in save() from the catalog FK.
 
-    canonical_key is computed as "tech:{tech_name.lower().strip()}"
-    when tech_name is set, enabling corroboration across observations
-    of the same tool at the same account.
+    Required:
+        - tech_catalog_entry (FK TechCatalog)
+
+    Conditional:
+        - usage_department  (required iff usage_scope == DEPARTMENT)
+        - discontinued_date (required iff is_discontinued is True)
+
+    Optional:
+        - usage_scope, usage_start_year, renewal_date, cost_description, notes
+
+    Inherited from BaseSignal (kept):
+        - account, source_activity (nullable), source_quote, source,
+          status, validated_*, language_original, requested_by, metadata,
+          is_inferred, confidence, original_value, canonical_key, audit fields.
     """
 
     # =========================================================================
-    # TOOL IDENTIFICATION
+    # SHADOW OVERRIDES — narrow the BaseSignal field set
+    # =========================================================================
+    # See module docstring for the rationale of each override. Django
+    # treats `= None` on a concrete subclass as "this field does not
+    # exist on the concrete model" — no column is created, no
+    # get_FIELD_display, no serialization.
+    source_contact    = None
+    source_department = None
+    decision_cycle    = None
+    campaign          = None
+    signal_category   = None
+
+    # =========================================================================
+    # CATALOG ANCHOR (required — drives canonical_key)
     # =========================================================================
 
-    tech_name = models.CharField(
-        max_length=255,
-        blank=True,
-        verbose_name=_('Tech Name'),
+    tech_catalog_entry = models.ForeignKey(
+        'tech_catalog.TechCatalog',
+        on_delete=models.PROTECT,
+        related_name='tech_stack_signals',
+        verbose_name=_('Tech Catalog Entry'),
         help_text=_(
-            'Name of the tool as mentioned in the conversation. '
-            'Free text — no FK to a canonical entity.'
-        )
+            'Tenant-level master catalog entry identifying the tool. '
+            'Drives canonical_key and cluster identity. Required.'
+        ),
     )
+    # Note on on_delete=PROTECT: deleting a catalog entry that has live
+    # signals would silently amputate the corroboration chain. PROTECT
+    # forces the admin to handle migration (re-point or archive) before
+    # removing the entry. Same stance as PainSignal.account (CASCADE is
+    # appropriate when the parent OWNS the children; here the catalog
+    # is a reference, not an owner — PROTECT is the right semantic).
 
-    category = models.CharField(
+    # =========================================================================
+    # USAGE SCOPE (optional — drives conditional usage_department)
+    # =========================================================================
+
+    usage_scope = models.CharField(
         max_length=20,
-        choices=TechCategory.choices,
+        choices=UsageScope.choices,
         null=True,
         blank=True,
-        verbose_name=_('Category'),
-        help_text=_('Technology category of this tool')
+        verbose_name=_('Usage Scope'),
+        help_text=_(
+            'Organisational scope of the tool usage at this account. '
+            'When DEPARTMENT, usage_department must be set. '
+            'When TEAM / COMPANY / UNKNOWN, usage_department must be null.'
+        ),
     )
 
-    # =========================================================================
-    # USAGE & SATISFACTION
-    # =========================================================================
-
-    usage = models.TextField(
-        blank=True,
-        verbose_name=_('Usage'),
-        help_text=_('What the account uses this tool for')
-    )
-
-    satisfaction = models.CharField(
-        max_length=10,
-        choices=Satisfaction.choices,
+    usage_department = models.ForeignKey(
+        'core_modules.StandardDepartment',
+        on_delete=models.SET_NULL,
+        related_name='tech_stack_signals_using',
         null=True,
         blank=True,
-        verbose_name=_('Satisfaction'),
-        help_text=_('Satisfaction level expressed during the conversation')
+        verbose_name=_('Usage Department'),
+        help_text=_(
+            'Department using this tool — required when usage_scope=DEPARTMENT, '
+            'forbidden otherwise. Distinct from any inherited "source" '
+            'department (which describes who mentioned the tool, not who '
+            'uses it — and is shadow-overridden away on this signal).'
+        ),
     )
 
     # =========================================================================
-    # FRICTION
+    # LIFECYCLE STATS (optional — feed cluster all_observations)
     # =========================================================================
 
-    limitations = models.TextField(
+    usage_start_year = models.PositiveIntegerField(
+        null=True,
         blank=True,
-        verbose_name=_('Limitations'),
-        help_text=_('What does not work or frustrates the account with this tool')
-    )
-
-    workarounds = models.TextField(
-        blank=True,
-        verbose_name=_('Workarounds'),
-        help_text=_('How the account compensates for the limitations of this tool')
-    )
-
-    # =========================================================================
-    # INTEGRATIONS & CONTRACT
-    # =========================================================================
-
-    integrations = models.TextField(
-        blank=True,
-        verbose_name=_('Integrations'),
-        help_text=_('Other tools this one connects to, as mentioned in conversation')
+        verbose_name=_('Usage Start Year'),
+        help_text=_(
+            'Year the account started using this tool, when mentioned '
+            '(e.g. 2019). Aggregated by the cluster service to expose '
+            'the earliest observed start year across all observations.'
+        ),
     )
 
     renewal_date = models.DateField(
         null=True,
         blank=True,
         verbose_name=_('Renewal Date'),
-        help_text=_('When the contract for this tool renews')
+        help_text=_(
+            'Next contract renewal date for this tool, when mentioned. '
+            'The cluster service exposes the most recent observation '
+            'and surfaces an urgency flag when within '
+            'TECHSTACK_RENEWAL_SOON_DAYS from today.'
+        ),
+    )
+
+    cost_description = models.TextField(
+        blank=True,
+        verbose_name=_('Cost Description'),
+        help_text=_(
+            'Free-text cost description as expressed during the conversation '
+            '(e.g. "around 3000€/month", "120k$/year", "free tier"). '
+            'Intentionally NOT a structured numeric field — costs are reported '
+            'with widely varying granularity and currency by reps; structured '
+            'capture would lose nuance and force false precision.'
+        ),
+    )
+
+    # =========================================================================
+    # DISCONTINUATION
+    # =========================================================================
+
+    is_discontinued = models.BooleanField(
+        default=False,
+        verbose_name=_('Is Discontinued'),
+        help_text=_(
+            'True when the account has stopped using or plans to stop using '
+            'this tool. Drives the conditional discontinued_date requirement '
+            'and a strong negative weight in cluster priority scoring '
+            '(a discontinued tool is a closed door, not an open one).'
+        ),
+    )
+
+    discontinued_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_('Discontinued Date'),
+        help_text=_(
+            'Date of discontinuation — required when is_discontinued is True, '
+            'forbidden otherwise. Past dates indicate already-stopped usage; '
+            'future dates indicate a planned phase-out.'
+        ),
+    )
+
+    # =========================================================================
+    # NOTES
+    # =========================================================================
+
+    notes = models.TextField(
+        blank=True,
+        verbose_name=_('Notes'),
+        help_text=_('Additional qualitative context about this observation.'),
     )
 
     # =========================================================================
@@ -124,12 +292,62 @@ class TechStackSignal(BaseSignal):
         verbose_name_plural = _('Tech Stack Signals')
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['account'],           name='tsig_account_idx'),
-            models.Index(fields=['category'],          name='tsig_category_idx'),
-            models.Index(fields=['satisfaction'],      name='tsig_satisfaction_idx'),
-            models.Index(fields=['status'],            name='tsig_status_idx'),
-            models.Index(fields=['source_department'], name='tsig_department_idx'),
+            models.Index(
+                fields=['account'],
+                name='tssig_account_idx',
+            ),
+            models.Index(
+                fields=['tech_catalog_entry'],
+                name='tssig_catalog_idx',
+            ),
+            models.Index(
+                fields=['status'],
+                name='tssig_status_idx',
+            ),
+            models.Index(
+                fields=['is_discontinued'],
+                name='tssig_discontinued_idx',
+            ),
+            # Composite index for the cluster lookup path:
+            # "list TechStack clusters for account X" iterates by
+            # account then groups by canonical_key.
+            models.Index(
+                fields=['account', 'canonical_key'],
+                name='tssig_account_canon_idx',
+            ),
+            # Renewal-date ordering surface — supports the priority
+            # scorer's renewal-soon detection on cluster aggregation.
+            models.Index(
+                fields=['renewal_date'],
+                name='tssig_renewal_idx',
+            ),
         ]
+
+    # =========================================================================
+    # SAVE — canonical_key auto-computation
+    # =========================================================================
+
+    def save(self, *args, **kwargs):
+        """
+        Compute canonical_key before delegating to BaseSignal.save().
+
+        canonical_key = "techstack:<tech_catalog_entry.id>"
+
+        The catalog FK is required at clean() time, but save() may run
+        on a partially constructed instance during creation flows — we
+        guard the assignment so that a missing FK leaves canonical_key
+        as None rather than raising. The DB-level NOT NULL on
+        tech_catalog_entry will catch the missing FK regardless.
+
+        BaseSignal.save() then applies the shared business rules
+        (MANUAL → VALIDATED + confidence cleared).
+        """
+        if self.tech_catalog_entry_id:
+            self.canonical_key = f"techstack:{self.tech_catalog_entry_id}"
+        else:
+            self.canonical_key = None
+
+        super().save(*args, **kwargs)
 
     # =========================================================================
     # VALIDATION
@@ -137,54 +355,87 @@ class TechStackSignal(BaseSignal):
 
     def clean(self):
         """
-        Enforce required context fields for TechStackSignal.
+        Enforce TechStackSignal-specific constraints.
 
-        source_contact and source_activity are required — a tech stack
-        observation must always be anchored to a known contact and a
-        CRM activity.
+        Rules (all errors aggregated, returned as a single ValidationError):
+
+          1. tech_catalog_entry is required — the catalog FK drives
+             canonical_key. The DB-level NOT NULL would catch this at
+             save() time, but raising in clean() yields a clean error
+             payload and matches the Pain/Objective pattern.
+
+          2. usage_scope = DEPARTMENT
+                → usage_department REQUIRED.
+             usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}
+                → usage_department FORBIDDEN.
+
+          3. is_discontinued = True
+                → discontinued_date REQUIRED.
+             is_discontinued = False (default)
+                → discontinued_date FORBIDDEN.
+
+        Note on rule 2 with usage_scope = None:
+          A null usage_scope is interpreted as "scope not yet
+          documented". Setting usage_department in that state would
+          create an inconsistent record (a department is set but no
+          scope justifies it). Forbidden.
         """
         super().clean()
 
         errors = {}
 
-        if not self.source_contact_id:
-            errors['source_contact'] = _(
-                'A tech stack signal must be linked to a source contact.'
+        # --- Rule 1: catalog FK is required ---
+        if not self.tech_catalog_entry_id:
+            errors['tech_catalog_entry'] = _(
+                'A tech stack signal must reference a tech catalog entry.'
             )
 
-        if not self.source_activity_id:
-            errors['source_activity'] = _(
-                'A tech stack signal must be linked to a source activity.'
-            )
+        # --- Rule 2: usage_scope ↔ usage_department coherence ---
+        if self.usage_scope == UsageScope.DEPARTMENT:
+            if not self.usage_department_id:
+                errors['usage_department'] = _(
+                    'Tech stack signals with usage_scope=DEPARTMENT '
+                    'require a usage department.'
+                )
+        else:
+            # Covers TEAM, COMPANY, UNKNOWN, and None.
+            if self.usage_department_id:
+                errors['usage_department'] = _(
+                    'Usage department can only be set when '
+                    'usage_scope=DEPARTMENT.'
+                )
+
+        # --- Rule 3: is_discontinued ↔ discontinued_date coherence ---
+        if self.is_discontinued:
+            if not self.discontinued_date:
+                errors['discontinued_date'] = _(
+                    'Discontinued tech stack signals require a '
+                    'discontinued date.'
+                )
+        else:
+            if self.discontinued_date:
+                errors['discontinued_date'] = _(
+                    'Discontinued date can only be set when '
+                    'is_discontinued=True.'
+                )
 
         if errors:
             raise ValidationError(errors)
-
-    # =========================================================================
-    # SAVE
-    # =========================================================================
-
-    def save(self, *args, **kwargs):
-        """
-        Compute canonical_key before delegating to BaseSignal.save().
-
-        canonical_key = "tech:{tech_name.lower().strip()}"
-        Only set when tech_name is not empty.
-        Remains None when tech_name is blank.
-        """
-        if self.tech_name and self.tech_name.strip():
-            self.canonical_key = f"tech:{self.tech_name.lower().strip()}"
-        else:
-            self.canonical_key = None
-
-        super().save(*args, **kwargs)
 
     # =========================================================================
     # STR
     # =========================================================================
 
     def __str__(self):
-        tool = self.tech_name or 'Unknown tool'
+        # Avoid an extra DB hit when the FK isn't loaded — fall back to
+        # the bare ID string instead of forcing a join just for repr.
+        if self.tech_catalog_entry_id:
+            try:
+                tool = str(self.tech_catalog_entry)
+            except Exception:
+                tool = f"catalog:{self.tech_catalog_entry_id}"
+        else:
+            tool = 'no-catalog-entry'
         return (
             f"TechStackSignal | "
             f"{tool} | "

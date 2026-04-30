@@ -1,4 +1,4 @@
-// frontend/src/api/admin/techCatalog.js
+// frontend/src/api/businessData/techCatalog.js
 /**
  * API hooks and mutations for the TechCatalog module.
  *
@@ -145,8 +145,7 @@ export function useGetTechCatalogEntries(options = {}) {
       entriesError: error,
       entriesValidating: isValidating,
       entriesEmpty:
-        !isLoading &&
-        !(data?.data?.results?.length ?? data?.results?.length),
+        !isLoading && !(data?.data?.results?.length ?? data?.results?.length),
       mutateEntries: mutate,
     }),
     [data, isLoading, error, isValidating, mutate],

@@ -1,23 +1,26 @@
 // src/sections/businessData/techCatalog/AlertTechCatalogDelete.jsx
 
-import PropTypes from 'prop-types';
-import { useState } from 'react';
+import PropTypes from "prop-types";
+import { useState } from "react";
 
 // material-ui
-import Button from '@mui/material/Button';
-import Dialog from '@mui/material/Dialog';
-import DialogContent from '@mui/material/DialogContent';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogContent from "@mui/material/DialogContent";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 
 // project imports
-import Avatar from 'components/@extended/Avatar';
-import { PopupTransition } from 'components/@extended/Transitions';
-import { deleteTechCatalogEntry } from 'api/admin/techCatalog';
-import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
+import Avatar from "components/@extended/Avatar";
+import { PopupTransition } from "components/@extended/Transitions";
+import { deleteTechCatalogEntry } from "api/businessData/techCatalog";
+import {
+  displayErrorSnackbar,
+  displaySuccessSnackbar,
+} from "utils/displayError";
 
 // assets
-import DeleteFilled from '@ant-design/icons/DeleteFilled';
+import DeleteFilled from "@ant-design/icons/DeleteFilled";
 
 // ==============================|| TECH CATALOG - DELETE ALERT ||============================== //
 
@@ -46,7 +49,7 @@ export default function AlertTechCatalogDelete({ entry, open, handleClose }) {
       const result = await deleteTechCatalogEntry(entry.id);
 
       if (result?.success) {
-        displaySuccessSnackbar('Tech catalog entry deleted successfully');
+        displaySuccessSnackbar("Tech catalog entry deleted successfully");
         handleClose?.();
       } else {
         displayErrorSnackbar(result);
@@ -68,7 +71,7 @@ export default function AlertTechCatalogDelete({ entry, open, handleClose }) {
       ? entry.company_name === entry.product_name
         ? entry.company_name
         : `${entry.company_name} / ${entry.product_name}`
-      : entry?.company_name || '';
+      : entry?.company_name || "";
 
   return (
     <Dialog
@@ -84,7 +87,7 @@ export default function AlertTechCatalogDelete({ entry, open, handleClose }) {
         <Stack alignItems="center" spacing={3.5}>
           <Avatar
             color="error"
-            sx={{ width: 72, height: 72, fontSize: '1.75rem' }}
+            sx={{ width: 72, height: 72, fontSize: "1.75rem" }}
           >
             <DeleteFilled />
           </Avatar>
@@ -94,9 +97,9 @@ export default function AlertTechCatalogDelete({ entry, open, handleClose }) {
               Are you sure you want to delete?
             </Typography>
             <Typography align="center">
-              By deleting{' '}
+              By deleting{" "}
               <Typography variant="subtitle1" component="span">
-                &quot;{displayName}&quot;{' '}
+                &quot;{displayName}&quot;{" "}
               </Typography>
               from the tech catalog, this entry will be permanently removed.
             </Typography>
@@ -120,7 +123,7 @@ export default function AlertTechCatalogDelete({ entry, open, handleClose }) {
               autoFocus
               disabled={deleting}
             >
-              {deleting ? 'Deleting...' : 'Delete'}
+              {deleting ? "Deleting..." : "Delete"}
             </Button>
           </Stack>
         </Stack>

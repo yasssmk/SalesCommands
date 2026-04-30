@@ -85,6 +85,27 @@ function resolveLabel(options, value) {
 }
 
 /**
+ * Build the canonical display label for a TechCatalog entry.
+ * Mirrors TechStackCard.getCatalogLabel — kept local for consistency
+ * across the cards. The PainCard only consumes this for the optional
+ * cross-reference chip (Sprint TechStack).
+ *
+ *   { company_name: "Salesforce", product_name: "Sales Cloud" }
+ *     → "Salesforce Sales Cloud"
+ *   { company_name: "Notion", product_name: "Notion" }
+ *     → "Notion"
+ */
+function getCatalogLabel(entry) {
+  if (!entry) return "Unknown tool";
+  const company = entry.company_name?.trim() || "";
+  const product = entry.product_name?.trim() || "";
+  if (!company && !product) return "Unknown tool";
+  if (!company) return product;
+  if (!product || product === company) return company;
+  return `${company} ${product}`;
+}
+
+/**
  * Format an impact into a single readable line.
  *
  * BUSINESS   → "120k$/year lost productivity"
@@ -355,7 +376,7 @@ export default function PainCard({
     return `${whatLabel} × ${dimensionLabel}`;
   }, [choices, pain.what, pain.dimension]);
 
-  /** Source line — "Reported by Nicky Larson · 2026-04-15" */
+  /** Source line */
   const sourceLine = useMemo(() => {
     const contactName = formatContact(pain.source_contact);
     const activity = pain.source_activity;
@@ -376,6 +397,38 @@ export default function PainCard({
     if (dateStr) return dateStr;
     return null;
   }, [pain.source_contact, pain.source_activity]);
+
+  /**
+   * Cross-reference — TechStack
+   *
+   * Two independent fields on the backend; the UI prefers the structured
+   * FK and falls back to the textual mention. Both can co-exist in a
+   * progressive-enrichment scenario; we still show only one chip in
+   * that case (FK wins) to avoid visual redundancy.
+   *
+   * Returns null when neither field is set so the section is suppressed
+   * entirely rather than rendered with a placeholder.
+   */
+  const relatedTech = useMemo(() => {
+    const entry = pain.related_techstack;
+    const mention = pain.related_techstack_mention?.trim() || "";
+
+    if (entry) {
+      return {
+        kind: "fk",
+        label: getCatalogLabel(entry),
+        isCompetitor: Boolean(entry.is_competitor),
+        isIntegrationTarget: Boolean(entry.is_integration_target),
+      };
+    }
+    if (mention) {
+      return {
+        kind: "mention",
+        label: mention,
+      };
+    }
+    return null;
+  }, [pain.related_techstack, pain.related_techstack_mention]);
 
   /** Nested impacts — always an array, default empty */
   const impacts = useMemo(
@@ -583,6 +636,80 @@ export default function PainCard({
         </Typography>
       )}
 
+      {/* ==================== RELATED TOOL  ==================== */}
+      {/*
+        Optional cross-reference to a TechCatalog entry. Surfaced when:
+          - related_techstack (structured FK)        — preferred
+          - related_techstack_mention (free text)    — fallback
+        The chip variant differentiates the two: solid primary for
+        the structured FK (with strategic flags if applicable),
+        outlined italic for the textual mention.
+
+        Visible regardless of `pain.what` — the model is permissive
+        (a non-TECH pain may legitimately reference a tool); the
+        InlinePainForm UI only restricts the capture surface.
+      */}
+      {relatedTech && (
+        <Stack
+          direction="row"
+          spacing={0.5}
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mt: 1 }}
+        >
+          <Typography variant="caption" color="text.disabled">
+            Related tool:
+          </Typography>
+          {relatedTech.kind === "fk" ? (
+            <>
+              <Chip
+                label={relatedTech.label}
+                size="small"
+                color="primary"
+                variant="outlined"
+                sx={{ fontSize: "0.65rem", height: 20, fontWeight: 500 }}
+              />
+              {relatedTech.isCompetitor && (
+                <Tooltip title="This vendor competes with us">
+                  <Chip
+                    label="Competitor"
+                    color="error"
+                    size="small"
+                    sx={{ fontSize: "0.6rem", height: 18 }}
+                  />
+                </Tooltip>
+              )}
+              {relatedTech.isIntegrationTarget && (
+                <Tooltip title="This vendor is an integration target">
+                  <Chip
+                    label="Integration"
+                    color="info"
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontSize: "0.6rem", height: 18 }}
+                  />
+                </Tooltip>
+              )}
+            </>
+          ) : (
+            <Tooltip title="Tool mention not yet matched against the catalog">
+              <Chip
+                label={relatedTech.label}
+                size="small"
+                variant="outlined"
+                sx={{
+                  fontSize: "0.65rem",
+                  height: 20,
+                  fontStyle: "italic",
+                  color: "text.secondary",
+                }}
+              />
+            </Tooltip>
+          )}
+        </Stack>
+      )}
+
       {/* ==================== SOURCE LINE ==================== */}
       {sourceLine && (
         <Typography
@@ -706,6 +833,21 @@ PainCard.propTypes = {
         impacted_contact: PropTypes.object,
       }),
     ),
+    /**
+     * Optional cross-reference to a TechCatalog entry — Sprint TechStack.
+     * The backend exposes a compact catalog payload via _PainDisplayMixin
+     * (id + company_name + product_name + is_competitor +
+     * is_integration_target).
+     */
+    related_techstack: PropTypes.shape({
+      id: PropTypes.string,
+      company_name: PropTypes.string,
+      product_name: PropTypes.string,
+      is_competitor: PropTypes.bool,
+      is_integration_target: PropTypes.bool,
+    }),
+    /** Free-text fallback when the catalog doesn't include the tool yet. */
+    related_techstack_mention: PropTypes.string,
   }).isRequired,
   choices: PropTypes.object,
 

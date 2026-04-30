@@ -1,38 +1,38 @@
 // src/sections/businessData/techCatalog/FormTechCatalogEdit.jsx
 
-import PropTypes from 'prop-types';
-import React, { useState } from 'react';
+import PropTypes from "prop-types";
+import React, { useState } from "react";
 
 // material-ui
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
-import Divider from '@mui/material/Divider';
-import FormControlLabel from '@mui/material/FormControlLabel';
-import FormHelperText from '@mui/material/FormHelperText';
-import Grid from '@mui/material/Grid';
-import InputLabel from '@mui/material/InputLabel';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
-import TextField from '@mui/material/TextField';
-import Typography from '@mui/material/Typography';
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import Divider from "@mui/material/Divider";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import FormHelperText from "@mui/material/FormHelperText";
+import Grid from "@mui/material/Grid";
+import InputLabel from "@mui/material/InputLabel";
+import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
+import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
 // third-party
-import * as Yup from 'yup';
-import { useFormik, Form, FormikProvider } from 'formik';
+import * as Yup from "yup";
+import { useFormik, Form, FormikProvider } from "formik";
 
 // project imports
-import CircularWithPath from 'components/@extended/progress/CircularWithPath';
-import { displaySuccessSnackbar } from 'utils/displayError';
-import { handleFormikError } from 'utils/formErrorHandler';
+import CircularWithPath from "components/@extended/progress/CircularWithPath";
+import { displaySuccessSnackbar } from "utils/displayError";
+import { handleFormikError } from "utils/formErrorHandler";
 
 // api
 import {
   updateTechCatalogEntry,
   useGetTechCatalogEntry,
-} from 'api/admin/techCatalog';
+} from "api/businessData/techCatalog";
 
 // ==============================|| SECTION TITLE ||============================== //
 
@@ -57,20 +57,20 @@ SectionTitle.propTypes = {
 const EditSchema = Yup.object().shape({
   company_name: Yup.string()
     .trim()
-    .required('Company name is required')
-    .min(2, 'Company name must be at least 2 characters')
-    .max(255, 'Company name must be less than 255 characters'),
+    .required("Company name is required")
+    .min(2, "Company name must be at least 2 characters")
+    .max(255, "Company name must be less than 255 characters"),
 
   // Product name optional client-side: blank → backend keeps the
   // current product_name as-is on PATCH (we just don't send the field).
   product_name: Yup.string()
     .trim()
-    .max(255, 'Product name must be less than 255 characters')
+    .max(255, "Product name must be less than 255 characters")
     .nullable(),
 
   vendor_url: Yup.string()
-    .url('Must be a valid URL (e.g. https://example.com)')
-    .max(500, 'Vendor URL must be less than 500 characters')
+    .url("Must be a valid URL (e.g. https://example.com)")
+    .max(500, "Vendor URL must be less than 500 characters")
     .nullable(),
 
   is_competitor: Yup.boolean(),
@@ -80,9 +80,9 @@ const EditSchema = Yup.object().shape({
 // ==============================|| INITIAL VALUES ||============================== //
 
 const buildInitialValues = (entry) => ({
-  company_name: entry?.company_name || '',
-  product_name: entry?.product_name || '',
-  vendor_url: entry?.vendor_url || '',
+  company_name: entry?.company_name || "",
+  product_name: entry?.product_name || "",
+  vendor_url: entry?.vendor_url || "",
   is_competitor: Boolean(entry?.is_competitor),
   is_integration_target: Boolean(entry?.is_integration_target),
 });
@@ -109,13 +109,13 @@ function sanitizePayload(values) {
     is_integration_target: Boolean(values.is_integration_target),
   };
 
-  const productName = (values.product_name || '').trim();
+  const productName = (values.product_name || "").trim();
   if (productName) {
     payload.product_name = productName;
   }
 
   // vendor_url: send trimmed value or explicit null to clear
-  const vendorUrl = (values.vendor_url || '').trim();
+  const vendorUrl = (values.vendor_url || "").trim();
   payload.vendor_url = vendorUrl ? vendorUrl : null;
 
   return payload;
@@ -143,7 +143,7 @@ function FormTechCatalogEdit({ closeModal, entryId, entry: initialEntry }) {
         const result = await updateTechCatalogEntry(entryData.id, payload);
 
         if (result.success) {
-          displaySuccessSnackbar('Tech catalog entry updated successfully');
+          displaySuccessSnackbar("Tech catalog entry updated successfully");
           closeModal?.();
         } else {
           handleFormikError(result, formik);
@@ -197,7 +197,7 @@ function FormTechCatalogEdit({ closeModal, entryId, entry: initialEntry }) {
                   fullWidth
                   id="company_name"
                   placeholder="e.g. Salesforce"
-                  {...getFieldProps('company_name')}
+                  {...getFieldProps("company_name")}
                   error={Boolean(touched.company_name && errors.company_name)}
                   helperText={touched.company_name && errors.company_name}
                 />
@@ -211,7 +211,7 @@ function FormTechCatalogEdit({ closeModal, entryId, entry: initialEntry }) {
                   fullWidth
                   id="product_name"
                   placeholder="e.g. Sales Cloud"
-                  {...getFieldProps('product_name')}
+                  {...getFieldProps("product_name")}
                   error={Boolean(touched.product_name && errors.product_name)}
                   helperText={touched.product_name && errors.product_name}
                 />
@@ -225,7 +225,7 @@ function FormTechCatalogEdit({ closeModal, entryId, entry: initialEntry }) {
                   fullWidth
                   id="vendor_url"
                   placeholder="https://salesforce.com"
-                  {...getFieldProps('vendor_url')}
+                  {...getFieldProps("vendor_url")}
                   error={Boolean(touched.vendor_url && errors.vendor_url)}
                   helperText={touched.vendor_url && errors.vendor_url}
                 />
@@ -241,7 +241,7 @@ function FormTechCatalogEdit({ closeModal, entryId, entry: initialEntry }) {
                   <Switch
                     checked={values.is_competitor}
                     onChange={(e) =>
-                      setFieldValue('is_competitor', e.target.checked)
+                      setFieldValue("is_competitor", e.target.checked)
                     }
                     color="error"
                   />
@@ -259,7 +259,7 @@ function FormTechCatalogEdit({ closeModal, entryId, entry: initialEntry }) {
                   <Switch
                     checked={values.is_integration_target}
                     onChange={(e) =>
-                      setFieldValue('is_integration_target', e.target.checked)
+                      setFieldValue("is_integration_target", e.target.checked)
                     }
                     color="success"
                   />
@@ -287,7 +287,7 @@ function FormTechCatalogEdit({ closeModal, entryId, entry: initialEntry }) {
                   variant="contained"
                   disabled={isSubmitting || loading}
                 >
-                  {isSubmitting || loading ? 'Updating...' : 'Update'}
+                  {isSubmitting || loading ? "Updating..." : "Update"}
                 </Button>
               </Stack>
             </Grid>

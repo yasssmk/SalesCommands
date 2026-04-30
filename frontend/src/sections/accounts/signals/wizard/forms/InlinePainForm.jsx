@@ -8,17 +8,37 @@
  * Account Workspace — NOT here.
  *
  * This form captures strictly:
- *   - What × Dimension   → canonical axes (drive canonical_key)
- *   - Summary            → qualitative narrative
- *   - Source Activity    → conversation where the pain was identified (required)
- *   - Source Contact     → person who reported it (required)
- *   - Source Quote       → verbatim excerpt (optional)
- *   - Notes              → additional qualitative context (optional)
+ *   - What × Dimension          → canonical axes (drive canonical_key)
+ *   - Summary                   → qualitative narrative
+ *   - Source Activity           → conversation where the pain was identified (required)
+ *   - Source Contact            → person who reported it (required)
+ *   - Source Quote              → verbatim excerpt (optional)
+ *   - Notes                     → additional qualitative context (optional)
+ *   - Related TechStack         → optional cross-reference to a TechCatalog
+ *                                  entry — only surfaced when what === 'TECH'
+ *                                  (Sprint TechStack)
+ *   - Related TechStack mention → optional free-text fallback when the
+ *                                  catalog doesn't include the tool yet
+ *
+ * Cross-reference rule (UI-only)
+ * ------------------------------
+ * The two related_techstack fields are independent at the model level
+ * (see PainSignal model docstring) but the UI nudges the rep toward
+ * the structured FK: the mention TextField is hidden as soon as a
+ * catalog entry is picked. The rep can clear the FK to surface the
+ * mention again. The backend accepts both being set simultaneously
+ * for progressive enrichment scenarios.
+ *
+ * Activation rule (UI-only)
+ * -------------------------
+ * The cross-ref section is mounted only when `what === 'TECH'`.
+ * Switching `what` away from TECH clears both fields automatically
+ * via a useEffect — preserves write/dispatch idempotency.
  *
  * The form does NOT call createSignal directly. It calls onAdd(payload) with
  * a ready-to-dispatch payload — the wizard injects account + source at
- * dispatch time. Contact and activity objects are kept whole; UUIDs are
- * extracted by the wizard at dispatch time.
+ * dispatch time. Contact, activity, and tech catalog objects are kept
+ * whole; UUIDs are extracted by the wizard at dispatch time.
  */
 
 "use client";
@@ -50,6 +70,7 @@ import PlusOutlined from "@ant-design/icons/PlusOutlined";
 // project imports
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import AsyncActivitySelect from "components/AsyncSelection/AsyncActivitySelect";
+import AsyncTechCatalogSelect from "components/AsyncSelection/AsyncTechCatalogSelect";
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -77,6 +98,16 @@ const validationSchema = Yup.object({
   // --- Optional narrative extras ---
   source_quote: Yup.string().nullable(),
   notes: Yup.string().nullable(),
+
+  // --- Cross-reference (Sprint TechStack) ---
+  // Both optional and not mutually exclusive — see file docstring.
+  // No .when() guard on `what`: the section is unmounted entirely when
+  // what !== 'TECH', and useEffect clears both fields on transition,
+  // so a stale value can never reach validation.
+  related_techstack: Yup.object().nullable(),
+  related_techstack_mention: Yup.string()
+    .nullable()
+    .max(200, "Mention must be 200 characters or fewer"),
 });
 
 // ==============================|| INITIAL VALUES ||============================== //
@@ -95,6 +126,12 @@ function buildInitialValues(defaultContact) {
     // Optional narrative extras
     source_quote: "",
     notes: "",
+
+    // Cross-reference — TechStack (Sprint TechStack)
+    // Object whole for the FK (AsyncTechCatalogSelect compatibility),
+    // empty string for the mention (TextField default).
+    related_techstack: null,
+    related_techstack_mention: "",
   };
 }
 
@@ -186,8 +223,8 @@ export default function InlinePainForm({
     enableReinitialize: true,
     onSubmit: (values, { resetForm }) => {
       // Build payload — strip empty strings so the backend never receives
-      // "" for optional text fields. Send contact/activity objects as-is;
-      // the wizard extracts UUIDs at dispatch time.
+      // "" for optional text fields. Send contact/activity/catalog objects
+      // as-is; the wizard extracts UUIDs at dispatch time.
       const payload = {
         // Required
         summary: values.summary.trim(),
@@ -210,6 +247,26 @@ export default function InlinePainForm({
       payload.notes =
         values.notes && values.notes.trim() ? values.notes.trim() : "";
 
+      // Cross-reference — TechStack (Sprint TechStack)
+      //
+      // Always emit BOTH fields so an Edit that clears a stale value
+      // explicitly reaches the backend. The UI may have unmounted the
+      // section (when what !== 'TECH'), in which case the useEffect
+      // above has already cleared the fields to null / "".
+      //
+      //   related_techstack          : object | null  → wizard extracts
+      //                                 .id at dispatch time (or sends null)
+      //   related_techstack_mention  : string ('' allowed)
+      //                                 The model field is CharField with
+      //                                 blank=True, so '' is a valid
+      //                                 "no mention" signal — never null.
+      payload.related_techstack = values.related_techstack ?? null;
+      payload.related_techstack_mention =
+        values.related_techstack_mention &&
+        values.related_techstack_mention.trim()
+          ? values.related_techstack_mention.trim()
+          : "";
+
       onAdd(payload);
       resetForm({ values: buildInitialValues(defaultContact) });
     },
@@ -224,6 +281,32 @@ export default function InlinePainForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultContact, initialValuesProp]);
+
+  // ==============================|| CLEAR CROSS-REF ON `what` CHANGE ||============================== //
+
+  /**
+   * The TechStack cross-reference is conceptually scoped to what === 'TECH'.
+   * When the rep switches `what` away from TECH (e.g. re-classifies a
+   * pain from TECH × QUALITY to OPS × QUALITY), we silently clear both
+   * cross-ref fields so a stale FK or mention does not reach dispatch.
+   *
+   * The section is also unmounted in that case, so the user does not
+   * see a "ghost" value being kept — the clear is purely defensive
+   * against the dispatch path. The backend would accept either a TECH
+   * or non-TECH pain referencing a tool (the rule is UI-only), but
+   * carrying a value across a re-classification is almost always a bug.
+   */
+  useEffect(() => {
+    if (
+      formik.values.what !== "TECH" &&
+      (formik.values.related_techstack ||
+        formik.values.related_techstack_mention)
+    ) {
+      formik.setFieldValue("related_techstack", null);
+      formik.setFieldValue("related_techstack_mention", "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formik.values.what]);
 
   // ==============================|| DERIVED ||============================== //
 
@@ -458,6 +541,75 @@ export default function InlinePainForm({
         </Stack>
 
         <Divider />
+
+        {/* =================================================================
+            SECTION 2.5 — Related tool 
+            =================================================================
+            Mounted only when what === 'TECH'. The two fields are
+            mutually-soft-exclusive in the UI: a structured catalog
+            pick hides the mention TextField, freeing visual space.
+            The mention re-appears as soon as the FK is cleared.
+            ================================================================= */}
+        {formik.values.what === "TECH" && (
+          <>
+            <Stack spacing={1.5}>
+              <SectionHeader
+                index={3}
+                title="Related tool (optional)"
+                subtitle="If this pain involves a specific tool, link it to the catalog."
+              />
+
+              {/* Catalog picker — primary surface */}
+              <AsyncTechCatalogSelect
+                label="Related tool"
+                value={formik.values.related_techstack}
+                onChange={(_e, entry) =>
+                  formik.setFieldValue("related_techstack", entry)
+                }
+                onBlur={() => formik.setFieldTouched("related_techstack", true)}
+                error={
+                  formik.touched.related_techstack &&
+                  Boolean(formik.errors.related_techstack)
+                }
+                helperText={
+                  (formik.touched.related_techstack &&
+                    formik.errors.related_techstack) ||
+                  "Pick the tool from your tenant's tech catalog if it's already there."
+                }
+              />
+
+              {/* Mention TextField — fallback when the FK is empty.
+                  Hiding it on FK selection keeps the form compact and
+                  reinforces the structured choice without blocking the
+                  rep from removing the FK to surface the mention. */}
+              {!formik.values.related_techstack && (
+                <TextField
+                  fullWidth
+                  size="small"
+                  id="pain-related-techstack-mention"
+                  name="related_techstack_mention"
+                  label="Tool mention (free text)"
+                  placeholder="e.g. Salesforce, the legacy CRM, our scheduling tool…"
+                  value={formik.values.related_techstack_mention}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  error={
+                    formik.touched.related_techstack_mention &&
+                    Boolean(formik.errors.related_techstack_mention)
+                  }
+                  helperText={
+                    (formik.touched.related_techstack_mention &&
+                      formik.errors.related_techstack_mention) ||
+                    "Type the tool's name. We'll catalog it later — once it's in the catalog, you can come back and link it properly."
+                  }
+                  inputProps={{ maxLength: 200 }}
+                />
+              )}
+            </Stack>
+
+            <Divider />
+          </>
+        )}
 
         {/* =================================================================
             SECTION 3 — Narrative (optional)

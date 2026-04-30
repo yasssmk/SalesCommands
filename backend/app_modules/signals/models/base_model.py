@@ -293,25 +293,51 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
         Rules:
           1. source=MANUAL → status=VALIDATED, confidence=None
              Manual signals are trusted by definition — no LLM confidence score.
+             Universal across all 4 concrete signal types.
 
           2. source_contact set + source_department not set
              → auto-populate source_department from contact.standard_department
              Avoids requiring the rep to fill department separately when the
              contact already carries that information.
+
+             NOT universal: TechStackSignal shadow-overrides both
+             source_contact and source_department to None on the
+             concrete model (a tool's existence at an account is
+             account-level, not contact/department-level — see
+             TechStackSignal model docstring). The rule is therefore
+             guarded by a class-level None-check on both fields: when
+             either has been shadow-overridden to None, the rule is
+             skipped silently.
+
+             Why class-level rather than instance-level:
+             instance-level access to `self.source_contact_id` on a
+             shadow-overridden field triggers Django's descriptor
+             machinery and kicks off a refresh_from_db that crashes
+             at SQL compile time (FieldDoesNotExist on '*_id').
+             Reading the class attribute directly bypasses the
+             descriptor — None on the class means "shadow-overridden",
+             non-None means "real ForeignKey".
         """
         # Rule 1 — manual signals are immediately validated
         if self.source == SignalSource.MANUAL:
             self.status = SignalStatus.VALIDATED
             self.confidence = None
 
-        # Rule 2 — inherit department from contact when not explicitly set
+        # Rule 2 — inherit department from contact when not explicitly set.
+        # Skipped on concrete types that shadow-override either field to None
+        # (TechStackSignal sets both, so the rule is no-op for it).
+        cls = type(self)
         if (
-            self.source_contact_id
-            and not self.source_department_id
-            and hasattr(self.source_contact, 'standard_department')
-            and self.source_contact.standard_department is not None
+            getattr(cls, 'source_contact', None) is not None
+            and getattr(cls, 'source_department', None) is not None
         ):
-            self.source_department = self.source_contact.standard_department
+            if (
+                self.source_contact_id
+                and not self.source_department_id
+                and hasattr(self.source_contact, 'standard_department')
+                and self.source_contact.standard_department is not None
+            ):
+                self.source_department = self.source_contact.standard_department
 
         super().save(*args, **kwargs)
 

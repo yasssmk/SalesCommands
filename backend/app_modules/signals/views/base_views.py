@@ -48,8 +48,7 @@ from ..constants import (
     SignalDimension,
     HumanImpact,
     ScopeLevel,
-    TechCategory,
-    Satisfaction,
+    UsageScope,
 )
 
 from ..filters import SignalFilter
@@ -150,6 +149,35 @@ class BaseSignalViewSet(
         Client-scoped queryset with select_related and prefetch_related
         tuned per action.
 
+        Sprint TechStack — narrowed surface
+        -----------------------------------
+        TechStackSignal shadow-overrides several BaseSignal FKs to None
+        on the model (source_contact, source_department, decision_cycle,
+        campaign, signal_category — see TechStackSignal model). Listing
+        TechStack therefore raised FieldError at SQL compile time when
+        the previous implementation included those FKs unconditionally
+        in select_related.
+
+        The base queryset now only preloads FKs that exist on EVERY
+        concrete signal model (account, source_activity, audit users).
+        Concrete ViewSets are responsible for adding their type-specific
+        select_related on top:
+
+          PainSignalViewSet      → source_contact, source_department,
+                                    decision_cycle, campaign,
+                                    related_techstack
+          ObjectiveSignalViewSet → source_contact, source_department,
+                                    decision_cycle, campaign,
+                                    target_contact, target_department
+          PeopleSignalViewSet    → source_contact, source_department,
+                                    decision_cycle, campaign,
+                                    target_contact, target_department
+          TechStackSignalViewSet → tech_catalog_entry, usage_department
+                                    (no source_contact / source_department —
+                                     shadow-overridden on the model)
+
+        This mirrors the per-type strategy already used by
+        SignalDataService._RELATED_BY_TYPE (see signal_data_service.py).
         Detail actions also prefetch `source_activity__contacts` so that
         BaseSignalDetailSerializer.get_source_activity (enriched via
         ActivityCompactSerializer since Wave A) resolves the activity's
@@ -159,18 +187,16 @@ class BaseSignalViewSet(
         qs = self.apply_owner_scope_filter(qs)
 
         if self.action == 'list':
+            # Universal FKs only — concrete ViewSets add type-specific
+            # select_related on top via super().get_queryset() chaining.
             qs = qs.select_related(
-                'source_contact',
-                'source_department',
+                'account',
+                'source_activity',
             )
         else:
             qs = qs.select_related(
                 'account',
                 'source_activity',
-                'source_contact',
-                'source_department',
-                'decision_cycle',
-                'campaign',
                 'validated_by',
                 'last_modified_by',
                 'requested_by',
@@ -440,15 +466,11 @@ class SignalChoicesView(APIView):
         "signal_category":   [...],
         "people_roles":      [...],
         "influence_levels":  [...],
-        "signal_whats":      [...],   # shared across Pain (today) and
-                                        # Objective (Wave B)
-        "signal_dimensions": [...],   # shared across Pain (today) and
-                                        # Objective (Wave B)
+        "signal_whats":      [...],   # shared across Pain and Objective
+        "signal_dimensions": [...],   # shared across Pain and Objective
         "human_impacts":     [...],
-        "scope_levels":      [...],   # PainImpact scope today; will also
-                                        # drive ObjectiveSignal in Wave B
-        "tech_categories":   [...],
-        "satisfaction":      [...],
+        "scope_levels":      [...],   # PainImpact + ObjectiveSignal scope axis
+        "usage_scopes":      [...],   # TechStackSignal usage scope axis
       }
     }
 
@@ -456,12 +478,28 @@ class SignalChoicesView(APIView):
       - pain_whats       → signal_whats
       - pain_dimensions  → signal_dimensions
       - impact_levels    → scope_levels
-      - goal_levels      → removed. Objective will adopt scope_levels in
-                           Wave B when the ObjectiveSignal port lands.
+      - goal_levels      → removed (Objective adopts scope_levels since
+                                     Wave B).
+
+    Sprint TechStack changes:
+      - tech_categories  → removed (TechCategory enum dropped;
+                                     categorisation moves to TechCatalog
+                                     entries themselves via
+                                     is_competitor / is_integration_target
+                                     flags).
+      - satisfaction     → removed (Satisfaction enum dropped; replaced
+                                     by structured lifecycle stats on
+                                     the TechStack cluster — start year,
+                                     renewal date, cost description,
+                                     discontinuation flags).
+      - usage_scopes     → added (drives the conditional usage_department
+                                   requirement on TechStackSignal:
+                                   DEPARTMENT requires usage_department,
+                                   TEAM / COMPANY / UNKNOWN forbid it).
 
     Notes:
-      - scope_levels drives PainImpact creation (BUSINESS / DEPARTMENT /
-        PERSONAL) — see PainImpact model docstring.
+      - scope_levels drives PainImpact (BUSINESS / DEPARTMENT / PERSONAL)
+        and ObjectiveSignal scope_level — see those models' docstrings.
       - The legacy pain_levels key (and the underlying PainLevel enum)
         was removed in Sprint 1.22 once it had no remaining consumers.
     """
@@ -485,7 +523,6 @@ class SignalChoicesView(APIView):
                 'signal_dimensions': _choices(SignalDimension),
                 'human_impacts':     _choices(HumanImpact),
                 'scope_levels':      _choices(ScopeLevel),
-                'tech_categories':   _choices(TechCategory),
-                'satisfaction':      _choices(Satisfaction),
+                'usage_scopes':      _choices(UsageScope),
             },
         })

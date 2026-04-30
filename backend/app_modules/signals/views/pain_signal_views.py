@@ -49,9 +49,16 @@ class PainSignalViewSet(BaseSignalViewSet):
         """
         Extend base queryset with PainSignal-specific optimisations.
 
+        Adds the FKs that exist on PainSignal but not on every concrete
+        type (the base queryset preloads only universally-present FKs
+        since Sprint TechStack — see BaseSignalViewSet.get_queryset).
+
         Notes:
           - impacted_department was removed from PainSignal in Sprint 1.6 —
             it now lives on PainImpact. No select_related on it here.
+          - related_techstack (Sprint TechStack cross-reference) is
+            included so the Pain detail / list serializers can render
+            the compact catalog payload without an extra query per row.
           - Nested 'impacts' are prefetched for all actions to avoid N+1
             when the serializer renders the nested list. The prefetch
             itself select_relates the FK fields on PainImpact to keep the
@@ -62,6 +69,16 @@ class PainSignalViewSet(BaseSignalViewSet):
 
         qs = super().get_queryset()
 
+        # Pain-specific FKs that were previously on the base queryset
+        # but are now type-scoped (Sprint TechStack — see BaseSignalViewSet).
+        qs = qs.select_related(
+            'source_contact',
+            'source_department',
+            'decision_cycle',
+            'campaign',
+            'related_techstack',
+        )
+
         impacts_prefetch = Prefetch(
             'impacts',
             queryset=PainImpact.objects.select_related(
@@ -70,5 +87,4 @@ class PainSignalViewSet(BaseSignalViewSet):
             ).order_by('-created_at'),
         )
         qs = qs.prefetch_related(impacts_prefetch)
-
         return qs

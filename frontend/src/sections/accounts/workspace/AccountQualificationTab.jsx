@@ -76,12 +76,31 @@ import {
  * `signalTypePayload` is what we send to the API hook.
  *
  * 'all' translates to a CSV array so the backend returns clusters of
- * both types in a single call, server-sorted by priority.
+ * all clustered types in a single call, server-sorted by priority.
+ *
+ * Sprint TechStack — Tech Stack joins the cluster surface
+ * -------------------------------------------------------
+ * The TechStack cluster uses the canonical key "techstack:<entry.id>"
+ * (see SignalClusterService). Mixed lists therefore stay key-unique
+ * across types thanks to the per-type prefix. The card key in the
+ * render loop combines signal_type + canonical_key, which already
+ * disambiguates any future collisions.
+ *
+ * Note on the 'all' payload: we send the new type as 'tech_stack'
+ * (snake_case, mirror of cluster.signal_type from the backend payload).
+ * This is intentionally distinct from the URL-style 'tech-stack'
+ * (kebab-case) used in SignalList / AccountSignalsTab, because the
+ * backend cluster API and the underscore-style enum are aligned.
  */
 const TYPE_FILTER_OPTIONS = [
-  { value: "all", label: "All", signalTypePayload: ["pain", "objective"] },
+  {
+    value: "all",
+    label: "All",
+    signalTypePayload: ["pain", "objective", "tech_stack"],
+  },
   { value: "pain", label: "Pain", signalTypePayload: "pain" },
   { value: "objective", label: "Objective", signalTypePayload: "objective" },
+  { value: "tech_stack", label: "Tech Stack", signalTypePayload: "tech_stack" },
 ];
 
 const TYPE_FILTER_BY_VALUE = TYPE_FILTER_OPTIONS.reduce((acc, opt) => {
@@ -116,7 +135,7 @@ function ClusterEmptyState({ hasFilters, onGoToSignals }) {
       >
         {hasFilters
           ? "Try removing the priority or archived filter, or switch to another type."
-          : "Pain and Objective signals captured during conversations group automatically into priority clusters here."}
+          : "Pain, Objective and Tech Stack signals captured during conversations group automatically into priority clusters here."}
       </Typography>
       {!hasFilters && (
         <Button
@@ -324,19 +343,24 @@ export default function AccountQualificationTab({ accountId }) {
         justifyContent="space-between"
         sx={{ mb: 2 }}
       >
-        {/* Left: type toggle */}
+        {/* Left: type toggle.
+            With the 4th option added (Tech Stack), the row gets denser —
+            we tighten horizontal padding so the toggle still fits the
+            sm/md toolbar without forcing the priority+archived switches
+            on a second row at common widths. */}
         <ToggleButtonGroup
           value={typeFilter}
           exclusive
           onChange={handleTypeFilterChange}
           size="small"
           aria-label="Filter clusters by type"
+          sx={{ flexShrink: 0 }}
         >
           {TYPE_FILTER_OPTIONS.map((opt) => (
             <ToggleButton
               key={opt.value}
               value={opt.value}
-              sx={{ textTransform: "none", px: 1.75, fontSize: "0.78rem" }}
+              sx={{ textTransform: "none", px: 1.25, fontSize: "0.78rem" }}
             >
               {opt.label}
             </ToggleButton>

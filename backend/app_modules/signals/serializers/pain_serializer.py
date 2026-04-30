@@ -50,6 +50,28 @@ class _PainDisplayMixin:
     def get_dimension_display(self, obj):
         return obj.get_dimension_display() if obj.dimension else None
 
+    def get_related_techstack(self, obj):
+        """
+        Compact catalog payload for the cross-reference FK.
+
+        Mirror of TechStackSignal serializers' get_tech_catalog_entry —
+        keeps the frontend from issuing a separate /tech-catalog/<id>/
+        fetch just to render the tool name on a Pain card.
+
+        Returns None when the FK is not set (the textual
+        related_techstack_mention is exposed as a separate field).
+        """
+        entry = obj.related_techstack
+        if not entry:
+            return None
+        return {
+            'id':                    str(entry.id),
+            'company_name':          entry.company_name,
+            'product_name':          entry.product_name,
+            'is_competitor':         entry.is_competitor,
+            'is_integration_target': entry.is_integration_target,
+        }
+
 
 # =============================================================================
 # LIST
@@ -60,17 +82,28 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
     Lightweight serializer for PainSignal list endpoints.
 
     Exposes the canonical axes, the narrative content (summary only —
-    not notes, which belong to the detail view), and nested impacts in
-    read-only form so the UI can render a pain card with its evidence
-    at-a-glance.
+    not notes, which belong to the detail view), nested impacts in
+    read-only form, and the optional cross-reference to a TechStack
+    catalog entry.
 
     corroboration_count is excluded here for performance — available in
     Detail only.
+
+    Cross-reference exposure (Sprint TechStack):
+      - related_techstack          : compact catalog payload or None
+      - related_techstack_mention  : free-text mention or empty string
+
+    Both fields are emitted unconditionally — the UI hides them when
+    what != 'TECH', but the API stays neutral. See PainSignal model
+    docstring for the rationale.
     """
 
     # Canonical axes
     what_display      = serializers.SerializerMethodField()
     dimension_display = serializers.SerializerMethodField()
+
+    # Cross-reference — compact catalog payload (read)
+    related_techstack = serializers.SerializerMethodField()
 
     # Read-only nested impacts — via the reverse relation 'impacts'
     # on PainSignal (declared by the FK related_name on PainImpact).
@@ -84,6 +117,9 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
             'dimension', 'dimension_display',
             # Narrative
             'summary',
+            # Cross-reference — TechStack
+            'related_techstack',
+            'related_techstack_mention',
             # Nested impacts (read-only)
             'impacts',
         ]
@@ -99,11 +135,15 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
     Full detail serializer for PainSignal retrieve endpoints.
 
     Inherits corroboration_count from BaseSignalDetailSerializer.
-    Adds notes on top of the list payload, plus nested impacts.
+    Adds notes on top of the list payload, plus nested impacts and
+    the optional TechStack cross-reference.
     """
 
     what_display      = serializers.SerializerMethodField()
     dimension_display = serializers.SerializerMethodField()
+
+    # Cross-reference — compact catalog payload (read)
+    related_techstack = serializers.SerializerMethodField()
 
     impacts = PainImpactReadSerializer(many=True, read_only=True)
 
@@ -114,6 +154,9 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
             'dimension', 'dimension_display',
             'summary',
             'notes',
+            # Cross-reference — TechStack
+            'related_techstack',
+            'related_techstack_mention',
             'impacts',
         ]
         read_only_fields = fields
@@ -137,6 +180,14 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
       - source_activity (required — every pain must have a conversational
                          origin; see Sprint 1.6 model docstring)
 
+    Optional fields (Sprint TechStack):
+      - related_techstack          — FK to TechCatalog, written as UUID
+      - related_techstack_mention  — free-text tool mention
+
+    The two cross-reference fields are independent and not mutually
+    exclusive at the API level. The frontend is responsible for hiding
+    them when what != 'TECH' — the backend stays permissive.
+
     Impacts are NOT accepted here. To attach evidence to a pain, use the
     dedicated POST /module-signals/pain-impacts/ endpoint with pain_signal
     set to the created pain's UUID.
@@ -151,6 +202,9 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
             'dimension',
             'summary',
             'notes',
+            # Cross-reference — TechStack
+            'related_techstack',
+            'related_techstack_mention',
         ]
         extra_kwargs = {
             **BaseSignalCreateSerializer.Meta.extra_kwargs,
@@ -158,6 +212,8 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
             'dimension': {'required': True},
             'summary':   {'required': True},
             'notes':     {'required': False, 'allow_blank': True},
+            'related_techstack':         {'required': False, 'allow_null': True},
+            'related_techstack_mention': {'required': False, 'allow_blank': True},
         }
 
     def validate(self, attrs):
@@ -169,6 +225,10 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
           2. source_activity always required — every Pain must be tied
              to a real conversation (stricter than BaseSignal, where
              activity is optional).
+
+        Cross-reference fields (related_techstack / related_techstack_mention)
+        carry no model-level constraint — see PainSignal model docstring
+        for the rationale of permissive backend behaviour.
         """
         # Rule 1 — source_contact
         if not attrs.get('source_contact'):
@@ -194,7 +254,9 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
     """
     Restricted PATCH serializer for PainSignal.
 
-    Allowed beyond base fields: what, dimension, summary, notes.
+    Allowed beyond base fields:
+      - what, dimension, summary, notes
+      - related_techstack, related_techstack_mention  (Sprint TechStack)
 
     Changing `what` or `dimension` is allowed — the model's save() recomputes
     canonical_key automatically. A pain can therefore be re-classified
@@ -203,6 +265,13 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
 
     canonical_key itself is NOT writable: it is derived, not authored.
     Cluster metadata is recomputed on read from the current canonical_key.
+
+    Cross-reference fields support progressive enrichment:
+      - PATCH related_techstack_mention='Salesforce' first
+      - Later PATCH related_techstack=<uuid> when the catalog has been
+        populated
+      - The UI may then drop the mention textually, but the backend
+        accepts both being set simultaneously without error.
 
     Impacts cannot be mutated via this endpoint. Use the dedicated
     /module-signals/pain-impacts/{id}/ endpoint for impact CRUD.
@@ -215,6 +284,9 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'dimension',
             'summary',
             'notes',
+            # Cross-reference — TechStack
+            'related_techstack',
+            'related_techstack_mention',
         ]
         extra_kwargs = {
             **BaseSignalUpdateSerializer.Meta.extra_kwargs,
@@ -222,4 +294,6 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'dimension': {'required': False},
             'summary':   {'required': False},
             'notes':     {'required': False, 'allow_blank': True},
+            'related_techstack':         {'required': False, 'allow_null': True},
+            'related_techstack_mention': {'required': False, 'allow_blank': True},
         }

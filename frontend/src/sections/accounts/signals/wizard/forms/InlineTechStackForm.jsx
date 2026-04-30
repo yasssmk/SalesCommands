@@ -1,18 +1,44 @@
 // frontend/src/sections/accounts/signals/wizard/forms/InlineTechStackForm.jsx
 /**
- * InlineTechStackForm — inline form for staging a single TechStackSignal inside the wizard.
+ * InlineTechStackForm — inline form for staging a single TechStackSignal.
  *
- * This form does NOT call createSignal directly.
- * It calls onAdd(payload) with a ready-to-dispatch payload object.
- * The wizard container (WizardSignalAdd) injects account + extraPayload
- * at dispatch time.
+ * Captures structured intelligence about a tool used by the account,
+ * anchored to a tenant-level TechCatalog entry. The form mirrors the
+ * 5-section product spec from the Sprint TechStack plan:
  *
- * Required fields: source_contact only.
- * All other fields are optional — a tech stack signal can be minimal.
+ *   S1 — Which tool?      tech_catalog_entry (REQUIRED)
+ *   S2 — How is it used?  usage_scope + usage_department (conditional)
+ *   S3 — Lifecycle        usage_start_year, renewal_date, cost_description
+ *   S4 — State            is_discontinued + discontinued_date (conditional)
+ *   S5 — Source           source_activity, source_quote, notes
  *
- * Contact field uses AsyncContactSelect scoped to the account via
- * filters={{ account_id: accountId }}. Formik stores the full contact
- * object; .id is extracted when building the payload.
+ * Conditional rules — strict mirror of TechStackSignal.clean() and the
+ * Create / Update serializers:
+ *
+ *   - usage_scope = DEPARTMENT
+ *       → usage_department REQUIRED
+ *   - usage_scope ∈ {TEAM, COMPANY, UNKNOWN, null}
+ *       → usage_department FORBIDDEN
+ *   - is_discontinued = true
+ *       → discontinued_date REQUIRED
+ *   - is_discontinued = false (default)
+ *       → discontinued_date FORBIDDEN
+ *
+ * The form does NOT call createSignal directly. It calls onAdd(payload)
+ * with a ready-to-dispatch payload — the wizard injects account + source
+ * + extraPayload at dispatch time and extracts UUIDs from object refs
+ * (tech_catalog_entry, usage_department, source_activity).
+ *
+ * Edit mode is supported via initialValues + submitLabel — when set, the
+ * form reinitializes from the prefilled values and the submit button
+ * label is overridden ("Save changes" instead of "Add Tech Stack").
+ *
+ * Note on usage_scope = '' (empty string)
+ * ---------------------------------------
+ * Yup treats '' as a present-but-empty string. We use null in initial
+ * values to represent "not set" so the conditional rule (DEPARTMENT
+ * vs others) reads cleanly. The MUI RadioGroup binds to '' for "no
+ * selection", so we coerce '' → null before submit.
  */
 
 "use client";
@@ -25,14 +51,19 @@ import * as Yup from "yup";
 // material-ui
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import FormHelperText from "@mui/material/FormHelperText";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
+import Radio from "@mui/material/Radio";
+import RadioGroup from "@mui/material/RadioGroup";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
@@ -41,63 +72,272 @@ import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // project imports
-import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
+import AsyncTechCatalogSelect from "components/AsyncSelection/AsyncTechCatalogSelect";
+import AsyncActivitySelect from "components/AsyncSelection/AsyncActivitySelect";
 import { useGetContactChoices } from "api/businessData/contacts";
+
+// ==============================|| CONSTANTS ||============================== //
+
+/**
+ * UsageScope options — must match the backend UsageScope enum.
+ * Hard-coded here (not pulled from choices) because we want a fixed
+ * order and human-friendly helper text per option.
+ */
+const USAGE_SCOPE_OPTIONS = [
+  {
+    value: "TEAM",
+    label: "Team",
+    helper: "Used by a single team within a department",
+  },
+  {
+    value: "DEPARTMENT",
+    label: "Department",
+    helper: "Used by an identifiable department",
+  },
+  {
+    value: "COMPANY",
+    label: "Company-wide",
+    helper: "Used across the whole organisation",
+  },
+  {
+    value: "UNKNOWN",
+    label: "Unknown",
+    helper: "Scope not yet clarified",
+  },
+];
+
+/** Year bounds for usage_start_year — defensive against typos. */
+const MIN_USAGE_YEAR = 1980;
+const MAX_USAGE_YEAR = new Date().getFullYear() + 1;
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
+/**
+ * Yup schema — scope-conditional and discontinued-conditional rules
+ * implemented via .when() so error messages surface on the right fields.
+ *
+ * Backend has the final say (TechStackSignalCreateSerializer.validate)
+ * but the UI rules mirror it for instant feedback.
+ */
 const validationSchema = Yup.object({
-  source_contact: Yup.object()
+  // S1 — Which tool?
+  tech_catalog_entry: Yup.object()
     .nullable()
-    .required("Source contact is required"),
-  tech_name: Yup.string().nullable(),
-  category: Yup.string().nullable(),
-  usage: Yup.string().nullable(),
-  satisfaction: Yup.string().nullable(),
-  limitations: Yup.string().nullable(),
-  workarounds: Yup.string().nullable(),
-  integrations: Yup.string().nullable(),
+    .required("Pick a tool from the catalog"),
+
+  // S2 — Scope
+  // null is the "not set" sentinel; '' is coerced to null at submit time.
+  usage_scope: Yup.string()
+    .nullable()
+    .oneOf(
+      [...USAGE_SCOPE_OPTIONS.map((o) => o.value), null, ""],
+      "Invalid scope",
+    ),
+
+  // Conditional: DEPARTMENT requires usage_department, others forbid it.
+  usage_department: Yup.string()
+    .nullable()
+    .when("usage_scope", {
+      is: "DEPARTMENT",
+      then: (schema) => schema.required("Pick the department using this tool"),
+      otherwise: (schema) =>
+        schema.test(
+          "no-department-outside-scope",
+          "Department can only be set when scope is Department",
+          (val) => !val,
+        ),
+    }),
+
+  // S3 — Lifecycle
+  usage_start_year: Yup.number()
+    .nullable()
+    .transform((value, original) =>
+      // Empty string → null. NaN → null (defensive).
+      original === "" || Number.isNaN(value) ? null : value,
+    )
+    .integer("Year must be a whole number")
+    .min(MIN_USAGE_YEAR, `Year must be ≥ ${MIN_USAGE_YEAR}`)
+    .max(MAX_USAGE_YEAR, `Year must be ≤ ${MAX_USAGE_YEAR}`),
+
   renewal_date: Yup.string().nullable(),
-  source_department: Yup.string().nullable(),
+  cost_description: Yup.string().nullable(),
+
+  // S4 — State
+  is_discontinued: Yup.boolean(),
+
+  discontinued_date: Yup.string()
+    .nullable()
+    .when("is_discontinued", {
+      is: true,
+      then: (schema) => schema.required("Discontinued date is required"),
+      otherwise: (schema) =>
+        schema.test(
+          "no-date-without-flag",
+          "Discontinued date can only be set when the tool is discontinued",
+          (val) => !val,
+        ),
+    }),
+
+  // S5 — Source
+  source_activity: Yup.object().nullable(),
   source_quote: Yup.string().nullable(),
-  signal_category: Yup.string().nullable(),
+  notes: Yup.string().nullable(),
 });
 
 // ==============================|| INITIAL VALUES ||============================== //
 
-function buildInitialValues(defaultContact) {
+function buildInitialValues() {
   return {
-    source_contact: defaultContact ?? null,
-    tech_name: "",
-    category: "",
-    usage: "",
-    satisfaction: "",
-    limitations: "",
-    workarounds: "",
-    integrations: "",
+    // S1
+    tech_catalog_entry: null,
+    // S2
+    usage_scope: "",
+    usage_department: "",
+    // S3
+    usage_start_year: "",
     renewal_date: "",
-    source_department: "",
+    cost_description: "",
+    // S4
+    is_discontinued: false,
+    discontinued_date: "",
+    // S5
+    source_activity: null,
     source_quote: "",
-    signal_category: "",
+    notes: "",
   };
 }
+
+// ==============================|| SECTION HEADER ||============================== //
+
+function SectionHeader({ index, title, subtitle }) {
+  return (
+    <Stack spacing={0.25}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Chip
+          label={index}
+          size="small"
+          color="primary"
+          sx={{
+            height: 18,
+            width: 18,
+            fontSize: "0.65rem",
+            fontWeight: 700,
+            "& .MuiChip-label": { px: 0 },
+          }}
+        />
+        <Typography variant="body2" fontWeight={600}>
+          {title}
+        </Typography>
+      </Stack>
+      {subtitle && (
+        <Typography variant="caption" color="text.secondary" sx={{ pl: 3.25 }}>
+          {subtitle}
+        </Typography>
+      )}
+    </Stack>
+  );
+}
+
+SectionHeader.propTypes = {
+  index: PropTypes.number.isRequired,
+  title: PropTypes.string.isRequired,
+  subtitle: PropTypes.string,
+};
+
+// ==============================|| CATALOG PREVIEW CARD ||============================== //
+
+/**
+ * Compact preview shown below the AsyncTechCatalogSelect once an entry
+ * is picked. Reinforces the choice and surfaces strategic flags so
+ * the rep can spot a competitor or integration target at a glance.
+ *
+ * Hidden when no entry is selected — the picker carries its own empty
+ * state.
+ */
+function CatalogPreview({ entry }) {
+  if (!entry) return null;
+
+  const company = entry.company_name?.trim() || "";
+  const product = entry.product_name?.trim() || "";
+  const sameName = !product || product === company;
+
+  return (
+    <Box
+      sx={{
+        px: 1.5,
+        py: 1,
+        bgcolor: "action.hover",
+        borderRadius: 1,
+        borderLeft: "3px solid",
+        borderLeftColor: "primary.main",
+      }}
+    >
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        flexWrap="wrap"
+        useFlexGap
+      >
+        <Typography
+          variant="body2"
+          fontWeight={600}
+          sx={{ color: "text.primary" }}
+        >
+          {sameName ? company : `${company} ${product}`}
+        </Typography>
+        {entry.is_competitor && (
+          <Chip
+            label="Competitor"
+            size="small"
+            color="error"
+            variant="outlined"
+            sx={{ fontSize: "0.62rem", height: 18 }}
+          />
+        )}
+        {entry.is_integration_target && (
+          <Chip
+            label="Integration target"
+            size="small"
+            color="info"
+            variant="outlined"
+            sx={{ fontSize: "0.62rem", height: 18 }}
+          />
+        )}
+      </Stack>
+    </Box>
+  );
+}
+
+CatalogPreview.propTypes = {
+  entry: PropTypes.object,
+};
 
 // ==============================|| INLINE TECH STACK FORM ||============================== //
 
 /**
  * InlineTechStackForm
  *
- * @param {Object}   choices         - Choices from useGetSignalChoices()
- * @param {boolean}  choicesLoading  - True while choices are loading
- * @param {string}   accountId       - Account UUID — scopes contact search
- * @param {Object}   defaultContact  - Full contact object to pre-fill source_contact
+ * @param {Object}   choices         - From useGetSignalChoices()
+ *                                     Currently unused — TechStack scope
+ *                                     options are hard-coded above.
+ *                                     Kept in the signature for parity
+ *                                     with sibling inline forms.
+ * @param {boolean}  choicesLoading
+ * @param {string}   accountId       - Required for source_activity scope
+ * @param {Object}   defaultContact  - Unused by TechStack (no source_contact
+ *                                      on the model) — kept for signature parity
  * @param {Function} onAdd           - (payload: Object) => void
  * @param {Function} onCancel        - () => void
+ * @param {Object}   initialValues   - Pre-filled values for edit mode
+ * @param {string}   submitLabel     - Override submit button label
  */
 export default function InlineTechStackForm({
+  // eslint-disable-next-line no-unused-vars
   choices,
   choicesLoading,
   accountId,
+  // eslint-disable-next-line no-unused-vars
   defaultContact,
   onAdd,
   onCancel,
@@ -106,6 +346,11 @@ export default function InlineTechStackForm({
 }) {
   // ==============================|| DATA ||============================== //
 
+  /**
+   * Departments come from the contact-choices endpoint — same source
+   * as InlineObjectiveForm. The shape varies (some entries use
+   * { value, label }, others { id, name }) so we normalise here.
+   */
   const { standardDepartments } = useGetContactChoices();
 
   const departmentOptions = useMemo(
@@ -117,55 +362,94 @@ export default function InlineTechStackForm({
     [standardDepartments],
   );
 
-  /** Contact search scoped to this account only */
-  const contactFilters = useMemo(
-    () => ({ account_id: accountId }),
-    [accountId],
-  );
+  /** Activity search scoped to this account only. */
+  const scopedFilters = useMemo(() => ({ account_id: accountId }), [accountId]);
 
   // ==============================|| FORMIK ||============================== //
 
   const formik = useFormik({
-    initialValues: initialValuesProp ?? buildInitialValues(defaultContact),
+    initialValues: initialValuesProp ?? buildInitialValues(),
     validationSchema,
     enableReinitialize: true,
+
     onSubmit: (values, { resetForm }) => {
+      // Build payload — ALWAYS emit the conditional pair fields so a
+      // scope/discontinued change during Edit explicitly clears the
+      // stale value on the backend (mirror of InlineObjectiveForm's
+      // strategy). Empty strings → null for nullable fields.
+
       const payload = {
-        // Keep full contact object — UUID is extracted at dispatch time
-        // (wizard dispatch or SignalEditDialog PATCH)
-        source_contact: values.source_contact,
+        // S1 — required catalog anchor (object — wizard extracts UUID)
+        tech_catalog_entry: values.tech_catalog_entry,
+
+        // S2 — scope axis (always emit both for clean clear-on-change)
+        usage_scope: values.usage_scope || null,
+        usage_department:
+          values.usage_scope === "DEPARTMENT" && values.usage_department
+            ? values.usage_department
+            : null,
+
+        // S3 — lifecycle (omit empty strings → null / undefined)
+        usage_start_year:
+          values.usage_start_year === "" ||
+          values.usage_start_year === null ||
+          values.usage_start_year === undefined
+            ? null
+            : Number(values.usage_start_year),
+        renewal_date: values.renewal_date || null,
+        cost_description: values.cost_description?.trim() || "",
+
+        // S4 — discontinuation (always emit both)
+        is_discontinued: Boolean(values.is_discontinued),
+        discontinued_date:
+          values.is_discontinued && values.discontinued_date
+            ? values.discontinued_date
+            : null,
+
+        // S5 — source (object preserved — wizard extracts UUID)
+        source_activity: values.source_activity ?? null,
+        source_quote: values.source_quote?.trim() || null,
+        notes: values.notes?.trim() || "",
       };
 
-      if (values.tech_name) payload.tech_name = values.tech_name.trim();
-      if (values.category) payload.category = values.category;
-      if (values.usage) payload.usage = values.usage.trim();
-      if (values.satisfaction) payload.satisfaction = values.satisfaction;
-      if (values.limitations) payload.limitations = values.limitations.trim();
-      if (values.workarounds) payload.workarounds = values.workarounds.trim();
-      if (values.integrations)
-        payload.integrations = values.integrations.trim();
-      if (values.renewal_date) payload.renewal_date = values.renewal_date;
-      if (values.source_department)
-        payload.source_department = values.source_department;
-      if (values.source_quote)
-        payload.source_quote = values.source_quote.trim();
-      if (values.signal_category)
-        payload.signal_category = values.signal_category;
-
       onAdd(payload);
-      resetForm({ values: buildInitialValues(defaultContact) });
+
+      // Only reset in create mode — edit mode unmounts the form on success
+      if (!initialValuesProp) {
+        resetForm({ values: buildInitialValues() });
+      }
     },
   });
 
-  // ==============================|| SYNC defaultContact ||============================== //
+  // ==============================|| CLEAR CONDITIONAL FIELDS ON SCOPE CHANGE ||============================== //
 
+  /**
+   * When usage_scope leaves DEPARTMENT, clear usage_department so a
+   * stale value doesn't get submitted. Mirrors InlineObjectiveForm.
+   */
   useEffect(() => {
-    // Only sync defaultContact when not in edit mode (initialValuesProp absent)
-    if (!initialValuesProp) {
-      formik.setFieldValue("source_contact", defaultContact ?? null);
+    if (
+      formik.values.usage_scope !== "DEPARTMENT" &&
+      formik.values.usage_department
+    ) {
+      formik.setFieldValue("usage_department", "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultContact, initialValuesProp]);
+  }, [formik.values.usage_scope]);
+
+  /**
+   * When is_discontinued is toggled OFF, clear discontinued_date.
+   */
+  useEffect(() => {
+    if (!formik.values.is_discontinued && formik.values.discontinued_date) {
+      formik.setFieldValue("discontinued_date", "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formik.values.is_discontinued]);
+
+  // ==============================|| DERIVED ||============================== //
+
+  const isEditMode = Boolean(initialValuesProp);
 
   // ==============================|| RENDER ||============================== //
 
@@ -179,7 +463,7 @@ export default function InlineTechStackForm({
         bgcolor: "background.paper",
       }}
     >
-      <Stack spacing={2}>
+      <Stack spacing={2.5}>
         {/* ---- Header ---- */}
         <Stack
           direction="row"
@@ -187,7 +471,7 @@ export default function InlineTechStackForm({
           alignItems="center"
         >
           <Typography variant="subtitle2" fontWeight={600}>
-            New Tech Stack Signal
+            {isEditMode ? "Edit Tech Stack Signal" : "New Tech Stack Signal"}
           </Typography>
           <Button
             size="small"
@@ -202,252 +486,367 @@ export default function InlineTechStackForm({
 
         <Divider />
 
-        {/* ---- Source Contact (required) ---- */}
-        <AsyncContactSelect
-          label="Source Contact *"
-          value={formik.values.source_contact}
-          onChange={(_e, contact) =>
-            formik.setFieldValue("source_contact", contact)
-          }
-          onBlur={() => formik.setFieldTouched("source_contact", true)}
-          filters={contactFilters}
-          disabled={!accountId}
-          error={
-            formik.touched.source_contact &&
-            Boolean(formik.errors.source_contact)
-          }
-          helperText={
-            formik.touched.source_contact && formik.errors.source_contact
-          }
-        />
-
-        {/* ---- Tech Name + Category (optional) ---- */}
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-          <TextField
-            fullWidth
-            size="small"
-            id="tech-name"
-            name="tech_name"
-            label="Tool Name"
-            placeholder="e.g. Salesforce, HubSpot, Notion…"
-            value={formik.values.tech_name}
-            onChange={formik.handleChange}
-            onBlur={formik.handleBlur}
-            error={formik.touched.tech_name && Boolean(formik.errors.tech_name)}
-            helperText={
-              (formik.touched.tech_name && formik.errors.tech_name) ||
-              "Name of the tool as mentioned"
-            }
+        {/* =================================================================
+            SECTION 1 — Which tool?
+            ================================================================= */}
+        <Stack spacing={1.5}>
+          <SectionHeader
+            index={1}
+            title="Which tool?"
+            subtitle="Pick the tool from your tenant's tech catalog."
           />
 
-          <FormControl fullWidth size="small" disabled={choicesLoading}>
-            <InputLabel id="tech-category-label">Category</InputLabel>
-            <Select
-              labelId="tech-category-label"
-              id="tech-category"
-              name="category"
-              value={formik.values.category}
-              onChange={formik.handleChange}
-              onBlur={formik.handleBlur}
-              label="Category"
-            >
-              <MenuItem value="">
-                <em>None</em>
-              </MenuItem>
-              {(choices?.tech_categories ?? []).map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Stack>
-
-        {/* ---- Satisfaction (optional) ---- */}
-        <FormControl fullWidth size="small" disabled={choicesLoading}>
-          <InputLabel id="tech-satisfaction-label">Satisfaction</InputLabel>
-          <Select
-            labelId="tech-satisfaction-label"
-            id="tech-satisfaction"
-            name="satisfaction"
-            value={formik.values.satisfaction}
-            onChange={formik.handleChange}
-            onBlur={formik.handleBlur}
-            label="Satisfaction"
-          >
-            <MenuItem value="">
-              <em>None</em>
-            </MenuItem>
-            {(choices?.satisfaction ?? []).map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
-        {/* ---- Usage (optional) ---- */}
-        <TextField
-          fullWidth
-          size="small"
-          id="tech-usage"
-          name="usage"
-          label="Usage"
-          placeholder="How do they use it?…"
-          multiline
-          minRows={2}
-          value={formik.values.usage}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-          error={formik.touched.usage && Boolean(formik.errors.usage)}
-          helperText={formik.touched.usage && formik.errors.usage}
-        />
-
-        {/* ---- Limitations + Workarounds (optional) ---- */}
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-          <TextField
-            fullWidth
-            size="small"
-            id="tech-limitations"
-            name="limitations"
-            label="Limitations"
-            placeholder="What doesn't work well?…"
-            multiline
-            minRows={2}
-            value={formik.values.limitations}
-            onChange={formik.handleChange}
-            onBlur={formik.handleBlur}
-            error={
-              formik.touched.limitations && Boolean(formik.errors.limitations)
+          <AsyncTechCatalogSelect
+            label="Tool *"
+            value={formik.values.tech_catalog_entry}
+            onChange={(_e, entry) =>
+              formik.setFieldValue("tech_catalog_entry", entry)
             }
-            helperText={formik.touched.limitations && formik.errors.limitations}
-          />
-
-          <TextField
-            fullWidth
-            size="small"
-            id="tech-workarounds"
-            name="workarounds"
-            label="Workarounds"
-            placeholder="How do they compensate?…"
-            multiline
-            minRows={2}
-            value={formik.values.workarounds}
-            onChange={formik.handleChange}
-            onBlur={formik.handleBlur}
+            onBlur={() => formik.setFieldTouched("tech_catalog_entry", true)}
             error={
-              formik.touched.workarounds && Boolean(formik.errors.workarounds)
-            }
-            helperText={formik.touched.workarounds && formik.errors.workarounds}
-          />
-        </Stack>
-
-        {/* ---- Integrations (optional) ---- */}
-        <TextField
-          fullWidth
-          size="small"
-          id="tech-integrations"
-          name="integrations"
-          label="Integrations"
-          placeholder="Connected tools or APIs…"
-          value={formik.values.integrations}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-          error={
-            formik.touched.integrations && Boolean(formik.errors.integrations)
-          }
-          helperText={formik.touched.integrations && formik.errors.integrations}
-        />
-
-        {/* ---- Renewal Date + Source Department (optional) ---- */}
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-          <TextField
-            fullWidth
-            size="small"
-            id="tech-renewal-date"
-            name="renewal_date"
-            label="Renewal Date"
-            type="date"
-            value={formik.values.renewal_date}
-            onChange={formik.handleChange}
-            onBlur={formik.handleBlur}
-            error={
-              formik.touched.renewal_date && Boolean(formik.errors.renewal_date)
+              formik.touched.tech_catalog_entry &&
+              Boolean(formik.errors.tech_catalog_entry)
             }
             helperText={
-              formik.touched.renewal_date && formik.errors.renewal_date
+              (formik.touched.tech_catalog_entry &&
+                formik.errors.tech_catalog_entry) ||
+              undefined
             }
-            InputLabelProps={{ shrink: true }}
+            // In edit mode, the FK is immutable on the backend — disable
+            // the picker to prevent a UI choice the API would reject.
+            disabled={isEditMode}
           />
 
-          <FormControl fullWidth size="small">
-            <InputLabel id="tech-source-dept-label">
-              Source Department
-            </InputLabel>
-            <Select
-              labelId="tech-source-dept-label"
-              id="tech-source-department"
-              name="source_department"
-              value={formik.values.source_department}
-              onChange={formik.handleChange}
-              onBlur={formik.handleBlur}
-              label="Source Department"
+          {/* Compact preview — reinforces the choice */}
+          <CatalogPreview entry={formik.values.tech_catalog_entry} />
+
+          {isEditMode && (
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{ fontStyle: "italic" }}
             >
-              <MenuItem value="">
-                <em>None</em>
-              </MenuItem>
-              {departmentOptions.map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              The tool itself cannot be changed once a signal is created. To
+              point this signal at a different tool, delete it and create a new
+              one.
+            </Typography>
+          )}
         </Stack>
 
-        {/* ---- Source Quote (optional) ---- */}
-        <TextField
-          fullWidth
-          size="small"
-          id="tech-source-quote"
-          name="source_quote"
-          label="Source Quote"
-          placeholder="Exact words from the conversation…"
-          multiline
-          minRows={2}
-          value={formik.values.source_quote}
-          onChange={formik.handleChange}
-          onBlur={formik.handleBlur}
-          error={
-            formik.touched.source_quote && Boolean(formik.errors.source_quote)
-          }
-          helperText={formik.touched.source_quote && formik.errors.source_quote}
-        />
+        <Divider />
 
-        {/* ---- Signal Category (optional) ---- */}
-        <FormControl fullWidth size="small" disabled={choicesLoading}>
-          <InputLabel id="tech-signal-category-label">
-            Signal Category
-          </InputLabel>
-          <Select
-            labelId="tech-signal-category-label"
-            id="tech-signal-category"
-            name="signal_category"
-            value={formik.values.signal_category}
+        {/* =================================================================
+            SECTION 2 — How is it used?
+            ================================================================= */}
+        <Stack spacing={1.5}>
+          <SectionHeader
+            index={2}
+            title="How is it used?"
+            subtitle="Pick the organisational scope of usage at this account."
+          />
+
+          <FormControl
+            component="fieldset"
+            error={
+              formik.touched.usage_scope && Boolean(formik.errors.usage_scope)
+            }
+          >
+            <RadioGroup
+              row
+              name="usage_scope"
+              value={formik.values.usage_scope}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              sx={{ gap: 0.5, flexWrap: "wrap" }}
+            >
+              {USAGE_SCOPE_OPTIONS.map((opt) => (
+                <FormControlLabel
+                  key={opt.value}
+                  value={opt.value}
+                  control={<Radio size="small" />}
+                  label={
+                    <Stack spacing={0}>
+                      <Typography variant="body2" fontWeight={500}>
+                        {opt.label}
+                      </Typography>
+                      <Typography variant="caption" color="text.disabled">
+                        {opt.helper}
+                      </Typography>
+                    </Stack>
+                  }
+                  sx={{
+                    flex: { xs: "1 1 45%", sm: "1 1 22%" },
+                    minWidth: 0,
+                    alignItems: "flex-start",
+                    m: 0,
+                    p: 1,
+                    border: "1px solid",
+                    borderColor:
+                      formik.values.usage_scope === opt.value
+                        ? "primary.main"
+                        : "divider",
+                    borderRadius: 1,
+                    bgcolor:
+                      formik.values.usage_scope === opt.value
+                        ? "primary.lighter"
+                        : "transparent",
+                    transition: "border-color 0.15s, background-color 0.15s",
+                  }}
+                />
+              ))}
+            </RadioGroup>
+            {formik.touched.usage_scope && formik.errors.usage_scope && (
+              <FormHelperText>{formik.errors.usage_scope}</FormHelperText>
+            )}
+          </FormControl>
+
+          {/* Conditional: DEPARTMENT → usage_department */}
+          {formik.values.usage_scope === "DEPARTMENT" && (
+            <FormControl
+              fullWidth
+              size="small"
+              error={
+                formik.touched.usage_department &&
+                Boolean(formik.errors.usage_department)
+              }
+            >
+              <InputLabel id="ts-usage-dept-label">
+                Usage Department *
+              </InputLabel>
+              <Select
+                labelId="ts-usage-dept-label"
+                id="ts-usage-department"
+                name="usage_department"
+                value={formik.values.usage_department}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
+                label="Usage Department *"
+              >
+                {departmentOptions.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+              {formik.touched.usage_department &&
+                formik.errors.usage_department && (
+                  <FormHelperText>
+                    {formik.errors.usage_department}
+                  </FormHelperText>
+                )}
+            </FormControl>
+          )}
+        </Stack>
+
+        <Divider />
+
+        {/* =================================================================
+            SECTION 3 — Lifecycle
+            ================================================================= */}
+        <Stack spacing={1.5}>
+          <SectionHeader
+            index={3}
+            title="Lifecycle"
+            subtitle="Optional — when did they start, when does it renew, what does it cost."
+          />
+
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+            <TextField
+              fullWidth
+              size="small"
+              id="ts-usage-start-year"
+              name="usage_start_year"
+              label="Usage Start Year"
+              type="number"
+              placeholder="e.g. 2019"
+              value={formik.values.usage_start_year}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              error={
+                formik.touched.usage_start_year &&
+                Boolean(formik.errors.usage_start_year)
+              }
+              helperText={
+                formik.touched.usage_start_year &&
+                formik.errors.usage_start_year
+              }
+              inputProps={{ min: MIN_USAGE_YEAR, max: MAX_USAGE_YEAR, step: 1 }}
+            />
+            <TextField
+              fullWidth
+              size="small"
+              id="ts-renewal-date"
+              name="renewal_date"
+              label="Renewal Date"
+              type="date"
+              value={formik.values.renewal_date}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              error={
+                formik.touched.renewal_date &&
+                Boolean(formik.errors.renewal_date)
+              }
+              helperText={
+                formik.touched.renewal_date && formik.errors.renewal_date
+              }
+              InputLabelProps={{ shrink: true }}
+            />
+          </Stack>
+
+          <TextField
+            fullWidth
+            size="small"
+            id="ts-cost-description"
+            name="cost_description"
+            label="Cost Description"
+            placeholder="e.g. around 3000€/month, 80k€/year, free tier"
+            multiline
+            minRows={2}
+            value={formik.values.cost_description}
             onChange={formik.handleChange}
             onBlur={formik.handleBlur}
-            label="Signal Category"
-          >
-            <MenuItem value="">
-              <em>None</em>
-            </MenuItem>
-            {(choices?.signal_category ?? []).map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            error={
+              formik.touched.cost_description &&
+              Boolean(formik.errors.cost_description)
+            }
+            helperText={
+              (formik.touched.cost_description &&
+                formik.errors.cost_description) ||
+              "Free-text cost as expressed during the conversation."
+            }
+          />
+        </Stack>
+
+        <Divider />
+
+        {/* =================================================================
+            SECTION 4 — State
+            ================================================================= */}
+        <Stack spacing={1.5}>
+          <SectionHeader
+            index={4}
+            title="State"
+            subtitle="Is this tool still in use, or being phased out?"
+          />
+
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={Boolean(formik.values.is_discontinued)}
+                onChange={(e) =>
+                  formik.setFieldValue("is_discontinued", e.target.checked)
+                }
+                inputProps={{ "aria-label": "Tool is discontinued" }}
+              />
+            }
+            label={
+              <Stack spacing={0}>
+                <Typography variant="body2" fontWeight={500}>
+                  This tool is discontinued
+                </Typography>
+                <Typography variant="caption" color="text.disabled">
+                  The account has stopped, or plans to stop, using this tool.
+                </Typography>
+              </Stack>
+            }
+            sx={{ alignItems: "flex-start", m: 0 }}
+          />
+
+          {/* Conditional: is_discontinued → discontinued_date */}
+          {formik.values.is_discontinued && (
+            <TextField
+              fullWidth
+              size="small"
+              id="ts-discontinued-date"
+              name="discontinued_date"
+              label="Discontinued Date *"
+              type="date"
+              value={formik.values.discontinued_date}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              error={
+                formik.touched.discontinued_date &&
+                Boolean(formik.errors.discontinued_date)
+              }
+              helperText={
+                (formik.touched.discontinued_date &&
+                  formik.errors.discontinued_date) ||
+                "Past dates indicate already-stopped usage; future dates indicate a planned phase-out."
+              }
+              InputLabelProps={{ shrink: true }}
+            />
+          )}
+        </Stack>
+
+        <Divider />
+
+        {/* =================================================================
+            SECTION 5 — Source
+            ================================================================= */}
+        <Stack spacing={1.5}>
+          <SectionHeader
+            index={5}
+            title="Source"
+            subtitle="Optional — link to the conversation, exact words, additional context."
+          />
+
+          <AsyncActivitySelect
+            label="Source Activity"
+            value={formik.values.source_activity}
+            onChange={(_e, activity) =>
+              formik.setFieldValue("source_activity", activity)
+            }
+            onBlur={() => formik.setFieldTouched("source_activity", true)}
+            filters={scopedFilters}
+            disabled={!accountId}
+            error={
+              formik.touched.source_activity &&
+              Boolean(formik.errors.source_activity)
+            }
+            helperText={
+              (formik.touched.source_activity &&
+                formik.errors.source_activity) ||
+              "The call or meeting where this tool came up (optional)."
+            }
+          />
+
+          <TextField
+            fullWidth
+            size="small"
+            id="ts-source-quote"
+            name="source_quote"
+            label="Source Quote"
+            placeholder="Exact words from the conversation…"
+            multiline
+            minRows={2}
+            value={formik.values.source_quote}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            error={
+              formik.touched.source_quote && Boolean(formik.errors.source_quote)
+            }
+            helperText={
+              formik.touched.source_quote && formik.errors.source_quote
+            }
+          />
+
+          <TextField
+            fullWidth
+            size="small"
+            id="ts-notes"
+            name="notes"
+            label="Notes"
+            placeholder="Additional qualitative context about this observation…"
+            multiline
+            minRows={2}
+            value={formik.values.notes}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            error={formik.touched.notes && Boolean(formik.errors.notes)}
+            helperText={formik.touched.notes && formik.errors.notes}
+          />
+        </Stack>
 
         {/* ---- Actions ---- */}
         <Divider />
@@ -464,6 +863,7 @@ export default function InlineTechStackForm({
           <Button
             size="small"
             variant="contained"
+            color="primary"
             onClick={formik.handleSubmit}
             disabled={formik.isSubmitting || !formik.isValid || !formik.dirty}
             startIcon={
@@ -485,24 +885,20 @@ export default function InlineTechStackForm({
 // ==============================|| PROP TYPES ||============================== //
 
 InlineTechStackForm.propTypes = {
-  choices: PropTypes.shape({
-    tech_categories: PropTypes.arrayOf(
-      PropTypes.shape({ value: PropTypes.string, label: PropTypes.string }),
-    ),
-    satisfaction: PropTypes.arrayOf(
-      PropTypes.shape({ value: PropTypes.string, label: PropTypes.string }),
-    ),
-    signal_category: PropTypes.arrayOf(
-      PropTypes.shape({ value: PropTypes.string, label: PropTypes.string }),
-    ),
-  }),
+  /**
+   * Currently unused — TechStack scope options are hard-coded in this
+   * file. Kept in the signature so the wizard can pass the same shared
+   * choices object to all 4 inline forms uniformly.
+   */
+  choices: PropTypes.object,
   choicesLoading: PropTypes.bool,
   accountId: PropTypes.string.isRequired,
+  /** Unused by TechStack — kept for interface parity with sibling forms */
   defaultContact: PropTypes.object,
   onAdd: PropTypes.func.isRequired,
   onCancel: PropTypes.func.isRequired,
   /** Pre-filled values for edit mode — triggers enableReinitialize */
   initialValues: PropTypes.object,
-  /** Override submit button label (default: "Add X") */
+  /** Override submit button label (default: "Add Tech Stack") */
   submitLabel: PropTypes.string,
 };

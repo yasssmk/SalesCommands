@@ -469,6 +469,19 @@ export default function WizardSignalAdd({
         // but the backend expects UUID strings. We downcast any remaining
         // object references here — once, at dispatch time — to keep each
         // signal type's form logic free of this serialization concern.
+        //
+        // Fields covered:
+        //   source_contact       — Pain / Objective / People (where required)
+        //   target_contact       — People (target of the relation)
+        //   source_activity      — All types (optional except Pain where
+        //                          it is required by the backend serializer)
+        //   tech_catalog_entry   — TechStack catalog anchor (required)
+        //                          Sprint TechStack
+        //   related_techstack    — Pain cross-reference to a TechCatalog
+        //                          entry (optional, only meaningful when
+        //                          what === 'TECH'). Sprint TechStack —
+        //                          field exposed by InlinePainForm in
+        //                          sub-step 7.1; harmless no-op until then.
         if (
           payload.source_contact &&
           typeof payload.source_contact === "object"
@@ -481,14 +494,30 @@ export default function WizardSignalAdd({
         ) {
           payload.target_contact = payload.target_contact.id;
         }
-        // source_activity — Pain signals carry this from AsyncActivitySelect.
-        // Same pattern: the form stores the full activity object, we send
-        // just the UUID to the backend.
         if (
           payload.source_activity &&
           typeof payload.source_activity === "object"
         ) {
           payload.source_activity = payload.source_activity.id;
+        }
+        // tech_catalog_entry — TechStack required FK. The form stores the
+        // full TechCatalog object (so the picker can rehydrate its label
+        // on edit without a re-fetch); the backend write serializer
+        // accepts a UUID string.
+        if (
+          payload.tech_catalog_entry &&
+          typeof payload.tech_catalog_entry === "object"
+        ) {
+          payload.tech_catalog_entry = payload.tech_catalog_entry.id;
+        }
+        // related_techstack — optional Pain cross-reference. Same pattern
+        // as tech_catalog_entry. Defensive normalisation today; the field
+        // becomes live once InlinePainForm is extended in sub-step 7.1.
+        if (
+          payload.related_techstack &&
+          typeof payload.related_techstack === "object"
+        ) {
+          payload.related_techstack = payload.related_techstack.id;
         }
 
         const result = await createSignal(type, {

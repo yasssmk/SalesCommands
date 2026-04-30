@@ -33,6 +33,7 @@ import InboxOutlined from "@ant-design/icons/InboxOutlined";
 import SignalCard from "components/cards/signals/SignalCard";
 import PainCard from "components/cards/signals/PainCard";
 import ObjectiveCard from "components/cards/signals/ObjectiveCard";
+import TechStackCard from "components/cards/signals/TechStackCard";
 
 // ==============================|| SKELETON CARD ||============================== //
 
@@ -195,18 +196,23 @@ export default function SignalList({
   // ==============================|| LIST ||============================== //
 
   // Each signal type can route to a dedicated card component. The generic
-  // SignalCard remains authoritative for types that don't need a custom
-  // layout (People / TechStack).
+  // SignalCard remains authoritative for People only — Pain, Objective,
+  // and Tech Stack each have their own dedicated card with type-specific
+  // affordances.
   //
   // Dedicated cards:
-  //   - pain      → PainCard       (nested impacts + impact CRUD controls)
-  //   - objective → ObjectiveCard  (canonical axes + scope + target_date
-  //                                  urgency — Wave B)
+  //   - pain       → PainCard        (nested impacts + impact CRUD controls)
+  //   - objective  → ObjectiveCard   (canonical axes + scope + target_date
+  //                                    urgency — Wave B)
+  //   - tech-stack → TechStackCard   (catalog anchor + lifecycle +
+  //                                    competitor / integration flags —
+  //                                    Sprint TechStack)
   //
   // Resolution is done once per type (outside the map) so the branch
   // predicate stays O(1) per row.
   const isPain = signalType === "pain";
   const isObjective = signalType === "objective";
+  const isTechStack = signalType === "tech-stack";
 
   const renderSignalCard = (signal) => {
     if (isPain) {
@@ -225,7 +231,6 @@ export default function SignalList({
         />
       );
     }
-
     if (isObjective) {
       return (
         <ObjectiveCard
@@ -239,7 +244,22 @@ export default function SignalList({
         />
       );
     }
-
+    if (isTechStack) {
+      return (
+        <TechStackCard
+          key={signal.id}
+          techStack={signal}
+          choices={choices}
+          onValidate={onValidate}
+          onReject={onReject}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      );
+    }
+    // Fallback: People (and any other future type) renders via the
+    // generic SignalCard. SignalCard's PainSignalBody / TechStackSignalBody
+    // fallbacks remain visible warnings if someone bypasses this routing.
     return (
       <SignalCard
         key={signal.id}

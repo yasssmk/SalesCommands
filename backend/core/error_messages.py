@@ -456,6 +456,22 @@ class SignalErrorMessages:
         "Business objectives must not specify a target department."
     )
 
+    TECHSTACK_CATALOG_ENTRY_REQUIRED = _(
+        "A tech stack signal must reference a tech catalog entry."
+    )
+    TECHSTACK_DEPT_REQUIRES_DEPT = _(
+        "Tech stack signals with usage_scope=DEPARTMENT require a usage department."
+    )
+    TECHSTACK_DEPT_OUTSIDE_SCOPE = _(
+        "Usage department can only be set when usage_scope=DEPARTMENT."
+    )
+    TECHSTACK_DISCONTINUED_REQUIRES_DATE = _(
+        "Discontinued tech stack signals require a discontinued date."
+    )
+    TECHSTACK_DISCONTINUED_DATE_WITHOUT_FLAG = _(
+        "Discontinued date can only be set when is_discontinued=True."
+    )
+
     CLUSTER_ACCOUNT_REQUIRED = _(
         "An account is required to query signal clusters."
     )

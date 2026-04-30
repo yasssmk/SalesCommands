@@ -1,5 +1,5 @@
-// src/app/(protected)/admin/techCatalog/page.jsx
-import TechCatalogListPage from 'views/businessData/techCatalog/list';
+// frontend/src/app/(protected)/businessData/techCatalog/page.jsx
+import TechCatalogListPage from "views/businessData/techCatalog/list";
 
 // ==============================|| TECH CATALOG ADMIN PAGE ||============================== //
 

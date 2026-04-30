@@ -11,8 +11,24 @@
  * Staged signal shape (managed by WizardSignalAdd):
  *   { _key: string, _status: 'VALIDATED'|'REJECTED', ...payload }
  *
- * choices is used locally to resolve category + satisfaction display labels.
- * tech_name is a free text field — displayed as-is.
+ * Sprint TechStack — model alignment
+ * ----------------------------------
+ * The staged payload follows the new TechStackSignal model:
+ *   tech_catalog_entry  : full TechCatalog object (UUID extracted at dispatch)
+ *   usage_scope         : 'TEAM' | 'DEPARTMENT' | 'COMPANY' | 'UNKNOWN' | null
+ *   usage_department    : department object | null (DEPARTMENT scope only)
+ *   usage_start_year    : number | null
+ *   renewal_date        : ISO yyyy-mm-dd | null
+ *   cost_description    : string ('' allowed)
+ *   is_discontinued     : boolean
+ *   discontinued_date   : ISO yyyy-mm-dd | null
+ *   source_activity     : activity object | null
+ *   source_quote, notes : strings
+ *
+ * No legacy free-text fields (tech_name, category, satisfaction, usage,
+ * limitations, workarounds, integrations, source_department,
+ * signal_category, flat renewal_date) — they no longer exist on the
+ * model and are not part of the staged shape.
  */
 
 "use client";
@@ -45,27 +61,95 @@ import { buildEditInitialValues } from "../forms/buildEditInitialValues";
 // ==============================|| HELPERS ||============================== //
 
 /**
- * Resolve a display label from a choices array by value.
+ * Build the canonical display label from a tech_catalog_entry payload.
+ * Mirrors the same helper in TechStackCard / SignalClusterCard /
+ * SignalClusterDetailDrawer — kept local for symmetry.
  *
- * @param {Array<{value: string, label: string}>} options
- * @param {string} value
- * @returns {string}
+ *   { company_name: "Salesforce", product_name: "Sales Cloud" }
+ *     → "Salesforce Sales Cloud"
+ *   { company_name: "Notion", product_name: "Notion" }
+ *     → "Notion"
  */
-function resolveLabel(options, value) {
-  if (!value || !options) return value ?? "—";
-  return options.find((o) => o.value === value)?.label ?? value;
+function getCatalogLabel(entry) {
+  if (!entry) return "Unknown tool";
+  const company = entry.company_name?.trim() || "";
+  const product = entry.product_name?.trim() || "";
+  if (!company && !product) return "Unknown tool";
+  if (!company) return product;
+  if (!product || product === company) return company;
+  return `${company} ${product}`;
 }
+
+/**
+ * Format a short date label for inline display in the lifecycle row.
+ * Returns null on falsy input so the caller can omit the segment.
+ */
+function formatShortDate(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Truncate a string to max length with an ellipsis. Used for the
+ * cost_description segment and for the notes preview.
+ */
+function truncate(str, max) {
+  if (!str) return null;
+  return str.length > max ? `${str.slice(0, max)}…` : str;
+}
+
+/**
+ * UsageScope display labels — local copy, mirror of TechStackCard.
+ *
+ * Hard-coded rather than pulled from `choices` because TechStack scope
+ * options are fixed and the staged card has no need for a runtime lookup.
+ */
+const USAGE_SCOPE_LABELS = {
+  TEAM: "Team",
+  DEPARTMENT: "Department",
+  COMPANY: "Company-wide",
+  UNKNOWN: "Unknown scope",
+};
 
 // ==============================|| STAGED TECH STACK CARD ||============================== //
 
 /**
- * StagedTechStackCard — displays a single staged TechStackSignal with a VALIDATED/REJECTED toggle.
+ * StagedTechStackCard — displays a single staged TechStackSignal with
+ * a VALIDATED/REJECTED toggle.
  *
- * Primary display: tech_name (bold) + category chip + satisfaction chip.
- * usage shown truncated if present.
+ * Layout (top to bottom):
+ *   1. Header line   : "{vendor} {product}" + Competitor / Integration badges
+ *   2. Scope row     : usage_scope chip + usage_department (when scope=DEPARTMENT)
+ *   3. Lifecycle row : "Used since 2019 · Renewal Sep 2025 · ~80k€/year"
+ *                      (each segment included only when set; null fields collapse)
+ *   4. Discontinuation badge : when is_discontinued=true
+ *   5. Source line   : "From {activity subject or id}" — when source_activity set
+ *   6. Notes preview : truncated to 80 chars
+ *   7. Actions       : Include/Exclude toggle + Edit + Remove
+ *
+ * Visual rules:
+ *   - REJECTED state strikes through the title and dims to opacity 0.75
+ *   - The container border switches to error.light / error.lighter for REJECTED
+ *   - Strategic flags (Competitor / Integration) earn explicit chips IN ADDITION
+ *     to driving border emphasis on the live card (TechStackCard); inside the
+ *     wizard staging context the border stays scoped to the include/exclude
+ *     state — the staged card is not a final display surface.
+ *
+ * `choices` is kept in the signature for parity with the section's other
+ * staged cards but is not used here — TechStack scope and discontinuation
+ * options are static and rendered from local label tables.
  */
 function StagedTechStackCard({
   signal,
+  // eslint-disable-next-line no-unused-vars
   choices,
   onToggleStatus,
   onEdit,
@@ -73,15 +157,70 @@ function StagedTechStackCard({
 }) {
   const isRejected = signal._status === "REJECTED";
 
-  const categoryLabel = useMemo(
-    () => resolveLabel(choices?.tech_categories, signal.category),
-    [choices, signal.category],
+  // ----- Catalog anchor -----
+  const catalogLabel = useMemo(
+    () => getCatalogLabel(signal.tech_catalog_entry),
+    [signal.tech_catalog_entry],
+  );
+  const isCompetitor = Boolean(signal.tech_catalog_entry?.is_competitor);
+  const isIntegrationTarget = Boolean(
+    signal.tech_catalog_entry?.is_integration_target,
   );
 
-  const satisfactionLabel = useMemo(
-    () => resolveLabel(choices?.satisfaction, signal.satisfaction),
-    [choices, signal.satisfaction],
-  );
+  // ----- Scope -----
+  const scopeLabel = signal.usage_scope
+    ? (USAGE_SCOPE_LABELS[signal.usage_scope] ?? signal.usage_scope)
+    : null;
+
+  /**
+   * usage_department arrives from the staged payload as an object whole
+   * (AsyncSelect compatibility) — we extract its name for display.
+   * Defensive: if a UUID string ever lands here, render that as-is.
+   */
+  const departmentName = useMemo(() => {
+    const dept = signal.usage_department;
+    if (!dept) return null;
+    if (typeof dept === "string") return dept;
+    return dept.name ?? null;
+  }, [signal.usage_department]);
+
+  // ----- Lifecycle compact line -----
+  const lifecycleLine = useMemo(() => {
+    const parts = [];
+
+    if (signal.usage_start_year) {
+      parts.push(`Used since ${signal.usage_start_year}`);
+    }
+    if (signal.renewal_date) {
+      const label = formatShortDate(signal.renewal_date);
+      if (label) parts.push(`Renewal ${label}`);
+    }
+    if (signal.cost_description?.trim()) {
+      parts.push(truncate(signal.cost_description.trim(), 50));
+    }
+
+    return parts.length > 0 ? parts.join(" · ") : null;
+  }, [signal.usage_start_year, signal.renewal_date, signal.cost_description]);
+
+  // ----- Discontinuation -----
+  const discontinuationLabel = useMemo(() => {
+    if (!signal.is_discontinued) return null;
+    const dateLabel = formatShortDate(signal.discontinued_date);
+    return dateLabel ? `Discontinued ${dateLabel}` : "Discontinued";
+  }, [signal.is_discontinued, signal.discontinued_date]);
+
+  // ----- Source activity (subject or id) -----
+  const sourceLabel = useMemo(() => {
+    const activity = signal.source_activity;
+    if (!activity) return null;
+    if (typeof activity === "string") {
+      return `From Activity #${activity.slice(0, 8)}`;
+    }
+    const subject = activity.subject || activity.title;
+    if (subject) return `From ${subject}`;
+    if (activity.id) return `From Activity #${String(activity.id).slice(0, 8)}`;
+    return null;
+  }, [signal.source_activity]);
 
   return (
     <Box
@@ -98,44 +237,84 @@ function StagedTechStackCard({
       <Stack direction="row" spacing={1.5} alignItems="flex-start">
         {/* Content */}
         <Stack spacing={0.75} flex={1} minWidth={0}>
-          {/* Tech name — primary identifier */}
-          <Typography
-            variant="body2"
-            fontWeight={600}
-            sx={{
-              textDecoration: isRejected ? "line-through" : "none",
-              color: isRejected ? "text.disabled" : "text.primary",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
+          {/* ---- Header line: catalog label + strategic badges ---- */}
+          <Stack
+            direction="row"
+            spacing={0.75}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+            sx={{ minWidth: 0 }}
           >
-            {signal.tech_name || "Unnamed tool"}
-          </Typography>
-
-          {/* Category + satisfaction chips */}
-          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-            {signal.category && (
+            <Typography
+              variant="body2"
+              fontWeight={600}
+              sx={{
+                textDecoration: isRejected ? "line-through" : "none",
+                color: isRejected ? "text.disabled" : "text.primary",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                minWidth: 0,
+                flex: "0 1 auto",
+              }}
+              title={catalogLabel}
+            >
+              {catalogLabel}
+            </Typography>
+            {isCompetitor && !isRejected && (
               <Chip
-                label={categoryLabel}
+                label="Competitor"
+                color="error"
                 size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.65rem", height: 20 }}
+                sx={{ fontSize: "0.6rem", height: 18 }}
               />
             )}
-            {signal.satisfaction && (
+            {isIntegrationTarget && !isRejected && (
               <Chip
-                label={satisfactionLabel}
+                label="Integration"
+                color="info"
                 size="small"
-                color={isRejected ? "default" : "primary"}
                 variant="outlined"
-                sx={{ fontSize: "0.65rem", height: 20 }}
+                sx={{ fontSize: "0.6rem", height: 18 }}
               />
             )}
           </Stack>
 
-          {/* Usage — truncated */}
-          {signal.usage && (
+          {/* ---- Scope row: scope chip + (department name when applicable) ---- */}
+          {(scopeLabel || departmentName) && (
+            <Stack
+              direction="row"
+              spacing={0.5}
+              alignItems="center"
+              flexWrap="wrap"
+              useFlexGap
+            >
+              {scopeLabel && (
+                <Chip
+                  label={scopeLabel}
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    fontSize: "0.62rem",
+                    height: 18,
+                    color: isRejected ? "text.disabled" : "text.secondary",
+                  }}
+                />
+              )}
+              {departmentName && signal.usage_scope === "DEPARTMENT" && (
+                <Typography
+                  variant="caption"
+                  color={isRejected ? "text.disabled" : "text.secondary"}
+                >
+                  {departmentName}
+                </Typography>
+              )}
+            </Stack>
+          )}
+
+          {/* ---- Lifecycle compact line ---- */}
+          {lifecycleLine && (
             <Typography
               variant="caption"
               color={isRejected ? "text.disabled" : "text.secondary"}
@@ -144,20 +323,61 @@ function StagedTechStackCard({
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
+              title={signal.cost_description?.trim() || undefined}
             >
-              {signal.usage}
+              {lifecycleLine}
             </Typography>
           )}
 
-          {/* Renewal date if set */}
-          {signal.renewal_date && (
-            <Typography variant="caption" color="text.secondary">
-              Renewal: {signal.renewal_date}
+          {/* ---- Discontinuation badge ---- */}
+          {discontinuationLabel && (
+            <Typography
+              variant="caption"
+              color="error.dark"
+              fontWeight={500}
+              sx={{
+                width: "fit-content",
+                px: 0.75,
+                py: 0.25,
+                borderRadius: 0.5,
+                bgcolor: "error.lighter",
+                border: "1px dashed",
+                borderColor: "error.light",
+              }}
+            >
+              {discontinuationLabel}
+            </Typography>
+          )}
+
+          {/* ---- Source activity line ---- */}
+          {sourceLabel && (
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {sourceLabel}
+            </Typography>
+          )}
+
+          {/* ---- Notes preview ---- */}
+          {signal.notes?.trim() && (
+            <Typography
+              variant="caption"
+              color={isRejected ? "text.disabled" : "text.secondary"}
+              sx={{ fontStyle: "italic" }}
+              title={signal.notes}
+            >
+              {truncate(signal.notes.trim(), 80)}
             </Typography>
           )}
         </Stack>
 
-        {/* Actions */}
+        {/* Actions — unchanged from prior implementation */}
         <Stack direction="row" spacing={0.5} alignItems="center" flexShrink={0}>
           <Button
             size="small"
@@ -204,11 +424,30 @@ StagedTechStackCard.propTypes = {
   signal: PropTypes.shape({
     _key: PropTypes.string.isRequired,
     _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
-    tech_name: PropTypes.string,
-    category: PropTypes.string,
-    satisfaction: PropTypes.string,
-    usage: PropTypes.string,
+    // Catalog anchor — object whole; UUID extracted at dispatch.
+    tech_catalog_entry: PropTypes.shape({
+      id: PropTypes.string,
+      company_name: PropTypes.string,
+      product_name: PropTypes.string,
+      is_competitor: PropTypes.bool,
+      is_integration_target: PropTypes.bool,
+    }),
+    // Scope axis
+    usage_scope: PropTypes.oneOf(["TEAM", "DEPARTMENT", "COMPANY", "UNKNOWN"]),
+    usage_department: PropTypes.oneOfType([
+      PropTypes.string,
+      PropTypes.shape({ id: PropTypes.string, name: PropTypes.string }),
+    ]),
+    // Lifecycle
+    usage_start_year: PropTypes.number,
     renewal_date: PropTypes.string,
+    cost_description: PropTypes.string,
+    is_discontinued: PropTypes.bool,
+    discontinued_date: PropTypes.string,
+    // Narrative
+    notes: PropTypes.string,
+    // Source — object whole or UUID string fallback
+    source_activity: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
   }).isRequired,
   choices: PropTypes.object,
   onToggleStatus: PropTypes.func.isRequired,
@@ -321,12 +560,17 @@ export default function TechStackSection({
 
   return (
     <Stack spacing={2}>
-      {/* ---- No activity context warning ---- */}
+      {/* ---- No activity context — soft hint ----
+          Unlike Pain (where source_activity is REQUIRED), TechStack
+          accepts signals without an activity link. Reps may capture
+          a tool from external research (e.g. account intel, public
+          stack guides) before a real conversation has happened. We
+          surface a soft hint, not a blocking warning. */}
       {!hasActivityContext && (
-        <Alert severity="warning" sx={{ fontSize: "0.8rem" }}>
-          Tech stack signals should be linked to a conversation. Open this
-          wizard from an <strong>Activity</strong> to automatically attach them
-          to a call or meeting.
+        <Alert severity="info" sx={{ fontSize: "0.8rem" }}>
+          You can capture tech stack signals here without an activity link. To
+          pin a signal to a specific call or meeting, open the wizard from an{" "}
+          <strong>Activity</strong>.
         </Alert>
       )}
 
@@ -418,11 +662,24 @@ TechStackSection.propTypes = {
     PropTypes.shape({
       _key: PropTypes.string.isRequired,
       _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
-      tech_name: PropTypes.string,
-      category: PropTypes.string,
-      satisfaction: PropTypes.string,
-      usage: PropTypes.string,
+      // Sprint TechStack staged shape — see file docstring.
+      tech_catalog_entry: PropTypes.object,
+      usage_scope: PropTypes.string,
+      usage_department: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.object,
+      ]),
+      usage_start_year: PropTypes.number,
       renewal_date: PropTypes.string,
+      cost_description: PropTypes.string,
+      is_discontinued: PropTypes.bool,
+      discontinued_date: PropTypes.string,
+      notes: PropTypes.string,
+      source_activity: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.object,
+      ]),
+      source_quote: PropTypes.string,
     }),
   ).isRequired,
   onAdd: PropTypes.func.isRequired,

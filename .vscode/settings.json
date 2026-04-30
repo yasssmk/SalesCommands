@@ -9,5 +9,6 @@
   "javascript.validate.enable": false,
 
   "typescript.tsserver.enableProjectDiagnostics": false,
-  "typescript.tsserver.experimental.enableProjectDiagnostics": false
+  "typescript.tsserver.experimental.enableProjectDiagnostics": false,
+  "git.decorations.enabled": true
 }

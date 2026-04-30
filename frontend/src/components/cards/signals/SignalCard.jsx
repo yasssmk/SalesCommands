@@ -64,6 +64,14 @@ const STATUS_CONFIG = {
 
 /**
  * Distinct MUI Chip color + display label per signal type.
+ *
+ * SignalCard is now authoritative for People only. Pain, Objective,
+ * and Tech Stack route to their own dedicated cards via SignalList.
+ * The non-People entries are kept here purely for the fallback path:
+ * if a caller bypasses SignalList and lands directly on SignalCard
+ * with one of those types, the type chip still renders correctly
+ * with the matching palette and the fallback body components surface
+ * a visible warning.
  */
 const TYPE_CONFIG = {
   people: { color: "secondary", label: "People" },
@@ -300,66 +308,46 @@ function ObjectiveSignalBody({ signal }) {
 ObjectiveSignalBody.propTypes = { signal: PropTypes.object.isRequired };
 
 /**
- * TechStackSignalBody
- * Primary:   tech_name (bold) + category_display chip
- * Secondary: satisfaction_display chip
- * Footer:    usage (truncated), renewal_date
+ * TechStackSignalBody — fallback renderer.
+ *
+ * Tech Stack signals are rendered by TechStackCard
+ * (components/cards/signals/TechStackCard), which is selected by
+ * SignalList when signalType === 'tech-stack'. This fallback exists
+ * only to surface a visible warning if someone bypasses SignalList
+ * and calls SignalCard directly with signalType='tech-stack' — a case
+ * that should never happen in normal flow.
+ *
+ * The legacy TechStackSignal model fields (tech_name, category,
+ * satisfaction, usage, limitations, workarounds, integrations,
+ * renewal_date as a flat field) no longer exist on the new model.
+ * The current model is anchored on a TechCatalog FK and exposes
+ * structured lifecycle / scope nested fields — handled exclusively
+ * by TechStackCard.
  */
 function TechStackSignalBody({ signal }) {
+  // Try to derive a minimal label from the new catalog payload so
+  // the fallback isn't completely opaque to the rep if it ever lands.
+  const entry = signal.tech_catalog_entry;
+  const company = entry?.company_name?.trim() || "";
+  const product = entry?.product_name?.trim() || "";
+  const label =
+    !company && !product
+      ? "Unknown tool"
+      : !company
+        ? product
+        : !product || product === company
+          ? company
+          : `${company} ${product}`;
+
   return (
     <Stack spacing={0.75} sx={{ mt: 1 }}>
-      {/* Tech name + category */}
-      <Stack
-        direction="row"
-        spacing={1}
-        alignItems="center"
-        flexWrap="wrap"
-        useFlexGap
-      >
-        {signal.tech_name && (
-          <Typography variant="body2" fontWeight={600}>
-            {signal.tech_name}
-          </Typography>
-        )}
-        {signal.category_display && (
-          <Chip
-            label={signal.category_display}
-            size="small"
-            variant="outlined"
-            sx={{ fontSize: "0.65rem", height: 20 }}
-          />
-        )}
-      </Stack>
-
-      {/* Satisfaction chip */}
-      {signal.satisfaction_display && (
-        <Box>
-          <Chip
-            label={signal.satisfaction_display}
-            size="small"
-            color="primary"
-            variant="outlined"
-            sx={{ fontSize: "0.65rem", height: 20 }}
-          />
-        </Box>
-      )}
-
-      {/* Footer */}
-      <Stack
-        direction="row"
-        spacing={2}
-        flexWrap="wrap"
-        useFlexGap
-        sx={{ mt: 0.5 }}
-      >
-        <MetaItem label="From" value={formatContact(signal.source_contact)} />
-        {signal.usage && (
-          <MetaItem label="Usage" value={truncate(signal.usage, 80)} />
-        )}
-        {signal.renewal_date && (
-          <MetaItem label="Renewal" value={signal.renewal_date} />
-        )}
-      </Stack>
+      <Typography variant="body2" fontWeight={600}>
+        {label}
+      </Typography>
+      <Typography variant="caption" color="warning.main">
+        Tech Stack signals should be rendered via TechStackCard — not
+        SignalCard.
+      </Typography>
     </Stack>
   );
 }
@@ -426,19 +414,22 @@ function ObjectiveSignalDetail({ signal }) {
 }
 ObjectiveSignalDetail.propTypes = { signal: PropTypes.object.isRequired };
 
+/**
+ * TechStackSignalDetail — fallback renderer.
+ *
+ * The legacy fields (limitations / workarounds / integrations /
+ * signal_category) no longer exist on TechStackSignal. The expanded
+ * detail surface for Tech Stack lives on TechStackCard, which surfaces
+ * lifecycle / scope / source via inline sections rather than a
+ * collapsible detail. This fallback shows only what's still on the
+ * minimal model (notes + source_quote) so the fallback stays useful
+ * if it renders by accident.
+ */
 function TechStackSignalDetail({ signal }) {
   return (
     <Stack spacing={1.5}>
-      <DetailField label="Limitations" value={signal.limitations} />
-      <DetailField label="Workarounds" value={signal.workarounds} />
-      <DetailField label="Integrations" value={signal.integrations} />
+      <DetailField label="Notes" value={signal.notes} />
       <QuoteBlock value={signal.source_quote} />
-      {signal.signal_category_display && (
-        <MetaItem
-          label="Signal category"
-          value={signal.signal_category_display}
-        />
-      )}
     </Stack>
   );
 }
@@ -671,10 +662,22 @@ export default function SignalCard({
       </Stack>
 
       {/* ==================== CARD BODY — PER TYPE ==================== */}
-      {/* signalType === 'pain' is intentionally NOT handled here —
-          PainCard takes over via SignalList. If it lands here it means
-          the caller bypassed SignalList; PainSignalBody surfaces the
-          warning in that case. */}
+      {/*
+        signalType === 'pain' AND 'tech-stack' are intentionally NOT
+        rendered authoritatively here — PainCard / TechStackCard take
+        over via SignalList. If either lands here it means the caller
+        bypassed SignalList; the *Body fallback components surface a
+        visible warning in that case.
+
+        signalType === 'objective' was previously rendered here too;
+        it now goes through ObjectiveCard via SignalList. The
+        ObjectiveSignalBody renderer below is kept as a similar
+        fallback path — though it has not been retro-converted to the
+        explicit "should be rendered via ObjectiveCard" warning style,
+        because the old fields it reads (goal_level_display,
+        success_criteria) still exist on the model. Out of scope for
+        Sprint TechStack.
+      */}
       {signalType === "people" && <PeopleSignalBody signal={signal} />}
       {signalType === "pain" && <PainSignalBody signal={signal} />}
       {signalType === "objective" && <ObjectiveSignalBody signal={signal} />}
@@ -747,15 +750,14 @@ SignalCard.propTypes = {
     goal_level_display: PropTypes.string,
     success_criteria: PropTypes.string,
     measurement_method: PropTypes.string,
-    // TechStackSignal
-    tech_name: PropTypes.string,
-    satisfaction: PropTypes.string,
-    satisfaction_display: PropTypes.string,
-    usage: PropTypes.string,
-    limitations: PropTypes.string,
-    workarounds: PropTypes.string,
-    integrations: PropTypes.string,
-    renewal_date: PropTypes.string,
+    // TechStackSignal — fallback path only. Authoritative shape lives
+    // on TechStackCard.propTypes; here we keep the minimal subset the
+    // fallback components actually read.
+    tech_catalog_entry: PropTypes.shape({
+      id: PropTypes.string,
+      company_name: PropTypes.string,
+      product_name: PropTypes.string,
+    }),
   }).isRequired,
 
   /** Signal type — never inferred from the signal object itself */

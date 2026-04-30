@@ -22,10 +22,10 @@ Model-specific:
                     only meaningful at PERSONAL scope level)
   ScopeLevel      — organisational scope of the evidence
                     (BUSINESS / DEPARTMENT / PERSONAL). Used by PainImpact
-                    today; will also drive ObjectiveSignal scope once the
-                    Objective port lands (Wave B).
-  TechCategory    — technology category for TechStackSignal
-  Satisfaction    — satisfaction level for TechStackSignal
+                    today and ObjectiveSignal since Wave B.
+  UsageScope      — organisational usage scope of a tool for TechStackSignal
+                    (TEAM / DEPARTMENT / COMPANY / UNKNOWN). Drives the
+                    conditional usage_department requirement.
 
 Cluster aggregation (Sprint 2):
   SignalClusterType — enumeration of signal types that support clustering
@@ -46,6 +46,13 @@ Removed vs. previous versions:
                            SignalWhat × SignalDimension)
   - PainLevel             (replaced by ScopeLevel on PainImpact — Pain is
                            now a pure diagnosis, scope lives on PainImpact)
+  - TechCategory          (replaced by FK to TechCatalog — categorisation
+                           moves out of the signal into the tenant-level
+                           tech master catalog)
+  - Satisfaction          (dropped — qualitative feel of a tool was rarely
+                           used and noisy. Replaced by structured lifecycle
+                           stats on the TechStack cluster: usage_start_year,
+                           renewal_date, cost_description, is_discontinued)
 
 Renamed in Wave A (backend refactor prep for the Objective port):
   - PainWhat      → SignalWhat       (shared across Pain and Objective)
@@ -282,7 +289,7 @@ class HumanImpact(models.TextChoices):
 
 
 # =============================================================================
-# SCOPE LEVEL — enum  (shared by PainImpact and — Wave B — Objective)
+# SCOPE LEVEL — enum  
 # =============================================================================
 
 class ScopeLevel(models.TextChoices):
@@ -317,55 +324,35 @@ class ScopeLevel(models.TextChoices):
 # TECH STACK SIGNAL — enums
 # =============================================================================
 
-class TechCategory(models.TextChoices):
+class UsageScope(models.TextChoices):
     """
-    Technology category for TechStackSignal.
+    Organisational usage scope of a tool observed at an account.
 
-    Classifies the type of tool or platform the account is using.
-    Used for filtering and LLM prompt grouping.
+    Drives the conditional usage_department requirement on TechStackSignal:
+      usage_scope = DEPARTMENT → usage_department REQUIRED
+      usage_scope ∈ {TEAM, COMPANY, UNKNOWN} → usage_department FORBIDDEN
 
-    CRM           — customer relationship management
-    ERP           — enterprise resource planning
-    BI            — business intelligence / analytics
-    HR            — human resources / HCM
-    MARKETING     — marketing automation, email, ads
-    SECURITY      — cybersecurity, IAM, compliance tools
-    CLOUD         — cloud infrastructure, IaaS, PaaS
-    COLLABORATION — communication, project management, productivity
-    FINANCE       — accounting, FP&A, expense management
-    OTHER         — tools that do not fit the above categories
+    TEAM       — used by a single team within a department
+                 (granularity finer than department; usage_department
+                 not specified because the team is not a first-class
+                 entity in the platform)
+    DEPARTMENT — used by a specific department; usage_department FK
+                 must be set (StandardDepartment)
+    COMPANY    — used company-wide across multiple departments
+    UNKNOWN    — scope was discussed but not clarified, or not yet known.
+                 Safe default for early-stage observations.
+
+    INDIVIDUAL is intentionally NOT a value — single-user usage is captured
+    through notes / source_quote on the signal itself, not promoted to a
+    canonical scope.
     """
-    CRM           = 'CRM',           _('CRM')
-    ERP           = 'ERP',           _('ERP')
-    BI            = 'BI',            _('BI & Analytics')
-    HR            = 'HR',            _('HR & People')
-    MARKETING     = 'MARKETING',     _('Marketing')
-    SECURITY      = 'SECURITY',      _('Security')
-    CLOUD         = 'CLOUD',         _('Cloud Infrastructure')
-    COLLABORATION = 'COLLABORATION', _('Collaboration')
-    FINANCE       = 'FINANCE',       _('Finance')
-    OTHER         = 'OTHER',         _('Other')
-
-
-class Satisfaction(models.TextChoices):
-    """
-    Rep-assessed satisfaction level of the account with a tool in TechStackSignal.
-
-    Based on what was expressed during the conversation — not a formal score.
-    UNKNOWN is the safe default when satisfaction was not discussed.
-
-    HIGH    — account is satisfied or positive about the tool
-    MEDIUM  — mixed feelings, some concerns raised
-    LOW     — clear dissatisfaction or frustration expressed
-    UNKNOWN — satisfaction was not discussed or is unclear
-    """
-    HIGH    = 'HIGH',    _('High')
-    MEDIUM  = 'MEDIUM',  _('Medium')
-    LOW     = 'LOW',     _('Low')
-    UNKNOWN = 'UNKNOWN', _('Unknown')
+    TEAM       = 'TEAM',       _('Team')
+    DEPARTMENT = 'DEPARTMENT', _('Department')
+    COMPANY    = 'COMPANY',    _('Company-wide')
+    UNKNOWN    = 'UNKNOWN',    _('Unknown')
 
 # =============================================================================
-# SIGNAL CLUSTER AGGREGATION — enums and thresholds (Sprint 2)
+# SIGNAL CLUSTER AGGREGATION — enums and thresholds 
 # =============================================================================
 #
 # Clusters aggregate signals sharing the same canonical_key on a given account.
@@ -470,6 +457,7 @@ FRESHNESS_DORMANT_DAYS = 90
 
 PRIORITY_HIGH_THRESHOLD   = 70
 PRIORITY_MEDIUM_THRESHOLD = 40
+TECHSTACK_RENEWAL_SOON_DAYS = 90
 
 # =============================================================================
 # CACHE TAGS
