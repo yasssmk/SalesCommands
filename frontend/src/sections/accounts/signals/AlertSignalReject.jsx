@@ -102,15 +102,12 @@ export default function AlertSignalReject({
       return (
         signal.summary.slice(0, 60) + (signal.summary.length > 60 ? "…" : "")
       );
-    if (signal.role_display) return signal.role_display;
     if (signal.tech_name) return signal.tech_name;
     return "this signal";
   })();
 
   const techSuffix =
-    signal?.tech_name && !signal?.summary && !signal?.role_display
-      ? ` · ${signal.tech_name}`
-      : "";
+    signal?.tech_name && !signal?.summary ? ` · ${signal.tech_name}` : "";
 
   // ==============================|| RENDER ||============================== //
 
@@ -203,8 +200,7 @@ AlertSignalReject.propTypes = {
   signal: PropTypes.shape({
     id: PropTypes.string.isRequired,
     summary: PropTypes.string,
-    role_display: PropTypes.string,
     tech_name: PropTypes.string,
   }),
-  signalType: PropTypes.oneOf(["people", "pain", "objective", "tech-stack"]),
+  signalType: PropTypes.oneOf(["pain", "objective", "tech-stack"]),
 };

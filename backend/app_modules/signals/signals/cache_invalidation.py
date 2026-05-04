@@ -3,9 +3,8 @@
 Cache invalidation Django signals for the Signals module.
 
 Automatically invalidates the 'signals' and 'signal_clusters' cache tags
-when a signal model (PeopleSignal, PainSignal, ObjectiveSignal,
-TechStackSignal), a PainImpact, or a SignalClusterArchival is created,
-updated, or deleted.
+when a signal model (PainSignal, ObjectiveSignal, TechStackSignal),
+a PainImpact, or a SignalClusterArchival is created, updated, or deleted.
 
 This is a safety net: ViewSets already call invalidate_tag() directly on
 every write path. These receivers catch writes made outside a ViewSet
@@ -17,7 +16,6 @@ See app_modules.signals.constants for the canonical matrix. Summary:
 
   Write on                  signals   signal_clusters
   ---------------------    -------   ---------------
-  PeopleSignal                ✓             ✗
   PainSignal                  ✓             ✓
   ObjectiveSignal             ✓             ✗
   TechStackSignal             ✓             ✗
@@ -121,30 +119,6 @@ def _invalidate_clusters_after_commit(client_id: str) -> None:
         transaction.on_commit(_do_invalidate)
     else:
         _do_invalidate()
-
-
-# =============================================================================
-# PEOPLE SIGNAL — invalidates 'signals' only
-# =============================================================================
-
-@receiver(post_save, sender='module_signals.PeopleSignal')
-def invalidate_on_people_save(sender, instance, **kwargs):
-    """Invalidate signal caches when a PeopleSignal is saved."""
-    if are_signals_disabled():
-        return
-    client_id = getattr(instance, 'client_id', None)
-    if client_id:
-        _invalidate_signals_after_commit(str(client_id))
-
-
-@receiver(post_delete, sender='module_signals.PeopleSignal')
-def invalidate_on_people_delete(sender, instance, **kwargs):
-    """Invalidate signal caches when a PeopleSignal is deleted."""
-    if are_signals_disabled():
-        return
-    client_id = getattr(instance, 'client_id', None)
-    if client_id:
-        _invalidate_signals_after_commit(str(client_id))
 
 
 # =============================================================================

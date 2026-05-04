@@ -2,11 +2,11 @@
 """
 FilterSet for the Signals module.
 
-Shared across all 4 signal types — the view's filter_queryset() dynamically
-binds SignalFilter.Meta.model to the concrete queryset model before
-django-filters runs its assertion check.
+Shared across all 3 concrete signal types (Pain, Objective, TechStack) —
+the view's filter_queryset() dynamically binds SignalFilter.Meta.model to
+the concrete queryset model before django-filters runs its assertion check.
 
-Type-specific filters (role, what, dimension, scope_level, tech_catalog_entry,
+Type-specific filters (what, dimension, scope_level, tech_catalog_entry,
 etc.) that do not exist on a given model are silently harmless — django-filter
 ignores unknown field lookups via the dynamic model binding. This is the
 established pattern in this codebase.
@@ -30,6 +30,11 @@ Sprint TechStack — filter changes:
     - is_integration_target   (bool, via FK traversal to TechCatalog)
   ADDED (PainSignal cross-reference):
     - related_techstack       (UUID — Pains cross-referencing a catalog entry)
+
+Sprint 2 — filter changes (PeopleSignal sunset):
+  REMOVED:
+    - role            (PeopleRole enum dropped along with PeopleSignal)
+    - influence_level (InfluenceLevel enum dropped along with PeopleSignal)
 """
 
 import django_filters
@@ -48,8 +53,7 @@ class CharInFilter(BaseInFilter, CharFilter):
 
 class SignalFilter(django_filters.FilterSet):
     """
-    FilterSet shared across PeopleSignal, PainSignal, ObjectiveSignal,
-    and TechStackSignal.
+    FilterSet shared across PainSignal, ObjectiveSignal, and TechStackSignal.
 
     Base filters (all signal types — fields live on BaseSignal):
       status, source, signal_category
@@ -58,21 +62,17 @@ class SignalFilter(django_filters.FilterSet):
       canonical_key
 
     Type-specific filters (silently ignored when field absent on model):
-      role, influence_level — PeopleSignal
-      what, dimension       — PainSignal + ObjectiveSignal (shared canonical
-                              axes since Wave A)
-      scope_level           — ObjectiveSignal (Wave B — renamed from
-                              goal_level)
-      category              — TechStackSignal
-      satisfaction          — TechStackSignal
+      what, dimension — PainSignal + ObjectiveSignal (shared canonical
+                        axes since Wave A)
+      scope_level     — ObjectiveSignal (Wave B — renamed from goal_level)
 
     Silently-absent fields on ObjectiveSignal (Wave B):
       - signal_category is shadow-overridden to None on the concrete
         ObjectiveSignal model. The `signal_category` filter declared
-        here still works for People / Pain / TechStack; on Objective
-        querysets, django-filters finds no matching field and falls
-        back to a no-op (tolerated via the dynamic Meta.model rebinding
-        in BaseSignalViewSet.filter_queryset()). No behavioural change
+        here still works for Pain / TechStack; on Objective querysets,
+        django-filters finds no matching field and falls back to a
+        no-op (tolerated via the dynamic Meta.model rebinding in
+        BaseSignalViewSet.filter_queryset()). No behavioural change
         needed here.
 
     Note — Pain-side fields removed in Sprint 1.6:
@@ -111,13 +111,6 @@ class SignalFilter(django_filters.FilterSet):
     source_department = UUIDFilter(field_name='source_department_id')
     decision_cycle   = UUIDFilter(field_name='decision_cycle_id')
     campaign         = UUIDFilter(field_name='campaign_id')
-
-    # -------------------------------------------------------------------------
-    # TYPE-SPECIFIC — PeopleSignal
-    # -------------------------------------------------------------------------
-
-    role            = CharInFilter(field_name='role',            lookup_expr='in')
-    influence_level = CharInFilter(field_name='influence_level', lookup_expr='in')
 
     # -------------------------------------------------------------------------
     # TYPE-SPECIFIC — PainSignal (canonical axes only)

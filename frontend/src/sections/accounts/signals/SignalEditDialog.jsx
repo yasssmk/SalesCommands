@@ -43,13 +43,11 @@ import {
 import { buildEditInitialValues } from "./wizard/forms/buildEditInitialValues";
 import InlinePainForm from "./wizard/forms/InlinePainForm";
 import InlineObjectiveForm from "./wizard/forms/InlineObjectiveForm";
-import InlinePeopleForm from "./wizard/forms/InlinePeopleForm";
 import InlineTechStackForm from "./wizard/forms/InlineTechStackForm";
 
 // ==============================|| TYPE CONFIG ||============================== //
 
 const TYPE_LABELS = {
-  people: "People Signal",
   pain: "Pain Signal",
   objective: "Objective Signal",
   "tech-stack": "Tech Stack Signal",
@@ -204,9 +202,6 @@ export default function SignalEditDialog({
             {signalType === "objective" && (
               <InlineObjectiveForm {...sharedFormProps} />
             )}
-            {signalType === "people" && (
-              <InlinePeopleForm {...sharedFormProps} />
-            )}
             {signalType === "tech-stack" && (
               <InlineTechStackForm {...sharedFormProps} />
             )}
@@ -226,7 +221,7 @@ SignalEditDialog.propTypes = {
   signal: PropTypes.shape({
     id: PropTypes.string.isRequired,
   }),
-  signalType: PropTypes.oneOf(["people", "pain", "objective", "tech-stack"]),
+  signalType: PropTypes.oneOf(["pain", "objective", "tech-stack"]),
   accountId: PropTypes.string.isRequired,
   choices: PropTypes.object,
   choicesLoading: PropTypes.bool,

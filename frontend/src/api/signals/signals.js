@@ -2,14 +2,13 @@
 /**
  * API hooks and mutations for the Signals module.
  *
- * Four signal types, each with its own endpoint group:
- *   'people'     → /module-signals/people/
+ * Three signal types, each with its own endpoint group:
  *   'pain'       → /module-signals/pain/
  *   'objective'  → /module-signals/objective/
  *   'tech-stack' → /module-signals/tech-stack/
  *
  * Mutations accept a `signalType` param:
- *   'people' | 'pain' | 'objective' | 'tech-stack'
+ *   'pain' | 'objective' | 'tech-stack'
  *
  * Follows the same patterns as api/accounts/activities.js.
  */
@@ -23,19 +22,13 @@ import { isValidUUID } from "utils/validators";
 
 // ==============================|| SIGNAL TYPES ||============================== //
 
-const SIGNAL_TYPES = ["people", "pain", "objective", "tech-stack"];
+const SIGNAL_TYPES = ["pain", "objective", "tech-stack"];
 
 // ==============================|| ENDPOINTS ||============================== //
 
 const endpoints = {
   // Choices (shared across all signal types)
   choices: "/module-signals/choices/",
-
-  // People
-  people: "/module-signals/people/",
-  peopleDetail: (id) => `/module-signals/people/${id}/`,
-  peopleValidate: (id) => `/module-signals/people/${id}/validate/`,
-  peopleReject: (id) => `/module-signals/people/${id}/reject/`,
 
   // Pain
   pain: "/module-signals/pain/",
@@ -61,13 +54,11 @@ const endpoints = {
 /**
  * Resolve base list endpoint for a given signal type.
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'tech-stack'} signalType
  * @returns {string} Base URL
  */
 function getBaseEndpoint(signalType) {
   switch (signalType) {
-    case "people":
-      return endpoints.people;
     case "pain":
       return endpoints.pain;
     case "objective":
@@ -82,14 +73,12 @@ function getBaseEndpoint(signalType) {
 /**
  * Resolve detail endpoint for a given signal type + id.
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'tech-stack'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Detail URL
  */
 function getDetailEndpoint(signalType, id) {
   switch (signalType) {
-    case "people":
-      return endpoints.peopleDetail(id);
     case "pain":
       return endpoints.painDetail(id);
     case "objective":
@@ -104,14 +93,12 @@ function getDetailEndpoint(signalType, id) {
 /**
  * Resolve validate endpoint for a given signal type + id.
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'tech-stack'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Validate URL
  */
 function getValidateEndpoint(signalType, id) {
   switch (signalType) {
-    case "people":
-      return endpoints.peopleValidate(id);
     case "pain":
       return endpoints.painValidate(id);
     case "objective":
@@ -126,14 +113,12 @@ function getValidateEndpoint(signalType, id) {
 /**
  * Resolve reject endpoint for a given signal type + id.
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'tech-stack'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Reject URL
  */
 function getRejectEndpoint(signalType, id) {
   switch (signalType) {
-    case "people":
-      return endpoints.peopleReject(id);
     case "pain":
       return endpoints.painReject(id);
     case "objective":
@@ -146,12 +131,11 @@ function getRejectEndpoint(signalType, id) {
 }
 
 /**
- * Revalidate all 4 signal list caches.
+ * Revalidate all 3 signal list caches.
  * Called after any write that could affect any signal list.
  */
 function revalidateSignalLists() {
   revalidateMultiple([
-    endpoints.people,
     endpoints.pain,
     endpoints.objective,
     endpoints.techStack,
@@ -282,7 +266,7 @@ function useGetSignals(signalType, options = {}) {
  * Fetches signals of a given type for a specific account.
  *
  * @param {string} accountId - Account UUID
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'tech-stack'} signalType
  * @param {Object} options   - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
@@ -311,7 +295,7 @@ export function useGetSignalsByAccount(accountId, signalType, options = {}) {
  * Fetches signals of a given type linked to a specific source activity.
  *
  * @param {string} activityId - Activity UUID
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'tech-stack'} signalType
  * @param {Object} options    - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
@@ -344,33 +328,41 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *   status:            [...],   // SignalStatus    (lifecycle shared by all types)
  *   source:            [...],   // SignalSource    (MANUAL / LLM_* / EXTERNAL_RESEARCH)
  *   signal_category:   [...],   // SignalCategory  (legacy, being deprecated)
- *   people_roles:      [...],   // PeopleRole
- *   influence_levels:  [...],   // InfluenceLevel
  *   signal_whats:      [...],   // SignalWhat      (1st axis of canonical_key —
- *                                                   shared Pain today + Objective
- *                                                   in Wave B)
+ *                                                   shared Pain + Objective)
  *   signal_dimensions: [...],   // SignalDimension (2nd axis of canonical_key —
  *                                                   same shared scope)
  *   human_impacts:     [...],   // HumanImpact     (orthogonal axis on PainImpact)
  *   scope_levels:      [...],   // ScopeLevel      (BUSINESS / DEPARTMENT /
  *                                                   PERSONAL — drives PainImpact
- *                                                   scope today; will also drive
- *                                                   ObjectiveSignal in Wave B)
- *   tech_categories:   [...],   // TechCategory
- *   satisfaction:      [...],   // Satisfaction
+ *                                                   scope and ObjectiveSignal
+ *                                                   scope_level)
+ *   usage_scopes:      [...],   // UsageScope      (TechStackSignal — TEAM /
+ *                                                   DEPARTMENT / COMPANY / UNKNOWN)
  * }
  *
  * Notes:
  *   - signal_whats × signal_dimensions form the canonical_key
- *     "pain:<what>:<dimension>" on PainSignal (and "objective:<what>:<dimension>"
- *     in Wave B). See InlinePainForm for rendering.
+ *     "pain:<what>:<dimension>" on PainSignal and
+ *     "objective:<what>:<dimension>" on ObjectiveSignal. See
+ *     InlinePainForm / InlineObjectiveForm for rendering.
  *   - scope_levels drives PainImpact creation — see AddPainImpactDialog.
  *
  * Wave A renames (destructive, no back-compat):
  *   - pain_whats      → signal_whats
  *   - pain_dimensions → signal_dimensions
  *   - impact_levels   → scope_levels
- *   - goal_levels     → removed (Objective will adopt scope_levels in Wave B)
+ *   - goal_levels     → removed (Objective adopts scope_levels since Wave B)
+ *
+ * Sprint TechStack changes:
+ *   - tech_categories → removed (TechCategory enum dropped)
+ *   - satisfaction    → removed (Satisfaction enum dropped)
+ *   - usage_scopes    → added (drives conditional usage_department on
+ *                              TechStackSignal)
+ *
+ * Sprint 2 removals (PeopleSignal sunset):
+ *   - people_roles     → removed
+ *   - influence_levels → removed
  *
  * @returns {Object} { choices, choicesLoading, choicesError, mutateChoices }
  */

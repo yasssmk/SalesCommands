@@ -34,17 +34,15 @@ indirectly):
     source_activity__decision_cycle, not by decision_cycle.
 This mirrors the cluster service's filtering strategy (Phase 6.2).
 """
-
 from core.exceptions import StandardizedValidationError
 from core.error_messages import SignalErrorMessages
 
 from ..constants import SignalStatus
-from ..models import PeopleSignal, PainSignal, ObjectiveSignal, TechStackSignal
+from ..models import PainSignal, ObjectiveSignal, TechStackSignal
 
 
 # Mapping from string key → model class.
 _SIGNAL_TYPE_MAP = {
-    'people':     PeopleSignal,
     'pain':       PainSignal,
     'objective':  ObjectiveSignal,
     'tech_stack': TechStackSignal,
@@ -62,15 +60,6 @@ _SIGNAL_TYPE_MAP = {
 # Extending this dict is the single point of truth when a model gains or
 # loses a relation that benefits from select_related preloading.
 _RELATED_BY_TYPE = {
-    'people': [
-        'source_contact',
-        'source_department',
-        'validated_by',
-        'decision_cycle',
-        'campaign',
-        'target_contact',
-        'target_department',
-    ],
     'pain': [
         'source_contact',
         'source_department',
@@ -145,8 +134,8 @@ class SignalDataService:
 
         Args:
             account_id:  UUID of the account.
-            signal_type: 'people' | 'pain' | 'objective' | 'tech_stack' | None.
-                         None returns all 4 types.
+            signal_type: 'pain' | 'objective' | 'tech_stack' | None.
+                         None returns all 3 types.
             status:      SignalStatus value to filter by (e.g. 'VALIDATED').
                          None applies no status filter.
             **filters:   Additional ORM filters (allowlisted).
@@ -155,8 +144,8 @@ class SignalDataService:
 
         Returns:
             If signal_type given → single QuerySet for that model.
-            If signal_type None  → dict with keys 'people', 'pain',
-                                   'objective', 'tech_stack'.
+            If signal_type None  → dict with keys 'pain', 'objective',
+                                   'tech_stack'.
 
         Raises:
             StandardizedValidationError if signal_type is invalid.
@@ -169,6 +158,7 @@ class SignalDataService:
           Callers querying TechStack should restrict themselves to
           'source' and 'is_inferred' filters.
         """
+
         safe_filters = {k: v for k, v in filters.items() if k in _ALLOWED_FILTERS}
 
         def _build_qs(type_key, model_class):
@@ -212,7 +202,7 @@ class SignalDataService:
             contact_id: UUID of the contact.
 
         Returns:
-            dict with keys 'people', 'pain', 'objective', 'tech_stack'.
+            dict with keys 'pain', 'objective', 'tech_stack'.
 
         TechStack semantics
         -------------------
@@ -224,10 +214,10 @@ class SignalDataService:
             source_activity__contacts__id = contact_id
 
         Semantic shift:
-          Pain / Objective / People → "this contact REPORTED the signal"
-          TechStack                 → "this contact PARTICIPATED in a
-                                       conversation where the tool was
-                                       mentioned"
+          Pain / Objective → "this contact REPORTED the signal"
+          TechStack        → "this contact PARTICIPATED in a
+                              conversation where the tool was
+                              mentioned"
 
         Both are useful for the question "what does this contact know
         about?" — the per-type semantics simply reflect each model's
@@ -263,6 +253,7 @@ class SignalDataService:
     # =========================================================================
 
     @classmethod
+    @classmethod
     def get_by_cycle(cls, cycle_id) -> dict:
         """
         Return all signals associated with a decision cycle, across all types.
@@ -271,7 +262,7 @@ class SignalDataService:
             cycle_id: UUID of the decision cycle.
 
         Returns:
-            dict with keys 'people', 'pain', 'objective', 'tech_stack'.
+            dict with keys 'pain', 'objective', 'tech_stack'.
 
         TechStack semantics
         -------------------

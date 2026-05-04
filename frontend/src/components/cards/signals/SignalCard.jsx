@@ -1,14 +1,12 @@
 // frontend/src/components/cards/signals/SignalCard.jsx
 /**
- * SignalCard — displays a single signal of any type with its metadata
- * and contextual actions.
+ * SignalCard — generic fallback card for signal rendering.
  *
- * Covered types: People, Objective, Tech Stack.
- *
- * Pain is NOT handled here. PainSignal has a dedicated card
- * (components/cards/signals/PainCard) because it requires nested impact
- * rendering and a different action surface (add/edit/delete impacts).
- * SignalList routes signalType === 'pain' to PainCard automatically.
+ * In normal flow, SignalList routes every concrete signal type to its
+ * dedicated card component (PainCard / ObjectiveCard / TechStackCard).
+ * SignalCard is retained as a defensive fallback for any future signal
+ * type not yet routed to a dedicated card; the *SignalBody fallbacks
+ * below surface a visible warning when one of those types lands here.
  *
  * Actions available per status:
  *   PENDING   → Validate, Reject, Edit, Delete
@@ -65,16 +63,12 @@ const STATUS_CONFIG = {
 /**
  * Distinct MUI Chip color + display label per signal type.
  *
- * SignalCard is now authoritative for People only. Pain, Objective,
- * and Tech Stack route to their own dedicated cards via SignalList.
- * The non-People entries are kept here purely for the fallback path:
- * if a caller bypasses SignalList and lands directly on SignalCard
- * with one of those types, the type chip still renders correctly
- * with the matching palette and the fallback body components surface
- * a visible warning.
+ * Kept for the fallback path: if a caller bypasses SignalList and
+ * lands directly on SignalCard with one of these types, the type chip
+ * still renders correctly with the matching palette and the fallback
+ * body components surface a visible warning.
  */
 const TYPE_CONFIG = {
-  people: { color: "secondary", label: "People" },
   pain: { color: "error", label: "Pain" },
   objective: { color: "info", label: "Objective" },
   "tech-stack": { color: "primary", label: "Tech Stack" },
@@ -355,22 +349,6 @@ function TechStackSignalBody({ signal }) {
 TechStackSignalBody.propTypes = { signal: PropTypes.object.isRequired };
 
 // ==============================|| EXPANDED DETAIL — PER TYPE ||============================== //
-
-function PeopleSignalDetail({ signal }) {
-  return (
-    <Stack spacing={1.5}>
-      <DetailField label="Notes" value={signal.notes} />
-      <QuoteBlock value={signal.source_quote} />
-      {signal.signal_category_display && (
-        <MetaItem
-          label="Signal category"
-          value={signal.signal_category_display}
-        />
-      )}
-    </Stack>
-  );
-}
-PeopleSignalDetail.propTypes = { signal: PropTypes.object.isRequired };
 
 /**
  * PainSignalDetail — fallback renderer, see PainSignalBody for rationale.
@@ -662,23 +640,14 @@ export default function SignalCard({
       </Stack>
 
       {/* ==================== CARD BODY — PER TYPE ==================== */}
+      {/* ==================== CARD BODY — PER TYPE ==================== */}
       {/*
-        signalType === 'pain' AND 'tech-stack' are intentionally NOT
-        rendered authoritatively here — PainCard / TechStackCard take
-        over via SignalList. If either lands here it means the caller
-        bypassed SignalList; the *Body fallback components surface a
-        visible warning in that case.
-
-        signalType === 'objective' was previously rendered here too;
-        it now goes through ObjectiveCard via SignalList. The
-        ObjectiveSignalBody renderer below is kept as a similar
-        fallback path — though it has not been retro-converted to the
-        explicit "should be rendered via ObjectiveCard" warning style,
-        because the old fields it reads (goal_level_display,
-        success_criteria) still exist on the model. Out of scope for
-        Sprint TechStack.
+        All three signal types (pain / objective / tech-stack) are
+        normally rendered by their dedicated card components via
+        SignalList. The *Body components below are fallback renderers
+        that surface a visible warning when one of those types lands
+        here, e.g. because a caller bypassed SignalList.
       */}
-      {signalType === "people" && <PeopleSignalBody signal={signal} />}
       {signalType === "pain" && <PainSignalBody signal={signal} />}
       {signalType === "objective" && <ObjectiveSignalBody signal={signal} />}
       {signalType === "tech-stack" && <TechStackSignalBody signal={signal} />}
@@ -698,8 +667,8 @@ export default function SignalCard({
       {/* ==================== EXPANDED DETAILS ==================== */}
       <Collapse in={expanded} timeout="auto" unmountOnExit>
         <Divider sx={{ mt: 1.5, mb: 1.5 }} />
-        {/* Pain detail is a fallback — PainCard handles it normally. */}
-        {signalType === "people" && <PeopleSignalDetail signal={signal} />}
+        {/* All three branches are fallback renderers — dedicated cards
+            handle expansion themselves when used through SignalList. */}
         {signalType === "pain" && <PainSignalDetail signal={signal} />}
         {signalType === "objective" && (
           <ObjectiveSignalDetail signal={signal} />
@@ -731,17 +700,6 @@ SignalCard.propTypes = {
     }),
     source_activity: PropTypes.shape({ id: PropTypes.string }),
     created_at: PropTypes.string,
-    // PeopleSignal
-    role: PropTypes.string,
-    role_display: PropTypes.string,
-    influence_level: PropTypes.string,
-    influence_level_display: PropTypes.string,
-    target_contact: PropTypes.shape({
-      id: PropTypes.string,
-      first_name: PropTypes.string,
-      last_name: PropTypes.string,
-      job_title: PropTypes.string,
-    }),
     notes: PropTypes.string,
     // PainSignal
     summary: PropTypes.string,
@@ -761,8 +719,7 @@ SignalCard.propTypes = {
   }).isRequired,
 
   /** Signal type — never inferred from the signal object itself */
-  signalType: PropTypes.oneOf(["people", "pain", "objective", "tech-stack"])
-    .isRequired,
+  signalType: PropTypes.oneOf(["pain", "objective", "tech-stack"]).isRequired,
 
   onValidate: PropTypes.func.isRequired,
   onReject: PropTypes.func.isRequired,

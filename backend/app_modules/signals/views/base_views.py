@@ -42,8 +42,6 @@ from ..constants import (
     SignalStatus,
     SignalSource,
     SignalCategory,
-    PeopleRole,
-    InfluenceLevel,
     SignalWhat,
     SignalDimension,
     HumanImpact,
@@ -464,8 +462,6 @@ class SignalChoicesView(APIView):
         "status":            [...],
         "source":            [...],
         "signal_category":   [...],
-        "people_roles":      [...],
-        "influence_levels":  [...],
         "signal_whats":      [...],   # shared across Pain and Objective
         "signal_dimensions": [...],   # shared across Pain and Objective
         "human_impacts":     [...],
@@ -497,6 +493,14 @@ class SignalChoicesView(APIView):
                                    DEPARTMENT requires usage_department,
                                    TEAM / COMPANY / UNKNOWN forbid it).
 
+    Sprint 2 removals (PeopleSignal sunset):
+      - people_roles      → removed (PeopleRole enum dropped along with
+                                      PeopleSignal; stakeholder data now
+                                      lives on Contact + activity People
+                                      sections).
+      - influence_levels  → removed (InfluenceLevel enum dropped along
+                                      with PeopleSignal).
+
     Notes:
       - scope_levels drives PainImpact (BUSINESS / DEPARTMENT / PERSONAL)
         and ObjectiveSignal scope_level — see those models' docstrings.
@@ -517,8 +521,6 @@ class SignalChoicesView(APIView):
                 'status':            _choices(SignalStatus),
                 'source':            _choices(SignalSource),
                 'signal_category':   _choices(SignalCategory),
-                'people_roles':      _choices(PeopleRole),
-                'influence_levels':  _choices(InfluenceLevel),
                 'signal_whats':      _choices(SignalWhat),
                 'signal_dimensions': _choices(SignalDimension),
                 'human_impacts':     _choices(HumanImpact),

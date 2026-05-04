@@ -369,19 +369,17 @@ class SignalClusterType(models.TextChoices):
     """
     Signal types that support cluster aggregation.
 
-    In the current sprint only PAIN is actively aggregated. PEOPLE,
-    OBJECTIVE, and TECH_STACK are reserved — kept in the enum so the
-    same SignalClusterArchival table can serve them without a schema
-    change when their respective waves ship.
+    PAIN, OBJECTIVE, and TECH_STACK all produce real clusters today.
+    The enum stays open-ended so that future signal types can plug
+    into the same SignalClusterArchival table without a schema change.
 
     The string values intentionally match the keys used in
-    SignalDataService._SIGNAL_TYPE_MAP (people / pain / objective /
-    tech_stack) so the same identifier travels through all layers.
+    SignalDataService._SIGNAL_TYPE_MAP (pain / objective / tech_stack)
+    so the same identifier travels through all layers.
     """
     PAIN       = 'pain',       _('Pain')
-    PEOPLE     = 'people',     _('People')       # reserved — not aggregated yet
-    OBJECTIVE  = 'objective',  _('Objective')    # reserved — activates in Wave B
-    TECH_STACK = 'tech_stack', _('Tech Stack')   # reserved — not aggregated yet
+    OBJECTIVE  = 'objective',  _('Objective')
+    TECH_STACK = 'tech_stack', _('Tech Stack')
 
 
 class FreshnessStatus(models.TextChoices):

@@ -5,12 +5,7 @@ from .base_serializer import (
     BaseSignalUpdateSerializer,
     SignalLLMSerializer,
 )
-from .people_serializer import (
-    PeopleSignalListSerializer,
-    PeopleSignalDetailSerializer,
-    PeopleSignalCreateSerializer,
-    PeopleSignalUpdateSerializer,
-)
+
 from .pain_serializer import (
     PainSignalListSerializer,
     PainSignalDetailSerializer,
@@ -48,11 +43,7 @@ __all__ = [
     'BaseSignalCreateSerializer',
     'BaseSignalUpdateSerializer',
     'SignalLLMSerializer',
-    # People
-    'PeopleSignalListSerializer',
-    'PeopleSignalDetailSerializer',
-    'PeopleSignalCreateSerializer',
-    'PeopleSignalUpdateSerializer',
+
     # Pain
     'PainSignalListSerializer',
     'PainSignalDetailSerializer',

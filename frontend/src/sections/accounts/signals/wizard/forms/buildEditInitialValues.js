@@ -1,29 +1,22 @@
 // frontend/src/sections/accounts/signals/wizard/forms/buildEditInitialValues.js
 /**
- * @param {Object} signal - PainSignal read object
- * @returns {Object}
+ * Build Formik initialValues for an edit form, given a backend signal
+ * read object and its concrete type.
  *
- * PainSignal is a pure qualitative diagnosis — what × dimension, a summary,
- * a source context, and free-text notes. Impact-level data (scope, metrics,
- * human consequences) lives on PainImpact and is captured separately via
- * AddPainImpactDialog in the Account Workspace, NOT in the wizard form.
+ * Each per-type builder mirrors exactly the fields of its matching
+ * Inline*Form component. Contact / activity / catalog objects are
+ * passed whole — the matching Async* selectors expect the full option
+ * object as their value prop, not a UUID string. This avoids a re-fetch
+ * loop to re-hydrate the selection on edit.
  *
- * This builder mirrors exactly the 7 fields of InlinePainForm:
- *   what, dimension, summary            → canonical + narrative
- *   source_contact, source_activity     → required provenance (objects)
- *   source_quote, notes                 → optional narrative extras
- *
- * Contact and activity objects are passed whole — AsyncContactSelect and
- * AsyncActivitySelect both expect the full option object as their value
- * prop, not a UUID string. This avoids a re-fetch loop to re-hydrate the
- * selection on edit.
+ * @param {'pain'|'objective'|'tech-stack'} signalType
+ * @param {Object} signal - Backend read object for the signal
+ * @returns {Object} Formik-ready initialValues
  */
 export function buildEditInitialValues(signalType, signal) {
   if (!signal) return {};
 
   switch (signalType) {
-    case "people":
-      return buildPeopleInitialValues(signal);
     case "pain":
       return buildPainInitialValues(signal);
     case "objective":
@@ -33,28 +26,6 @@ export function buildEditInitialValues(signalType, signal) {
     default:
       return {};
   }
-}
-
-// ==============================|| PEOPLE ||============================== //
-
-/**
- * @param {Object} signal - PeopleSignal read object
- * @returns {Object}
- */
-function buildPeopleInitialValues(signal) {
-  return {
-    role: signal.role ?? "",
-    influence_level: signal.influence_level ?? "",
-    // Contact objects passed as-is — AsyncContactSelect expects { id, ... } | null
-    target_contact: signal.target_contact ?? null,
-    // Department objects: extract id for MUI Select
-    target_department: signal.target_department?.id ?? "",
-    notes: signal.notes ?? "",
-    source_contact: signal.source_contact ?? null,
-    source_department: signal.source_department?.id ?? "",
-    source_quote: signal.source_quote ?? "",
-    signal_category: signal.signal_category ?? "",
-  };
 }
 
 // ==============================|| PAIN ||============================== //

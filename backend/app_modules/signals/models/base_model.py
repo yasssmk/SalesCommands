@@ -2,16 +2,16 @@
 """
 Signal models for the Signals module.
 
-Three concrete signal types, all inheriting from BaseSignal (abstract):
-  - QualificationSignal  — commercial qualification data (MEDPICC-style)
-  - TechStackSignal      — tools and technology used by the account
-
-RhetoricalSignal is out of scope for Sprint 1.
+Four concrete signal types, all inheriting from BaseSignal (abstract):
+  - PainSignal           — qualitative pain diagnosis (what × dimension)
+  - ObjectiveSignal      — business objectives (what × dimension × scope)
+  - TechStackSignal      — tools used by the account (catalog-anchored)
 
 Creation modes:
-  - MANUAL        → status forced to VALIDATED, confidence forced to None
-  - LLM_EXTRACTED → status starts PENDING, rep must validate
-  - LLM_MODIFIED  → LLM-extracted then edited by rep before validation
+  - MANUAL            → status forced to VALIDATED, confidence forced to None
+  - LLM_EXTRACTED     → status starts PENDING, rep must validate
+  - LLM_MODIFIED      → LLM-extracted then edited by rep before validation
+  - EXTERNAL_RESEARCH → status starts PENDING (rep validates)
 """
 
 from django.db import models

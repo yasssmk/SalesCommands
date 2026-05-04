@@ -3,7 +3,8 @@
 SignalManager — signal lifecycle operations.
 
 Centralises all state-mutating operations on signals:
-  create   — route signal_type → model, delegate save
+  create   — route signal_type → model, propagate activity context,
+             delegate save
   validate — PENDING → VALIDATED
   reject   — PENDING → REJECTED (+ optional reason in metadata)
   edit     — patch fields, snapshot original_value on first LLM edit
@@ -11,7 +12,21 @@ Centralises all state-mutating operations on signals:
 All methods raise StandardizedValidationError on guard violations.
 All write paths use model.save(user=user, client_id=...) so that
 ModuleBaseModel audit fields (created_by, updated_by) are always enforced.
+
+Activity-context propagation
+----------------------------
+At create time, when a `source_activity` is provided, the manager
+auto-fills `decision_cycle`, `campaign`, and (for future signal types)
+`decision_step` from the activity's own FKs — unless the caller passed
+explicit values, which always win. Concrete signal types that
+shadow-override these inherited fields to None on the model
+(TechStackSignal sets all three) are skipped by class-level
+hasattr checks. This guarantees that signals captured from an Activity
+context inherit the deal-level metadata required for cluster scoping
+without forcing every UI surface to remember the propagation rules.
 """
+
+import logging
 
 from django.utils import timezone
 
@@ -19,7 +34,10 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import SignalErrorMessages
 
 from ..constants import SignalStatus, SignalSource
-from ..models import PeopleSignal, PainSignal, ObjectiveSignal, TechStackSignal
+from ..models import PainSignal, ObjectiveSignal, TechStackSignal
+
+
+logger = logging.getLogger(__name__)
 
 
 class SignalManager:
@@ -35,16 +53,29 @@ class SignalManager:
     # CREATE
     # =========================================================================
 
+    # Fields auto-propagated from source_activity at create time when not
+    # explicitly provided. The list is intentionally inclusive — concrete
+    # models that shadow-override a field to None (e.g. TechStackSignal
+    # for decision_cycle / campaign) are detected at runtime and skipped.
+    # decision_step is included for forward-compatibility: no current
+    # signal type carries it, but adding one later requires no change here.
+    _ACTIVITY_PROPAGATED_FIELDS = ('decision_cycle', 'campaign', 'decision_step')
+
     @classmethod
     def create(cls, data: dict, user, client_id) -> object:
         """
         Create a new signal of the appropriate concrete type.
 
         Routing (signal_type key consumed here, not passed to the model):
-          'people'     → PeopleSignal
           'pain'       → PainSignal
           'objective'  → ObjectiveSignal
           'tech_stack' → TechStackSignal
+
+        Activity-context propagation:
+          When `data['source_activity']` is set, fields listed in
+          _ACTIVITY_PROPAGATED_FIELDS are auto-filled from the activity
+          when not already provided in `data`. See
+          _propagate_activity_context() for the full algorithm.
 
         Source routing is enforced by BaseSignal.save():
           MANUAL source      → status forced to VALIDATED, confidence = None
@@ -62,10 +93,10 @@ class SignalManager:
         Raises:
             StandardizedValidationError if signal_type is invalid.
         """
+
         signal_type = data.pop('signal_type')
 
         model_map = {
-            'people':     PeopleSignal,
             'pain':       PainSignal,
             'objective':  ObjectiveSignal,
             'tech_stack': TechStackSignal,
@@ -78,9 +109,84 @@ class SignalManager:
                 )
             )
 
+        # Auto-fill deal-level context from source_activity when applicable.
+        # Mutates `data` in place — non-destructive (only fills None / missing keys).
+        cls._propagate_activity_context(model_class, data)
+
         signal = model_class(**data)
         signal.save(user=user, client_id=client_id)
         return signal
+
+    # -------------------------------------------------------------------------
+    # CREATE — helpers
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def _propagate_activity_context(cls, model_class, data: dict) -> None:
+        """
+        Auto-fill deal-level FKs from `data['source_activity']` when the
+        caller didn't pass them explicitly.
+
+        Fields covered: decision_cycle, campaign, decision_step
+        (see _ACTIVITY_PROPAGATED_FIELDS).
+
+        Algorithm (per field):
+          1. If source_activity is None / missing in data → no-op (early return).
+          2. If the concrete model shadow-overrides the field to None at the
+             class level (TechStackSignal sets decision_cycle, campaign,
+             decision_step to None) → skip silently. Detected via class-level
+             getattr to avoid triggering Django descriptor refresh on a
+             non-existent column (same pattern as BaseSignal.save() rule 2).
+          3. If `data[field]` is already set to a non-None value → skip
+             (caller value wins; propagation is non-destructive).
+          4. Otherwise: copy `getattr(source_activity, field, None)` into data.
+             A None on the activity propagates as None — no field violation
+             is introduced because all three propagated fields are nullable
+             on every signal model that exposes them.
+
+        Args:
+            model_class: Concrete signal model class (PeopleSignal, PainSignal,
+                         ObjectiveSignal, TechStackSignal).
+            data:        Mutable validated_data dict from the create serializer.
+                         Mutated in place.
+
+        Returns:
+            None. Side effect: `data` may have new keys filled in.
+        """
+        source_activity = data.get('source_activity')
+        if source_activity is None:
+            return
+
+        for field in cls._ACTIVITY_PROPAGATED_FIELDS:
+            # Class-level check — None means the concrete model has
+            # shadow-overridden the field (no DB column). Reading via the
+            # class avoids the descriptor machinery that an instance access
+            # would trigger.
+            if getattr(model_class, field, None) is None:
+                continue
+
+            # Caller provided an explicit value (including a non-null FK):
+            # respect it. We test `is not None` rather than truthiness so a
+            # caller intentionally passing None to override the propagation
+            # would still trigger the fill — which is consistent with
+            # "caller didn't really commit to a value". If a caller wants
+            # to force null, they should not include the key at all and
+            # then no propagation happens because source_activity itself
+            # may be null too. In practice the wizard sends None for
+            # missing values, which is exactly what we want to fill in.
+            if data.get(field) is not None:
+                continue
+
+            propagated_value = getattr(source_activity, field, None)
+            if propagated_value is not None:
+                data[field] = propagated_value
+                logger.debug(
+                    'SignalManager: propagated %s=%s from activity %s to %s',
+                    field,
+                    getattr(propagated_value, 'pk', propagated_value),
+                    source_activity.pk,
+                    model_class.__name__,
+                )
 
     # =========================================================================
     # VALIDATE

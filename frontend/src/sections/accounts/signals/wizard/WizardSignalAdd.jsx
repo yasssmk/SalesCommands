@@ -58,7 +58,6 @@ import {
 
 import WizardNav from "./WizardNav";
 import WizardSummary from "./WizardSummary";
-import PeopleSection from "./sections/PeopleSection";
 import PainSection from "./sections/PainSection";
 import ObjectiveSection from "./sections/ObjectiveSection";
 import TechStackSection from "./sections/TechStackSection";
@@ -68,7 +67,6 @@ import TechStackSection from "./sections/TechStackSection";
 const DRAWER_WIDTH = 540;
 
 const INITIAL_STAGED = {
-  people: [],
   pain: [],
   objective: [],
   "tech-stack": [],
@@ -161,7 +159,6 @@ export default function WizardSignalAdd({
 
   const stagedCounts = useMemo(
     () => ({
-      people: staged.people.length,
       pain: staged.pain.length,
       objective: staged.objective.length,
       "tech-stack": staged["tech-stack"].length,
@@ -202,10 +199,7 @@ export default function WizardSignalAdd({
   }, []);
 
   // Type-specific wrappers — each section receives (payload) => void
-  const handleAddPeople = useCallback(
-    (payload) => handleAdd("people", payload),
-    [handleAdd],
-  );
+
   const handleAddPain = useCallback(
     (payload) => handleAdd("pain", payload),
     [handleAdd],
@@ -242,10 +236,7 @@ export default function WizardSignalAdd({
   }, []);
 
   // Type-specific wrappers for sections (_key) => void
-  const handleTogglePeople = useCallback(
-    (_key) => handleToggle("people", _key),
-    [handleToggle],
-  );
+
   const handleTogglePain = useCallback(
     (_key) => handleToggle("pain", _key),
     [handleToggle],
@@ -275,10 +266,7 @@ export default function WizardSignalAdd({
   }, []);
 
   // Type-specific wrappers for sections (_key) => void
-  const handleRemovePeople = useCallback(
-    (_key) => handleRemove("people", _key),
-    [handleRemove],
-  );
+
   const handleRemovePain = useCallback(
     (_key) => handleRemove("pain", _key),
     [handleRemove],
@@ -345,10 +333,7 @@ export default function WizardSignalAdd({
   }, []);
 
   // Type-specific wrappers for sections — (_key) => void, (_key, payload) => void
-  const handleStartEditPeople = useCallback(
-    (_key) => handleStartEdit("people", _key),
-    [handleStartEdit],
-  );
+
   const handleStartEditPain = useCallback(
     (_key) => handleStartEdit("pain", _key),
     [handleStartEdit],
@@ -362,10 +347,6 @@ export default function WizardSignalAdd({
     [handleStartEdit],
   );
 
-  const handleUpdatePeople = useCallback(
-    (_key, payload) => handleUpdate("people", _key, payload),
-    [handleUpdate],
-  );
   const handleUpdatePain = useCallback(
     (_key, payload) => handleUpdate("pain", _key, payload),
     [handleUpdate],
@@ -614,19 +595,6 @@ export default function WizardSignalAdd({
       editing?.type === type ? editing._key : null;
 
     switch (activeSection) {
-      case "people":
-        return (
-          <PeopleSection
-            stagedSignals={staged.people}
-            onAdd={handleAddPeople}
-            onToggleStatus={handleTogglePeople}
-            onRemove={handleRemovePeople}
-            onEdit={handleStartEditPeople}
-            onUpdate={handleUpdatePeople}
-            editingKey={editingKeyFor("people")}
-            {...sharedProps}
-          />
-        );
       case "pain":
         return (
           <PainSection
@@ -885,10 +853,5 @@ WizardSignalAdd.propTypes = {
   /** Pre-fills source_contact in all inline forms */
   defaultContact: PropTypes.object,
   /** Section open by default — defaults to 'pain' */
-  defaultSection: PropTypes.oneOf([
-    "people",
-    "pain",
-    "objective",
-    "tech-stack",
-  ]),
+  defaultSection: PropTypes.oneOf(["pain", "objective", "tech-stack"]),
 };

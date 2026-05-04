@@ -59,7 +59,6 @@ import {
 
 /** Section toggle — 4 signal types */
 const TYPE_OPTIONS = [
-  { value: "people", label: "People" },
   { value: "pain", label: "Pain" },
   { value: "objective", label: "Objective" },
   { value: "tech-stack", label: "Tech Stack" },
@@ -181,12 +180,51 @@ export default function ActivitySignalsTab({ activity }) {
 
   /**
    * Extra payload injected into every signal at wizard dispatch time.
-   * source_activity links each new signal to this activity.
+   *
+   * Provides the deal-level context the wizard cannot infer on its own:
+   *   - source_activity : links each new signal to this activity (always)
+   *   - decision_cycle  : copied from the activity when set
+   *   - campaign        : copied from the activity's campaign_detail.id
+   *   - decision_step   : copied from the activity when set
+   *
+   * Frontend redundancy with the backend propagation hook
+   * -----------------------------------------------------
+   * SignalManager.create() also auto-fills decision_cycle / campaign /
+   * decision_step from source_activity when not explicitly provided
+   * (Sprint 1 hook). Sending these values from the frontend is a belt-
+   * and-suspenders measure: when the activity object is already loaded
+   * client-side, we pass the IDs along so the write path stays fully
+   * deterministic and doesn't depend on a second backend resolution.
+   *
+   * Backend behaviour with these values
+   * -----------------------------------
+   * The propagation hook respects explicit non-null values (caller
+   * wins). Sending null for fields the activity doesn't carry triggers
+   * the hook fallback — also safe, since null on the activity side
+   * means "no value to propagate" and the field stays null on the
+   * signal too.
+   *
+   * TechStackSignal note
+   * --------------------
+   * decision_cycle / campaign / decision_step are stripped from the
+   * TechStack create serializer's fields list (model shadow-overrides),
+   * so DRF silently ignores them on TechStack creation. Sending them
+   * uniformly here is safe — no per-type branching needed.
    */
-  const extraPayload = useMemo(
-    () => (activityId ? { source_activity: activityId } : {}),
-    [activityId],
-  );
+  const extraPayload = useMemo(() => {
+    if (!activityId) return {};
+    return {
+      source_activity: activityId,
+      decision_cycle: activity?.decision_cycle ?? null,
+      campaign: activity?.campaign_detail?.id ?? null,
+      decision_step: activity?.decision_step ?? null,
+    };
+  }, [
+    activityId,
+    activity?.decision_cycle,
+    activity?.campaign_detail?.id,
+    activity?.decision_step,
+  ]);
 
   // ==============================|| SECTION STATE ||============================== //
 
@@ -197,13 +235,6 @@ export default function ActivitySignalsTab({ activity }) {
   }, []);
 
   // ==============================|| DATA FETCHING ||============================== //
-
-  const {
-    signals: peopleSignals,
-    signalsLoading: peopleLoading,
-    signalsError: peopleError,
-    mutateSignals: mutatePeople,
-  } = useGetSignalsByActivity(activityId, "people");
 
   const {
     signals: painSignals,
@@ -231,42 +262,30 @@ export default function ActivitySignalsTab({ activity }) {
   // ==============================|| DERIVED ||============================== //
 
   const mutateAll = useCallback(() => {
-    mutatePeople();
     mutatePain();
     mutateObjective();
     mutateTech();
-  }, [mutatePeople, mutatePain, mutateObjective, mutateTech]);
+  }, [mutatePain, mutateObjective, mutateTech]);
 
   /** Total signal count across all types — shown in panel header */
   const totalCount = useMemo(
-    () =>
-      peopleSignals.length +
-      painSignals.length +
-      objectiveSignals.length +
-      techSignals.length,
-    [peopleSignals, painSignals, objectiveSignals, techSignals],
+    () => painSignals.length + objectiveSignals.length + techSignals.length,
+    [painSignals, objectiveSignals, techSignals],
   );
 
   /** Per-type counts — shown as badges in the section toggle */
   const counts = useMemo(
     () => ({
-      people: peopleSignals.length,
       pain: painSignals.length,
       objective: objectiveSignals.length,
       "tech-stack": techSignals.length,
     }),
-    [peopleSignals, painSignals, objectiveSignals, techSignals],
+    [painSignals, objectiveSignals, techSignals],
   );
 
   /** Active section data — signals, loading, error */
   const activeData = useMemo(() => {
     switch (activeSection) {
-      case "people":
-        return {
-          signals: peopleSignals,
-          loading: peopleLoading,
-          error: peopleError,
-        };
       case "pain":
         return { signals: painSignals, loading: painLoading, error: painError };
       case "objective":
@@ -282,9 +301,6 @@ export default function ActivitySignalsTab({ activity }) {
     }
   }, [
     activeSection,
-    peopleSignals,
-    peopleLoading,
-    peopleError,
     painSignals,
     painLoading,
     painError,

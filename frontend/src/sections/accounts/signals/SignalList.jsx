@@ -3,7 +3,7 @@
  * SignalList
  *
  * @param {Array}    signals            - Array of signal objects for this type
- * @param {string}   signalType         - 'people' | 'pain' | 'objective' | 'tech-stack'
+ * @param {string}   signalType         - 'pain' | 'objective' | 'tech-stack'
  * @param {boolean}  loading            - Show skeleton when true
  * @param {*}        error              - Truthy value shows error state
  * @param {Function} onValidate         - (signal, signalType) => void
@@ -153,9 +153,9 @@ export default function SignalList({
   emptyMessage,
   emptyDescription,
   // Props consumed by dedicated card components:
-  //   - `choices` is needed by PainCard (impact labels / human_impacts)
-  //     AND by ObjectiveCard (canonical axes + scope labels — Wave B).
-  //     Ignored silently when signalType is People / TechStack.
+  //   - `choices` is needed by PainCard (impact labels / human_impacts),
+  //     ObjectiveCard (canonical axes + scope labels), and TechStackCard
+  //     (usage scope + lifecycle labels). Safely ignored when absent.
   //   - `onAddImpact` / `onEditImpact` / `onDeleteImpact` are Pain-only.
   //     A Pain SignalList without these handlers will crash at PainCard
   //     level — the failure is obvious.
@@ -195,12 +195,7 @@ export default function SignalList({
 
   // ==============================|| LIST ||============================== //
 
-  // Each signal type can route to a dedicated card component. The generic
-  // SignalCard remains authoritative for People only — Pain, Objective,
-  // and Tech Stack each have their own dedicated card with type-specific
-  // affordances.
-  //
-  // Dedicated cards:
+  // Each signal type routes to its own dedicated card component:
   //   - pain       → PainCard        (nested impacts + impact CRUD controls)
   //   - objective  → ObjectiveCard   (canonical axes + scope + target_date
   //                                    urgency — Wave B)
@@ -209,7 +204,9 @@ export default function SignalList({
   //                                    Sprint TechStack)
   //
   // Resolution is done once per type (outside the map) so the branch
-  // predicate stays O(1) per row.
+  // predicate stays O(1) per row. The generic SignalCard fallback below
+  // is retained as a defensive net for any future signal type that
+  // ships before its dedicated card is wired through this list.
   const isPain = signalType === "pain";
   const isObjective = signalType === "objective";
   const isTechStack = signalType === "tech-stack";
@@ -257,9 +254,9 @@ export default function SignalList({
         />
       );
     }
-    // Fallback: People (and any other future type) renders via the
-    // generic SignalCard. SignalCard's PainSignalBody / TechStackSignalBody
-    // fallbacks remain visible warnings if someone bypasses this routing.
+    // Defensive fallback for any future signal type not yet routed to a
+    // dedicated card. SignalCard's *SignalBody fallbacks surface a
+    // visible warning if someone bypasses this routing.
     return (
       <SignalCard
         key={signal.id}
@@ -300,8 +297,7 @@ SignalList.propTypes = {
       id: PropTypes.string.isRequired,
     }),
   ),
-  signalType: PropTypes.oneOf(["people", "pain", "objective", "tech-stack"])
-    .isRequired,
+  signalType: PropTypes.oneOf(["pain", "objective", "tech-stack"]).isRequired,
   loading: PropTypes.bool,
   error: PropTypes.any,
   onValidate: PropTypes.func.isRequired,
@@ -311,10 +307,10 @@ SignalList.propTypes = {
   emptyMessage: PropTypes.string,
   emptyDescription: PropTypes.string,
 
-  // `choices` is consumed by PainCard + ObjectiveCard (Wave B) to render
-  // canonical axis and scope labels. Not enforced strictly required so
-  // that People / TechStack callers can omit it without warnings, but
-  // Pain / Objective lists without it will render raw enum values.
+  // `choices` is consumed by PainCard, ObjectiveCard, and TechStackCard
+  // to render canonical axis / scope / lifecycle labels. Not enforced
+  // strictly required so callers can omit it; lists missing the prop
+  // will render raw enum values where applicable.
   //
   // `onAddImpact` / `onEditImpact` / `onDeleteImpact` are Pain-only —
   // omitted for any other signalType. A Pain SignalList without these

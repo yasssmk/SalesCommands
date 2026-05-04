@@ -46,15 +46,11 @@ import Stack from "@mui/material/Stack";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
-// ant-design icons
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
-
 // project imports
 import SignalList from "../signals/SignalList";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "../signals/SignalEditDialog";
 import AddPainImpactDialog from "../signals/pain/AddPainImpactDialog";
-import WizardSignalAdd from "../signals/wizard/WizardSignalAdd";
 
 import {
   useGetSignalsByAccount,
@@ -72,7 +68,6 @@ import {
 
 /** Section toggle options — 4 signal types */
 const TYPE_OPTIONS = [
-  { value: "people", label: "People" },
   { value: "pain", label: "Pain" },
   { value: "objective", label: "Objective" },
   { value: "tech-stack", label: "Tech Stack" },
@@ -100,8 +95,6 @@ export default function AccountSignalsTab({ accountId, account }) {
   const [statusFilter, setStatusFilter] = useState("");
 
   // ==============================|| MODAL STATE ||============================== //
-
-  const [wizardOpen, setWizardOpen] = useState(false);
 
   const [rejectModal, setRejectModal] = useState({
     open: false,
@@ -140,13 +133,6 @@ export default function AccountSignalsTab({ accountId, account }) {
   );
 
   const {
-    signals: peopleSignals,
-    signalsLoading: peopleLoading,
-    signalsError: peopleError,
-    mutateSignals: mutatePeople,
-  } = useGetSignalsByAccount(accountId, "people", sharedOptions);
-
-  const {
     signals: painSignals,
     signalsLoading: painLoading,
     signalsError: painError,
@@ -172,43 +158,35 @@ export default function AccountSignalsTab({ accountId, account }) {
   // ==============================|| DERIVED ||============================== //
 
   /**
-   * Revalidate all 4 sections — called after any signal-level write.
+   * Revalidate all 3 sections — called after any signal-level write.
    * Pain mutations also implicitly invalidate the cluster cache via
    * the API layer's revalidateMultiple — that's the Qualification tab's
    * responsibility, not ours.
    */
   const mutateAll = useCallback(() => {
-    mutatePeople();
     mutatePain();
     mutateObjective();
     mutateTech();
-  }, [mutatePeople, mutatePain, mutateObjective, mutateTech]);
+  }, [mutatePain, mutateObjective, mutateTech]);
 
   /**
    * Counts per type — shown as badges in the section toggle.
-   * All 4 types now share the same flat-list semantics, so each count
+   * All 3 types share the same flat-list semantics, so each count
    * is the number of individual signals in the current view (after
    * status filter).
    */
   const counts = useMemo(
     () => ({
-      people: peopleSignals.length,
       pain: painSignals.length,
       objective: objectiveSignals.length,
       "tech-stack": techSignals.length,
     }),
-    [peopleSignals, painSignals, objectiveSignals, techSignals],
+    [painSignals, objectiveSignals, techSignals],
   );
 
-  /** Active section data — uniform shape across all 4 types. */
+  /** Active section data — uniform shape across all 3 types. */
   const activeData = useMemo(() => {
     switch (activeType) {
-      case "people":
-        return {
-          signals: peopleSignals,
-          loading: peopleLoading,
-          error: peopleError,
-        };
       case "pain":
         return {
           signals: painSignals,
@@ -232,9 +210,6 @@ export default function AccountSignalsTab({ accountId, account }) {
     }
   }, [
     activeType,
-    peopleSignals,
-    peopleLoading,
-    peopleError,
     painSignals,
     painLoading,
     painError,
@@ -255,21 +230,6 @@ export default function AccountSignalsTab({ accountId, account }) {
   const handleStatusChange = useCallback((e) => {
     setStatusFilter(e.target.value);
   }, []);
-
-  // ==============================|| WIZARD HANDLERS ||============================== //
-
-  const handleWizardOpen = useCallback(() => {
-    setWizardOpen(true);
-  }, []);
-
-  const handleWizardClose = useCallback(() => {
-    setWizardOpen(false);
-  }, []);
-
-  const handleWizardSuccess = useCallback(() => {
-    mutateAll();
-    // Wizard closes itself on full success
-  }, [mutateAll]);
 
   // ==============================|| LIFECYCLE HANDLERS (universal) ||============================== //
 
@@ -385,73 +345,62 @@ export default function AccountSignalsTab({ accountId, account }) {
   return (
     <Box>
       {/* ==================== TOOLBAR ==================== */}
+      {/*
+        Read-only operational view: signal creation now happens exclusively
+        from the Activity Workspace (ActivitySignalsTab), where the source
+        activity context is available for auto-propagation. This tab keeps
+        full lifecycle control (validate / reject / edit / delete) plus
+        Pain impact CRUD via PainCard.
+      */}
       <Stack
         direction={{ xs: "column", sm: "row" }}
         spacing={1.5}
-        alignItems={{ xs: "stretch", sm: "center" }}
-        justifyContent="space-between"
+        alignItems="center"
         sx={{ mb: 2 }}
       >
-        {/* Left: section toggle + status filter (universal across all 4 types) */}
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={1.5}
-          alignItems="center"
-        >
-          <ToggleButtonGroup
-            value={activeType}
-            exclusive
-            onChange={handleTypeChange}
-            size="small"
-            aria-label="Signal section"
-          >
-            {TYPE_OPTIONS.map((opt) => (
-              <ToggleButton
-                key={opt.value}
-                value={opt.value}
-                sx={{ textTransform: "none", px: 1.5, fontSize: "0.78rem" }}
-              >
-                {opt.label}
-                {counts[opt.value] > 0 && (
-                  <Chip
-                    label={counts[opt.value]}
-                    size="small"
-                    sx={{
-                      ml: 0.75,
-                      height: 18,
-                      fontSize: "0.62rem",
-                      pointerEvents: "none",
-                    }}
-                  />
-                )}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-
-          <Select
-            value={statusFilter}
-            onChange={handleStatusChange}
-            size="small"
-            displayEmpty
-            sx={{ minWidth: 140, fontSize: "0.82rem" }}
-          >
-            {STATUS_OPTIONS.map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </Stack>
-
-        {/* Right: wizard add button */}
-        <Button
-          variant="contained"
+        <ToggleButtonGroup
+          value={activeType}
+          exclusive
+          onChange={handleTypeChange}
           size="small"
-          startIcon={<PlusOutlined />}
-          onClick={handleWizardOpen}
+          aria-label="Signal section"
         >
-          Add Signal
-        </Button>
+          {TYPE_OPTIONS.map((opt) => (
+            <ToggleButton
+              key={opt.value}
+              value={opt.value}
+              sx={{ textTransform: "none", px: 1.5, fontSize: "0.78rem" }}
+            >
+              {opt.label}
+              {counts[opt.value] > 0 && (
+                <Chip
+                  label={counts[opt.value]}
+                  size="small"
+                  sx={{
+                    ml: 0.75,
+                    height: 18,
+                    fontSize: "0.62rem",
+                    pointerEvents: "none",
+                  }}
+                />
+              )}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+
+        <Select
+          value={statusFilter}
+          onChange={handleStatusChange}
+          size="small"
+          displayEmpty
+          sx={{ minWidth: 140, fontSize: "0.82rem" }}
+        >
+          {STATUS_OPTIONS.map((opt) => (
+            <MenuItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </MenuItem>
+          ))}
+        </Select>
       </Stack>
 
       <Divider sx={{ mb: 2 }} />
@@ -490,17 +439,6 @@ export default function AccountSignalsTab({ accountId, account }) {
       />
 
       {/* ==================== MODALS ==================== */}
-
-      {/* Signal capture wizard */}
-      <WizardSignalAdd
-        open={wizardOpen}
-        onClose={handleWizardClose}
-        onSuccess={handleWizardSuccess}
-        accountId={accountId}
-        choices={choices}
-        choicesLoading={choicesLoading}
-        defaultSection={activeType}
-      />
 
       {/* Reject confirmation */}
       <AlertSignalReject

@@ -342,60 +342,146 @@ class AccountFilterService:
     # ==========================================================================
     # QUALIFICATION FILTER
     # ==========================================================================
-    
+
     @classmethod
     def _filter_by_qualification(cls, queryset, has_qualification, client_id=None):
-        """Filter accounts by qualification status."""
-        from apps.signals.models import QualificationSignal
-        
-        qualification_exists = QualificationSignal.objects.filter(
-            account_id=OuterRef('pk'),
-            status='APPROVED'
+        """
+        Filter accounts by qualification status — temporarily neutralised.
+
+        Status: STUB — returns queryset unchanged.
+
+        Why
+        ---
+        This filter previously relied on the legacy `apps.signals.models.
+        QualificationSignal` model, which has been replaced by the new
+        4-type architecture (PeopleSignal / PainSignal / ObjectiveSignal /
+        TechStackSignal) under `app_modules.signals`. The legacy import
+        was the last bridge from `app_modules` into `apps.signals`; it
+        has been removed as part of Sprint 1 Phase E hygiene.
+
+        The notion of "qualification" in the legacy model was a single
+        category covering MEDPICC-style commercial data. The new
+        architecture splits this concept across multiple signal types,
+        so a 1-to-1 redirect would be sloppy. A proper rewrite is
+        deferred to the Filtres sprint, when the team will revisit
+        `AccountFilterService` filters as a coherent set against the
+        new signals architecture.
+
+        Behavioural note
+        ----------------
+        Until the Filtres sprint ships:
+          - `has_qualification=true`   → returns ALL accounts (no narrowing)
+          - `has_qualification=false`  → returns ALL accounts (no widening)
+        The API endpoint accepting this query param continues to respond
+        200 (no breakage), but the parameter has no effect. A WARNING is
+        logged each time the filter is invoked so usage can be tracked
+        in ops logs and prioritised.
+
+        TODO (Filtres sprint)
+        ---------------------
+        Re-implement against the new signal types. Likely shape:
+          PainSignal.objects.filter(
+              account_id=OuterRef('pk'),
+              status=SignalStatus.VALIDATED,
+          ).exists()
+        — possibly OR'd across the 4 types depending on product intent
+        ("any validated signal" vs "specifically a Pain", etc.). To be
+        confirmed at sprint kickoff.
+
+        Args:
+            queryset:         CompanyAccount queryset (returned unchanged).
+            has_qualification: Boolean from the API caller (ignored).
+            client_id:        Tenant ID (ignored).
+
+        Returns:
+            queryset (unchanged).
+        """
+        logger.warning(
+            'AccountFilterService._filter_by_qualification called but is '
+            'currently a no-op (Sprint 1 hygiene — Filtres sprint pending). '
+            'has_qualification=%s, client_id=%s',
+            has_qualification,
+            client_id,
         )
-        
-        if client_id:
-            qualification_exists = qualification_exists.filter(client_id=client_id)
-        
-        if has_qualification:
-            return queryset.filter(Exists(qualification_exists))
-        else:
-            return queryset.exclude(Exists(qualification_exists))
+        return queryset
     
     # ==========================================================================
     # SIGNALS FRESHNESS FILTER
     # ==========================================================================
-    
+
     @classmethod
     def _filter_by_signals_freshness(cls, queryset, days, client_id=None):
-        """Filter accounts with recent signals."""
-        if not days or days <= 0:
-            return queryset
-        
-        from apps.signals.models import QualificationSignal, TechStackSignal, ProfileSignal
-        
-        cutoff_date = timezone.now() - timedelta(days=int(days))
-        
-        qual_exists = QualificationSignal.objects.filter(
-            account_id=OuterRef('pk'),
-            created_at__gte=cutoff_date
+        """
+        Filter accounts with recent signals — temporarily neutralised.
+
+        Status: STUB — returns queryset unchanged.
+
+        Why
+        ---
+        This filter previously relied on the legacy
+        `apps.signals.models.{QualificationSignal, TechStackSignal,
+        ProfileSignal}` models. The 4-type architecture under
+        `app_modules.signals` (PeopleSignal / PainSignal /
+        ObjectiveSignal / TechStackSignal) makes this freshness check
+        trivially redirectable, but rewriting filter logic in isolation
+        is out of scope for Sprint 1. The Filtres sprint will revisit
+        `AccountFilterService` as a coherent set.
+
+        Behavioural note
+        ----------------
+        Until the Filtres sprint ships, calling this filter has no
+        effect. The API endpoint accepting `signals_since_days`
+        continues to respond 200 but the parameter is ignored. A
+        WARNING is logged for traceability.
+
+        TODO (Filtres sprint)
+        ---------------------
+        Trivial redirect — this filter has no semantic ambiguity, only
+        a temporality. The new shape:
+
+            from app_modules.signals.models import (
+                PainSignal, ObjectiveSignal, TechStackSignal, PeopleSignal,
+            )
+
+            cutoff = timezone.now() - timedelta(days=int(days))
+            pain_recent      = PainSignal.objects.filter(
+                account_id=OuterRef('pk'), created_at__gte=cutoff,
+            )
+            objective_recent = ObjectiveSignal.objects.filter(
+                account_id=OuterRef('pk'), created_at__gte=cutoff,
+            )
+            tech_recent      = TechStackSignal.objects.filter(
+                account_id=OuterRef('pk'), created_at__gte=cutoff,
+            )
+            people_recent    = PeopleSignal.objects.filter(
+                account_id=OuterRef('pk'), created_at__gte=cutoff,
+            )
+            # client_id scoping on each
+            return queryset.filter(
+                Exists(pain_recent) | Exists(objective_recent)
+                | Exists(tech_recent) | Exists(people_recent),
+            )
+
+        PeopleSignal will be removed in Sprint 2 — drop the People
+        branch here when the model is gone (canonical removal trace
+        for that day).
+
+        Args:
+            queryset:  CompanyAccount queryset (returned unchanged).
+            days:      Number of days for the freshness window (ignored).
+            client_id: Tenant ID (ignored).
+
+        Returns:
+            queryset (unchanged).
+        """
+        logger.warning(
+            'AccountFilterService._filter_by_signals_freshness called but '
+            'is currently a no-op (Sprint 1 hygiene — Filtres sprint '
+            'pending). days=%s, client_id=%s',
+            days,
+            client_id,
         )
-        tech_exists = TechStackSignal.objects.filter(
-            account_id=OuterRef('pk'),
-            created_at__gte=cutoff_date
-        )
-        profile_exists = ProfileSignal.objects.filter(
-            account_id=OuterRef('pk'),
-            created_at__gte=cutoff_date
-        )
-        
-        if client_id:
-            qual_exists = qual_exists.filter(client_id=client_id)
-            tech_exists = tech_exists.filter(client_id=client_id)
-            profile_exists = profile_exists.filter(client_id=client_id)
-        
-        return queryset.filter(
-            Exists(qual_exists) | Exists(tech_exists) | Exists(profile_exists)
-        )
+        return queryset
     
     # ==========================================================================
     # UTILITY

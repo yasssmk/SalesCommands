@@ -44,14 +44,13 @@ import SendOutlined from "@ant-design/icons/SendOutlined";
 // ==============================|| CONSTANTS ||============================== //
 
 const TYPE_CONFIG = {
-  people: { label: "People", color: "secondary" },
   pain: { label: "Pain", color: "error" },
   objective: { label: "Objective", color: "info" },
   "tech-stack": { label: "Tech Stack", color: "primary" },
 };
 
 /** Ordered for display in the summary */
-const TYPE_ORDER = ["pain", "objective", "people", "tech-stack"];
+const TYPE_ORDER = ["pain", "objective", "tech-stack"];
 
 // ==============================|| HELPERS ||============================== //
 
@@ -66,7 +65,7 @@ function resolveLabel(options, value) {
 /**
  * Derive a short human-readable primary label for a staged signal.
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} type
+ * @param {'pain'|'objective'|'tech-stack'} type
  * @param {Object} signal
  * @param {Object} choices
  * @returns {string}
@@ -78,8 +77,6 @@ function getPrimaryLabel(type, signal, choices) {
       return signal.summary
         ? signal.summary.slice(0, 80) + (signal.summary.length > 80 ? "…" : "")
         : "—";
-    case "people":
-      return resolveLabel(choices?.people_roles, signal.role) ?? "—";
     case "tech-stack":
       return signal.tech_name || "Unnamed tool";
     default:
@@ -196,8 +193,7 @@ function SummarySignalCard({
 }
 
 SummarySignalCard.propTypes = {
-  type: PropTypes.oneOf(["people", "pain", "objective", "tech-stack"])
-    .isRequired,
+  type: PropTypes.oneOf(["pain", "objective", "tech-stack"]).isRequired,
   signal: PropTypes.shape({
     _key: PropTypes.string.isRequired,
     _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
@@ -410,7 +406,6 @@ export default function WizardSummary({
 
 WizardSummary.propTypes = {
   staged: PropTypes.shape({
-    people: PropTypes.array,
     pain: PropTypes.array,
     objective: PropTypes.array,
     "tech-stack": PropTypes.array,

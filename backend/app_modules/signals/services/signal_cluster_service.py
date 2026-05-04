@@ -7,16 +7,16 @@ given account. For Pain, canonical_key is
     "pain:<SignalWhat>:<SignalDimension>"
 so a cluster corresponds to a distinct pain diagnosis at an account,
 regardless of which contact reported it or when. The same canonical
-structure will apply to Objective in Wave B —
-"objective:<SignalWhat>:<SignalDimension>".
+structure applies to Objective since Wave B —
+"objective:<SignalWhat>:<SignalDimension>" — and to TechStack since
+Sprint TechStack — "techstack:<TechCatalog.id>".
 
 Supported signal types
 ----------------------
-Wave A expanded the signature of list_clusters_for_account to accept
-either a single signal_type string or a list. Pain clusters are fully
-computed; Objective is accepted at the API surface but yields an empty
-result until the Objective port lands in Wave B. All other signal types
-(People / TechStack) are rejected by the guard as "not supported".
+list_clusters_for_account accepts either a single signal_type string
+or a list. The three concrete signal types — Pain, Objective, and
+TechStack — all produce real clusters today. Any other signal_type
+value is rejected by the guard as "not supported".
 
 What the service does
 ---------------------
@@ -45,10 +45,7 @@ What the service does NOT do
 ----------------------------
   - It does not write anything.
   - It does not paginate (MVP — acceptable for <100 clusters per account).
-  - It does not cache (Sprint 4).
-  - It does not cluster PeopleSignal / TechStackSignal.
-  - It does not compute ObjectiveSignal clusters yet — accepted as input
-    since Wave A, activated in Wave B.
+  - It does not cache 
 
 Output shape
 ------------

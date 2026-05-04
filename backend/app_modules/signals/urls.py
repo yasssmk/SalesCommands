@@ -18,7 +18,6 @@ app_name = 'module_signals'
 def get_urlpatterns():
     """Lazy imports to avoid circular import at Django startup."""
     from .views import (
-        PeopleSignalViewSet,
         PainSignalViewSet,
         PainImpactViewSet,
         ObjectiveSignalViewSet,
@@ -40,36 +39,6 @@ def get_urlpatterns():
             'choices/',
             SignalChoicesView.as_view(),
             name='choices',
-        ),
-
-        # =====================================================================
-        # PEOPLE SIGNALS
-        # =====================================================================
-
-        path(
-            'people/',
-            PeopleSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
-            name='people-list',
-        ),
-        path(
-            'people/<uuid:pk>/',
-            PeopleSignalViewSet.as_view({
-                'get':    'retrieve',
-                'patch':  'partial_update',
-                'put':    'update',
-                'delete': 'destroy',
-            }),
-            name='people-detail',
-        ),
-        path(
-            'people/<uuid:pk>/validate/',
-            PeopleSignalViewSet.as_view({'post': 'validate_signal'}),
-            name='people-validate',
-        ),
-        path(
-            'people/<uuid:pk>/reject/',
-            PeopleSignalViewSet.as_view({'post': 'reject_signal'}),
-            name='people-reject',
         ),
 
         # =====================================================================

@@ -28,7 +28,6 @@ import Tabs from "@mui/material/Tabs";
 const SECTIONS = [
   { value: "pain", label: "Pain" },
   { value: "objective", label: "Objective" },
-  { value: "people", label: "People" },
   { value: "tech-stack", label: "Tech Stack" },
 ];
 
@@ -101,15 +100,12 @@ export default function WizardNav({ activeSection, onChange, stagedCounts }) {
 
 WizardNav.propTypes = {
   /** Currently active section */
-  activeSection: PropTypes.oneOf(["people", "pain", "objective", "tech-stack"])
+  activeSection: PropTypes.oneOf(["pain", "objective", "tech-stack"])
     .isRequired,
-
   /** Called when the user clicks a tab */
   onChange: PropTypes.func.isRequired,
-
   /** Count of staged signals per section (VALIDATED + REJECTED combined) */
   stagedCounts: PropTypes.shape({
-    people: PropTypes.number,
     pain: PropTypes.number,
     objective: PropTypes.number,
     "tech-stack": PropTypes.number,
