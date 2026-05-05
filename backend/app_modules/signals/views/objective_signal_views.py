@@ -64,18 +64,30 @@ class ObjectiveSignalViewSet(BaseSignalViewSet):
         """
         Extend base queryset with ObjectiveSignal-specific select_related.
 
-        The base queryset now preloads only universally-present FKs since
-        Sprint TechStack (account, source_activity, audit users). This
-        method adds every Objective-specific FK on top:
+        The base queryset preloads only universally-present FKs (account,
+        source_activity, audit users on detail) plus the standardised
+        `source_activity__contacts` prefetch consumed by the
+        `source_context` block. This method adds every Objective-specific
+        FK on top:
 
-          source_contact, source_department  — narrative provenance
           decision_cycle, campaign           — secondary deal links
           target_contact, target_department  — Objective subject
+                                                (the OWNER of the
+                                                objective, not its
+                                                source — distinct from
+                                                the participating
+                                                contacts derived from
+                                                source_activity)
+
+        History:
+          source_contact / source_department were removed from
+          BaseSignal during the standardisation refactor — provenance
+          is now derived from source_activity through the
+          `source_context` block exposed by the list / detail
+          serializers.
         """
         qs = super().get_queryset()
         qs = qs.select_related(
-            'source_contact',
-            'source_department',
             'decision_cycle',
             'campaign',
             'target_contact',

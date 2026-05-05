@@ -650,8 +650,9 @@ class SignalClusterService:
             )
             .select_related(
                 'source_activity',  # nested in cluster member payload via
-                                    # PainSignalDetailSerializer
-                'source_contact',
+                                    # PainSignalDetailSerializer; also the
+                                    # join path for distinct_contacts_count
+                                    # since source_contact was retired.
                 'decision_cycle',
                 'campaign',
             )
@@ -665,7 +666,9 @@ class SignalClusterService:
                 ),
                 # ActivityCompactSerializer (nested inside each cluster
                 # member) reads source_activity.contacts — prefetch keeps
-                # the cluster detail at a bounded query count.
+                # the cluster detail at a bounded query count. Also used
+                # by _build_pain_cluster to compute distinct_contacts_count
+                # via the activity.contacts m2m (standardisation refactor).
                 'source_activity__contacts',
             )
         )
@@ -696,8 +699,12 @@ class SignalClusterService:
                 status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
             )
             .select_related(
+                # source_activity is the join path for
+                # distinct_contacts_count via the activity.contacts m2m
+                # (standardisation refactor — source_contact was retired).
                 'source_activity',
-                'source_contact',
+                # Objective-specific FKs (the OWNER of the objective,
+                # not the source — distinct concept).
                 'target_contact',
                 'target_department',
                 'decision_cycle',
@@ -867,10 +874,26 @@ class SignalClusterService:
 
         # --- Stats: corroboration & breadth ---
         confirmation_count = len(validated)
-        distinct_contacts_count = len({
-            m.source_contact_id for m in validated if m.source_contact_id
-        })
 
+        # distinct_contacts_count is computed across source_activity.contacts
+        # (m2m). Standardisation refactor: source_contact was retired from
+        # BaseSignal — the contacts who participated in the source
+        # conversation are derived from activity.contacts. Mirrors the
+        # TechStack cluster strategy.
+        #
+        # Semantic shift vs pre-refactor:
+        #   - Before: "contacts who REPORTED this pain" (via source_contact FK)
+        #   - After : "contacts who PARTICIPATED in conversations producing
+        #             these pain observations" (via activity.contacts m2m)
+        # Cohérent with the new data model where contacts are an attribute
+        # of the conversation, not of the signal.
+        distinct_contacts: set = set()
+        for signal in validated:
+            if signal.source_activity_id and signal.source_activity:
+                for contact in signal.source_activity.contacts.all():
+                    distinct_contacts.add(contact.id)
+        distinct_contacts_count = len(distinct_contacts)
+        
         # --- Impacts aggregation (VALIDATED parents only) ---
         human_impacts, metrics, impacted_contacts, max_level = (
             cls._aggregate_impacts(validated)
@@ -1014,9 +1037,22 @@ class SignalClusterService:
 
         # --- Stats: corroboration & breadth ---
         confirmation_count = len(validated)
-        distinct_contacts_count = len({
-            m.source_contact_id for m in validated if m.source_contact_id
-        })
+
+        # distinct_contacts_count is computed across source_activity.contacts
+        # (m2m). Standardisation refactor: source_contact was retired from
+        # BaseSignal — the contacts who participated in the source
+        # conversation are derived from activity.contacts. Mirrors the
+        # Pain and TechStack cluster strategy.
+        #
+        # Note: target_contact (PERSONAL scope) is a distinct concept on
+        # Objective — it captures who OWNS the objective, not who reported
+        # it. It is not consumed in this stat by design.
+        distinct_contacts: set = set()
+        for signal in validated:
+            if signal.source_activity_id and signal.source_activity:
+                for contact in signal.source_activity.contacts.all():
+                    distinct_contacts.add(contact.id)
+        distinct_contacts_count = len(distinct_contacts)
 
         # --- Max scope level observed across VALIDATED members ---
         # Objective reads scope_level directly from the model (no

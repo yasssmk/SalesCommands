@@ -12,28 +12,32 @@ Public API:
   get_by_cycle(cycle_id)
   format_for_llm(queryset)
 
-Sprint TechStack notes
-----------------------
-TechStackSignal shadow-overrides 5 inherited BaseSignal fields:
-  source_contact, source_department, decision_cycle, campaign,
-  signal_category.
+Standardisation refactor notes
+------------------------------
+source_contact and source_department were retired from BaseSignal
+during the standardisation refactor. The "TechStack-style" join
+strategy that previously applied only to TechStack is now
+generalised to every signal type:
 
-The previous shared `_BASE_RELATED` list assumed all signal types
-carry the full BaseSignal field set — it broke silently (or loudly)
-on TechStack. We now keep an EXPLICIT per-type select_related list in
-_RELATED_BY_TYPE to make the model's narrow surface visible at the
-call site.
+  - get_by_contact: ALL signal types are matched by
+    source_activity__contacts (contacts who PARTICIPATED in the source
+    conversation). Single uniform code path, no per-type branching.
+  - format_for_llm: contact name is derived from
+    source_activity.contacts.first() across all types — consistent
+    with the standardised `source_context` block exposed by the
+    serializers.
 
-Likewise, get_by_contact and get_by_cycle now route TechStack queries
-via source_activity (the only deal/contact context TechStack carries
-indirectly):
-  - get_by_contact: TechStack signals are matched by
-    source_activity__contacts (contacts who PARTICIPATED in the
-    activity), not by source_contact.
-  - get_by_cycle:   TechStack signals are matched by
-    source_activity__decision_cycle, not by decision_cycle.
-This mirrors the cluster service's filtering strategy (Phase 6.2).
+decision_cycle / campaign remain direct FKs on Pain and Objective
+(populated by SignalManager._propagate_activity_context from
+source_activity at create time), so get_by_cycle uses the indexed
+direct filter for those two types and the activity traversal only for
+TechStack — same strategy as before. See Q1 architectural decision.
+
+TechStackSignal still shadow-overrides decision_cycle, campaign, and
+signal_category. The per-type _RELATED_BY_TYPE map remains the single
+source of truth for select_related preloading per concrete model.
 """
+
 from core.exceptions import StandardizedValidationError
 from core.error_messages import SignalErrorMessages
 
@@ -50,44 +54,47 @@ _SIGNAL_TYPE_MAP = {
 
 # select_related paths PER signal type.
 #
-# Sprint TechStack: we replaced the legacy _BASE_RELATED + _EXTRA_RELATED
-# split with a single explicit per-type list. The previous _BASE_RELATED
-# silently assumed every signal carries source_contact / source_department
-# / decision_cycle / campaign — false on TechStack since the catalog-FK
-# refactor (those fields are shadow-overridden to None on the model).
-#
 # Each list contains only FKs that ACTUALLY exist on the concrete model.
 # Extending this dict is the single point of truth when a model gains or
 # loses a relation that benefits from select_related preloading.
+#
+# source_activity is preloaded for all 3 types because:
+#   - The standardisation refactor derives the contact set from
+#     source_activity.contacts (m2m). Without source_activity in
+#     select_related, every signal access through that path triggers
+#     an extra query.
+#   - format_for_llm walks source_activity.contacts.first() per signal
+#     to compose the LLM contact name.
+#
+# Note: source_activity.contacts is a m2m and requires
+# prefetch_related('source_activity__contacts') to be efficient — that
+# prefetch lives at the view layer (PHASE E) since it's a per-action
+# concern, not a default per-type optimisation.
 _RELATED_BY_TYPE = {
     'pain': [
-        'source_contact',
-        'source_department',
+        'source_activity',
         'validated_by',
         'decision_cycle',
         'campaign',
-        # PainSignal does not declare impacted_department on the model
-        # itself — it lives on PainImpact (see PainImpact model). The
-        # legacy _EXTRA_RELATED['pain'] = ['impacted_department'] was
-        # therefore inert. Removed here for accuracy.
         # Cross-reference TechCatalog (Sprint TechStack):
         'related_techstack',
     ],
     'objective': [
-        'source_contact',
-        'source_department',
+        'source_activity',
         'validated_by',
         'decision_cycle',
         'campaign',
         'target_contact',
         'target_department',
     ],
-    # TechStackSignal narrow surface — shadow-overrides remove
-    # source_contact, source_department, decision_cycle, campaign, and
-    # signal_category. Only validated_by survives from the audit set.
+    # TechStackSignal narrow surface — shadow-overrides decision_cycle,
+    # campaign, and signal_category. (source_contact / source_department
+    # were retired from BaseSignal entirely during the standardisation
+    # refactor — they are not "shadow-overridden", they simply do not
+    # exist on any signal type anymore.)
     'tech_stack': [
+        'source_activity',
         'validated_by',
-        'source_activity',     # Used as deal/contact-context join path.
         'tech_catalog_entry',  # Drives canonical_key + display payload.
         'usage_department',    # Often null but cheap to prefetch.
     ],
@@ -96,14 +103,18 @@ _RELATED_BY_TYPE = {
 # Allowlist of filters accepted by get_by_account.
 #
 # Note on cross-type validity:
-#   - 'signal_category' and 'source_department' do NOT exist on
-#     TechStackSignal (shadow-overridden). Passing them with
-#     signal_type='tech_stack' will raise a FieldError. This is by
-#     design — the allowlist is generic, model surface enforces what
-#     applies. Callers must respect each model's documented surface.
+#   - 'signal_category' does NOT exist on TechStackSignal nor on
+#     ObjectiveSignal (both shadow-override it). Passing it with
+#     signal_type='tech_stack' or 'objective' will raise a FieldError.
+#     This is by design — the allowlist is generic, model surface
+#     enforces what applies. Callers must respect each model's
+#     documented surface.
+#
+# Removed during the standardisation refactor:
+#   - 'source_department' — the field was retired from BaseSignal
+#     entirely; it no longer exists on any signal type.
 _ALLOWED_FILTERS = {
     'signal_category',
-    'source_department',
     'source',
     'is_inferred',
 }
@@ -150,13 +161,16 @@ class SignalDataService:
         Raises:
             StandardizedValidationError if signal_type is invalid.
 
-        Sprint TechStack note:
-          Passing signal_category / source_department in filters with
-          signal_type='tech_stack' will raise a FieldError. Those fields
-          do not exist on TechStackSignal — see _RELATED_BY_TYPE
-          docstring for the full list of shadow-overridden fields.
-          Callers querying TechStack should restrict themselves to
-          'source' and 'is_inferred' filters.
+        Cross-type filter notes:
+          - signal_category does not exist on ObjectiveSignal nor on
+            TechStackSignal (both shadow-override it). Passing it with
+            those signal_type values raises a FieldError. Callers
+            querying Objective / TechStack should restrict themselves
+            to 'source' and 'is_inferred' filters.
+          - source_department was retired from BaseSignal during the
+            standardisation refactor and is no longer accepted in the
+            allowlist (any caller still passing it gets it silently
+            stripped by the safe_filters comprehension).
         """
 
         safe_filters = {k: v for k, v in filters.items() if k in _ALLOWED_FILTERS}
@@ -196,7 +210,7 @@ class SignalDataService:
     @classmethod
     def get_by_contact(cls, contact_id) -> dict:
         """
-        Return all signals where source_contact matches, across all types.
+        Return all signals associated with a contact, across all types.
 
         Args:
             contact_id: UUID of the contact.
@@ -204,47 +218,42 @@ class SignalDataService:
         Returns:
             dict with keys 'pain', 'objective', 'tech_stack'.
 
-        TechStack semantics
-        -------------------
-        TechStackSignal has no source_contact FK (shadow-overridden —
-        a tool's existence at an account is account-level, not
-        per-contact). For TechStack, this method matches signals where
-        the source Activity included the given contact:
+        Standardisation refactor — uniformised semantics
+        ------------------------------------------------
+        All signal types are now matched by source_activity.contacts:
 
             source_activity__contacts__id = contact_id
 
-        Semantic shift:
-          Pain / Objective → "this contact REPORTED the signal"
-          TechStack        → "this contact PARTICIPATED in a
-                              conversation where the tool was
-                              mentioned"
+        This is a single uniform code path replacing the previous
+        per-type branching. The previous Pain / Objective semantics
+        (direct source_contact FK on the model = "this contact
+        REPORTED the signal") is gone with the field removal.
 
-        Both are useful for the question "what does this contact know
-        about?" — the per-type semantics simply reflect each model's
-        relationship to its origin.
+        New semantics across all types:
+          "Signal whose source conversation included this contact"
+
+        Stricter than the previous direct FK lookup — Pain / Objective
+        signals without source_activity are excluded from the result.
+        For Pain this is irrelevant in practice (source_activity is
+        required at clean()). For Objective and TechStack,
+        source_activity is optional and signals without one are simply
+        not surfaced by this method — by design.
+
+        distinct() is required because the JOIN on the m2m
+        (source_activity.contacts) can yield duplicate rows when a
+        contact participates in multiple activities tied to the same
+        signal — defensive even though the current single-value
+        filter does not in practice trigger duplicates.
         """
         result = {}
         for key, model_class in _SIGNAL_TYPE_MAP.items():
             related = _RELATED_BY_TYPE.get(key, [])
-            if key == 'tech_stack':
-                # No source_contact FK on TechStack — traverse
-                # source_activity.contacts instead. distinct() is needed
-                # because the JOIN on the m2m yields one row per contact
-                # match (which is fine here — there's only one filter
-                # value — but stays defensive in case the helper is
-                # later called with multi-value filtering).
-                qs = (
-                    model_class.objects
-                    .filter(source_activity__contacts__id=contact_id)
-                    .select_related(*related)
-                    .distinct()
-                )
-            else:
-                qs = (
-                    model_class.objects
-                    .filter(source_contact_id=contact_id)
-                    .select_related(*related)
-                )
+            qs = (
+                model_class.objects
+                .filter(source_activity__contacts__id=contact_id)
+                .select_related(*related)
+                .distinct()
+            )
             result[key] = qs
         return result
 
@@ -252,7 +261,6 @@ class SignalDataService:
     # GET BY CYCLE
     # =========================================================================
 
-    @classmethod
     @classmethod
     def get_by_cycle(cls, cycle_id) -> dict:
         """
@@ -312,39 +320,45 @@ class SignalDataService:
         Format a signal queryset into a compact list for LLM prompt injection.
 
         Strips all technical identifiers and retains only fields meaningful
-        to the LLM. Stateless — does not call CorroborationService.
+        to the LLM. Stateless — pure read-and-format, no service
+        dependencies.
 
-        Output format per signal (common across all 4 types):
+        Output format per signal (common across all 3 types):
         {
-            "type":       "PeopleSignal",  # class name for LLM disambiguation
-            "category":   "ECONOMIC",       # signal_category or None for TechStack
+            "type":       "PainSignal",     # class name for LLM disambiguation
+            "category":   "ECONOMIC",       # signal_category or None for TechStack/Objective
             "summary":    "...",            # type-appropriate text excerpt
-            "contact":    "Jane Doe",       # source_contact OR (for TechStack)
-                                            # first activity contact, or None
-            "department": "IT",             # source_department OR (for TechStack)
-                                            # usage_department, or None
-            "confirmed":  1,                # always 1 in MVP for non-People types
+            "contact":    "Jane Doe",       # first contact of source_activity, or None
+            "department": "IT",             # usage_department for TechStack only,
+                                            # None for Pain / Objective
+            "confirmed":  1,                # always 1 in MVP
             "date":       "2025-03-15"      # validated_at date or None
         }
 
-        Sprint TechStack changes
-        ------------------------
-        TechStackSignal has shadow-overridden source_contact,
-        source_department, signal_category. The legacy implementation
-        accessed these unconditionally and broke when iterating over
-        TechStack. This method now branches per-type to safely emit
-        the same shape:
-
-          - signal_category : None for TechStack (no such field)
-          - summary         : tech_catalog_entry display + notes for
-                              TechStack instead of looking for a
-                              non-existent `tech_name` attribute
-          - contact         : first contact of source_activity for
-                              TechStack (when set), else None
-          - department      : usage_department for TechStack (when set),
-                              else None — note this is "department
-                              USING the tool", not "department who
-                              MENTIONED the tool"
+        Standardisation refactor changes
+        --------------------------------
+        - signal_category : None for TechStack and Objective (both
+                            shadow-override it on the model).
+        - summary         : Pain / Objective use signal.summary (or
+                            notes fallback). TechStack composes
+                            "<company> <product>" from
+                            tech_catalog_entry plus notes when set.
+        - contact         : Now uniformly derived from
+                            source_activity.contacts.first() across
+                            all 3 types. Previous per-type branching
+                            (Pain / Objective via source_contact FK)
+                            is gone — the field was retired from the
+                            model.
+        - department      : TechStack-only (usage_department, "the
+                            department USING the tool"). None for
+                            Pain / Objective — source_department was
+                            retired from BaseSignal and no
+                            replacement is provided at this layer.
+                            If a deeper department surface is needed
+                            for Pain or Objective later, derive it
+                            from impacted_department (PainImpact) or
+                            target_department (Objective) at the call
+                            site.
 
         Args:
             queryset: Any QuerySet of a concrete signal model.
@@ -400,35 +414,37 @@ class SignalDataService:
         """
         Resolve a contact display name for the LLM payload.
 
-        Pain / Objective / People: source_contact.
-        TechStack:                  first contact of source_activity
-                                    (best-effort — the activity's
-                                    participants are the closest
-                                    "who reported this" approximation
-                                    available given the shadow-override).
-        """
-        if is_tech_stack:
-            if not signal.source_activity_id or not signal.source_activity:
-                return None
-            try:
-                # source_activity.contacts is m2m; we take the first
-                # for a compact LLM display, not an authoritative
-                # representation. The Pre-Call Game Plan pipeline can
-                # always re-fetch full activity details when needed.
-                first_contact = signal.source_activity.contacts.first()
-            except Exception:
-                return None
-            if not first_contact:
-                return None
-            return SignalDataService._format_contact_name(first_contact)
+        Uniform across all signal types (Pain / Objective / TechStack):
+        first contact of source_activity, or None if the activity is
+        unset or has no contacts.
 
-        # Non-TechStack path — direct source_contact FK.
-        if not signal.source_contact_id:
+        Standardisation refactor note:
+          The previous Pain / Objective path read signal.source_contact
+          directly; the field was retired from BaseSignal during the
+          standardisation refactor. All types now share the activity-
+          derived path — same code surface as the cluster service and
+          the standardised `source_context` block on the serializers.
+
+        The `is_tech_stack` flag is kept in the signature for caller
+        symmetry with _extract_department_name and _extract_summary,
+        but it is no longer consulted here.
+        """
+        # Unused param kept for caller-symmetry (see docstring).
+        del is_tech_stack
+
+        if not signal.source_activity_id or not signal.source_activity:
             return None
-        contact = signal.source_contact
-        if not contact:
+        try:
+            # source_activity.contacts is m2m; we take the first for a
+            # compact LLM display, not an authoritative representation.
+            # The Pre-Call Game Plan pipeline can always re-fetch full
+            # activity details when needed.
+            first_contact = signal.source_activity.contacts.first()
+        except Exception:
             return None
-        return SignalDataService._format_contact_name(contact)
+        if not first_contact:
+            return None
+        return SignalDataService._format_contact_name(first_contact)
 
     @staticmethod
     def _format_contact_name(contact):
@@ -444,23 +460,25 @@ class SignalDataService:
         """
         Resolve a department display name for the LLM payload.
 
-        Pain / Objective / People: source_department.
-        TechStack:                  usage_department — note semantic
-                                    shift: "department USING the tool"
-                                    rather than "department who
-                                    MENTIONED it". This is the most
-                                    informative department available
-                                    for TechStack.
+        TechStack:           usage_department — "department USING the
+                             tool". This is the most informative
+                             department available on TechStackSignal.
+        Pain / Objective:    None. source_department was retired from
+                             BaseSignal during the standardisation
+                             refactor and no replacement is provided
+                             at this layer. If a deeper department
+                             surface is needed, derive it from
+                             impacted_department (PainImpact) or
+                             target_department (Objective) at the call
+                             site, not here.
         """
-        if is_tech_stack:
-            if not signal.usage_department_id:
-                return None
-            dept = signal.usage_department
-        else:
-            if not signal.source_department_id:
-                return None
-            dept = signal.source_department
+        if not is_tech_stack:
+            return None
 
+        if not signal.usage_department_id:
+            return None
+
+        dept = signal.usage_department
         if not dept:
             return None
 

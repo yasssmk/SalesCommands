@@ -34,6 +34,19 @@ Wave B notes:
     and recreates the underlying table.
   - The field `scope_level` replaces `goal_level` and adopts the shared
     ScopeLevel enum introduced in Wave A.
+
+    Standardisation refactor notes:
+  - source_contact and source_department are no longer fields on any
+    signal type — they were removed from BaseSignal abstract during
+    the standardisation refactor. Contacts who participated in the
+    source conversation are now derived at read time from
+    `source_activity.contacts` and exposed through the standardised
+    `source` block in serializers (see SignalSourceMixin in
+    base_serializer.py).
+  - target_contact (PERSONAL scope) is unaffected by the refactor —
+    it captures who OWNS the objective, not who reported it. The two
+    concepts are distinct and target_contact remains a first-class
+    FK on this model.
 """
 
 from django.core.exceptions import ValidationError
@@ -60,6 +73,15 @@ class ObjectiveSignal(BaseSignal):
 
     Cluster identity:
       canonical_key = "objective:<what>:<dimension>" — auto-computed in save().
+
+    Source contacts:
+      Contacts who participated in `source_activity` are derived at
+      read time from `source_activity.contacts` and exposed through
+      the standardised `source` block in serializers. The signal does
+      not carry a dedicated source_contact FK — see BaseSignal class
+      docstring for the rationale. target_contact (PERSONAL scope) is
+      a distinct concept that captures who OWNS the objective, not
+      who reported it.
 
     Signal-category suppression:
       signal_category is set to None at the class level to shadow the

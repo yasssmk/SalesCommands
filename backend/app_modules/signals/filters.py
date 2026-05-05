@@ -35,6 +35,21 @@ Sprint 2 — filter changes (PeopleSignal sunset):
   REMOVED:
     - role            (PeopleRole enum dropped along with PeopleSignal)
     - influence_level (InfluenceLevel enum dropped along with PeopleSignal)
+
+Standardisation refactor — filter changes:
+  REMOVED:
+    - source_department (UUID — column retired from BaseSignal; the
+                         notion no longer exists)
+  REPOINTED:
+    - source_contact (UUID — previously filtered the direct
+                      source_contact_id FK on the model; now traverses
+                      source_activity.contacts (m2m) instead. The field
+                      was retired from BaseSignal but contacts who
+                      participated in the source conversation remain
+                      queryable through the activity. API surface is
+                      unchanged for callers — `?source_contact=<uuid>`
+                      keeps returning signals associated with that
+                      contact, just resolved through a different path.)
 """
 
 import django_filters
@@ -57,9 +72,16 @@ class SignalFilter(django_filters.FilterSet):
 
     Base filters (all signal types — fields live on BaseSignal):
       status, source, signal_category
-      account, source_contact, source_activity, source_department,
-      decision_cycle, campaign
+      account, source_activity, decision_cycle, campaign
       canonical_key
+
+    Derived filters (traverse source_activity to reach related entities):
+      source_contact — filters via source_activity.contacts (m2m).
+                       Returns signals whose source_activity has the
+                       given contact as a participant. Replaces the
+                       previous direct source_contact_id FK filter
+                       (the field was retired during the standardisation
+                       refactor). API surface unchanged.
 
     Type-specific filters (silently ignored when field absent on model):
       what, dimension — PainSignal + ObjectiveSignal (shared canonical
@@ -74,6 +96,13 @@ class SignalFilter(django_filters.FilterSet):
         no-op (tolerated via the dynamic Meta.model rebinding in
         BaseSignalViewSet.filter_queryset()). No behavioural change
         needed here.
+
+    Silently-absent fields on TechStackSignal:
+      - decision_cycle, campaign are shadow-overridden to None on the
+        concrete TechStackSignal model (they are not deal-scoped — see
+        the model docstring for the rationale). The `decision_cycle`
+        and `campaign` filters declared here are silently no-op on
+        TechStack querysets.
 
     Note — Pain-side fields removed in Sprint 1.6:
       pain_level, human_impact, impacted_contact no longer exist on
@@ -105,12 +134,28 @@ class SignalFilter(django_filters.FilterSet):
     # delimiter would otherwise split a legitimate key into two halves.
     canonical_key   = CharInFilter(field_name='canonical_key',   lookup_expr='in')
 
-    account          = UUIDFilter(field_name='account_id')
-    source_contact   = UUIDFilter(field_name='source_contact_id')
-    source_activity  = UUIDFilter(field_name='source_activity_id')
-    source_department = UUIDFilter(field_name='source_department_id')
-    decision_cycle   = UUIDFilter(field_name='decision_cycle_id')
-    campaign         = UUIDFilter(field_name='campaign_id')
+    account         = UUIDFilter(field_name='account_id')
+    source_activity = UUIDFilter(field_name='source_activity_id')
+    decision_cycle  = UUIDFilter(field_name='decision_cycle_id')
+    campaign        = UUIDFilter(field_name='campaign_id')
+
+    # source_contact — repointed during the standardisation refactor.
+    # The direct source_contact_id FK was retired from BaseSignal. To
+    # preserve API surface compatibility (?source_contact=<uuid> on the
+    # signal listing endpoints), we now traverse source_activity.contacts
+    # (m2m). distinct=True is required because a contact may appear on
+    # multiple activities, which would otherwise duplicate signal rows
+    # in the result set.
+    #
+    # Behaviour by signal type:
+    #   - Pain        : source_activity is required → filter is exact.
+    #   - Objective   : source_activity is optional → signals without
+    #                   activity are excluded from the filtered set.
+    #   - TechStack   : source_activity is optional → same.
+    source_contact  = UUIDFilter(
+        field_name='source_activity__contacts',
+        distinct=True,
+    )
 
     # -------------------------------------------------------------------------
     # TYPE-SPECIFIC — PainSignal (canonical axes only)

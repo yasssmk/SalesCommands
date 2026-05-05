@@ -147,39 +147,46 @@ class BaseSignalViewSet(
         Client-scoped queryset with select_related and prefetch_related
         tuned per action.
 
-        Sprint TechStack — narrowed surface
-        -----------------------------------
-        TechStackSignal shadow-overrides several BaseSignal FKs to None
-        on the model (source_contact, source_department, decision_cycle,
-        campaign, signal_category — see TechStackSignal model). Listing
-        TechStack therefore raised FieldError at SQL compile time when
-        the previous implementation included those FKs unconditionally
-        in select_related.
+        Per-type select_related strategy
+        --------------------------------
+        Each concrete signal model carries its own narrow surface of
+        FKs. The base queryset preloads only FKs that exist on EVERY
+        concrete signal model (account, source_activity, audit users
+        on detail). Concrete ViewSets add their type-specific
+        select_related on top via super().get_queryset() chaining:
 
-        The base queryset now only preloads FKs that exist on EVERY
-        concrete signal model (account, source_activity, audit users).
-        Concrete ViewSets are responsible for adding their type-specific
-        select_related on top:
-
-          PainSignalViewSet      → source_contact, source_department,
-                                    decision_cycle, campaign,
+          PainSignalViewSet      → decision_cycle, campaign,
                                     related_techstack
-          ObjectiveSignalViewSet → source_contact, source_department,
-                                    decision_cycle, campaign,
-                                    target_contact, target_department
-          PeopleSignalViewSet    → source_contact, source_department,
-                                    decision_cycle, campaign,
+          ObjectiveSignalViewSet → decision_cycle, campaign,
                                     target_contact, target_department
           TechStackSignalViewSet → tech_catalog_entry, usage_department
-                                    (no source_contact / source_department —
-                                     shadow-overridden on the model)
+                                    (decision_cycle and campaign are
+                                     shadow-overridden to None on the
+                                     model — derived via source_activity
+                                     fallback in SignalSourceSerializer)
 
         This mirrors the per-type strategy already used by
         SignalDataService._RELATED_BY_TYPE (see signal_data_service.py).
-        Detail actions also prefetch `source_activity__contacts` so that
-        BaseSignalDetailSerializer.get_source_activity (enriched via
-        ActivityCompactSerializer since Wave A) resolves the activity's
-        contacts without issuing an extra query per signal.
+
+        Standardised provenance prefetch
+        --------------------------------
+        Both list and detail actions prefetch `source_activity__contacts`
+        because the standardised `source_context` block exposed by
+        BaseSignalListSerializer / BaseSignalDetailSerializer (introduced
+        by the standardisation refactor) reads activity.contacts to
+        derive the participating-contacts list. Without this prefetch,
+        every rendered signal would issue an extra query, yielding
+        O(N) DB roundtrips on list responses.
+
+        History
+        -------
+          - source_contact and source_department were removed from
+            BaseSignal during the standardisation refactor — they no
+            longer appear in any per-type select_related.
+          - last_modified_by was removed at the same time
+            (duplicate with updated_by inherited from ModuleBaseModel).
+          - PeopleSignalViewSet was retired in Sprint 2 — only Pain,
+            Objective, and TechStack ViewSets remain.
         """
         qs = super().get_queryset()
         qs = self.apply_owner_scope_filter(qs)
@@ -190,18 +197,24 @@ class BaseSignalViewSet(
             qs = qs.select_related(
                 'account',
                 'source_activity',
+            ).prefetch_related(
+                # The standardised `source_context` block exposed by
+                # BaseSignalListSerializer reads source_activity.contacts
+                # (m2m). Prefetch keeps the list at a bounded query count
+                # regardless of result size.
+                'source_activity__contacts',
             )
         else:
             qs = qs.select_related(
                 'account',
                 'source_activity',
                 'validated_by',
-                'last_modified_by',
                 'requested_by',
             ).prefetch_related(
                 # source_activity exposes its linked contacts through the
-                # enriched compact serializer — prefetch keeps detail reads
-                # at a bounded number of queries.
+                # enriched compact serializer and the standardised
+                # `source_context` block — prefetch keeps detail reads at
+                # a bounded number of queries.
                 'source_activity__contacts',
             )
 

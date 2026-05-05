@@ -1,20 +1,30 @@
 # app_modules/signals/serializers/pain_serializer.py
 """
-Serializers for PainSignal.
+PainSignal serializers.
 
-Pain = the diagnosis (qualitative, narrative). Metrics, impacted parties,
-and human consequences all live on PainImpact (see pain_impact_serializer).
+Implements the four standard variants on top of BaseSignal* serializers:
+  - PainSignalListSerializer
+  - PainSignalDetailSerializer
+  - PainSignalCreateSerializer
+  - PainSignalUpdateSerializer
 
-Stack:
-  PainSignalListSerializer   — lightweight list view + nested impacts (read)
-  PainSignalDetailSerializer — full detail + corroboration_count + impacts
-  PainSignalCreateSerializer — write path: strict source_activity requirement
-  PainSignalUpdateSerializer — restricted PATCH, allows canonical changes
+Also exposes:
+  - canonical axes    : what / dimension (drive canonical_key)
+  - related_techstack : compact list of tools the pain points to
 
-Impacts are exposed read-only here. Creating, updating, or deleting an
-impact happens through dedicated /module-signals/pain-impacts/ endpoints.
-This keeps the write surface small and avoids nested-write complexity
-(transactions, partial-failure semantics, idempotency).
+Validation rules surfaced from the model (PainSignal.clean):
+  1. source_activity is required
+
+The previous "source_contact required" rule was retired during the
+standardisation refactor — the field was removed from BaseSignal.
+Contacts are now derived from source_activity.contacts and exposed
+via the standardised `source_context` block (read-only).
+
+The source_activity rule is enforced at both the model level and the
+serializer level. The model's clean() is invoked through full_clean()
+inside SignalManager.create(); the serializer's validate() raises
+StandardizedValidationError early so the response shape is consistent
+with other DRF validation errors.
 """
 
 from rest_framework import serializers
@@ -86,8 +96,7 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
     read-only form, and the optional cross-reference to a TechStack
     catalog entry.
 
-    corroboration_count is excluded here for performance — available in
-    Detail only.
+    corroboration_count is excluded here for performance — Detail only.
 
     Cross-reference exposure (Sprint TechStack):
       - related_techstack          : compact catalog payload or None
@@ -176,13 +185,18 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
       - what
       - dimension
       - summary
-      - source_contact  (always required)
       - source_activity (required — every pain must have a conversational
                          origin; see Sprint 1.6 model docstring)
 
     Optional fields (Sprint TechStack):
       - related_techstack          — FK to TechCatalog, written as UUID
       - related_techstack_mention  — free-text tool mention
+
+    Removed during the standardisation refactor:
+      - "source_contact required" rule. The field was retired from
+         BaseSignal — contacts associated with the source conversation
+         are now derived from source_activity.contacts at read time
+         and exposed via the standardised `source_context` block.
 
     The two cross-reference fields are independent and not mutually
     exclusive at the API level. The frontend is responsible for hiding
@@ -220,29 +234,27 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
         """
         Enforce Pain-specific contextual rules, then delegate to base.
 
-        Rules:
-          1. source_contact always required.
-          2. source_activity always required — every Pain must be tied
+        Rule (re-surfaced from PainSignal.clean()):
+          1. source_activity always required — every Pain must be tied
              to a real conversation (stricter than BaseSignal, where
              activity is optional).
+
+        Removed during the standardisation refactor:
+          - "source_contact always required" rule. The field was
+             retired from BaseSignal; contacts are derived from
+             source_activity.contacts at read time.
 
         Cross-reference fields (related_techstack / related_techstack_mention)
         carry no model-level constraint — see PainSignal model docstring
         for the rationale of permissive backend behaviour.
         """
-        # Rule 1 — source_contact
-        if not attrs.get('source_contact'):
-            raise StandardizedValidationError(
-                SignalErrorMessages.SOURCE_CONTACT_REQUIRED
-            )
-
-        # Rule 2 — source_activity (strict for Pain)
+        # Rule 1 — source_activity (strict for Pain)
         if not attrs.get('source_activity'):
             raise StandardizedValidationError(
                 SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
             )
 
-        # Delegate to base for cross-account source_contact check + client_id
+        # Delegate to base for client_id injection.
         return super().validate(attrs)
 
 

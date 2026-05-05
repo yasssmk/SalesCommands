@@ -22,14 +22,18 @@ when, or which angle was documented. See SignalClusterService (Sprint 2)
 for how clusters roll up PainImpacts across their member Pains.
 
 Required context (enforced in clean()):
-  - source_contact — the contact who reported the pain
   - source_activity — the call/meeting where the pain was identified
 
-Note: source_activity is REQUIRED here. Unlike earlier drafts that accepted
-"at least one of activity / cycle / campaign", every Pain must now be tied
-to a real conversation — this guarantees that every Pain has a traceable
-origin for audit and LLM retrieval purposes. Decision cycle and campaign
-remain optional secondary links inherited from BaseSignal.
+Note: source_activity is REQUIRED. Every Pain must be tied to a real
+conversation, which guarantees a traceable origin for audit and LLM
+retrieval purposes. The list of contacts who participated in that
+conversation is derived at read time from `source_activity.contacts`
+and exposed through the standardised `source` block in serializers
+(see SignalSourceMixin in base_serializer.py) — there is no single
+source_contact FK on the signal. Decision cycle and campaign are
+inherited from BaseSignal as indexed-FK columns and are auto-populated
+from source_activity by SignalManager._propagate_activity_context at
+create time.
 
 Cross-reference with TechStack (Sprint TechStack)
 -------------------------------------------------
@@ -84,18 +88,24 @@ class PainSignal(BaseSignal):
     Concrete signal for a qualitative pain diagnosis.
 
     Structure:
-      - what      : domain of the pain (SignalWhat enum, required)
-      - dimension : friction experienced (SignalDimension enum, required)
-      - summary   : free-text description of the pain (required)
+      - what         : domain of the pain (SignalWhat enum, required)
+      - dimension    : friction experienced (SignalDimension enum, required)
+      - summary      : free-text description of the pain (required)
       - source_quote : optional verbatim excerpt from the transcript
-      - notes   : optional additional context
+      - notes        : optional additional context
 
     Required context (via clean()):
-      - source_contact
-      - source_activity
+      - source_activity (every pain must be tied to a conversation)
 
     Cluster identity:
       canonical_key = "pain:<what>:<dimension>" — auto-computed in save().
+
+    Source contacts:
+      The contacts who participated in `source_activity` are derived at
+      read time from `source_activity.contacts` and exposed through the
+      standardised `source` block in serializers. The signal does not
+      carry a dedicated source_contact FK — see BaseSignal class
+      docstring for the rationale.
 
     Metrics, cost estimates, impacted parties, and human consequences all
     live on the related PainImpact model. A Pain can have zero or many
@@ -238,20 +248,25 @@ class PainSignal(BaseSignal):
         Enforce PainSignal-specific constraints.
 
         Rules:
-          1. source_contact is required  — every pain has an origin contact.
-          2. source_activity is required — every pain has an origin conversation.
+          1. source_activity is required — every pain has an origin
+             conversation. Decision cycle and campaign are propagated
+             from the activity by SignalManager._propagate_activity_context
+             at create time, so a non-null source_activity is the single
+             anchor that guarantees a complete deal-level context.
 
-        All quantitative and human-level validation (who is impacted, what
-        the metric is, etc.) lives on PainImpact and is enforced there.
+        Removed during the standardisation refactor:
+          - "source_contact required" rule. The field was removed from
+             BaseSignal — the contacts who participated in the source
+             conversation are now derived from source_activity.contacts
+             at read time.
+
+        All quantitative and human-level validation (who is impacted,
+        what the metric is, etc.) lives on PainImpact and is enforced
+        there.
         """
         super().clean()
 
         errors = {}
-
-        if not self.source_contact_id:
-            errors['source_contact'] = _(
-                'A pain signal must be linked to a source contact.'
-            )
 
         if not self.source_activity_id:
             errors['source_activity'] = _(

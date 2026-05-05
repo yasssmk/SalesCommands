@@ -29,25 +29,34 @@ from ..constants import SignalStatus, SignalSource, SignalCategory
 
 class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
     """
-        Abstract base for all signal types.
+    Abstract base for all signal types.
 
-        Provides:
-        - Multi-tenant isolation via ClientScopeManager.ModelMixin
-        - Full audit trail via ModuleBaseModel (id, client_id, created_by,
-            updated_by, created_at, updated_at)
-        - Context FKs (account required; activity, contact, department optional)
-        - Signal content fields (source_quote, confidence, canonical_key…)
-        - Source tracking (source, requested_by, language_original)
-        - Lifecycle management (status, validated_by, validated_at)
-        - Modification tracking (last_modified_by, last_modified_at,
-            original_value)
+    Provides:
+    - Multi-tenant isolation via ClientScopeManager.ModelMixin
+    - Full audit trail via ModuleBaseModel (id, client_id, created_by,
+        updated_by, created_at, updated_at)
+    - Context FKs (account required; source_activity, decision_cycle,
+        campaign optional)
+    - Signal content fields (source_quote, confidence, canonical_key…)
+    - Source tracking (source, requested_by, language_original)
+    - Lifecycle management (status, validated_by, validated_at)
+    - Modification tracking (
+        original_value)
 
-        Business rules enforced in save():
-        - source=MANUAL  → status=VALIDATED, confidence=None
-        - source_contact set + source_department not set
-            → auto-populate source_department from contact.standard_department
-        """
+    Source contacts and departments are NOT stored on the signal — they
+    are derived at read time from `source_activity.contacts` (m2m on
+    Activity) and exposed through the standardised `source` block in
+    serializers (see SignalSourceMixin in base_serializer.py).
 
+    decision_cycle and campaign are kept as direct FKs for indexed
+    scoping queries (cluster service, cluster filter API), but they
+    are NEVER written directly by the API. SignalManager
+    ._propagate_activity_context populates them from source_activity
+    at create time and the Update serializer does not expose them.
+
+    Business rules enforced in save():
+    - source=MANUAL  → status=VALIDATED, confidence=None
+    """
     # =========================================================================
     # CONTEXT — required
     # =========================================================================
@@ -74,28 +83,6 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # CONTEXT — optional
     # =========================================================================
 
-    source_contact = models.ForeignKey(
-        'module_contacts.Contact',
-        on_delete=models.SET_NULL,
-        related_name='%(class)s_signals',
-        null=True,
-        blank=True,
-        verbose_name=_('Source Contact'),
-        help_text=_('Contact who provided or confirmed this signal')
-    )
-
-    source_department = models.ForeignKey(
-        'core_modules.StandardDepartment',
-        on_delete=models.SET_NULL,
-        related_name='%(class)s_signals',
-        null=True,
-        blank=True,
-        verbose_name=_('Source Department'),
-        help_text=_(
-            'Department this signal originates from. '
-            'Auto-populated from source_contact.standard_department if not set.'
-        )
-    )
 
     decision_cycle = models.ForeignKey(
         'decision_cycles.DecisionCycle',
@@ -249,21 +236,6 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # MODIFICATION TRACKING
     # =========================================================================
 
-    last_modified_by = models.ForeignKey(
-        'end_users.User',
-        on_delete=models.SET_NULL,
-        related_name='%(class)s_modified',
-        null=True,
-        blank=True,
-        verbose_name=_('Last Modified By'),
-        help_text=_('User who last edited the signal value after creation')
-    )
-
-    last_modified_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        verbose_name=_('Last Modified At')
-    )
 
     original_value = models.JSONField(
         null=True,
@@ -292,52 +264,23 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
         Rules:
           1. source=MANUAL → status=VALIDATED, confidence=None
-             Manual signals are trusted by definition — no LLM confidence score.
-             Universal across all 4 concrete signal types.
+             Manual signals are trusted by definition — no LLM
+             confidence score. Universal across all concrete signal
+             types.
 
-          2. source_contact set + source_department not set
-             → auto-populate source_department from contact.standard_department
-             Avoids requiring the rep to fill department separately when the
-             contact already carries that information.
-
-             NOT universal: TechStackSignal shadow-overrides both
-             source_contact and source_department to None on the
-             concrete model (a tool's existence at an account is
-             account-level, not contact/department-level — see
-             TechStackSignal model docstring). The rule is therefore
-             guarded by a class-level None-check on both fields: when
-             either has been shadow-overridden to None, the rule is
-             skipped silently.
-
-             Why class-level rather than instance-level:
-             instance-level access to `self.source_contact_id` on a
-             shadow-overridden field triggers Django's descriptor
-             machinery and kicks off a refresh_from_db that crashes
-             at SQL compile time (FieldDoesNotExist on '*_id').
-             Reading the class attribute directly bypasses the
-             descriptor — None on the class means "shadow-overridden",
-             non-None means "real ForeignKey".
+        Removed in standardisation refactor:
+          - "auto-populate source_department from
+             source_contact.standard_department" rule. Both
+             source_contact and source_department have been removed
+             from BaseSignal — the source surface is now derived at
+             read time from source_activity.contacts via the
+             SignalSourceMixin in the base serializer. The rule
+             became obsolete and was dropped.
         """
         # Rule 1 — manual signals are immediately validated
         if self.source == SignalSource.MANUAL:
             self.status = SignalStatus.VALIDATED
             self.confidence = None
-
-        # Rule 2 — inherit department from contact when not explicitly set.
-        # Skipped on concrete types that shadow-override either field to None
-        # (TechStackSignal sets both, so the rule is no-op for it).
-        cls = type(self)
-        if (
-            getattr(cls, 'source_contact', None) is not None
-            and getattr(cls, 'source_department', None) is not None
-        ):
-            if (
-                self.source_contact_id
-                and not self.source_department_id
-                and hasattr(self.source_contact, 'standard_department')
-                and self.source_contact.standard_department is not None
-            ):
-                self.source_department = self.source_contact.standard_department
 
         super().save(*args, **kwargs)
 

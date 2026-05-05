@@ -277,6 +277,16 @@ class SignalManager:
             snapshot source_quote into original_value and flip
             source → LLM_MODIFIED before saving.
 
+        Audit trail:
+          ModuleBaseModel.save(user=user) updates `updated_by` and
+          `updated_at` automatically. The previous explicit
+          `last_modified_by` / `last_modified_at` setters were removed
+          during the standardisation refactor — the fields were retired
+          from BaseSignal because they duplicated the inherited
+          `updated_*` audit pair from ModuleBaseModel. The save() call
+          below is now the single audit source of truth for "who
+          touched this signal last and when".
+
         Args:
             signal:  Any concrete signal instance.
             updates: Dict of field_name → new_value pairs to apply.
@@ -306,7 +316,5 @@ class SignalManager:
         for field, value in updates.items():
             setattr(signal, field, value)
 
-        signal.last_modified_by = user
-        signal.last_modified_at = timezone.now()
         signal.save(user=user)
         return signal

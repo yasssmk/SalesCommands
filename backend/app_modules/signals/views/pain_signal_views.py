@@ -54,6 +54,12 @@ class PainSignalViewSet(BaseSignalViewSet):
         since Sprint TechStack — see BaseSignalViewSet.get_queryset).
 
         Notes:
+          - source_contact / source_department were removed from
+            BaseSignal during the standardisation refactor — they no
+            longer appear in any select_related. Provenance is now
+            derived from source_activity (the standardised
+            `source_context` block — see BaseSignalListSerializer /
+            BaseSignalDetailSerializer).
           - impacted_department was removed from PainSignal in Sprint 1.6 —
             it now lives on PainImpact. No select_related on it here.
           - related_techstack (Sprint TechStack cross-reference) is
@@ -69,11 +75,11 @@ class PainSignalViewSet(BaseSignalViewSet):
 
         qs = super().get_queryset()
 
-        # Pain-specific FKs that were previously on the base queryset
-        # but are now type-scoped (Sprint TechStack — see BaseSignalViewSet).
+        # Pain-specific FKs added on top of the base queryset (which
+        # preloads only universally-present FKs — account,
+        # source_activity, audit users on detail, source_activity.contacts
+        # for the standardised source_context block).
         qs = qs.select_related(
-            'source_contact',
-            'source_department',
             'decision_cycle',
             'campaign',
             'related_techstack',
@@ -87,4 +93,5 @@ class PainSignalViewSet(BaseSignalViewSet):
             ).order_by('-created_at'),
         )
         qs = qs.prefetch_related(impacts_prefetch)
+
         return qs

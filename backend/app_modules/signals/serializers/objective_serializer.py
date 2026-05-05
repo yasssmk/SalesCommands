@@ -4,7 +4,9 @@ Serializers for ObjectiveSignal.
 
 Stack:
   ObjectiveSignalListSerializer   — lightweight list view
-  ObjectiveSignalDetailSerializer — full detail with corroboration_count
+  ObjectiveSignalDetailSerializer — full detail (validated_*, requested_by,
+                                    source_quote, metadata, original_value
+                                    on top of the list payload)
   ObjectiveSignalCreateSerializer — write path, enforces scope-conditional
                                     target requirements
   ObjectiveSignalUpdateSerializer — restricted PATCH, canonical axes
@@ -151,10 +153,16 @@ class ObjectiveSignalListSerializer(_ObjectiveDisplayMixin, BaseSignalListSerial
     narrative summary, the target (contact or department — exactly one
     will be non-null per scope_level), and the target_date.
 
-    corroboration_count is excluded here for performance — Detail only.
-
     signal_category is dropped from the base fields because the model
     shadow-overrides it to None for Objective.
+
+    Note (history):
+      Earlier versions noted that corroboration_count was excluded
+      here for performance and only emitted by the Detail variant.
+      CorroborationService was deprecated during the standardisation
+      refactor and the field was removed from the Detail variant too;
+      the cluster service's confirmation_count is the replacement
+      metric.
     """
 
     what_display        = serializers.SerializerMethodField()
@@ -199,11 +207,19 @@ class ObjectiveSignalDetailSerializer(_ObjectiveDisplayMixin, BaseSignalDetailSe
     """
     Full detail serializer for ObjectiveSignal retrieve endpoints.
 
-    Inherits corroboration_count from BaseSignalDetailSerializer.
-    Adds success_criteria + notes on top of the list payload.
+    Inherits validated_at / validated_by / requested_by / source_quote /
+    metadata / original_value from BaseSignalDetailSerializer. Adds
+    success_criteria + notes on top of the list payload.
 
     signal_category is dropped from the base fields (shadow override on
     the model).
+
+    Note (history):
+      Earlier versions inherited a `corroboration_count` field from
+      BaseSignalDetailSerializer. CorroborationService was deprecated
+      during the standardisation refactor and the field was removed
+      from the base detail serializer; the cluster service's
+      confirmation_count is the replacement metric.
     """
 
     what_display        = serializers.SerializerMethodField()
@@ -267,9 +283,17 @@ class ObjectiveSignalCreateSerializer(BaseSignalCreateSerializer):
       - BUSINESS   → neither target_contact nor target_department
 
     signal_category is dropped from the base fields (shadow override on
-    the model). source_department stays inherited — it comes from
-    source_contact.standard_department via BaseSignal.save() fallback
-    and can still be set explicitly.
+    the model).
+
+    Source contacts:
+      Contacts associated with the source conversation are derived
+      from source_activity.contacts at read time and exposed via the
+      standardised `source_context` block. The signal does not carry
+      a writable source_contact / source_department — both fields
+      were retired from BaseSignal during the standardisation
+      refactor. target_contact and target_department remain (they
+      describe the OWNER of the objective, not its source) and are
+      governed by the scope-conditional rules above.
     """
 
     signal_type = serializers.HiddenField(default='objective')

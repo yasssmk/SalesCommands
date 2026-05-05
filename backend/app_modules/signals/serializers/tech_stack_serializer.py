@@ -4,18 +4,28 @@ Serializers for TechStackSignal.
 
 Stack:
   TechStackSignalListSerializer   — lightweight list view
-  TechStackSignalDetailSerializer — full detail with corroboration_count
+  TechStackSignalDetailSerializer — full detail (validated_*, requested_by,
+                                    source_quote, metadata, original_value
+                                    on top of the list payload)
   TechStackSignalCreateSerializer — write path with conditional rules
   TechStackSignalUpdateSerializer — restricted PATCH, merged-state checks
 
 Sprint TechStack notes:
-  - The model shadow-overrides `source_contact`, `source_department`,
-    `decision_cycle`, `campaign`, and `signal_category` to None on the
-    concrete TechStackSignal — see app_modules/signals/models/tech_stack_signal.py
-    docstring for the rationale of each. The serializers below filter
-    those fields (and their *_display variants) out of the inherited
-    Meta.fields lists from BaseSignal* so List/Detail/Create/Update
-    never reference columns that don't exist.
+  - The model shadow-overrides `decision_cycle`, `campaign`, and
+    `signal_category` to None on the concrete TechStackSignal — see
+    app_modules/signals/models/tech_stack_signal.py docstring for the
+    rationale of each. Of these three, only `signal_category` (and its
+    `signal_category_display` companion) is declared at the top level
+    of the base serializers, so it is the only one that requires
+    filtering. decision_cycle and campaign are no longer top-level
+    fields on the base — they live inside the `source_context` block
+    produced by SignalSourceSerializer, which already handles the
+    shadow-override at runtime via getattr() fallback.
+
+  - source_contact and source_department were previously shadow-overridden
+    too. Both were retired from BaseSignal entirely during the
+    standardisation refactor — there is nothing left to strip for them
+    at the serializer level.
 
   - Cluster identity is driven by tech_catalog_entry FK. canonical_key
     is recomputed by model.save() from the FK and is never writable
@@ -88,7 +98,7 @@ class _TechStackDisplayMixin:
         }
 
     def get_usage_department(self, obj):
-        """Compact department payload — mirror of BaseSignal.source_department."""
+
         d = obj.usage_department
         if not d:
             return None
@@ -155,28 +165,34 @@ def _validate_discontinuation_consistency(is_discontinued, discontinued_date):
 # =============================================================================
 # BASE FIELD STRIP
 # =============================================================================
-# TechStackSignal shadow-overrides 5 fields inherited from BaseSignal:
-# source_contact, source_department, decision_cycle, campaign,
-# signal_category. The base serializers (BaseSignalListSerializer,
-# BaseSignalDetailSerializer, BaseSignalCreateSerializer,
-# BaseSignalUpdateSerializer) declare those fields in their Meta.fields
-# lists. We strip them here once and reuse the resulting filtered lists
-# in every Meta below — keeps the four serializers in sync and avoids
-# re-declaring the rule four times.
+# TechStackSignal shadow-overrides `signal_category` to None on the
+# concrete model (see app_modules/signals/models/tech_stack_signal.py
+# docstring). Among the base serializer fields, only signal_category
+# and its signal_category_display companion need to be stripped — they
+# are declared at the top level of BaseSignalListSerializer /
+# BaseSignalDetailSerializer / BaseSignalCreateSerializer /
+# BaseSignalUpdateSerializer. We strip them here once and reuse the
+# resulting filtered lists in every Meta below — keeps the four
+# serializers in sync.
 #
-# `_*_display` companions are also stripped where they appear (List /
-# Detail expose signal_category_display).
+# Other shadow-overrides on the model (decision_cycle, campaign):
+#   These are not declared at the top level of the base serializers
+#   post-standardisation refactor — they are exposed exclusively
+#   through the `source_context` block produced by
+#   SignalSourceSerializer, which handles the runtime fallback via
+#   getattr() (returns None when the attribute is absent at the
+#   concrete-class level). No strip needed here.
+#
+# Retired shadow-overrides (source_contact, source_department):
+#   Both fields were removed from BaseSignal entirely during the
+#   standardisation refactor — they are no longer declared anywhere
+#   in the base serializers. Nothing to strip.
 # =============================================================================
 
 _SHADOW_OVERRIDDEN_FIELDS = frozenset({
-    'source_contact',
-    'source_department',
-    'decision_cycle',
-    'campaign',
     'signal_category',
     'signal_category_display',
 })
-
 
 def _strip_shadow_fields(field_list):
     """Return a copy of `field_list` without TechStack's shadow-overridden fields."""
@@ -206,10 +222,12 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
         is_discontinued, discontinued_date
       - cost_description (optional but useful at-a-glance)
 
-    corroboration_count is excluded for performance — Detail only.
-
-    signal_category / source_contact / source_department are stripped
-    from inherited fields (model shadow-overrides).
+    signal_category / signal_category_display are stripped from
+    inherited fields (model shadow-overrides signal_category to None).
+    The standardised `source_context` block is inherited as-is from
+    the base; SignalSourceSerializer handles the shadow-overridden
+    decision_cycle / campaign at runtime by falling back to
+    source_activity.decision_cycle / .campaign.
     """
 
     # Catalog + scope + dept compact payloads
@@ -247,14 +265,28 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
     """
     Full detail serializer for TechStackSignal retrieve endpoints.
 
-    Inherits corroboration_count from BaseSignalDetailSerializer.
-    Adds notes on top of the list payload.
+    Inherits validated_at / validated_by / requested_by / source_quote /
+    metadata / original_value from BaseSignalDetailSerializer. Adds
+    notes on top of the list payload.
 
-    signal_category / source_contact / source_department are stripped
-    from inherited fields (model shadow-overrides). decision_cycle and
-    campaign are stripped too — Detail's `get_decision_cycle` /
-    `get_campaign` methods on BaseSignalDetailSerializer would error
-    out on a non-existent FK if not stripped here.
+    signal_category / signal_category_display are stripped from
+    inherited fields (model shadow-overrides signal_category to None).
+
+    Note (history):
+      Earlier versions also stripped source_contact / source_department
+      / decision_cycle / campaign. Following the standardisation refactor:
+        - source_contact / source_department were removed from
+          BaseSignal entirely.
+        - decision_cycle / campaign moved out of the top-level
+          serializer fields and into the standardised `source_context`
+          block (produced by SignalSourceSerializer with getattr()
+          fallback for shadow-overridden cases).
+      None of these four fields require explicit stripping anymore.
+
+      An older note mentioned `get_decision_cycle` / `get_campaign`
+      methods on BaseSignalDetailSerializer that would error out on
+      shadow-overridden FKs — these methods were removed; the
+      fallback now lives in SignalSourceSerializer.
     """
 
     tech_catalog_entry  = serializers.SerializerMethodField()
@@ -314,8 +346,17 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
     Strict validation on the conditional pairs — see helpers above.
 
     Stripped from BaseSignalCreateSerializer.Meta.fields:
-      source_contact, source_department, decision_cycle, campaign,
-      signal_category — the model has no such columns.
+      signal_category — the model shadow-overrides it to None.
+
+    Note: source_contact / source_department / decision_cycle / campaign
+    were previously stripped here too. Following the standardisation
+    refactor:
+      - source_contact / source_department were removed from
+        BaseSignal entirely.
+      - decision_cycle / campaign were removed from the Create
+        serializer (auto-populated by SignalManager from
+        source_activity at create time — never accepted from the API).
+    None of these four fields appear in the base Create fields anymore.
     """
 
     signal_type = serializers.HiddenField(default='tech_stack')
@@ -366,11 +407,12 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
           2. Scope ↔ usage_department coherence (strict — Create has
              no instance state to merge against).
           3. Discontinuation ↔ discontinued_date coherence (strict).
-          4. Base (cross-account source_contact check is harmless here
-             since source_contact is shadow-overridden, but we still
-             route through super().validate() to inject client_id and
-             keep a single code path).
+          4. super().validate() — base injects client_id from JWT
+             context. The previous cross-account source_contact check
+             is gone (the field was retired from BaseSignal during
+             the standardisation refactor).
         """
+
         # Rule 1: catalog FK presence
         if not attrs.get('tech_catalog_entry'):
             raise StandardizedValidationError({
@@ -436,8 +478,12 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
           → accepted.
 
     Stripped from BaseSignalUpdateSerializer.Meta.fields:
-      source_contact, source_department, signal_category — the model
-      has no such columns.
+      signal_category — the model shadow-overrides it to None.
+
+    Note: source_contact / source_department were previously stripped
+    here too. They were removed from BaseSignal entirely during the
+    standardisation refactor — they no longer appear in the base
+    Update fields, so no strip is needed.
     """
 
     class Meta(BaseSignalUpdateSerializer.Meta):

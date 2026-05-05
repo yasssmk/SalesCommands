@@ -33,39 +33,41 @@ Objective:
 Shadow-overrides (vs BaseSignal)
 --------------------------------
 TechStackSignal narrows the BaseSignal field set by shadow-overriding
-several inherited fields to `None`. Each override has a precise reason:
-
-  * source_contact = None
-        A tool used at an account is not "owned" by a single contact.
-        Contacts who mentioned the tool are derivable from
-        source_activity.contacts when source_activity is set. Storing
-        a single source_contact would force an arbitrary choice and
-        risk desynchronisation if the activity evolves.
-
-  * source_department = None
-        Same rationale as source_contact — derivable from the activity
-        (and never confused with usage_department, which describes WHO
-        USES the tool, not WHO MENTIONED it).
+three inherited fields to `None`. Each override has a precise reason:
 
   * decision_cycle = None
         A tool is account-level, not deal-level. Salesforce is used by
         an account independently of which decision cycle is in flight.
         The Pain ↔ TechStack indirection (PainSignal.related_techstack)
-        is the proper way to relate a deal to a tool.
+        is the proper way to relate a deal to a tool. When deal context
+        is needed for a TechStack observation, it can be inferred at
+        read time via source_activity.decision_cycle.
 
   * campaign = None
         Same logic — a campaign targets accounts, not their internal
-        tooling.
+        tooling. Inferable from source_activity.campaign on read when
+        needed.
 
   * signal_category = None
-        Aligned with ObjectiveSignal (Wave B). The legacy
-        signal_category field is being phased out across all signal
-        types — TechStack does not opt in.
+        Aligned with ObjectiveSignal. The signal_category tag is not
+        meaningful for TechStack observations — categorisation lives
+        on the TechCatalog entry instead via the is_competitor and
+        is_integration_target flags.
+
+History — fields removed from BaseSignal directly:
+  source_contact and source_department were previously shadow-overridden
+  here as well. They have been removed from BaseSignal abstract during
+  the standardisation refactor — contacts associated with a TechStack
+  observation are now uniformly derived from source_activity.contacts
+  through the standardised `source` block in serializers (see
+  SignalSourceMixin in base_serializer.py). The shadow-override
+  declarations are therefore obsolete and have been removed.
 
 The MUST-keep inherited fields are: account, source_activity (optional),
 canonical_key, source_quote, source, status, validated_*, audit
 (created_by / updated_by / etc.), language_original, requested_by,
 metadata, is_inferred, confidence, original_value.
+
 
 Validation rules (enforced in clean() AND in Create/Update serializers)
 ----------------------------------------------------------------------
@@ -132,6 +134,14 @@ class TechStackSignal(BaseSignal):
     Optional:
         - usage_scope, usage_start_year, renewal_date, cost_description, notes
 
+    Source contacts:
+        Contacts who participated in `source_activity` are derived at
+        read time from `source_activity.contacts` and exposed through
+        the standardised `source` block in serializers. The signal does
+        not carry a dedicated source_contact FK — see BaseSignal class
+        docstring for the rationale. usage_department is a distinct
+        concept that captures who USES the tool, not who reported it.
+
     Inherited from BaseSignal (kept):
         - account, source_activity (nullable), source_quote, source,
           status, validated_*, language_original, requested_by, metadata,
@@ -145,8 +155,6 @@ class TechStackSignal(BaseSignal):
     # treats `= None` on a concrete subclass as "this field does not
     # exist on the concrete model" — no column is created, no
     # get_FIELD_display, no serialization.
-    source_contact    = None
-    source_department = None
     decision_cycle    = None
     campaign          = None
     signal_category   = None
