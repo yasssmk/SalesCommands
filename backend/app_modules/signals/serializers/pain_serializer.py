@@ -96,8 +96,6 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
     read-only form, and the optional cross-reference to a TechStack
     catalog entry.
 
-    corroboration_count is excluded here for performance — Detail only.
-
     Cross-reference exposure (Sprint TechStack):
       - related_techstack          : compact catalog payload or None
       - related_techstack_mention  : free-text mention or empty string
@@ -105,6 +103,7 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
     Both fields are emitted unconditionally — the UI hides them when
     what != 'TECH', but the API stays neutral. See PainSignal model
     docstring for the rationale.
+
     """
 
     # Canonical axes
@@ -143,9 +142,10 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
     """
     Full detail serializer for PainSignal retrieve endpoints.
 
-    Inherits corroboration_count from BaseSignalDetailSerializer.
-    Adds notes on top of the list payload, plus nested impacts and
-    the optional TechStack cross-reference.
+    Inherits validated_at / validated_by / requested_by / source_quote /
+    metadata / original_value from BaseSignalDetailSerializer. Adds
+    notes on top of the list payload, plus nested impacts and the
+    optional TechStack cross-reference.
     """
 
     what_display      = serializers.SerializerMethodField()

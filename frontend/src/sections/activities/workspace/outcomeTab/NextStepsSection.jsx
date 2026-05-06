@@ -1,75 +1,60 @@
-// frontend/src/sections/activities/workspace/ActivityOutcomeTab.jsx
+// frontend/src/sections/activities/workspace/outcomeTab/NextStepsSection.jsx
 /**
- * Activity Outcome Tab Component
+ * NextStepsSection — Next-step planning for the Activity workspace.
  *
- * Post-activity workflow tab with 3 fixed sections:
- * 1. Key Takeaways - Notes capture + signals CTA stub
- * 2. Next Steps - Create follow-up Activity/Step or mark "No next step"
- * 3. Result - Outcome selection + Complete action
+ * Extracted from the legacy ActivityOutcomeTab so it can be reused by
+ * the new ActivityWrapUpTab without duplication. Logic identical to
+ * the legacy implementation — no behavioural change.
  *
- * Designed for fast, non-form-like post-call workflow.
+ * Renders:
+ *   - Sequence next activities (decision-cycle / campaign scope)
+ *   - Quick-create follow-up CTAs (decision-cycle activities only)
+ *   - Campaign → Decision Cycle conversion CTA (when applicable)
+ *   - Inactive disabled state when activity is not part of any sequence
+ *
+ * Helpers SectionCard and ActivityMiniCard are inlined here — they
+ * were inline helpers in the legacy ActivityOutcomeTab and have no
+ * other consumer after the Wrap-up refactor.
  */
 
 "use client";
 
-import { useState } from "react";
 import PropTypes from "prop-types";
-import { useTheme } from "@mui/material/styles";
+import { useRouter } from "next/navigation";
 
-// MUI
+// material-ui
+import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
-import Grid from "@mui/material/Grid";
 import IconButton from "@mui/material/IconButton";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import Alert from "@mui/material/Alert";
-import Tooltip from "@mui/material/Tooltip";
 
-// Project imports
+// ant-design icons
+import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import LinkOutlined from "@ant-design/icons/LinkOutlined";
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
+import RocketOutlined from "@ant-design/icons/RocketOutlined";
+import TrophyOutlined from "@ant-design/icons/TrophyOutlined";
+
+// project imports
 import {
-  completeActivity,
-  updateActivity,
-  ACTIVITY_OUTCOME_LABELS,
-  ACTIVITY_OUTCOME_COLORS,
   ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_COLORS,
 } from "api/accounts/activities";
-import {
-  displaySuccessSnackbar,
-  displayErrorSnackbar,
-} from "utils/displayError";
-
-// Navigation
-import { useRouter } from "next/navigation";
-
-// Modals
-import ActivityModal from "sections/accounts/activities/ActivityModal";
-import CampaignOutcomeModal from "sections/campaigns/CampaignOutcomeModal";
-
-// Icons
-import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
-import CheckOutlined from "@ant-design/icons/CheckOutlined";
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
-import BulbOutlined from "@ant-design/icons/BulbOutlined";
-import RocketOutlined from "@ant-design/icons/RocketOutlined";
-import StopOutlined from "@ant-design/icons/StopOutlined";
-import LinkOutlined from "@ant-design/icons/LinkOutlined";
-import WarningOutlined from "@ant-design/icons/WarningOutlined";
-import TrophyOutlined from "@ant-design/icons/TrophyOutlined";
-import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
-import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
 
 // ==============================|| SECTION CARD WRAPPER ||============================== //
 
+/**
+ * Internal helper — outlined card with a title row and an optional
+ * trailing action slot. Inlined here because the legacy KeyTakeaways /
+ * Result sections (its other former consumers) are removed by the
+ * Wrap-up refactor.
+ */
 function SectionCard({ title, icon: Icon, children, action }) {
   const theme = useTheme();
 
@@ -107,116 +92,13 @@ SectionCard.propTypes = {
   action: PropTypes.node,
 };
 
-// ==============================|| KEY TAKEAWAYS SECTION ||============================== //
+// ==============================|| ACTIVITY MINI CARD ||============================== //
 
-function KeyTakeawaysSection({ activity, onSave, isLocked = false }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(activity?.outcome_notes || "");
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    if (value === (activity?.outcome_notes || "")) {
-      setEditing(false);
-      return;
-    }
-    setSaving(true);
-    const success = await onSave("outcome_notes", value);
-    setSaving(false);
-    if (success) {
-      setEditing(false);
-    }
-  };
-
-  const handleCancel = () => {
-    setValue(activity?.outcome_notes || "");
-    setEditing(false);
-  };
-
-  return (
-    <SectionCard
-      title="Key Takeaways"
-      icon={BulbOutlined}
-      action={
-        !editing && (
-          <Button
-            size="small"
-            startIcon={<PlusOutlined />}
-            disabled
-            sx={{ opacity: 0.5 }}
-          >
-            Add Signal (Coming Soon)
-          </Button>
-        )
-      }
-    >
-      {editing ? (
-        <Stack spacing={1.5}>
-          <TextField
-            multiline
-            rows={4}
-            fullWidth
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder="Capture key information from this activity..."
-            disabled={saving}
-            autoFocus
-          />
-          <Stack direction="row" spacing={1} justifyContent="flex-end">
-            <Button
-              size="small"
-              onClick={handleCancel}
-              disabled={saving}
-              startIcon={<CloseOutlined />}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="small"
-              variant="contained"
-              onClick={handleSave}
-              disabled={saving}
-              startIcon={<CheckOutlined />}
-            >
-              Save
-            </Button>
-          </Stack>
-        </Stack>
-      ) : (
-        <Box
-          onClick={() => !isLocked && setEditing(true)}
-          sx={{
-            p: 2,
-            borderRadius: 1,
-            bgcolor: "action.hover",
-            cursor: isLocked ? "default" : "pointer",
-            minHeight: 80,
-            "&:hover": {
-              bgcolor: isLocked ? "action.hover" : "action.selected",
-            },
-          }}
-        >
-          {activity?.outcome_notes ? (
-            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-              {activity.outcome_notes}
-            </Typography>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Click to add notes about this activity...
-            </Typography>
-          )}
-        </Box>
-      )}
-    </SectionCard>
-  );
-}
-
-KeyTakeawaysSection.propTypes = {
-  activity: PropTypes.object,
-  onSave: PropTypes.func.isRequired,
-};
-
-// ==============================|| ACTIVITY MINI CARD (Reusable) ||============================== //
-
+/**
+ * Internal helper — compact card for an activity reference shown in
+ * the "Upcoming in sequence" list. Click navigates to the activity
+ * workspace; optional unlink action when caller passes showUnlink.
+ */
 function ActivityMiniCard({
   activity: activityItem,
   onNavigate,
@@ -225,7 +107,6 @@ function ActivityMiniCard({
 }) {
   const theme = useTheme();
 
-  // Format date helper
   const formatDate = (dateStr) => {
     if (!dateStr) return null;
     return new Date(dateStr).toLocaleDateString();
@@ -333,7 +214,18 @@ ActivityMiniCard.propTypes = {
 
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
-function NextStepsSection({
+/**
+ * NextStepsSection — public component.
+ *
+ * @param {Object}   activity         - Full activity object
+ * @param {Function} onCreateActivity - (activityType, options?) => void.
+ *                                      Opens the create-activity modal.
+ * @param {Function} onUpdate         - Callback after parent-driven mutations
+ *                                      (currently forwarded but unused inside).
+ * @param {boolean}  isLocked         - Activity is COMPLETED or CANCELLED →
+ *                                      hide creation CTAs.
+ */
+export default function NextStepsSection({
   activity,
   onCreateActivity,
   onUpdate,
@@ -342,8 +234,7 @@ function NextStepsSection({
   const router = useRouter();
   const theme = useTheme();
 
-  // Check if activity belongs to a sequence (Decision Cycle or future Campaign)
-  // Future-ready: add || Boolean(activity?.campaign) when campaign FK is added
+  // Check if activity belongs to a sequence (Decision Cycle or Campaign)
   const isInSequence =
     Boolean(activity?.decision_cycle) || Boolean(activity?.campaign_detail);
   const isCampaignActivity =
@@ -353,16 +244,13 @@ function NextStepsSection({
     (activity?.outcome === "SUCCESSFUL" ||
       activity?.outcome === "MEETING_SCHEDULED");
 
-  // Get next activities from sequence_context (calculated by backend)
+  // Sequence context (calculated by backend serializer)
   const sequenceContext = activity?.sequence_context;
   const nextActivities = sequenceContext?.next_activities || [];
   const hasNextActivity = nextActivities.length > 0;
 
   // Sequence position info
   const isLastInSequence = sequenceContext?.position === sequenceContext?.total;
-
-  // Check effective next step status from API
-  const effectiveHasNextStep = activity?.effective_has_next_step;
 
   // Navigate to activity workspace
   const handleActivityClick = (activityId) => {
@@ -420,7 +308,7 @@ function NextStepsSection({
               Upcoming in sequence ({nextActivities.length})
             </Typography>
             <Stack spacing={1}>
-              {nextActivities.map((nextAct, index) => (
+              {nextActivities.map((nextAct) => (
                 <ActivityMiniCard
                   key={nextAct.id}
                   activity={nextAct}
@@ -548,189 +436,11 @@ function NextStepsSection({
   );
 }
 
+// ==============================|| PROP TYPES ||============================== //
+
 NextStepsSection.propTypes = {
   activity: PropTypes.object,
   onCreateActivity: PropTypes.func.isRequired,
-  onUpdate: PropTypes.func,
-};
-
-// ==============================|| RESULT SECTION ||============================== //
-
-function ResultSection({ activity, onUpdate }) {
-  const [outcomeModalOpen, setOutcomeModalOpen] = useState(false);
-
-  const isCompleted = activity?.status === "COMPLETED";
-  const isCancelled = activity?.status === "CANCELLED";
-  const isCampaignActivity = Boolean(activity?.campaign_detail);
-
-  // Guard: previous activity in campaign sequence must be completed first
-  const previousActivities =
-    activity?.sequence_context?.previous_activities || [];
-  const previousActivity = previousActivities[0] || null;
-  const isPreviousBlocking =
-    isCampaignActivity &&
-    previousActivity &&
-    previousActivity.status !== "COMPLETED";
-
-  return (
-    <SectionCard title="Result" icon={CheckCircleOutlined}>
-      {isCompleted ? (
-        <Stack spacing={2}>
-          <Alert severity="success">Activity completed</Alert>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="body2" color="text.secondary">
-              Outcome:
-            </Typography>
-            <Chip
-              label={
-                ACTIVITY_OUTCOME_LABELS[activity.outcome] || activity.outcome
-              }
-              color={ACTIVITY_OUTCOME_COLORS[activity.outcome] || "default"}
-              size="small"
-            />
-          </Stack>
-          {activity.outcome_notes && (
-            <Box>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ mb: 0.5 }}
-              >
-                Notes:
-              </Typography>
-              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-                {activity.outcome_notes}
-              </Typography>
-            </Box>
-          )}
-        </Stack>
-      ) : isCancelled ? (
-        <Alert severity="warning">This activity has been cancelled</Alert>
-      ) : (
-        <Stack spacing={2}>
-          <Tooltip
-            title={
-              isPreviousBlocking
-                ? "Complete the previous activities in the playlist first."
-                : ""
-            }
-            arrow
-          >
-            <span style={{ width: "100%" }}>
-              <Button
-                variant="contained"
-                color="success"
-                startIcon={<CheckCircleOutlined />}
-                onClick={() => setOutcomeModalOpen(true)}
-                disabled={isPreviousBlocking}
-                fullWidth
-              >
-                Log Response
-              </Button>
-            </span>
-          </Tooltip>
-
-          {outcomeModalOpen && (
-            <CampaignOutcomeModal
-              open={outcomeModalOpen}
-              onClose={() => setOutcomeModalOpen(false)}
-              activity={activity}
-              campaignId={activity?.campaign_detail?.id}
-              onComplete={() => {
-                setOutcomeModalOpen(false);
-                onUpdate?.();
-              }}
-              onUpdate={onUpdate}
-            />
-          )}
-        </Stack>
-      )}
-    </SectionCard>
-  );
-}
-
-ResultSection.propTypes = {
-  activity: PropTypes.object,
-  onUpdate: PropTypes.func,
-};
-
-// ==============================|| ACTIVITY OUTCOME TAB ||============================== //
-
-export default function ActivityOutcomeTab({
-  activity,
-  onSave,
-  onUpdate,
-  isLocked = false,
-}) {
-  const [activityModalOpen, setActivityModalOpen] = useState(false);
-  const [activityModalType, setActivityModalType] = useState(null);
-  const [convertFromCampaign, setConvertFromCampaign] = useState(false);
-
-  const handleCreateActivity = (activityType, options = {}) => {
-    setActivityModalType(activityType);
-    setConvertFromCampaign(Boolean(options.convertFromCampaign));
-    setActivityModalOpen(true);
-  };
-
-  const handleActivityModalClose = () => {
-    setActivityModalOpen(false);
-    setActivityModalType(null);
-    setConvertFromCampaign(false);
-  };
-
-  // Success handler for activity creation
-  const handleActivitySuccess = async () => {
-    handleActivityModalClose();
-    onUpdate?.();
-    displaySuccessSnackbar("Follow-up activity created");
-  };
-
-  return (
-    <Box>
-      <Grid container spacing={3}>
-        {/* Left Column - Next Steps + Key Takeaways */}
-        <Grid item xs={12} md={8}>
-          <Stack spacing={3}>
-            <NextStepsSection
-              activity={activity}
-              onCreateActivity={handleCreateActivity}
-              onUpdate={onUpdate}
-              isLocked={isLocked}
-            />
-            <KeyTakeawaysSection
-              activity={activity}
-              onSave={onSave}
-              isLocked={isLocked}
-            />
-          </Stack>
-        </Grid>
-
-        {/* Right Column - Result */}
-        <Grid item xs={12} md={4}>
-          <ResultSection activity={activity} onUpdate={onUpdate} />
-        </Grid>
-      </Grid>
-
-      {/* Activity Modal - Create follow-up activity */}
-      <ActivityModal
-        open={activityModalOpen}
-        onClose={handleActivityModalClose}
-        activity={null}
-        accountId={activity?.account}
-        decisionStepId={activity?.decision_step || null}
-        decisionCycleId={activity?.decision_cycle || null}
-        defaultActivityType={activityModalType}
-        previousActivityId={activity?.id}
-        sourceActivityId={convertFromCampaign ? activity?.id : null}
-        onSuccess={handleActivitySuccess}
-      />
-    </Box>
-  );
-}
-
-ActivityOutcomeTab.propTypes = {
-  activity: PropTypes.object.isRequired,
-  onSave: PropTypes.func.isRequired,
   onUpdate: PropTypes.func,
   isLocked: PropTypes.bool,
 };

@@ -26,14 +26,31 @@ member is selected based on the cluster's signal_type:
                  for the cluster member surface)
   tech_stack  → TechStackSignalListSerializer
                 (catalog entry + lifecycle stats already on the List
-                 payload; Detail would only add corroboration_count
-                 which is not consumed by the cluster drawer member
-                 cards)
+                 payload; the Detail extras — validated_at /
+                 validated_by / requested_by / source_quote / metadata /
+                 original_value — are not consumed by the cluster
+                 drawer member cards)
 
 The dispatch lives inside `get_members` as a SerializerMethodField so
 the cluster payload stays a plain dict and the routing is centralised
 in one place. Adding a new signal type means adding one entry to the
 serializer map.
+
+Standardised provenance block on members
+----------------------------------------
+Every member (regardless of signal_type) exposes the standardised
+`source_context` block introduced by the standardisation refactor —
+this is inherited automatically through BaseSignalListSerializer /
+BaseSignalDetailSerializer and requires no special handling here. The
+block carries: activity (compact), contacts (list), decision_cycle,
+campaign, decision_step.
+
+Performance note: SignalClusterService fetchers
+(_fetch_pain_signals, _fetch_objective_signals, _fetch_techstack_signals)
+must include `prefetch_related('source_activity__contacts')` and
+`select_related('source_activity')` to avoid N+1 query loops when the
+source_context block is rendered. See PHASE D.3 of the standardisation
+refactor.
 
 Scope notes
 -----------
@@ -528,7 +545,8 @@ class SignalClusterDetailSerializer(SignalClusterListSerializer):
     # Pain uses Detail because PainCard needs nested impacts — those
     # only ship in the Detail payload. Objective and TechStack use List
     # since their cluster member cards do not consume the heavier
-    # Detail-only fields (corroboration_count, audit users, etc.).
+    # Detail-only extras (validated_at, validated_by, requested_by,
+    # source_quote, metadata, original_value).
     @staticmethod
     def _get_member_serializer_class(signal_type):
         if signal_type == 'pain':

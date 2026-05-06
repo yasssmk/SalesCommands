@@ -49,7 +49,7 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 // project imports
 import SignalList from "../signals/SignalList";
 import AlertSignalReject from "../signals/AlertSignalReject";
-import SignalEditDialog from "../signals/SignalEditDialog";
+import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 import AddPainImpactDialog from "../signals/pain/AddPainImpactDialog";
 
 import {

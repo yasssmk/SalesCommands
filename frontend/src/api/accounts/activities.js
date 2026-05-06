@@ -886,6 +886,7 @@ export async function updateActivity(activityId, payload) {
     "description",
     "call_to_action",
     "outcome_notes",
+    "transcript",
   ]);
 
   const result = await api.patch(

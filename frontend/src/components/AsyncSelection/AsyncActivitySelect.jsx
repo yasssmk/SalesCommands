@@ -8,6 +8,12 @@
  *   - Server-side search (typically by subject / type / date on the backend)
  *   - Automatic debounce (300ms, inherited from AsyncSelect)
  *   - Displays: "<Type> — <Date> — <Subject|Contact>"
+ *   - Stable React keys via `getOptionKey={activity.id}` — composite
+ *     labels are not unique enough (two distinct activities can share
+ *     the same "<Type> — <Date> — <Subject>" tuple), and MUI's default
+ *     fallback to `getOptionLabel` for the key would trigger React's
+ *     "Encountered two children with the same key" warning. Passing
+ *     activity.id (always unique) eliminates the collision.
  *   - Supports edit mode (current value always visible even if out of page 1)
  *   - Account-scoped filtering via `filters={{ account_id }}` — REQUIRED
  *     when used inside a signal form to prevent cross-account data leakage.
@@ -134,6 +140,7 @@ function AsyncActivitySelect({
       dataKey="activities"
       loadingKey="activitiesLoading"
       getOptionLabel={getActivityLabel}
+      getOptionKey={(option) => option?.id ?? getActivityLabel(option)}
       filterOptions={filterOptions}
       value={value}
       onChange={onChange}

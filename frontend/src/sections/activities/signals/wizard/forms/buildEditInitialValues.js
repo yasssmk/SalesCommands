@@ -4,22 +4,33 @@
  * read object and its concrete type.
  *
  * Each per-type builder mirrors exactly the fields of its matching
- * Inline*Form component. Activity / catalog / contact-related objects
- * are passed whole — the matching Async* selectors expect the full
- * option object as their value prop, not a UUID string. This avoids
- * a re-fetch loop to re-hydrate the selection on edit.
+ * Inline*Form component. Catalog / contact-related objects are passed
+ * whole — the matching Async* selectors expect the full option object
+ * as their value prop, not a UUID string. This avoids a re-fetch loop
+ * to re-hydrate the selection on edit.
+ *
+ * source_activity is NOT a builder field
+ * --------------------------------------
+ * A signal is always created from an activity context — the wizard
+ * injects source_activity into the dispatch payload via extraPayload.
+ * No inline form surfaces a picker for it, and no edit builder sets
+ * an initial value for it. In edit mode, source_activity is preserved
+ * server-side because PATCH is partial — sending no source_activity
+ * leaves the existing FK untouched.
  *
  * Standardisation refactor (post-PHASES A-E backend) — destructive:
  *   source_contact and source_department have been removed from
  *   BaseSignal entirely. Provenance is now derived from
- *   source_activity (the standardised `source_context` block exposed
- *   on backend list/detail responses). The corresponding form fields
- *   and builders have been retired across this module.
+ *   source_activity.contacts (m2m) and exposed back to the UI through
+ *   the standardised `source_context` block on list/detail responses.
+ *   The corresponding form fields and builders have been retired
+ *   across this module.
  *
  * @param {'pain'|'objective'|'tech-stack'} signalType
  * @param {Object} signal - Backend read object for the signal
  * @returns {Object} Formik-ready initialValues
  */
+
 export function buildEditInitialValues(signalType, signal) {
   if (!signal) return {};
 
@@ -48,15 +59,13 @@ export function buildEditInitialValues(signalType, signal) {
  *
  * This builder mirrors exactly the fields of InlinePainForm:
  *   - Diagnosis  : summary, what, dimension
- *   - Source     : source_activity (required for Pain post-standardisation)
  *   - Narrative  : source_quote, notes
  *   - Cross-ref  : related_techstack, related_techstack_mention
  *                  (Sprint TechStack — visible only when what === 'TECH')
  *
- * Activity / catalog objects are passed whole — the matching Async*
- * selectors expect the full option object as their value prop, not
- * a UUID string. This avoids a re-fetch loop to re-hydrate the
- * selection on edit.
+ * Catalog objects are passed whole — AsyncTechCatalogSelect expects the
+ * full option object as its value prop, not a UUID string. This avoids
+ * a re-fetch loop to re-hydrate the selection on edit.
  *
  * Removed during the standardisation refactor (no backward-compat):
  *   - source_contact     → field retired from BaseSignal. Pain
@@ -65,6 +74,11 @@ export function buildEditInitialValues(signalType, signal) {
  *                          on the backend through the
  *                          `source_context` block — not surfaced
  *                          as a form field anymore.
+ *   - source_activity    → never a form field. The wizard injects it
+ *                          from the activity context via extraPayload
+ *                          at create time. In edit mode, the existing
+ *                          FK is preserved server-side via the partial
+ *                          PATCH semantics.
  *
  * Cross-reference fields (Sprint TechStack):
  *   - related_techstack          : object whole | null
@@ -87,9 +101,6 @@ function buildPainInitialValues(signal) {
     what: signal.what ?? "",
     dimension: signal.dimension ?? "",
 
-    // Source — object passed whole; the wizard extracts UUIDs at dispatch time
-    source_activity: signal.source_activity ?? null,
-
     // Optional narrative extras
     source_quote: signal.source_quote ?? "",
     notes: signal.notes ?? "",
@@ -107,13 +118,12 @@ function buildPainInitialValues(signal) {
  * @returns {Object}
  *
  * Objective is a flat structured goal — no child sub-resource, no impacts.
- * This builder mirrors exactly the fields exposed by the 4-section
- * InlineObjectiveForm (Wave B):
+ * This builder mirrors exactly the fields exposed by the 3-section
+ * InlineObjectiveForm:
  *
  *   S1 — Goal:    summary, what, dimension
  *   S2 — Scope:   scope_level + conditional target_contact OR target_department
  *   S3 — Success: success_criteria, target_date, notes
- *   S4 — Source:  source_activity
  *
  * Removed during the Wave B rewrite and the standardisation refactor
  * (destructive — no backward-compat):
@@ -123,13 +133,16 @@ function buildPainInitialValues(signal) {
  *   - source_department   → retired from BaseSignal during standardisation
  *   - source_quote        → merged into notes (decision 2 — Wave B plan)
  *   - signal_category     → shadow-overridden to None on the model
+ *   - source_activity     → never a form field. The wizard injects it
+ *                           from the activity context via extraPayload
+ *                           at create time. In edit mode, the existing
+ *                           FK is preserved server-side via the partial
+ *                           PATCH semantics.
  *
  * Field shape notes:
  *   - target_contact passed whole — AsyncContactSelect expects the full
  *     option object as its value prop, not a UUID string.
  *   - target_department extracted to its id for MUI Select value binding.
- *   - source_activity passed whole — AsyncActivitySelect same pattern as
- *     AsyncContactSelect.
  *   - target_date kept as ISO yyyy-mm-dd string (backend DateField
  *     serialises to that format natively; HTML5 <input type="date">
  *     binds directly to the string).
@@ -150,9 +163,6 @@ function buildObjectiveInitialValues(signal) {
     success_criteria: signal.success_criteria ?? "",
     target_date: signal.target_date ?? "",
     notes: signal.notes ?? "",
-
-    // S4 — Source
-    source_activity: signal.source_activity ?? null,
   };
 }
 
@@ -174,7 +184,7 @@ function buildObjectiveInitialValues(signal) {
  *   S2 — usage_scope, usage_department (conditional)
  *   S3 — usage_start_year, renewal_date, cost_description
  *   S4 — is_discontinued, discontinued_date (conditional)
- *   S5 — source_activity, source_quote, notes
+ *   S5 — source_quote, notes           (narrative)
  *
  * Field shape notes:
  *   - tech_catalog_entry passed whole — AsyncTechCatalogSelect expects
@@ -183,7 +193,6 @@ function buildObjectiveInitialValues(signal) {
  *     ({ id, company_name, product_name, is_competitor,
  *        is_integration_target }) — directly usable by the picker.
  *   - usage_department extracted to its id for MUI Select binding.
- *   - source_activity passed whole — AsyncActivitySelect same pattern.
  *   - usage_start_year kept as raw number or '' (Yup transform handles
  *     the empty-string → null coercion at submit time).
  *   - renewal_date / discontinued_date kept as ISO yyyy-mm-dd strings
@@ -203,6 +212,11 @@ function buildObjectiveInitialValues(signal) {
  *   - integrations        → not on the new model
  *   - source_department   → retired from BaseSignal during standardisation
  *   - signal_category     → shadow-overridden to None on the model
+ *   - source_activity     → never a form field. The wizard injects it
+ *                           from the activity context via extraPayload
+ *                           at create time. In edit mode, the existing
+ *                           FK is preserved server-side via the partial
+ *                           PATCH semantics.
  */
 function buildTechStackInitialValues(signal) {
   return {
@@ -225,8 +239,7 @@ function buildTechStackInitialValues(signal) {
     is_discontinued: signal.is_discontinued ?? false,
     discontinued_date: signal.discontinued_date ?? "",
 
-    // S5 — Source / narrative
-    source_activity: signal.source_activity ?? null,
+    // S5 — Narrative
     source_quote: signal.source_quote ?? "",
     notes: signal.notes ?? "",
   };

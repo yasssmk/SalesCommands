@@ -1,14 +1,11 @@
-'use client';
-
+"use client";
 
 // ==============================|| TAB CONFIGURATION ||============================== //
 
 export const ACTIVITY_TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'preparation', label: 'Preparation' },
-  { id: 'outcome', label: 'Outcome' },
-  { id: 'transcript', label: 'Transcript' },
-  { id: 'signals', label: 'Signals' }
+  { id: "overview", label: "Overview" },
+  { id: "preparation", label: "Preparation" },
+  { id: "wrap-up", label: "Wrap-up" },
 ];
 
-export const DEFAULT_TAB = 'overview';
+export const DEFAULT_TAB = "overview";
