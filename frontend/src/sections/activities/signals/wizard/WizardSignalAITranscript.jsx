@@ -3,38 +3,56 @@
  * WizardSignalAITranscript — AI/transcript-driven entry point to signal capture.
  *
  * Sits beside WizardSignalAdd as a sibling wizard. Both target the same
- * destination (signal creation) via the same Validation step component
- * (WizardValidationStep), but follow different journeys:
+ * destination (a curated set of signals on the activity) via the same
+ * Validation step component (WizardValidationStep), but follow opposite
+ * journeys regarding signal lifecycle:
  *
- *   WizardSignalAdd  : Capture (manual inline forms) → Validation
- *   WizardSignalAI…  : Review (transcript + alert) → Processing → Validation
+ *   WizardSignalAdd  : Capture → Validation
+ *                      Signals do NOT exist in DB. The wizard stages them
+ *                      locally and `createSignal()` is dispatched on confirm.
  *
- * MVP scope:
- *   - Step 0 (Review)     : fully functional — transcript editable, alert,
- *                           "Include my notes" checkbox, Send button.
- *   - Step 1 (Processing) : placeholder — LLM channel not yet wired. User
- *                           must click "Continue to validation" to advance.
- *   - Step 2 (Validation) : fully wired — reuses WizardValidationStep,
- *                           dispatch logic mirrors WizardSignalAdd. In MVP
- *                           `staged` arrives empty (no LLM call), so the
- *                           empty state of WizardValidationStep renders.
+ *   WizardSignalAITranscript : Review → Processing → Validate
+ *                              The backend pipeline CREATES the signals in
+ *                              DB as PENDING. The wizard validates them:
+ *                              `validateSignal()` for accepted ones,
+ *                              `deleteSignal()` for rejected ones.
+ *                              No createSignal is ever called from here.
  *
- * Future LLM integration (sprint dédié) — replace the placeholders with:
- *   1. A real LLM call inside handleSendToAI:
- *        const llmPayload = { transcript, notes: includeNotes ? initialNotes : null };
- *        const { signals } = await callLLMExtractor(llmPayload);
- *        setStaged(groupByType(signals));
- *        setActiveStep(STEP_VALIDATE);   // auto-advance on response
- *   2. The "Continue to validation" button on ProcessingStep becomes
- *      obsolete — drop it (or keep only as a manual fallback on error).
- *   3. SIGNAL_SOURCE constant flips to the agreed enum value (likely
- *      'LLM_TRANSCRIPT'). Coordinate with backend on the exact value.
- *   4. handleStartEdit gets a real implementation — either a sub-dialog
- *      rendering the relevant inline form, or a 4th step.
+ * Tier T4 conventions (see backend/core/timeout_conventions.py):
+ *   R3 Polling fallback — handled inside extractTranscriptSignals
+ *   R4 Deterministic key — handled inside extractTranscriptSignals
+ *   R5 UX wait pattern   — wizard stays open during entire extraction
+ *                          and polling. Close-during-extraction shows
+ *                          confirmation; the backend operation continues.
  *
- * Transcript editing is local to the wizard — edits are NOT persisted to
- * Activity.transcript. The rep can placeholdize sensitive data before each
- * LLM submission without altering the source-of-truth on the activity.
+ * State machine on the Processing step:
+ *
+ *                            ┌──────────────────────┐
+ *                            │ idle (Review step)   │
+ *                            └──────────┬───────────┘
+ *                                       │  Send to AI
+ *                                       ▼
+ *                            ┌──────────────────────┐
+ *                            │ running              │
+ *                            │ (sync window <60s)   │
+ *                            └──────────┬───────────┘
+ *                                       │  axios timeout
+ *                                       ▼
+ *                            ┌──────────────────────┐
+ *                            │ polling              │
+ *                            │ (≤3 min, attempt n/m)│
+ *                            └──┬─────────┬─────────┘
+ *                               │         │
+ *           ┌───────────────────┘         └─────────────────────┐
+ *           │ success                     │ error / timeout / dedup
+ *           ▼                             ▼
+ *  ┌─────────────────┐         ┌────────────────────────────────┐
+ *  │ → STEP_VALIDATE │         │ STEP_PROCESSING + banner       │
+ *  │   staged is     │         │  • ALREADY_EXTRACTED → info    │
+ *  │   populated     │         │  • TIMEOUT_PENDING   → warn    │
+ *  │   from result   │         │  • REPLAY_FAILED     → error   │
+ *  └─────────────────┘         │  • other             → error   │
+ *                              └────────────────────────────────┘
  */
 
 "use client";
@@ -48,6 +66,7 @@ import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Checkbox from "@mui/material/Checkbox";
+import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
@@ -55,6 +74,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
+import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -62,11 +82,16 @@ import Typography from "@mui/material/Typography";
 // ant-design icons
 import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
-import RobotOutlined from "@ant-design/icons/RobotOutlined";
+import InfoCircleOutlined from "@ant-design/icons/InfoCircleOutlined";
 import SendOutlined from "@ant-design/icons/SendOutlined";
+import WarningOutlined from "@ant-design/icons/WarningOutlined";
 
 // project imports
-import { createSignal } from "api/signals/signals";
+import { validateSignal, deleteSignal } from "api/signals/signals";
+import {
+  extractTranscriptSignals,
+  EXTRACTION_OUTCOME_CODES,
+} from "api/aiPipelines/transcriptSignals";
 import {
   displaySuccessSnackbar,
   displayWarningSnackbar,
@@ -93,30 +118,18 @@ const INITIAL_STAGED = {
   "tech-stack": [],
 };
 
-/**
- * SignalSource value sent to the backend when this wizard dispatches signals.
- *
- * MVP value is 'MANUAL' because no LLM call runs yet — any signal that
- * happens to land in the validation step is effectively manually curated.
- *
- * TODO LLM SPRINT: switch to the appropriate SignalSource enum value for
- * AI-extracted signals (likely 'LLM_TRANSCRIPT' or similar). Backend
- * SignalSource enum exposes MANUAL / LLM_* / EXTERNAL_RESEARCH — coordinate
- * with backend on the exact value before flipping.
- */
-const SIGNAL_SOURCE = "MANUAL";
-
 // ==============================|| TRANSCRIPT REVIEW STEP ||============================== //
 
 /**
  * Step 0 — TranscriptReview.
  *
  * Editable transcript area, LLM safety alert, "Include my notes" checkbox,
- * Send button. Calling onSendToAI advances the parent to STEP_PROCESSING.
+ * Send button. Calling onSendToAI triggers the real extraction pipeline.
  *
  * The notes themselves are not displayed inline — only their availability
  * is communicated through the checkbox label. Concatenation with the
- * transcript happens at LLM submission time (see parent handleSendToAI).
+ * transcript happens at LLM submission time (sprint LLM future scope —
+ * MVP backend ignores notes and only consumes the transcript).
  */
 function TranscriptReviewStep({
   transcript,
@@ -211,46 +224,200 @@ TranscriptReviewStep.propTypes = {
 // ==============================|| PROCESSING STEP ||============================== //
 
 /**
- * Step 1 — Processing (MVP placeholder).
+ * Step 1 — Processing.
  *
- * In MVP this step is a static placeholder — the LLM channel is not yet
- * wired. The user must click "Continue to validation" to advance manually.
+ * Renders one of several states based on the extraction lifecycle:
  *
- * Once the LLM is plugged in, this step will:
- *   1. Display a real loading state while the LLM call resolves.
- *   2. Auto-advance to STEP_VALIDATE on response.
- *   3. Surface an error state on failure with retry / back options.
+ *   running           : initial backend call in flight (sync ≤ 60s)
+ *   polling           : axios timed out, frontend polling /ops/{key}/
+ *   already_extracted : backend layer-2 DB dedup hit (409)
+ *   timeout_pending   : polling exhausted, server still working
+ *   replay_failed     : previous attempt failed (Redis-cached error)
+ *   error             : generic failure (network, validation, server)
+ *
+ * On success the parent auto-advances to STEP_VALIDATE — this component
+ * does not render a success state itself.
  */
-function ProcessingStep({ onBackToReview, onContinue }) {
+function ProcessingStep({
+  extracting,
+  pollProgress,
+  extractionResult,
+  onBackToReview,
+  onRetry,
+}) {
+  // ---- In-flight: extraction is running (sync or polling) ----
+  if (extracting) {
+    const isPolling = Boolean(pollProgress && pollProgress.max > 0);
+    return (
+      <Stack
+        spacing={2.5}
+        sx={{ p: 3, alignItems: "center", textAlign: "center" }}
+      >
+        <CircularProgress size={48} />
+        <Stack spacing={0.5} sx={{ maxWidth: 460 }}>
+          <Typography variant="subtitle1" fontWeight={600}>
+            {isPolling
+              ? "Still processing..."
+              : "Analyzing transcript with AI..."}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {isPolling
+              ? `This is taking longer than expected — we're polling for the result (attempt ${pollProgress.attempt} of ${pollProgress.max}).`
+              : "The AI is extracting signals from your transcript. This typically takes 10 seconds to 3 minutes depending on transcript length."}
+          </Typography>
+        </Stack>
+        {isPolling && (
+          <Box sx={{ width: "100%", maxWidth: 360 }}>
+            <LinearProgress
+              variant="determinate"
+              value={Math.min(
+                100,
+                (pollProgress.attempt / pollProgress.max) * 100,
+              )}
+            />
+          </Box>
+        )}
+      </Stack>
+    );
+  }
+
+  // ---- Non-success outcomes after extraction completed ----
+  if (!extractionResult) return null; // defensive — shouldn't happen
+
+  const code = extractionResult.code;
+  const dedupData = extractionResult.data;
+
+  if (code === EXTRACTION_OUTCOME_CODES.ALREADY_EXTRACTED) {
+    const createdAt = dedupData?.created_at
+      ? new Date(dedupData.created_at).toLocaleDateString()
+      : null;
+    const signalsCount = dedupData?.created_signals_count;
+    return (
+      <Stack
+        spacing={2.5}
+        sx={{ p: 3, alignItems: "center", textAlign: "center" }}
+      >
+        <InfoCircleOutlined style={{ fontSize: 48, color: "#1890ff" }} />
+        <Stack spacing={0.5} sx={{ maxWidth: 460 }}>
+          <Typography variant="subtitle1" fontWeight={600}>
+            This transcript was already processed
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {createdAt ? `Extraction ran on ${createdAt}. ` : ""}
+            {signalsCount > 0
+              ? `${signalsCount} signal${signalsCount === 1 ? "" : "s"} are available in the Signals section. `
+              : ""}
+            To extract again, edit the transcript so it differs from the
+            previous attempt.
+          </Typography>
+        </Stack>
+        <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
+          <Button
+            variant="outlined"
+            onClick={onBackToReview}
+            startIcon={<ArrowLeftOutlined />}
+          >
+            Back to transcript
+          </Button>
+        </Stack>
+      </Stack>
+    );
+  }
+
+  if (code === EXTRACTION_OUTCOME_CODES.TIMEOUT_PENDING) {
+    return (
+      <Stack
+        spacing={2.5}
+        sx={{ p: 3, alignItems: "center", textAlign: "center" }}
+      >
+        <WarningOutlined style={{ fontSize: 48, color: "#faad14" }} />
+        <Stack spacing={0.5} sx={{ maxWidth: 460 }}>
+          <Typography variant="subtitle1" fontWeight={600}>
+            Operation still running
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {extractionResult.error ||
+              "The extraction is taking longer than expected. It will complete in the background — refresh the Signals section in a moment to see the results."}
+          </Typography>
+        </Stack>
+        <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
+          <Button
+            variant="outlined"
+            onClick={onBackToReview}
+            startIcon={<ArrowLeftOutlined />}
+          >
+            Back to transcript
+          </Button>
+        </Stack>
+      </Stack>
+    );
+  }
+
+  if (code === EXTRACTION_OUTCOME_CODES.IDEMPOTENCY_REPLAY_FAILED) {
+    return (
+      <Stack
+        spacing={2.5}
+        sx={{ p: 3, alignItems: "center", textAlign: "center" }}
+      >
+        <WarningOutlined style={{ fontSize: 48, color: "#cf1322" }} />
+        <Stack spacing={0.5} sx={{ maxWidth: 460 }}>
+          <Typography variant="subtitle1" fontWeight={600}>
+            Previous attempt failed
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            A previous attempt with this transcript failed. Wait a few minutes
+            (~10 min) before retrying, or edit the transcript to trigger a fresh
+            attempt.
+          </Typography>
+          {extractionResult.error && (
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              sx={{ mt: 1, fontStyle: "italic" }}
+            >
+              Detail: {extractionResult.error}
+            </Typography>
+          )}
+        </Stack>
+        <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
+          <Button
+            variant="outlined"
+            onClick={onBackToReview}
+            startIcon={<ArrowLeftOutlined />}
+          >
+            Back to transcript
+          </Button>
+        </Stack>
+      </Stack>
+    );
+  }
+
+  // Generic error fallback (network, validation, server, IDEMPOTENCY_CONFLICT, etc.)
   return (
     <Stack
       spacing={2.5}
       sx={{ p: 3, alignItems: "center", textAlign: "center" }}
     >
-      <RobotOutlined style={{ fontSize: 48, color: "#8c8c8c" }} />
-
-      <Stack spacing={0.5} sx={{ maxWidth: 420 }}>
+      <WarningOutlined style={{ fontSize: 48, color: "#cf1322" }} />
+      <Stack spacing={0.5} sx={{ maxWidth: 460 }}>
         <Typography variant="subtitle1" fontWeight={600}>
-          AI extraction not yet integrated
+          Extraction failed
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          The LLM channel is being built. The validation flow ahead is fully
-          wired — once the LLM responds it will populate this wizard with
-          extracted signals automatically.
+          {extractionResult.error ||
+            "An unexpected error occurred while extracting signals from the transcript."}
         </Typography>
       </Stack>
-
-      {/* Manual advance — replaced by auto-advance when LLM is wired */}
       <Stack direction="row" spacing={1.5} sx={{ pt: 1 }}>
         <Button
           variant="outlined"
           onClick={onBackToReview}
           startIcon={<ArrowLeftOutlined />}
         >
-          Back to review
+          Back to transcript
         </Button>
-        <Button variant="contained" onClick={onContinue}>
-          Continue to validation
+        <Button variant="contained" onClick={onRetry}>
+          Retry
         </Button>
       </Stack>
     </Stack>
@@ -258,8 +425,14 @@ function ProcessingStep({ onBackToReview, onContinue }) {
 }
 
 ProcessingStep.propTypes = {
+  extracting: PropTypes.bool.isRequired,
+  pollProgress: PropTypes.shape({
+    attempt: PropTypes.number,
+    max: PropTypes.number,
+  }),
+  extractionResult: PropTypes.object,
   onBackToReview: PropTypes.func.isRequired,
-  onContinue: PropTypes.func.isRequired,
+  onRetry: PropTypes.func.isRequired,
 };
 
 // ==============================|| WIZARD SIGNAL AI TRANSCRIPT ||============================== //
@@ -267,46 +440,60 @@ ProcessingStep.propTypes = {
 /**
  * WizardSignalAITranscript
  *
- * @param {boolean}  open              - Dialog open state
- * @param {Function} onClose           - Called on close (no payload)
- * @param {Function} onSuccess         - Called after all signals dispatched successfully
- * @param {string}   accountId         - Account UUID — required for all signal creates
- * @param {Object}   choices           - From useGetSignalChoices() — forwarded to
- *                                        WizardValidationStep / future inline forms
+ * @param {boolean}  open               - Dialog open state
+ * @param {Function} onClose            - Called on close (no payload)
+ * @param {Function} onSuccess          - Called after dispatch completes successfully
+ * @param {string}   accountId          - Account UUID (kept for parity / future use)
+ * @param {string}   activityId         - Activity UUID — required for the extraction call
+ * @param {Object}   choices            - From useGetSignalChoices() — currently unused
+ *                                        directly but kept for future inline edit support
  * @param {boolean}  choicesLoading
- * @param {Object}   extraPayload      - Injected into every signal at dispatch
- *                                        e.g. { source_activity, decision_cycle, campaign }
- * @param {string}   initialTranscript - Pre-fill content for the transcript area
- *                                        (typically activity.transcript from the parent)
- * @param {string}   initialNotes      - The activity's private notes — sent to the
- *                                        LLM only when the user opts in via the checkbox.
- *                                        Default: empty string.
+ * @param {string}   initialTranscript  - Pre-fill content for the transcript area
+ *                                        (typically activity.transcript)
+ * @param {string}   initialNotes       - The activity's private notes — referenced by
+ *                                        the "Include my notes" checkbox label only.
+ *                                        Backend MVP ignores notes; future LLM sprint
+ *                                        may concatenate them into the prompt.
+ * @param {Function} onSignalEdit       - Optional bubble-up edit handler:
+ *                                        (signal, signalType) => void
+ *                                        Called when the user clicks Edit on a card
+ *                                        in the Validation step. Parent typically
+ *                                        opens its existing SignalEditDialog.
  */
 export default function WizardSignalAITranscript({
   open,
   onClose,
   onSuccess,
+  // eslint-disable-next-line no-unused-vars
   accountId,
+  activityId,
+  // eslint-disable-next-line no-unused-vars
   choices,
+  // eslint-disable-next-line no-unused-vars
   choicesLoading,
-  extraPayload,
   initialTranscript = "",
   initialNotes = "",
+  onSignalEdit,
 }) {
   // ==============================|| STATE ||============================== //
 
   const [activeStep, setActiveStep] = useState(STEP_REVIEW);
 
-  // Step 0 state
+  // Step 0 — Review state
   const [transcript, setTranscript] = useState(initialTranscript);
   const [includeNotes, setIncludeNotes] = useState(false);
 
-  // Step 2 state — mirrors WizardSignalAdd
+  // Step 1 — Processing state
+  const [extracting, setExtracting] = useState(false);
+  const [pollProgress, setPollProgress] = useState(null); // { attempt, max } | null
+  const [extractionResult, setExtractionResult] = useState(null);
+
+  // Step 2 — Validation state (post-extraction lifecycle dispatch)
   const [staged, setStaged] = useState(INITIAL_STAGED);
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState(null);
 
-  // Close-confirmation state
+  // Close confirmation — only used while extraction is in flight
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
   // ==============================|| RESET ON OPEN ||============================== //
@@ -316,9 +503,13 @@ export default function WizardSignalAITranscript({
       setActiveStep(STEP_REVIEW);
       setTranscript(initialTranscript);
       setIncludeNotes(false);
+      setExtracting(false);
+      setPollProgress(null);
+      setExtractionResult(null);
       setStaged(INITIAL_STAGED);
       setSubmitting(false);
       setResults(null);
+      setConfirmCloseOpen(false);
     }
   }, [open, initialTranscript]);
 
@@ -337,43 +528,109 @@ export default function WizardSignalAITranscript({
     [staged],
   );
 
-  // ==============================|| STEP 0 HANDLERS ||============================== //
+  // ==============================|| EXTRACTION FLOW ||============================== //
 
   /**
-   * "Send to AI" handler — STEP_REVIEW → STEP_PROCESSING.
+   * Convert the backend's signals_by_stage payload into the wizard's
+   * staged shape. Each backend signal already has a real `id` from the
+   * pipeline-created PENDING row — we use it as the wizard's local `_key`
+   * for uniqueness and ergonomics (lookups during dispatch use signal.id).
    *
-   * MVP: simply advance to STEP_PROCESSING — no actual LLM call.
-   *
-   * TODO LLM SPRINT: wire the real call here. Build the LLM payload from
-   * the (potentially edited) transcript, append `initialNotes` only when
-   * `includeNotes` is true, then auto-advance to STEP_VALIDATE on response.
-   *
-   *   const llmPayload = {
-   *     transcript,
-   *     notes: includeNotes ? initialNotes : null,
-   *   };
-   *   const { signals } = await callLLMExtractor(llmPayload);
-   *   setStaged(groupByType(signals));
-   *   setActiveStep(STEP_VALIDATE);
+   * Default _status is VALIDATED ("include by default") — the user
+   * toggles Excluded on any signal they want to drop.
    */
-  const handleSendToAI = useCallback(() => {
-    setActiveStep(STEP_PROCESSING);
+  const buildStagedFromExtraction = useCallback((signalsByStage) => {
+    const next = { pain: [], objective: [], "tech-stack": [] };
+    for (const type of Object.keys(next)) {
+      const backendList = signalsByStage?.[type] ?? [];
+      next[type] = backendList.map((sig) => ({
+        ...sig,
+        _key: sig.id, // real DB id — guaranteed unique per signal
+        _status: "VALIDATED",
+      }));
+    }
+    return next;
   }, []);
+
+  /**
+   * Polling progress callback wired into extractTranscriptSignals.
+   * Called once per polling attempt; flips the Processing step from
+   * "running" presentation to "polling" presentation.
+   */
+  const handlePollProgress = useCallback((attempt, max) => {
+    setPollProgress({ attempt, max });
+  }, []);
+
+  /**
+   * Send-to-AI handler — STEP_REVIEW → STEP_PROCESSING.
+   *
+   * Calls the real extraction pipeline. Outcomes:
+   *   success                       → populate staged, auto-advance to STEP_VALIDATE
+   *   ALREADY_EXTRACTED             → stay on STEP_PROCESSING with info banner
+   *   TIMEOUT_PENDING               → stay with warning banner
+   *   IDEMPOTENCY_REPLAY_FAILED     → stay with error banner + wait hint
+   *   other error                   → stay with generic error banner + Retry
+   *
+   * Per Convention R4 (T4 / deterministic key), the call is idempotent
+   * within Redis TTL — re-clicking returns the cached result instantly
+   * without re-spending LLM tokens.
+   */
+  const handleSendToAI = useCallback(async () => {
+    // Clear any prior extraction state so re-run repopulates cleanly
+    setStaged(INITIAL_STAGED);
+    setResults(null);
+    setExtractionResult(null);
+    setPollProgress(null);
+
+    setActiveStep(STEP_PROCESSING);
+    setExtracting(true);
+
+    let result;
+    try {
+      result = await extractTranscriptSignals(
+        activityId,
+        transcript,
+        handlePollProgress,
+      );
+    } catch (err) {
+      // extractTranscriptSignals handles its own errors and returns a
+      // result envelope. A thrown exception here would be a programmer
+      // error in the helper itself — surface it as a generic failure.
+      result = {
+        success: false,
+        error: err?.message || "Unexpected error during extraction.",
+      };
+    }
+
+    setExtracting(false);
+
+    // Success path → populate staged + advance to Validate
+    if (result.success) {
+      const built = buildStagedFromExtraction(result.data?.signals_by_stage);
+      setStaged(built);
+      setExtractionResult(result);
+      setActiveStep(STEP_VALIDATE);
+      return;
+    }
+
+    // Non-success → stay on Processing with the appropriate banner
+    setExtractionResult(result);
+  }, [activityId, transcript, handlePollProgress, buildStagedFromExtraction]);
 
   // ==============================|| STEP 1 HANDLERS ||============================== //
 
   const handleBackToReview = useCallback(() => {
     setActiveStep(STEP_REVIEW);
+    setExtractionResult(null);
+    setPollProgress(null);
+    // Don't clear staged here — simple navigation back to review preserves
+    // any user toggles. Staged is cleared at the start of handleSendToAI
+    // when the user actually re-extracts.
   }, []);
 
-  /**
-   * Manual advance from STEP_PROCESSING to STEP_VALIDATE — MVP only.
-   * In production, this transition will be triggered automatically by
-   * the LLM response (see handleSendToAI TODO).
-   */
-  const handleContinueToValidation = useCallback(() => {
-    setActiveStep(STEP_VALIDATE);
-  }, []);
+  const handleRetryExtraction = useCallback(() => {
+    handleSendToAI();
+  }, [handleSendToAI]);
 
   // ==============================|| STEP 2 HANDLERS — STAGED MUTATIONS ||============================== //
 
@@ -393,49 +650,63 @@ export default function WizardSignalAITranscript({
   }, []);
 
   /**
-   * Edit handler — MVP placeholder.
+   * Edit handler — bubbles up to the parent via onSignalEdit prop.
    *
-   * In the manual wizard, edit routes the user back to the capture step
-   * with the inline form pre-loaded for the target signal. This wizard
-   * has no capture step — once the LLM is wired, edit will need a
-   * different surface (sub-dialog with the appropriate inline form, or a
-   * dedicated 4th step).
+   * The parent (WrapUpCaptureSection) wires its existing handleEdit,
+   * which opens its existing SignalEditDialog with the appropriate
+   * inline form. This avoids duplicating the edit surface inside the
+   * wizard.
    *
-   * MVP: surface a clear placeholder snackbar. With empty staged in MVP,
-   * this handler is unreachable in practice (no signals → no edit
-   * buttons rendered by WizardValidationStep).
+   * Trade-off: the wizard's staged state is NOT synced with the edit
+   * result — displayed text may go stale after a save. Acceptable for
+   * MVP because:
+   *   - signal.id is unchanged → dispatch (validate/delete) still
+   *     targets the right row regardless of stale display
+   *   - the user just edited; they remember what they typed
+   *   - closing & re-opening shows fresh data via re-fetch
    */
-  const handleStartEdit = useCallback(() => {
-    displayWarningSnackbar(
-      "Editing AI-extracted signals will be available once the LLM channel is wired.",
-    );
-  }, []);
+  const handleStartEdit = useCallback(
+    (type, _key) => {
+      const signal = (staged[type] ?? []).find((s) => s._key === _key);
+      if (!signal) return;
 
-  /** Back from STEP_VALIDATE — return to review so user can re-send. */
+      if (typeof onSignalEdit === "function") {
+        // Strip wizard-managed metadata before bubbling up
+        // eslint-disable-next-line no-unused-vars
+        const { _key: _omitKey, _status: _omitStatus, ...rest } = signal;
+        onSignalEdit(rest, type);
+      } else {
+        // No handler provided — degraded mode (shouldn't happen in normal use)
+        displayWarningSnackbar("Editing is unavailable in this context.");
+      }
+    },
+    [staged, onSignalEdit],
+  );
+
+  /** Back from STEP_VALIDATE — return to Review (transcript still pre-filled). */
   const handleBackFromValidation = useCallback(() => {
     setActiveStep(STEP_REVIEW);
   }, []);
 
-  // ==============================|| DISPATCH ||============================== //
+  // ==============================|| DISPATCH (VALIDATE / DELETE) ||============================== //
 
   /**
-   * Dispatch all VALIDATED staged signals to the backend.
+   * Dispatch all staged signals to the backend.
    *
-   * Logic mirrors WizardSignalAdd.handleConfirm:
-   *   - account + source + extraPayload injected per-payload
-   *   - Promise.allSettled — partial failures stay open for retry
-   *   - On full success: onSuccess() + close
-   *   - On partial failure: keep failed signals in staged, show errors
+   * Lifecycle transitions (NOT creates — signals already exist as PENDING):
+   *   _status === 'VALIDATED' → validateSignal()  (PENDING → VALIDATED)
+   *   _status === 'REJECTED'  → deleteSignal()    (row removed; silent MVP)
    *
-   * In MVP, staged is empty (no LLM call) — this handler is effectively
-   * unreachable. It is wired in full so the LLM sprint can plug responses
-   * into staged without further changes here.
+   * Uses Promise.allSettled so partial failures keep the wizard open
+   * with succeeded signals removed from staged and failed ones still
+   * visible with their error message.
    */
   const handleConfirm = useCallback(async () => {
+    // ALL staged signals participate — VALIDATED ones get validated,
+    // REJECTED ones get deleted. (In WizardSignalAdd we only dispatched
+    // VALIDATED; here REJECTED also has a destination.)
     const toDispatch = Object.entries(staged).flatMap(([type, signals]) =>
-      signals
-        .filter((s) => s._status === "VALIDATED")
-        .map((s) => ({ type, signal: s })),
+      signals.map((s) => ({ type, signal: s })),
     );
 
     if (toDispatch.length === 0) return;
@@ -444,43 +715,14 @@ export default function WizardSignalAITranscript({
 
     const settled = await Promise.allSettled(
       toDispatch.map(async ({ type, signal }) => {
-        // Strip wizard-managed metadata
-        const { _key, _status, ...payload } = signal;
+        const action = signal._status === "REJECTED" ? "delete" : "validate";
 
-        // Normalize relation FK fields — same downcasting as WizardSignalAdd.
-        if (
-          payload.target_contact &&
-          typeof payload.target_contact === "object"
-        ) {
-          payload.target_contact = payload.target_contact.id;
-        }
-        if (
-          payload.source_activity &&
-          typeof payload.source_activity === "object"
-        ) {
-          payload.source_activity = payload.source_activity.id;
-        }
-        if (
-          payload.tech_catalog_entry &&
-          typeof payload.tech_catalog_entry === "object"
-        ) {
-          payload.tech_catalog_entry = payload.tech_catalog_entry.id;
-        }
-        if (
-          payload.related_techstack &&
-          typeof payload.related_techstack === "object"
-        ) {
-          payload.related_techstack = payload.related_techstack.id;
-        }
+        const result =
+          action === "validate"
+            ? await validateSignal(type, signal.id)
+            : await deleteSignal(type, signal.id);
 
-        const result = await createSignal(type, {
-          ...payload,
-          account: accountId,
-          source: SIGNAL_SOURCE,
-          ...(extraPayload ?? {}),
-        });
-
-        return { _key, type, result };
+        return { _key: signal._key, type, action, result };
       }),
     );
 
@@ -496,12 +738,18 @@ export default function WizardSignalAITranscript({
           type: outcome.value.type,
         });
       } else if (outcome.status === "fulfilled") {
+        // Request completed but backend returned an error envelope.
+        const fallback =
+          outcome.value.action === "delete"
+            ? "Failed to reject signal"
+            : "Failed to validate signal";
         failed.push({
           _key: outcome.value._key,
           type: outcome.value.type,
-          error: outcome.value.result.error ?? "Failed to create signal",
+          error: outcome.value.result.error ?? fallback,
         });
       } else {
+        // Promise itself rejected — network error, timeout, etc.
         const original = toDispatch[index];
         failed.push({
           _key: original?.signal._key,
@@ -512,8 +760,9 @@ export default function WizardSignalAITranscript({
     });
 
     if (failed.length === 0) {
+      // Full success — close and notify
       displaySuccessSnackbar(
-        `${succeeded.length} signal${succeeded.length === 1 ? "" : "s"} created successfully`,
+        `${succeeded.length} signal${succeeded.length === 1 ? "" : "s"} processed successfully`,
       );
       onSuccess();
       onClose();
@@ -522,6 +771,7 @@ export default function WizardSignalAITranscript({
 
     // Partial failure — remove succeeded from staged, keep failed for retry
     const succeededKeys = new Set(succeeded.map((s) => s._key));
+
     setStaged((prev) => {
       const next = {};
       for (const type of Object.keys(prev)) {
@@ -535,37 +785,57 @@ export default function WizardSignalAITranscript({
     if (failed.length === 1) {
       displayWarningSnackbar(failed[0].error);
     } else {
-      displayWarningSnackbar(`${failed.length} signals failed to save.`);
+      displayWarningSnackbar(`${failed.length} signals failed to process.`);
     }
-  }, [staged, accountId, extraPayload, onSuccess, onClose]);
+  }, [staged, onSuccess, onClose]);
 
-  // ==============================|| STEPPER ||============================== //
+  // ==============================|| STEPPER NAVIGATION ||============================== //
 
-  /**
-   * Step navigation policy:
-   *  - Review is always reachable.
-   *  - Processing is reachable from Review (forward) and from Validate (back).
-   *  - Validate is always reachable per product directive — even with empty
-   *    staged, the user can inspect the validation surface to understand the
-   *    full flow.
-   *
-   * Direct skips (Review → Validate without sending) are not blocked here.
-   */
-  const handleStepClick = useCallback((idx) => {
-    setActiveStep(idx);
-    if (idx !== STEP_VALIDATE) setResults(null);
-  }, []);
+  const handleStepClick = useCallback(
+    (idx) => {
+      // Block navigation while any in-flight operation is running.
+      // Extraction continues in background even if the wizard closes,
+      // so a forced cancel from the stepper would be confusing.
+      if (extracting || submitting) return;
+
+      // Can't jump forward to Processing without a context (an extraction
+      // having been started or completed). Can't jump to Validate without
+      // staged signals.
+      if (idx === STEP_PROCESSING && !extractionResult) return;
+      if (idx === STEP_VALIDATE && totalStaged === 0) return;
+
+      setActiveStep(idx);
+
+      // Navigating to Review wipes the extraction result so the
+      // Processing step doesn't surface a stale banner if revisited.
+      if (idx === STEP_REVIEW) {
+        setExtractionResult(null);
+        setPollProgress(null);
+      }
+      if (idx !== STEP_VALIDATE) setResults(null);
+    },
+    [extracting, submitting, extractionResult, totalStaged],
+  );
 
   // ==============================|| CLOSE FLOW ||============================== //
 
   const handleClose = useCallback(() => {
+    // Block close during dispatch — would orphan the Promise.allSettled
     if (submitting) return;
-    if (totalStaged > 0) {
+
+    // Confirm before closing during extraction — server continues but
+    // the user might mistake closing for cancelling, so we warn.
+    if (extracting) {
       setConfirmCloseOpen(true);
       return;
     }
+
+    // Otherwise (idle on any step, or post-extraction with staged
+    // signals not yet validated) — just close. Staged signals stay as
+    // PENDING in DB; the user can pick them up later from the Signals
+    // section. No data loss.
     onClose();
-  }, [onClose, submitting, totalStaged]);
+  }, [onClose, submitting, extracting]);
 
   const handleCloseConfirm = useCallback(() => {
     setConfirmCloseOpen(false);
@@ -648,8 +918,11 @@ export default function WizardSignalAITranscript({
 
         {activeStep === STEP_PROCESSING && (
           <ProcessingStep
+            extracting={extracting}
+            pollProgress={pollProgress}
+            extractionResult={extractionResult}
             onBackToReview={handleBackToReview}
-            onContinue={handleContinueToValidation}
+            onRetry={handleRetryExtraction}
           />
         )}
 
@@ -666,32 +939,32 @@ export default function WizardSignalAITranscript({
         )}
       </DialogContent>
 
-      {/* ==================== CLOSE CONFIRMATION ==================== */}
+      {/* ==================== CLOSE CONFIRMATION (during extraction only) ==================== */}
       <Dialog
         open={confirmCloseOpen}
         onClose={handleCloseDismiss}
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>Discard staged signals?</DialogTitle>
+        <DialogTitle>Close while extracting?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            You have {totalStaged} staged signal
-            {totalStaged === 1 ? "" : "s"} that have not been saved yet. Closing
-            the wizard will discard them permanently.
+            The AI extraction will continue running in the background. You can
+            come back to the Signals section in a few moments to see the
+            results.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={handleCloseDismiss} color="inherit" size="small">
-            Keep editing
+            Keep waiting
           </Button>
           <Button
             onClick={handleCloseConfirm}
-            color="error"
+            color="warning"
             variant="contained"
             size="small"
           >
-            Discard & close
+            Close
           </Button>
         </DialogActions>
       </Dialog>
@@ -706,9 +979,10 @@ WizardSignalAITranscript.propTypes = {
   onClose: PropTypes.func.isRequired,
   onSuccess: PropTypes.func.isRequired,
   accountId: PropTypes.string.isRequired,
+  activityId: PropTypes.string.isRequired,
   choices: PropTypes.object,
   choicesLoading: PropTypes.bool,
-  extraPayload: PropTypes.object,
   initialTranscript: PropTypes.string,
   initialNotes: PropTypes.string,
+  onSignalEdit: PropTypes.func,
 };

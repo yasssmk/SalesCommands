@@ -662,11 +662,12 @@ export default function WrapUpCaptureSection({
         onClose={handleWizardAIClose}
         onSuccess={handleWizardSuccess}
         accountId={accountId ?? ""}
+        activityId={activityId ?? ""}
         choices={choices}
         choicesLoading={choicesLoading}
-        extraPayload={extraPayload}
         initialTranscript={activity?.transcript ?? ""}
         initialNotes={activity?.outcome_notes ?? ""}
+        onSignalEdit={handleEdit}
       />
 
       {/* Reject confirmation */}
