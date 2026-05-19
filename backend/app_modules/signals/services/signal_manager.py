@@ -197,6 +197,18 @@ class SignalManager:
         """
         Validate (approve) a PENDING signal.
 
+        Guards (raised before any mutation):
+          1. Signal must be in status=PENDING.
+          2. TechStackSignal must have tech_catalog_entry set. PENDING
+             LLM-extracted TechStack signals may legitimately exist
+             with tech_catalog_entry=None — the LLM could not match
+             the mentioned tool to the tenant catalog at extraction
+             time (see TechStackSignal.clean() rule 1 and the LLM-
+             PENDING exception). Promotion to VALIDATED requires the
+             catalog anchor because canonical_key is derived from it
+             and cluster aggregation cannot work without it. The rep
+             must attach (or create) a catalog entry before validating.
+
         Sets status → VALIDATED, records validated_by and validated_at.
 
         Args:
@@ -207,11 +219,23 @@ class SignalManager:
             Updated signal instance.
 
         Raises:
-            StandardizedValidationError if signal is not PENDING.
+            StandardizedValidationError when any guard fails.
         """
         if signal.status != SignalStatus.PENDING:
             raise StandardizedValidationError(
                 SignalErrorMessages.NOT_PENDING_VALIDATED
+            )
+
+        # TechStack-specific guard — cannot validate without the catalog FK.
+        # The model only allows the FK to be null on PENDING LLM-extracted
+        # signals (see TechStackSignal.clean() rule 1). Validation forces
+        # the rep to attach the anchor before promoting the signal.
+        if (
+            isinstance(signal, TechStackSignal)
+            and signal.tech_catalog_entry_id is None
+        ):
+            raise StandardizedValidationError(
+                SignalErrorMessages.TECHSTACK_CATALOG_ENTRY_REQUIRED
             )
 
         signal.status       = SignalStatus.VALIDATED

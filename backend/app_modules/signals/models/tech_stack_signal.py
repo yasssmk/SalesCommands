@@ -71,9 +71,17 @@ metadata, is_inferred, confidence, original_value.
 
 Validation rules (enforced in clean() AND in Create/Update serializers)
 ----------------------------------------------------------------------
-  1. tech_catalog_entry is required.
-       Without the catalog FK, the canonical_key cannot be computed and
-       cluster aggregation falls apart. Rejected at clean() time.
+  1. tech_catalog_entry is required, EXCEPT on PENDING LLM-extracted
+     signals.
+       Without the catalog FK, the canonical_key cannot be computed
+       and cluster aggregation falls apart. The exception covers the
+       LLM-extraction case where the mentioned tool could not be
+       matched to the tenant catalog: the signal is persisted as
+       PENDING with tech_catalog_entry=NULL and the raw name stored
+       in metadata['pending_tech_name']. The rep must attach a
+       catalog entry (or create one) before validating — enforced
+       downstream by SignalManager.validate(). Any other source/
+       status combination still requires the FK at clean() time.
 
   2. usage_scope = DEPARTMENT  →  usage_department REQUIRED.
      usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}  →  usage_department
@@ -111,9 +119,10 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from core.client_scope import ClientScopeManager
+from core.error_messages import SignalErrorMessages
 
 from .base_model import BaseSignal
-from ..constants import UsageScope
+from ..constants import UsageScope, SignalSource, SignalStatus
 
 
 class TechStackSignal(BaseSignal):
@@ -167,10 +176,18 @@ class TechStackSignal(BaseSignal):
         'tech_catalog.TechCatalog',
         on_delete=models.PROTECT,
         related_name='tech_stack_signals',
+        null=True,
+        blank=True,
         verbose_name=_('Tech Catalog Entry'),
         help_text=_(
             'Tenant-level master catalog entry identifying the tool. '
-            'Drives canonical_key and cluster identity. Required.'
+            'Drives canonical_key and cluster identity. '
+            'Required for MANUAL signals and required to validate any '
+            'signal. May be NULL on PENDING LLM-extracted signals when '
+            'the LLM could not match the mentioned tool to the catalog '
+            '— the rep must attach a catalog entry (or create one) '
+            'before validating. PROTECT semantics apply only when the '
+            'FK is set.'
         ),
     )
     # Note on on_delete=PROTECT: deleting a catalog entry that has live
@@ -392,39 +409,48 @@ class TechStackSignal(BaseSignal):
 
         errors = {}
 
-        # --- Rule 1: catalog FK is required ---
+        # --- Rule 1: catalog FK is required EXCEPT on PENDING LLM-extracted signals ---
+        # LLM extraction may produce a signal whose mentioned tool does
+        # not match the tenant TechCatalog (the prompt feeds the catalog
+        # list and instructs the model to return a raw tech_name when
+        # no match exists). In that case the signal is persisted as
+        # PENDING with tech_catalog_entry=None and the raw name stored
+        # in metadata['pending_tech_name']. The rep must attach a
+        # catalog entry before validating — enforced downstream by
+        # SignalManager.validate().
         if not self.tech_catalog_entry_id:
-            errors['tech_catalog_entry'] = _(
-                'A tech stack signal must reference a tech catalog entry.'
+            is_unmatched_llm_pending = (
+                self.source == SignalSource.LLM_EXTRACTED
+                and self.status == SignalStatus.PENDING
             )
+            if not is_unmatched_llm_pending:
+                errors['tech_catalog_entry'] = (
+                    SignalErrorMessages.TECHSTACK_CATALOG_ENTRY_REQUIRED
+                )
 
         # --- Rule 2: usage_scope ↔ usage_department coherence ---
         if self.usage_scope == UsageScope.DEPARTMENT:
             if not self.usage_department_id:
-                errors['usage_department'] = _(
-                    'Tech stack signals with usage_scope=DEPARTMENT '
-                    'require a usage department.'
+                errors['usage_department'] = (
+                    SignalErrorMessages.TECHSTACK_DEPT_REQUIRES_DEPT
                 )
         else:
             # Covers TEAM, COMPANY, UNKNOWN, and None.
             if self.usage_department_id:
-                errors['usage_department'] = _(
-                    'Usage department can only be set when '
-                    'usage_scope=DEPARTMENT.'
+                errors['usage_department'] = (
+                    SignalErrorMessages.TECHSTACK_DEPT_OUTSIDE_SCOPE
                 )
 
         # --- Rule 3: is_discontinued ↔ discontinued_date coherence ---
         if self.is_discontinued:
             if not self.discontinued_date:
-                errors['discontinued_date'] = _(
-                    'Discontinued tech stack signals require a '
-                    'discontinued date.'
+                errors['discontinued_date'] = (
+                    SignalErrorMessages.TECHSTACK_DISCONTINUED_REQUIRES_DATE
                 )
         else:
             if self.discontinued_date:
-                errors['discontinued_date'] = _(
-                    'Discontinued date can only be set when '
-                    'is_discontinued=True.'
+                errors['discontinued_date'] = (
+                    SignalErrorMessages.TECHSTACK_DISCONTINUED_DATE_WITHOUT_FLAG
                 )
 
         if errors:

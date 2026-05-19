@@ -23,6 +23,8 @@ from .campaigns_registry import CAMPAIGNS_REGISTRY
 from .territories_registry import TERRITORIES_REGISTRY
 from .decision_cycles_registry import DECISION_CYCLES_REGISTRY
 from .tech_catalog_registry import TECH_CATALOG_REGISTRY
+from .signals_registry import SIGNALS_REGISTRY
+from .ai_pipelines_registry import AI_PIPELINES_REGISTRY
 
 from ..constants import normalize_action
 logger = logging.getLogger(__name__)
@@ -58,6 +60,8 @@ def build_registry() -> Dict:
     registry.update(TERRITORIES_REGISTRY)
     registry.update(DECISION_CYCLES_REGISTRY)
     registry.update(TECH_CATALOG_REGISTRY)
+    registry.update(SIGNALS_REGISTRY)
+    registry.update(AI_PIPELINES_REGISTRY)
     
     logger.debug(f"Built registry with {len(registry)} modules")
     for module in registry.keys():

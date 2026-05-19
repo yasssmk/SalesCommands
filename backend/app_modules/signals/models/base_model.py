@@ -14,11 +14,13 @@ Creation modes:
   - EXTERNAL_RESEARCH → status starts PENDING (rep validates)
 """
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
+from core.error_messages import SignalErrorMessages
 
 from ..constants import SignalStatus, SignalSource, SignalCategory
 
@@ -54,8 +56,12 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
     ._propagate_activity_context populates them from source_activity
     at create time and the Update serializer does not expose them.
 
-    Business rules enforced in save():
+ Business rules enforced in save():
     - source=MANUAL  → status=VALIDATED, confidence=None
+    - CREATE-time guard: source ∈ {LLM_EXTRACTED, LLM_MODIFIED}
+      may not start with status=VALIDATED — must transit through
+      PENDING via SignalManager.validate() (which sets validated_by /
+      validated_at and triggers the audit trail).
     """
     # =========================================================================
     # CONTEXT — required
@@ -266,7 +272,20 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
           1. source=MANUAL → status=VALIDATED, confidence=None
              Manual signals are trusted by definition — no LLM
              confidence score. Universal across all concrete signal
-             types.
+             types. Enforced on every save (idempotent).
+
+          2. CREATE-time guard: source ∈ {LLM_EXTRACTED, LLM_MODIFIED}
+             may not start with status=VALIDATED.
+             Any LLM-sourced signal MUST transit through PENDING and
+             be moved to VALIDATED via SignalManager.validate() —
+             which sets validated_by and validated_at and records
+             the audit trail. Creating an LLM signal directly as
+             VALIDATED would bypass the human-review gate and the
+             audit trail entirely. Enforced only at CREATE
+             (self._state.adding=True) — the legitimate
+             PENDING → VALIDATED transition performed by
+             SignalManager.validate().save() runs after the INSERT
+             and is not blocked.
 
         Removed in standardisation refactor:
           - "auto-populate source_department from
@@ -281,6 +300,24 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
         if self.source == SignalSource.MANUAL:
             self.status = SignalStatus.VALIDATED
             self.confidence = None
+
+        # Rule 2 — CREATE-time guard against bypassing the LLM review gate.
+        # Any LLM-sourced signal must start PENDING and only transit to
+        # VALIDATED through SignalManager.validate(), which records
+        # validated_by / validated_at. The check is gated on
+        # self._state.adding so legitimate PENDING → VALIDATED updates
+        # performed by SignalManager.validate() are not blocked.
+        if (
+            self._state.adding
+            and self.source in (
+                SignalSource.LLM_EXTRACTED,
+                SignalSource.LLM_MODIFIED,
+            )
+            and self.status == SignalStatus.VALIDATED
+        ):
+            raise ValidationError({
+                'status': SignalErrorMessages.LLM_CANNOT_CREATE_VALIDATED,
+            })
 
         super().save(*args, **kwargs)
 

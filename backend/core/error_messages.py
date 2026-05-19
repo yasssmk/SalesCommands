@@ -372,6 +372,17 @@ class SignalErrorMessages:
     SOURCE_CONTACT_REQUIRED  = _("A source contact is required for this signal type.")
     SOURCE_ACTIVITY_REQUIRED = _("A source activity is required for this signal type.")
 
+    # CREATE-time invariant: LLM-sourced signals must transit through PENDING.
+    # Going straight to VALIDATED would bypass the human review gate and the
+    # validated_by / validated_at audit trail. The legitimate path is:
+    #   1. POST /signals/<type>/      → source=LLM_EXTRACTED, status=PENDING
+    #   2. POST /signals/<type>/<id>/validate/  → SignalManager.validate()
+    LLM_CANNOT_CREATE_VALIDATED = _(
+        "LLM-sourced signals cannot be created directly in VALIDATED state. "
+        "They must start as PENDING and be validated through the dedicated "
+        "endpoint."
+    )
+
     # -----------------------------------------------------------------
     # Legacy — kept for backward compatibility (ObjectiveSignal may
     # still enforce the relaxed rule in a future sprint).
@@ -489,6 +500,85 @@ class SignalErrorMessages:
     )
     CLUSTER_NOT_ARCHIVED = _(
         "This signal cluster is not archived."
+    )
+
+# =============================================================================
+# AI PIPELINES ERROR MESSAGES
+# =============================================================================
+
+class AIPipelineErrorMessages:
+    """
+    Centralised error messages for the AI Pipelines module.
+
+    Grouped by concern:
+
+      Input validation — surfaced by the
+        TranscriptSignalsExtractInputSerializer when the rep submits
+        a malformed extraction request (transcript too short / too
+        long, unknown activity).
+
+      Provider errors — raised by providers/__init__.py when the LLM
+        SDK call fails (timeout, rate limit, auth, generic error).
+        Mapped from provider-specific exception classes by the
+        provider abstraction. Messages stay generic so they do NOT
+        leak the active provider name, SDK error code, or any other
+        information that belongs in the audit trail
+        (AIPipelineRun.error_message + .sub_calls).
+
+      Pipeline errors — raised by pipelines/* when orchestration
+        fails irrecoverably (LLM response cannot be parsed as the
+        expected JSON shape, the whole pipeline yielded zero
+        persisted signals).
+
+    Format strings:
+      Use `.format(...)` only where the dynamic value carries genuine
+      diagnostic value for the rep (min/max length thresholds).
+      Provider-level details (specific SDK error code, raw provider
+      message) are NOT formatted in — they belong in
+      AIPipelineRun.sub_calls / .error_message for support review,
+      not in the user-facing error string.
+    """
+
+    # -----------------------------------------------------------------
+    # Input validation
+    # -----------------------------------------------------------------
+    TRANSCRIPT_TOO_SHORT = _(
+        "Transcript is too short — minimum {min_length} characters required."
+    )
+    TRANSCRIPT_TOO_LONG = _(
+        "Transcript is too long — maximum {max_length} characters allowed."
+    )
+    ACTIVITY_NOT_FOUND = _(
+        "The specified activity does not exist or is not accessible."
+    )
+
+    # -----------------------------------------------------------------
+    # Provider errors
+    # -----------------------------------------------------------------
+    PROVIDER_TIMEOUT = _(
+        "The AI provider did not respond in time. Please try again."
+    )
+    PROVIDER_RATE_LIMIT = _(
+        "The AI provider is currently rate-limited. Please try again shortly."
+    )
+    PROVIDER_AUTH = _(
+        "AI provider authentication failed. Contact your administrator."
+    )
+    PROVIDER_ERROR = _(
+        "The AI provider returned an unexpected error. Please try again "
+        "or contact support."
+    )
+
+    # -----------------------------------------------------------------
+    # Pipeline errors
+    # -----------------------------------------------------------------
+    PIPELINE_PARSE_FAILED = _(
+        "Could not parse the AI response. The extraction was aborted — "
+        "please try again."
+    )
+    PIPELINE_NO_SIGNALS_EXTRACTED = _(
+        "The AI did not extract any signal from the transcript. You can "
+        "retry or add signals manually."
     )
 
 class TechCatalogErrorMessages:
