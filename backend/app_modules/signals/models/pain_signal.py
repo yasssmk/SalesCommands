@@ -6,15 +6,32 @@ Pain = the DIAGNOSIS (qualitative)
 Impact = the PROOF  (quantitative and/or human)
 
 A PainSignal captures the structural problem an account is experiencing,
-identified by two orthogonal canonical axes (what × dimension). It is
-deliberately narrative-only:
+identified by two orthogonal canonical axes (what × dimension) and
+anchored at an organisational scope (scope_level). It is deliberately
+narrative-only on the proof axis:
 
-  * No metrics, costs, or numeric evidence — those live in PainImpact.
-  * No impacted department / contact — those live in PainImpact.
-  * No human impact enum — those live in PainImpact (PERSONAL type).
+  * No metrics, costs, or numeric evidence — those live in ImpactSignal
+    (introduced in Sprint Refonte ImpactSignal — supersedes the
+    retired PainImpact model).
+  * No impacted department / contact field — the impacted parties are
+    derived from the conversation's contacts (via source_activity) and
+    refined through related ImpactSignal observations sharing the same
+    canonical_key on the account.
+  * No human impact enum — captured on ImpactSignal when relevant
+    (human_impact field, HumanImpactType choices).
 
 Canonical key (auto-computed in save()):
     canonical_key = "pain:<what>:<dimension>"
+
+Scope axis (Sprint Refonte ImpactSignal):
+    scope_level documents the organisational layer at which the pain
+    is felt (BUSINESS / DEPARTMENT / PERSONAL). It defaults to
+    BUSINESS — the safest interpretation when no specific scope was
+    surfaced during the conversation. The LLM emission for Pain (see
+    pain_v1.py) is expected to provide an explicit value; the default
+    is a defence-in-depth fallback. Aligned with ObjectiveSignal and
+    ImpactSignal — the triangulation (Pain × Objective × Impact)
+    works on a shared (what, dimension, scope_level) axis.
 
 The canonical_key enables cluster aggregation across multiple observations
 of the same pain on the same account — regardless of who reported it,
@@ -80,7 +97,7 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 
 from .base_model import BaseSignal
-from ..constants import SignalWhat, SignalDimension
+from ..constants import ScopeLevel, SignalWhat, SignalDimension
 
 
 class PainSignal(BaseSignal):
@@ -128,6 +145,29 @@ class PainSignal(BaseSignal):
         choices=SignalDimension.choices,
         verbose_name=_('Dimension'),
         help_text=_('Friction axis of the pain (second component of canonical_key)')
+    )
+
+    # =========================================================================
+    # SCOPE (required — defence-in-depth default to BUSINESS)
+    # =========================================================================
+
+    scope_level = models.CharField(
+        max_length=20,
+        choices=ScopeLevel.choices,
+        default=ScopeLevel.BUSINESS,
+        verbose_name=_('Scope Level'),
+        help_text=_(
+            'Organisational scope at which the pain is felt '
+            '(BUSINESS / DEPARTMENT / PERSONAL). Purely descriptive — '
+            'no conditional FK requirement on PainSignal (contrast '
+            'with ObjectiveSignal where scope drives target_contact / '
+            'target_department). Defaults to BUSINESS — the safest '
+            'interpretation when no specific scope is provided. LLM '
+            'extraction is expected to emit an explicit value (see '
+            'pain_v1.py); the default is a defence-in-depth fallback '
+            'guaranteeing the field is never empty even if the API or '
+            'LLM omits it.'
+        )
     )
 
     # =========================================================================
@@ -199,10 +239,11 @@ class PainSignal(BaseSignal):
         verbose_name_plural = _('Pain Signals')
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['account'],    name='painsig_account_idx'),
-            models.Index(fields=['what'],       name='painsig_what_idx'),
-            models.Index(fields=['dimension'],  name='painsig_dimension_idx'),
-            models.Index(fields=['status'],     name='painsig_status_idx'),
+            models.Index(fields=['account'],     name='painsig_account_idx'),
+            models.Index(fields=['what'],        name='painsig_what_idx'),
+            models.Index(fields=['dimension'],   name='painsig_dimension_idx'),
+            models.Index(fields=['scope_level'], name='painsig_scope_level_idx'),
+            models.Index(fields=['status'],      name='painsig_status_idx'),
             # Composite index for cluster lookups by canonical_key scoped to account.
             # Serves SignalClusterService.list_clusters_for_account (Sprint 2).
             models.Index(

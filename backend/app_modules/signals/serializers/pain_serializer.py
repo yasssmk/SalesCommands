@@ -10,21 +10,31 @@ Implements the four standard variants on top of BaseSignal* serializers:
 
 Also exposes:
   - canonical axes    : what / dimension (drive canonical_key)
-  - related_techstack : compact list of tools the pain points to
+  - scope_level       : organisational scope at which the pain is felt
+                        (BUSINESS / DEPARTMENT / PERSONAL) — defaults to
+                        BUSINESS at the model layer if not provided
+  - related_techstack : compact catalog reference when the pain points
+                        to a tool from the tenant tech catalog
 
 Validation rules surfaced from the model (PainSignal.clean):
   1. source_activity is required
 
-The previous "source_contact required" rule was retired during the
-standardisation refactor — the field was removed from BaseSignal.
-Contacts are now derived from source_activity.contacts and exposed
-via the standardised `source_context` block (read-only).
+Contacts who participated in the source conversation are derived
+from source_activity.contacts and exposed via the standardised
+`source_context` block (read-only) on the base serializers.
 
 The source_activity rule is enforced at both the model level and the
 serializer level. The model's clean() is invoked through full_clean()
 inside SignalManager.create(); the serializer's validate() raises
 StandardizedValidationError early so the response shape is consistent
 with other DRF validation errors.
+
+Impact-level evidence (metrics, human consequences, quantified
+proof) is captured by ImpactSignal — a separate first-class signal
+type sharing the same (what, dimension) canonical axes as PainSignal.
+A Pain cluster and an Impact cluster on the same (what × dimension)
+can be cross-referenced at the cluster layer; the relationship is
+not modelled as an FK on either side.
 """
 
 from rest_framework import serializers
@@ -39,7 +49,6 @@ from .base_serializer import (
     BaseSignalCreateSerializer,
     BaseSignalUpdateSerializer,
 )
-from .pain_impact_serializer import PainImpactReadSerializer
 
 
 # =============================================================================
@@ -59,6 +68,9 @@ class _PainDisplayMixin:
 
     def get_dimension_display(self, obj):
         return obj.get_dimension_display() if obj.dimension else None
+
+    def get_scope_level_display(self, obj):
+        return obj.get_scope_level_display() if obj.scope_level else None
 
     def get_related_techstack(self, obj):
         """
@@ -91,31 +103,28 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
     """
     Lightweight serializer for PainSignal list endpoints.
 
-    Exposes the canonical axes, the narrative content (summary only —
-    not notes, which belong to the detail view), nested impacts in
-    read-only form, and the optional cross-reference to a TechStack
-    catalog entry.
+    Exposes the canonical axes (what × dimension), the scope axis, the
+    narrative summary (notes live on the detail view), and the optional
+    cross-reference to a TechStack catalog entry.
 
-    Cross-reference exposure (Sprint TechStack):
+    Cross-reference exposure:
       - related_techstack          : compact catalog payload or None
       - related_techstack_mention  : free-text mention or empty string
 
     Both fields are emitted unconditionally — the UI hides them when
     what != 'TECH', but the API stays neutral. See PainSignal model
     docstring for the rationale.
-
     """
 
     # Canonical axes
-    what_display      = serializers.SerializerMethodField()
-    dimension_display = serializers.SerializerMethodField()
+    what_display        = serializers.SerializerMethodField()
+    dimension_display   = serializers.SerializerMethodField()
+
+    # Scope axis
+    scope_level_display = serializers.SerializerMethodField()
 
     # Cross-reference — compact catalog payload (read)
-    related_techstack = serializers.SerializerMethodField()
-
-    # Read-only nested impacts — via the reverse relation 'impacts'
-    # on PainSignal (declared by the FK related_name on PainImpact).
-    impacts = PainImpactReadSerializer(many=True, read_only=True)
+    related_techstack   = serializers.SerializerMethodField()
 
     class Meta(BaseSignalListSerializer.Meta):
         model = PainSignal
@@ -123,13 +132,13 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
             # Canonical axes (form canonical_key)
             'what', 'what_display',
             'dimension', 'dimension_display',
+            # Scope
+            'scope_level', 'scope_level_display',
             # Narrative
             'summary',
             # Cross-reference — TechStack
             'related_techstack',
             'related_techstack_mention',
-            # Nested impacts (read-only)
-            'impacts',
         ]
         read_only_fields = fields
 
@@ -144,29 +153,28 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
 
     Inherits validated_at / validated_by / requested_by / source_quote /
     metadata / original_value from BaseSignalDetailSerializer. Adds
-    notes on top of the list payload, plus nested impacts and the
-    optional TechStack cross-reference.
+    scope_level, notes, and the optional TechStack cross-reference on
+    top of the list payload.
     """
 
-    what_display      = serializers.SerializerMethodField()
-    dimension_display = serializers.SerializerMethodField()
+    what_display        = serializers.SerializerMethodField()
+    dimension_display   = serializers.SerializerMethodField()
+    scope_level_display = serializers.SerializerMethodField()
 
     # Cross-reference — compact catalog payload (read)
-    related_techstack = serializers.SerializerMethodField()
-
-    impacts = PainImpactReadSerializer(many=True, read_only=True)
+    related_techstack   = serializers.SerializerMethodField()
 
     class Meta(BaseSignalDetailSerializer.Meta):
         model = PainSignal
         fields = BaseSignalDetailSerializer.Meta.fields + [
             'what', 'what_display',
             'dimension', 'dimension_display',
+            'scope_level', 'scope_level_display',
             'summary',
             'notes',
             # Cross-reference — TechStack
             'related_techstack',
             'related_techstack_mention',
-            'impacts',
         ]
         read_only_fields = fields
 
@@ -185,26 +193,28 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
       - what
       - dimension
       - summary
-      - source_activity (required — every pain must have a conversational
-                         origin; see Sprint 1.6 model docstring)
+      - source_activity (every pain must have a conversational origin)
 
-    Optional fields (Sprint TechStack):
+    Optional fields:
+      - scope_level                — defaults to BUSINESS at the model
+                                      layer when omitted
+      - notes                      — free-text additional context
       - related_techstack          — FK to TechCatalog, written as UUID
       - related_techstack_mention  — free-text tool mention
 
-    Removed during the standardisation refactor:
-      - "source_contact required" rule. The field was retired from
-         BaseSignal — contacts associated with the source conversation
-         are now derived from source_activity.contacts at read time
-         and exposed via the standardised `source_context` block.
+    Contacts who participated in the source conversation are derived
+    from source_activity.contacts and exposed read-only via the
+    standardised `source_context` block — the signal itself does not
+    carry a source_contact FK.
 
     The two cross-reference fields are independent and not mutually
     exclusive at the API level. The frontend is responsible for hiding
     them when what != 'TECH' — the backend stays permissive.
 
-    Impacts are NOT accepted here. To attach evidence to a pain, use the
-    dedicated POST /module-signals/pain-impacts/ endpoint with pain_signal
-    set to the created pain's UUID.
+    Impact-level evidence (metrics, human consequences) is not
+    accepted here. ImpactSignal is a separate first-class signal type;
+    use POST /module-signals/impact/ to record an impact observation
+    on the same (what, dimension) axes.
     """
 
     signal_type = serializers.HiddenField(default='pain')
@@ -214,6 +224,7 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
         fields = BaseSignalCreateSerializer.Meta.fields + [
             'what',
             'dimension',
+            'scope_level',
             'summary',
             'notes',
             # Cross-reference — TechStack
@@ -222,10 +233,11 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
         ]
         extra_kwargs = {
             **BaseSignalCreateSerializer.Meta.extra_kwargs,
-            'what':      {'required': True},
-            'dimension': {'required': True},
-            'summary':   {'required': True},
-            'notes':     {'required': False, 'allow_blank': True},
+            'what':        {'required': True},
+            'dimension':   {'required': True},
+            'scope_level': {'required': False},  # default BUSINESS at model
+            'summary':     {'required': True},
+            'notes':       {'required': False, 'allow_blank': True},
             'related_techstack':         {'required': False, 'allow_null': True},
             'related_techstack_mention': {'required': False, 'allow_blank': True},
         }
@@ -239,14 +251,13 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
              to a real conversation (stricter than BaseSignal, where
              activity is optional).
 
-        Removed during the standardisation refactor:
-          - "source_contact always required" rule. The field was
-             retired from BaseSignal; contacts are derived from
-             source_activity.contacts at read time.
-
         Cross-reference fields (related_techstack / related_techstack_mention)
         carry no model-level constraint — see PainSignal model docstring
         for the rationale of permissive backend behaviour.
+
+        scope_level is not validated here: it has a model-level default
+        (BUSINESS) that guarantees the column is never empty, even when
+        the API omits the value entirely.
         """
         # Rule 1 — source_activity (strict for Pain)
         if not attrs.get('source_activity'):
@@ -267,8 +278,12 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
     Restricted PATCH serializer for PainSignal.
 
     Allowed beyond base fields:
-      - what, dimension, summary, notes
-      - related_techstack, related_techstack_mention  (Sprint TechStack)
+      - what, dimension          — canonical axes (canonical_key recomputed
+                                    by model.save())
+      - scope_level              — scope axis (re-anchors the pain at a
+                                    different organisational layer)
+      - summary, notes
+      - related_techstack, related_techstack_mention
 
     Changing `what` or `dimension` is allowed — the model's save() recomputes
     canonical_key automatically. A pain can therefore be re-classified
@@ -285,8 +300,9 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
       - The UI may then drop the mention textually, but the backend
         accepts both being set simultaneously without error.
 
-    Impacts cannot be mutated via this endpoint. Use the dedicated
-    /module-signals/pain-impacts/{id}/ endpoint for impact CRUD.
+    Impact-level evidence (metrics, human consequences) is not mutated
+    here. ImpactSignal is a separate first-class signal type with its
+    own CRUD endpoints at /module-signals/impact/.
     """
 
     class Meta(BaseSignalUpdateSerializer.Meta):
@@ -294,6 +310,7 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
         fields = BaseSignalUpdateSerializer.Meta.fields + [
             'what',
             'dimension',
+            'scope_level',
             'summary',
             'notes',
             # Cross-reference — TechStack
@@ -302,10 +319,11 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
         ]
         extra_kwargs = {
             **BaseSignalUpdateSerializer.Meta.extra_kwargs,
-            'what':      {'required': False},
-            'dimension': {'required': False},
-            'summary':   {'required': False},
-            'notes':     {'required': False, 'allow_blank': True},
+            'what':        {'required': False},
+            'dimension':   {'required': False},
+            'scope_level': {'required': False},
+            'summary':     {'required': False},
+            'notes':       {'required': False, 'allow_blank': True},
             'related_techstack':         {'required': False, 'allow_null': True},
             'related_techstack_mention': {'required': False, 'allow_blank': True},
         }

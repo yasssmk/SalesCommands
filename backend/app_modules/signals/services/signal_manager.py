@@ -9,6 +9,12 @@ Centralises all state-mutating operations on signals:
   reject   — PENDING → REJECTED (+ optional reason in metadata)
   edit     — patch fields, snapshot original_value on first LLM edit
 
+Supported signal types (routed by SignalManager.create):
+  pain       → PainSignal
+  objective  → ObjectiveSignal
+  impact     → ImpactSignal
+  tech_stack → TechStackSignal
+
 All methods raise StandardizedValidationError on guard violations.
 All write paths use model.save(user=user, client_id=...) so that
 ModuleBaseModel audit fields (created_by, updated_by) are always enforced.
@@ -34,7 +40,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import SignalErrorMessages
 
 from ..constants import SignalStatus, SignalSource
-from ..models import PainSignal, ObjectiveSignal, TechStackSignal
+from ..models import PainSignal, ObjectiveSignal, ImpactSignal, TechStackSignal
 
 
 logger = logging.getLogger(__name__)
@@ -66,9 +72,10 @@ class SignalManager:
         """
         Create a new signal of the appropriate concrete type.
 
-        Routing (signal_type key consumed here, not passed to the model):
+         Routing (signal_type key consumed here, not passed to the model):
           'pain'       → PainSignal
           'objective'  → ObjectiveSignal
+          'impact'     → ImpactSignal
           'tech_stack' → TechStackSignal
 
         Activity-context propagation:
@@ -99,6 +106,7 @@ class SignalManager:
         model_map = {
             'pain':       PainSignal,
             'objective':  ObjectiveSignal,
+            'impact':     ImpactSignal,
             'tech_stack': TechStackSignal,
         }
         model_class = model_map.get(signal_type)

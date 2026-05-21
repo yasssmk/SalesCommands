@@ -71,7 +71,13 @@ metadata, is_inferred, confidence, original_value.
 
 Validation rules (enforced in clean() AND in Create/Update serializers)
 ----------------------------------------------------------------------
-  1. tech_catalog_entry is required, EXCEPT on PENDING LLM-extracted
+  1. source_activity is required — every TechStack observation must be
+     tied to a real conversation. The DB column is also NOT NULL,
+     guaranteeing the rule at every layer. Raising in clean() yields
+     a clean ValidationError on the API surface rather than an
+     IntegrityError.
+
+  2. tech_catalog_entry is required, EXCEPT on PENDING LLM-extracted
      signals.
        Without the catalog FK, the canonical_key cannot be computed
        and cluster aggregation falls apart. The exception covers the
@@ -83,15 +89,15 @@ Validation rules (enforced in clean() AND in Create/Update serializers)
        downstream by SignalManager.validate(). Any other source/
        status combination still requires the FK at clean() time.
 
-  2. usage_scope = DEPARTMENT  →  usage_department REQUIRED.
+  3. usage_scope = DEPARTMENT  →  usage_department REQUIRED.
      usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}  →  usage_department
                                                        FORBIDDEN.
 
-  3. is_discontinued = True  →  discontinued_date REQUIRED.
+  4. is_discontinued = True  →  discontinued_date REQUIRED.
      is_discontinued = False (default)  →  discontinued_date FORBIDDEN.
 
-The (2) and (3) pairs use the merged-state validation pattern in their
-matching serializers — see TechStackSignalUpdateSerializer in Phase 4.1.
+The (3) and (4) pairs use the merged-state validation pattern in their
+matching serializers — see TechStackSignalUpdateSerializer.
 
 Status creation rule
 --------------------
@@ -384,22 +390,35 @@ class TechStackSignal(BaseSignal):
 
         Rules (all errors aggregated, returned as a single ValidationError):
 
-          1. tech_catalog_entry is required — the catalog FK drives
+          1. source_activity is required — every TechStack observation
+             must be tied to a real conversation. The DB column is also
+             NOT NULL. Raising in clean() yields a clean error payload
+             on the API surface rather than an IntegrityError on save.
+
+          2. tech_catalog_entry is required — the catalog FK drives
              canonical_key. The DB-level NOT NULL would catch this at
              save() time, but raising in clean() yields a clean error
              payload and matches the Pain/Objective pattern.
 
-          2. usage_scope = DEPARTMENT
+             Exception: LLM extraction may produce a signal whose
+             mentioned tool does not match the tenant TechCatalog. In
+             that case the signal is persisted as PENDING with
+             tech_catalog_entry=None and the raw name stored in
+             metadata['pending_tech_name']. The rep must attach a
+             catalog entry before validating — enforced downstream by
+             SignalManager.validate().
+
+          3. usage_scope = DEPARTMENT
                 → usage_department REQUIRED.
              usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}
                 → usage_department FORBIDDEN.
 
-          3. is_discontinued = True
+          4. is_discontinued = True
                 → discontinued_date REQUIRED.
              is_discontinued = False (default)
                 → discontinued_date FORBIDDEN.
 
-        Note on rule 2 with usage_scope = None:
+        Note on rule 3 with usage_scope = None:
           A null usage_scope is interpreted as "scope not yet
           documented". Setting usage_department in that state would
           create an inconsistent record (a department is set but no
@@ -409,7 +428,13 @@ class TechStackSignal(BaseSignal):
 
         errors = {}
 
-        # --- Rule 1: catalog FK is required EXCEPT on PENDING LLM-extracted signals ---
+        # --- Rule 1: source_activity required ---
+        if not self.source_activity_id:
+            errors['source_activity'] = (
+                SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
+            )
+
+        # --- Rule 2: catalog FK is required EXCEPT on PENDING LLM-extracted signals ---
         # LLM extraction may produce a signal whose mentioned tool does
         # not match the tenant TechCatalog (the prompt feeds the catalog
         # list and instructs the model to return a raw tech_name when
@@ -428,7 +453,7 @@ class TechStackSignal(BaseSignal):
                     SignalErrorMessages.TECHSTACK_CATALOG_ENTRY_REQUIRED
                 )
 
-        # --- Rule 2: usage_scope ↔ usage_department coherence ---
+        # --- Rule 3: usage_scope ↔ usage_department coherence ---
         if self.usage_scope == UsageScope.DEPARTMENT:
             if not self.usage_department_id:
                 errors['usage_department'] = (
@@ -441,7 +466,7 @@ class TechStackSignal(BaseSignal):
                     SignalErrorMessages.TECHSTACK_DEPT_OUTSIDE_SCOPE
                 )
 
-        # --- Rule 3: is_discontinued ↔ discontinued_date coherence ---
+        # --- Rule 4: is_discontinued ↔ discontinued_date coherence ---
         if self.is_discontinued:
             if not self.discontinued_date:
                 errors['discontinued_date'] = (

@@ -3,8 +3,9 @@
 Cache invalidation Django signals for the Signals module.
 
 Automatically invalidates the 'signals' and 'signal_clusters' cache tags
-when a signal model (PainSignal, ObjectiveSignal, TechStackSignal),
-a PainImpact, or a SignalClusterArchival is created, updated, or deleted.
+when a signal model (PainSignal, ObjectiveSignal, ImpactSignal,
+TechStackSignal), a PainImpact, or a SignalClusterArchival is created,
+updated, or deleted.
 
 This is a safety net: ViewSets already call invalidate_tag() directly on
 every write path. These receivers catch writes made outside a ViewSet
@@ -18,9 +19,21 @@ See app_modules.signals.constants for the canonical matrix. Summary:
   ---------------------    -------   ---------------
   PainSignal                  ✓             ✓
   ObjectiveSignal             ✓             ✗
+  ImpactSignal                ✓             ✓
   TechStackSignal             ✓             ✗
-  PainImpact                  ✓             ✓   (cluster stats pivot)
+  PainImpact (legacy)         ✓             ✓
   SignalClusterArchival       ✗             ✓   (archival-only)
+
+Cluster-tag invalidation rule
+-----------------------------
+A signal type busts SIGNAL_CLUSTERS_CACHE_TAG iff it produces clusters
+whose aggregated stats (priority_score, freshness_status,
+confirmation_count, scope summaries) depend on the write. Pain,
+Impact, and PainImpact (legacy) match; Objective and TechStack
+clusters exist too but Objective writes don't change anything beyond
+the signal itself, and TechStack invalidation is currently scoped to
+the signals tag (Sprint TechStack decision — to revisit if cluster
+caches diverge).
 
 Signal control
 --------------
@@ -178,6 +191,47 @@ def invalidate_on_objective_delete(sender, instance, **kwargs):
     client_id = getattr(instance, 'client_id', None)
     if client_id:
         _invalidate_signals_after_commit(str(client_id))
+
+# =============================================================================
+# IMPACT SIGNAL — invalidates 'signals' AND 'signal_clusters'
+# =============================================================================
+#
+# ImpactSignal produces clusters on the same canonical (what × dimension)
+# axes as Pain. Cluster membership, priority_score, freshness_status,
+# confirmation_count, and max_scope_level all derive from the set of
+# ImpactSignals sharing a canonical_key on an account — so any write
+# here must bust cluster caches too. Same stance as PainSignal.
+# =============================================================================
+
+@receiver(post_save, sender='module_signals.ImpactSignal')
+def invalidate_on_impact_save(sender, instance, **kwargs):
+    """
+    Invalidate both signal and cluster caches when an ImpactSignal is saved.
+
+    Cluster membership, priority_score, freshness_status,
+    confirmation_count, and max_scope_level all derive from the set
+    of ImpactSignals sharing a canonical_key on an account — so any
+    write here must bust cluster caches.
+    """
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if not client_id:
+        return
+    _invalidate_signals_after_commit(str(client_id))
+    _invalidate_clusters_after_commit(str(client_id))
+
+
+@receiver(post_delete, sender='module_signals.ImpactSignal')
+def invalidate_on_impact_delete(sender, instance, **kwargs):
+    """Invalidate both caches when an ImpactSignal is deleted."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if not client_id:
+        return
+    _invalidate_signals_after_commit(str(client_id))
+    _invalidate_clusters_after_commit(str(client_id))
 
 
 # =============================================================================

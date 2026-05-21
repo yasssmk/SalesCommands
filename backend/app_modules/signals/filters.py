@@ -2,54 +2,53 @@
 """
 FilterSet for the Signals module.
 
-Shared across all 3 concrete signal types (Pain, Objective, TechStack) —
-the view's filter_queryset() dynamically binds SignalFilter.Meta.model to
-the concrete queryset model before django-filters runs its assertion check.
+Shared across all 4 concrete signal types (Pain, Objective, Impact,
+TechStack) — the view's filter_queryset() dynamically binds
+SignalFilter.Meta.model to the concrete queryset model before
+django-filters runs its assertion check.
 
-Type-specific filters (what, dimension, scope_level, tech_catalog_entry,
-etc.) that do not exist on a given model are silently harmless — django-filter
-ignores unknown field lookups via the dynamic model binding. This is the
-established pattern in this codebase.
+Type-specific filters (what, dimension, scope_level, impact_type,
+human_impact, tech_catalog_entry, etc.) that do not exist on a given
+model are silently harmless — django-filter ignores unknown field
+lookups via the dynamic model binding. This is the established
+pattern in this codebase.
 
-PainImpact is NOT handled here. It has its own PainImpactFilter defined in
-views/pain_impact_views.py, since impacts are a distinct resource with a
-separate CRUD surface (/pain-impacts/).
+PainImpact is NOT handled here. It has its own PainImpactFilter defined
+in views/pain_impact_views.py — kept for backward compatibility during
+the ImpactSignal cutover, slated for removal alongside the PainImpact
+model itself in the final cleanup wave.
 
-Sprint TechStack — filter changes:
-  REMOVED:
-    - category     (TechCategory enum dropped — categorisation moved to TechCatalog)
-    - satisfaction (Satisfaction enum dropped — replaced by structured lifecycle)
-  ADDED (TechStackSignal):
-    - tech_catalog_entry      (UUID — anchor by catalog entry)
-    - usage_scope             (CSV — TEAM, DEPARTMENT, COMPANY, UNKNOWN)
-    - usage_department        (UUID — department using the tool)
-    - is_discontinued         (bool)
-    - renewal_date_after      (date >= filter)
-    - renewal_date_before     (date <= filter)
-    - is_competitor           (bool, via FK traversal to TechCatalog)
-    - is_integration_target   (bool, via FK traversal to TechCatalog)
-  ADDED (PainSignal cross-reference):
-    - related_techstack       (UUID — Pains cross-referencing a catalog entry)
+Shared canonical axes (Pain + Objective + Impact):
+  - what       (SignalWhat enum)
+  - dimension  (SignalDimension enum)
+  - scope_level (ScopeLevel enum — also on TechStack via usage_scope,
+                 distinct concept)
 
-Sprint 2 — filter changes (PeopleSignal sunset):
-  REMOVED:
-    - role            (PeopleRole enum dropped along with PeopleSignal)
-    - influence_level (InfluenceLevel enum dropped along with PeopleSignal)
+Filter inventory by signal type
+-------------------------------
+  Pain:       what, dimension, scope_level, related_techstack
+  Objective:  what, dimension, scope_level
+  Impact:     what, dimension, scope_level, impact_type, human_impact
+  TechStack:  tech_catalog_entry, usage_scope, usage_department,
+              is_discontinued, renewal_date_*, is_competitor,
+              is_integration_target
 
-Standardisation refactor — filter changes:
-  REMOVED:
-    - source_department (UUID — column retired from BaseSignal; the
-                         notion no longer exists)
-  REPOINTED:
-    - source_contact (UUID — previously filtered the direct
-                      source_contact_id FK on the model; now traverses
-                      source_activity.contacts (m2m) instead. The field
-                      was retired from BaseSignal but contacts who
-                      participated in the source conversation remain
-                      queryable through the activity. API surface is
-                      unchanged for callers — `?source_contact=<uuid>`
-                      keeps returning signals associated with that
-                      contact, just resolved through a different path.)
+Universal:
+  status, source, signal_category, account, source_activity,
+  decision_cycle, campaign, canonical_key, source_contact
+  (decision_cycle / campaign / signal_category are shadow-overridden
+   to None on TechStack — those filters are no-op on TechStack
+   querysets.)
+
+Source contact resolution
+-------------------------
+`source_contact` traverses source_activity.contacts (m2m). The direct
+source_contact_id FK was retired from BaseSignal during the
+standardisation refactor — contacts who participated in the source
+conversation remain queryable through the activity. API surface is
+unchanged for callers — `?source_contact=<uuid>` keeps returning
+signals associated with that contact, just resolved through a
+different path.
 """
 
 import django_filters
@@ -157,25 +156,39 @@ class SignalFilter(django_filters.FilterSet):
         distinct=True,
     )
 
+   # -------------------------------------------------------------------------
+    # CANONICAL AXES — shared by Pain, Objective, Impact
     # -------------------------------------------------------------------------
-    # TYPE-SPECIFIC — PainSignal (canonical axes only)
-    # -------------------------------------------------------------------------
+    #
+    # what / dimension form the canonical_key for all three qualification
+    # signal types. TechStack signals have no what/dimension axes
+    # (canonical_key built from tech_catalog_entry FK instead) — these
+    # filters are silently no-op on TechStack querysets.
 
     what      = CharInFilter(field_name='what',      lookup_expr='in')
     dimension = CharInFilter(field_name='dimension', lookup_expr='in')
 
     # -------------------------------------------------------------------------
-    # TYPE-SPECIFIC — ObjectiveSignal
+    # TYPE-SPECIFIC — ObjectiveSignal + ImpactSignal
     # -------------------------------------------------------------------------
+    #
+    # scope_level is shared between Objective and Impact — both store
+    # the field directly on the model. Pain also stores scope_level
+    # since the ImpactSignal refonte sprint (PainSignal.scope_level
+    # added with default=BUSINESS), so this filter applies to Pain too.
 
     scope_level = CharInFilter(field_name='scope_level', lookup_expr='in')
 
     # -------------------------------------------------------------------------
-    # TYPE-SPECIFIC — TechStackSignal
+    # TYPE-SPECIFIC — ImpactSignal
     # -------------------------------------------------------------------------
+    #
+    # impact_type  — nature of the impact (FINANCIAL, TIME, HUMAN, ...)
+    # human_impact — optional human dimension (FRUSTRATION, OVERLOAD, ...)
+    #                Multiple values via CSV: ?human_impact=FRUSTRATION,STRESS
 
-    category     = CharInFilter(field_name='category',     lookup_expr='in')
-    satisfaction = CharInFilter(field_name='satisfaction', lookup_expr='in')
+    impact_type  = CharInFilter(field_name='impact_type',  lookup_expr='in')
+    human_impact = CharInFilter(field_name='human_impact', lookup_expr='in')
 
     class Meta:
         # PainSignal used as the reference model — chosen for stability:

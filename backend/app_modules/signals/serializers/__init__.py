@@ -18,6 +18,12 @@ from .objective_serializer import (
     ObjectiveSignalCreateSerializer,
     ObjectiveSignalUpdateSerializer,
 )
+from .impact_serializer import (
+    ImpactSignalListSerializer,
+    ImpactSignalDetailSerializer,
+    ImpactSignalCreateSerializer,
+    ImpactSignalUpdateSerializer,
+)
 from .pain_impact_serializer import (
     PainImpactReadSerializer,
     PainImpactListSerializer,
@@ -43,29 +49,33 @@ __all__ = [
     'BaseSignalCreateSerializer',
     'BaseSignalUpdateSerializer',
     'SignalLLMSerializer',
-
     # Pain
     'PainSignalListSerializer',
     'PainSignalDetailSerializer',
     'PainSignalCreateSerializer',
     'PainSignalUpdateSerializer',
-    # pain impact
-    'PainImpactReadSerializer',
-    'PainImpactListSerializer',
-    'PainImpactDetailSerializer',
-    'PainImpactCreateSerializer',
-    'PainImpactUpdateSerializer',
     # Objective
     'ObjectiveSignalListSerializer',
     'ObjectiveSignalDetailSerializer',
     'ObjectiveSignalCreateSerializer',
     'ObjectiveSignalUpdateSerializer',
+    # Impact
+    'ImpactSignalListSerializer',
+    'ImpactSignalDetailSerializer',
+    'ImpactSignalCreateSerializer',
+    'ImpactSignalUpdateSerializer',
+    # Pain Impact (legacy — to be removed in cleanup wave)
+    'PainImpactReadSerializer',
+    'PainImpactListSerializer',
+    'PainImpactDetailSerializer',
+    'PainImpactCreateSerializer',
+    'PainImpactUpdateSerializer',
     # TechStack
     'TechStackSignalListSerializer',
     'TechStackSignalDetailSerializer',
     'TechStackSignalCreateSerializer',
     'TechStackSignalUpdateSerializer',
-    # Cluster 
+    # Cluster
     'SignalClusterListSerializer',
     'SignalClusterDetailSerializer',
 ]

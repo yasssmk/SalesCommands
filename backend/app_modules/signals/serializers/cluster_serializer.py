@@ -20,16 +20,9 @@ Member serialization — type dispatch
 member is selected based on the cluster's signal_type:
 
   pain        → PainSignalDetailSerializer
-                (Pain members carry nested impacts — Detail is required)
   objective   → ObjectiveSignalListSerializer
-                (no nested entity to drill into; List payload is enough
-                 for the cluster member surface)
+  impact      → ImpactSignalListSerializer
   tech_stack  → TechStackSignalListSerializer
-                (catalog entry + lifecycle stats already on the List
-                 payload; the Detail extras — validated_at /
-                 validated_by / requested_by / source_quote / metadata /
-                 original_value — are not consumed by the cluster
-                 drawer member cards)
 
 The dispatch lives inside `get_members` as a SerializerMethodField so
 the cluster payload stays a plain dict and the routing is centralised
@@ -39,52 +32,39 @@ serializer map.
 Standardised provenance block on members
 ----------------------------------------
 Every member (regardless of signal_type) exposes the standardised
-`source_context` block introduced by the standardisation refactor —
-this is inherited automatically through BaseSignalListSerializer /
-BaseSignalDetailSerializer and requires no special handling here. The
-block carries: activity (compact), contacts (list), decision_cycle,
+`source_context` block, inherited automatically through
+BaseSignalListSerializer / BaseSignalDetailSerializer. The block
+carries: activity (compact), contacts (list), decision_cycle,
 campaign, decision_step.
 
 Performance note: SignalClusterService fetchers
-(_fetch_pain_signals, _fetch_objective_signals, _fetch_techstack_signals)
-must include `prefetch_related('source_activity__contacts')` and
+(_fetch_pain_signals, _fetch_objective_signals, _fetch_impact_signals,
+_fetch_techstack_signals) include
+`prefetch_related('source_activity__contacts')` and
 `select_related('source_activity')` to avoid N+1 query loops when the
-source_context block is rendered. See PHASE D.3 of the standardisation
-refactor.
+source_context block is rendered.
 
-Scope notes
------------
-- Human impacts and metrics are aggregated lists of primitives, not
-  nested model instances — no sub-serializer needed.
-- by_level (Pain only) and all_observations (TechStack only) are
-  independent payloads exposed via SerializerMethodField for
-  consistency with members type-aware behaviour.
+TechStack-only payloads
+-----------------------
+TechStack clusters carry type-specific aggregations: tech_catalog_entry
+identity, lifecycle stats, scope_summary, related_pain_clusters, and
+the detail-only `all_observations` drill-down. These are nested via
+dedicated sub-serializers below and emitted with neutral defaults
+(null / empty) on non-TechStack clusters so the unified cluster
+serializer can render any cluster type uniformly.
 """
 
 from rest_framework import serializers
 
 from .pain_serializer import PainSignalDetailSerializer
 from .objective_serializer import ObjectiveSignalListSerializer
+from .impact_serializer import ImpactSignalListSerializer
 from .tech_stack_serializer import TechStackSignalListSerializer
 
 
-# =============================================================================
-# NESTED HELPER — human impact entry
-# =============================================================================
-
-class _HumanImpactEntrySerializer(serializers.Serializer):
-    """
-    One entry of the aggregated `human_impacts` list.
-
-    Produced by SignalClusterService._aggregate_impacts as
-    {'type': <HumanImpact value>, 'count': <int>}.
-    """
-    type  = serializers.CharField()
-    count = serializers.IntegerField()
-
 
 # =============================================================================
-# NESTED HELPERS — TechStack cluster payload (Sprint TechStack)
+# NESTED HELPERS — TechStack cluster payload 
 # =============================================================================
 #
 # These serializers type the TechStack-specific structures emitted by
@@ -253,107 +233,6 @@ class _TechStackAllObservationsSerializer(serializers.Serializer):
     is_discontinued   = _TechStackObservationEntrySerializer(many=True)
     discontinued_date = _TechStackObservationEntrySerializer(many=True)
 
-# =============================================================================
-# NESTED HELPERS — `by_level` breakdown  (detail-only, Wave A)
-# =============================================================================
-#
-# These serializers type the per-ScopeLevel breakdown produced by
-# SignalClusterService._aggregate_by_level and exposed on cluster detail
-# only. See the service docstring for the authoritative shape definition.
-#
-# The breakdown dict is keyed dynamically (department / contact UUIDs),
-# so DictField(child=…) is the right DRF primitive here — a nested
-# Serializer with fixed keys would not fit.
-# =============================================================================
-
-
-class _ByLevelDepartmentRefSerializer(serializers.Serializer):
-    """
-    Compact Department reference embedded inside a DEPARTMENT bucket.
-
-    Produced by SignalClusterService._aggregate_by_level as
-    {'id': <uuid>, 'name': <display-label>}.
-    """
-    id   = serializers.CharField()
-    name = serializers.CharField()
-
-
-class _ByLevelContactRefSerializer(serializers.Serializer):
-    """
-    Compact Contact reference embedded inside a PERSONAL bucket.
-
-    Produced by SignalClusterService._aggregate_by_level.
-    job_title is allowed to be null for contacts without one.
-    """
-    id         = serializers.CharField()
-    first_name = serializers.CharField(allow_null=True, allow_blank=True)
-    last_name  = serializers.CharField(allow_null=True, allow_blank=True)
-    job_title  = serializers.CharField(allow_null=True, allow_blank=True)
-
-
-class _ByLevelBusinessEntrySerializer(serializers.Serializer):
-    """
-    BUSINESS bucket payload — always present, even with zero impacts.
-
-    Shape: { impact_count, parent_pain_ids: [<pain_uuid>, ...] }.
-    """
-    impact_count    = serializers.IntegerField()
-    parent_pain_ids = serializers.ListField(child=serializers.CharField())
-
-
-class _ByLevelDepartmentEntrySerializer(serializers.Serializer):
-    """
-    One DEPARTMENT bucket entry — one entry per impacted department.
-
-    Shape:
-      {
-        impact_count,
-        parent_pain_ids: [<pain_uuid>, ...],
-        department: {id, name},
-      }
-    """
-    impact_count    = serializers.IntegerField()
-    parent_pain_ids = serializers.ListField(child=serializers.CharField())
-    department      = _ByLevelDepartmentRefSerializer()
-
-
-class _ByLevelPersonalEntrySerializer(serializers.Serializer):
-    """
-    One PERSONAL bucket entry — one entry per impacted contact.
-
-    Shape:
-      {
-        impact_count,
-        parent_pain_ids: [<pain_uuid>, ...],
-        contact: {id, first_name, last_name, job_title},
-      }
-    """
-    impact_count    = serializers.IntegerField()
-    parent_pain_ids = serializers.ListField(child=serializers.CharField())
-    contact         = _ByLevelContactRefSerializer()
-
-
-class _ByLevelSerializer(serializers.Serializer):
-    """
-    Top-level `by_level` payload — per-ScopeLevel breakdown of the
-    cluster's VALIDATED PainImpacts.
-
-    Keys:
-      BUSINESS   — single entry (always present, may be zero).
-      DEPARTMENT — dict keyed by <department_uuid>.
-      PERSONAL   — dict keyed by <contact_uuid>.
-
-    See SignalClusterService._aggregate_by_level for the generator
-    docstring and the semantics of `parent_pain_ids`.
-    """
-    BUSINESS   = _ByLevelBusinessEntrySerializer()
-    DEPARTMENT = serializers.DictField(
-        child=_ByLevelDepartmentEntrySerializer(),
-    )
-    PERSONAL   = serializers.DictField(
-        child=_ByLevelPersonalEntrySerializer(),
-    )
-
 
 # =============================================================================
 # LIST SERIALIZER
@@ -374,10 +253,10 @@ class SignalClusterListSerializer(serializers.Serializer):
     --------------------
     Some fields are only meaningful for one signal type but always emitted
     by the service for shape symmetry:
-      - Pain-specific:      human_impacts, metrics, max_impact_level,
-                            impacted_contacts_count
       - Objective-specific: max_scope_level, target_dates,
                             has_target_date_soon
+      - TechStack-specific: tech_catalog_entry, lifecycle, scope_summary,
+                            has_renewal_soon, related_pain_clusters
     Cross-type clusters carry neutral values (empty list, null, false, 0)
     for the fields that don't apply to them. The unified cluster UI reads
     these neutral values without needing to branch on signal_type.
@@ -395,7 +274,6 @@ class SignalClusterListSerializer(serializers.Serializer):
     # --- Corroboration & breadth ---
     confirmation_count      = serializers.IntegerField()
     distinct_contacts_count = serializers.IntegerField()
-    impacted_contacts_count = serializers.IntegerField()
 
     # --- Status ---
     status              = serializers.CharField()
@@ -406,12 +284,6 @@ class SignalClusterListSerializer(serializers.Serializer):
     first_observed_at = serializers.DateTimeField(allow_null=True)
     last_confirmed_at = serializers.DateTimeField(allow_null=True)
     freshness_status  = serializers.CharField(allow_null=True)
-
-    # --- Pain-specific impact aggregation ---
-    # Always present in the payload. Empty / null for non-Pain clusters.
-    human_impacts    = _HumanImpactEntrySerializer(many=True)
-    metrics          = serializers.ListField(child=serializers.CharField())
-    max_impact_level = serializers.CharField(allow_null=True)
 
    # --- Objective-specific aggregation  ---
     # Always present in the payload. Empty / null / false for non-Objective
@@ -503,56 +375,44 @@ class SignalClusterDetailSerializer(SignalClusterListSerializer):
     """
     Output serializer for the cluster detail endpoint.
 
-    Extends the list payload with three type-aware fields, each rendered
+    Extends the list payload with two type-aware fields, each rendered
     only when relevant:
 
       - members          : member signal instances, type-dispatched
                            based on cluster.signal_type. See the
                            module-level docstring for the dispatch map.
-      - by_level         : per-ScopeLevel breakdown of the cluster's
-                           VALIDATED PainImpacts. Only meaningful for
-                           Pain clusters; emitted as None on Objective
-                           and TechStack.
       - all_observations : per-lifecycle-field observation lists. Only
                            meaningful for TechStack clusters; emitted
-                           as None on Pain and Objective.
+                           as None on other cluster types.
 
-    Each of the three fields is a SerializerMethodField so the routing
-    stays explicit and type-safe. Adding a new signal type to members
-    rendering is a one-line addition to _MEMBER_SERIALIZER_MAP.
-
-    Sprint TechStack — fix
-    ----------------------
-    Before this fix, members was hardcoded on PainSignalDetailSerializer.
-    The cluster Detail endpoint therefore returned 500 for Objective and
-    TechStack clusters whose members couldn't be serialised by a Pain
-    serializer (different field set; AttributeError on `obj.what`,
-    `obj.summary`, etc.). The dispatch below restores per-type rendering.
+    Both fields are SerializerMethodField so the routing stays
+    explicit and type-safe. Adding a new signal type to member
+    rendering is a one-line addition to _get_member_serializer_class.
     """
 
     members          = serializers.SerializerMethodField()
-    by_level         = serializers.SerializerMethodField()
     all_observations = serializers.SerializerMethodField()
 
     # -------------------------------------------------------------------------
-    # MEMBER DISPATCH MAP
+    # MEMBER DISPATCH
     # -------------------------------------------------------------------------
     #
     # Map cluster signal_type → concrete serializer for member rendering.
     # Lazy-resolved at call time inside get_members to keep the import
     # graph minimal at module load.
     #
-    # Pain uses Detail because PainCard needs nested impacts — those
-    # only ship in the Detail payload. Objective and TechStack use List
-    # since their cluster member cards do not consume the heavier
-    # Detail-only extras (validated_at, validated_by, requested_by,
-    # source_quote, metadata, original_value).
+    # Pain uses Detail to expose validated_at / validated_by /
+    # requested_by / source_quote / metadata / original_value on cluster
+    # member cards. Objective, Impact, and TechStack use List since
+    # their cluster member cards do not consume those extras.
     @staticmethod
     def _get_member_serializer_class(signal_type):
         if signal_type == 'pain':
             return PainSignalDetailSerializer
         if signal_type == 'objective':
             return ObjectiveSignalListSerializer
+        if signal_type == 'impact':
+            return ImpactSignalListSerializer
         if signal_type == 'tech_stack':
             return TechStackSignalListSerializer
         # Unknown type — fall back to Pain Detail to mirror the prior
@@ -572,7 +432,8 @@ class SignalClusterDetailSerializer(SignalClusterListSerializer):
 
         cluster is a dict produced by SignalClusterService.get_cluster_detail.
         Its `members` key holds a list of concrete signal instances
-        (PainSignal / ObjectiveSignal / TechStackSignal) — never a mix.
+        (PainSignal / ObjectiveSignal / ImpactSignal / TechStackSignal)
+        — never a mix.
         """
         members = cluster.get('members', []) or []
         signal_type = cluster.get('signal_type')
@@ -582,21 +443,6 @@ class SignalClusterDetailSerializer(SignalClusterListSerializer):
             many=True,
             context=self.context,
         ).data
-
-    def get_by_level(self, cluster):
-        """
-        Pain-only: per-ScopeLevel breakdown.
-
-        Returns None for non-Pain clusters and for Pain clusters that
-        do not carry the breakdown (defensive — the service does emit
-        the key, but malformed cached fragments can drift).
-        """
-        if cluster.get('signal_type') != 'pain':
-            return None
-        by_level = cluster.get('by_level')
-        if not by_level:
-            return None
-        return _ByLevelSerializer(by_level, context=self.context).data
 
     def get_all_observations(self, cluster):
         """

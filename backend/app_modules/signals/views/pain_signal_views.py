@@ -2,8 +2,10 @@
 """
 PainSignalViewSet — CRUD + validate/reject for PainSignal.
 
-Inherits all shared logic from BaseSignalViewSet.
-Extends get_queryset() with impacted_department select_related.
+Inherits all shared logic from BaseSignalViewSet. Extends get_queryset()
+with PainSignal-specific FKs (decision_cycle, campaign, related_techstack)
+that do not exist on every concrete signal type and therefore are not
+preloaded by the base.
 """
 
 from ..models import PainSignal
@@ -50,48 +52,23 @@ class PainSignalViewSet(BaseSignalViewSet):
         Extend base queryset with PainSignal-specific optimisations.
 
         Adds the FKs that exist on PainSignal but not on every concrete
-        type (the base queryset preloads only universally-present FKs
-        since Sprint TechStack — see BaseSignalViewSet.get_queryset).
+        signal type (the base queryset preloads only universally-present
+        FKs — account, source_activity, audit users on detail,
+        source_activity.contacts for the standardised source_context
+        block).
 
-        Notes:
-          - source_contact / source_department were removed from
-            BaseSignal during the standardisation refactor — they no
-            longer appear in any select_related. Provenance is now
-            derived from source_activity (the standardised
-            `source_context` block — see BaseSignalListSerializer /
-            BaseSignalDetailSerializer).
-          - impacted_department was removed from PainSignal in Sprint 1.6 —
-            it now lives on PainImpact. No select_related on it here.
-          - related_techstack (Sprint TechStack cross-reference) is
-            included so the Pain detail / list serializers can render
-            the compact catalog payload without an extra query per row.
-          - Nested 'impacts' are prefetched for all actions to avoid N+1
-            when the serializer renders the nested list. The prefetch
-            itself select_relates the FK fields on PainImpact to keep the
-            total query count bounded at O(1) regardless of impact count.
+        PainSignal-specific FKs preloaded here:
+          - decision_cycle      : exposed inside the source_context block
+                                  on detail responses.
+          - campaign            : same.
+          - related_techstack   : compact TechCatalog payload rendered by
+                                  the Pain List and Detail serializers
+                                  on every row (no extra query per row).
         """
-        from django.db.models import Prefetch
-        from ..models import PainImpact
-
         qs = super().get_queryset()
-
-        # Pain-specific FKs added on top of the base queryset (which
-        # preloads only universally-present FKs — account,
-        # source_activity, audit users on detail, source_activity.contacts
-        # for the standardised source_context block).
         qs = qs.select_related(
             'decision_cycle',
             'campaign',
             'related_techstack',
         )
-
-        impacts_prefetch = Prefetch(
-            'impacts',
-            queryset=PainImpact.objects.select_related(
-                'impacted_department',
-                'impacted_contact',
-            ).order_by('-created_at'),
-        )
-        qs = qs.prefetch_related(impacts_prefetch)
-
         return qs

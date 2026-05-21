@@ -60,7 +60,7 @@ from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models import ModuleBaseModel
 from core.client_scope import ClientScopeManager
 
-from ..constants import HumanImpact, ScopeLevel
+from ..constants import  ScopeLevel
 
 
 class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -149,7 +149,6 @@ class PainImpact(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
     human_impact = models.CharField(
         max_length=20,
-        choices=HumanImpact.choices,
         blank=True,
         null=True,
         verbose_name=_('Human Impact'),

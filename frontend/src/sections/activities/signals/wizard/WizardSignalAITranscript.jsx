@@ -736,6 +736,7 @@ export default function WizardSignalAITranscript({
         succeeded.push({
           _key: outcome.value._key,
           type: outcome.value.type,
+          action: outcome.value.action, // ← propagate the operation type
         });
       } else if (outcome.status === "fulfilled") {
         // Request completed but backend returned an error envelope.
@@ -760,10 +761,26 @@ export default function WizardSignalAITranscript({
     });
 
     if (failed.length === 0) {
-      // Full success — close and notify
-      displaySuccessSnackbar(
-        `${succeeded.length} signal${succeeded.length === 1 ? "" : "s"} processed successfully`,
-      );
+      // Split counts to be precise: validated signals are kept, rejected
+      // ones are deleted. "Processed" was ambiguous and read as "saved",
+      // which over-counted the saves whenever a rejection was in the batch.
+      const validatedCount = succeeded.filter(
+        (s) => s.action === "validate",
+      ).length;
+      const rejectedCount = succeeded.filter(
+        (s) => s.action === "delete",
+      ).length;
+
+      let message;
+      if (rejectedCount === 0) {
+        message = `${validatedCount} signal${validatedCount === 1 ? "" : "s"} validated`;
+      } else if (validatedCount === 0) {
+        message = `${rejectedCount} signal${rejectedCount === 1 ? "" : "s"} rejected`;
+      } else {
+        message = `${validatedCount} validated, ${rejectedCount} rejected`;
+      }
+
+      displaySuccessSnackbar(message);
       onSuccess();
       onClose();
       return;

@@ -1,10 +1,11 @@
 # app_modules/signals/services/signal_data_service.py
+
 """
 SignalDataService — read-only signal queries and LLM formatting.
 
-Provides optimised querysets for all 4 signal types and compact
-LLM-ready formatting. No state mutation — all writes go through
-SignalManager.
+Provides optimised querysets for the 4 concrete signal types (Pain,
+Objective, Impact, TechStack) and compact LLM-ready formatting. No
+state mutation — all writes go through SignalManager.
 
 Public API:
   get_by_account(account_id, signal_type, status, **filters)
@@ -42,13 +43,14 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import SignalErrorMessages
 
 from ..constants import SignalStatus
-from ..models import PainSignal, ObjectiveSignal, TechStackSignal
+from ..models import PainSignal, ObjectiveSignal, ImpactSignal, TechStackSignal
 
 
 # Mapping from string key → model class.
 _SIGNAL_TYPE_MAP = {
     'pain':       PainSignal,
     'objective':  ObjectiveSignal,
+    'impact':     ImpactSignal,
     'tech_stack': TechStackSignal,
 }
 
@@ -86,6 +88,16 @@ _RELATED_BY_TYPE = {
         'campaign',
         'target_contact',
         'target_department',
+    ],
+    # ImpactSignal — same base FK surface as Pain/Objective (no
+    # Impact-specific FK). Impact-specific data (impact_type,
+    # scope_level, metric_text, human_impact) are scalar fields
+    # requiring no relational preload.
+    'impact': [
+        'source_activity',
+        'validated_by',
+        'decision_cycle',
+        'campaign',
     ],
     # TechStackSignal narrow surface — shadow-overrides decision_cycle,
     # campaign, and signal_category. (source_contact / source_department
@@ -145,18 +157,17 @@ class SignalDataService:
 
         Args:
             account_id:  UUID of the account.
-            signal_type: 'pain' | 'objective' | 'tech_stack' | None.
-                         None returns all 3 types.
+            signal_type: 'pain' | 'objective' | 'impact' | 'tech_stack' | None.
+                         None returns all 4 types.
             status:      SignalStatus value to filter by (e.g. 'VALIDATED').
                          None applies no status filter.
             **filters:   Additional ORM filters (allowlisted).
-                         Supported: signal_category, source_department,
-                                    source, is_inferred.
+                         Supported: signal_category, source, is_inferred.
 
         Returns:
             If signal_type given → single QuerySet for that model.
             If signal_type None  → dict with keys 'pain', 'objective',
-                                   'tech_stack'.
+                                   'impact', 'tech_stack'.
 
         Raises:
             StandardizedValidationError if signal_type is invalid.
@@ -216,7 +227,7 @@ class SignalDataService:
             contact_id: UUID of the contact.
 
         Returns:
-            dict with keys 'pain', 'objective', 'tech_stack'.
+            dict with keys 'pain', 'objective', 'impact', 'tech_stack'.
 
         Standardisation refactor — uniformised semantics
         ------------------------------------------------
@@ -270,7 +281,7 @@ class SignalDataService:
             cycle_id: UUID of the decision cycle.
 
         Returns:
-            dict with keys 'pain', 'objective', 'tech_stack'.
+            dict with keys 'pain', 'objective', 'impact', 'tech_stack'.
 
         TechStack semantics
         -------------------
@@ -323,14 +334,16 @@ class SignalDataService:
         to the LLM. Stateless — pure read-and-format, no service
         dependencies.
 
-        Output format per signal (common across all 3 types):
+        Output format per signal (common across all 4 types):
         {
             "type":       "PainSignal",     # class name for LLM disambiguation
-            "category":   "ECONOMIC",       # signal_category or None for TechStack/Objective
+            "category":   "ECONOMIC",       # signal_category — None on
+                                            # Objective / Impact / TechStack
+                                            # (shadow-overridden)
             "summary":    "...",            # type-appropriate text excerpt
             "contact":    "Jane Doe",       # first contact of source_activity, or None
             "department": "IT",             # usage_department for TechStack only,
-                                            # None for Pain / Objective
+                                            # None for Pain / Objective / Impact
             "confirmed":  1,                # always 1 in MVP
             "date":       "2025-03-15"      # validated_at date or None
         }

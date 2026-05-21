@@ -44,7 +44,6 @@ from ..constants import (
     SignalCategory,
     SignalWhat,
     SignalDimension,
-    HumanImpact,
     ScopeLevel,
     UsageScope,
 )
@@ -536,7 +535,6 @@ class SignalChoicesView(APIView):
                 'signal_category':   _choices(SignalCategory),
                 'signal_whats':      _choices(SignalWhat),
                 'signal_dimensions': _choices(SignalDimension),
-                'human_impacts':     _choices(HumanImpact),
                 'scope_levels':      _choices(ScopeLevel),
                 'usage_scopes':      _choices(UsageScope),
             },

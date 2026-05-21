@@ -97,7 +97,7 @@ class PainImpactFilter(django_filters.FilterSet):
     impacted_contact    = django_filters.UUIDFilter(field_name='impacted_contact_id')
 
     level        = CharInFilter(field_name='level',        lookup_expr='in')
-    human_impact = CharInFilter(field_name='human_impact', lookup_expr='in')
+
 
     # Account-scope filter via the parent pain.
     # This is useful for AccountSignalsTab → "all impacts on this account"

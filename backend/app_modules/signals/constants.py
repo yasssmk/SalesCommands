@@ -11,21 +11,28 @@ Lifecycle / cross-cutting:
   SignalCategory — high-level commercial category (optional tagging)
 
 Model-specific:
-  PeopleRole      — stakeholder role for PeopleSignal
-  InfluenceLevel  — stakeholder influence level for PeopleSignal
-  SignalWhat      — domain axis for canonical-keyed signals (Pain, and
-                    Objective once Wave B ships). First component of the
-                    canonical_key.
-  SignalDimension — friction / outcome axis for canonical-keyed signals.
-                    Second component of the canonical_key.
-  HumanImpact     — orthogonal human impact axis for PainImpact (optional,
-                    only meaningful at PERSONAL scope level)
-  ScopeLevel      — organisational scope of the evidence
-                    (BUSINESS / DEPARTMENT / PERSONAL). Used by PainImpact
-                    today and ObjectiveSignal since Wave B.
-  UsageScope      — organisational usage scope of a tool for TechStackSignal
-                    (TEAM / DEPARTMENT / COMPANY / UNKNOWN). Drives the
-                    conditional usage_department requirement.
+  PeopleRole       — stakeholder role for PeopleSignal
+  InfluenceLevel   — stakeholder influence level for PeopleSignal
+  SignalWhat       — domain axis for canonical-keyed signals
+                     (PainSignal, ObjectiveSignal, ImpactSignal).
+                     First component of the canonical_key.
+  SignalDimension  — friction / outcome axis for canonical-keyed signals.
+                     Second component of the canonical_key.
+  ScopeLevel       — organisational scope of the evidence
+                     (BUSINESS / DEPARTMENT / PERSONAL). Used by
+                     PainSignal, ObjectiveSignal, and ImpactSignal.
+  UsageScope       — organisational usage scope of a tool for TechStackSignal
+                     (TEAM / DEPARTMENT / COMPANY / UNKNOWN). Drives the
+                     conditional usage_department requirement.
+  ImpactType       — nature of an Impact observation (FINANCIAL, TIME,
+                     PRODUCTIVITY, REVENUE, RISK, CUSTOMER, HUMAN,
+                     STRATEGIC, METRIC). Used by ImpactSignal.
+  HumanImpactType  — optional human dimension of an Impact (FRUSTRATION,
+                     OVERLOAD, STRESS, DEMOTIVATION, CONFLICT). Used by
+                     ImpactSignal when impact_type=HUMAN — typically
+                     emitted at PERSONAL scope. Renamed from the legacy
+                     HumanImpact enum (PainImpact-only); the DB values
+                     are strictly identical.
 
 Cluster aggregation (Sprint 2):
   SignalClusterType — enumeration of signal types that support clustering
@@ -64,12 +71,36 @@ Dropped in Wave A:
   - GoalLevel — superseded by the shared ScopeLevel. Objective will
                 adopt ScopeLevel during the Wave B port.
 
-The canonical_key format is unchanged:
-  - PainSignal:      "pain:<SignalWhat>:<SignalDimension>"
-  - ObjectiveSignal: "objective:<SignalWhat>:<SignalDimension>"  (Wave B)
+Renamed in Sprint Refonte ImpactSignal (this sprint):
+  - HumanImpact → HumanImpactType
+                  Aligned with the new ImpactType naming convention.
+                  DB values strictly unchanged (FRUSTRATION, OVERLOAD,
+                  STRESS, DEMOTIVATION, CONFLICT) — pure Python rename.
 
-Enum values (DB strings) are strictly unchanged by Wave A — only the
-Python class names change.
+Added in Sprint Refonte ImpactSignal:
+  - ImpactType — nature of an ImpactSignal (FINANCIAL, TIME,
+                 PRODUCTIVITY, REVENUE, RISK, CUSTOMER, HUMAN,
+                 STRATEGIC, METRIC).
+  - SignalClusterType.IMPACT — ImpactSignal clusters share the same
+                 canonical axes (SignalWhat × SignalDimension) as
+                 PainSignal and ObjectiveSignal, anchored to an
+                 account. canonical_key format:
+                 "impact:<what>:<dimension>".
+
+Removed in Sprint Refonte ImpactSignal:
+  - PainImpact-related references throughout the module. The model
+    is retired in favour of the first-class ImpactSignal. See the
+    sprint documentation for the migration path (table dropped,
+    no backfill).
+
+The canonical_key format follows the same pattern across all
+canonical-axes signal types:
+  - PainSignal:      "pain:<SignalWhat>:<SignalDimension>"
+  - ObjectiveSignal: "objective:<SignalWhat>:<SignalDimension>"
+  - ImpactSignal:    "impact:<SignalWhat>:<SignalDimension>"
+
+Enum values (DB strings) are strictly unchanged by Wave A and by the
+HumanImpact → HumanImpactType rename — only Python class names change.
 """
 
 
@@ -226,8 +257,9 @@ class SignalWhat(models.TextChoices):
     First component of the canonical_key: "<type>:<what>:<dimension>".
 
     Used by:
-      - PainSignal.what          (today)
-      - ObjectiveSignal.what     (Wave B)
+      - PainSignal.what          
+      - ObjectiveSignal.what
+      - ImpactSignal.what     
 
     OPS    — operations, processes, execution bottlenecks
     TECH   — technology, systems, technical debt, integrations
@@ -249,8 +281,9 @@ class SignalDimension(models.TextChoices):
     Second component of the canonical_key: "<type>:<what>:<dimension>".
 
     Used by:
-      - PainSignal.dimension         (today)
-      - ObjectiveSignal.dimension    (Wave B)
+      - PainSignal.dimension         
+      - ObjectiveSignal.dimension
+      - ImpactSignal.dimension   
 
     TIME    — slowness, latency, time spent, speed constraints
     COST    — budget overruns, financial waste, cost pressure
@@ -265,22 +298,29 @@ class SignalDimension(models.TextChoices):
     RISK    = 'RISK',    _('Risk / Compliance')
 
 
-class HumanImpact(models.TextChoices):
+class HumanImpactType(models.TextChoices):
     """
-    Personal consequence on an individual — the human side of a pain.
+    Optional human dimension of an ImpactSignal — the personal
+    consequence on an individual.
 
-    Used on PainImpact at PERSONAL scope level (optional). Not part of
-    any canonical_key. When set, the parent PainImpact must have
-    level=ScopeLevel.PERSONAL and a non-null impacted_contact
-    (enforced in PainImpact.clean()).
+    Used on ImpactSignal when impact_type=HUMAN (and occasionally on
+    other impact_types when relevant). Typically emitted at PERSONAL
+    or DEPARTMENT scope.
 
     FRUSTRATION  — ongoing irritation, annoyance, dissatisfaction
     OVERLOAD     — workload pressure, too much to handle
     STRESS       — anxiety, tension, mental strain
     DEMOTIVATION — disengagement, loss of drive, apathy
     CONFLICT     — interpersonal tension, disputes, friction with peers
-    """
 
+    History — rename from HumanImpact:
+      This enum was originally introduced for PainImpact (PainImpact-only,
+      meaningful at PERSONAL scope on impacts). PainImpact was retired in
+      Sprint Refonte ImpactSignal in favour of the first-class
+      ImpactSignal model. The enum was renamed from HumanImpact to
+      HumanImpactType for naming consistency with ImpactType — the DB
+      values are strictly identical (no migration required).
+    """
     FRUSTRATION  = 'FRUSTRATION',  _('Frustration')
     OVERLOAD     = 'OVERLOAD',     _('Overload')
     STRESS       = 'STRESS',       _('Stress / Anxiety')
@@ -289,31 +329,111 @@ class HumanImpact(models.TextChoices):
 
 
 # =============================================================================
-# SCOPE LEVEL — enum  
+# IMPACT TYPE — enum  (Sprint Refonte ImpactSignal)
+# =============================================================================
+
+class ImpactType(models.TextChoices):
+    """
+    Nature of an ImpactSignal observation.
+
+    Required field on ImpactSignal — every impact observation must
+    declare which kind of consequence or proof it represents. Not
+    part of canonical_key (which is built from what × dimension);
+    impact_type is an orthogonal axis that documents the FLAVOUR of
+    the impact, separate from the business area (what) and friction
+    axis (dimension).
+
+    Used by:
+      - ImpactSignal.impact_type
+
+    Values:
+      FINANCIAL     — direct monetary consequence (cost overrun,
+                       opportunity cost in currency terms).
+                       Example: "30k€/month lost on inefficient onboarding"
+      TIME          — time-based consequence (hours, days, weeks
+                       consumed or wasted).
+                       Example: "Managers spend 5h/week on manual reports"
+      PRODUCTIVITY  — output efficiency loss (tasks per period,
+                       throughput drop).
+                       Example: "Sales reps close 30% fewer deals due to
+                       data quality"
+      REVENUE       — revenue-side consequence (sales lost, deals
+                       blocked, missed opportunities).
+                       Example: "We lost 4 deals last quarter because of X"
+      RISK          — exposure to compliance, security, legal, or
+                       operational risk.
+                       Example: "GDPR audit risk because of unverified
+                       data lineage"
+      CUSTOMER      — customer-facing consequence (churn, NPS drop,
+                       complaints, satisfaction loss).
+                       Example: "Customer churn at 15%"
+      HUMAN         — qualitative human consequence (frustration,
+                       overload, stress). Typically pairs with a
+                       non-null human_impact field on the same
+                       ImpactSignal.
+                       Example: "Team is frustrated by reporting delays"
+      STRATEGIC     — strategic alignment consequence (loss of focus,
+                       priority drift, executive misalignment).
+                       Example: "Engineering bandwidth pulled away from
+                       product roadmap"
+      METRIC        — raw quantified observation without a clear
+                       business-impact classification. Captures
+                       evidence the LLM extracted as a number but
+                       could not categorise further — typically
+                       refined by the rep at validation time.
+                       Example: "Team of 50 people"
+    """
+    FINANCIAL    = 'FINANCIAL',    _('Financial impact')
+    TIME         = 'TIME',         _('Time impact')
+    PRODUCTIVITY = 'PRODUCTIVITY', _('Productivity impact')
+    REVENUE      = 'REVENUE',      _('Revenue impact')
+    RISK         = 'RISK',         _('Risk impact')
+    CUSTOMER     = 'CUSTOMER',     _('Customer impact')
+    HUMAN        = 'HUMAN',        _('Human impact')
+    STRATEGIC    = 'STRATEGIC',    _('Strategic impact')
+    METRIC       = 'METRIC',       _('Raw metric')
+
+
+# =============================================================================
+# SCOPE LEVEL — enum
 # =============================================================================
 
 class ScopeLevel(models.TextChoices):
     """
-    Organisational scope level — the three mutually-exclusive angles
-    under which evidence (or a goal) can be anchored.
+    Organisational scope level — the three mutually-exclusive layers
+    under which evidence (a pain, a goal, or an impact) is anchored.
 
     Used by:
-      - PainImpact.level              — scope of a documented pain impact
-      - ObjectiveSignal.goal_level    — scope of an objective (Wave B)
+      - PainSignal.scope_level        — scope at which a pain is felt
+      - ObjectiveSignal.scope_level   — scope at which an objective applies
+      - ImpactSignal.scope_level      — scope at which an impact is measured
 
-    On PainImpact, each level drives conditional field requirements
-    (see PainImpact.clean()) and maps to a distinct sales question:
+    The three levels map to a sales question:
+      BUSINESS   — "How does this apply to the company overall?"
+                   CFO-level framing.
+      DEPARTMENT — "Which department does this concern?"
+                   VP / team-lead framing.
+      PERSONAL   — "Which individual is involved?"
+                   Champion-level framing.
 
-      BUSINESS   — "How much does it cost the company overall?"
-                   CFO-level evidence. metric + notes.
-      DEPARTMENT — "Which department pays the price?"
-                   VP-level evidence. impacted_department + metric + notes.
-      PERSONAL   — "Who personally bears this pain?"
-                   Champion-level evidence. impacted_contact + metric (opt)
-                   + human_impact (opt) + notes.
+    Conditional logic per signal type:
+      PainSignal   — default BUSINESS; no conditional FK requirement.
+                     Purely descriptive.
+      ObjectiveSignal — drives conditional target requirements
+                     (PERSONAL → target_contact, DEPARTMENT →
+                     target_department, BUSINESS → neither). See
+                     ObjectiveSignal.clean().
+      ImpactSignal — purely descriptive; no conditional FK requirement.
+                     Documents the layer at which the rep observed the
+                     impact (e.g. "30k€/mo" at BUSINESS, "5h/week per
+                     AE" at PERSONAL).
 
-    On ObjectiveSignal (Wave B), the same three levels describe at which
-    layer of the organisation the objective applies.
+    Historical note:
+      This enum was previously also consumed by PainImpact.level. The
+      PainImpact model was retired in Sprint Refonte ImpactSignal in
+      favour of the first-class ImpactSignal that captures quantified
+      evidence directly. The PainImpact-level conditional rules no
+      longer exist.
     """
     BUSINESS   = 'BUSINESS',   _('Business')
     DEPARTMENT = 'DEPARTMENT', _('Department')
@@ -369,17 +489,25 @@ class SignalClusterType(models.TextChoices):
     """
     Signal types that support cluster aggregation.
 
-    PAIN, OBJECTIVE, and TECH_STACK all produce real clusters today.
-    The enum stays open-ended so that future signal types can plug
-    into the same SignalClusterArchival table without a schema change.
+    PAIN, OBJECTIVE, TECH_STACK, and IMPACT all produce real clusters
+    today. The enum stays open-ended so that future signal types can
+    plug into the same SignalClusterArchival table without a schema
+    change.
 
     The string values intentionally match the keys used in
-    SignalDataService._SIGNAL_TYPE_MAP (pain / objective / tech_stack)
-    so the same identifier travels through all layers.
+    SignalDataService._SIGNAL_TYPE_MAP (pain / objective / tech_stack /
+    impact) so the same identifier travels through all layers.
+
+    Cluster identity per type:
+      pain       — "pain:<SignalWhat>:<SignalDimension>"
+      objective  — "objective:<SignalWhat>:<SignalDimension>"
+      tech_stack — "techstack:<TechCatalog.id>"
+      impact     — "impact:<SignalWhat>:<SignalDimension>"
     """
     PAIN       = 'pain',       _('Pain')
     OBJECTIVE  = 'objective',  _('Objective')
     TECH_STACK = 'tech_stack', _('Tech Stack')
+    IMPACT     = 'impact',     _('Impact')
 
 
 class FreshnessStatus(models.TextChoices):

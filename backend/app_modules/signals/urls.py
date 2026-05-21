@@ -19,8 +19,9 @@ def get_urlpatterns():
     """Lazy imports to avoid circular import at Django startup."""
     from .views import (
         PainSignalViewSet,
-        PainImpactViewSet,
         ObjectiveSignalViewSet,
+        ImpactSignalViewSet,
+        PainImpactViewSet,
         TechStackSignalViewSet,
         SignalChoicesView,
         SignalClusterListView,
@@ -99,6 +100,36 @@ def get_urlpatterns():
             'objective/<uuid:pk>/reject/',
             ObjectiveSignalViewSet.as_view({'post': 'reject_signal'}),
             name='objective-reject',
+        ),
+
+        # =====================================================================
+        # IMPACT SIGNALS
+        # =====================================================================
+
+        path(
+            'impact/',
+            ImpactSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='impact-list',
+        ),
+        path(
+            'impact/<uuid:pk>/',
+            ImpactSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='impact-detail',
+        ),
+        path(
+            'impact/<uuid:pk>/validate/',
+            ImpactSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='impact-validate',
+        ),
+        path(
+            'impact/<uuid:pk>/reject/',
+            ImpactSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='impact-reject',
         ),
 
         # =====================================================================

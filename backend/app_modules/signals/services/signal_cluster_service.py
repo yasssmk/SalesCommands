@@ -3,73 +3,85 @@
 SignalClusterService — aggregate signals into canonical clusters.
 
 A cluster is the set of signals sharing the same canonical_key on a
-given account. For Pain, canonical_key is
-    "pain:<SignalWhat>:<SignalDimension>"
-so a cluster corresponds to a distinct pain diagnosis at an account,
-regardless of which contact reported it or when. The same canonical
-structure applies to Objective since Wave B —
-"objective:<SignalWhat>:<SignalDimension>" — and to TechStack since
-Sprint TechStack — "techstack:<TechCatalog.id>".
+given account. The canonical_key format depends on the signal type:
+
+    Pain        — "pain:<SignalWhat>:<SignalDimension>"
+    Objective   — "objective:<SignalWhat>:<SignalDimension>"
+    Impact      — "impact:<SignalWhat>:<SignalDimension>"
+    TechStack   — "techstack:<TechCatalog.id>"
+
+A Pain cluster corresponds to a distinct pain diagnosis at an account,
+regardless of which contact reported it or when. The same logic
+applies to Objective, Impact, and TechStack on their respective
+canonical identities.
+
+Pain, Objective, and Impact share the same canonical-axes mechanism
+(what × dimension). A cluster identified by (what, dimension) on an
+account can therefore have three parallel cluster perspectives — Pain
+(the diagnosis), Objective (the target), and Impact (the proof). The
+three perspectives are stored, scored, and rendered independently;
+cross-perspective consolidation (e.g. "show me everything happening
+at OPS × TIME") is a frontend concern, not a service one.
 
 Supported signal types
 ----------------------
 list_clusters_for_account accepts either a single signal_type string
-or a list. The three concrete signal types — Pain, Objective, and
-TechStack — all produce real clusters today. Any other signal_type
-value is rejected by the guard as "not supported".
+or a list. Pain, Objective, Impact, and TechStack all produce real
+clusters today. Any other signal_type value is rejected by the guard
+as "not supported".
 
 What the service does
 ---------------------
-  1. Loads PainSignals for an account (VALIDATED + PENDING; REJECTED
-     excluded entirely).
+  1. Loads concrete signals for an account (VALIDATED + PENDING;
+     REJECTED excluded entirely).
   2. Groups them by canonical_key.
   3. For each group, computes consolidated stats:
        - confirmation_count    (VALIDATED members only)
-       - distinct_contacts_count
-       - impacted_contacts_count
-       - human_impacts aggregation (from PainImpacts of VALIDATED members)
-       - metrics list (from PainImpacts of VALIDATED members)
+       - distinct_contacts_count (derived from
+                                  source_activity.contacts m2m)
+       - type-specific aggregations
+         (Pain:      max_scope_level
+          Objective: max_scope_level + target dates
+          Impact:    max_scope_level
+          TechStack: lifecycle + scope_summary + renewal proximity)
   4. Computes lifecycle (first_observed_at, last_confirmed_at,
-     freshness_status) with the active-DC exception.
-  5. Derives cluster status (VALIDATED + has_pending_signals + pending_count).
+     freshness_status) with the active-DC exception (a cluster on
+     an open decision cycle is never STALE — clamped to DORMANT).
+  5. Derives cluster status (VALIDATED | PENDING + has_pending_signals
+     + pending_count).
   6. Delegates priority scoring to signal_priority_service.
   7. Marks clusters as archived by cross-referencing
      SignalClusterArchival.
   8. Optionally filters the cluster list to a specific decision_cycle.
-  9. Detail-only: computes a per-scope-level breakdown (`by_level`) of
-     the cluster's PainImpacts — shape is documented on
-     get_cluster_detail below. Not emitted in list responses to keep
-     payloads bounded.
 
 What the service does NOT do
 ----------------------------
   - It does not write anything.
-  - It does not paginate (MVP — acceptable for <100 clusters per account).
-  - It does not cache 
+  - It does not paginate (acceptable for <100 clusters per account).
+  - It does not cache — callers are responsible for any caching layer.
 
 Output shape
 ------------
 list_clusters_for_account returns a list of dicts. get_cluster_detail
 returns the same dict structure plus a 'members' key with the raw
-PainSignal instances (the serializer is responsible for turning those
-into JSON).
+concrete signal instances (the serializer is responsible for turning
+those into JSON).
 
 Each cluster dict contains:
 
     {
         # Identity
         'canonical_key':        'pain:OPS:TIME',
-        'signal_type':          'pain',
-        'what':                 'OPS',
+        'signal_type':          'pain' | 'objective' | 'impact' | 'tech_stack',
+        'what':                 'OPS',     # null on TechStack
         'what_display':         'Operations / Process',
-        'dimension':            'TIME',
+        'dimension':            'TIME',    # null on TechStack
         'dimension_display':    'Time / Speed',
         'summary':              '...',     # consolidated summary
 
         # Corroboration & breadth
         'confirmation_count':      2,
         'distinct_contacts_count': 2,
-        'impacted_contacts_count': 3,
 
         # Status
         'status':               'VALIDATED' | 'PENDING',
@@ -81,16 +93,17 @@ Each cluster dict contains:
         'last_confirmed_at':    datetime | None,
         'freshness_status':     'FRESH' | 'DORMANT' | 'STALE' | None,
 
-        # Impact aggregation (Pain-specific)
-        'human_impacts': [
-            {'type': 'FRUSTRATION', 'count': 2},
-            {'type': 'OVERLOAD',    'count': 1},
-        ],
-        'metrics': [
-            '120k$/year',
-            '15h/week',
-        ],
-        'max_impact_level': 'BUSINESS' | 'DEPARTMENT' | 'PERSONAL' | None,
+        # Objective-specific (neutral defaults on other types)
+        'max_scope_level':       'BUSINESS' | ... | None,
+        'target_dates':          [<iso-date>, ...],
+        'has_target_date_soon':  bool,
+
+        # TechStack-specific (neutral defaults on other types)
+        'tech_catalog_entry':    {...} | None,
+        'lifecycle':             {...} | None,
+        'scope_summary':         {...} | None,
+        'has_renewal_soon':      bool,
+        'related_pain_clusters': [{...}, ...],
 
         # Priority
         'priority_score':   85,
@@ -105,7 +118,7 @@ Each cluster dict contains:
     }
 """
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import timedelta
 
 from django.db.models import Prefetch
@@ -123,10 +136,11 @@ from ..constants import (
     SignalClusterType,
     SignalStatus,
 )
-from ..models import ObjectiveSignal, PainImpact, PainSignal, SignalClusterArchival, TechStackSignal
+from ..models import ImpactSignal, ObjectiveSignal, PainSignal, SignalClusterArchival, TechStackSignal
 from .signal_priority_service import (
     OBJECTIVE_TARGET_DATE_SOON_DAYS,
     bucket_from_score,
+    compute_impact_priority_score,
     compute_objective_priority_score,
     compute_pain_priority_score,
     compute_techstack_priority_score,
@@ -134,6 +148,8 @@ from .signal_priority_service import (
 
 # Ordering used to determine the "max observed" scope level on a cluster.
 # BUSINESS > DEPARTMENT > PERSONAL — the strongest evidence wins.
+# Used by Pain, Objective, and Impact cluster builders to compute
+# max_scope_level across the cluster's VALIDATED members.
 _SCOPE_LEVEL_RANK = {
     ScopeLevel.PERSONAL:   1,
     ScopeLevel.DEPARTMENT: 2,
@@ -150,7 +166,7 @@ class SignalClusterService:
     for any caching layer.
     """
 
-   # =========================================================================
+    # =========================================================================
     # PUBLIC — LIST
     # =========================================================================
 
@@ -169,11 +185,9 @@ class SignalClusterService:
         Args:
             account_id:         UUID of the account.
             signal_type:        Cluster signal type — accepts either a
-                                single string ('pain' / 'objective') or a
-                                list/tuple of strings for mixed queries.
-                                Pain produces real clusters; Objective is
-                                accepted but returns no clusters until
-                                Wave B activates the port.
+                                single string ('pain' / 'objective' /
+                                'impact' / 'tech_stack') or a list/tuple
+                                of strings for mixed queries.
             decision_cycle_id:  Optional UUID. When provided, only clusters
                                 having at least one member signal linked
                                 to that decision cycle are returned.
@@ -189,16 +203,12 @@ class SignalClusterService:
 
         Raises:
             StandardizedValidationError if any requested signal_type is
-            not in the supported set (currently {'pain', 'objective'}).
+            not in the supported set.
         """
         requested_types = cls._assert_signal_types_supported(signal_type)
 
         clusters: list = []
 
-        # Dispatch per signal_type. Pain was the only active cluster type
-        # in Sprint 2; Objective joined in Wave B; TechStack joined in
-        # Sprint TechStack. All three produce real clusters; the guard
-        # above rejects any other type.
         for stype in requested_types:
             if stype == SignalClusterType.PAIN:
                 clusters.extend(
@@ -212,6 +222,15 @@ class SignalClusterService:
             if stype == SignalClusterType.OBJECTIVE:
                 clusters.extend(
                     cls._list_objective_clusters_for_account(
+                        account_id=account_id,
+                        decision_cycle_id=decision_cycle_id,
+                        include_archived=include_archived,
+                    )
+                )
+                continue
+            if stype == SignalClusterType.IMPACT:
+                clusters.extend(
+                    cls._list_impact_clusters_for_account(
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
@@ -243,7 +262,7 @@ class SignalClusterService:
         return clusters
 
     # -------------------------------------------------------------------------
-    # INTERNAL — Pain-specific listing (factored out of the dispatch loop)
+    # INTERNAL — Pain-specific listing
     # -------------------------------------------------------------------------
 
     @classmethod
@@ -258,9 +277,9 @@ class SignalClusterService:
         Pain-specific cluster computation for list_clusters_for_account.
 
         Factored out so the top-level dispatch loop stays readable and
-        future signal types (Objective in Wave B) can plug in via their
-        own _list_*_clusters_for_account helper without touching the
-        Pain logic.
+        future signal types can plug in via their own
+        _list_*_clusters_for_account helper without touching the Pain
+        logic.
         """
         signals = cls._fetch_pain_signals(
             account_id=account_id,
@@ -290,9 +309,9 @@ class SignalClusterService:
             clusters.append(cluster)
 
         return clusters
-    
+
     # -------------------------------------------------------------------------
-    # INTERNAL — Objective-specific listing (Wave B)
+    # INTERNAL — Objective-specific listing
     # -------------------------------------------------------------------------
 
     @classmethod
@@ -306,11 +325,10 @@ class SignalClusterService:
         """
         Objective-specific cluster computation for list_clusters_for_account.
 
-        Mirror of _list_pain_clusters_for_account but scoped to
-        ObjectiveSignal. The shape of the returned cluster dict is the
-        same as Pain's, minus Pain-specific keys (impacts aggregation,
-        max_impact_level, human_impacts, metrics). See
-        _build_objective_cluster for the exact output shape.
+        Mirror of _list_pain_clusters_for_account scoped to
+        ObjectiveSignal. The cluster shape adds target-date stats
+        (target_dates, has_target_date_soon) on top of the common
+        canonical-axes payload.
         """
         signals = cls._fetch_objective_signals(
             account_id=account_id,
@@ -343,7 +361,58 @@ class SignalClusterService:
         return clusters
 
     # -------------------------------------------------------------------------
-    # INTERNAL — TechStack-specific listing (Sprint TechStack)
+    # INTERNAL — Impact-specific listing
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def _list_impact_clusters_for_account(
+        cls,
+        *,
+        account_id,
+        decision_cycle_id=None,
+        include_archived: bool = False,
+    ) -> list:
+        """
+        Impact-specific cluster computation for list_clusters_for_account.
+
+        Mirror of _list_objective_clusters_for_account. ImpactSignal
+        shares the same canonical-axes mechanism (what × dimension) as
+        Pain and Objective, with scope_level as a direct field on the
+        model. ImpactSignal carries no target_date concept — the
+        Impact cluster shape mirrors Objective's minus target-date
+        aggregation.
+        """
+        signals = cls._fetch_impact_signals(
+            account_id=account_id,
+            decision_cycle_id=decision_cycle_id,
+        )
+        grouped = cls._group_by_canonical_key(signals)
+
+        archived_keys = cls._get_archived_keys(
+            account_id,
+            SignalClusterType.IMPACT,
+        )
+
+        clusters: list = []
+        for canonical_key, members in grouped.items():
+            if canonical_key is None:
+                # Defensive skip — ImpactSignal.save() always computes
+                # canonical_key when both what and dimension are set,
+                # and both are required fields on the model.
+                continue
+
+            cluster = cls._build_impact_cluster(canonical_key, members)
+            cluster['is_archived'] = canonical_key in archived_keys
+
+            if cluster['is_archived'] and not include_archived:
+                continue
+
+            clusters.append(cluster)
+
+        return clusters
+
+    # -------------------------------------------------------------------------
+    # INTERNAL — TechStack-specific listing
     # -------------------------------------------------------------------------
 
     @classmethod
@@ -421,36 +490,32 @@ class SignalClusterService:
         signal_type: str = SignalClusterType.PAIN,
     ) -> dict:
         """
-        Return a single cluster with its member signals and per-scope-level
-        breakdown.
+        Return a single cluster with its member signals.
 
         The cluster dict has the same shape as in list_clusters_for_account
         plus:
-          - `members`: PainSignal instances (impacts prefetched) — turned
-                       into JSON by the calling serializer.
-          - `by_level`: per-ScopeLevel breakdown of this cluster's
-                        validated PainImpacts. See _aggregate_by_level
-                        below for the exact shape.
+          - `members`: concrete signal instances (Pain / Objective /
+                       Impact / TechStack) — turned into JSON by the
+                       calling serializer.
 
-        The Wave A-introduced `by_level` key is detail-only. It is not
-        emitted by list endpoints to keep list payloads bounded.
+        TechStack additionally carries `all_observations` — a per-field
+        observation drill-down — see _compute_techstack_lifecycle_observations.
 
         Args:
             account_id:     UUID of the account.
             canonical_key:  Cluster identifier (e.g. 'pain:OPS:TIME').
-            signal_type:    Cluster signal type — single string. 'pain'
-                            yields real data; 'objective' is accepted at
-                            the API surface but raises CLUSTER_NOT_FOUND
-                            until Wave B activates it. Other types are
-                            rejected by the guard.
+            signal_type:    Cluster signal type — single string
+                            ('pain', 'objective', 'impact', or
+                            'tech_stack').
 
         Returns:
-            Cluster dict with `members` and `by_level` keys.
+            Cluster dict with `members` key.
 
         Raises:
             StandardizedValidationError if signal_type is unsupported,
             or if no signals exist for the given (account, canonical_key).
         """
+
         # A detail is always one cluster → one signal_type. We reuse the
         # generic supported-types guard but insist on a single value here.
         normalised = cls._assert_signal_types_supported(signal_type)
@@ -468,8 +533,8 @@ class SignalClusterService:
                 SignalErrorMessages.CLUSTER_CANONICAL_KEY_REQUIRED
             )
 
-        # Dispatch per signal type. Both Pain and Objective produce real
-        # cluster detail payloads since Wave B.
+        # Dispatch per signal type. Pain, Objective, Impact, and
+        # TechStack all produce real cluster detail payloads.
         if resolved_type == SignalClusterType.PAIN:
             members = list(
                 cls._fetch_pain_signals(account_id=account_id)
@@ -486,14 +551,6 @@ class SignalClusterService:
             archived_keys = cls._get_archived_keys(account_id, resolved_type)
             cluster['is_archived'] = canonical_key in archived_keys
             cluster['members'] = members
-
-            # Detail-only enrichment: per-scope-level breakdown of the
-            # cluster's PainImpacts. Computed from the VALIDATED members
-            # already loaded above — no extra DB hit.
-            validated_members = [
-                m for m in members if m.status == SignalStatus.VALIDATED
-            ]
-            cluster['by_level'] = cls._aggregate_by_level(validated_members)
 
             return cluster
 
@@ -514,10 +571,24 @@ class SignalClusterService:
             cluster['is_archived'] = canonical_key in archived_keys
             cluster['members'] = members
 
-            # No by_level aggregation for Objective — the scope_level
-            # is stored directly on each member and already surfaced
-            # through the cluster's max_scope_level stat. PainImpact-style
-            # per-scope breakdown has no equivalent here.
+            return cluster
+
+        if resolved_type == SignalClusterType.IMPACT:
+            members = list(
+                cls._fetch_impact_signals(account_id=account_id)
+                .filter(canonical_key=canonical_key)
+            )
+
+            if not members:
+                raise StandardizedValidationError(
+                    SignalErrorMessages.CLUSTER_NOT_FOUND
+                )
+
+            cluster = cls._build_impact_cluster(canonical_key, members)
+
+            archived_keys = cls._get_archived_keys(account_id, resolved_type)
+            cluster['is_archived'] = canonical_key in archived_keys
+            cluster['members'] = members
 
             return cluster
 
@@ -540,7 +611,7 @@ class SignalClusterService:
 
             # TechStack-specific drill-down: per-field observation lists
             # exposed under `all_observations`, computed from VALIDATED
-            # members only (consistent with Pain/Objective). See
+            # members only (consistent with Pain/Objective/Impact). See
             # _compute_techstack_lifecycle_observations for the shape.
             validated_members = [
                 m for m in members if m.status == SignalStatus.VALIDATED
@@ -558,13 +629,15 @@ class SignalClusterService:
     # =========================================================================
 
     # Signal types the cluster service currently accepts at its API
-    # surface. Pain and Objective produce real clusters; TechStack is
-    # activated since Sprint TechStack and follows the same canonical
-    # cluster pattern (canonical_key = "techstack:<catalog_entry_id>"
-    # on an account).
+    # surface. Pain, Objective, and Impact share the same canonical-
+    # axes mechanism (what × dimension); TechStack follows a distinct
+    # canonical pattern (canonical_key = "techstack:<catalog_entry_id>")
+    # anchored to the tenant tech catalog rather than the (what,
+    # dimension) pair.
     _SUPPORTED_CLUSTER_TYPES = frozenset({
         SignalClusterType.PAIN.value,
         SignalClusterType.OBJECTIVE.value,
+        SignalClusterType.IMPACT.value,
         SignalClusterType.TECH_STACK.value,
     })
 
@@ -629,18 +702,23 @@ class SignalClusterService:
     @classmethod
     def _fetch_pain_signals(cls, *, account_id, decision_cycle_id=None):
         """
-        Base queryset for cluster aggregation.
+        Base queryset for Pain cluster aggregation.
 
-        Includes VALIDATED and PENDING signals (REJECTED excluded as per
-        product decision). Prefetches impacts of VALIDATED parents only —
-        impacts of PENDING / REJECTED parents do not contribute to
-        cluster stats.
+        Includes VALIDATED and PENDING signals (REJECTED excluded as
+        per product decision).
 
-        Note on the prefetch filter: PainImpact has no status field; the
-        filter is on the parent Pain's status. The prefetch_related below
-        loads impacts regardless, and the aggregation layer
-        (_aggregate_impacts) filters them at runtime using the member's
-        status. This keeps the query simple and avoids a subquery.
+        select_related coverage:
+          - source_activity  : nested in cluster member payload via
+                                PainSignalDetailSerializer; also the
+                                join path for distinct_contacts_count
+                                (derived from activity.contacts m2m).
+          - decision_cycle   : exposed inside the source_context block.
+          - campaign         : same.
+
+        prefetch coverage:
+          - source_activity.contacts (m2m): used by both
+            ActivityCompactSerializer (nested in member detail) and the
+            distinct_contacts_count computation in _build_pain_cluster.
         """
         qs = (
             PainSignal.objects
@@ -649,26 +727,11 @@ class SignalClusterService:
                 status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
             )
             .select_related(
-                'source_activity',  # nested in cluster member payload via
-                                    # PainSignalDetailSerializer; also the
-                                    # join path for distinct_contacts_count
-                                    # since source_contact was retired.
+                'source_activity',
                 'decision_cycle',
                 'campaign',
             )
             .prefetch_related(
-                Prefetch(
-                    'impacts',
-                    queryset=PainImpact.objects.select_related(
-                        'impacted_department',
-                        'impacted_contact',
-                    ),
-                ),
-                # ActivityCompactSerializer (nested inside each cluster
-                # member) reads source_activity.contacts — prefetch keeps
-                # the cluster detail at a bounded query count. Also used
-                # by _build_pain_cluster to compute distinct_contacts_count
-                # via the activity.contacts m2m (standardisation refactor).
                 'source_activity__contacts',
             )
         )
@@ -677,20 +740,20 @@ class SignalClusterService:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
 
         return qs
-    
+
     @classmethod
     def _fetch_objective_signals(cls, *, account_id, decision_cycle_id=None):
         """
-        Base queryset for Objective cluster aggregation (Wave B).
+        Base queryset for Objective cluster aggregation.
 
         Includes VALIDATED and PENDING signals (REJECTED excluded — same
         product rule as Pain).
 
-        Unlike Pain, Objective has no child `impacts` relation — scope
-        and target are stored directly on the model. The only prefetch
-        needed is source_activity.contacts so that
-        ActivityCompactSerializer (nested inside each cluster member
-        detail payload) resolves without additional queries.
+        Unlike Pain, Objective has no child relation — scope and target
+        are stored directly on the model. The only prefetch needed is
+        source_activity.contacts so that ActivityCompactSerializer
+        (nested inside each cluster member detail payload) resolves
+        without additional queries.
         """
         qs = (
             ObjectiveSignal.objects
@@ -700,8 +763,7 @@ class SignalClusterService:
             )
             .select_related(
                 # source_activity is the join path for
-                # distinct_contacts_count via the activity.contacts m2m
-                # (standardisation refactor — source_contact was retired).
+                # distinct_contacts_count via the activity.contacts m2m.
                 'source_activity',
                 # Objective-specific FKs (the OWNER of the objective,
                 # not the source — distinct concept).
@@ -719,20 +781,69 @@ class SignalClusterService:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
 
         return qs
-    
+
+    @classmethod
+    def _fetch_impact_signals(cls, *, account_id, decision_cycle_id=None):
+        """
+        Base queryset for Impact cluster aggregation.
+
+        Includes VALIDATED and PENDING signals (REJECTED excluded — same
+        product rule as Pain / Objective / TechStack).
+
+        ImpactSignal carries no Impact-specific FK (no equivalent to
+        Pain's related_techstack, Objective's target_contact /
+        target_department, or TechStack's tech_catalog_entry).
+        Impact-specific data (impact_type, scope_level, metric_text,
+        human_impact) are scalar fields requiring no relational preload.
+
+        select_related coverage:
+          - source_activity  : nested in cluster member payload via
+                                ImpactSignalListSerializer; also the
+                                join path for distinct_contacts_count
+                                (derived from activity.contacts m2m).
+          - decision_cycle   : exposed inside the source_context block.
+          - campaign         : same.
+
+        prefetch coverage:
+          - source_activity.contacts (m2m): used by both
+            ActivityCompactSerializer (nested in member detail) and the
+            distinct_contacts_count computation in _build_impact_cluster.
+        """
+        qs = (
+            ImpactSignal.objects
+            .filter(
+                account_id=account_id,
+                status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+            )
+            .select_related(
+                'source_activity',
+                'decision_cycle',
+                'campaign',
+            )
+            .prefetch_related(
+                'source_activity__contacts',
+            )
+        )
+
+        if decision_cycle_id:
+            qs = qs.filter(decision_cycle_id=decision_cycle_id)
+
+        return qs
+
     @classmethod
     def _fetch_techstack_signals(cls, *, account_id, decision_cycle_id=None):
         """
-        Base queryset for TechStack cluster aggregation (Sprint TechStack).
+        Base queryset for TechStack cluster aggregation.
 
         Includes VALIDATED and PENDING signals (REJECTED excluded — same
-        product rule as Pain/Objective).
+        product rule as Pain / Objective / Impact).
 
-        Unlike Pain (which has the impacts child relation) and Objective
-        (which carries scope/target on the model), TechStack signals are
-        flat: every lifecycle field (usage_start_year, renewal_date,
-        cost_description, is_discontinued, discontinued_date, notes)
-        lives directly on the model. No prefetched child relation needed.
+        Unlike Pain (which previously had a child relation) and Objective
+        / Impact (which carry scope/target on the model), TechStack
+        signals are flat: every lifecycle field (usage_start_year,
+        renewal_date, cost_description, is_discontinued,
+        discontinued_date, notes) lives directly on the model. No
+        prefetched child relation needed.
 
         Select_related coverage:
           - tech_catalog_entry  : reference for canonical_key + compact
@@ -814,7 +925,6 @@ class SignalClusterService:
 
         return qs
 
-
     # =========================================================================
     # GROUP
     # =========================================================================
@@ -852,16 +962,32 @@ class SignalClusterService:
         )
 
     # =========================================================================
-    # BUILD — per cluster
+    # BUILD — per Pain cluster
     # =========================================================================
 
     @classmethod
     def _build_pain_cluster(cls, canonical_key: str, members: list) -> dict:
         """
-        Build the cluster dict from a list of PainSignal members.
+        Build the Pain cluster dict from a list of PainSignal members.
 
         `members` includes VALIDATED and PENDING signals for the same
         canonical_key on the same account. REJECTED are not in `members`.
+
+        Output shape — aligned with Objective, Impact, and TechStack on
+        shared keys (identity, corroboration, status, lifecycle,
+        priority, archival). Pain-specific additions beyond the common
+        keys:
+          - max_scope_level (the layer at which the pain is felt, read
+                              directly from PainSignal.scope_level)
+
+        Objective-compat and TechStack-compat keys are emitted with
+        neutral values so the unified cluster serializer can render
+        any cluster type uniformly without branching on signal_type.
+
+        Cluster identity:
+          The reference signal (most recent VALIDATED, else most
+          recent member) carries the canonical axes (what, dimension)
+          and the headline summary.
         """
         validated = [m for m in members if m.status == SignalStatus.VALIDATED]
         pending   = [m for m in members if m.status == SignalStatus.PENDING]
@@ -876,28 +1002,22 @@ class SignalClusterService:
         confirmation_count = len(validated)
 
         # distinct_contacts_count is computed across source_activity.contacts
-        # (m2m). Standardisation refactor: source_contact was retired from
-        # BaseSignal — the contacts who participated in the source
-        # conversation are derived from activity.contacts. Mirrors the
-        # TechStack cluster strategy.
-        #
-        # Semantic shift vs pre-refactor:
-        #   - Before: "contacts who REPORTED this pain" (via source_contact FK)
-        #   - After : "contacts who PARTICIPATED in conversations producing
-        #             these pain observations" (via activity.contacts m2m)
-        # Cohérent with the new data model where contacts are an attribute
-        # of the conversation, not of the signal.
+        # (m2m). Contacts who participated in the source conversation are
+        # derived from activity.contacts — the signal itself does not
+        # carry a source_contact FK. Mirrors Objective / Impact / TechStack.
         distinct_contacts: set = set()
         for signal in validated:
             if signal.source_activity_id and signal.source_activity:
                 for contact in signal.source_activity.contacts.all():
                     distinct_contacts.add(contact.id)
         distinct_contacts_count = len(distinct_contacts)
-        
-        # --- Impacts aggregation (VALIDATED parents only) ---
-        human_impacts, metrics, impacted_contacts, max_level = (
-            cls._aggregate_impacts(validated)
-        )
+
+        # --- Scope: pick the highest-ranked scope_level across VALIDATED ---
+        # Mirrors _compute_max_scope_level used by Objective and Impact.
+        # Falls back to the reference signal's scope_level when no
+        # VALIDATED member exists (defensive — Pain.scope_level has a
+        # model-level default so the field is always populated).
+        max_scope_level = cls._compute_max_scope_level(validated) if validated else reference.scope_level
 
         # --- Lifecycle ---
         has_active_dc = cls._cluster_has_active_dc(members)
@@ -915,9 +1035,7 @@ class SignalClusterService:
             'confirmation_count':      confirmation_count,
             'distinct_contacts_count': distinct_contacts_count,
             'freshness_status':        freshness,
-            'has_human_impact':        bool(human_impacts),
-            'max_impact_level':        max_level,
-            'has_metric':              bool(metrics),
+            'max_scope_level':         max_scope_level,
         }
         score = compute_pain_priority_score(stats_for_priority)
         bucket = bucket_from_score(score)
@@ -943,7 +1061,6 @@ class SignalClusterService:
             # Corroboration & breadth
             'confirmation_count':      confirmation_count,
             'distinct_contacts_count': distinct_contacts_count,
-            'impacted_contacts_count': len(impacted_contacts),
 
             # Status
             'status':              status_value,
@@ -955,24 +1072,18 @@ class SignalClusterService:
             'last_confirmed_at': last_confirmed_at,
             'freshness_status':  freshness,
 
-            # Pain-specific impact aggregation
-            'human_impacts':     human_impacts,
-            'metrics':           metrics,
-            'max_impact_level':  max_level,
+            # Scope (shared shape with Objective and Impact via
+            # max_scope_level key)
+            'max_scope_level': max_scope_level,
 
-            # Objective-compat keys — Pain has no scope_level / target_date
-            # concepts. Emitted as neutral values so the unified cluster
-            # serializer can render any cluster type without branching on
-            # signal_type.
-            'max_scope_level':       None,
+            # Objective-compat keys — neutral values for type-agnostic
+            # frontend rendering.
             'target_dates':          [],
             'has_target_date_soon':  False,
 
-            # TechStack-compat keys — Pain has no catalog FK / lifecycle
-            # stats / scope summary / renewal urgency / related-pain
-            # cross-references. Emitted as neutral values so the unified
-            # cluster serializer can render any cluster type uniformly.
-            # See _build_techstack_cluster for the populated shape.
+            # TechStack-compat keys — neutral values for type-agnostic
+            # rendering. See _build_techstack_cluster for the populated
+            # shape on TechStack clusters.
             'tech_catalog_entry':    None,
             'lifecycle':             {
                 'usage_start_year':   None,
@@ -1000,9 +1111,9 @@ class SignalClusterService:
             # Archival — default False, overridden by caller if applicable
             'is_archived': False,
         }
-    
+
     # =========================================================================
-    # BUILD — per Objective cluster  (Wave B)
+    # BUILD — per Objective cluster
     # =========================================================================
 
     @classmethod
@@ -1014,17 +1125,12 @@ class SignalClusterService:
         `members` includes VALIDATED and PENDING signals for the same
         canonical_key on the same account. REJECTED are not in `members`.
 
-        Output shape — intentionally aligned with Pain on all shared keys
-        so the frontend cluster renderer can remain type-agnostic for
-        common fields. Objective-specific additions:
-          - max_scope_level     (instead of Pain's max_impact_level)
+        Output shape — intentionally aligned with Pain and Impact on all
+        shared keys so the frontend cluster renderer can remain
+        type-agnostic for common fields. Objective-specific additions:
+          - max_scope_level
           - target_dates        (list of ISO date strings, VALIDATED only)
           - has_target_date_soon (bool — drives priority bonus)
-
-        Objective-specific omissions (vs Pain):
-          - human_impacts, metrics, impacted_contacts_count — these are
-            Pain/Impact concepts with no equivalent on Objective. Fields
-            still present as empty/None for cluster renderer uniformity.
         """
         validated = [m for m in members if m.status == SignalStatus.VALIDATED]
         pending   = [m for m in members if m.status == SignalStatus.PENDING]
@@ -1039,10 +1145,8 @@ class SignalClusterService:
         confirmation_count = len(validated)
 
         # distinct_contacts_count is computed across source_activity.contacts
-        # (m2m). Standardisation refactor: source_contact was retired from
-        # BaseSignal — the contacts who participated in the source
-        # conversation are derived from activity.contacts. Mirrors the
-        # Pain and TechStack cluster strategy.
+        # (m2m). Contacts who participated in the source conversation are
+        # derived from activity.contacts. Mirrors Pain / Impact / TechStack.
         #
         # Note: target_contact (PERSONAL scope) is a distinct concept on
         # Objective — it captures who OWNS the objective, not who reported
@@ -1055,9 +1159,8 @@ class SignalClusterService:
         distinct_contacts_count = len(distinct_contacts)
 
         # --- Max scope level observed across VALIDATED members ---
-        # Objective reads scope_level directly from the model (no
-        # PainImpact indirection). We pick the highest-ranked scope
-        # present across validated members.
+        # Objective reads scope_level directly from the model. We pick
+        # the highest-ranked scope present across validated members.
         max_scope_level = cls._compute_max_scope_level(validated)
 
         # --- Target date proximity ---
@@ -1110,9 +1213,6 @@ class SignalClusterService:
             # Corroboration & breadth
             'confirmation_count':      confirmation_count,
             'distinct_contacts_count': distinct_contacts_count,
-            # Pain-compat key — Objective has no impact concept; fixed 0
-            # so the frontend cluster renderer stays type-agnostic.
-            'impacted_contacts_count': 0,
 
             # Status
             'status':              status_value,
@@ -1124,18 +1224,12 @@ class SignalClusterService:
             'last_confirmed_at': last_confirmed_at,
             'freshness_status':  freshness,
 
-            # Scope (Objective-specific)
+            # Scope (shared shape with Pain and Impact via max_scope_level key)
             'max_scope_level': max_scope_level,
 
             # Target date signals (Objective-specific)
             'target_dates':           target_dates,
             'has_target_date_soon':   has_target_date_soon,
-
-            # Pain-compat keys — empty/None so the cluster renderer can
-            # share code across signal types without special-casing.
-            'human_impacts':    [],
-            'metrics':          [],
-            'max_impact_level': None,
 
             # Priority
             'priority_score':  score,
@@ -1148,9 +1242,177 @@ class SignalClusterService:
             # Archival — default False, overridden by caller if applicable
             'is_archived': False,
         }
-    
+
     # =========================================================================
-    # BUILD — per TechStack cluster (Sprint TechStack)
+    # BUILD — per Impact cluster
+    # =========================================================================
+
+    @classmethod
+    def _build_impact_cluster(cls, canonical_key: str, members: list) -> dict:
+        """
+        Build the Impact cluster dict from a list of ImpactSignal members.
+
+        `members` includes VALIDATED and PENDING signals for the same
+        canonical_key on the same account. REJECTED are not in `members`.
+
+        Output shape — aligned with Pain and Objective on every shared
+        key (identity, corroboration, status, lifecycle, scope, priority,
+        archival). Impact carries no target_date concept (impacts are
+        observed states, not scheduled outcomes), so target-date keys
+        are emitted with neutral defaults — same stance Pain takes
+        toward Objective-specific fields.
+
+        TechStack-compat keys are emitted with neutral values so the
+        unified cluster serializer can render any cluster type
+        uniformly without branching on signal_type.
+
+        Cluster identity:
+          The reference signal (most recent VALIDATED, else most recent
+          member) carries the canonical axes (what, dimension) and the
+          headline summary.
+
+        Note on impact_type, metric_text, human_impact:
+          These are per-member axes consumed by the member serializer
+          (ImpactSignalListSerializer). They are NOT aggregated at the
+          cluster level — the cluster identity is built from
+          (what × dimension) only. Two impacts on the same
+          canonical_key with different impact_types (e.g. one FINANCIAL,
+          one HUMAN) coexist in the same cluster, each preserving its
+          own classification on the member card. This is the
+          intentional design — clustering captures
+          "what × dimension at this account", individual impact_types
+          are observation-level metadata.
+        """
+        validated = [m for m in members if m.status == SignalStatus.VALIDATED]
+        pending   = [m for m in members if m.status == SignalStatus.PENDING]
+
+        # Pick a reference signal for axes + summary.
+        # Preference: most recent VALIDATED, else most recent PENDING.
+        # Members are ordered by _fetch_impact_signals default ordering
+        # ('-created_at'), so the first match wins.
+        reference = validated[0] if validated else members[0]
+
+        # --- Stats: corroboration & breadth ---
+        confirmation_count = len(validated)
+
+        # distinct_contacts_count is computed across source_activity.contacts
+        # (m2m). Contacts who participated in the source conversation are
+        # derived from activity.contacts — the signal itself does not
+        # carry a source_contact FK. Mirrors Pain / Objective / TechStack.
+        distinct_contacts: set = set()
+        for signal in validated:
+            if signal.source_activity_id and signal.source_activity:
+                for contact in signal.source_activity.contacts.all():
+                    distinct_contacts.add(contact.id)
+        distinct_contacts_count = len(distinct_contacts)
+
+        # --- Max scope level across VALIDATED members ---
+        # Mirrors Objective: scope_level is a required field on
+        # ImpactSignal (no model-level default), so every member
+        # contributes a non-null value. Falls back to the reference
+        # signal's scope_level when no VALIDATED member exists
+        # (PENDING-only cluster — defensive).
+        max_scope_level = (
+            cls._compute_max_scope_level(validated)
+            if validated else reference.scope_level
+        )
+
+        # --- Lifecycle ---
+        has_active_dc = cls._cluster_has_active_dc(members)
+        first_observed_at, last_confirmed_at, freshness = (
+            cls._compute_lifecycle(validated, has_active_dc)
+        )
+
+        # --- Cluster status ---
+        status_value = SignalStatus.VALIDATED if validated else SignalStatus.PENDING
+        has_pending = bool(pending)
+        pending_count = len(pending)
+
+        # --- Priority ---
+        stats_for_priority = {
+            'confirmation_count':      confirmation_count,
+            'distinct_contacts_count': distinct_contacts_count,
+            'freshness_status':        freshness,
+            'max_scope_level':         max_scope_level,
+        }
+        score = compute_impact_priority_score(stats_for_priority)
+        bucket = bucket_from_score(score)
+
+        # --- Linking ---
+        decision_cycle_ids = sorted({
+            str(m.decision_cycle_id) for m in members if m.decision_cycle_id
+        })
+        campaign_ids = sorted({
+            str(m.campaign_id) for m in members if m.campaign_id
+        })
+
+        return {
+            # Identity
+            'canonical_key':     canonical_key,
+            'signal_type':       SignalClusterType.IMPACT.value,
+            'what':              reference.what,
+            'what_display':      reference.get_what_display(),
+            'dimension':         reference.dimension,
+            'dimension_display': reference.get_dimension_display(),
+            'summary':           reference.summary,
+
+            # Corroboration & breadth
+            'confirmation_count':      confirmation_count,
+            'distinct_contacts_count': distinct_contacts_count,
+
+            # Status
+            'status':              status_value,
+            'has_pending_signals': has_pending,
+            'pending_count':       pending_count,
+
+            # Lifecycle
+            'first_observed_at': first_observed_at,
+            'last_confirmed_at': last_confirmed_at,
+            'freshness_status':  freshness,
+
+            # Scope (shared shape with Pain and Objective via
+            # max_scope_level key)
+            'max_scope_level': max_scope_level,
+
+            # Objective-compat keys — Impact has no target_date concept.
+            # Emitted as neutral values for type-agnostic frontend
+            # rendering.
+            'target_dates':          [],
+            'has_target_date_soon':  False,
+
+            # TechStack-compat keys — neutral values for type-agnostic
+            # rendering. See _build_techstack_cluster for the populated
+            # shape on TechStack clusters.
+            'tech_catalog_entry':    None,
+            'lifecycle':             {
+                'usage_start_year':   None,
+                'renewal_date':       None,
+                'cost_description':   None,
+                'is_discontinued':    False,
+                'discontinued_date':  None,
+            },
+            'scope_summary':         {
+                'is_company_wide':   False,
+                'departments_using': [],
+                'summary_text':      None,
+            },
+            'has_renewal_soon':      False,
+            'related_pain_clusters': [],
+
+            # Priority
+            'priority_score':  score,
+            'priority_bucket': bucket,
+
+            # Linking
+            'decision_cycle_ids': decision_cycle_ids,
+            'campaign_ids':       campaign_ids,
+
+            # Archival — default False, overridden by caller if applicable
+            'is_archived': False,
+        }
+
+    # =========================================================================
+    # BUILD — per TechStack cluster
     # =========================================================================
 
     @classmethod
@@ -1161,9 +1423,10 @@ class SignalClusterService:
         `members` includes VALIDATED and PENDING signals for the same
         canonical_key on the same account. REJECTED are not in `members`.
 
-        Output shape — aligned with Pain/Objective on shared keys
-        (identity, corroboration, status, lifecycle, priority, archival)
-        and enriched with TechStack-specific consolidated stats:
+        Output shape — aligned with Pain / Objective / Impact on shared
+        keys (identity, corroboration, status, lifecycle, priority,
+        archival) and enriched with TechStack-specific consolidated
+        stats:
           - tech_catalog_entry payload (compact catalog reference)
           - lifecycle: usage_start_year (earliest), renewal_date (latest),
                        cost_description (latest), is_discontinued (latest),
@@ -1173,13 +1436,7 @@ class SignalClusterService:
                                    reference the same TechCatalog entry
                                    on this account
 
-        Pain/Objective-compat keys (emitted as neutral values for
-        type-agnostic frontend rendering):
-          - human_impacts=[], metrics=[], max_impact_level=None,
-            impacted_contacts_count=0
-          - max_scope_level=None, target_dates=[], has_target_date_soon=False
-
-        Decision cycle / campaign linking (Pain/Objective parity):
+        Decision cycle / campaign linking (Pain / Objective / Impact parity):
           decision_cycle_ids and campaign_ids are derived via the
           source_activity FK chain (since TechStackSignal has no direct
           decision_cycle / campaign FK — shadow-overridden). This makes
@@ -1214,8 +1471,8 @@ class SignalClusterService:
         scope_summary = cls._compute_techstack_scope_summary(validated)
 
         # --- Cluster lifecycle: first/last/freshness ---
-        # We use BaseSignal.created_at like Pain/Objective do. The
-        # active-DC clamp is computed by traversing source_activity →
+        # We use BaseSignal.created_at like Pain / Objective / Impact do.
+        # The active-DC clamp is computed by traversing source_activity →
         # decision_cycle (TechStack has no direct decision_cycle FK).
         has_active_dc = cls._techstack_cluster_has_active_dc(members)
         first_observed_at, last_confirmed_at, freshness = (
@@ -1238,7 +1495,6 @@ class SignalClusterService:
         )
 
         # --- Priority ---
-        # Stats consumed by compute_techstack_priority_score (added in Phase 7).
         stats_for_priority = {
             'confirmation_count':         confirmation_count,
             'distinct_contacts_count':    distinct_contacts_count,
@@ -1319,8 +1575,6 @@ class SignalClusterService:
             # =================================================================
             'confirmation_count':      confirmation_count,
             'distinct_contacts_count': distinct_contacts_count,
-            # Pain-compat key — TechStack has no impact concept.
-            'impacted_contacts_count': 0,
 
             # =================================================================
             # STATUS
@@ -1339,25 +1593,11 @@ class SignalClusterService:
             # =================================================================
             # TECHSTACK LIFECYCLE STATS (consolidated from VALIDATED members)
             # =================================================================
-            # Output of _consolidate_techstack_lifecycle:
-            #   {
-            #     'usage_start_year':   <int | None>,
-            #     'renewal_date':       <ISO-date | None>,
-            #     'cost_description':   <str | None>,
-            #     'is_discontinued':    <bool>,
-            #     'discontinued_date':  <ISO-date | None>,
-            #   }
             'lifecycle': consolidated_lifecycle,
 
             # =================================================================
             # SCOPE SUMMARY (consolidated from VALIDATED members)
             # =================================================================
-            # Output of _compute_techstack_scope_summary:
-            #   {
-            #     'is_company_wide':    <bool>,
-            #     'departments_using':  [{id, name}, ...],
-            #     'summary_text':       <str | None>,
-            #   }
             'scope_summary': scope_summary,
 
             # =================================================================
@@ -1370,13 +1610,6 @@ class SignalClusterService:
             # entry on the same account
             # =================================================================
             'related_pain_clusters': related_pain_clusters,
-
-            # =================================================================
-            # PAIN-COMPAT KEYS (neutral values for type-agnostic rendering)
-            # =================================================================
-            'human_impacts':    [],
-            'metrics':          [],
-            'max_impact_level': None,
 
             # =================================================================
             # OBJECTIVE-COMPAT KEYS (neutral values for type-agnostic rendering)
@@ -1404,219 +1637,6 @@ class SignalClusterService:
         }
 
     # =========================================================================
-    # AGGREGATE IMPACTS (VALIDATED parents only)
-    # =========================================================================
-
-    @staticmethod
-    def _aggregate_impacts(validated_signals: list):
-        """
-        Aggregate PainImpacts across a cluster's VALIDATED member Pains.
-
-        Returns a 4-tuple:
-          human_impacts:      list of {type, count} sorted by count DESC
-          metrics:            list of non-empty metric strings
-          impacted_contacts:  set of contact IDs (PERSONAL impacts +
-                              any impact carrying impacted_contact — but
-                              since PainImpact.clean() forbids
-                              impacted_contact outside PERSONAL, this
-                              resolves to PERSONAL contacts only)
-          max_level:          ScopeLevel value (or None) — highest
-                              observed rank per _SCOPE_LEVEL_RANK
-        """
-        human_counter = Counter()
-        metrics = []
-        impacted_contacts = set()
-        max_rank = 0
-        max_level_value = None
-
-        for signal in validated_signals:
-            for impact in signal.impacts.all():
-                # Human impact counter
-                if impact.human_impact:
-                    human_counter[impact.human_impact] += 1
-
-                # Metric list
-                if impact.metric and impact.metric.strip():
-                    metrics.append(impact.metric.strip())
-
-                # Impacted contact
-                if impact.impacted_contact_id:
-                    impacted_contacts.add(impact.impacted_contact_id)
-
-                # Max level
-                rank = _SCOPE_LEVEL_RANK.get(impact.level, 0)
-                if rank > max_rank:
-                    max_rank = rank
-                    max_level_value = impact.level
-
-        human_impacts = [
-            {'type': impact_type, 'count': count}
-            for impact_type, count in human_counter.most_common()
-        ]
-
-        return human_impacts, metrics, impacted_contacts, max_level_value
-
-    # =========================================================================
-    # AGGREGATE BY LEVEL — detail payload only (Wave A)
-    # =========================================================================
-
-    @classmethod
-    def _aggregate_by_level(cls, validated_signals: list) -> dict:
-        """
-        Per-ScopeLevel breakdown of the cluster's VALIDATED PainImpacts.
-
-        Emitted only on cluster detail (never in list) — see
-        get_cluster_detail. The breakdown answers the question "at what
-        organisational layers is this pain documented, and by which
-        parent Pain observations?" without forcing the UI to crawl
-        members × impacts.
-
-        Shape
-        -----
-            {
-                "BUSINESS": {
-                    "impact_count": N,
-                    "parent_pain_ids": [<pain_uuid>, ...],
-                },
-                "DEPARTMENT": {
-                    "<department_uuid>": {
-                        "impact_count": N,
-                        "parent_pain_ids": [<pain_uuid>, ...],
-                        "department": {"id": ..., "name": ...},
-                    },
-                    ...
-                },
-                "PERSONAL": {
-                    "<contact_uuid>": {
-                        "impact_count": N,
-                        "parent_pain_ids": [<pain_uuid>, ...],
-                        "contact": {
-                            "id": ..., "first_name": ..., "last_name": ...,
-                            "job_title": ...,
-                        },
-                    },
-                    ...
-                },
-            }
-
-        Semantics of `parent_pain_ids`
-        ------------------------------
-        Within a given bucket entry (BUSINESS | DEPARTMENT[dept] |
-        PERSONAL[contact]), `parent_pain_ids` lists only the parent Pain
-        observations that actually produced an impact at that bucket.
-        Example: contact Marie with 2 PERSONAL impacts, one on Pain A
-        and one on Pain B in the same cluster → parent_pain_ids = ['A', 'B'].
-        This yields an actionable "impacted-by-N-pains" signal on the UI.
-
-        Empty buckets
-        -------------
-        - `BUSINESS` is always present (impact_count may be 0 with
-          an empty parent_pain_ids list) so the UI can render the
-          three scope buckets uniformly.
-        - `DEPARTMENT` / `PERSONAL` dicts are populated only with keys
-          for which at least one impact was recorded — no empty entries.
-
-        Performance
-        -----------
-        Reads from the same impacts already prefetched by
-        _fetch_pain_signals (via `source_activity__contacts` prefetch
-        unrelated — this one uses `impacts` prefetch). Zero additional
-        DB queries.
-        """
-        business_entry = {
-            'impact_count': 0,
-            'parent_pain_ids': [],
-        }
-        department_entries: dict = {}
-        personal_entries: dict = {}
-
-        # Track ordered uniqueness for parent_pain_ids per bucket so the
-        # output preserves the natural member order (most recent first,
-        # per _fetch_pain_signals default ordering) without duplicates.
-        business_seen: set = set()
-        department_seen: dict = {}
-        personal_seen: dict = {}
-
-        for signal in validated_signals:
-            parent_pid = str(signal.id)
-
-            for impact in signal.impacts.all():
-                if impact.level == ScopeLevel.BUSINESS:
-                    business_entry['impact_count'] += 1
-                    if parent_pid not in business_seen:
-                        business_seen.add(parent_pid)
-                        business_entry['parent_pain_ids'].append(parent_pid)
-
-                elif impact.level == ScopeLevel.DEPARTMENT:
-                    dept = impact.impacted_department
-                    if not dept:
-                        # Defensive — clean() guarantees this is set, but
-                        # we skip silently rather than emit a broken key.
-                        continue
-                    dept_id = str(dept.id)
-
-                    entry = department_entries.get(dept_id)
-                    if entry is None:
-                        entry = {
-                            'impact_count': 0,
-                            'parent_pain_ids': [],
-                            'department': {
-                                'id': dept_id,
-                                'name': (
-                                    dept.get_name_display()
-                                    if hasattr(dept, 'get_name_display')
-                                    else str(dept)
-                                ),
-                            },
-                        }
-                        department_entries[dept_id] = entry
-                        department_seen[dept_id] = set()
-
-                    entry['impact_count'] += 1
-                    if parent_pid not in department_seen[dept_id]:
-                        department_seen[dept_id].add(parent_pid)
-                        entry['parent_pain_ids'].append(parent_pid)
-
-                elif impact.level == ScopeLevel.PERSONAL:
-                    contact = impact.impacted_contact
-                    if not contact:
-                        # Same defensive skip as above.
-                        continue
-                    contact_id = str(contact.id)
-
-                    entry = personal_entries.get(contact_id)
-                    if entry is None:
-                        entry = {
-                            'impact_count': 0,
-                            'parent_pain_ids': [],
-                            'contact': {
-                                'id': contact_id,
-                                'first_name': contact.first_name,
-                                'last_name': contact.last_name,
-                                'job_title': getattr(
-                                    contact, 'job_title', None
-                                ),
-                            },
-                        }
-                        personal_entries[contact_id] = entry
-                        personal_seen[contact_id] = set()
-
-                    entry['impact_count'] += 1
-                    if parent_pid not in personal_seen[contact_id]:
-                        personal_seen[contact_id].add(parent_pid)
-                        entry['parent_pain_ids'].append(parent_pid)
-
-                # Any other level value is silently ignored; the set of
-                # valid levels is enforced upstream by PainImpact.clean().
-
-        return {
-            'BUSINESS': business_entry,
-            'DEPARTMENT': department_entries,
-            'PERSONAL': personal_entries,
-        }
-
-
-    # =========================================================================
     # LIFECYCLE
     # =========================================================================
 
@@ -1630,10 +1650,10 @@ class SignalClusterService:
         Derive first_observed_at, last_confirmed_at, freshness_status.
 
         Uses BaseSignal.created_at as the timestamp anchor. validated_at
-        was considered but rejected: two Pains confirmed on the same call
-        would get identical validated_at timestamps (same audit click),
-        which flattens lifecycle signal. created_at reflects when the
-        observation entered the system.
+        was considered but rejected: two signals confirmed on the same
+        call would get identical validated_at timestamps (same audit
+        click), which flattens lifecycle signal. created_at reflects
+        when the observation entered the system.
 
         If there is no VALIDATED signal in the cluster, freshness is None
         (no confirmed observation to measure staleness against).
@@ -1641,7 +1661,8 @@ class SignalClusterService:
         Active DC exception: if at least one member references a decision
         cycle whose outcome is NULL or ON_HOLD, freshness is clamped to
         DORMANT at worst — never STALE. Rationale: a living deal keeps
-        its pain relevant even if the last confirmation is old.
+        its pain / objective / impact relevant even if the last
+        confirmation is old.
         """
         if not validated_signals:
             return None, None, None
@@ -1664,16 +1685,21 @@ class SignalClusterService:
             freshness = FreshnessStatus.DORMANT
 
         return first, last, freshness
-    
+
     # =========================================================================
-    # SCOPE / TARGET-DATE HELPERS — Objective (Wave B)
+    # SCOPE / TARGET-DATE HELPERS
     # =========================================================================
 
     @classmethod
     def _compute_max_scope_level(cls, validated_members: list):
         """
         Pick the highest-ranked scope_level across a cluster's VALIDATED
-        Objective members.
+        members.
+
+        Used by Pain, Objective, and Impact cluster builders — all three
+        signal types carry scope_level as a direct field on the model.
+        The helper is type-agnostic: it reads signal.scope_level on
+        every member regardless of the concrete class.
 
         BUSINESS > DEPARTMENT > PERSONAL per _SCOPE_LEVEL_RANK.
 
@@ -1742,10 +1768,9 @@ class SignalClusterService:
             if dc.outcome is None or dc.outcome == CycleOutcome.ON_HOLD:
                 return True
         return False
-    
+
     # =========================================================================
     # TECHSTACK HELPERS — consolidation, scope, renewal, related pains
-    # (Sprint TechStack)
     # =========================================================================
 
     @classmethod
@@ -2023,7 +2048,7 @@ class SignalClusterService:
           - the `has_renewal_soon` boolean exposed on the cluster
             payload (UI urgency badge);
           - the `has_renewal_soon` input to compute_techstack_priority_score
-            in Phase 7 (priority bonus).
+            (priority bonus).
         """
         # Lazy import — TECHSTACK_RENEWAL_SOON_DAYS lives in constants.py
         # alongside the other thresholds.
@@ -2053,7 +2078,8 @@ class SignalClusterService:
         are skipped.
 
         Used to clamp cluster freshness (a STALE cluster on an active
-        deal is downgraded to DORMANT — same rule as Pain/Objective).
+        deal is downgraded to DORMANT — same rule as Pain / Objective /
+        Impact).
         """
         for signal in members:
             act = signal.source_activity
@@ -2095,15 +2121,6 @@ class SignalClusterService:
         built. For large accounts (>100 TechStack clusters), consider
         prefetching at the listing layer in a future optimisation
         sprint. For MVP, the cost is acceptable.
-
-        Priority bucket NOT computed
-        ----------------------------
-        Computing each Pain cluster's full priority bucket would require
-        loading their PainImpacts (used by compute_pain_priority_score).
-        That would multiply the query cost. The frontend can fetch full
-        Pain cluster detail via /clusters/<canonical_key>/?signal_type=pain
-        when it needs the bucket. The cross-reference payload here is
-        kept minimal on purpose.
 
         Args:
             account_id:             UUID of the account.

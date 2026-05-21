@@ -243,11 +243,7 @@ class PainImpactCreateSerializer(
         required=False,
         allow_null=True,
     )
-    human_impact = serializers.ChoiceField(
-        choices=PainImpact._meta.get_field('human_impact').choices,
-        required=False,
-        allow_null=True,
-    )
+
 
     class Meta:
         model = PainImpact
@@ -294,7 +290,7 @@ class PainImpactCreateSerializer(
         level = attrs.get('level')
         impacted_department = attrs.get('impacted_department')
         impacted_contact = attrs.get('impacted_contact')
-        human_impact = attrs.get('human_impact')
+
 
         # Rule 1
         if not pain_signal:
@@ -402,11 +398,7 @@ class PainImpactUpdateSerializer(
         required=False,
         allow_null=True,
     )
-    human_impact = serializers.ChoiceField(
-        choices=PainImpact._meta.get_field('human_impact').choices,
-        required=False,
-        allow_null=True,
-    )
+
 
     class Meta:
         model = PainImpact
@@ -443,7 +435,7 @@ class PainImpactUpdateSerializer(
         level = _merged('level')
         impacted_department = _merged('impacted_department')
         impacted_contact = _merged('impacted_contact')
-        human_impact = _merged('human_impact')
+
         pain_signal = getattr(instance, 'pain_signal', None) if instance else None
 
         if not level:

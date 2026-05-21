@@ -16,6 +16,12 @@ clusters (see SignalClusterService). The UI renders ObjectiveSignals as
 individual cards for MVP; cluster consumption is reserved for the
 Pre-call Game Plan LLM pipeline.
 
+Required context (enforced in clean()):
+  - source_activity — the call/meeting where the objective was surfaced.
+    Added in Sprint Refonte ImpactSignal — every signal of qualification
+    (Pain / Objective / TechStack / Impact) must now be tied to a real
+    conversation. This ensures every signal has a clear provenance and supports
+
 Scope-conditional requirements (enforced in clean()):
   - scope_level = PERSONAL   → target_contact required, target_department forbidden
   - scope_level = DEPARTMENT → target_department required, target_contact forbidden
@@ -23,7 +29,7 @@ Scope-conditional requirements (enforced in clean()):
 
 signal_category is inherited from BaseSignal as a general-purpose tag;
 it is intentionally shadow-overridden to None here so it is neither
-stored nor exposed for ObjectiveSignal. See Wave B decision A4 — the
+stored nor exposed for ObjectiveSignal. the
 field will be retired from BaseSignal once People and TechStack are
 refactored.
 
@@ -54,6 +60,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from core.client_scope import ClientScopeManager
+from core.error_messages import SignalErrorMessages
 
 from .base_model import BaseSignal
 from ..constants import ScopeLevel, SignalDimension, SignalWhat
@@ -237,29 +244,47 @@ class ObjectiveSignal(BaseSignal):
 
     def clean(self):
         """
-        Enforce ObjectiveSignal-specific scope-conditional constraints.
+        Enforce ObjectiveSignal-specific constraints.
 
         Rules:
-          1. scope_level = PERSONAL
+          1. source_activity is required — every objective must be tied
+             to a real conversation. Added in Sprint Refonte ImpactSignal;
+             aligned with PainSignal / TechStackSignal / ImpactSignal.
+             The DB column was simultaneously durified to NOT NULL via
+             migration 0014. Raising early here yields a clean
+             ValidationError on the API surface rather than an
+             IntegrityError.
+          2. scope_level = PERSONAL
                 → target_contact required
                 → target_department forbidden
-          2. scope_level = DEPARTMENT
+          3. scope_level = DEPARTMENT
                 → target_department required
                 → target_contact forbidden
-          3. scope_level = BUSINESS
+          4. scope_level = BUSINESS
                 → neither target_contact nor target_department
 
-        Note (Wave B decision 3):
-          The "at least one of source_activity / decision_cycle / campaign"
-          rule is intentionally NOT enforced here for MVP. source_activity
-          remains optional and is the only context link exposed by the UI.
-          decision_cycle and campaign remain available as nullable fields
-          inherited from BaseSignal for future integrations.
+        Historical note (Wave B decision 3, partially superseded):
+          The original Wave B stance was "at least one of source_activity
+          / decision_cycle / campaign — but none individually required".
+          Sprint Refonte ImpactSignal tightened the rule: source_activity
+          is now strictly required, in line with the LLM-driven extraction
+          path (every signal originates from a transcript anchored to an
+          Activity). decision_cycle and campaign remain available as
+          nullable fields inherited from BaseSignal and are auto-populated
+          by SignalManager._propagate_activity_context from source_activity
+          at create time.
         """
         super().clean()
 
         errors = {}
 
+        # --- Rule 1: source_activity required (Sprint Refonte ImpactSignal) ---
+        if not self.source_activity_id:
+            errors['source_activity'] = (
+                SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
+            )
+
+        # --- Rules 2-4: scope-conditional target requirements ---
         if self.scope_level == ScopeLevel.PERSONAL:
             if not self.target_contact_id:
                 errors['target_contact'] = _(
