@@ -3,7 +3,7 @@
  * SignalList
  *
  * @param {Array}    signals            - Array of signal objects for this type
- * @param {string}   signalType         - 'pain' | 'objective' | 'tech-stack'
+ * @param {string}   signalType         - 'pain' | 'objective' | 'impact' | 'tech-stack'
  * @param {boolean}  loading            - Show skeleton when true
  * @param {*}        error              - Truthy value shows error state
  * @param {Function} onValidate         - (signal, signalType) => void
@@ -199,13 +199,11 @@ export default function SignalList({
   // Each signal type routes to its own dedicated card component:
   //   - pain       → PainCard        (nested impacts + impact CRUD controls)
   //   - objective  → ObjectiveCard   (canonical axes + scope + target_date
-  //                                    urgency — Wave B)
+  //                                    urgency)
   //   - impact     → ImpactCard      (canonical axes + scope + impact_type
-  //                                    + human_impact + metric_text —
-  //                                    Sprint Impact)
+  //                                    + human_impact + metric_text)
   //   - tech-stack → TechStackCard   (catalog anchor + lifecycle +
-  //                                    competitor / integration flags —
-  //                                    Sprint TechStack)
+  //                                    competitor / integration flags)
   //
   // Resolution is done once per type (outside the map) so the branch
   // predicate stays O(1) per row. The generic SignalCard fallback below

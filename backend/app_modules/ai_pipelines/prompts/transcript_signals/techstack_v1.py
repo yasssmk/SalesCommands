@@ -78,7 +78,7 @@ row).
 
 Persistence contract
 --------------------
-The downstream persistence service (Phase F -- TranscriptSignalExtractor)
+The downstream persistence service (TranscriptSignalExtractor)
 first applies the pipeline-level safety filter (drops signals where
 confidence < CONFIDENCE_MIN OR (DROP_INFERRED is true AND is_inferred is
 true) -- the dropped count is logged on the AIPipelineRun audit row,

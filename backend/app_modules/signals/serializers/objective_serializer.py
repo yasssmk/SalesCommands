@@ -13,11 +13,10 @@ Stack:
                                     rewritable (canonical_key recomputed
                                     by model.save())
 
-Wave B notes:
+Notes:
   - `goal_level`, `measurement_method`, `signal_category` are gone.
-    `scope_level` is the new scope axis (shared ScopeLevel enum).
-    `what` × `dimension` are the canonical axes (shared with Pain since
-    Wave A).
+    `scope_level` is the scope axis (shared ScopeLevel enum).
+    `what` × `dimension` are the canonical axes (shared with Pain).
   - `signal_category` is shadow-overridden to None on the model, so it
     is neither stored nor exposed on ObjectiveSignal. Inherited base
     serializer lists that include `signal_category` / `signal_category_display`
@@ -27,7 +26,7 @@ Wave B notes:
       DEPARTMENT → target_department required, target_contact forbidden
       BUSINESS   → neither target_contact nor target_department
     Enforced in Create (strict) and Update (merged-state on partial
-    payloads — same pattern as PainImpact).
+    payloads — same pattern as ImpactSignal).
 """
 
 from rest_framework import serializers
@@ -384,7 +383,7 @@ class ObjectiveSignalUpdateSerializer(BaseSignalUpdateSerializer):
       When the payload changes `scope_level`, `target_contact`, or
       `target_department`, we merge the partial payload with the
       current instance state and run the same scope-consistency check
-      as Create. This is the pattern used by PainImpact.update().
+      as Create. This is the pattern used by ImpactSignal.update().
 
       Example — switching a BUSINESS objective to PERSONAL:
         PATCH { scope_level: 'PERSONAL' }          → rejected

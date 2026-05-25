@@ -16,7 +16,6 @@
  *   - Notes                     → additional qualitative context (optional)
  *   - Related TechStack         → optional cross-reference to a TechCatalog
  *                                  entry — only surfaced when what === 'TECH'
- *                                  (Sprint TechStack)
  *   - Related TechStack mention → optional free-text fallback when the
  *                                  catalog doesn't include the tool yet
  *
@@ -99,7 +98,7 @@ const validationSchema = Yup.object({
   source_quote: Yup.string().nullable(),
   notes: Yup.string().nullable(),
 
-  // --- Cross-reference (Sprint TechStack) ---
+  // --- Cross-reference ---
   // Both optional and not mutually exclusive — see file docstring.
   // No .when() guard on `what`: the section is unmounted entirely when
   // what !== 'TECH', and useEffect clears both fields on transition,
@@ -127,7 +126,7 @@ function buildInitialValues(defaultContact) {
     source_quote: "",
     notes: "",
 
-    // Cross-reference — TechStack (Sprint TechStack)
+    // Cross-reference — TechStack
     // Object whole for the FK (AsyncTechCatalogSelect compatibility),
     // empty string for the mention (TextField default).
     related_techstack: null,
@@ -247,7 +246,7 @@ export default function InlinePainForm({
       payload.notes =
         values.notes && values.notes.trim() ? values.notes.trim() : "";
 
-      // Cross-reference — TechStack (Sprint TechStack)
+      // Cross-reference — TechStack
       //
       // Always emit BOTH fields so an Edit that clears a stale value
       // explicitly reaches the backend. The UI may have unmounted the
@@ -391,7 +390,7 @@ export default function InlinePainForm({
           {/* What × Dimension side by side */}
           {/*
             Options come from choices.signal_whats and choices.signal_dimensions
-            (shared enums, backend exposes these since Wave A). The model
+            (shared enums exposed by the backend). The model
             fields are still `what` and `dimension` — we only renamed the
             source of enum options, not the fields. The canonical_key
             stored on the row remains "pain:<what>:<dimension>".
@@ -720,7 +719,7 @@ export default function InlinePainForm({
 InlinePainForm.propTypes = {
   choices: PropTypes.shape({
     /**
-     * Shared canonical-axis enums exposed by the backend since Wave A.
+     * Shared canonical-axis enums exposed by the backend.
      * The model fields are still `what` and `dimension`, only the source
      * of options changed (pain_whats → signal_whats, etc.).
      */

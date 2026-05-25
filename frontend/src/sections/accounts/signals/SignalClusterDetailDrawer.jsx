@@ -287,7 +287,7 @@ ByLevelEntryRow.propTypes = {
  * ByLevelAccordion — Pain-only breakdown of a cluster's VALIDATED
  * PainImpacts grouped by ScopeLevel.
  *
- * The backend's by_level payload (Wave A) tells the rep at which
+ * The backend's by_level payload tells the rep at which
  * organisational layer the pain has been documented and which parent
  * pain observations contributed. This component renders that as a
  * three-section MUI Accordion:

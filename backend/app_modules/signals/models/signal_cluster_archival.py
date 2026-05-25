@@ -11,10 +11,8 @@ default.
 Design choices
 --------------
 1. Generic signal_type field (not Pain-only)
-   The same table serves future Objective / TechStack clusters without a
-   schema change. In Sprint 2 only `pain` is actively aggregated — the
-   other SignalClusterType values are accepted by the schema but will
-   not produce clusters until their respective sprints ship.
+   The same table serves Pain, Objective, Impact and TechStack clusters
+   without a schema change.
 
 2. Archival = a row with unarchived_at = NULL
    Unarchive sets unarchived_at to the current time. The row is kept

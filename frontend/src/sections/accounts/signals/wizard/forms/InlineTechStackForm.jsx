@@ -4,7 +4,7 @@
  *
  * Captures structured intelligence about a tool used by the account,
  * anchored to a tenant-level TechCatalog entry. The form mirrors the
- * 5-section product spec from the Sprint TechStack plan:
+ * 5-section product spec:
  *
  *   S1 — Which tool?      tech_catalog_entry (REQUIRED)
  *   S2 — How is it used?  usage_scope + usage_department (conditional)

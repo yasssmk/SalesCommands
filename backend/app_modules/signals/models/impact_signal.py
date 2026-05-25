@@ -69,12 +69,11 @@ rationale.
 Validation rules (enforced in clean())
 --------------------------------------
   1. source_activity is required — every impact must be tied to a
-     conversation. Sprint Refonte ImpactSignal also durified Pain,
-     Objective, and TechStack on this rule via the migration's
-     NOT NULL alter — ImpactSignal enforces it at the model layer
-     as well so the API surface yields a clean ValidationError
-     (rather than an IntegrityError) when an unwrapped Impact is
-     submitted without an activity.
+     conversation. Pain, Objective, and TechStack enforce the same
+     rule (NOT NULL at the DB layer); ImpactSignal enforces it at the
+     model layer as well so the API surface yields a clean
+     ValidationError (rather than an IntegrityError) when an unwrapped
+     Impact is submitted without an activity.
 
   No conditional logic on (impact_type, human_impact):
     The brief allows human_impact to coexist with any impact_type when
@@ -309,11 +308,10 @@ class ImpactSignal(BaseSignal):
 
         Rules:
           1. source_activity is required — every impact must be tied
-             to a real conversation. Mirror of PainSignal.clean();
-             Sprint Refonte ImpactSignal also durified the database
-             column to NOT NULL across Pain / Objective / TechStack /
-             ImpactSignal via migration 0014. The clean()-level check
-             here yields a clean ValidationError (rather than an
+             to a real conversation. Mirror of PainSignal.clean(); the
+             database column is NOT NULL across Pain / Objective /
+             TechStack / ImpactSignal. The clean()-level check here
+             yields a clean ValidationError (rather than an
              IntegrityError) on a payload missing the activity.
 
         No conditional rules on (impact_type, human_impact, metric_text):

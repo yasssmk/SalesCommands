@@ -32,7 +32,7 @@ class ObjectiveSignalViewSet(BaseSignalViewSet):
       POST   /objective/{id}/reject/      → reject_signal
 
     Cluster cache invalidation:
-      ObjectiveSignal participates in the cluster model since Wave B —
+      ObjectiveSignal participates in the cluster model —
       clusters are grouped by canonical_key = "objective:<what>:<dimension>"
       on an account. Every write on this ViewSet therefore mutates
       cluster membership, priority score, or freshness. The

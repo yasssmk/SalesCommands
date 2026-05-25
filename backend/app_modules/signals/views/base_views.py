@@ -176,16 +176,6 @@ class BaseSignalViewSet(
         derive the participating-contacts list. Without this prefetch,
         every rendered signal would issue an extra query, yielding
         O(N) DB roundtrips on list responses.
-
-        History
-        -------
-          - source_contact and source_department were removed from
-            BaseSignal during the standardisation refactor — they no
-            longer appear in any per-type select_related.
-          - last_modified_by was removed at the same time
-            (duplicate with updated_by inherited from ModuleBaseModel).
-          - PeopleSignalViewSet was retired in Sprint 2 — only Pain,
-            Objective, and TechStack ViewSets remain.
         """
         qs = super().get_queryset()
         qs = self.apply_owner_scope_filter(qs)
@@ -474,50 +464,18 @@ class SignalChoicesView(APIView):
         "status":            [...],
         "source":            [...],
         "signal_category":   [...],
-        "signal_whats":      [...],   # shared across Pain and Objective
-        "signal_dimensions": [...],   # shared across Pain and Objective
+        "signal_whats":      [...],   # shared across Pain, Objective and Impact
+        "signal_dimensions": [...],   # shared across Pain, Objective and Impact
         "human_impacts":     [...],
-        "scope_levels":      [...],   # PainImpact + ObjectiveSignal scope axis
+        "scope_levels":      [...],   # Pain, Objective and Impact scope axis
         "usage_scopes":      [...],   # TechStackSignal usage scope axis
       }
     }
 
-    Wave A renames (destructive, no back-compat):
-      - pain_whats       → signal_whats
-      - pain_dimensions  → signal_dimensions
-      - impact_levels    → scope_levels
-      - goal_levels      → removed (Objective adopts scope_levels since
-                                     Wave B).
-
-    Sprint TechStack changes:
-      - tech_categories  → removed (TechCategory enum dropped;
-                                     categorisation moves to TechCatalog
-                                     entries themselves via
-                                     is_competitor / is_integration_target
-                                     flags).
-      - satisfaction     → removed (Satisfaction enum dropped; replaced
-                                     by structured lifecycle stats on
-                                     the TechStack cluster — start year,
-                                     renewal date, cost description,
-                                     discontinuation flags).
-      - usage_scopes     → added (drives the conditional usage_department
-                                   requirement on TechStackSignal:
-                                   DEPARTMENT requires usage_department,
-                                   TEAM / COMPANY / UNKNOWN forbid it).
-
-    Sprint 2 removals (PeopleSignal sunset):
-      - people_roles      → removed (PeopleRole enum dropped along with
-                                      PeopleSignal; stakeholder data now
-                                      lives on Contact + activity People
-                                      sections).
-      - influence_levels  → removed (InfluenceLevel enum dropped along
-                                      with PeopleSignal).
-
     Notes:
-      - scope_levels drives PainImpact (BUSINESS / DEPARTMENT / PERSONAL)
-        and ObjectiveSignal scope_level — see those models' docstrings.
-      - The legacy pain_levels key (and the underlying PainLevel enum)
-        was removed in Sprint 1.22 once it had no remaining consumers.
+      - scope_levels drives the PainSignal / ObjectiveSignal / ImpactSignal
+        scope_level (BUSINESS / DEPARTMENT / PERSONAL) — see those models'
+        docstrings.
     """
 
     authentication_classes = [CustomJWTAuthentication]

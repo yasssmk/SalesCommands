@@ -4,12 +4,12 @@ TechStackSignalViewSet — CRUD + validate/reject for TechStackSignal.
 
 Inherits all shared logic from BaseSignalViewSet.
 
-Sprint TechStack notes:
-  * The model was rewritten in Sprint TechStack (catalog FK + structured
-    lifecycle fields) — see app_modules/signals/models/tech_stack_signal.py
-    for the full architecture.
+Notes:
+  * The model uses a catalog FK + structured lifecycle fields — see
+    app_modules/signals/models/tech_stack_signal.py for the full
+    architecture.
   * `invalidate_cluster_tag = True` is set: TechStackSignal participates
-    in the cluster model since this sprint (clusters grouped by
+    in the cluster model (clusters grouped by
     canonical_key = "techstack:<catalog_entry_id>" on an account). Every
     write therefore mutates cluster membership, lifecycle stats, or
     priority — must bust SIGNAL_CLUSTERS_CACHE_TAG in addition to
@@ -45,8 +45,8 @@ class TechStackSignalViewSet(BaseSignalViewSet):
       POST   /tech-stack/{id}/reject/      → reject_signal
 
     Cluster cache invalidation:
-      TechStackSignal participates in the cluster model since Sprint
-      TechStack — clusters are grouped by canonical_key
+      TechStackSignal participates in the cluster model — clusters are
+      grouped by canonical_key
       = "techstack:<tech_catalog_entry.id>" on an account. Every write
       on this ViewSet therefore mutates cluster membership, lifecycle
       stats (usage_start_year, renewal_date, cost_description, ...) or

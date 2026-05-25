@@ -51,7 +51,7 @@ export function buildEditInitialValues(signalType, signal) {
  *   - Source     : source_activity (required for Pain post-standardisation)
  *   - Narrative  : source_quote, notes
  *   - Cross-ref  : related_techstack, related_techstack_mention
- *                  (Sprint TechStack — visible only when what === 'TECH')
+ *                  (visible only when what === 'TECH')
  *
  * Activity / catalog objects are passed whole — the matching Async*
  * selectors expect the full option object as their value prop, not
@@ -66,7 +66,7 @@ export function buildEditInitialValues(signalType, signal) {
  *                          `source_context` block — not surfaced
  *                          as a form field anymore.
  *
- * Cross-reference fields (Sprint TechStack):
+ * Cross-reference fields:
  *   - related_techstack          : object whole | null
  *                                  Backend exposes a compact catalog
  *                                  payload via the _PainDisplayMixin
@@ -94,7 +94,7 @@ function buildPainInitialValues(signal) {
     source_quote: signal.source_quote ?? "",
     notes: signal.notes ?? "",
 
-    // Cross-reference — TechStack (Sprint TechStack)
+    // Cross-reference — TechStack
     related_techstack: signal.related_techstack ?? null,
     related_techstack_mention: signal.related_techstack_mention ?? "",
   };
@@ -108,21 +108,12 @@ function buildPainInitialValues(signal) {
  *
  * Objective is a flat structured goal — no child sub-resource, no impacts.
  * This builder mirrors exactly the fields exposed by the 4-section
- * InlineObjectiveForm (Wave B):
+ * InlineObjectiveForm:
  *
  *   S1 — Goal:    summary, what, dimension
  *   S2 — Scope:   scope_level + conditional target_contact OR target_department
  *   S3 — Success: success_criteria, target_date, notes
  *   S4 — Source:  source_activity
- *
- * Removed during the Wave B rewrite and the standardisation refactor
- * (destructive — no backward-compat):
- *   - goal_level          → replaced by scope_level (shared ScopeLevel enum)
- *   - measurement_method  → merged conceptually into success_criteria / notes
- *   - source_contact      → retired from BaseSignal during standardisation
- *   - source_department   → retired from BaseSignal during standardisation
- *   - source_quote        → merged into notes (decision 2 — Wave B plan)
- *   - signal_category     → shadow-overridden to None on the model
  *
  * Field shape notes:
  *   - target_contact passed whole — AsyncContactSelect expects the full
@@ -159,7 +150,7 @@ function buildObjectiveInitialValues(signal) {
 // ==============================|| TECH STACK ||============================== //
 
 /**
- * @param {Object} signal - TechStackSignal read object (Sprint TechStack model)
+ * @param {Object} signal - TechStackSignal read object
  * @returns {Object}
  *
  * TechStackSignal is anchored to a tenant-level TechCatalog entry
@@ -190,19 +181,6 @@ function buildObjectiveInitialValues(signal) {
  *     for HTML5 <input type="date">.
  *   - is_discontinued is a strict boolean — defensive ?? false in case
  *     the backend ever returns null.
- *
- * Removed in Sprint TechStack and the standardisation refactor (no
- * backward-compat):
- *   - source_contact      → retired from BaseSignal during standardisation
- *   - tech_name           → replaced by tech_catalog_entry FK
- *   - category            → moved to TechCatalog (admin-curated)
- *   - satisfaction        → dropped (replaced by lifecycle stats)
- *   - usage               → not on the new model
- *   - limitations         → not on the new model
- *   - workarounds         → not on the new model
- *   - integrations        → not on the new model
- *   - source_department   → retired from BaseSignal during standardisation
- *   - signal_category     → shadow-overridden to None on the model
  */
 function buildTechStackInitialValues(signal) {
   return {

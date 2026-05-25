@@ -316,7 +316,7 @@ class TranscriptSignalExtractor:
         Schema requirements (from objective_v1.py):
             what, dimension, summary, source_quote, confidence, is_inferred
 
-        BUSINESS-scope hardcoded fields (per Option B, v1):
+        BUSINESS-scope hardcoded fields (v1):
             scope_level         = ScopeLevel.BUSINESS
             target_contact      = (unset, defaults to None)
             target_department   = (unset, defaults to None)

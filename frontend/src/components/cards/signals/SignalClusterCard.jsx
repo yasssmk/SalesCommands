@@ -1013,12 +1013,12 @@ SignalClusterCard.propTypes = {
     ),
     metrics: PropTypes.arrayOf(PropTypes.string),
 
-    // Stats — Objective-specific (Wave B)
+    // Stats — Objective-specific
     max_scope_level: PropTypes.string,
     target_dates: PropTypes.arrayOf(PropTypes.string),
     has_target_date_soon: PropTypes.bool,
 
-    // Stats — TechStack-specific (Sprint TechStack)
+    // Stats — TechStack-specific
     tech_catalog_entry: PropTypes.shape({
       id: PropTypes.string,
       company_name: PropTypes.string,

@@ -10,9 +10,7 @@ identified by two orthogonal canonical axes (what × dimension) and
 anchored at an organisational scope (scope_level). It is deliberately
 narrative-only on the proof axis:
 
-  * No metrics, costs, or numeric evidence — those live in ImpactSignal
-    (introduced in Sprint Refonte ImpactSignal — supersedes the
-    retired PainImpact model).
+  * No metrics, costs, or numeric evidence — those live in ImpactSignal.
   * No impacted department / contact field — the impacted parties are
     derived from the conversation's contacts (via source_activity) and
     refined through related ImpactSignal observations sharing the same
@@ -23,7 +21,7 @@ narrative-only on the proof axis:
 Canonical key (auto-computed in save()):
     canonical_key = "pain:<what>:<dimension>"
 
-Scope axis (Sprint Refonte ImpactSignal):
+Scope axis:
     scope_level documents the organisational layer at which the pain
     is felt (BUSINESS / DEPARTMENT / PERSONAL). It defaults to
     BUSINESS — the safest interpretation when no specific scope was
@@ -35,8 +33,8 @@ Scope axis (Sprint Refonte ImpactSignal):
 
 The canonical_key enables cluster aggregation across multiple observations
 of the same pain on the same account — regardless of who reported it,
-when, or which angle was documented. See SignalClusterService (Sprint 2)
-for how clusters roll up PainImpacts across their member Pains.
+when, or which angle was documented. See SignalClusterService for how
+clusters roll up their member Pain signals.
 
 Required context (enforced in clean()):
   - source_activity — the call/meeting where the pain was identified
@@ -52,8 +50,8 @@ inherited from BaseSignal as indexed-FK columns and are auto-populated
 from source_activity by SignalManager._propagate_activity_context at
 create time.
 
-Cross-reference with TechStack (Sprint TechStack)
--------------------------------------------------
+Cross-reference with TechStack
+------------------------------
 Two optional fields enable a Pain to reference a tool that is part of
 the diagnosed problem — typically (but not exclusively) when what=TECH:
 
@@ -124,9 +122,9 @@ class PainSignal(BaseSignal):
       carry a dedicated source_contact FK — see BaseSignal class
       docstring for the rationale.
 
-    Metrics, cost estimates, impacted parties, and human consequences all
-    live on the related PainImpact model. A Pain can have zero or many
-    PainImpacts (1:N, FK on PainImpact.pain_signal).
+    Metrics, cost estimates, impacted parties, and human consequences live
+    on ImpactSignal observations sharing the same canonical_key on the
+    account.
     """
 
     # =========================================================================
@@ -186,7 +184,7 @@ class PainSignal(BaseSignal):
     )
 
     # =========================================================================
-    # CROSS-REFERENCE — TechStack (Sprint TechStack)
+    # CROSS-REFERENCE — TechStack
     # =========================================================================
     #
     # Both fields are optional and not mutually exclusive at the model
@@ -245,14 +243,14 @@ class PainSignal(BaseSignal):
             models.Index(fields=['scope_level'], name='painsig_scope_level_idx'),
             models.Index(fields=['status'],      name='painsig_status_idx'),
             # Composite index for cluster lookups by canonical_key scoped to account.
-            # Serves SignalClusterService.list_clusters_for_account (Sprint 2).
+            # Serves SignalClusterService.list_clusters_for_account.
             models.Index(
                 fields=['account', 'canonical_key'],
                 name='painsig_account_canon_idx',
             ),
             # Composite index for TechStack cluster's related_pain_clusters
             # lookup: "find all Pains on account X cross-referencing
-            # TechCatalog entry Y". See SignalClusterService Phase 6.
+            # TechCatalog entry Y". See SignalClusterService.
             models.Index(
                 fields=['account', 'related_techstack'],
                 name='painsig_account_techref_idx',
@@ -302,7 +300,7 @@ class PainSignal(BaseSignal):
              at read time.
 
         All quantitative and human-level validation (who is impacted,
-        what the metric is, etc.) lives on PainImpact and is enforced
+        what the metric is, etc.) lives on ImpactSignal and is enforced
         there.
         """
         super().clean()

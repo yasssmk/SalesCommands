@@ -29,8 +29,8 @@ Safety filter
     DROP_INFERRED  = True  -- drop signals where the LLM self-declared
                               is_inferred=true (verbatim-anchored only).
 
-The filter itself is applied by TranscriptSignalExtractor (Phase F.3),
-per stage. The pipeline only OWNS the thresholds and propagates them
+The filter itself is applied by TranscriptSignalExtractor, per stage.
+The pipeline only OWNS the thresholds and propagates them
 into the extractor; it does not see the dropped signals -- only the
 dropped count, which is logged into AIPipelineRun.sub_calls for audit.
 End users never see dropped signals.
@@ -71,11 +71,11 @@ Return contract
         }
     }
 
-The API view in Phase G consumes this directly, grouping signals by
-type for the frontend wizard.
+The API view consumes this directly, grouping signals by type for the
+frontend wizard.
 
-Service dependency (Phase F.3)
-------------------------------
+Service dependency
+------------------
 TranscriptSignalExtractor.persist_stage(...) is invoked once per
 successful LLM stage. Contract:
 

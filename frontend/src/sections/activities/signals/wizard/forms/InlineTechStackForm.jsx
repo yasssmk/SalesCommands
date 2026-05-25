@@ -39,16 +39,6 @@
  * injects source_activity into the dispatch payload via extraPayload.
  * The form does not surface a picker for it.
  *
- * Standardisation refactor (post-PHASES A-E backend) — destructive
- * --------------------------------------------------------------
- * source_contact and source_department were never on TechStackSignal
- * (shadow-overridden to None on the model since Sprint TechStack), so
- * this form was never a consumer of either field. The legacy
- * `defaultContact` signature parity prop has been removed (no inline
- * form drives source_contact anymore). Combined with the
- * source_activity removal above, S5 has been renamed "Narrative" and
- * surfaces only the optional source_quote + notes fields.
- *
  * Note on usage_scope = '' (empty string)
  * ---------------------------------------
  * Yup treats '' as a present-but-empty string. We use null in initial

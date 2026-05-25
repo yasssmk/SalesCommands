@@ -14,17 +14,6 @@
  * Error handling:
  *   Field-level errors surfaced via handleFormikError if the backend returns
  *   structured validation errors. Generic errors shown via displayErrorSnackbar.
- *
- * Migration + standardisation refactor (post-PHASES A-E backend) — destructive
- * ---------------------------------------------------------------------------
- * - File migrated from accounts/signals/ to activities/signals/ to
- *   consolidate the signal editing surfaces under the activity-centric
- *   workspace (matches the wizard migration of PHASE G).
- * - source_contact retired from BaseSignal entirely. The legacy
- *   normalization guard for source_contact has been removed from
- *   handleSave. Only target_contact (Objective PERSONAL scope) remains
- *   as a contact-shaped field requiring object → UUID downcasting at
- *   PATCH time.
  */
 
 "use client";
@@ -118,10 +107,6 @@ export default function SignalEditDialog({
    * contact-shaped field on the form payloads. Inline forms store it
    * as a full contact object for AsyncContactSelect compatibility; the
    * backend expects a UUID — we extract .id here before sending the PATCH.
-   *
-   * The legacy `source_contact` normalization guard has been removed —
-   * the field was retired from BaseSignal during the standardisation
-   * refactor and no inline form payload carries it anymore.
    */
   const handleSave = useCallback(
     async (payload) => {

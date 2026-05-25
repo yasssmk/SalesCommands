@@ -13,11 +13,6 @@ model are silently harmless — django-filter ignores unknown field
 lookups via the dynamic model binding. This is the established
 pattern in this codebase.
 
-PainImpact is NOT handled here. It has its own PainImpactFilter defined
-in views/pain_impact_views.py — kept for backward compatibility during
-the ImpactSignal cutover, slated for removal alongside the PainImpact
-model itself in the final cleanup wave.
-
 Shared canonical axes (Pain + Objective + Impact):
   - what       (SignalWhat enum)
   - dimension  (SignalDimension enum)
@@ -67,7 +62,8 @@ class CharInFilter(BaseInFilter, CharFilter):
 
 class SignalFilter(django_filters.FilterSet):
     """
-    FilterSet shared across PainSignal, ObjectiveSignal, and TechStackSignal.
+    FilterSet shared across PainSignal, ObjectiveSignal, ImpactSignal,
+    and TechStackSignal.
 
     Base filters (all signal types — fields live on BaseSignal):
       status, source, signal_category
@@ -83,11 +79,11 @@ class SignalFilter(django_filters.FilterSet):
                        refactor). API surface unchanged.
 
     Type-specific filters (silently ignored when field absent on model):
-      what, dimension — PainSignal + ObjectiveSignal (shared canonical
-                        axes since Wave A)
-      scope_level     — ObjectiveSignal (Wave B — renamed from goal_level)
+      what, dimension — PainSignal + ObjectiveSignal + ImpactSignal
+                        (shared canonical axes)
+      scope_level     — ObjectiveSignal
 
-    Silently-absent fields on ObjectiveSignal (Wave B):
+    Silently-absent fields on ObjectiveSignal:
       - signal_category is shadow-overridden to None on the concrete
         ObjectiveSignal model. The `signal_category` filter declared
         here still works for Pain / TechStack; on Objective querysets,
@@ -103,15 +99,10 @@ class SignalFilter(django_filters.FilterSet):
         and `campaign` filters declared here are silently no-op on
         TechStack querysets.
 
-    Note — Pain-side fields removed in Sprint 1.6:
-      pain_level, human_impact, impacted_contact no longer exist on
-      PainSignal. Impact-level data now lives on PainImpact and is
-      filterable through PainImpactFilter (see views/pain_impact_views.py).
-
     Note:
-      When the refactored SignalClusterService (Sprint 2) groups Pain signals
-      by canonical_key, callers can also filter directly by what/dimension
-      to narrow cluster lookups.
+      When SignalClusterService groups Pain signals by canonical_key,
+      callers can also filter directly by what/dimension to narrow
+      cluster lookups.
     """
 
     # -------------------------------------------------------------------------
@@ -126,7 +117,6 @@ class SignalFilter(django_filters.FilterSet):
     # This is safe for the current canonical schemas which never contain
     # commas:
     #     "pain:OPS:TIME"
-    #     "people:<uuid>:CHAMPION"
     # If a future signal type introduces commas inside canonical_key
     # (free-text matching, localized labels, etc.), switch this filter to an
     # exact CharFilter or implement a JSON/array-aware lookup — the comma
@@ -174,8 +164,8 @@ class SignalFilter(django_filters.FilterSet):
     #
     # scope_level is shared between Objective and Impact — both store
     # the field directly on the model. Pain also stores scope_level
-    # since the ImpactSignal refonte sprint (PainSignal.scope_level
-    # added with default=BUSINESS), so this filter applies to Pain too.
+    # (PainSignal.scope_level, default=BUSINESS), so this filter applies
+    # to Pain too.
 
     scope_level = CharInFilter(field_name='scope_level', lookup_expr='in')
 

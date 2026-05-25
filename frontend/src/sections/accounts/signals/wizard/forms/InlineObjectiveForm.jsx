@@ -771,7 +771,7 @@ export default function InlineObjectiveForm({
 InlineObjectiveForm.propTypes = {
   choices: PropTypes.shape({
     /**
-     * Shared canonical-axis enums exposed by the backend since Wave A.
+     * Shared canonical-axis enums exposed by the backend.
      * The model fields `what` and `dimension` read their options from
      * signal_whats / signal_dimensions respectively.
      */

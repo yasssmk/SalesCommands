@@ -3,7 +3,7 @@
  * API hooks and mutations for Signal Clusters.
  *
  * A cluster is NOT an ORM entity on the backend — it is a projection over
- * signals sharing the same canonical_key on a given account. Sprint 2
+ * signals sharing the same canonical_key on a given account. The
  * backend exposes four endpoints at /module-signals/clusters/:
  *
  *   GET   /module-signals/clusters/                        → list
@@ -11,9 +11,8 @@
  *   POST  /module-signals/clusters/archive/                → archive
  *   POST  /module-signals/clusters/unarchive/              → unarchive
  *
- * Sprint 3 covers Pain clusters only. Other signal types may ship in
- * later sprints — signalType is parameterized end-to-end to keep that
- * path open without refactor.
+ * signalType is parameterized end-to-end so any clusterable signal type
+ * works without refactor.
  *
  * Follows the pattern established by api/signals/painImpacts.js (the
  * most recent module) for URL building, revalidation, and mutation
@@ -160,7 +159,7 @@ function buildDetailUrl(canonicalKey, accountId, signalType = "pain") {
 /**
  * Revalidate all caches that depend on cluster data.
  *
- * The cluster payload is derived from Pain signals + PainImpacts + the
+ * The cluster payload is derived from Pain signals + Impact signals + the
  * archival table. Writes on any of those should bust the cluster cache,
  * and writes on the cluster archival table should bust the Pain/Impact
  * caches to keep their detail views consistent (same cache tag on the

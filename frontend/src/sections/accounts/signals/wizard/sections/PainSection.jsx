@@ -69,7 +69,7 @@ function StagedPainCard({ signal, choices, onToggleStatus, onEdit, onRemove }) {
   const isRejected = signal._status === "REJECTED";
 
   // choices.signal_whats / signal_dimensions expose the shared canonical-axis
-  // enums since Wave A. The staged signal's `what` and `dimension` fields
+  // enums. The staged signal's `what` and `dimension` fields
   // themselves are unchanged — only the source of display labels did.
   const whatLabel = useMemo(
     () => resolveLabel(choices?.signal_whats, signal.what),

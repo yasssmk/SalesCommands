@@ -18,9 +18,9 @@ Pre-call Game Plan LLM pipeline.
 
 Required context (enforced in clean()):
   - source_activity — the call/meeting where the objective was surfaced.
-    Added in Sprint Refonte ImpactSignal — every signal of qualification
-    (Pain / Objective / TechStack / Impact) must now be tied to a real
-    conversation. This ensures every signal has a clear provenance and supports
+    Every signal of qualification (Pain / Objective / Impact / TechStack)
+    must be tied to a real conversation. This ensures every signal has a
+    clear provenance and supports
 
 Scope-conditional requirements (enforced in clean()):
   - scope_level = PERSONAL   → target_contact required, target_department forbidden
@@ -29,19 +29,9 @@ Scope-conditional requirements (enforced in clean()):
 
 signal_category is inherited from BaseSignal as a general-purpose tag;
 it is intentionally shadow-overridden to None here so it is neither
-stored nor exposed for ObjectiveSignal. the
-field will be retired from BaseSignal once People and TechStack are
-refactored.
+stored nor exposed for ObjectiveSignal.
 
-Wave B notes:
-  - This is a destructive rewrite of the legacy ObjectiveSignal. All
-    previous fields (goal_level, measurement_method, horizon,
-    source_contact, impacted_contact) are removed. Migration 1.2 drops
-    and recreates the underlying table.
-  - The field `scope_level` replaces `goal_level` and adopts the shared
-    ScopeLevel enum introduced in Wave A.
-
-    Standardisation refactor notes:
+Field notes:
   - source_contact and source_department are no longer fields on any
     signal type — they were removed from BaseSignal abstract during
     the standardisation refactor. Contacts who participated in the
@@ -208,8 +198,7 @@ class ObjectiveSignal(BaseSignal):
             models.Index(fields=['scope_level'], name='objsig_scope_level_idx'),
             models.Index(fields=['status'],      name='objsig_status_idx'),
             # Composite index for cluster lookups by canonical_key scoped to account.
-            # Serves SignalClusterService.list_clusters_for_account for Objective
-            # (activated in Phase 4 of the Wave B port).
+            # Serves SignalClusterService.list_clusters_for_account for Objective.
             models.Index(
                 fields=['account', 'canonical_key'],
                 name='objsig_account_canon_idx',
@@ -248,12 +237,10 @@ class ObjectiveSignal(BaseSignal):
 
         Rules:
           1. source_activity is required — every objective must be tied
-             to a real conversation. Added in Sprint Refonte ImpactSignal;
-             aligned with PainSignal / TechStackSignal / ImpactSignal.
-             The DB column was simultaneously durified to NOT NULL via
-             migration 0014. Raising early here yields a clean
-             ValidationError on the API surface rather than an
-             IntegrityError.
+             to a real conversation, aligned with PainSignal /
+             TechStackSignal / ImpactSignal. The DB column is NOT NULL.
+             Raising early here yields a clean ValidationError on the
+             API surface rather than an IntegrityError.
           2. scope_level = PERSONAL
                 → target_contact required
                 → target_department forbidden
@@ -262,23 +249,12 @@ class ObjectiveSignal(BaseSignal):
                 → target_contact forbidden
           4. scope_level = BUSINESS
                 → neither target_contact nor target_department
-
-        Historical note (Wave B decision 3, partially superseded):
-          The original Wave B stance was "at least one of source_activity
-          / decision_cycle / campaign — but none individually required".
-          Sprint Refonte ImpactSignal tightened the rule: source_activity
-          is now strictly required, in line with the LLM-driven extraction
-          path (every signal originates from a transcript anchored to an
-          Activity). decision_cycle and campaign remain available as
-          nullable fields inherited from BaseSignal and are auto-populated
-          by SignalManager._propagate_activity_context from source_activity
-          at create time.
         """
         super().clean()
 
         errors = {}
 
-        # --- Rule 1: source_activity required (Sprint Refonte ImpactSignal) ---
+        # --- Rule 1: source_activity required ---
         if not self.source_activity_id:
             errors['source_activity'] = (
                 SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED

@@ -14,11 +14,6 @@
  *                  WizardCaptureStep)
  *   - WizardSummary → WizardValidationStep (renamed + adapted)
  *   - defaultSection prop dropped — entry is always at Capture step
- *   - defaultContact prop dropped — no inline form drives source_contact
- *     anymore (standardisation refactor: source_contact retired from
- *     BaseSignal)
- *   - Dispatch cleanup: removed the zombie source_contact UUID-extract
- *     guard (the field is no longer present in any inline form payload)
  *
  * Staged signal shape:
  *   { _key: string, _status: 'VALIDATED'|'REJECTED', ...payload }
@@ -306,14 +301,6 @@ export default function WizardSignalAdd({
    *
    * On full success: onSuccess() + close.
    * On partial failure: keep failed signals in staged, set results for display.
-   *
-   * Standardisation refactor — dispatch cleanup
-   * --------------------------------------------
-   * The legacy zombie source_contact UUID-extract guard has been removed
-   * — no inline form carries source_contact in its payload anymore. The
-   * remaining UUID extractions cover fields still present on the form
-   * payloads (target_contact, source_activity, tech_catalog_entry,
-   * related_techstack).
    */
   const handleConfirm = useCallback(async () => {
     // Collect all VALIDATED signals with their type
@@ -338,20 +325,13 @@ export default function WizardSignalAdd({
         // object references here — once, at dispatch time — to keep each
         // signal type's form logic free of this serialization concern.
         //
-        // Fields covered (post-standardisation refactor):
+        // Fields covered:
         //   target_contact       — Objective PERSONAL scope (target FK)
         //   source_activity      — Pain (required) / Objective / TechStack (optional)
         //   tech_catalog_entry   — TechStack catalog anchor (required)
         //   related_techstack    — Pain cross-reference to a TechCatalog
         //                          entry (optional, only meaningful when
         //                          what === 'TECH')
-        //
-        // source_contact removal note
-        // ---------------------------
-        // The legacy `source_contact` extraction guard was removed during
-        // the standardisation refactor — the field is no longer present
-        // in any inline form payload. Pain provenance is now derived
-        // server-side from source_activity.contacts (m2m).
         if (
           payload.target_contact &&
           typeof payload.target_contact === "object"

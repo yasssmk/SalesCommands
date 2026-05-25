@@ -14,8 +14,8 @@ Serializer map:
   BaseSignalUpdateSerializer   — restricted PATCH, routes edits through edit()
   SignalLLMSerializer          — read-only compact format for LLM prompt injection
 
-Standardisation refactor (PHASE B.1)
-------------------------------------
+Standardisation refactor
+------------------------
 - source_contact and source_department fields removed from List/Detail/
   Create/Update. Contacts who participated in the source conversation
   are now derived at read time from `source_activity.contacts` and
@@ -359,11 +359,9 @@ class BaseSignalCreateSerializer(
     HiddenField(default='<type>').
 
     Removed during the standardisation refactor:
-      - source_contact / source_department fields (no longer on models)
       - decision_cycle / campaign fields (auto-populated by
          SignalManager._propagate_activity_context from source_activity
          — never accepted directly from the API)
-      - cross-account validation on source_contact (the field is gone)
 
     The serializer does NOT call save() — the view's perform_create()
     must call SignalManager.create(serializer.validated_data, user,
@@ -429,8 +427,7 @@ class BaseSignalCreateSerializer(
 
         No cross-FK validation needed at the base level — concrete
         serializers (Pain, Objective) enforce their own contextual
-        rules in their own validate(). The previous cross-account check
-        on source_contact is gone because the field itself was retired.
+        rules in their own validate().
         """
         attrs['client_id'] = self._get_client_id_from_context()
         return attrs
@@ -458,13 +455,9 @@ class BaseSignalUpdateSerializer(
                                               by SignalManager — never
                                               writable)
 
-    Removed during the standardisation refactor:
-      - source_contact / source_department fields (no longer on models)
-      - validate_source_contact (the field is gone)
-
-    Canonical axes rewritable (since Wave A/B):
-        For PainSignal (Wave A) and ObjectiveSignal (Wave B), the
-        canonical axes `what` / `dimension` ARE rewritable via PATCH —
+    Canonical axes rewritable:
+        For PainSignal and ObjectiveSignal, the canonical axes
+        `what` / `dimension` ARE rewritable via PATCH —
         their concrete Update serializers add these fields to
         Meta.fields. The model's save() recomputes canonical_key from
         the new axes automatically; `canonical_key` itself is NOT

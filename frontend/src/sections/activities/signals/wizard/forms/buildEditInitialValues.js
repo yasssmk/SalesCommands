@@ -18,14 +18,6 @@
  * server-side because PATCH is partial — sending no source_activity
  * leaves the existing FK untouched.
  *
- * Standardisation refactor (post-PHASES A-E backend) — destructive:
- *   source_contact and source_department have been removed from
- *   BaseSignal entirely. Provenance is now derived from
- *   source_activity.contacts (m2m) and exposed back to the UI through
- *   the standardised `source_context` block on list/detail responses.
- *   The corresponding form fields and builders have been retired
- *   across this module.
- *
  * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {Object} signal - Backend read object for the signal
  * @returns {Object} Formik-ready initialValues
@@ -63,26 +55,13 @@ export function buildEditInitialValues(signalType, signal) {
  *   - Diagnosis  : summary, what, dimension
  *   - Narrative  : source_quote, notes
  *   - Cross-ref  : related_techstack, related_techstack_mention
- *                  (Sprint TechStack — visible only when what === 'TECH')
+ *                  (visible only when what === 'TECH')
  *
  * Catalog objects are passed whole — AsyncTechCatalogSelect expects the
  * full option object as its value prop, not a UUID string. This avoids
  * a re-fetch loop to re-hydrate the selection on edit.
  *
- * Removed during the standardisation refactor (no backward-compat):
- *   - source_contact     → field retired from BaseSignal. Pain
- *                          provenance is now derived from
- *                          source_activity.contacts (m2m), exposed
- *                          on the backend through the
- *                          `source_context` block — not surfaced
- *                          as a form field anymore.
- *   - source_activity    → never a form field. The wizard injects it
- *                          from the activity context via extraPayload
- *                          at create time. In edit mode, the existing
- *                          FK is preserved server-side via the partial
- *                          PATCH semantics.
- *
- * Cross-reference fields (Sprint TechStack):
+ * Cross-reference fields:
  *   - related_techstack          : object whole | null
  *                                  Backend exposes a compact catalog
  *                                  payload via the _PainDisplayMixin
@@ -107,7 +86,7 @@ function buildPainInitialValues(signal) {
     source_quote: signal.source_quote ?? "",
     notes: signal.notes ?? "",
 
-    // Cross-reference — TechStack (Sprint TechStack)
+    // Cross-reference — TechStack
     related_techstack: signal.related_techstack ?? null,
     related_techstack_mention: signal.related_techstack_mention ?? "",
   };
@@ -126,20 +105,6 @@ function buildPainInitialValues(signal) {
  *   S1 — Goal:    summary, what, dimension
  *   S2 — Scope:   scope_level + conditional target_contact OR target_department
  *   S3 — Success: success_criteria, target_date, notes
- *
- * Removed during the Wave B rewrite and the standardisation refactor
- * (destructive — no backward-compat):
- *   - goal_level          → replaced by scope_level (shared ScopeLevel enum)
- *   - measurement_method  → merged conceptually into success_criteria / notes
- *   - source_contact      → retired from BaseSignal during standardisation
- *   - source_department   → retired from BaseSignal during standardisation
- *   - source_quote        → merged into notes (decision 2 — Wave B plan)
- *   - signal_category     → shadow-overridden to None on the model
- *   - source_activity     → never a form field. The wizard injects it
- *                           from the activity context via extraPayload
- *                           at create time. In edit mode, the existing
- *                           FK is preserved server-side via the partial
- *                           PATCH semantics.
  *
  * Field shape notes:
  *   - target_contact passed whole — AsyncContactSelect expects the full
@@ -229,7 +194,7 @@ function buildImpactInitialValues(signal) {
 // ==============================|| TECH STACK ||============================== //
 
 /**
- * @param {Object} signal - TechStackSignal read object (Sprint TechStack model)
+ * @param {Object} signal - TechStackSignal read object
  * @returns {Object}
  *
  * TechStackSignal is anchored to a tenant-level TechCatalog entry
@@ -259,24 +224,6 @@ function buildImpactInitialValues(signal) {
  *     for HTML5 <input type="date">.
  *   - is_discontinued is a strict boolean — defensive ?? false in case
  *     the backend ever returns null.
- *
- * Removed in Sprint TechStack and the standardisation refactor (no
- * backward-compat):
- *   - source_contact      → retired from BaseSignal during standardisation
- *   - tech_name           → replaced by tech_catalog_entry FK
- *   - category            → moved to TechCatalog (admin-curated)
- *   - satisfaction        → dropped (replaced by lifecycle stats)
- *   - usage               → not on the new model
- *   - limitations         → not on the new model
- *   - workarounds         → not on the new model
- *   - integrations        → not on the new model
- *   - source_department   → retired from BaseSignal during standardisation
- *   - signal_category     → shadow-overridden to None on the model
- *   - source_activity     → never a form field. The wizard injects it
- *                           from the activity context via extraPayload
- *                           at create time. In edit mode, the existing
- *                           FK is preserved server-side via the partial
- *                           PATCH semantics.
  */
 function buildTechStackInitialValues(signal) {
   return {

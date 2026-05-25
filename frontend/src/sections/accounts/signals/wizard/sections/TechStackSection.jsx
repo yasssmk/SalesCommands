@@ -11,9 +11,9 @@
  * Staged signal shape (managed by WizardSignalAdd):
  *   { _key: string, _status: 'VALIDATED'|'REJECTED', ...payload }
  *
- * Sprint TechStack — model alignment
- * ----------------------------------
- * The staged payload follows the new TechStackSignal model:
+ * Model alignment
+ * ---------------
+ * The staged payload follows the TechStackSignal model:
  *   tech_catalog_entry  : full TechCatalog object (UUID extracted at dispatch)
  *   usage_scope         : 'TEAM' | 'DEPARTMENT' | 'COMPANY' | 'UNKNOWN' | null
  *   usage_department    : department object | null (DEPARTMENT scope only)
@@ -662,7 +662,7 @@ TechStackSection.propTypes = {
     PropTypes.shape({
       _key: PropTypes.string.isRequired,
       _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
-      // Sprint TechStack staged shape — see file docstring.
+      // Staged shape — see file docstring.
       tech_catalog_entry: PropTypes.object,
       usage_scope: PropTypes.string,
       usage_department: PropTypes.oneOfType([

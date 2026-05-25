@@ -31,10 +31,9 @@ Model-specific:
                      OVERLOAD, STRESS, DEMOTIVATION, CONFLICT). Used by
                      ImpactSignal when impact_type=HUMAN — typically
                      emitted at PERSONAL scope. Renamed from the legacy
-                     HumanImpact enum (PainImpact-only); the DB values
-                     are strictly identical.
+                     HumanImpact enum; the DB values are strictly identical.
 
-Cluster aggregation (Sprint 2):
+Cluster aggregation:
   SignalClusterType — enumeration of signal types that support clustering
   FreshnessStatus   — age-based freshness of a cluster
   PriorityBucket    — coarse priority label derived from a numeric score
@@ -51,8 +50,8 @@ Removed vs. previous versions:
   - TechStackField        (replaced by rich fields on TechStackSignal)
   - PainCategory          (replaced by the canonical pair
                            SignalWhat × SignalDimension)
-  - PainLevel             (replaced by ScopeLevel on PainImpact — Pain is
-                           now a pure diagnosis, scope lives on PainImpact)
+  - PainLevel             (replaced by ScopeLevel — Pain is now a pure
+                           diagnosis)
   - TechCategory          (replaced by FK to TechCatalog — categorisation
                            moves out of the signal into the tenant-level
                            tech master catalog)
@@ -61,46 +60,14 @@ Removed vs. previous versions:
                            stats on the TechStack cluster: usage_start_year,
                            renewal_date, cost_description, is_discontinued)
 
-Renamed in Wave A (backend refactor prep for the Objective port):
-  - PainWhat      → SignalWhat       (shared across Pain and Objective)
-  - PainDimension → SignalDimension  (shared across Pain and Objective)
-  - ImpactLevel   → ScopeLevel       (shared across PainImpact and — Wave B —
-                                      ObjectiveSignal)
-
-Dropped in Wave A:
-  - GoalLevel — superseded by the shared ScopeLevel. Objective will
-                adopt ScopeLevel during the Wave B port.
-
-Renamed in Sprint Refonte ImpactSignal (this sprint):
-  - HumanImpact → HumanImpactType
-                  Aligned with the new ImpactType naming convention.
-                  DB values strictly unchanged (FRUSTRATION, OVERLOAD,
-                  STRESS, DEMOTIVATION, CONFLICT) — pure Python rename.
-
-Added in Sprint Refonte ImpactSignal:
-  - ImpactType — nature of an ImpactSignal (FINANCIAL, TIME,
-                 PRODUCTIVITY, REVENUE, RISK, CUSTOMER, HUMAN,
-                 STRATEGIC, METRIC).
-  - SignalClusterType.IMPACT — ImpactSignal clusters share the same
-                 canonical axes (SignalWhat × SignalDimension) as
-                 PainSignal and ObjectiveSignal, anchored to an
-                 account. canonical_key format:
-                 "impact:<what>:<dimension>".
-
-Removed in Sprint Refonte ImpactSignal:
-  - PainImpact-related references throughout the module. The model
-    is retired in favour of the first-class ImpactSignal. See the
-    sprint documentation for the migration path (table dropped,
-    no backfill).
-
 The canonical_key format follows the same pattern across all
 canonical-axes signal types:
   - PainSignal:      "pain:<SignalWhat>:<SignalDimension>"
   - ObjectiveSignal: "objective:<SignalWhat>:<SignalDimension>"
   - ImpactSignal:    "impact:<SignalWhat>:<SignalDimension>"
 
-Enum values (DB strings) are strictly unchanged by Wave A and by the
-HumanImpact → HumanImpactType rename — only Python class names change.
+Enum values (DB strings) are strictly unchanged — only Python class
+names change.
 """
 
 
@@ -224,7 +191,7 @@ class InfluenceLevel(models.TextChoices):
 
 
 # =============================================================================
-# SIGNAL CANONICAL AXES — enums  (shared by Pain and Objective)
+# SIGNAL CANONICAL AXES — enums  (shared by Pain, Objective and Impact)
 # =============================================================================
 #
 # Canonical-keyed signals are anchored on two orthogonal axes that
@@ -234,7 +201,7 @@ class InfluenceLevel(models.TextChoices):
 #
 # Examples:
 #     "pain:OPS:TIME"
-#     "objective:GROWTH:COST"   (Wave B — not yet emitted)
+#     "objective:GROWTH:COST"
 #
 # SignalWhat      — the domain of the signal (what area of the business it affects)
 # SignalDimension — the friction or outcome experienced in that domain
@@ -243,9 +210,9 @@ class InfluenceLevel(models.TextChoices):
 # B2B pain or objective without fragmenting the cluster space.
 #
 # Impact-level data (BUSINESS / DEPARTMENT / PERSONAL scope, metrics,
-# human consequences) lives on PainImpact — a separate model attached to
-# PainSignal. See the PainImpact docstring for details. ScopeLevel and
-# HumanImpact (below) describe the PainImpact side of the picture.
+# human consequences) lives on ImpactSignal — a first-class signal type.
+# ScopeLevel and HumanImpactType (below) describe the ImpactSignal side
+# of the picture.
 # =============================================================================
 
 
@@ -312,14 +279,6 @@ class HumanImpactType(models.TextChoices):
     STRESS       — anxiety, tension, mental strain
     DEMOTIVATION — disengagement, loss of drive, apathy
     CONFLICT     — interpersonal tension, disputes, friction with peers
-
-    History — rename from HumanImpact:
-      This enum was originally introduced for PainImpact (PainImpact-only,
-      meaningful at PERSONAL scope on impacts). PainImpact was retired in
-      Sprint Refonte ImpactSignal in favour of the first-class
-      ImpactSignal model. The enum was renamed from HumanImpact to
-      HumanImpactType for naming consistency with ImpactType — the DB
-      values are strictly identical (no migration required).
     """
     FRUSTRATION  = 'FRUSTRATION',  _('Frustration')
     OVERLOAD     = 'OVERLOAD',     _('Overload')
@@ -329,7 +288,7 @@ class HumanImpactType(models.TextChoices):
 
 
 # =============================================================================
-# IMPACT TYPE — enum  (Sprint Refonte ImpactSignal)
+# IMPACT TYPE — enum
 # =============================================================================
 
 class ImpactType(models.TextChoices):
@@ -427,13 +386,6 @@ class ScopeLevel(models.TextChoices):
                      Documents the layer at which the rep observed the
                      impact (e.g. "30k€/mo" at BUSINESS, "5h/week per
                      AE" at PERSONAL).
-
-    Historical note:
-      This enum was previously also consumed by PainImpact.level. The
-      PainImpact model was retired in Sprint Refonte ImpactSignal in
-      favour of the first-class ImpactSignal that captures quantified
-      evidence directly. The PainImpact-level conditional rules no
-      longer exist.
     """
     BUSINESS   = 'BUSINESS',   _('Business')
     DEPARTMENT = 'DEPARTMENT', _('Department')
@@ -479,9 +431,9 @@ class UsageScope(models.TextChoices):
 # The enums below describe cluster-level attributes (freshness, priority)
 # that are computed on read — never stored on signal rows.
 #
-# Only PainSignal is actively clustered today. SignalClusterType is
-# intentionally extensible so later waves can add Objective / TechStack
-# clustering without introducing a second enum.
+# Pain, Objective, Impact and Tech Stack signals are all clustered today.
+# SignalClusterType is intentionally extensible so future signal types can
+# plug in without introducing a second enum.
 # =============================================================================
 
 
@@ -596,8 +548,8 @@ TECHSTACK_RENEWAL_SOON_DAYS = 90
 # A single 'signals' tag would force full cache invalidation on every
 # write. That is wasteful because:
 #
-#   - Validating a People signal does not affect Pain cluster stats
-#     (clusters are computed from Pain signals + PainImpact only).
+#   - Validating an Objective signal does not affect cluster stats
+#     (clusters are busted only by Pain and Impact writes).
 #   - Archiving a cluster does not change any signal data, only its
 #     visibility in cluster listings.
 #
@@ -610,30 +562,25 @@ TECHSTACK_RENEWAL_SOON_DAYS = 90
 #
 #   Write on                  signals   signal_clusters
 #   ---------------------    -------   ---------------
-#   PeopleSignal                 ✓            ✗
 #   PainSignal                   ✓            ✓  (cluster member)
 #   ObjectiveSignal              ✓            ✗
+#   ImpactSignal                 ✓            ✓  (cluster member)
 #   TechStackSignal              ✓            ✗
-#   PainImpact                   ✓            ✓  (cluster stats pivot)
 #   SignalClusterArchival        ✗            ✓  (archival-only)
 # =============================================================================
 
 # Shared namespace for list / detail / filtered signal caches.
-# Any write on a concrete signal type (People / Pain / Objective /
-# TechStack) invalidates this tag. PainImpact writes also invalidate
-# it because impacts are rendered inline in PainSignal detail reads.
+# Any write on a concrete signal type (Pain / Objective / Impact /
+# TechStack) invalidates this tag.
 SIGNALS_CACHE_TAG = 'signals'
 
 # Dedicated namespace for cluster list / detail responses.
-# Writes that do NOT change cluster content (e.g. validating a People
+# Writes that do NOT change cluster content (e.g. validating an Objective
 # signal) must not bust this tag — that is the whole point of the split.
 #
 # Invalidated on:
 #   - PainSignal create/update/delete        (cluster membership changes)
-#   - PainImpact create/update/delete        (cluster aggregated stats
-#                                              change: human_impacts,
-#                                              metrics, max_impact_level,
-#                                              impacted_contacts_count)
+#   - ImpactSignal create/update/delete      (cluster membership changes)
 #   - SignalClusterArchival create/update    (archive / unarchive toggle
 #                                              — affects include_archived
 #                                              filtering in list views)

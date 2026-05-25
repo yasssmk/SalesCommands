@@ -78,7 +78,7 @@ _RELATED_BY_TYPE = {
         'validated_by',
         'decision_cycle',
         'campaign',
-        # Cross-reference TechCatalog (Sprint TechStack):
+        # Cross-reference TechCatalog:
         'related_techstack',
     ],
     'objective': [
@@ -293,8 +293,8 @@ class SignalDataService:
             source_activity__decision_cycle_id = cycle_id
 
         Mirror of the cluster service's filtering strategy — see
-        SignalClusterService._fetch_techstack_signals (Phase 6.2)
-        for the same join path.
+        SignalClusterService._fetch_techstack_signals for the same
+        join path.
 
         Signals with source_activity=NULL are excluded for TechStack
         when filtering by cycle (no Activity → no DC context to match
@@ -306,7 +306,7 @@ class SignalDataService:
             if key == 'tech_stack':
                 # No direct decision_cycle FK on TechStack — traverse
                 # source_activity.decision_cycle instead. Same strategy
-                # as SignalClusterService Phase 6.2.
+                # as SignalClusterService.
                 qs = (
                     model_class.objects
                     .filter(source_activity__decision_cycle_id=cycle_id)
@@ -369,7 +369,7 @@ class SignalDataService:
                             replacement is provided at this layer.
                             If a deeper department surface is needed
                             for Pain or Objective later, derive it
-                            from impacted_department (PainImpact) or
+                            from related ImpactSignal data or
                             target_department (Objective) at the call
                             site.
 
@@ -481,7 +481,7 @@ class SignalDataService:
                              refactor and no replacement is provided
                              at this layer. If a deeper department
                              surface is needed, derive it from
-                             impacted_department (PainImpact) or
+                             related ImpactSignal data or
                              target_department (Objective) at the call
                              site, not here.
         """
@@ -507,8 +507,6 @@ class SignalDataService:
         Resolve the summary text shown to the LLM.
 
         Pain / Objective : `summary` field.
-        People           : falls back to `notes` (no canonical summary
-                           field on PeopleSignal).
         TechStack        : "<company> <product>" from tech_catalog_entry,
                            optionally suffixed with notes when set.
                            Replaces the legacy `tech_name` lookup that

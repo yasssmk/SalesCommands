@@ -10,7 +10,7 @@ Stack:
   TechStackSignalCreateSerializer — write path with conditional rules
   TechStackSignalUpdateSerializer — restricted PATCH, merged-state checks
 
-Sprint TechStack notes:
+Notes:
   - The model shadow-overrides `decision_cycle`, `campaign`, and
     `signal_category` to None on the concrete TechStackSignal — see
     app_modules/signals/models/tech_stack_signal.py docstring for the
@@ -43,7 +43,7 @@ Sprint TechStack notes:
       is_discontinued = True    → discontinued_date REQUIRED
       is_discontinued = False   → discontinued_date FORBIDDEN
     Enforced strict in Create. Enforced merged-state in Update — same
-    pattern as ObjectiveSignal scope and PainImpact level.
+    pattern as ObjectiveSignal scope and ImpactSignal level.
 """
 
 from rest_framework import serializers
@@ -70,7 +70,7 @@ from .base_serializer import (
 # when the schema evolves.
 #
 # Conditional validation helpers are shared by Create (strict) and
-# Update (merged-state) — same pattern as ObjectiveSignal / PainImpact.
+# Update (merged-state) — same pattern as ObjectiveSignal / ImpactSignal.
 # =============================================================================
 
 
