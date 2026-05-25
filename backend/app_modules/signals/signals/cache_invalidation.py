@@ -31,7 +31,7 @@ confirmation_count, scope summaries) depend on the write. Pain and
 Impact match; Objective and TechStack clusters exist too but
 Objective writes don't change anything beyond the signal itself, and
 TechStack invalidation is currently scoped to the signals tag
-(Sprint TechStack decision — to revisit if cluster caches diverge).
+(to revisit if cluster caches diverge).
 
 Signal control
 --------------
@@ -100,7 +100,7 @@ def _invalidate_clusters_after_commit(client_id: str) -> None:
 
     Called in addition to _invalidate_signals_after_commit for any write
     that affects cluster membership or aggregated cluster stats (Pain +
-    PainImpact), or called alone for SignalClusterArchival writes.
+    Impact), or called alone for SignalClusterArchival writes.
     """
     if not client_id:
         return

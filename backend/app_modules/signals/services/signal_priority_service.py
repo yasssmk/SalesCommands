@@ -404,7 +404,7 @@ def compute_objective_priority_score(cluster_stats: dict) -> int:
     docstring for rationale):
       - corroboration + breadth + freshness behave like Pain
       - scope_level_bonus reads the directly-stored scope_level
-        on ObjectiveSignal (no PainImpact indirection)
+        on ObjectiveSignal
       - no human_impact / metric bonuses (Pain-only concepts)
       - target_date_proximity_bonus adds urgency when the deadline
         is close (within OBJECTIVE_TARGET_DATE_SOON_DAYS)
@@ -536,7 +536,7 @@ def compute_impact_priority_score(cluster_stats: dict) -> int:
     return score
 
 # =============================================================================
-# TECHSTACK PRIORITY (Sprint TechStack)
+# TECHSTACK PRIORITY
 # =============================================================================
 
 def compute_techstack_priority_score(cluster_stats: dict) -> int:

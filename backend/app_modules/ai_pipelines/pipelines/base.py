@@ -32,7 +32,7 @@ A subclass MAY override:
                            override per stance.
 
 These two filter knobs are READ by downstream services that persist
-signals (see TranscriptSignalExtractor in Phase F.3). BasePipeline does
+signals (see TranscriptSignalExtractor). BasePipeline does
 not apply them directly -- it merely exposes them as class attributes
 so the downstream service can read them per-pipeline.
 

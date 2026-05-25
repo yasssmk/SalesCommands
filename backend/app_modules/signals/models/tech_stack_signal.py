@@ -25,10 +25,9 @@ Objective:
     BaseSignal.save() which applies the MANUAL → VALIDATED rule.
   * Conditional validation lives in clean() and is mirrored by the
     Create / Update serializers (merged-state pattern as on
-    PainImpact / ObjectiveSignal).
+    ObjectiveSignal / ImpactSignal).
   * Cluster aggregation is delegated entirely to SignalClusterService
-    via the shared dispatch — see _list_techstack_clusters_for_account
-    in Phase 6.
+    via the shared dispatch — see _list_techstack_clusters_for_account.
 
 Shadow-overrides (vs BaseSignal)
 --------------------------------

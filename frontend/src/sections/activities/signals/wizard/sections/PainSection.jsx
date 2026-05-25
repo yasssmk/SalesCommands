@@ -14,15 +14,6 @@
  * choices is used locally to resolve PainWhat × PainDimension display
  * labels on the StagedPainCard's canonical chip. The payload itself only
  * stores raw enum values — no display metadata.
- *
- * Standardisation refactor (post-PHASES A-E backend) — destructive
- * --------------------------------------------------------------
- * source_contact was retired from BaseSignal entirely. The staged
- * card's source-line provenance is now derived from
- * source_activity.contacts (m2m carried by the activity object)
- * instead of a dedicated source_contact field. The `defaultContact`
- * prop has been dropped from this section since InlinePainForm no
- * longer surfaces a contact picker.
  */
 
 "use client";
@@ -88,7 +79,7 @@ function StagedPainCard({ signal, choices, onToggleStatus, onEdit, onRemove }) {
   const isRejected = signal._status === "REJECTED";
 
   // choices.signal_whats / signal_dimensions expose the shared canonical-axis
-  // enums since Wave A. The staged signal's `what` and `dimension` fields
+  // enums. The staged signal's `what` and `dimension` fields
   // themselves are unchanged — only the source of display labels did.
   const whatLabel = useMemo(
     () => resolveLabel(choices?.signal_whats, signal.what),
@@ -101,8 +92,7 @@ function StagedPainCard({ signal, choices, onToggleStatus, onEdit, onRemove }) {
   );
 
   // Compact source line for provenance at-a-glance: "Nicky Larson · 2026-04-15"
-  // Reads activity.contacts (m2m) and activity date — no source_contact field
-  // anymore (retired in the standardisation refactor).
+  // Reads activity.contacts (m2m) and activity date.
   const sourceLine = useMemo(() => {
     const activity = signal.source_activity;
     if (!activity) return "";
@@ -240,8 +230,7 @@ StagedPainCard.propTypes = {
     dimension: PropTypes.string,
     // Source provenance — activity object whole, captured by
     // AsyncActivitySelect in InlinePainForm. Its nested `contacts` m2m
-    // drives the staged source-line label (post-standardisation
-    // refactor — there is no longer a dedicated source_contact field).
+    // drives the staged source-line label.
     source_activity: PropTypes.object,
     source_quote: PropTypes.string,
     notes: PropTypes.string,

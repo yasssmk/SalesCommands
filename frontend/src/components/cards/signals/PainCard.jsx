@@ -88,7 +88,7 @@ function resolveLabel(options, value) {
  * Build the canonical display label for a TechCatalog entry.
  * Mirrors TechStackCard.getCatalogLabel — kept local for consistency
  * across the cards. The PainCard only consumes this for the optional
- * cross-reference chip (Sprint TechStack).
+ * cross-reference chip.
  *
  *   { company_name: "Salesforce", product_name: "Sales Cloud" }
  *     → "Salesforce Sales Cloud"
@@ -363,7 +363,7 @@ export default function PainCard({
 
   /** Canonical axes chip text — "Operations × Time" */
   // choices.signal_whats / signal_dimensions expose the shared
-  // canonical-axis enums since Wave A. Pain's `what` and `dimension`
+  // canonical-axis enums. Pain's `what` and `dimension`
   // model fields are unchanged — only the source of display labels
   // differs. Same applies when a Pain is rendered inside a cluster.
   const canonicalText = useMemo(() => {
@@ -834,7 +834,7 @@ PainCard.propTypes = {
       }),
     ),
     /**
-     * Optional cross-reference to a TechCatalog entry — Sprint TechStack.
+     * Optional cross-reference to a TechCatalog entry.
      * The backend exposes a compact catalog payload via _PainDisplayMixin
      * (id + company_name + product_name + is_competitor +
      * is_integration_target).

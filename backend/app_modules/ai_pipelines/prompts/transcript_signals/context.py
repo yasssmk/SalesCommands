@@ -41,8 +41,8 @@ audit traceability of every prompt revision in production.
 
 Performance
 -----------
-This builder runs per sub-call (3 sub-calls per pipeline run). For
-production use the orchestrator (Phase F) should pass an Activity
+This builder runs per sub-call (4 sub-calls per pipeline run). For
+production use the orchestrator should pass an Activity
 prefetched with:
 
     Activity.objects
@@ -346,7 +346,7 @@ def _build_techcatalog_block(activity):
     mentions to a curated entry. The request layer (techstack_v1)
     instructs the LLM to emit `tech_catalog_entry_id` when a match
     is found, or `tech_name_raw` otherwise. The persistence service
-    in Phase F creates the signal in PENDING with tech_catalog_entry
+    creates the signal in PENDING with tech_catalog_entry
     either set (UUID match) or NULL + metadata.pending_tech_name=<raw>
     (rep attaches the catalog entry before validating).
 

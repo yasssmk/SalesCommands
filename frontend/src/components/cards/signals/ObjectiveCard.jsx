@@ -22,7 +22,7 @@
  *
  * Design notes:
  *   - Uses `info` color palette (blue) as the Objective visual identity,
- *     distinct from Pain's `error` (red) and People's `secondary`.
+ *     distinct from Pain's `error` (red).
  *   - No nested list of children — unlike PainCard which renders
  *     PainImpacts, Objective has no sub-resource.
  *   - target_date is formatted with an "urgency" chip when within

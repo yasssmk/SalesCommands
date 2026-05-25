@@ -26,11 +26,6 @@
  * sets source_activity at extraction time. PATCH is partial, so omitting
  * source_activity leaves the existing FK untouched.
  *
- * Standardisation refactor (post-PHASES A-E backend) — destructive:
- *   source_contact and source_department have been removed from
- *   BaseSignal entirely. Provenance derived server-side from
- *   source_activity.contacts (m2m).
- *
  * The form does NOT call updateSignal directly. It calls onAdd(payload)
  * with a ready-to-dispatch payload — SignalEditDialog dispatches the
  * PATCH and surfaces errors.
@@ -690,7 +685,7 @@ export default function InlineImpactForm({
 InlineImpactForm.propTypes = {
   choices: PropTypes.shape({
     /**
-     * Shared canonical-axis enums exposed by the backend since Wave A.
+     * Shared canonical-axis enums exposed by the backend.
      * The model fields `what` and `dimension` read their options from
      * signal_whats / signal_dimensions respectively.
      */

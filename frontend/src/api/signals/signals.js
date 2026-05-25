@@ -2,13 +2,14 @@
 /**
  * API hooks and mutations for the Signals module.
  *
- * Three signal types, each with its own endpoint group:
+ * Four signal types, each with its own endpoint group:
  *   'pain'       → /module-signals/pain/
  *   'objective'  → /module-signals/objective/
+ *   'impact'     → /module-signals/impact/
  *   'tech-stack' → /module-signals/tech-stack/
  *
  * Mutations accept a `signalType` param:
- *   'pain' | 'objective' | 'tech-stack'
+ *   'pain' | 'objective' | 'impact' | 'tech-stack'
  *
  * Follows the same patterns as api/accounts/activities.js.
  */
@@ -60,7 +61,7 @@ const endpoints = {
 /**
  * Resolve base list endpoint for a given signal type.
  *
- * @param {'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @returns {string} Base URL
  */
 function getBaseEndpoint(signalType) {
@@ -218,7 +219,7 @@ function buildUrlWithParams(baseUrl, params = {}) {
  * Used internally by the public convenience hooks below.
  * Not exported — callers use useGetSignalsByAccount / useGetSignalsByActivity.
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'|null} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|null} signalType
  * @param {Object} options - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
@@ -344,13 +345,13 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *   source:            [...],   // SignalSource    (MANUAL / LLM_* / EXTERNAL_RESEARCH)
  *   signal_category:   [...],   // SignalCategory  (legacy, being deprecated)
  *   signal_whats:      [...],   // SignalWhat      (1st axis of canonical_key —
- *                                                   shared Pain + Objective)
+ *                                                   shared Pain, Objective, Impact)
  *   signal_dimensions: [...],   // SignalDimension (2nd axis of canonical_key —
  *                                                   same shared scope)
- *   human_impacts:     [...],   // HumanImpact     (orthogonal axis on PainImpact)
+ *   human_impacts:     [...],   // HumanImpact     (orthogonal axis on ImpactSignal)
  *   scope_levels:      [...],   // ScopeLevel      (BUSINESS / DEPARTMENT /
- *                                                   PERSONAL — drives PainImpact
- *                                                   scope and ObjectiveSignal
+ *                                                   PERSONAL — drives Pain,
+ *                                                   Objective and Impact
  *                                                   scope_level)
  *   usage_scopes:      [...],   // UsageScope      (TechStackSignal — TEAM /
  *                                                   DEPARTMENT / COMPANY / UNKNOWN)
@@ -362,22 +363,6 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *     "objective:<what>:<dimension>" on ObjectiveSignal. See
  *     InlinePainForm / InlineObjectiveForm for rendering.
  *   - scope_levels drives PainImpact creation — see AddPainImpactDialog.
- *
- * Wave A renames (destructive, no back-compat):
- *   - pain_whats      → signal_whats
- *   - pain_dimensions → signal_dimensions
- *   - impact_levels   → scope_levels
- *   - goal_levels     → removed (Objective adopts scope_levels since Wave B)
- *
- * Sprint TechStack changes:
- *   - tech_categories → removed (TechCategory enum dropped)
- *   - satisfaction    → removed (Satisfaction enum dropped)
- *   - usage_scopes    → added (drives conditional usage_department on
- *                              TechStackSignal)
- *
- * Sprint 2 removals (PeopleSignal sunset):
- *   - people_roles     → removed
- *   - influence_levels → removed
  *
  * @returns {Object} { choices, choicesLoading, choicesError, mutateChoices }
  */
@@ -412,7 +397,7 @@ export function useGetSignalChoices() {
  *
  * POST /module-signals/{signalType}/
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {Object} payload - Signal creation payload
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
@@ -439,7 +424,7 @@ export async function createSignal(signalType, payload) {
  *
  * PATCH /module-signals/{signalType}/{id}/
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {string} signalId - Signal UUID
  * @param {Object} payload  - Partial update payload
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
@@ -471,7 +456,7 @@ export async function updateSignal(signalType, signalId, payload) {
  *
  * DELETE /module-signals/{signalType}/{id}/
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {string} signalId - Signal UUID
  * @returns {Promise<{success: boolean, status?: number, error?: string}>}
  */
@@ -502,7 +487,7 @@ export async function deleteSignal(signalType, signalId) {
  * POST /module-signals/{signalType}/{id}/validate/
  * Transitions signal from PENDING → VALIDATED.
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {string} signalId - Signal UUID
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
@@ -534,7 +519,7 @@ export async function validateSignal(signalType, signalId) {
  * POST /module-signals/{signalType}/{id}/reject/
  * Body (optional): { reason: string }
  *
- * @param {'people'|'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {string} signalId    - Signal UUID
  * @param {string|null} reason - Optional rejection reason
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}

@@ -14,15 +14,15 @@
  * Staged signal shape (managed by WizardSignalAdd):
  *   { _key: string, _status: 'VALIDATED'|'REJECTED', ...payload }
  *
- * Wave B alignment:
+ * Staged card rendering:
  *   - StagedObjectiveCard renders canonical axes chip (what × dimension)
  *     + scope_level chip, consuming choices.signal_whats /
- *     signal_dimensions (shared canonical enums since Wave A).
+ *     signal_dimensions (shared canonical enums).
  *   - target_date urgency surfaced as a discrete chip when applicable.
  *   - Scope chip colors aligned with ObjectiveCard's palette
  *     (BUSINESS=warning, DEPARTMENT=info, PERSONAL=error).
- *   - No reference to choices.goal_levels (removed in Wave B — was a
- *     latent bug in the previous implementation).
+ *   - No reference to choices.goal_levels (removed — was a latent bug
+ *     in the previous implementation).
  */
 
 "use client";

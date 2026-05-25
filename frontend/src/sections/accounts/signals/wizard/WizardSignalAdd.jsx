@@ -5,7 +5,7 @@
  * Rendered as a right-side Drawer (full height).
  *
  * Two exclusive screens:
- *   SECTIONS  — WizardNav + active section (People/Pain/Objective/Tech Stack)
+ *   SECTIONS  — WizardNav + active section (Pain/Objective/Impact/Tech Stack)
  *               Footer: signal count + "Review & Save" button
  *
  *   SUMMARY   — WizardSummary (replaces sections entirely)
@@ -185,7 +185,7 @@ export default function WizardSignalAdd({
    * Add a signal payload to the staged list for a given type.
    * Called by each Section component via a type-specific wrapper.
    *
-   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {'pain'|'objective'|'impact'|'tech-stack'} type
    * @param {Object} payload - Form values from the inline form (no account/extraPayload)
    */
   const handleAdd = useCallback((type, payload) => {
@@ -218,7 +218,7 @@ export default function WizardSignalAdd({
   /**
    * Flip the _status of a staged signal between VALIDATED and REJECTED.
    *
-   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {'pain'|'objective'|'impact'|'tech-stack'} type
    * @param {string} key - _key of the signal to toggle
    */
   const handleToggle = useCallback((type, key) => {
@@ -255,7 +255,7 @@ export default function WizardSignalAdd({
   /**
    * Remove a staged signal entirely from the list.
    *
-   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {'pain'|'objective'|'impact'|'tech-stack'} type
    * @param {string} key - _key of the signal to remove
    */
   const handleRemove = useCallback((type, key) => {
@@ -287,7 +287,7 @@ export default function WizardSignalAdd({
    * Start editing a staged signal from within a section view.
    * The section will render the inline form pre-filled with signal data.
    *
-   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {'pain'|'objective'|'impact'|'tech-stack'} type
    * @param {string} key - _key of the signal to edit
    */
   const handleStartEdit = useCallback((type, key) => {
@@ -298,7 +298,7 @@ export default function WizardSignalAdd({
    * Start editing a staged signal from the Summary screen.
    * Closes Summary, switches to the signal's section, then enters edit mode.
    *
-   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {'pain'|'objective'|'impact'|'tech-stack'} type
    * @param {string} key - _key of the signal to edit
    */
   const handleStartEditFromSummary = useCallback((type, key) => {
@@ -313,7 +313,7 @@ export default function WizardSignalAdd({
    * Preserves the original _key and _status — only the payload fields are replaced.
    * Clears edit mode after update.
    *
-   * @param {'people'|'pain'|'objective'|'tech-stack'} type
+   * @param {'pain'|'objective'|'impact'|'tech-stack'} type
    * @param {string} key - _key of the signal being updated
    * @param {Object} payload - New payload from the inline form
    */
@@ -452,17 +452,15 @@ export default function WizardSignalAdd({
         // signal type's form logic free of this serialization concern.
         //
         // Fields covered:
-        //   source_contact       — Pain / Objective / People (where required)
-        //   target_contact       — People (target of the relation)
+        //   source_contact       — Pain / Objective (where required)
+        //   target_contact       — Objective (target of the relation)
         //   source_activity      — All types (optional except Pain where
         //                          it is required by the backend serializer)
         //   tech_catalog_entry   — TechStack catalog anchor (required)
-        //                          Sprint TechStack
         //   related_techstack    — Pain cross-reference to a TechCatalog
         //                          entry (optional, only meaningful when
-        //                          what === 'TECH'). Sprint TechStack —
-        //                          field exposed by InlinePainForm in
-        //                          sub-step 7.1; harmless no-op until then.
+        //                          what === 'TECH'). Field exposed by
+        //                          InlinePainForm in sub-step 7.1.
         if (
           payload.source_contact &&
           typeof payload.source_contact === "object"

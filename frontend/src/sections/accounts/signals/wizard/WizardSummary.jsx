@@ -209,7 +209,7 @@ SummarySignalCard.propTypes = {
 /**
  * WizardSummary
  *
- * @param {Object}   staged          - { people, pain, objective, 'tech-stack' } arrays
+ * @param {Object}   staged          - { pain, objective, impact, 'tech-stack' } arrays
  * @param {Function} onToggleStatus  - (type, _key) => void
  * @param {Function} onBack          - () => void — return to section view
  * @param {Function} onConfirm       - () => void — trigger dispatch

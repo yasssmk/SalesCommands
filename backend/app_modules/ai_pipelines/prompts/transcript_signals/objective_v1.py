@@ -56,8 +56,7 @@ success_criteria. Rationale per axis:
     ("by Q4", "ASAP", "30% reduction") that need normalisation. The rep
     is the right author for those refinements.
 
-The persistence service (Phase F) hardcodes the deferred fields at
-create time:
+The persistence service hardcodes the deferred fields at create time:
 
     scope_level         = ScopeLevel.BUSINESS
     target_contact      = None
@@ -71,7 +70,7 @@ These defaults satisfy ObjectiveSignal.clean()'s BUSINESS branch:
 
 Persistence contract
 --------------------
-The downstream persistence service (Phase F -- TranscriptSignalExtractor)
+The downstream persistence service (TranscriptSignalExtractor)
 first applies the pipeline-level safety filter (drops signals where
 confidence < CONFIDENCE_MIN OR (DROP_INFERRED is true AND is_inferred is
 true) -- the dropped count is logged on the AIPipelineRun audit row,

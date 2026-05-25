@@ -160,7 +160,7 @@ class _RelatedPainClusterRefSerializer(serializers.Serializer):
       }
 
     Note: priority_bucket is intentionally NOT included. Computing it
-    would require loading PainImpacts for every cross-referenced Pain
+    would require loading impact signals for every cross-referenced Pain
     cluster, which would multiply query cost on TechStack listing.
     Frontend can fetch the full Pain cluster detail via
     /clusters/<canonical_key>/?signal_type=pain when bucket is needed.
@@ -327,7 +327,7 @@ class SignalClusterListSerializer(serializers.Serializer):
     # --- Archival ---
     is_archived = serializers.BooleanField()
 
-    # --- TechStack-specific aggregation (Sprint TechStack) ---
+    # --- TechStack-specific aggregation ---
     # Always present in the payload across all signal types — populated
     # for TechStack clusters, neutral / null on Pain and Objective. The
     # unified cluster UI reads these without needing to branch on

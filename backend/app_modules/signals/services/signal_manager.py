@@ -153,8 +153,8 @@ class SignalManager:
              on every signal model that exposes them.
 
         Args:
-            model_class: Concrete signal model class (PeopleSignal, PainSignal,
-                         ObjectiveSignal, TechStackSignal).
+            model_class: Concrete signal model class (PainSignal,
+                         ObjectiveSignal, ImpactSignal, TechStackSignal).
             data:        Mutable validated_data dict from the create serializer.
                          Mutated in place.
 

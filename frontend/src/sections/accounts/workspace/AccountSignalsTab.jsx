@@ -2,7 +2,7 @@
 /**
  * AccountSignalsTab — operational view of individual signals.
  *
- * Renders all 4 signal types (People, Pain, Objective, Tech Stack) as
+ * Renders all 4 signal types (Pain, Objective, Impact, Tech Stack) as
  * uniform flat lists of cards with full CRUD: validate / reject / edit
  * / delete, plus type-specific extras (Pain has nested impacts CRUD).
  *

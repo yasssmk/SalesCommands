@@ -27,7 +27,7 @@ Cache invalidation
 ------------------
 Archive / unarchive invalidate the shared 'signals' cache tag so that
 any cached cluster listing becomes instantly stale. Follows the pattern
-used by BaseSignalViewSet and PainImpactViewSet.
+used by BaseSignalViewSet.
 """
 
 from django.db import transaction
@@ -223,9 +223,9 @@ class SignalClusterListView(BaseAPIView):
 
         account_id         = _parse_account_id(request, source='query')
         # List accepts either a single signal_type or a CSV list so the
-        # frontend can fetch mixed Pain+Objective clusters in one call
-        # once Wave B lands. SignalClusterService.list_clusters_for_account
-        # is the final authority on which types yield results.
+        # frontend can fetch mixed Pain+Objective clusters in one call.
+        # SignalClusterService.list_clusters_for_account is the final
+        # authority on which types yield results.
         signal_type        = _parse_signal_type(
             request, source='query', allow_list=True,
         )

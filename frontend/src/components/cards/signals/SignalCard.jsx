@@ -419,7 +419,7 @@ TechStackSignalDetail.propTypes = { signal: PropTypes.object.isRequired };
  * SignalCard
  *
  * @param {Object}   signal      - Signal data object (shape varies per type)
- * @param {string}   signalType  - 'people' | 'pain' | 'objective' | 'tech-stack'
+ * @param {string}   signalType  - 'pain' | 'objective' | 'impact' | 'tech-stack'
  * @param {Function} onValidate  - (signal, signalType) => void
  * @param {Function} onReject    - (signal, signalType) => void
  * @param {Function} onEdit      - (signal, signalType) => void
@@ -640,9 +640,8 @@ export default function SignalCard({
       </Stack>
 
       {/* ==================== CARD BODY — PER TYPE ==================== */}
-      {/* ==================== CARD BODY — PER TYPE ==================== */}
       {/*
-        All three signal types (pain / objective / tech-stack) are
+        All four signal types (pain / objective / impact / tech-stack) are
         normally rendered by their dedicated card components via
         SignalList. The *Body components below are fallback renderers
         that surface a visible warning when one of those types lands

@@ -29,16 +29,6 @@
  *
  * Validation is enforced here via Yup AND on the backend via model/serializer —
  * the UI rules mirror the server contract for a fast feedback loop.
- *
- *  Standardisation refactor (post-PHASES A-E backend) — destructive
- * --------------------------------------------------------------
- * source_contact and source_department have been retired from
- * BaseSignal entirely. ObjectiveSignal already had them removed
- * during the Wave B rewrite. The legacy `defaultContact` signature
- * parity prop has also been dropped (no inline form drives
- * source_contact anymore). Combined with the source_activity
- * removal above, this form's "Source" section has been retired
- * entirely — the user no longer picks any provenance data manually.
  */
 
 "use client";
@@ -740,7 +730,7 @@ export default function InlineObjectiveForm({
 InlineObjectiveForm.propTypes = {
   choices: PropTypes.shape({
     /**
-     * Shared canonical-axis enums exposed by the backend since Wave A.
+     * Shared canonical-axis enums exposed by the backend.
      * The model fields `what` and `dimension` read their options from
      * signal_whats / signal_dimensions respectively.
      */

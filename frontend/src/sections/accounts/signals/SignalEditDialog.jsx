@@ -62,7 +62,7 @@ const TYPE_LABELS = {
  * @param {Function} onClose        - Called on cancel / backdrop click
  * @param {Function} onSuccess      - Called after successful PATCH
  * @param {Object}   signal         - Signal object to edit (from backend read serializer)
- * @param {string}   signalType     - 'people' | 'pain' | 'objective' | 'tech-stack'
+ * @param {string}   signalType     - 'pain' | 'objective' | 'impact' | 'tech-stack'
  * @param {string}   accountId      - Account UUID — scopes contact search
  * @param {Object}   choices        - From useGetSignalChoices()
  * @param {boolean}  choicesLoading
