@@ -24,13 +24,7 @@ from .impact_serializer import (
     ImpactSignalCreateSerializer,
     ImpactSignalUpdateSerializer,
 )
-from .pain_impact_serializer import (
-    PainImpactReadSerializer,
-    PainImpactListSerializer,
-    PainImpactDetailSerializer,
-    PainImpactCreateSerializer,
-    PainImpactUpdateSerializer,
-)
+
 from .tech_stack_serializer import (
     TechStackSignalListSerializer,
     TechStackSignalDetailSerializer,
@@ -64,12 +58,7 @@ __all__ = [
     'ImpactSignalDetailSerializer',
     'ImpactSignalCreateSerializer',
     'ImpactSignalUpdateSerializer',
-    # Pain Impact (legacy — to be removed in cleanup wave)
-    'PainImpactReadSerializer',
-    'PainImpactListSerializer',
-    'PainImpactDetailSerializer',
-    'PainImpactCreateSerializer',
-    'PainImpactUpdateSerializer',
+
     # TechStack
     'TechStackSignalListSerializer',
     'TechStackSignalDetailSerializer',

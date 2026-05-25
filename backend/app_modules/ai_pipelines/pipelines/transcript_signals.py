@@ -1,14 +1,20 @@
 # app_modules/ai_pipelines/pipelines/transcript_signals.py
+
 """
 TranscriptSignalsPipeline -- the concrete pipeline that extracts
-Pain / Objective / TechStack signals from a sales transcript via 3
-sequential LLM sub-calls.
+Pain / Objective / Impact / TechStack signals from a sales transcript
+via 4 sequential LLM sub-calls.
 
 Sub-call sequence
 -----------------
     pain      -> Pain signals       (4 narrative + 2 epistemic fields)
     objective -> Objective signals  (4 narrative + 2 epistemic; service
                                        forces scope_level=BUSINESS)
+    impact    -> Impact signals     (5 narrative + 2 epistemic; service
+                                       forces scope_level=BUSINESS and
+                                       leaves metric_text / human_impact
+                                       unset -- rep fills during
+                                       validation)
     techstack -> TechStack signals  (4 techstack + 2 epistemic; catalog
                                        matching via context layer)
 
@@ -44,8 +50,8 @@ Error handling per stage
 
 Final status determination
 --------------------------
-    All 3 stages succeeded               -> SUCCESS
-    1 or 2 stages succeeded              -> PARTIAL
+    All 4 stages succeeded               -> SUCCESS
+    1, 2 or 3 stages succeeded           -> PARTIAL
     0 succeeded, all 'parse_error'       -> PARSE_ERROR
     0 succeeded, all 'timeout'           -> TIMEOUT
     0 succeeded, mixed failures          -> LLM_ERROR
@@ -60,6 +66,7 @@ Return contract
         'signals_by_stage': {
             'pain':       list[PainSignal],
             'objective':  list[ObjectiveSignal],
+            'impact':     list[ImpactSignal],
             'techstack':  list[TechStackSignal],
         }
     }
@@ -73,7 +80,7 @@ TranscriptSignalExtractor.persist_stage(...) is invoked once per
 successful LLM stage. Contract:
 
     persist_stage(
-        *, stage,           # 'pain' | 'objective' | 'techstack'
+        *, stage,           # 'pain' | 'objective' | 'impact' | 'techstack'
            raw_signals,     # list[dict] from LLM
            activity,
            user,
@@ -105,6 +112,10 @@ from ..prompts.transcript_signals.objective_v1 import (
     build_objective_request,
     OBJECTIVE_PROMPT_VERSION,
 )
+from ..prompts.transcript_signals.impact_v1 import (
+    build_impact_request,
+    IMPACT_PROMPT_VERSION,
+)
 from ..prompts.transcript_signals.techstack_v1 import (
     build_techstack_request,
     TECHSTACK_PROMPT_VERSION,
@@ -123,6 +134,7 @@ from .base import BasePipeline
 _STAGES = [
     ('pain', build_pain_request),
     ('objective', build_objective_request),
+    ('impact', build_impact_request),
     ('techstack', build_techstack_request),
 ]
 
@@ -139,6 +151,7 @@ class TranscriptSignalsPipeline(BasePipeline):
         'context':   CONTEXT_VERSION,
         'pain':      PAIN_PROMPT_VERSION,
         'objective': OBJECTIVE_PROMPT_VERSION,
+        'impact':    IMPACT_PROMPT_VERSION,
         'techstack': TECHSTACK_PROMPT_VERSION,
     }
 
@@ -156,7 +169,7 @@ class TranscriptSignalsPipeline(BasePipeline):
 
     def run(self, *, transcript, activity, user, client_id):
         """
-        Execute the 3-stage pipeline.
+        Execute the 4-stage pipeline.
 
         Args:
             transcript: str -- raw transcript. Hashed (sha256) for audit;
@@ -171,6 +184,7 @@ class TranscriptSignalsPipeline(BasePipeline):
                 'signals_by_stage': {
                     'pain':      list[PainSignal],
                     'objective': list[ObjectiveSignal],
+                    'impact':    list[ImpactSignal],
                     'techstack': list[TechStackSignal],
                 },
             }

@@ -4,8 +4,8 @@ Cache invalidation Django signals for the Signals module.
 
 Automatically invalidates the 'signals' and 'signal_clusters' cache tags
 when a signal model (PainSignal, ObjectiveSignal, ImpactSignal,
-TechStackSignal), a PainImpact, or a SignalClusterArchival is created,
-updated, or deleted.
+TechStackSignal) or a SignalClusterArchival is created, updated, or
+deleted.
 
 This is a safety net: ViewSets already call invalidate_tag() directly on
 every write path. These receivers catch writes made outside a ViewSet
@@ -21,19 +21,17 @@ See app_modules.signals.constants for the canonical matrix. Summary:
   ObjectiveSignal             ✓             ✗
   ImpactSignal                ✓             ✓
   TechStackSignal             ✓             ✗
-  PainImpact (legacy)         ✓             ✓
   SignalClusterArchival       ✗             ✓   (archival-only)
 
 Cluster-tag invalidation rule
 -----------------------------
 A signal type busts SIGNAL_CLUSTERS_CACHE_TAG iff it produces clusters
 whose aggregated stats (priority_score, freshness_status,
-confirmation_count, scope summaries) depend on the write. Pain,
-Impact, and PainImpact (legacy) match; Objective and TechStack
-clusters exist too but Objective writes don't change anything beyond
-the signal itself, and TechStack invalidation is currently scoped to
-the signals tag (Sprint TechStack decision — to revisit if cluster
-caches diverge).
+confirmation_count, scope summaries) depend on the write. Pain and
+Impact match; Objective and TechStack clusters exist too but
+Objective writes don't change anything beyond the signal itself, and
+TechStack invalidation is currently scoped to the signals tag
+(Sprint TechStack decision — to revisit if cluster caches diverge).
 
 Signal control
 --------------
@@ -256,48 +254,6 @@ def invalidate_on_tech_stack_delete(sender, instance, **kwargs):
     client_id = getattr(instance, 'client_id', None)
     if client_id:
         _invalidate_signals_after_commit(str(client_id))
-
-
-# =============================================================================
-# PAIN IMPACT — PIVOT: invalidates 'signals' AND 'signal_clusters'
-# =============================================================================
-#
-# PainImpact has no lifecycle of its own (no BaseSignal inheritance), but
-# it is the pivot entity that drives cluster aggregated stats:
-#   - human_impacts distribution
-#   - metrics list
-#   - impacted_contacts_count
-#   - max_impact_level
-#
-# A write on a PainImpact therefore must invalidate BOTH:
-#   - 'signals'          — because PainSignal detail reads nest impacts
-#   - 'signal_clusters'  — because cluster serializers compute stats
-#                          from the parent pain's impacts set
-# =============================================================================
-
-@receiver(post_save, sender='module_signals.PainImpact')
-def invalidate_on_pain_impact_save(sender, instance, **kwargs):
-    """Invalidate both caches when a PainImpact is saved."""
-    if are_signals_disabled():
-        return
-    client_id = getattr(instance, 'client_id', None)
-    if not client_id:
-        return
-    _invalidate_signals_after_commit(str(client_id))
-    _invalidate_clusters_after_commit(str(client_id))
-
-
-@receiver(post_delete, sender='module_signals.PainImpact')
-def invalidate_on_pain_impact_delete(sender, instance, **kwargs):
-    """Invalidate both caches when a PainImpact is deleted."""
-    if are_signals_disabled():
-        return
-    client_id = getattr(instance, 'client_id', None)
-    if not client_id:
-        return
-    _invalidate_signals_after_commit(str(client_id))
-    _invalidate_clusters_after_commit(str(client_id))
-
 
 # =============================================================================
 # SIGNAL CLUSTER ARCHIVAL — invalidates 'signal_clusters' only

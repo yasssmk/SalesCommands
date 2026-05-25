@@ -21,7 +21,6 @@ def get_urlpatterns():
         PainSignalViewSet,
         ObjectiveSignalViewSet,
         ImpactSignalViewSet,
-        PainImpactViewSet,
         TechStackSignalViewSet,
         SignalChoicesView,
         SignalClusterListView,
@@ -160,26 +159,6 @@ def get_urlpatterns():
             'tech-stack/<uuid:pk>/reject/',
             TechStackSignalViewSet.as_view({'post': 'reject_signal'}),
             name='tech-stack-reject',
-        ),
-
-        # =====================================================================
-        # PAIN IMPACTS — no lifecycle, no validate/reject
-        # =====================================================================
-
-        path(
-            'pain-impacts/',
-            PainImpactViewSet.as_view({'get': 'list', 'post': 'create'}),
-            name='pain-impact-list',
-        ),
-        path(
-            'pain-impacts/<uuid:pk>/',
-            PainImpactViewSet.as_view({
-                'get':    'retrieve',
-                'patch':  'partial_update',
-                'put':    'update',
-                'delete': 'destroy',
-            }),
-            name='pain-impact-detail',
         ),
 
         # =====================================================================

@@ -6,7 +6,7 @@ TranscriptSignalsPipeline.
 Responsibility
 --------------
 Given a list of raw signal dicts emitted by the LLM for ONE pipeline
-stage (pain / objective / techstack), this service:
+stage (pain / objective / impact / techstack), this service:
 
   1. Filters out LLM-self-declared weak signals (safety filter on
      confidence + is_inferred -- thresholds passed in from the
@@ -18,6 +18,10 @@ stage (pain / objective / techstack), this service:
                           (and target_contact / target_department stay
                           unset, satisfying ObjectiveSignal.clean()'s
                           BUSINESS branch).
+        - Impact      -> 1:1 passthrough + force scope_level=BUSINESS;
+                          metric_text and human_impact left unset (rep
+                          fills during validation). impact_type is
+                          emitted by the LLM and persisted directly.
         - TechStack   -> XOR resolution of tech_catalog_entry_id /
                           tech_name_raw, with defense-in-depth on the
                           catalog UUID (must belong to the requesting
@@ -123,7 +127,7 @@ class TranscriptSignalExtractor:
         Apply safety filter + persist surviving signals for one stage.
 
         Args:
-            stage:           'pain' | 'objective' | 'techstack'.
+            stage:           'pain' | 'objective' | 'impact' | 'techstack'.
             raw_signals:     list[dict] -- the LLM's emitted signals.
             activity:        app_modules.activities.Activity -- source activity.
             user:            end_users.User -- the rep who triggered the run.
@@ -136,7 +140,8 @@ class TranscriptSignalExtractor:
         Returns:
             tuple (persisted, dropped_count)
                 persisted:     list of concrete signal instances
-                                (PainSignal / ObjectiveSignal / TechStackSignal).
+                                (PainSignal / ObjectiveSignal /
+                                ImpactSignal / TechStackSignal).
                 dropped_count: int -- total signals NOT persisted, all reasons
                                 combined. The pipeline logs this in
                                 AIPipelineRun.sub_calls.
@@ -264,6 +269,8 @@ class TranscriptSignalExtractor:
             return self._build_pain_data(raw, activity)
         if stage == 'objective':
             return self._build_objective_data(raw, activity)
+        if stage == 'impact':
+            return self._build_impact_data(raw, activity)
         if stage == 'techstack':
             return self._build_techstack_data(raw, activity, client_id)
 
@@ -333,6 +340,63 @@ class TranscriptSignalExtractor:
 
             # v1 hardcoded scope -- rep refines during validation.
             'scope_level':     ScopeLevel.BUSINESS,
+        }
+    
+    # ---------------------- Impact ----------------------
+
+    def _build_impact_data(self, raw, activity):
+        """
+        Build SignalManager.create() data for an Impact signal.
+
+        Schema requirements (from impact_v1.py):
+            what, dimension, impact_type, summary, source_quote,
+            confidence, is_inferred.
+
+        impact_type is REQUIRED at the model level (ImpactSignal.clean())
+        and emitted on every signal by the LLM. Missing or null
+        impact_type -> drop the signal.
+
+        BUSINESS-scope hardcoded fields (v1):
+            scope_level    = ScopeLevel.BUSINESS  (rep promotes during
+                                                    validation)
+
+        Optional Impact fields left unset (rep adds during validation):
+            metric_text    -- free-text quantified value; LLM
+                              normalisation of fuzzy units is brittle
+                              at MVP scope.
+            human_impact   -- fuzzy emotion qualifier (FRUSTRATION /
+                              OVERLOAD / STRESS / DEMOTIVATION /
+                              CONFLICT); mapping a quote to a precise
+                              category yields too much noise at MVP.
+
+        These defaults satisfy ImpactSignal.clean()'s required-fields
+        rule (source_activity NOT NULL; impact_type / what / dimension /
+        summary / scope_level all populated).
+        """
+        required = ('what', 'dimension', 'impact_type', 'summary', 'source_quote')
+        if not all(k in raw and raw[k] is not None for k in required):
+            return None
+
+        return {
+            'signal_type':     'impact',
+            'account':         activity.account,
+            'source_activity': activity,
+            'source':          SignalSource.LLM_EXTRACTED,
+            'status':          SignalStatus.PENDING,
+            'what':            raw['what'],
+            'dimension':       raw['dimension'],
+            'impact_type':     raw['impact_type'],
+            'summary':         raw['summary'],
+            'source_quote':    raw['source_quote'],
+            'confidence':      self._safe_float(raw.get('confidence')),
+            'is_inferred':     bool(raw.get('is_inferred')),
+
+            # v1 hardcoded scope -- rep refines during validation.
+            'scope_level':     ScopeLevel.BUSINESS,
+
+            # metric_text and human_impact NOT extracted in v1 -- rep
+            # fills during validation. The fields are nullable on the
+            # model, so omitting them from the data dict is safe.
         }
 
     # ---------------------- TechStack ----------------------

@@ -59,6 +59,7 @@ the pipeline orchestrator (resolve once, pass three times).
 import logging
 
 from app_modules.signals.constants import (
+    ImpactType,
     SignalDimension,
     SignalWhat,
     UsageScope,
@@ -71,7 +72,7 @@ logger = logging.getLogger(__name__)
 
 CONTEXT_VERSION = 'v1'
 
-_SUPPORTED_STAGES = ('pain', 'objective', 'techstack')
+_SUPPORTED_STAGES = ('pain', 'objective', 'impact', 'techstack')
 
 
 # =============================================================================
@@ -245,17 +246,24 @@ def _build_taxonomy_block(target_stage):
     Render the per-stage canonical taxonomy as a JSON-array of allowed
     string values for each axis.
 
-    Pain & Objective both anchor on the SignalWhat x SignalDimension
-    canonical pair (the canonical_key of the resulting signal).
-    Objective additionally carries a goal_level (ScopeLevel) describing
-    the organisational scope of the goal.
+    Pain, Objective, and Impact all anchor on the SignalWhat x
+    SignalDimension canonical pair (the canonical_key of the resulting
+    signal). Impact additionally carries an `impact_type` axis
+    (ImpactType enum) that classifies the nature of the consequence
+    (financial / time / human / strategic / ...).
 
     TechStack does NOT use the (what, dimension) pair -- its canonical
     axis is the TechCatalog entry. Its only enum here is usage_scope.
 
     Field-level extraction details (which fields the LLM must emit,
     when to OMIT a signal) live in the per-stage request layer
-    (pain_v1.py, objective_v1.py, techstack_v1.py).
+    (pain_v1.py, objective_v1.py, impact_v1.py, techstack_v1.py).
+
+    Deferred axes per stage (forced to a hardcoded default by the
+    persistence service, rep refines during validation):
+      * Objective: scope_level forced to BUSINESS.
+      * Impact:    scope_level forced to BUSINESS; metric_text and
+                   human_impact left empty.
     """
     lines = [
         'CANONICAL TAXONOMY '
@@ -274,9 +282,7 @@ def _build_taxonomy_block(target_stage):
 
     elif target_stage == 'objective':
         # v1: scope_level is forced to BUSINESS by the persistence service
-        # (Option B - rep refines scope and target during validation).
-        # When PainImpact / objective scope extraction is added in a later
-        # sprint, re-import ScopeLevel and expose the scope_level axis here.
+        # (rep refines scope and target during validation).
         lines.append(
             '- what (area of the business targeted): '
             + _enum_json_array(SignalWhat)
@@ -284,6 +290,25 @@ def _build_taxonomy_block(target_stage):
         lines.append(
             '- dimension (outcome sought): '
             + _enum_json_array(SignalDimension)
+        )
+
+    elif target_stage == 'impact':
+        # v1: scope_level is forced to BUSINESS by the persistence
+        # service (rep refines scope during validation). metric_text
+        # and human_impact are NOT extracted in v1 -- the rep adds
+        # them during validation when relevant. See impact_v1.py
+        # docstring for the rationale.
+        lines.append(
+            '- what (area of the business affected): '
+            + _enum_json_array(SignalWhat)
+        )
+        lines.append(
+            '- dimension (friction or outcome experienced): '
+            + _enum_json_array(SignalDimension)
+        )
+        lines.append(
+            '- impact_type (nature of the observed consequence): '
+            + _enum_json_array(ImpactType)
         )
 
     elif target_stage == 'techstack':
