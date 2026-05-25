@@ -22,7 +22,7 @@ import { isValidUUID } from "utils/validators";
 
 // ==============================|| SIGNAL TYPES ||============================== //
 
-const SIGNAL_TYPES = ["pain", "objective", "tech-stack"];
+const SIGNAL_TYPES = ["pain", "objective", "impact", "tech-stack"];
 
 // ==============================|| ENDPOINTS ||============================== //
 
@@ -41,6 +41,12 @@ const endpoints = {
   objectiveDetail: (id) => `/module-signals/objective/${id}/`,
   objectiveValidate: (id) => `/module-signals/objective/${id}/validate/`,
   objectiveReject: (id) => `/module-signals/objective/${id}/reject/`,
+
+  // Impact
+  impact: "/module-signals/impact/",
+  impactDetail: (id) => `/module-signals/impact/${id}/`,
+  impactValidate: (id) => `/module-signals/impact/${id}/validate/`,
+  impactReject: (id) => `/module-signals/impact/${id}/reject/`,
 
   // Tech Stack
   techStack: "/module-signals/tech-stack/",
@@ -63,6 +69,8 @@ function getBaseEndpoint(signalType) {
       return endpoints.pain;
     case "objective":
       return endpoints.objective;
+    case "impact":
+      return endpoints.impact;
     case "tech-stack":
       return endpoints.techStack;
     default:
@@ -73,7 +81,7 @@ function getBaseEndpoint(signalType) {
 /**
  * Resolve detail endpoint for a given signal type + id.
  *
- * @param {'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Detail URL
  */
@@ -83,6 +91,8 @@ function getDetailEndpoint(signalType, id) {
       return endpoints.painDetail(id);
     case "objective":
       return endpoints.objectiveDetail(id);
+    case "impact":
+      return endpoints.impactDetail(id);
     case "tech-stack":
       return endpoints.techStackDetail(id);
     default:
@@ -93,7 +103,7 @@ function getDetailEndpoint(signalType, id) {
 /**
  * Resolve validate endpoint for a given signal type + id.
  *
- * @param {'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Validate URL
  */
@@ -103,6 +113,8 @@ function getValidateEndpoint(signalType, id) {
       return endpoints.painValidate(id);
     case "objective":
       return endpoints.objectiveValidate(id);
+    case "impact":
+      return endpoints.impactValidate(id);
     case "tech-stack":
       return endpoints.techStackValidate(id);
     default:
@@ -113,7 +125,7 @@ function getValidateEndpoint(signalType, id) {
 /**
  * Resolve reject endpoint for a given signal type + id.
  *
- * @param {'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Reject URL
  */
@@ -123,6 +135,8 @@ function getRejectEndpoint(signalType, id) {
       return endpoints.painReject(id);
     case "objective":
       return endpoints.objectiveReject(id);
+    case "impact":
+      return endpoints.impactReject(id);
     case "tech-stack":
       return endpoints.techStackReject(id);
     default:
@@ -131,13 +145,14 @@ function getRejectEndpoint(signalType, id) {
 }
 
 /**
- * Revalidate all 3 signal list caches.
+ * Revalidate all 4 signal list caches.
  * Called after any write that could affect any signal list.
  */
 function revalidateSignalLists() {
   revalidateMultiple([
     endpoints.pain,
     endpoints.objective,
+    endpoints.impact,
     endpoints.techStack,
   ]);
 }

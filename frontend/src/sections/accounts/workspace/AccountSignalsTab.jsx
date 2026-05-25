@@ -67,9 +67,11 @@ import {
 // ==============================|| CONSTANTS ||============================== //
 
 /** Section toggle options — 4 signal types */
+/** Section toggle options — 4 signal types */
 const TYPE_OPTIONS = [
   { value: "pain", label: "Pain" },
   { value: "objective", label: "Objective" },
+  { value: "impact", label: "Impact" },
   { value: "tech-stack", label: "Tech Stack" },
 ];
 
@@ -147,6 +149,13 @@ export default function AccountSignalsTab({ accountId, account }) {
   } = useGetSignalsByAccount(accountId, "objective", sharedOptions);
 
   const {
+    signals: impactSignals,
+    signalsLoading: impactLoading,
+    signalsError: impactError,
+    mutateSignals: mutateImpact,
+  } = useGetSignalsByAccount(accountId, "impact", sharedOptions);
+
+  const {
     signals: techSignals,
     signalsLoading: techLoading,
     signalsError: techError,
@@ -158,7 +167,7 @@ export default function AccountSignalsTab({ accountId, account }) {
   // ==============================|| DERIVED ||============================== //
 
   /**
-   * Revalidate all 3 sections — called after any signal-level write.
+   * Revalidate all 4 sections — called after any signal-level write.
    * Pain mutations also implicitly invalidate the cluster cache via
    * the API layer's revalidateMultiple — that's the Qualification tab's
    * responsibility, not ours.
@@ -166,12 +175,13 @@ export default function AccountSignalsTab({ accountId, account }) {
   const mutateAll = useCallback(() => {
     mutatePain();
     mutateObjective();
+    mutateImpact();
     mutateTech();
-  }, [mutatePain, mutateObjective, mutateTech]);
+  }, [mutatePain, mutateObjective, mutateImpact, mutateTech]);
 
   /**
    * Counts per type — shown as badges in the section toggle.
-   * All 3 types share the same flat-list semantics, so each count
+   * All 4 types share the same flat-list semantics, so each count
    * is the number of individual signals in the current view (after
    * status filter).
    */
@@ -179,12 +189,13 @@ export default function AccountSignalsTab({ accountId, account }) {
     () => ({
       pain: painSignals.length,
       objective: objectiveSignals.length,
+      impact: impactSignals.length,
       "tech-stack": techSignals.length,
     }),
-    [painSignals, objectiveSignals, techSignals],
+    [painSignals, objectiveSignals, impactSignals, techSignals],
   );
 
-  /** Active section data — uniform shape across all 3 types. */
+  /** Active section data — uniform shape across all 4 types. */
   const activeData = useMemo(() => {
     switch (activeType) {
       case "pain":
@@ -198,6 +209,12 @@ export default function AccountSignalsTab({ accountId, account }) {
           signals: objectiveSignals,
           loading: objectiveLoading,
           error: objectiveError,
+        };
+      case "impact":
+        return {
+          signals: impactSignals,
+          loading: impactLoading,
+          error: impactError,
         };
       case "tech-stack":
         return {
@@ -216,6 +233,9 @@ export default function AccountSignalsTab({ accountId, account }) {
     objectiveSignals,
     objectiveLoading,
     objectiveError,
+    impactSignals,
+    impactLoading,
+    impactError,
     techSignals,
     techLoading,
     techError,

@@ -115,6 +115,7 @@ const STEP_VALIDATE = 2;
 const INITIAL_STAGED = {
   pain: [],
   objective: [],
+  impact: [],
   "tech-stack": [],
 };
 
@@ -524,6 +525,7 @@ export default function WizardSignalAITranscript({
     () =>
       staged.pain.length +
       staged.objective.length +
+      staged.impact.length +
       staged["tech-stack"].length,
     [staged],
   );
@@ -538,9 +540,13 @@ export default function WizardSignalAITranscript({
    *
    * Default _status is VALIDATED ("include by default") — the user
    * toggles Excluded on any signal they want to drop.
+   *
+   * The local `next` shape mirrors INITIAL_STAGED — adding a new
+   * signal type only requires extending that constant; this builder
+   * picks it up automatically via Object.keys.
    */
   const buildStagedFromExtraction = useCallback((signalsByStage) => {
-    const next = { pain: [], objective: [], "tech-stack": [] };
+    const next = { pain: [], objective: [], impact: [], "tech-stack": [] };
     for (const type of Object.keys(next)) {
       const backendList = signalsByStage?.[type] ?? [];
       next[type] = backendList.map((sig) => ({

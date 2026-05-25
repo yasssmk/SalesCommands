@@ -1,4 +1,4 @@
-// frontend/src/sections/activities/signals/wizard/steps/WizardValidationStep.jsx
+// frontend/src/sections/activities/signals/wizard/WizardValidationStep.jsx
 /**
  * WizardValidationStep — second step of the signal capture wizard.
  *
@@ -57,18 +57,19 @@ import SendOutlined from "@ant-design/icons/SendOutlined";
 const TYPE_CONFIG = {
   pain: { label: "Pain", color: "error" },
   objective: { label: "Objective", color: "info" },
+  impact: { label: "Impact", color: "secondary" },
   "tech-stack": { label: "Tech Stack", color: "primary" },
 };
 
 /** Ordered for display in the validation recap */
-const TYPE_ORDER = ["pain", "objective", "tech-stack"];
+const TYPE_ORDER = ["pain", "objective", "impact", "tech-stack"];
 
 // ==============================|| HELPERS ||============================== //
 
 /**
  * Derive a short human-readable primary label for a staged signal.
  *
- * @param {'pain'|'objective'|'tech-stack'} type
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} type
  * @param {Object} signal
  * @returns {string}
  */
@@ -76,6 +77,7 @@ function getPrimaryLabel(type, signal) {
   switch (type) {
     case "pain":
     case "objective":
+    case "impact":
       return signal.summary
         ? signal.summary.slice(0, 80) + (signal.summary.length > 80 ? "…" : "")
         : "—";
@@ -204,7 +206,8 @@ function ValidationSignalCard({
 }
 
 ValidationSignalCard.propTypes = {
-  type: PropTypes.oneOf(["pain", "objective", "tech-stack"]).isRequired,
+  type: PropTypes.oneOf(["pain", "objective", "impact", "tech-stack"])
+    .isRequired,
   signal: PropTypes.shape({
     _key: PropTypes.string.isRequired,
     _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
@@ -411,6 +414,7 @@ WizardValidationStep.propTypes = {
   staged: PropTypes.shape({
     pain: PropTypes.array,
     objective: PropTypes.array,
+    impact: PropTypes.array,
     "tech-stack": PropTypes.array,
   }).isRequired,
   onToggleStatus: PropTypes.func.isRequired,

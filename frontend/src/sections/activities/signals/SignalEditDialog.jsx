@@ -54,6 +54,7 @@ import {
 import { buildEditInitialValues } from "./wizard/forms/buildEditInitialValues";
 import InlinePainForm from "./wizard/forms/InlinePainForm";
 import InlineObjectiveForm from "./wizard/forms/InlineObjectiveForm";
+import InlineImpactForm from "./wizard/forms/InlineImpactForm";
 import InlineTechStackForm from "./wizard/forms/InlineTechStackForm";
 
 // ==============================|| TYPE CONFIG ||============================== //
@@ -61,6 +62,7 @@ import InlineTechStackForm from "./wizard/forms/InlineTechStackForm";
 const TYPE_LABELS = {
   pain: "Pain Signal",
   objective: "Objective Signal",
+  impact: "Impact Signal",
   "tech-stack": "Tech Stack Signal",
 };
 
@@ -73,7 +75,7 @@ const TYPE_LABELS = {
  * @param {Function} onClose        - Called on cancel / backdrop click
  * @param {Function} onSuccess      - Called after successful PATCH
  * @param {Object}   signal         - Signal object to edit (from backend read serializer)
- * @param {string}   signalType     - 'pain' | 'objective' | 'tech-stack'
+ * @param {string}   signalType     - 'pain' | 'objective' | 'impact' | 'tech-stack'
  * @param {string}   accountId      - Account UUID — scopes contact search
  * @param {Object}   choices        - From useGetSignalChoices()
  * @param {boolean}  choicesLoading
@@ -212,6 +214,9 @@ export default function SignalEditDialog({
             {signalType === "objective" && (
               <InlineObjectiveForm {...sharedFormProps} />
             )}
+            {signalType === "impact" && (
+              <InlineImpactForm {...sharedFormProps} />
+            )}
             {signalType === "tech-stack" && (
               <InlineTechStackForm {...sharedFormProps} />
             )}
@@ -231,7 +236,7 @@ SignalEditDialog.propTypes = {
   signal: PropTypes.shape({
     id: PropTypes.string.isRequired,
   }),
-  signalType: PropTypes.oneOf(["pain", "objective", "tech-stack"]),
+  signalType: PropTypes.oneOf(["pain", "objective", "impact", "tech-stack"]),
   accountId: PropTypes.string.isRequired,
   choices: PropTypes.object,
   choicesLoading: PropTypes.bool,

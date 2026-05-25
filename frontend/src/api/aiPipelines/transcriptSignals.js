@@ -106,7 +106,7 @@ const endpoints = {
 /**
  * SWR cache prefixes invalidated after a successful extraction.
  *
- * The pipeline creates PENDING signals across all 3 types — every
+ * The pipeline creates PENDING signals across all 4 types — every
  * list that displays them (account workspace SignalsTab, activity
  * SignalsTab, etc.) needs to refetch so the new rows appear without
  * a manual page reload.
@@ -116,6 +116,7 @@ const endpoints = {
 const SIGNAL_LIST_PREFIXES = [
   "/module-signals/pain/",
   "/module-signals/objective/",
+  "/module-signals/impact/",
   "/module-signals/tech-stack/",
 ];
 

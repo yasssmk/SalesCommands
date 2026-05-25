@@ -26,7 +26,7 @@
  *   The corresponding form fields and builders have been retired
  *   across this module.
  *
- * @param {'pain'|'objective'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
  * @param {Object} signal - Backend read object for the signal
  * @returns {Object} Formik-ready initialValues
  */
@@ -39,6 +39,8 @@ export function buildEditInitialValues(signalType, signal) {
       return buildPainInitialValues(signal);
     case "objective":
       return buildObjectiveInitialValues(signal);
+    case "impact":
+      return buildImpactInitialValues(signal);
     case "tech-stack":
       return buildTechStackInitialValues(signal);
     default:
@@ -162,6 +164,64 @@ function buildObjectiveInitialValues(signal) {
     // S3 — Success
     success_criteria: signal.success_criteria ?? "",
     target_date: signal.target_date ?? "",
+    notes: signal.notes ?? "",
+  };
+}
+
+// ==============================|| IMPACT ||============================== //
+
+/**
+ * @param {Object} signal - ImpactSignal read object
+ * @returns {Object}
+ *
+ * Impact is a quantifiable evidence signal anchored on the same canonical
+ * axes (what × dimension) as Pain and Objective, with a scope_level for
+ * organisational reach but NO target_* owner FKs (Impact does not
+ * propagate ownership).
+ *
+ * This builder mirrors exactly the 4-section InlineImpactForm:
+ *
+ *   S1 — Diagnosis:        summary, what, dimension
+ *   S2 — Characterisation: impact_type (REQUIRED), human_impact, metric_text
+ *   S3 — Scope:            scope_level
+ *   S4 — Narrative:        source_quote, notes
+ *
+ * Field shape notes:
+ *   - impact_type is REQUIRED on the backend (null=False) — the LLM
+ *     pipeline always sets it at extraction time, so a read object
+ *     should never have it null. Defensive ?? "" guards against
+ *     malformed reads.
+ *   - human_impact is nullable — '' represents "not set" in the form
+ *     and gets coerced to null at submit time (see InlineImpactForm).
+ *   - metric_text is nullable free text. Defensive ?? "" so the
+ *     TextField binds to a string, never null.
+ *   - scope_level is null=False with default=BUSINESS on the model;
+ *     the LLM extractor forces BUSINESS by default — the rep can
+ *     promote it via Edit.
+ *
+ * NO target_* fields — Impact has no owner FK (contrary to Objective).
+ * NO target_date / success_criteria — Impact is the evidence itself,
+ * not a goal to reach.
+ *
+ * source_activity is NOT a builder field — see file docstring.
+ */
+function buildImpactInitialValues(signal) {
+  return {
+    // S1 — Diagnosis
+    summary: signal.summary ?? "",
+    what: signal.what ?? "",
+    dimension: signal.dimension ?? "",
+
+    // S2 — Characterisation
+    impact_type: signal.impact_type ?? "",
+    human_impact: signal.human_impact ?? "",
+    metric_text: signal.metric_text ?? "",
+
+    // S3 — Scope
+    scope_level: signal.scope_level ?? "",
+
+    // S4 — Narrative
+    source_quote: signal.source_quote ?? "",
     notes: signal.notes ?? "",
   };
 }

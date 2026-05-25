@@ -68,6 +68,7 @@ import WizardSignalAITranscript from "sections/activities/signals/wizard/WizardS
 const TYPE_OPTIONS = [
   { value: "pain", label: "Pain" },
   { value: "objective", label: "Objective" },
+  { value: "impact", label: "Impact" },
   { value: "tech-stack", label: "Tech Stack" },
 ];
 
@@ -298,6 +299,13 @@ export default function WrapUpCaptureSection({
   } = useGetSignalsByActivity(activityId, "objective");
 
   const {
+    signals: impactSignals,
+    signalsLoading: impactLoading,
+    signalsError: impactError,
+    mutateSignals: mutateImpact,
+  } = useGetSignalsByActivity(activityId, "impact");
+
+  const {
     signals: techSignals,
     signalsLoading: techLoading,
     signalsError: techError,
@@ -309,23 +317,29 @@ export default function WrapUpCaptureSection({
   const mutateAll = useCallback(() => {
     mutatePain();
     mutateObjective();
+    mutateImpact();
     mutateTech();
-  }, [mutatePain, mutateObjective, mutateTech]);
+  }, [mutatePain, mutateObjective, mutateImpact, mutateTech]);
 
   // ==============================|| DERIVED LIST DATA ||============================== //
 
   const totalCount = useMemo(
-    () => painSignals.length + objectiveSignals.length + techSignals.length,
-    [painSignals, objectiveSignals, techSignals],
+    () =>
+      painSignals.length +
+      objectiveSignals.length +
+      impactSignals.length +
+      techSignals.length,
+    [painSignals, objectiveSignals, impactSignals, techSignals],
   );
 
   const counts = useMemo(
     () => ({
       pain: painSignals.length,
       objective: objectiveSignals.length,
+      impact: impactSignals.length,
       "tech-stack": techSignals.length,
     }),
-    [painSignals, objectiveSignals, techSignals],
+    [painSignals, objectiveSignals, impactSignals, techSignals],
   );
 
   const activeData = useMemo(() => {
@@ -337,6 +351,12 @@ export default function WrapUpCaptureSection({
           signals: objectiveSignals,
           loading: objectiveLoading,
           error: objectiveError,
+        };
+      case "impact":
+        return {
+          signals: impactSignals,
+          loading: impactLoading,
+          error: impactError,
         };
       case "tech-stack":
         return { signals: techSignals, loading: techLoading, error: techError };
@@ -351,6 +371,9 @@ export default function WrapUpCaptureSection({
     objectiveSignals,
     objectiveLoading,
     objectiveError,
+    impactSignals,
+    impactLoading,
+    impactError,
     techSignals,
     techLoading,
     techError,

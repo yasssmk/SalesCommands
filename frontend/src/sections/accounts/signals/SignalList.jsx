@@ -33,6 +33,7 @@ import InboxOutlined from "@ant-design/icons/InboxOutlined";
 import SignalCard from "components/cards/signals/SignalCard";
 import PainCard from "components/cards/signals/PainCard";
 import ObjectiveCard from "components/cards/signals/ObjectiveCard";
+import ImpactCard from "components/cards/signals/ImpactCard";
 import TechStackCard from "components/cards/signals/TechStackCard";
 
 // ==============================|| SKELETON CARD ||============================== //
@@ -199,6 +200,9 @@ export default function SignalList({
   //   - pain       → PainCard        (nested impacts + impact CRUD controls)
   //   - objective  → ObjectiveCard   (canonical axes + scope + target_date
   //                                    urgency — Wave B)
+  //   - impact     → ImpactCard      (canonical axes + scope + impact_type
+  //                                    + human_impact + metric_text —
+  //                                    Sprint Impact)
   //   - tech-stack → TechStackCard   (catalog anchor + lifecycle +
   //                                    competitor / integration flags —
   //                                    Sprint TechStack)
@@ -209,6 +213,7 @@ export default function SignalList({
   // ships before its dedicated card is wired through this list.
   const isPain = signalType === "pain";
   const isObjective = signalType === "objective";
+  const isImpact = signalType === "impact";
   const isTechStack = signalType === "tech-stack";
 
   const renderSignalCard = (signal) => {
@@ -233,6 +238,19 @@ export default function SignalList({
         <ObjectiveCard
           key={signal.id}
           objective={signal}
+          choices={choices}
+          onValidate={onValidate}
+          onReject={onReject}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      );
+    }
+    if (isImpact) {
+      return (
+        <ImpactCard
+          key={signal.id}
+          impact={signal}
           choices={choices}
           onValidate={onValidate}
           onReject={onReject}
@@ -297,7 +315,8 @@ SignalList.propTypes = {
       id: PropTypes.string.isRequired,
     }),
   ),
-  signalType: PropTypes.oneOf(["pain", "objective", "tech-stack"]).isRequired,
+  signalType: PropTypes.oneOf(["pain", "objective", "impact", "tech-stack"])
+    .isRequired,
   loading: PropTypes.bool,
   error: PropTypes.any,
   onValidate: PropTypes.func.isRequired,

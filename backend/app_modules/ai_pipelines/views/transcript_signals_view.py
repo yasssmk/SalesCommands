@@ -128,6 +128,9 @@ from app_modules.signals.serializers.pain_serializer import (
 from app_modules.signals.serializers.objective_serializer import (
     ObjectiveSignalDetailSerializer,
 )
+from app_modules.signals.serializers.impact_serializer import (
+    ImpactSignalDetailSerializer,
+)
 from app_modules.signals.serializers.tech_stack_serializer import (
     TechStackSignalDetailSerializer,
 )
@@ -619,6 +622,11 @@ class TranscriptSignalsExtractView(BaseAPIView):
             many=True,
             context=ser_ctx,
         ).data
+        impact_payload = ImpactSignalDetailSerializer(
+            signals_by_stage.get('impact', []),
+            many=True,
+            context=ser_ctx,
+        ).data
         techstack_payload = TechStackSignalDetailSerializer(
             signals_by_stage.get('techstack', []),
             many=True,
@@ -640,6 +648,7 @@ class TranscriptSignalsExtractView(BaseAPIView):
             'signals_by_stage': {
                 'pain':       pain_payload,
                 'objective':  objective_payload,
+                'impact':       impact_payload,
                 'tech-stack': techstack_payload,
             },
         }
