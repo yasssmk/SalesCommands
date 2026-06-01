@@ -40,7 +40,13 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import SignalErrorMessages
 
 from ..constants import SignalStatus, SignalSource
-from ..models import PainSignal, ObjectiveSignal, ImpactSignal, TechStackSignal
+from ..models import (
+    PainSignal,
+    ObjectiveSignal,
+    ImpactSignal,
+    TechStackSignal,
+    BlockerSignal,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -77,6 +83,7 @@ class SignalManager:
           'objective'  → ObjectiveSignal
           'impact'     → ImpactSignal
           'tech_stack' → TechStackSignal
+          'blocker'    → BlockerSignal
 
         Activity-context propagation:
           When `data['source_activity']` is set, fields listed in
@@ -108,6 +115,7 @@ class SignalManager:
             'objective':  ObjectiveSignal,
             'impact':     ImpactSignal,
             'tech_stack': TechStackSignal,
+            'blocker':    BlockerSignal,
         }
         model_class = model_map.get(signal_type)
         if not model_class:

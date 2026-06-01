@@ -21,6 +21,7 @@ See app_modules.signals.constants for the canonical matrix. Summary:
   ObjectiveSignal             ✓             ✗
   ImpactSignal                ✓             ✓
   TechStackSignal             ✓             ✗
+  BlockerSignal               ✓             ✗
   SignalClusterArchival       ✗             ✓   (archival-only)
 
 Cluster-tag invalidation rule
@@ -254,6 +255,36 @@ def invalidate_on_tech_stack_delete(sender, instance, **kwargs):
     client_id = getattr(instance, 'client_id', None)
     if client_id:
         _invalidate_signals_after_commit(str(client_id))
+
+# =============================================================================
+# BLOCKER SIGNAL — invalidates 'signals' only
+# =============================================================================
+#
+# BlockerSignal does not participate in cluster aggregation (no
+# canonical_key, no signal_category, no clustering pass). Writes only
+# need to bust the operational signals tag — never the cluster tag.
+# See app_modules/signals/models/blocker_signal.py for the rationale.
+# =============================================================================
+
+@receiver(post_save, sender='module_signals.BlockerSignal')
+def invalidate_on_blocker_save(sender, instance, **kwargs):
+    """Invalidate signal caches when a BlockerSignal is saved."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_signals_after_commit(str(client_id))
+
+
+@receiver(post_delete, sender='module_signals.BlockerSignal')
+def invalidate_on_blocker_delete(sender, instance, **kwargs):
+    """Invalidate signal caches when a BlockerSignal is deleted."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_signals_after_commit(str(client_id))
+
 
 # =============================================================================
 # SIGNAL CLUSTER ARCHIVAL — invalidates 'signal_clusters' only

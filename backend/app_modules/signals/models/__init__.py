@@ -3,6 +3,7 @@ from .pain_signal import PainSignal
 from .objective_signal import ObjectiveSignal
 from .tech_stack_signal import TechStackSignal
 from .impact_signal import ImpactSignal
+from .blocker_signal import BlockerSignal
 from .signal_cluster_archival import SignalClusterArchival
 
 
@@ -12,5 +13,6 @@ __all__ = [
     'ObjectiveSignal',
     'TechStackSignal',
     'ImpactSignal',
+    'BlockerSignal',
     'SignalClusterArchival',
 ]

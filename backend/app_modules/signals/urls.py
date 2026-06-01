@@ -22,6 +22,7 @@ def get_urlpatterns():
         ObjectiveSignalViewSet,
         ImpactSignalViewSet,
         TechStackSignalViewSet,
+        BlockerSignalViewSet,
         SignalChoicesView,
         SignalClusterListView,
         SignalClusterDetailView,
@@ -159,6 +160,36 @@ def get_urlpatterns():
             'tech-stack/<uuid:pk>/reject/',
             TechStackSignalViewSet.as_view({'post': 'reject_signal'}),
             name='tech-stack-reject',
+        ),
+
+        # =====================================================================
+        # BLOCKER SIGNALS
+        # =====================================================================
+
+        path(
+            'blockers/',
+            BlockerSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='blocker-list',
+        ),
+        path(
+            'blockers/<uuid:pk>/',
+            BlockerSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='blocker-detail',
+        ),
+        path(
+            'blockers/<uuid:pk>/validate/',
+            BlockerSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='blocker-validate',
+        ),
+        path(
+            'blockers/<uuid:pk>/reject/',
+            BlockerSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='blocker-reject',
         ),
 
         # =====================================================================

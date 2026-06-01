@@ -31,6 +31,12 @@ from .tech_stack_serializer import (
     TechStackSignalCreateSerializer,
     TechStackSignalUpdateSerializer,
 )
+from .blocker_serializer import (
+    BlockerSignalListSerializer,
+    BlockerSignalDetailSerializer,
+    BlockerSignalCreateSerializer,
+    BlockerSignalUpdateSerializer,
+)
 from .cluster_serializer import (
     SignalClusterListSerializer,
     SignalClusterDetailSerializer,
@@ -64,6 +70,11 @@ __all__ = [
     'TechStackSignalDetailSerializer',
     'TechStackSignalCreateSerializer',
     'TechStackSignalUpdateSerializer',
+    # Blocker
+    'BlockerSignalListSerializer',
+    'BlockerSignalDetailSerializer',
+    'BlockerSignalCreateSerializer',
+    'BlockerSignalUpdateSerializer',
     # Cluster
     'SignalClusterListSerializer',
     'SignalClusterDetailSerializer',
