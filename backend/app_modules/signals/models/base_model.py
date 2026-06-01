@@ -82,7 +82,17 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
         null=True,
         blank=True,
         verbose_name=_('Source Activity'),
-        help_text=_('Activity (call/meeting) from which this signal was extracted')
+        help_text=_(
+            'Activity (call/meeting) from which this signal was extracted. '
+            'Nullable + on_delete=SET_NULL is INTENTIONAL: a validated signal '
+            'survives the deletion of its source conversation as an '
+            'account-level observation. The "source_activity required at '
+            'create" rule is enforced at the application layer — in '
+            'concrete model clean() methods and in the Create serializers '
+            '(see PainSignal.clean, BlockerSignal.clean, etc.) — never via '
+            'a DB-level NOT NULL constraint, because durifying the column '
+            'would contradict the SET_NULL deletion semantic.'
+        )
     )
 
     # =========================================================================
