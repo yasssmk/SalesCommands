@@ -37,6 +37,12 @@ from .blocker_serializer import (
     BlockerSignalCreateSerializer,
     BlockerSignalUpdateSerializer,
 )
+from .next_step_serializer import (
+    NextStepSignalListSerializer,
+    NextStepSignalDetailSerializer,
+    NextStepSignalCreateSerializer,
+    NextStepSignalUpdateSerializer,
+)
 from .cluster_serializer import (
     SignalClusterListSerializer,
     SignalClusterDetailSerializer,
@@ -75,6 +81,11 @@ __all__ = [
     'BlockerSignalDetailSerializer',
     'BlockerSignalCreateSerializer',
     'BlockerSignalUpdateSerializer',
+    # NextStep
+    'NextStepSignalListSerializer',
+    'NextStepSignalDetailSerializer',
+    'NextStepSignalCreateSerializer',
+    'NextStepSignalUpdateSerializer',
     # Cluster
     'SignalClusterListSerializer',
     'SignalClusterDetailSerializer',

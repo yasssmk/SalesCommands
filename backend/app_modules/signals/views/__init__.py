@@ -5,6 +5,7 @@ from .tech_stack_signal_views import TechStackSignalViewSet
 from .cluster_views import SignalClusterListView, SignalClusterDetailView, SignalClusterArchiveView, SignalClusterUnarchiveView
 from .impact_signal_views import ImpactSignalViewSet
 from .blocker_signal_views import BlockerSignalViewSet
+from .next_step_signal_views import NextStepSignalViewSet
 
 
 __all__ = [
@@ -18,6 +19,8 @@ __all__ = [
     'TechStackSignalViewSet',
     # Blocker
     'BlockerSignalViewSet',
+    # NextStep
+    'NextStepSignalViewSet',
     # Cluster views
     'SignalClusterListView',
     'SignalClusterDetailView',

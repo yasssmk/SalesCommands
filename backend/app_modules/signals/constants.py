@@ -566,6 +566,8 @@ TECHSTACK_RENEWAL_SOON_DAYS = 90
 #   ObjectiveSignal              ✓            ✗
 #   ImpactSignal                 ✓            ✓  (cluster member)
 #   TechStackSignal              ✓            ✗
+#   BlockerSignal                ✓            ✗  (non-clustering)
+#   NextStepSignal               ✓            ✗  (non-clustering)
 #   SignalClusterArchival        ✗            ✓  (archival-only)
 # =============================================================================
 

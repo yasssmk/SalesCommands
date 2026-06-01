@@ -324,7 +324,48 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Preparation Notes'),
         help_text=_('AI-generated preparation notes (future feature)')
     )
-    
+
+    # ==========================================================================
+    # NEXT-STEP SUGGESTION PROVENANCE
+    # ==========================================================================
+    #
+    # When an Activity is materialised from a validated NextStepSignal
+    # (post-call AI suggestion that the rep accepted and turned into a
+    # concrete Activity via the LLMNextStepActivityFormModal — Sprint
+    # F7), this FK records the originating suggestion for audit and
+    # for the reverse accessor on NextStepSignal
+    # (`next_step.created_activities`).
+    #
+    # Cardinality: DB-level FK (not OneToOne) because we do not enforce
+    # uniqueness — soft duplicates from retries / network failures
+    # should not raise, and the product contract "1 suggestion → 1
+    # Activity" is enforced at the UI layer, not at the schema layer.
+    #
+    # on_delete=SET_NULL preserves the Activity if the originating
+    # NextStepSignal is hard-deleted. REJECTING a NextStepSignal does
+    # not affect this FK (status change only, no DB cascade) — that is
+    # intentional: a rep may reject a suggestion AFTER having already
+    # materialised it (audit trail "this Activity was created from a
+    # suggestion that was later rejected").
+    #
+    # String reference to module_signals.NextStepSignal avoids a
+    # circular Python import at module load time.
+
+    next_step_signal = models.ForeignKey(
+        'module_signals.NextStepSignal',
+        on_delete=models.SET_NULL,
+        related_name='created_activities',
+        null=True,
+        blank=True,
+        verbose_name=_('Next Step Signal'),
+        help_text=_(
+            'Originating NextStepSignal this Activity was materialised '
+            'from (LLM-extracted post-call suggestion that the rep '
+            'accepted). Null for Activities created directly without '
+            'an LLM suggestion.'
+        ),
+    )
+
     # ==========================================================================
     # META
     # ==========================================================================

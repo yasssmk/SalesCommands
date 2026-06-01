@@ -14,6 +14,8 @@ Supported signal types (routed by SignalManager.create):
   objective  → ObjectiveSignal
   impact     → ImpactSignal
   tech_stack → TechStackSignal
+  blocker    → BlockerSignal
+  next_step  → NextStepSignal
 
 All methods raise StandardizedValidationError on guard violations.
 All write paths use model.save(user=user, client_id=...) so that
@@ -46,6 +48,7 @@ from ..models import (
     ImpactSignal,
     TechStackSignal,
     BlockerSignal,
+    NextStepSignal,
 )
 
 
@@ -84,6 +87,7 @@ class SignalManager:
           'impact'     → ImpactSignal
           'tech_stack' → TechStackSignal
           'blocker'    → BlockerSignal
+          'next_step'  → NextStepSignal
 
         Activity-context propagation:
           When `data['source_activity']` is set, fields listed in
@@ -116,6 +120,7 @@ class SignalManager:
             'impact':     ImpactSignal,
             'tech_stack': TechStackSignal,
             'blocker':    BlockerSignal,
+            'next_step':  NextStepSignal,
         }
         model_class = model_map.get(signal_type)
         if not model_class:
@@ -129,13 +134,56 @@ class SignalManager:
         # Mutates `data` in place — non-destructive (only fills None / missing keys).
         cls._propagate_activity_context(model_class, data)
 
+        # M2M kwargs cannot be passed to model.__init__() — Django raises
+        # TypeError "invalid keyword argument". Pop them out, instantiate
+        # + save the row, then apply each M2M via .set() once the
+        # instance has a PK. NextStepSignal.suggested_contacts is the
+        # first M2M to land on a concrete signal type — this branch is
+        # a forward-compatible hook for future M2M-bearing signals.
+        m2m_values = cls._pop_m2m_values(model_class, data)
+
         signal = model_class(**data)
         signal.save(user=user, client_id=client_id)
+
+        for field_name, value in m2m_values.items():
+            getattr(signal, field_name).set(value)
+
         return signal
 
     # -------------------------------------------------------------------------
     # CREATE — helpers
     # -------------------------------------------------------------------------
+
+    @classmethod
+    def _pop_m2m_values(cls, model_class, data: dict) -> dict:
+        """
+        Pop ManyToMany values out of `data` so they can be applied via
+        `.set()` AFTER the row is saved.
+
+        Django prohibits passing M2M values to `Model.__init__()` —
+        `MyModel(m2m_field=[...])` raises TypeError because the M2M
+        descriptor requires an existing PK before any relation can be
+        attached. SignalManager's create path therefore splits the
+        payload in two: scalar / FK fields go to __init__(); M2M
+        fields are returned here for the caller to apply post-save.
+
+        Mutates `data` in place (M2M keys are removed); returns a dict
+        of `{field_name: value}` for the popped M2M fields. An empty
+        dict when no M2M fields are present on the model.
+
+        Args:
+            model_class: Concrete signal model class.
+            data:        Mutable validated_data dict.
+
+        Returns:
+            Dict of M2M field_name → iterable-of-instances popped from `data`.
+        """
+        m2m_field_names = {f.name for f in model_class._meta.many_to_many}
+        popped = {}
+        for name in m2m_field_names:
+            if name in data:
+                popped[name] = data.pop(name)
+        return popped
 
     @classmethod
     def _propagate_activity_context(cls, model_class, data: dict) -> None:
@@ -353,8 +401,18 @@ class SignalManager:
             signal.original_value = signal.source_quote
             signal.source         = SignalSource.LLM_MODIFIED
 
+        # M2M fields cannot be applied via setattr — pop them out, apply
+        # scalar / FK fields via setattr + save, then materialise the
+        # M2M assignments via .set(). Mirror of the create-path split in
+        # SignalManager.create() / _pop_m2m_values().
+        m2m_values = cls._pop_m2m_values(signal.__class__, updates)
+
         for field, value in updates.items():
             setattr(signal, field, value)
 
         signal.save(user=user)
+
+        for field_name, value in m2m_values.items():
+            getattr(signal, field_name).set(value)
+
         return signal
