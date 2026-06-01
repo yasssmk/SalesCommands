@@ -23,6 +23,7 @@ def get_urlpatterns():
         ImpactSignalViewSet,
         TechStackSignalViewSet,
         BlockerSignalViewSet,
+        NextStepSignalViewSet,
         SignalChoicesView,
         SignalClusterListView,
         SignalClusterDetailView,
@@ -190,6 +191,36 @@ def get_urlpatterns():
             'blockers/<uuid:pk>/reject/',
             BlockerSignalViewSet.as_view({'post': 'reject_signal'}),
             name='blocker-reject',
+        ),
+
+        # =====================================================================
+        # NEXT STEP SIGNALS
+        # =====================================================================
+
+        path(
+            'next-steps/',
+            NextStepSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='next-step-list',
+        ),
+        path(
+            'next-steps/<uuid:pk>/',
+            NextStepSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='next-step-detail',
+        ),
+        path(
+            'next-steps/<uuid:pk>/validate/',
+            NextStepSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='next-step-validate',
+        ),
+        path(
+            'next-steps/<uuid:pk>/reject/',
+            NextStepSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='next-step-reject',
         ),
 
         # =====================================================================

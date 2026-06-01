@@ -4,8 +4,8 @@ Cache invalidation Django signals for the Signals module.
 
 Automatically invalidates the 'signals' and 'signal_clusters' cache tags
 when a signal model (PainSignal, ObjectiveSignal, ImpactSignal,
-TechStackSignal) or a SignalClusterArchival is created, updated, or
-deleted.
+TechStackSignal, BlockerSignal, NextStepSignal) or a
+SignalClusterArchival is created, updated, or deleted.
 
 This is a safety net: ViewSets already call invalidate_tag() directly on
 every write path. These receivers catch writes made outside a ViewSet
@@ -22,6 +22,7 @@ See app_modules.signals.constants for the canonical matrix. Summary:
   ImpactSignal                ✓             ✓
   TechStackSignal             ✓             ✗
   BlockerSignal               ✓             ✗
+  NextStepSignal              ✓             ✗
   SignalClusterArchival       ✗             ✓   (archival-only)
 
 Cluster-tag invalidation rule
@@ -279,6 +280,36 @@ def invalidate_on_blocker_save(sender, instance, **kwargs):
 @receiver(post_delete, sender='module_signals.BlockerSignal')
 def invalidate_on_blocker_delete(sender, instance, **kwargs):
     """Invalidate signal caches when a BlockerSignal is deleted."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_signals_after_commit(str(client_id))
+
+# =============================================================================
+# NEXT STEP SIGNAL — invalidates 'signals' only
+# =============================================================================
+#
+# NextStepSignal does not participate in cluster aggregation (no
+# canonical_key, no signal_category, no clustering pass — same stance
+# as BlockerSignal). Writes only need to bust the operational signals
+# tag — never the cluster tag.
+# See app_modules/signals/models/next_step_signal.py for the rationale.
+# =============================================================================
+
+@receiver(post_save, sender='module_signals.NextStepSignal')
+def invalidate_on_next_step_save(sender, instance, **kwargs):
+    """Invalidate signal caches when a NextStepSignal is saved."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_signals_after_commit(str(client_id))
+
+
+@receiver(post_delete, sender='module_signals.NextStepSignal')
+def invalidate_on_next_step_delete(sender, instance, **kwargs):
+    """Invalidate signal caches when a NextStepSignal is deleted."""
     if are_signals_disabled():
         return
     client_id = getattr(instance, 'client_id', None)

@@ -21,8 +21,8 @@ Scope conventions:
     primary subject under test.
   - `other_tenant_*` fixtures provide a second isolated tenant
     used exclusively by cross-tenant tests in test_blocker_api.py.
-  - Fixtures are minimal — only the fields required by BlockerSignal
-    and its FK chain are populated.
+  - Fixtures are minimal — only the fields required by BlockerSignal /
+    NextStepSignal and their FK chains are populated.
 
 Auth strategy:
   - `APIClient.force_authenticate(user=user, token=claims_dict)` is
@@ -277,6 +277,23 @@ def contact(db, account, user_a):
         first_name='Jane',
         last_name='Doe',
         job_title='VP Engineering',
+    )
+    c.save(user=user_a, client_id=account.client_id)
+    return c
+
+
+@pytest.fixture
+def contact_extra(db, account, user_a):
+    """
+    Second contact on tenant A — used by NextStepSignal tests that
+    exercise the `suggested_contacts` M2M with > 1 attendee.
+    """
+    from app_modules.contacts.models import Contact
+    c = Contact(
+        account=account,
+        first_name='John',
+        last_name='Smith',
+        job_title='CTO',
     )
     c.save(user=user_a, client_id=account.client_id)
     return c
