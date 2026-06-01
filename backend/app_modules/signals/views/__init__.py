@@ -4,6 +4,7 @@ from .objective_signal_views import ObjectiveSignalViewSet
 from .tech_stack_signal_views import TechStackSignalViewSet
 from .cluster_views import SignalClusterListView, SignalClusterDetailView, SignalClusterArchiveView, SignalClusterUnarchiveView
 from .impact_signal_views import ImpactSignalViewSet
+from .blocker_signal_views import BlockerSignalViewSet
 
 
 __all__ = [
@@ -15,6 +16,8 @@ __all__ = [
     'ImpactSignalViewSet',
     # TechStack
     'TechStackSignalViewSet',
+    # Blocker
+    'BlockerSignalViewSet',
     # Cluster views
     'SignalClusterListView',
     'SignalClusterDetailView',
