@@ -203,6 +203,33 @@ class TestPromptStructureCapture:
         assert 'EVIDENCE' in normalised
         assert 'NOT a verbatim' in normalised
 
+    def test_user_prompt_contains_concrete_source_quote_example(self):
+        """
+        The abstract JUSTIFICATION rule is reinforced by a concrete
+        EXAMPLE block that shows BOTH the correct shape and a
+        counter-example labelled INCORRECT. The example anchors the
+        LLM in the difference between "the justification" and "the
+        act of proposing", which the abstract wording alone does not
+        always disambiguate -- especially when a single speaker's
+        turn contains both the motivation and the proposal.
+
+        Asserting on two distinct anchors:
+          * "15 hours per week" -- the verbatim justification quote.
+          * "INCORRECT"         -- the counter-example label.
+
+        Removing either side of the contrast (the positive example or
+        the negative one) weakens the contract. Catching such a
+        regression at the prompt-capture level is the whole point of
+        the FakeProvider payload capture.
+        """
+        calls = self._provider.calls_for('next_steps')
+        user_prompt = calls[0]['user']
+        assert 'EXAMPLE' in user_prompt
+        # Positive example anchor (the justification verbatim).
+        assert '15 hours per week' in user_prompt
+        # Negative example anchor (counter-example label).
+        assert 'INCORRECT' in user_prompt
+
     def test_user_prompt_carries_activity_type_taxonomy(self):
         """
         The ACTIVITY TYPE TAXONOMY block must list every ActivityType

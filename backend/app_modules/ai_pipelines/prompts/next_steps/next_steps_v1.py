@@ -222,6 +222,23 @@ EMISSION RULES
   the EVIDENCE that the action is warranted, not the act of proposing
   it. Quote verbatim from the transcript, preserving original
   language, punctuation, and casing. Never translate.
+
+  EXAMPLE -- Suppose the transcript contains:
+    DSI: "My team loses 15 hours per week on manual reporting, it's untenable."
+    AE: "I can send you a sector benchmark tomorrow to quantify ROI."
+
+  The extracted NextStep would be:
+    suggested_title:         "Send sector benchmark for ROI"
+    suggested_activity_type: "EMAIL"
+    source_quote:            "My team loses 15 hours per week on manual reporting,
+                              it's untenable."        <- JUSTIFICATION
+
+  The following would be INCORRECT:
+    source_quote:            "I can send you a sector benchmark tomorrow."
+                                                      <- verbatim of the act of
+                                                         proposing, NOT the
+                                                         justification
+
 - Multiple distinct next steps on the same activity ARE allowed --
   emit one signal per distinct action, each anchored on its own
   justification quote.
