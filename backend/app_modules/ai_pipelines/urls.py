@@ -6,26 +6,30 @@ Mounted under /module-ai-pipelines/ in salescommands/urls.py.
 
 Routes
 ------
+    POST /module-ai-pipelines/activity-extraction/run/
+        -> ActivityExtractionView (Sprint B5)
+
+        Unified endpoint: orchestrates Qualification + NextSteps
+        pipelines on a single transcript. Preferred entry point.
+
     POST /module-ai-pipelines/transcript-signals/extract/
-        -> TranscriptSignalsExtractView
+        -> TranscriptSignalsExtractView (DEPRECATED — see TD-10)
 
-        Extract Pain / Objective / TechStack signals from a sales-call
-        transcript. See the view module docstring for the full
-        request / response contract.
-
-Future endpoints (deferred to follow-up sprints):
-    POST /module-ai-pipelines/game-plan/generate/
-        -> Pre-call preparation guide generator
-    POST /module-ai-pipelines/sentiment-analysis/run/
-        -> Per-contact rhetorical / sentiment analysis
+        Legacy qualification-only endpoint. Returns Deprecation +
+        Sunset headers. Will be removed after frontend migration.
 """
 
 from django.urls import path
 
-from .views import TranscriptSignalsExtractView
+from .views import ActivityExtractionView, TranscriptSignalsExtractView
 
 
 urlpatterns = [
+    path(
+        'activity-extraction/run/',
+        ActivityExtractionView.as_view(),
+        name='activity-extraction-run',
+    ),
     path(
         'transcript-signals/extract/',
         TranscriptSignalsExtractView.as_view(),

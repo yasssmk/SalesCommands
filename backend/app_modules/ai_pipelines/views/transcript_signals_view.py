@@ -138,6 +138,7 @@ from app_modules.signals.serializers.blocker_serializer import (
     BlockerSignalDetailSerializer,
 )
 
+from ..config import TRANSCRIPT_SIGNALS_SUNSET_DATE
 from ..models import AIPipelineRun
 from ..pipelines.transcript_signals import QualificationSignalsPipeline
 from ..serializers.transcript_signals_serializer import (
@@ -179,9 +180,21 @@ class TranscriptSignalsExtractView(BaseAPIView):
     def post(self, request, *args, **kwargs):
         """Thin wrapper: dispatch to _handle_extract, route exceptions."""
         try:
-            return self._handle_extract(request)
+            response = self._handle_extract(request)
         except Exception as exc:
-            return self.handle_exception(exc)
+            response = self.handle_exception(exc)
+        self._add_deprecation_headers(response)
+        return response
+
+    @staticmethod
+    def _add_deprecation_headers(response):
+        """Mark this endpoint as deprecated (TD-10). Migrate to /activity-extraction/run/."""
+        response['Deprecation'] = 'true'
+        response['Sunset'] = TRANSCRIPT_SIGNALS_SUNSET_DATE
+        response['Link'] = (
+            '</module-ai-pipelines/activity-extraction/run/>; '
+            'rel="successor-version"'
+        )
 
     # =========================================================================
     # ORCHESTRATOR
