@@ -1,9 +1,27 @@
 # app_modules/ai_pipelines/pipelines/transcript_signals.py
 
 """
-TranscriptSignalsPipeline -- the concrete pipeline that extracts
-Pain / Objective / Impact / TechStack signals from a sales transcript
-via 4 sequential LLM sub-calls.
+QualificationSignalsPipeline -- the concrete pipeline that extracts
+Pain / Objective / Impact / TechStack / Blocker signals from a sales
+transcript via 5 sequential LLM sub-calls.
+
+Naming note (Sprint B3 rename)
+------------------------------
+This class was originally named TranscriptSignalsPipeline. It was
+renamed to QualificationSignalsPipeline when the Blocker stage landed
+(Sprint B3) to better reflect the MEDDPICC-style scope of the pipeline
+(qualification axes across the whole conversation, not "raw transcript
+signals"). The previous name is kept as an alias at the bottom of this
+module for backwards compatibility -- both class names resolve to the
+same class.
+
+The underlying AIPipelineType.TRANSCRIPT_SIGNALS enum value is
+DELIBERATELY unchanged: historical AIPipelineRun rows store that string,
+and renaming it would require a data migration with no functional
+benefit. The "qualification" framing lives in Python; the DB and the
+URL surface keep the legacy name. The endpoint URL
+(/module-ai-pipelines/transcript-signals/extract/) also stays
+operational this sprint -- deprecation deferred to Sprint B5.
 
 Sub-call sequence
 -----------------
@@ -17,10 +35,16 @@ Sub-call sequence
                                        validation)
     techstack -> TechStack signals  (4 techstack + 2 epistemic; catalog
                                        matching via context layer)
+    blocker   -> Blocker signals    (2 narrative + 2 epistemic; no
+                                       canonical taxonomy axes; contact
+                                       attribution deferred to rep at
+                                       validation -- see TD-6)
 
 Each sub-call shares system prompt + context, varying only the request
 layer. The context layer includes the TechCatalog UUIDs only on the
-techstack stage (token economy).
+techstack stage (token economy). The context layer SKIPS the taxonomy
+block entirely on the blocker stage (BlockerSignal has no canonical
+axes).
 
 Safety filter
 -------------
@@ -50,8 +74,8 @@ Error handling per stage
 
 Final status determination
 --------------------------
-    All 4 stages succeeded               -> SUCCESS
-    1, 2 or 3 stages succeeded           -> PARTIAL
+    All 5 stages succeeded               -> SUCCESS
+    1, 2, 3 or 4 stages succeeded        -> PARTIAL
     0 succeeded, all 'parse_error'       -> PARSE_ERROR
     0 succeeded, all 'timeout'           -> TIMEOUT
     0 succeeded, mixed failures          -> LLM_ERROR
@@ -68,6 +92,7 @@ Return contract
             'objective':  list[ObjectiveSignal],
             'impact':     list[ImpactSignal],
             'techstack':  list[TechStackSignal],
+            'blocker':    list[BlockerSignal],
         }
     }
 
@@ -81,6 +106,7 @@ successful LLM stage. Contract:
 
     persist_stage(
         *, stage,           # 'pain' | 'objective' | 'impact' | 'techstack'
+                            # | 'blocker'
            raw_signals,     # list[dict] from LLM
            activity,
            user,
@@ -120,6 +146,10 @@ from ..prompts.transcript_signals.techstack_v1 import (
     build_techstack_request,
     TECHSTACK_PROMPT_VERSION,
 )
+from ..prompts.transcript_signals.blocker_v1 import (
+    build_blocker_request,
+    BLOCKER_PROMPT_VERSION,
+)
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -131,15 +161,22 @@ from .base import BasePipeline
 
 # Stage descriptors: (stage_name, request_builder).
 # Ordered list = call order. Future stage insertions go here.
+#
+# The blocker stage is intentionally LAST: it is the only non-canonical
+# stage (no taxonomy, no clustering, no catalog matching), and running
+# it after the canonical-axis stages keeps the prompt sequence aligned
+# with the rep's mental flow (qualification first, then "what stands
+# in the way").
 _STAGES = [
     ('pain', build_pain_request),
     ('objective', build_objective_request),
     ('impact', build_impact_request),
     ('techstack', build_techstack_request),
+    ('blocker', build_blocker_request),
 ]
 
 
-class TranscriptSignalsPipeline(BasePipeline):
+class QualificationSignalsPipeline(BasePipeline):
     """
     See module docstring for the full pipeline contract and lifecycle.
     """
@@ -153,6 +190,7 @@ class TranscriptSignalsPipeline(BasePipeline):
         'objective': OBJECTIVE_PROMPT_VERSION,
         'impact':    IMPACT_PROMPT_VERSION,
         'techstack': TECHSTACK_PROMPT_VERSION,
+        'blocker':   BLOCKER_PROMPT_VERSION,
     }
 
     TEMPERATURE = 0.0
@@ -169,7 +207,7 @@ class TranscriptSignalsPipeline(BasePipeline):
 
     def run(self, *, transcript, activity, user, client_id):
         """
-        Execute the 4-stage pipeline.
+        Execute the 5-stage pipeline.
 
         Args:
             transcript: str -- raw transcript. Hashed (sha256) for audit;
@@ -186,6 +224,7 @@ class TranscriptSignalsPipeline(BasePipeline):
                     'objective': list[ObjectiveSignal],
                     'impact':    list[ImpactSignal],
                     'techstack': list[TechStackSignal],
+                    'blocker':   list[BlockerSignal],
                 },
             }
         """
@@ -386,3 +425,22 @@ class TranscriptSignalsPipeline(BasePipeline):
         if all(f == 'timeout' for f in failures):
             return AIPipelineStatus.TIMEOUT, 'all stages timed out'
         return AIPipelineStatus.LLM_ERROR, f'all stages failed: {stage_outcomes}'
+
+
+# =============================================================================
+# BACKWARDS-COMPAT ALIAS
+# =============================================================================
+#
+# Sprint B3 renamed the class from TranscriptSignalsPipeline to
+# QualificationSignalsPipeline to reflect the broader MEDDPICC framing
+# (Pain / Objective / Impact / TechStack + Blocker). The legacy name is
+# preserved as an alias so any external import that still spells
+# `TranscriptSignalsPipeline` keeps resolving to the same class without
+# behavioural change.
+#
+# Internal callers updated to the new name during the same sprint:
+#   - views/transcript_signals_view.py
+#
+# Remove this alias once no internal caller spells the legacy name and
+# the deprecation window (B5) has closed.
+TranscriptSignalsPipeline = QualificationSignalsPipeline

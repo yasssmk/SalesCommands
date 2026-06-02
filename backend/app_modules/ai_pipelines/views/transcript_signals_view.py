@@ -134,9 +134,12 @@ from app_modules.signals.serializers.impact_serializer import (
 from app_modules.signals.serializers.tech_stack_serializer import (
     TechStackSignalDetailSerializer,
 )
+from app_modules.signals.serializers.blocker_serializer import (
+    BlockerSignalDetailSerializer,
+)
 
 from ..models import AIPipelineRun
-from ..pipelines.transcript_signals import TranscriptSignalsPipeline
+from ..pipelines.transcript_signals import QualificationSignalsPipeline
 from ..serializers.transcript_signals_serializer import (
     TranscriptSignalsExtractInputSerializer,
 )
@@ -297,7 +300,7 @@ class TranscriptSignalsExtractView(BaseAPIView):
         # 5. Run pipeline
         # ---------------------------------------------------------------------
         try:
-            pipeline = TranscriptSignalsPipeline()
+            pipeline = QualificationSignalsPipeline()
             result = pipeline.run(
                 transcript=transcript,
                 activity=activity,
@@ -632,6 +635,11 @@ class TranscriptSignalsExtractView(BaseAPIView):
             many=True,
             context=ser_ctx,
         ).data
+        blocker_payload = BlockerSignalDetailSerializer(
+            signals_by_stage.get('blocker', []),
+            many=True,
+            context=ser_ctx,
+        ).data
 
         sub_calls = run.sub_calls or []
         total_emitted = sum(sub.get('emitted_count', 0) for sub in sub_calls)
@@ -639,6 +647,14 @@ class TranscriptSignalsExtractView(BaseAPIView):
             sub.get('dropped_by_safety_filter', 0) for sub in sub_calls
         )
 
+        # signals_by_stage key naming convention:
+        #   - 'tech-stack' uses a dash for parity with the URL pattern
+        #     /module-signals/tech-stack/ (legacy frontend convention).
+        #   - 'blocker' (singular, no dash) matches the pipeline-internal
+        #     stage name and the URL pattern /module-signals/blockers/
+        #     stripped of its plural -- consistent with the per-signal
+        #     identifier used everywhere else (SignalManager dispatch,
+        #     AIPipelineRun.sub_calls[].stage).
         data = {
             'run_id':                          str(run.id),
             'status':                          run.status,
@@ -650,6 +666,7 @@ class TranscriptSignalsExtractView(BaseAPIView):
                 'objective':  objective_payload,
                 'impact':       impact_payload,
                 'tech-stack': techstack_payload,
+                'blocker':    blocker_payload,
             },
         }
 
