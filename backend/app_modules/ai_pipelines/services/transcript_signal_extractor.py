@@ -84,6 +84,8 @@ from app_modules.signals.services.signal_manager import SignalManager
 from app_modules.tech_catalog.models import TechCatalog
 from core.exceptions import StandardizedValidationError
 
+from .safety_filter import passes_safety_filter, safe_float
+
 
 logger = logging.getLogger(__name__)
 
@@ -224,40 +226,20 @@ class TranscriptSignalExtractor:
         return persisted, dropped_count
 
     # =========================================================================
-    # SAFETY FILTER
+    # SAFETY FILTER (delegated to the shared module)
     # =========================================================================
+    #
+    # The policy (drop on missing/low confidence + drop_inferred) lives
+    # in services/safety_filter.py so it is shared with NextStepExtractor
+    # and any future extractor. We keep a thin static-method wrapper on
+    # the class for backwards-compat with any caller that already spells
+    # `TranscriptSignalExtractor._passes_safety_filter`, but the
+    # implementation is a one-line delegation.
 
     @staticmethod
     def _passes_safety_filter(raw, confidence_min, drop_inferred):
-        """
-        Apply the LLM self-declared safety filter.
-
-        Drop rules:
-          - `confidence` missing or non-numeric                 -> drop.
-          - `confidence` < confidence_min                       -> drop.
-          - drop_inferred is True AND `is_inferred` is True     -> drop.
-
-        Returns:
-            bool: True when the signal passes the filter; False to drop.
-        """
-        raw_conf = raw.get('confidence')
-        if raw_conf is None:
-            # Per schema, confidence is required. Missing == contract violation.
-            return False
-        try:
-            confidence = float(raw_conf)
-        except (TypeError, ValueError):
-            return False
-        if confidence < confidence_min:
-            return False
-
-        if drop_inferred:
-            # Strict True comparison: a missing or falsy value does not
-            # trigger the drop, only an explicit boolean True.
-            if raw.get('is_inferred') is True:
-                return False
-
-        return True
+        """Delegate to services.safety_filter.passes_safety_filter."""
+        return passes_safety_filter(raw, confidence_min, drop_inferred)
 
     # =========================================================================
     # DATA-DICT BUILDERS
@@ -604,15 +586,10 @@ class TranscriptSignalExtractor:
             return None
 
     # =========================================================================
-    # MISC HELPERS
+    # MISC HELPERS (delegated to the shared module)
     # =========================================================================
 
     @staticmethod
     def _safe_float(value, default=0.0):
-        """Convert value to float; return default on failure."""
-        if value is None:
-            return default
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return default
+        """Delegate to services.safety_filter.safe_float."""
+        return safe_float(value, default)
