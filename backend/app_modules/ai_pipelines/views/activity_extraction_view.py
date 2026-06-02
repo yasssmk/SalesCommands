@@ -60,7 +60,6 @@ with the cached payload of both.
 """
 
 import hashlib
-import logging
 import uuid
 
 from rest_framework import status as http_status
@@ -456,7 +455,15 @@ class ActivityExtractionView(BaseAPIView):
         return {'success': True, 'data': data}
 
     def _build_cached_body(self, *, qualif_run, nextsteps_run, request):
-        """Build 409 response body when both pipelines are already extracted."""
+        """
+        Build 409 response body when both pipelines are already extracted.
+
+        Note on cache replay scope (TD-11): the serialized signals are
+        ALL signals matching source_activity, not only those produced by
+        these specific runs. Signals created manually or by prior runs
+        on different transcripts will appear here. Acceptable for MVP;
+        to be resolved when adding source_run FK tracking to signals.
+        """
         ser_ctx = {'request': request}
         return {
             'success': False,
@@ -467,7 +474,7 @@ class ActivityExtractionView(BaseAPIView):
             ),
             'code': 'ALREADY_EXTRACTED',
             'data': {
-                'status':                'ALREADY_EXTRACTED',
+                'status':                'SUCCESS',
                 'qualification_run':     self._serialize_run(
                     qualif_run, from_cache=True,
                 ),

@@ -289,6 +289,7 @@ class TestBothAlreadyExtracted:
         assert resp.status_code == 409
         body = resp.json()
         assert body['code'] == 'ALREADY_EXTRACTED'
+        assert body['data']['status'] == 'SUCCESS'
         assert body['data']['qualification_run']['from_cache'] is True
         assert body['data']['next_steps_run']['from_cache'] is True
 
@@ -568,3 +569,97 @@ class TestOldEndpointRegression:
         assert resp['Deprecation'] == 'true'
         assert resp['Sunset'] == TRANSCRIPT_SIGNALS_SUNSET_DATE
         assert 'activity-extraction/run/' in resp['Link']
+
+
+# =============================================================================
+# Q1 SYMMETRIC — prior NextSteps does NOT block Qualif
+# =============================================================================
+
+@pytest.mark.django_db
+class TestNextStepsCachedQualifFresh:
+    """
+    Mirror of TD-8 test: a prior NextSteps run (SUCCESS) in DB should NOT
+    block Qualification extraction via the unified endpoint. The response
+    should contain NextSteps from cache + fresh Qualif.
+    """
+
+    def test_next_steps_already_extracted_unified_run_still_extracts_qualif(
+        self, authed_api_a, activity, user_a, client_account_a,
+        patch_active_provider, fake_provider,
+    ):
+        input_hash = hashlib.sha256(TRANSCRIPT.encode('utf-8')).hexdigest()
+        AIPipelineRun.objects.create(
+            pipeline_type=AIPipelineType.NEXT_STEPS,
+            prompt_versions={'system': 'v1'},
+            provider='openai',
+            model_name='gpt-4o-mini',
+            temperature=0.0,
+            source_activity=activity,
+            input_hash=input_hash,
+            status=AIPipelineStatus.SUCCESS,
+            sub_calls=[],
+            total_tokens_used=100,
+            total_duration_ms=500,
+            error_message='',
+            created_signals_count=1,
+            client_id=client_account_a.id,
+            created_by=user_a,
+            updated_by=user_a,
+        )
+
+        fake_provider.replies = {**CANNED_REPLIES_HAPPY}
+
+        with _apply_patches(_bypass_redis):
+            resp = authed_api_a.post(
+                URL,
+                {'activity_id': str(activity.id), 'transcript': TRANSCRIPT},
+                format='json',
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body['success'] is True
+        data = body['data']
+
+        # NextSteps came from cache
+        assert data['next_steps_run']['from_cache'] is True
+        # Qualif is fresh
+        assert data['qualification_run']['from_cache'] is False
+        assert data['qualification_run']['status'] in ('SUCCESS', 'PARTIAL')
+        assert 'pain' in data['qualification_signals']
+
+        runs = AIPipelineRun.objects.filter(source_activity=activity)
+        assert runs.count() == 2
+
+
+# =============================================================================
+# P3 — Both pipelines crash → 500
+# =============================================================================
+
+@pytest.mark.django_db
+class TestBothPipelinesCrash:
+    """When both pipelines raise an unhandled exception, the view returns 500."""
+
+    def test_both_pipelines_real_crash_returns_500(
+        self, authed_api_a, activity, patch_active_provider,
+    ):
+        with (
+            _apply_patches(_bypass_redis),
+            patch(
+                'app_modules.ai_pipelines.views.activity_extraction_view'
+                '.QualificationSignalsPipeline.run',
+                side_effect=RuntimeError('qualif boom'),
+            ),
+            patch(
+                'app_modules.ai_pipelines.views.activity_extraction_view'
+                '.NextStepsPipeline.run',
+                side_effect=RuntimeError('nextsteps boom'),
+            ),
+        ):
+            resp = authed_api_a.post(
+                URL,
+                {'activity_id': str(activity.id), 'transcript': TRANSCRIPT},
+                format='json',
+            )
+
+        assert resp.status_code == 500
