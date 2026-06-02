@@ -120,7 +120,7 @@ class AIPipelineRun(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Pipeline Type'),
         help_text=_(
             'Identifies which business case produced this run '
-            '(e.g. TRANSCRIPT_SIGNALS).'
+            '(e.g. TRANSCRIPT_SIGNALS, NEXT_STEPS).'
         ),
     )
 

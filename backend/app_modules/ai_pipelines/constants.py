@@ -53,14 +53,31 @@ class AIPipelineType(models.TextChoices):
                             string 'TRANSCRIPT_SIGNALS' and migrating
                             them carries no functional benefit.
 
+      NEXT_STEPS         — produced by NextStepsPipeline (Sprint B4).
+                            Extracts NextStepSignal records (proposed
+                            follow-up actions) from a sales-call
+                            transcript. Single-stage pipeline -- no
+                            taxonomy block, no clustering, no contact
+                            attribution at v1 (deferred to the rep
+                            during validation, tracked as TD-7).
+                            Co-exists with TRANSCRIPT_SIGNALS runs on
+                            the same transcript: both pipelines share
+                            the same input_hash but distinct
+                            pipeline_type values, so AIPipelineRun
+                            rows are not deduplicated against each
+                            other -- see TD-8 for the view-layer
+                            dedup filter that must learn about
+                            pipeline_type in Sprint B5.
+
     Adding new values:
-      Each new pipeline (game plan generation, next-step extraction,
-      semantic retrieval, ...) adds one value here AND a corresponding
-      orchestrator module under pipelines/. The two must stay in
-      lockstep — `AIPipelineRun.pipeline_type` is the audit key for
-      filtering runs in support tooling and dashboards.
+      Each new pipeline (game plan generation, semantic retrieval,
+      ...) adds one value here AND a corresponding orchestrator
+      module under pipelines/. The two must stay in lockstep --
+      `AIPipelineRun.pipeline_type` is the audit key for filtering
+      runs in support tooling and dashboards.
     """
     TRANSCRIPT_SIGNALS = 'TRANSCRIPT_SIGNALS', _('Transcript signal extraction')
+    NEXT_STEPS         = 'NEXT_STEPS',         _('Next steps extraction')
 
 
 # =============================================================================

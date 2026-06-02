@@ -119,13 +119,16 @@ class FakeProvider:
     """
 
     # Marker substring -> stage name. Kept in sync with the TASK header
-    # of each prompts/transcript_signals/<stage>_v1.py module.
+    # of each prompt request builder. The first 5 markers belong to the
+    # transcript_signals/ family (QualificationSignalsPipeline); the
+    # last belongs to the next_steps/ family (NextStepsPipeline, B4).
     _STAGE_MARKERS = (
         ('Extract PAIN signals',       'pain'),
         ('Extract OBJECTIVE signals',  'objective'),
         ('Extract IMPACT signals',     'impact'),
         ('Extract TECH STACK signals', 'techstack'),
         ('Extract BLOCKER signals',    'blocker'),
+        ('Extract NEXT-STEP signals',  'next_steps'),
     )
 
     _EMPTY_REPLY = '{"signals": []}'
@@ -294,3 +297,19 @@ CANNED_REPLIES_HAPPY = {
         '}]}'
     ),
 }
+
+
+# A minimal happy-path LLM payload for the NextStepsPipeline single
+# stage. Used by Sprint B4 tests that want a "everything succeeded"
+# baseline without hand-rolling JSON per test. The shape mirrors
+# prompts/next_steps/next_steps_v1.py OUTPUT SCHEMA.
+CANNED_REPLY_NEXT_STEPS_HAPPY = (
+    '{"signals": [{'
+    '"suggested_title": "Send pricing recap to CFO", '
+    '"suggested_activity_type": "EMAIL", '
+    '"suggested_due_date": "2026-12-15", '
+    '"source_quote": "The CFO asked for a pricing recap by mid-December", '
+    '"confidence": 0.9, '
+    '"is_inferred": false'
+    '}]}'
+)
