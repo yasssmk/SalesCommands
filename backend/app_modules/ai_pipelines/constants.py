@@ -38,13 +38,23 @@ class AIPipelineType(models.TextChoices):
     audit record.
 
     Values:
-      TRANSCRIPT_SIGNALS — extracts PainSignal / ObjectiveSignal /
-                            TechStackSignal records from a sales-call
-                            transcript. The inaugural pipeline shipped
-                            with Sprint LLM Transcript Extraction.
+      TRANSCRIPT_SIGNALS — produced by QualificationSignalsPipeline.
+                            Extracts PainSignal / ObjectiveSignal /
+                            ImpactSignal / TechStackSignal /
+                            BlockerSignal records from a sales-call
+                            transcript. Originally introduced as a
+                            4-stage pipeline (Pain / Objective / Impact
+                            / TechStack) under the legacy class name
+                            TranscriptSignalsPipeline; Sprint B3 added
+                            the Blocker stage and renamed the class to
+                            QualificationSignalsPipeline. The enum
+                            VALUE is intentionally NOT renamed --
+                            historical AIPipelineRun rows store the
+                            string 'TRANSCRIPT_SIGNALS' and migrating
+                            them carries no functional benefit.
 
     Adding new values:
-      Each new pipeline (game plan generation, qualification scoring,
+      Each new pipeline (game plan generation, next-step extraction,
       semantic retrieval, ...) adds one value here AND a corresponding
       orchestrator module under pipelines/. The two must stay in
       lockstep — `AIPipelineRun.pipeline_type` is the audit key for

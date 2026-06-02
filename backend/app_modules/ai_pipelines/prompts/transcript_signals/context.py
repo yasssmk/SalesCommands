@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 
 CONTEXT_VERSION = 'v1'
 
-_SUPPORTED_STAGES = ('pain', 'objective', 'impact', 'techstack')
+_SUPPORTED_STAGES = ('pain', 'objective', 'impact', 'techstack', 'blocker')
 
 
 # =============================================================================
@@ -87,14 +87,24 @@ def build_context_layer(activity, target_stage):
     Args:
         activity: app_modules.activities.models.Activity. Anchor for all
             session grounding (tenant, account, contacts).
-        target_stage: One of 'pain', 'objective', 'techstack'. Drives
-            which canonical enums are exposed AND whether the
-            TechCatalog list is appended.
+        target_stage: One of 'pain', 'objective', 'impact', 'techstack',
+            'blocker'. Drives which canonical enums are exposed AND
+            whether the TechCatalog list is appended.
 
     Returns:
         str: A ready-to-concatenate context block. Will be combined
         with the request layer by PromptBuilder.assemble() to form the
         final user message.
+
+    Stage-specific block composition:
+        pain / objective / impact / techstack
+            session + taxonomy (+ techcatalog for techstack)
+        blocker
+            session only. BlockerSignal carries NO canonical taxonomy
+            (no `what` / `dimension` / signal_category) and does not
+            consume the TechCatalog. Emitting an empty taxonomy header
+            would waste tokens and confuse the LLM with an irrelevant
+            instruction; we skip the block entirely.
 
     Raises:
         ValueError: target_stage is not one of the supported values.
@@ -105,12 +115,15 @@ def build_context_layer(activity, target_stage):
             f'Expected one of: {", ".join(_SUPPORTED_STAGES)}.'
         )
 
-    blocks = [
-        _build_session_block(activity),
-        _build_taxonomy_block(target_stage),
-    ]
-    if target_stage == 'techstack':
-        blocks.append(_build_techcatalog_block(activity))
+    blocks = [_build_session_block(activity)]
+
+    # Taxonomy + techcatalog only for canonical-axis stages.
+    # Blocker stage is intentionally session-only: no canonical enums,
+    # no catalog dependency. See module docstring of blocker_v1.py.
+    if target_stage != 'blocker':
+        blocks.append(_build_taxonomy_block(target_stage))
+        if target_stage == 'techstack':
+            blocks.append(_build_techcatalog_block(activity))
 
     return '\n\n'.join(b for b in blocks if b)
 

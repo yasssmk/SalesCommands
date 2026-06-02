@@ -28,6 +28,10 @@ stage (pain / objective / impact / techstack), this service:
                           tenant); usage_scope filtered to TEAM /
                           COMPANY / UNKNOWN (DEPARTMENT and unknown
                           values demoted to null).
+        - Blocker     -> 1:1 passthrough on summary / source_quote /
+                          confidence / is_inferred. `contact` (FK
+                          Contact, optional) is NOT extracted in v1
+                          -- rep attributes during validation (TD-6).
   3. Calls SignalManager.create() for each surviving signal.
   4. Returns the persisted list and the dropped count for audit
      logging by the pipeline.
@@ -127,7 +131,7 @@ class TranscriptSignalExtractor:
         Apply safety filter + persist surviving signals for one stage.
 
         Args:
-            stage:           'pain' | 'objective' | 'impact' | 'techstack'.
+            stage:           'pain' | 'objective' | 'impact' | 'techstack' | 'blocker'.
             raw_signals:     list[dict] -- the LLM's emitted signals.
             activity:        app_modules.activities.Activity -- source activity.
             user:            end_users.User -- the rep who triggered the run.
@@ -141,7 +145,8 @@ class TranscriptSignalExtractor:
             tuple (persisted, dropped_count)
                 persisted:     list of concrete signal instances
                                 (PainSignal / ObjectiveSignal /
-                                ImpactSignal / TechStackSignal).
+                                ImpactSignal / TechStackSignal /
+                                BlockerSignal).
                 dropped_count: int -- total signals NOT persisted, all reasons
                                 combined. The pipeline logs this in
                                 AIPipelineRun.sub_calls.
@@ -273,6 +278,8 @@ class TranscriptSignalExtractor:
             return self._build_impact_data(raw, activity)
         if stage == 'techstack':
             return self._build_techstack_data(raw, activity, client_id)
+        if stage == 'blocker':
+            return self._build_blocker_data(raw, activity)
 
         logger.warning(
             'persist_stage_unknown_stage',
@@ -484,6 +491,63 @@ class TranscriptSignalExtractor:
         # else: leave unset (None) -- model field is nullable.
 
         return data
+
+    # ---------------------- Blocker ----------------------
+
+    def _build_blocker_data(self, raw, activity):
+        """
+        Build SignalManager.create() data for a Blocker signal.
+
+        Schema requirements (from blocker_v1.py):
+            summary, source_quote, confidence, is_inferred
+
+        v1 deliberately omits `contact` attribution
+        ---------------------------------------------
+        BlockerSignal.contact (FK Contact, nullable) is NOT extracted in
+        v1 -- the LLM may not reliably map "the CFO" / "Jane" to a
+        Contact UUID from free text. Rep attributes during validation
+        in the Activity workspace. Mirror of Impact v1 which defers
+        metric_text and human_impact for the same robustness reason.
+        Tracked as TD-6 in TECH_DEBT.md.
+
+        Other deferred BlockerSignal fields
+        -----------------------------------
+        BlockerSignal does NOT participate in cluster aggregation:
+            signal_category    -- shadow-overridden to None on the
+                                  model; never set here.
+            canonical_key      -- forced to None by BlockerSignal.save()
+                                  regardless of any value passed in.
+
+        decision_cycle / campaign are auto-propagated from
+        source_activity by SignalManager._propagate_activity_context --
+        not by this builder.
+        """
+        required = ('summary', 'source_quote')
+        if not all(k in raw and raw[k] is not None for k in required):
+            return None
+
+        # Non-empty source_quote: an empty verbatim defeats the audit
+        # purpose of the column. Empty summary likewise carries no
+        # signal value.
+        summary = str(raw['summary']).strip()
+        source_quote = str(raw['source_quote']).strip()
+        if not summary or not source_quote:
+            return None
+
+        return {
+            'signal_type':     'blocker',
+            'account':         activity.account,
+            'source_activity': activity,
+            'source':          SignalSource.LLM_EXTRACTED,
+            'status':          SignalStatus.PENDING,
+            'summary':         summary,
+            'source_quote':    source_quote,
+            'confidence':      self._safe_float(raw.get('confidence')),
+            'is_inferred':     bool(raw.get('is_inferred')),
+
+            # v1: contact attribution deferred to validation UI -- TD-6.
+            # Field stays at model default (None).
+        }
 
     # =========================================================================
     # DEFENSE-IN-DEPTH HELPERS
