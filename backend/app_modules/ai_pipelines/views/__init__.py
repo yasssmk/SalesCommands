@@ -11,7 +11,8 @@ When new endpoints land (future game-plan generator, etc.), add their
 view classes here and to __all__.
 """
 
+from .activity_extraction_view import ActivityExtractionView
 from .transcript_signals_view import TranscriptSignalsExtractView
 
 
-__all__ = ['TranscriptSignalsExtractView']
+__all__ = ['ActivityExtractionView', 'TranscriptSignalsExtractView']

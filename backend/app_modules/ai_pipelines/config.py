@@ -108,6 +108,16 @@ MAX_TRANSCRIPT_LENGTH = getattr(
 
 
 # =============================================================================
+# DEPRECATION — old endpoint sunset
+# =============================================================================
+
+# ISO-8601 date after which /transcript-signals/extract/ may be removed.
+# 6 months from Sprint B5 merge (June 2026). Referenced by the Deprecation
+# + Sunset headers added to the old view (see TD-10 in TECH_DEBT.md).
+TRANSCRIPT_SIGNALS_SUNSET_DATE = '2026-12-01'
+
+
+# =============================================================================
 # HELPERS
 # =============================================================================
 
