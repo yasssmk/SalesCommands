@@ -28,7 +28,7 @@ export default function ActivityNextStepsTab({ activity, isLocked }) {
           Next Steps
         </Typography>
         <Typography variant="body2" color="text.secondary" maxWidth={400}>
-          Coming in Sprint F7 — Wizard for materializing AI-suggested next
+          Coming in Sprint F6 — Wizard for materializing AI-suggested next
           steps into concrete Activities, with title, due date, contact
           assignment, and activity type.
         </Typography>

@@ -69,7 +69,7 @@ vi.mock("sections/activities/workspace/ActivitySignalsTab", () => ({
   default: () => <div data-testid="tab-signals">Coming in Sprint F5</div>,
 }));
 vi.mock("sections/activities/workspace/ActivityNextStepsTab", () => ({
-  default: () => <div data-testid="tab-next-steps">Coming in Sprint F7</div>,
+  default: () => <div data-testid="tab-next-steps">Coming in Sprint F6</div>,
 }));
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
@@ -263,7 +263,7 @@ describe("ActivityWorkspacePage", () => {
     render(<ActivityWorkspacePage />);
 
     expect(screen.getByTestId("tab-next-steps")).toBeInTheDocument();
-    expect(screen.getByTestId("tab-next-steps")).toHaveTextContent("Coming in Sprint F7");
+    expect(screen.getByTestId("tab-next-steps")).toHaveTextContent("Coming in Sprint F6");
   });
 
   // ------------------------------------------------------------------
