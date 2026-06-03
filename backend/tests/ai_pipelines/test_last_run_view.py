@@ -79,7 +79,7 @@ class TestLastRunView:
         assert resp.data['last_run'] is None
 
     def test_ignores_failed_runs(self, authed_api_a, activity, user_a):
-        _create_run(activity, user_a, status=AIPipelineStatus.FAILED)
+        _create_run(activity, user_a, status=AIPipelineStatus.LLM_ERROR)
 
         resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
 
