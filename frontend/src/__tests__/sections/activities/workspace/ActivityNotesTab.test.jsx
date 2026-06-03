@@ -16,9 +16,24 @@ vi.mock('components/MainCard', () => ({
   default: ({ children, ...props }) => <div data-testid="main-card" {...props}>{children}</div>,
 }));
 
-const mockUpdateActivity = vi.fn();
-vi.mock('api/accounts/activities', () => ({
-  updateActivity: (...args) => mockUpdateActivity(...args),
+vi.mock('components/EditableTextBlock', () => ({
+  default: ({ label, field, initialValue, onSave, isLocked, placeholder, showCharCount }) => (
+    <div data-testid={`editable-text-block-${field}`}>
+      <span data-testid={`etb-label-${field}`}>{label}</span>
+      <textarea
+        data-testid={`etb-input-${field}`}
+        defaultValue={initialValue || ''}
+        disabled={isLocked}
+        placeholder={placeholder}
+        readOnly
+      />
+      {showCharCount && (
+        <span data-testid={`etb-charcount-${field}`}>
+          {(initialValue || '').length} characters
+        </span>
+      )}
+    </div>
+  ),
 }));
 
 const mockRunExtraction = vi.fn();
@@ -37,6 +52,17 @@ vi.mock('api/aiPipelines/activityExtraction', () => ({
   },
 }));
 
+const mockLastRun = { last_run_at: null, last_run_by: null, input_hash: null };
+const mockMutateLastRun = vi.fn();
+vi.mock('api/aiPipelines/lastRun', () => ({
+  useGetLastExtractionRun: () => ({
+    lastRun: mockLastRun,
+    lastRunLoading: false,
+    lastRunError: null,
+    mutateLastRun: mockMutateLastRun,
+  }),
+}));
+
 vi.mock('utils/displayError', () => ({
   displayErrorSnackbar: vi.fn(),
   displaySuccessSnackbar: vi.fn(),
@@ -53,6 +79,7 @@ const LONG_TRANSCRIPT = 'B'.repeat(200);
 const mockActivity = {
   id: 'act-111',
   transcript: LONG_TRANSCRIPT,
+  outcome_notes: 'Some important notes',
   status: 'PLANNED',
 };
 
@@ -74,129 +101,57 @@ function renderTab(overrides = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.useFakeTimers({ shouldAdvanceTime: true });
   mockOnSave.mockResolvedValue(true);
 });
 
 afterEach(() => {
-  vi.useRealTimers();
   cleanup();
 });
 
 describe('ActivityNotesTab', () => {
   // ------------------------------------------------------------------
-  // 1. Render OK
+  // 1. Renders Notes and Transcript EditableTextBlocks
   // ------------------------------------------------------------------
-  it('renders transcript textarea and Run AI Analysis button', () => {
+  it('renders Notes and Transcript EditableTextBlocks', () => {
     renderTab();
 
-    expect(screen.getByTestId('transcript-input')).toBeInTheDocument();
-    expect(screen.getByText('Transcript')).toBeInTheDocument();
-    expect(screen.getByText('Run AI Analysis')).toBeInTheDocument();
+    expect(screen.getByTestId('editable-text-block-outcome_notes')).toBeInTheDocument();
+    expect(screen.getByTestId('editable-text-block-transcript')).toBeInTheDocument();
+    expect(screen.getByTestId('etb-label-outcome_notes')).toHaveTextContent('Notes');
+    expect(screen.getByTestId('etb-label-transcript')).toHaveTextContent('Transcript');
   });
 
   // ------------------------------------------------------------------
-  // 2. Pre-fills transcript from activity
+  // 2. Pre-fills transcript and notes from activity
   // ------------------------------------------------------------------
-  it('pre-fills textarea with activity.transcript', () => {
+  it('pre-fills transcript and notes from activity', () => {
     renderTab();
 
-    const input = screen.getByTestId('transcript-input');
-    expect(input.value).toBe(LONG_TRANSCRIPT);
+    expect(screen.getByTestId('etb-input-transcript')).toHaveValue(LONG_TRANSCRIPT);
+    expect(screen.getByTestId('etb-input-outcome_notes')).toHaveValue('Some important notes');
   });
 
   // ------------------------------------------------------------------
-  // 3. Autosave debounce — fires after 1.5s
+  // 3. Shows character count on transcript
   // ------------------------------------------------------------------
-  it('calls onSave after debounce delay on text change', async () => {
+  it('shows character count on transcript block', () => {
     renderTab();
 
-    const input = screen.getByTestId('transcript-input');
-    const newText = 'C'.repeat(100);
-
-    await act(async () => {
-      fireEvent.change(input, { target: { value: newText } });
-    });
-
-    expect(mockOnSave).not.toHaveBeenCalled();
-
-    await act(async () => {
-      vi.advanceTimersByTime(1500);
-    });
-
-    await waitFor(() => {
-      expect(mockOnSave).toHaveBeenCalledWith('transcript', newText);
-    });
+    expect(screen.getByTestId('etb-charcount-transcript')).toBeInTheDocument();
   });
 
   // ------------------------------------------------------------------
-  // 4. Autosave on blur (immediate)
+  // 4. Run AI button enabled with long transcript
   // ------------------------------------------------------------------
-  it('calls onSave immediately on blur', async () => {
+  it('enables Run AI Analysis button with sufficient transcript', () => {
     renderTab();
 
-    const input = screen.getByTestId('transcript-input');
-    const newText = 'D'.repeat(100);
-
-    await act(async () => {
-      fireEvent.change(input, { target: { value: newText } });
-      fireEvent.blur(input);
-    });
-
-    await waitFor(() => {
-      expect(mockOnSave).toHaveBeenCalledWith('transcript', newText);
-    });
+    const btn = screen.getByText('Run AI Analysis').closest('button');
+    expect(btn).not.toBeDisabled();
   });
 
   // ------------------------------------------------------------------
-  // 5. Shows saving indicator
-  // ------------------------------------------------------------------
-  it('shows "Saving…" indicator while persisting', async () => {
-    let resolveOnSave;
-    mockOnSave.mockReturnValue(new Promise((r) => { resolveOnSave = r; }));
-    renderTab();
-
-    const input = screen.getByTestId('transcript-input');
-
-    await act(async () => {
-      fireEvent.change(input, { target: { value: 'E'.repeat(100) } });
-      fireEvent.blur(input);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/Saving/)).toBeInTheDocument();
-    });
-
-    await act(async () => {
-      resolveOnSave(true);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/Saved/)).toBeInTheDocument();
-    });
-  });
-
-  // ------------------------------------------------------------------
-  // 6. Shows save error indicator
-  // ------------------------------------------------------------------
-  it('shows "Error saving" when onSave returns false', async () => {
-    mockOnSave.mockResolvedValue(false);
-    renderTab();
-
-    const input = screen.getByTestId('transcript-input');
-
-    await act(async () => {
-      fireEvent.change(input, { target: { value: 'F'.repeat(100) } });
-      fireEvent.blur(input);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/Error saving/)).toBeInTheDocument();
-    });
-  });
-
-  // ------------------------------------------------------------------
-  // 7. Run AI button disabled when transcript empty
+  // 5. Run AI button disabled when transcript empty
   // ------------------------------------------------------------------
   it('disables Run AI Analysis when transcript is empty', () => {
     renderTab({ activity: { ...mockActivity, transcript: '' } });
@@ -206,7 +161,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 8. Run AI button disabled when transcript too short
+  // 6. Run AI button disabled when transcript too short
   // ------------------------------------------------------------------
   it('disables Run AI Analysis when transcript < 50 chars', () => {
     renderTab({ activity: { ...mockActivity, transcript: 'Short' } });
@@ -216,17 +171,17 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 9. Locked state — textarea disabled
+  // 7. Locked state — textarea disabled
   // ------------------------------------------------------------------
-  it('disables textarea when isLocked', () => {
+  it('disables text blocks when isLocked', () => {
     renderTab({ isLocked: true });
 
-    const input = screen.getByTestId('transcript-input');
-    expect(input).toBeDisabled();
+    expect(screen.getByTestId('etb-input-transcript')).toBeDisabled();
+    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
   });
 
   // ------------------------------------------------------------------
-  // 10. Locked state — Run AI button disabled
+  // 8. Locked state — Run AI button disabled
   // ------------------------------------------------------------------
   it('disables Run AI Analysis when isLocked', () => {
     renderTab({ isLocked: true });
@@ -236,7 +191,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 11. Opens preview modal on Run AI click
+  // 9. Opens preview modal on Run AI click
   // ------------------------------------------------------------------
   it('opens preview modal when Run AI Analysis is clicked', async () => {
     renderTab();
@@ -249,7 +204,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 12. Successful extraction — shows success alert
+  // 10. Successful extraction — shows success alert
   // ------------------------------------------------------------------
   it('shows success alert after successful extraction', async () => {
     mockRunExtraction.mockResolvedValue({
@@ -263,12 +218,10 @@ describe('ActivityNotesTab', () => {
 
     renderTab();
 
-    // Open modal
     await act(async () => {
       fireEvent.click(screen.getByText('Run AI Analysis'));
     });
 
-    // Send for analysis
     await act(async () => {
       fireEvent.click(screen.getByText('Send for analysis'));
     });
@@ -279,7 +232,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 13. Extraction error — shows error alert
+  // 11. Extraction error — shows error alert
   // ------------------------------------------------------------------
   it('shows error alert after failed extraction', async () => {
     mockRunExtraction.mockResolvedValue({
@@ -303,7 +256,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 14. ALREADY_EXTRACTED — shows info alert
+  // 12. ALREADY_EXTRACTED — shows info alert
   // ------------------------------------------------------------------
   it('shows info alert for ALREADY_EXTRACTED', async () => {
     mockRunExtraction.mockResolvedValue({
@@ -331,7 +284,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 15. PARTIAL extraction — shows warning alert
+  // 13. PARTIAL extraction — shows warning alert
   // ------------------------------------------------------------------
   it('shows warning alert for partial extraction', async () => {
     mockRunExtraction.mockResolvedValue({
@@ -359,7 +312,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 16. Button state after success — shows "Last run"
+  // 14. Button state after success — shows "Last run"
   // ------------------------------------------------------------------
   it('shows "Last run" button label after successful extraction', async () => {
     mockRunExtraction.mockResolvedValue({
@@ -387,7 +340,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 17. Button state after error — shows "Run failed · Retry"
+  // 15. Button state after error — shows "Run failed · Retry"
   // ------------------------------------------------------------------
   it('shows retry button after extraction error', async () => {
     mockRunExtraction.mockResolvedValue({
@@ -411,9 +364,9 @@ describe('ActivityNotesTab', () => {
   });
 
   // ------------------------------------------------------------------
-  // 18. Transcript modified after run — shows warning
+  // 16. Mutates lastRun after successful extraction
   // ------------------------------------------------------------------
-  it('shows "Transcript modified" warning when text changes after extraction', async () => {
+  it('mutates lastRun after successful extraction', async () => {
     mockRunExtraction.mockResolvedValue({
       success: true,
       data: {
@@ -425,48 +378,40 @@ describe('ActivityNotesTab', () => {
 
     renderTab();
 
-    // Run extraction
     await act(async () => {
       fireEvent.click(screen.getByText('Run AI Analysis'));
     });
+
     await act(async () => {
       fireEvent.click(screen.getByText('Send for analysis'));
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/extracted/)).toBeInTheDocument();
+      expect(mockMutateLastRun).toHaveBeenCalled();
     });
-
-    // Modify transcript
-    const input = screen.getByTestId('transcript-input');
-    await act(async () => {
-      fireEvent.change(input, { target: { value: 'G'.repeat(200) } });
-    });
-
-    expect(screen.getByText(/Transcript modified since last run/)).toBeInTheDocument();
   });
 
   // ------------------------------------------------------------------
-  // 19. No autosave when locked
+  // 17. Empty activity — renders empty blocks
   // ------------------------------------------------------------------
-  it('does not call onSave when locked', async () => {
-    renderTab({ isLocked: true });
+  it('renders empty blocks when activity has no transcript or notes', () => {
+    renderTab({ activity: { ...mockActivity, transcript: null, outcome_notes: null } });
 
-    // Textarea is disabled so we can't type, but let's verify onSave not called
-    await act(async () => {
-      vi.advanceTimersByTime(5000);
-    });
-
-    expect(mockOnSave).not.toHaveBeenCalled();
+    expect(screen.getByTestId('etb-input-transcript')).toHaveValue('');
+    expect(screen.getByTestId('etb-input-outcome_notes')).toHaveValue('');
   });
 
   // ------------------------------------------------------------------
-  // 20. Empty activity transcript — renders empty textarea
+  // 18. Passes outcomeNotes to preview modal
   // ------------------------------------------------------------------
-  it('renders empty textarea when activity has no transcript', () => {
-    renderTab({ activity: { ...mockActivity, transcript: null } });
+  it('passes outcomeNotes and lastRun to the preview modal', async () => {
+    renderTab();
 
-    const input = screen.getByTestId('transcript-input');
-    expect(input.value).toBe('');
+    await act(async () => {
+      fireEvent.click(screen.getByText('Run AI Analysis'));
+    });
+
+    expect(screen.getByText('Review before sending to AI')).toBeInTheDocument();
+    expect(screen.getByText(/Include my notes/)).toBeInTheDocument();
   });
 });

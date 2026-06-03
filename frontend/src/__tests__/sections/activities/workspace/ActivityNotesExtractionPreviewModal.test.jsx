@@ -1,7 +1,7 @@
 // frontend/src/__tests__/sections/activities/workspace/ActivityNotesExtractionPreviewModal.test.jsx
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, act } from '@testing-library/react';
 
 // ==============================|| MOCKS ||============================== //
 
@@ -27,7 +27,10 @@ const SHORT_TRANSCRIPT = 'A'.repeat(30);
 
 const defaultProps = {
   open: true,
+  activityId: 'act-123',
   transcript: LONG_TRANSCRIPT,
+  outcomeNotes: 'My meeting notes here',
+  lastRun: null,
   onCancel: vi.fn(),
   onConfirm: vi.fn(),
   loading: false,
@@ -45,9 +48,11 @@ function renderModal(overrides = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
 });
 
@@ -55,12 +60,13 @@ describe('ActivityNotesExtractionPreviewModal', () => {
   // ------------------------------------------------------------------
   // 1. Render OK
   // ------------------------------------------------------------------
-  it('renders title, info banner, textarea, and buttons when open', () => {
+  it('renders title, info banner, textarea, checkbox, and buttons when open', () => {
     renderModal();
 
     expect(screen.getByText('Review before sending to AI')).toBeInTheDocument();
     expect(screen.getByText(/Edit below to remove anything/)).toBeInTheDocument();
     expect(screen.getByTestId('curated-transcript-input')).toBeInTheDocument();
+    expect(screen.getByText(/Include my notes/)).toBeInTheDocument();
     expect(screen.getByText('Cancel')).toBeInTheDocument();
     expect(screen.getByText('Send for analysis')).toBeInTheDocument();
   });
@@ -205,5 +211,74 @@ describe('ActivityNotesExtractionPreviewModal', () => {
     renderModal({ open: false });
 
     expect(screen.queryByText('Review before sending to AI')).not.toBeInTheDocument();
+  });
+
+  // ------------------------------------------------------------------
+  // 13. Include notes checkbox — enabled when notes exist
+  // ------------------------------------------------------------------
+  it('enables "Include my notes" checkbox when outcomeNotes is provided', () => {
+    renderModal();
+
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).not.toBeDisabled();
+    expect(checkbox).not.toBeChecked();
+    expect(screen.getByText(/available on this activity/)).toBeInTheDocument();
+  });
+
+  // ------------------------------------------------------------------
+  // 14. Include notes checkbox — disabled when no notes
+  // ------------------------------------------------------------------
+  it('disables "Include my notes" checkbox when outcomeNotes is empty', () => {
+    renderModal({ outcomeNotes: '' });
+
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).toBeDisabled();
+    expect(screen.getByText(/none on this activity/)).toBeInTheDocument();
+  });
+
+  // ------------------------------------------------------------------
+  // 15. Confirm with notes included — concatenates content
+  // ------------------------------------------------------------------
+  it('concatenates notes when checkbox is checked and confirmed', () => {
+    renderModal();
+
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+
+    fireEvent.click(screen.getByText('Send for analysis'));
+
+    const expected = LONG_TRANSCRIPT + '\n\n---\nSDR Notes:\n' + 'My meeting notes here';
+    expect(defaultProps.onConfirm).toHaveBeenCalledWith(expected);
+  });
+
+  // ------------------------------------------------------------------
+  // 16. Confirm without notes — sends transcript only
+  // ------------------------------------------------------------------
+  it('sends only transcript when checkbox is unchecked', () => {
+    renderModal();
+
+    fireEvent.click(screen.getByText('Send for analysis'));
+
+    expect(defaultProps.onConfirm).toHaveBeenCalledWith(LONG_TRANSCRIPT);
+  });
+
+  // ------------------------------------------------------------------
+  // 17. Resets include-notes checkbox on reopen
+  // ------------------------------------------------------------------
+  it('resets include-notes checkbox to unchecked on reopen', () => {
+    const { rerender } = renderModal();
+
+    const checkbox = screen.getByRole('checkbox');
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+
+    rerender(
+      <ActivityNotesExtractionPreviewModal {...defaultProps} open={false} />,
+    );
+    rerender(
+      <ActivityNotesExtractionPreviewModal {...defaultProps} open={true} />,
+    );
+
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
   });
 });
