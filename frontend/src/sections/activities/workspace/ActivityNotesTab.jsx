@@ -321,6 +321,7 @@ export default function ActivityNotesTab({ activity, onSave, isLocked }) {
       {/* Curation modal */}
       <ActivityNotesExtractionPreviewModal
         open={previewOpen}
+        activityId={activityId}
         transcript={transcript}
         outcomeNotes={outcomeNotes}
         lastRun={lastRun}
