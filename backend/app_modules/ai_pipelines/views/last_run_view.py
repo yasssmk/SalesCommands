@@ -25,6 +25,7 @@ Response (200, no run found):
 """
 
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.apps_shared_methods import BaseAPIView
@@ -37,7 +38,8 @@ from app_modules.ai_pipelines.models import AIPipelineRun
 
 class LastRunView(BaseAPIView):
     authentication_classes = [CustomJWTAuthentication]
-    permission_classes = [ScopedPermission]
+    permission_classes = [IsAuthenticated, ScopedPermission]
+    module = 'ai_pipelines'
 
     def get(self, request):
         activity_id = request.query_params.get('activity_id')
