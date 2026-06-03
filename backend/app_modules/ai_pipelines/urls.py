@@ -21,7 +21,7 @@ Routes
 
 from django.urls import path
 
-from .views import ActivityExtractionView, TranscriptSignalsExtractView
+from .views import ActivityExtractionView, LastRunView, TranscriptSignalsExtractView
 
 
 urlpatterns = [
@@ -29,6 +29,11 @@ urlpatterns = [
         'activity-extraction/run/',
         ActivityExtractionView.as_view(),
         name='activity-extraction-run',
+    ),
+    path(
+        'last-run/',
+        LastRunView.as_view(),
+        name='last-run',
     ),
     path(
         'transcript-signals/extract/',
