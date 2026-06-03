@@ -30,22 +30,18 @@ import "@testing-library/jest-dom/vitest";
 // useSearchParams). We provide sensible defaults here; individual tests
 // can override via vi.mocked(...).mockReturnValue({...}).
 
-const mockRouter = {
-  push: vi.fn(),
-  replace: vi.fn(),
-  back: vi.fn(),
-  forward: vi.fn(),
-  refresh: vi.fn(),
-  prefetch: vi.fn(),
-};
-
-const mockSearchParams = new URLSearchParams();
-
 vi.mock("next/navigation", () => ({
-  useRouter: () => mockRouter,
-  useParams: () => ({}),
-  useSearchParams: () => mockSearchParams,
-  usePathname: () => "/",
+  useRouter: vi.fn(() => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+  })),
+  useParams: vi.fn(() => ({})),
+  useSearchParams: vi.fn(() => new URLSearchParams()),
+  usePathname: vi.fn(() => "/"),
   redirect: vi.fn(),
   notFound: vi.fn(),
 }));

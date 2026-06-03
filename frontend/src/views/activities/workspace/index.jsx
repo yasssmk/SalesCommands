@@ -21,7 +21,6 @@ import {
 } from "utils/displayError";
 
 // Section imports
-// Section imports
 import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
 import {
   ACTIVITY_TABS,
@@ -30,6 +29,9 @@ import {
 import ActivityOverviewTab from "sections/activities/workspace/ActivityOverviewTab";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityWrapUpTab from "sections/activities/workspace/ActivityWrapUpTab";
+import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
+import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
+import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
 
 // ==============================|| ACTIVITY WORKSPACE PAGE ||============================== //
 
@@ -110,6 +112,12 @@ export default function ActivityWorkspacePage() {
             isLocked={isLocked}
           />
         );
+      case "notes":
+        return <ActivityNotesTab activity={activity} isLocked={isLocked} />;
+      case "signals":
+        return <ActivitySignalsTab activity={activity} isLocked={isLocked} />;
+      case "next-steps":
+        return <ActivityNextStepsTab activity={activity} isLocked={isLocked} />;
       default:
         return (
           <ActivityOverviewTab
