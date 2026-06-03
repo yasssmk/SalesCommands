@@ -113,7 +113,13 @@ export default function ActivityWorkspacePage() {
           />
         );
       case "notes":
-        return <ActivityNotesTab activity={activity} isLocked={isLocked} />;
+        return (
+          <ActivityNotesTab
+            activity={activity}
+            onSave={handleSaveField}
+            isLocked={isLocked}
+          />
+        );
       case "signals":
         return <ActivitySignalsTab activity={activity} isLocked={isLocked} />;
       case "next-steps":
