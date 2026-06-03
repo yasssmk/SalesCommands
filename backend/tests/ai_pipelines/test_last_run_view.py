@@ -34,9 +34,18 @@ def _create_run(activity, user, *, status='SUCCESS', pipeline_type=None, input_h
         client_id=activity.client_id,
         source_activity=activity,
         created_by=user,
+        updated_by=user,
         status=status,
         pipeline_type=pipeline_type or AIPipelineType.TRANSCRIPT_SIGNALS,
+        prompt_versions={'system': 'v1'},
+        provider='openai',
+        model_name='gpt-4o-mini',
+        temperature=0.0,
         input_hash=input_hash,
+        sub_calls=[],
+        total_tokens_used=100,
+        total_duration_ms=500,
+        error_message='',
         created_signals_count=3,
     )
 
