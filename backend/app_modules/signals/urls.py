@@ -29,9 +29,20 @@ def get_urlpatterns():
         SignalClusterDetailView,
         SignalClusterArchiveView,
         SignalClusterUnarchiveView,
+        SignalCountsByActivityView,
     )
 
     return [
+
+        # =====================================================================
+        # COUNTS — aggregated signal counts by activity
+        # =====================================================================
+
+        path(
+            'by-activity/<uuid:activity_id>/counts/',
+            SignalCountsByActivityView.as_view(),
+            name='signal-counts-by-activity',
+        ),
 
         # =====================================================================
         # CHOICES — before CRUD to avoid conflict with {pk}

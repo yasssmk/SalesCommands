@@ -4,7 +4,10 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
+import { useMemo } from "react";
+
 // MUI
+import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -16,6 +19,7 @@ import WorkspaceLayout from "components/WorkspaceLayout";
 import { buildActivityBreadcrumbs } from "components/WorkspaceBreadcrumb";
 import { useGetActivity, updateActivity } from "api/accounts/activities";
 import { useGetLastExtractionRun } from "api/aiPipelines/lastRun";
+import { useActivitySignalCounts } from "api/signals/signalCounts";
 import usePipelineRunner from "hooks/usePipelineRunner";
 import {
   displaySuccessSnackbar,
@@ -52,10 +56,14 @@ export default function ActivityWorkspacePage() {
   const { lastRun, runsByPipeline, mutateLastRun } =
     useGetLastExtractionRun(activityId);
 
+  // Signal counts for header pending badge
+  const { counts, mutateCounts } = useActivitySignalCounts(activityId);
+
   // Pipeline runner — owned here so pipelineState is accessible to header (F4)
   const pipelineRunner = usePipelineRunner({
     onSuccess: () => {
       mutateLastRun();
+      mutateCounts();
     },
   });
 
@@ -92,12 +100,52 @@ export default function ActivityWorkspacePage() {
 
   // ==============================|| HEADER PROPS (from hook) ||============================== //
 
+  const handlePendingClick = () => {
+    handleTabChange("signals");
+  };
+
   const headerProps = useActivityHeaderProps({
     activity,
     onSave: handleSaveField,
     onUpdate: mutateActivity,
     isLocked,
+    pipelineState: pipelineRunner.state,
+    lastRun,
+    counts,
+    onPendingClick: handlePendingClick,
   });
+
+  // ==============================|| TAB BADGES ||============================== //
+
+  const signalsPending = counts?.by_type
+    ? (counts.by_type.pain?.pending || 0) +
+      (counts.by_type.objective?.pending || 0) +
+      (counts.by_type.impact?.pending || 0) +
+      (counts.by_type.tech_stack?.pending || 0) +
+      (counts.by_type.blocker?.pending || 0)
+    : 0;
+
+  const nextStepsPending = counts?.by_type?.next_step?.pending || 0;
+
+  const tabsWithBadges = useMemo(() => {
+    return ACTIVITY_TABS.map((tab) => {
+      let badgeCount = 0;
+      if (tab.id === "signals") badgeCount = signalsPending;
+      if (tab.id === "next-steps") badgeCount = nextStepsPending;
+
+      if (badgeCount > 0) {
+        return {
+          ...tab,
+          label: (
+            <Badge badgeContent={badgeCount} color="warning" max={99}>
+              {tab.label}
+            </Badge>
+          ),
+        };
+      }
+      return tab;
+    });
+  }, [signalsPending, nextStepsPending]);
 
   // ==============================|| RENDER - ERROR ||============================== //
 
@@ -236,7 +284,7 @@ export default function ActivityWorkspacePage() {
       <WorkspaceLayout
         breadcrumbs={breadcrumbItems}
         {...headerProps}
-        tabs={ACTIVITY_TABS}
+        tabs={tabsWithBadges}
         activeTab={currentTab}
         onTabChange={handleTabChange}
         loading={activityLoading}

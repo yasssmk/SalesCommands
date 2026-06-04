@@ -319,7 +319,7 @@ WorkspaceLayout.propTypes = {
  tabs: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.string.isRequired,
-      label: PropTypes.string.isRequired,
+      label: PropTypes.node.isRequired,
       disabled: PropTypes.bool
     })
   ),
