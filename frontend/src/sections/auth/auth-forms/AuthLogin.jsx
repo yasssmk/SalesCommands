@@ -1,46 +1,49 @@
-'use client';
-import PropTypes from 'prop-types';
+"use client";
+import PropTypes from "prop-types";
 
-import React, { useState } from 'react';
+import React, { useState } from "react";
 
 // next
-import Image from 'next/legacy/image';
-import Link from 'next/link';
+import Image from "next/legacy/image";
+import Link from "next/link";
 
-import useMediaQuery from '@mui/material/useMediaQuery';
-import Button from '@mui/material/Button';
-import Checkbox from '@mui/material/Checkbox';
-import Divider from '@mui/material/Divider';
-import FormControlLabel from '@mui/material/FormControlLabel';
-import FormHelperText from '@mui/material/FormHelperText';
+import useMediaQuery from "@mui/material/useMediaQuery";
+import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
+import Divider from "@mui/material/Divider";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import FormHelperText from "@mui/material/FormHelperText";
 // import Grid from '@mui/material/Unstable_Grid2';
-import Grid from '@mui/material/Unstable_Grid2';
-import InputAdornment from '@mui/material/InputAdornment';
-import InputLabel from '@mui/material/InputLabel';
-import OutlinedInput from '@mui/material/OutlinedInput';
-import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
-import Box from '@mui/material/Box';
+import Grid from "@mui/material/Unstable_Grid2";
+import InputAdornment from "@mui/material/InputAdornment";
+import InputLabel from "@mui/material/InputLabel";
+import OutlinedInput from "@mui/material/OutlinedInput";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+import Box from "@mui/material/Box";
 
 // third party
-import * as Yup from 'yup';
-import { Formik } from 'formik';
+import * as Yup from "yup";
+import { Formik } from "formik";
 // project import
-import IconButton from 'components/@extended/IconButton';
-import AnimateButton from 'components/@extended/AnimateButton';
+import IconButton from "components/@extended/IconButton";
+import AnimateButton from "components/@extended/AnimateButton";
 
 //hooks
-import { useAuth } from 'hooks/useAuth';
+import { useAuth } from "hooks/useAuth";
 
 // assets
-import EyeOutlined from '@ant-design/icons/EyeOutlined';
-import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
-
+import EyeOutlined from "@ant-design/icons/EyeOutlined";
+import EyeInvisibleOutlined from "@ant-design/icons/EyeInvisibleOutlined";
 
 // ============================|| DJANGO AUTH - LOGIN ||============================ //
 
-export default function AuthLogin({ providers, csrfToken, initialError = null }) {
-  const downSM = useMediaQuery((theme) => theme.breakpoints.down('sm'));
+export default function AuthLogin({
+  providers,
+  csrfToken,
+  initialError = null,
+}) {
+  const downSM = useMediaQuery((theme) => theme.breakpoints.down("sm"));
   const [checked, setChecked] = useState(false);
   const [capsWarning, setCapsWarning] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -54,7 +57,7 @@ export default function AuthLogin({ providers, csrfToken, initialError = null })
   };
 
   const onKeyDown = (keyEvent) => {
-    if (keyEvent.getModifierState('CapsLock')) {
+    if (keyEvent.getModifierState("CapsLock")) {
       setCapsWarning(true);
     } else {
       setCapsWarning(false);
@@ -62,44 +65,64 @@ export default function AuthLogin({ providers, csrfToken, initialError = null })
   };
 
   const { login } = useAuth();
-  console.log('INITIAL ERROR:', { initialError });
+  console.log("INITIAL ERROR:", { initialError });
 
   return (
     <>
       <Formik
         initialValues={{
-          email: 'admin@companya.com',
-          password: 'password123',
-          submit: null
+          email: process.env.NEXT_PUBLIC_DEV_LOGIN_EMAIL || "",
+          password: process.env.NEXT_PUBLIC_DEV_LOGIN_PASSWORD || "",
+          submit: null,
         }}
         validationSchema={Yup.object().shape({
-          email: Yup.string().email('Must be a valid email').max(255).required('Email is required'),
+          email: Yup.string()
+            .email("Must be a valid email")
+            .max(255)
+            .required("Email is required"),
           password: Yup.string()
-            .required('Password is required')
-            .test('no-leading-trailing-whitespace', 'Password cannot start or end with spaces', (value) => value === value.trim())
+            .required("Password is required")
+            .test(
+              "no-leading-trailing-whitespace",
+              "Password cannot start or end with spaces",
+              (value) => value === value.trim(),
+            ),
         })}
         onSubmit={async (values, { setErrors, setSubmitting, setStatus }) => {
           setErrors({});
           setStatus(null);
           const trimmedEmail = values.email.trim();
-          console.log('Attempting login for:', trimmedEmail);
+          console.log("Attempting login for:", trimmedEmail);
           try {
             const result = await login(trimmedEmail, values.password);
             if (result.success) {
-              console.log('Login successful, redirect will be handled by useAuth');
+              console.log(
+                "Login successful, redirect will be handled by useAuth",
+              );
             } else {
-              console.log('Login failed with error:', result.error);
-              setErrors({ submit: result.error || 'Login failed. Please try again.' });
+              console.log("Login failed with error:", result.error);
+              setErrors({
+                submit: result.error || "Login failed. Please try again.",
+              });
             }
           } finally {
             setSubmitting(false);
           }
         }}
       >
-        {({ errors, handleBlur, handleChange, handleSubmit, isSubmitting, touched, values, setErrors }) => {
+        {({
+          errors,
+          handleBlur,
+          handleChange,
+          handleSubmit,
+          isSubmitting,
+          touched,
+          values,
+          setErrors,
+        }) => {
           React.useEffect(() => {
             if (initialError) {
-              console.log('🔥 Setting flash error in Formik:', initialError);
+              console.log("🔥 Setting flash error in Formik:", initialError);
               setErrors({ submit: initialError });
             }
           }, [initialError, setErrors]);
@@ -124,7 +147,10 @@ export default function AuthLogin({ providers, csrfToken, initialError = null })
                     />
                   </Stack>
                   {touched.email && errors.email && (
-                    <FormHelperText error id="standard-weight-helper-text-email-login">
+                    <FormHelperText
+                      error
+                      id="standard-weight-helper-text-email-login"
+                    >
                       {errors.email}
                     </FormHelperText>
                   )}
@@ -134,10 +160,10 @@ export default function AuthLogin({ providers, csrfToken, initialError = null })
                     <InputLabel htmlFor="password-login">Password</InputLabel>
                     <OutlinedInput
                       fullWidth
-                      color={capsWarning ? 'warning' : 'primary'}
+                      color={capsWarning ? "warning" : "primary"}
                       error={Boolean(touched.password && errors.password)}
                       id="password-login"
-                      type={showPassword ? 'text' : 'password'}
+                      type={showPassword ? "text" : "password"}
                       value={values.password}
                       name="password"
                       onBlur={(event) => {
@@ -155,26 +181,42 @@ export default function AuthLogin({ providers, csrfToken, initialError = null })
                             edge="end"
                             color="secondary"
                           >
-                            {showPassword ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+                            {showPassword ? (
+                              <EyeOutlined />
+                            ) : (
+                              <EyeInvisibleOutlined />
+                            )}
                           </IconButton>
                         </InputAdornment>
                       }
                       placeholder="Enter password"
                     />
                     {capsWarning && (
-                      <Typography variant="caption" sx={{ color: 'warning.main' }} id="warning-helper-text-password-login">
+                      <Typography
+                        variant="caption"
+                        sx={{ color: "warning.main" }}
+                        id="warning-helper-text-password-login"
+                      >
                         Caps lock on!
                       </Typography>
                     )}
                   </Stack>
                   {touched.password && errors.password && (
-                    <FormHelperText error id="standard-weight-helper-text-password-login">
+                    <FormHelperText
+                      error
+                      id="standard-weight-helper-text-password-login"
+                    >
                       {errors.password}
                     </FormHelperText>
                   )}
                 </Grid>
                 <Grid xs={12} sx={{ mt: -1 }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    alignItems="center"
+                    spacing={2}
+                  >
                     <FormControlLabel
                       control={
                         <Checkbox
@@ -185,9 +227,14 @@ export default function AuthLogin({ providers, csrfToken, initialError = null })
                           size="small"
                         />
                       }
-                      label={<Typography variant="h6">Keep me sign in</Typography>}
+                      label={
+                        <Typography variant="h6">Keep me sign in</Typography>
+                      }
                     />
-                    <Link href="/forget-pass" style={{ textDecoration: 'none' }}>
+                    <Link
+                      href="/forget-pass"
+                      style={{ textDecoration: "none" }}
+                    >
                       <Typography variant="h6" color="text.primary">
                         Forgot Password?
                       </Typography>
@@ -201,7 +248,15 @@ export default function AuthLogin({ providers, csrfToken, initialError = null })
                 )}
                 <Grid xs={12}>
                   <AnimateButton>
-                    <Button disableElevation disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained" color="primary">
+                    <Button
+                      disableElevation
+                      disabled={isSubmitting}
+                      fullWidth
+                      size="large"
+                      type="submit"
+                      variant="contained"
+                      color="primary"
+                    >
                       Login
                     </Button>
                   </AnimateButton>
@@ -215,8 +270,8 @@ export default function AuthLogin({ providers, csrfToken, initialError = null })
   );
 }
 
-AuthLogin.propTypes = { 
-  providers: PropTypes.any, 
-  csrfToken: PropTypes.any, 
-  initialError: PropTypes.string 
+AuthLogin.propTypes = {
+  providers: PropTypes.any,
+  csrfToken: PropTypes.any,
+  initialError: PropTypes.string,
 };
