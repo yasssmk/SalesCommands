@@ -28,7 +28,7 @@ const endpoints = {
  * Fetch the last extraction run for an activity.
  *
  * @param {string|null} activityId - Activity UUID.
- * @returns {Object} { lastRun, lastRunLoading, lastRunError, mutateLastRun }
+ * @returns {Object} { lastRun, runsByPipeline, lastRunLoading, lastRunError, mutateLastRun }
  *
  * lastRun shape (when a run exists):
  *   {
@@ -38,6 +38,12 @@ const endpoints = {
  *     pipeline_type: string,
  *     status: string,
  *     created_signals_count: number,
+ *   }
+ *
+ * runsByPipeline shape:
+ *   {
+ *     TRANSCRIPT_SIGNALS: { ...same shape as lastRun... } | null,
+ *     NEXT_STEPS:         { ...same shape as lastRun... } | null,
  *   }
  *
  * lastRun is null when no prior run exists for this activity.
@@ -61,6 +67,10 @@ export function useGetLastExtractionRun(activityId) {
   return useMemo(
     () => ({
       lastRun: data?.last_run ?? null,
+      runsByPipeline: data?.runs_by_pipeline ?? {
+        TRANSCRIPT_SIGNALS: null,
+        NEXT_STEPS: null,
+      },
       lastRunLoading: isLoading,
       lastRunError: error,
       mutateLastRun: mutate,

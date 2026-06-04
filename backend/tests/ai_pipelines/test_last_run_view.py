@@ -115,3 +115,46 @@ class TestLastRunView:
         resp = authed_api_a.get(f'{URL}?activity_id=00000000-0000-0000-0000-000000000001')
 
         assert resp.status_code == 404
+
+    # ===== runs_by_pipeline tests (Sprint F3) =====
+
+    def test_runs_by_pipeline_both_present(self, authed_api_a, activity, user_a):
+        _create_run(activity, user_a, pipeline_type=AIPipelineType.TRANSCRIPT_SIGNALS, input_hash='a' * 64)
+        _create_run(activity, user_a, pipeline_type=AIPipelineType.NEXT_STEPS, input_hash='b' * 64)
+
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        rbp = resp.data['runs_by_pipeline']
+        assert rbp['TRANSCRIPT_SIGNALS'] is not None
+        assert rbp['TRANSCRIPT_SIGNALS']['input_hash'] == 'a' * 64
+        assert rbp['NEXT_STEPS'] is not None
+        assert rbp['NEXT_STEPS']['input_hash'] == 'b' * 64
+
+    def test_runs_by_pipeline_one_missing(self, authed_api_a, activity, user_a):
+        _create_run(activity, user_a, pipeline_type=AIPipelineType.TRANSCRIPT_SIGNALS)
+
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        rbp = resp.data['runs_by_pipeline']
+        assert rbp['TRANSCRIPT_SIGNALS'] is not None
+        assert rbp['NEXT_STEPS'] is None
+
+    def test_runs_by_pipeline_none_when_no_runs(self, authed_api_a, activity):
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        rbp = resp.data['runs_by_pipeline']
+        assert rbp['TRANSCRIPT_SIGNALS'] is None
+        assert rbp['NEXT_STEPS'] is None
+
+    def test_last_run_is_most_recent_across_pipelines(self, authed_api_a, activity, user_a):
+        _create_run(activity, user_a, pipeline_type=AIPipelineType.TRANSCRIPT_SIGNALS, input_hash='a' * 64)
+        newer = _create_run(activity, user_a, pipeline_type=AIPipelineType.NEXT_STEPS, input_hash='b' * 64)
+
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        assert resp.data['last_run']['input_hash'] == 'b' * 64
+        assert resp.data['last_run']['pipeline_type'] == 'NEXT_STEPS'

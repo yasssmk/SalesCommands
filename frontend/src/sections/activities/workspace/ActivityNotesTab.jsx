@@ -3,7 +3,7 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { format } from 'date-fns';
 
 // material-ui
@@ -17,13 +17,8 @@ import Typography from '@mui/material/Typography';
 
 // project imports
 import EditableTextBlock from 'components/EditableTextBlock';
-import {
-  runActivityExtraction,
-  EXTRACTION_STATUS,
-  EXTRACTION_OUTCOME_CODES,
-} from 'api/aiPipelines/activityExtraction';
-import { useGetLastExtractionRun } from 'api/aiPipelines/lastRun';
-import ActivityNotesExtractionPreviewModal from 'sections/activities/workspace/ActivityNotesExtractionPreviewModal';
+import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
+import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
 
 // assets
 import ExperimentOutlined from '@ant-design/icons/ExperimentOutlined';
@@ -35,100 +30,49 @@ import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
 
 const MIN_TRANSCRIPT_LENGTH = 50;
 
-// ==============================|| EXTRACTION STATES ||============================== //
-
-const EXTRACTION_STATE = {
-  IDLE: 'idle',
-  RUNNING: 'running',
-  SUCCESS: 'success',
-  PARTIAL: 'partial',
-  ALREADY_EXTRACTED: 'already_extracted',
-  ERROR: 'error',
-};
-
 // ==============================|| ACTIVITY NOTES TAB ||============================== //
 
-export default function ActivityNotesTab({ activity, onSave, isLocked }) {
+export default function ActivityNotesTab({
+  activity,
+  onSave,
+  isLocked,
+  pipelineRunner,
+  lastRun,
+  runsByPipeline,
+}) {
   const activityId = activity?.id ?? null;
   const transcript = activity?.transcript ?? '';
   const outcomeNotes = activity?.outcome_notes ?? '';
 
-  // --- Last run metadata ---
-  const { lastRun, mutateLastRun } = useGetLastExtractionRun(activityId);
+  const { run, state: pipelineState, result: pipelineResult, error: pipelineError } = pipelineRunner;
 
-  // --- Extraction state ---
-  const [extractionState, setExtractionState] = useState(EXTRACTION_STATE.IDLE);
-  const [extractionResult, setExtractionResult] = useState(null);
-  const [extractionError, setExtractionError] = useState(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  // --- Wizard open state ---
+  const [wizardOpen, setWizardOpen] = useState(false);
+
+  // --- Derive effective display state from pipelineState + lastRun ---
+  const effectiveState = deriveEffectiveState(pipelineState, lastRun);
 
   // --- Run AI Analysis ---
   const trimmedTranscript = transcript.trim();
   const canRunAI =
     !isLocked &&
     trimmedTranscript.length >= MIN_TRANSCRIPT_LENGTH &&
-    extractionState !== EXTRACTION_STATE.RUNNING;
+    pipelineState !== PIPELINE_STATE.RUNNING;
 
-  const handleOpenPreview = () => {
+  const handleOpenWizard = () => {
     if (canRunAI) {
-      setPreviewOpen(true);
+      setWizardOpen(true);
     }
   };
 
-  const handleCancelPreview = () => {
-    setPreviewOpen(false);
+  const handleCancelWizard = () => {
+    setWizardOpen(false);
   };
 
-  const handleConfirmExtraction = useCallback(
-    async (curatedTranscript) => {
-      if (!activityId) return;
-
-      setPreviewLoading(true);
-      setPreviewOpen(false);
-      setExtractionState(EXTRACTION_STATE.RUNNING);
-      setExtractionResult(null);
-      setExtractionError(null);
-
-      try {
-        const result = await runActivityExtraction(
-          activityId,
-          curatedTranscript,
-          null,
-        );
-
-        if (result.success) {
-          const data = result.data || {};
-          const globalStatus = data.status;
-
-          if (globalStatus === EXTRACTION_STATUS.PARTIAL) {
-            setExtractionState(EXTRACTION_STATE.PARTIAL);
-          } else {
-            setExtractionState(EXTRACTION_STATE.SUCCESS);
-          }
-          setExtractionResult(data);
-          mutateLastRun();
-        } else if (result.code === EXTRACTION_OUTCOME_CODES.ALREADY_EXTRACTED) {
-          setExtractionState(EXTRACTION_STATE.ALREADY_EXTRACTED);
-          setExtractionResult(result.data || null);
-        } else if (result.code === EXTRACTION_OUTCOME_CODES.TIMEOUT_PENDING) {
-          setExtractionState(EXTRACTION_STATE.ERROR);
-          setExtractionError(
-            'Analysis is taking longer than expected. It will continue in the background — check back in a moment.',
-          );
-        } else {
-          setExtractionState(EXTRACTION_STATE.ERROR);
-          setExtractionError(result.error || 'Extraction failed. Please try again.');
-        }
-      } catch (err) {
-        setExtractionState(EXTRACTION_STATE.ERROR);
-        setExtractionError(err?.message || 'An unexpected error occurred.');
-      } finally {
-        setPreviewLoading(false);
-      }
-    },
-    [activityId, mutateLastRun],
-  );
+  const handleConfirmWizard = (curatedTranscript) => {
+    setWizardOpen(false);
+    run(activityId, curatedTranscript);
+  };
 
   // --- Render helpers ---
   const renderRunButton = () => {
@@ -141,7 +85,7 @@ export default function ActivityNotesTab({ activity, onSave, isLocked }) {
             ? `Transcript too short (min ${MIN_TRANSCRIPT_LENGTH} characters)`
             : '';
 
-    if (extractionState === EXTRACTION_STATE.RUNNING) {
+    if (effectiveState === 'running') {
       return (
         <Button
           variant="contained"
@@ -153,38 +97,24 @@ export default function ActivityNotesTab({ activity, onSave, isLocked }) {
       );
     }
 
-    if (
-      extractionState === EXTRACTION_STATE.SUCCESS ||
-      extractionState === EXTRACTION_STATE.PARTIAL ||
-      extractionState === EXTRACTION_STATE.ALREADY_EXTRACTED
-    ) {
-      const qualCount =
-        extractionResult?.qualification_run?.created_signals_count ?? 0;
-      const nsCount =
-        extractionResult?.next_steps_run?.created_signals_count ?? 0;
+    if (effectiveState === 'success' || effectiveState === 'partial') {
+      const qualCount = getQualCount(pipelineState, pipelineResult, lastRun);
+      const nsCount = getNsCount(pipelineState, pipelineResult, lastRun);
+      const isPartial = effectiveState === 'partial';
 
-      const label =
-        extractionState === EXTRACTION_STATE.ALREADY_EXTRACTED
-          ? 'Already extracted'
-          : extractionState === EXTRACTION_STATE.PARTIAL
-            ? `Partial · qualif (${qualCount}) + next-step (${nsCount})`
-            : `Last run · qualif (${qualCount}) + next-step (${nsCount})`;
+      const label = isPartial
+        ? `Partial · qualif (${qualCount}) + next-step (${nsCount})`
+        : `Last run · qualif (${qualCount}) + next-step (${nsCount})`;
 
       return (
         <Tooltip title={canRunAI ? 'Re-run with current transcript' : tooltipTitle}>
           <span>
             <Button
               variant="outlined"
-              onClick={handleOpenPreview}
+              onClick={handleOpenWizard}
               disabled={!canRunAI}
-              startIcon={
-                extractionState === EXTRACTION_STATE.PARTIAL ? (
-                  <WarningOutlined />
-                ) : (
-                  <CheckCircleOutlined />
-                )
-              }
-              color={extractionState === EXTRACTION_STATE.PARTIAL ? 'warning' : 'success'}
+              startIcon={isPartial ? <WarningOutlined /> : <CheckCircleOutlined />}
+              color={isPartial ? 'warning' : 'success'}
             >
               {label}
             </Button>
@@ -193,14 +123,14 @@ export default function ActivityNotesTab({ activity, onSave, isLocked }) {
       );
     }
 
-    if (extractionState === EXTRACTION_STATE.ERROR) {
+    if (effectiveState === 'error') {
       return (
         <Tooltip title={canRunAI ? 'Retry extraction' : tooltipTitle}>
           <span>
             <Button
               variant="outlined"
               color="error"
-              onClick={handleOpenPreview}
+              onClick={handleOpenWizard}
               disabled={!canRunAI}
               startIcon={<CloseCircleOutlined />}
             >
@@ -211,12 +141,13 @@ export default function ActivityNotesTab({ activity, onSave, isLocked }) {
       );
     }
 
+    // idle — no lastRun
     return (
       <Tooltip title={tooltipTitle}>
         <span>
           <Button
             variant="contained"
-            onClick={handleOpenPreview}
+            onClick={handleOpenWizard}
             disabled={!canRunAI}
             startIcon={<ExperimentOutlined />}
           >
@@ -228,32 +159,19 @@ export default function ActivityNotesTab({ activity, onSave, isLocked }) {
   };
 
   const renderExtractionResult = () => {
-    if (
-      extractionState !== EXTRACTION_STATE.SUCCESS &&
-      extractionState !== EXTRACTION_STATE.PARTIAL &&
-      extractionState !== EXTRACTION_STATE.ALREADY_EXTRACTED
-    ) {
+    if (pipelineState !== PIPELINE_STATE.SUCCESS && pipelineState !== PIPELINE_STATE.PARTIAL) {
       return null;
     }
 
-    const qualCount =
-      extractionResult?.qualification_run?.created_signals_count ?? 0;
-    const nsCount =
-      extractionResult?.next_steps_run?.created_signals_count ?? 0;
-
-    const isAlready = extractionState === EXTRACTION_STATE.ALREADY_EXTRACTED;
-    const isPartial = extractionState === EXTRACTION_STATE.PARTIAL;
+    const qualCount = pipelineResult?.qualification_run?.created_signals_count ?? 0;
+    const nsCount = pipelineResult?.next_steps_run?.created_signals_count ?? 0;
+    const isPartial = pipelineState === PIPELINE_STATE.PARTIAL;
 
     return (
-      <Alert
-        severity={isPartial ? 'warning' : isAlready ? 'info' : 'success'}
-        sx={{ mt: 1 }}
-      >
-        {isAlready
-          ? 'This transcript was already processed.'
-          : isPartial
-            ? `Partial extraction completed — ${qualCount} qualification signal(s) + ${nsCount} next-step suggestion(s).`
-            : `${qualCount} qualification signal(s) + ${nsCount} next-step suggestion(s) extracted.`}
+      <Alert severity={isPartial ? 'warning' : 'success'} sx={{ mt: 1 }}>
+        {isPartial
+          ? `Partial extraction completed — ${qualCount} qualification signal(s) + ${nsCount} next-step suggestion(s).`
+          : `${qualCount} qualification signal(s) + ${nsCount} next-step suggestion(s) extracted.`}
       </Alert>
     );
   };
@@ -305,8 +223,8 @@ export default function ActivityNotesTab({ activity, onSave, isLocked }) {
         {renderLastRunCaption()}
 
         {/* Extraction error */}
-        {extractionState === EXTRACTION_STATE.ERROR && extractionError && (
-          <Alert severity="error">{extractionError}</Alert>
+        {pipelineState === PIPELINE_STATE.ERROR && pipelineError && (
+          <Alert severity="error">{pipelineError}</Alert>
         )}
 
         {/* Extraction result */}
@@ -318,19 +236,52 @@ export default function ActivityNotesTab({ activity, onSave, isLocked }) {
         </Box>
       </Stack>
 
-      {/* Curation modal */}
-      <ActivityNotesExtractionPreviewModal
-        open={previewOpen}
+      {/* Run AI Wizard (2-step) */}
+      <RunAIWizard
+        open={wizardOpen}
         activityId={activityId}
         transcript={transcript}
         outcomeNotes={outcomeNotes}
         lastRun={lastRun}
-        onCancel={handleCancelPreview}
-        onConfirm={handleConfirmExtraction}
-        loading={previewLoading}
+        runsByPipeline={runsByPipeline}
+        onCancel={handleCancelWizard}
+        onConfirm={handleConfirmWizard}
       />
     </Box>
   );
+}
+
+// ==============================|| HELPERS ||============================== //
+
+/**
+ * Derive the effective display state for the Run AI button.
+ * pipelineState (transient) takes priority over lastRun (persisted).
+ */
+function deriveEffectiveState(pipelineState, lastRun) {
+  if (pipelineState === PIPELINE_STATE.RUNNING) return 'running';
+  if (pipelineState === PIPELINE_STATE.ERROR) return 'error';
+  if (pipelineState === PIPELINE_STATE.SUCCESS) return 'success';
+  if (pipelineState === PIPELINE_STATE.PARTIAL) return 'partial';
+
+  // pipelineState is idle — fall back to lastRun
+  if (!lastRun) return 'idle';
+  if (lastRun.status === 'SUCCESS') return 'success';
+  if (lastRun.status === 'PARTIAL') return 'partial';
+  return 'idle';
+}
+
+function getQualCount(pipelineState, pipelineResult, lastRun) {
+  if (pipelineState === PIPELINE_STATE.SUCCESS || pipelineState === PIPELINE_STATE.PARTIAL) {
+    return pipelineResult?.qualification_run?.created_signals_count ?? 0;
+  }
+  return lastRun?.created_signals_count ?? 0;
+}
+
+function getNsCount(pipelineState, pipelineResult, lastRun) {
+  if (pipelineState === PIPELINE_STATE.SUCCESS || pipelineState === PIPELINE_STATE.PARTIAL) {
+    return pipelineResult?.next_steps_run?.created_signals_count ?? 0;
+  }
+  return 0;
 }
 
 // ==============================|| PROP TYPES ||============================== //
@@ -344,4 +295,13 @@ ActivityNotesTab.propTypes = {
   }),
   onSave: PropTypes.func.isRequired,
   isLocked: PropTypes.bool,
+  pipelineRunner: PropTypes.shape({
+    run: PropTypes.func.isRequired,
+    state: PropTypes.string.isRequired,
+    result: PropTypes.object,
+    error: PropTypes.string,
+    reset: PropTypes.func.isRequired,
+  }).isRequired,
+  lastRun: PropTypes.object,
+  runsByPipeline: PropTypes.object,
 };

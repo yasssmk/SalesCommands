@@ -15,6 +15,8 @@ import Typography from "@mui/material/Typography";
 import WorkspaceLayout from "components/WorkspaceLayout";
 import { buildActivityBreadcrumbs } from "components/WorkspaceBreadcrumb";
 import { useGetActivity, updateActivity } from "api/accounts/activities";
+import { useGetLastExtractionRun } from "api/aiPipelines/lastRun";
+import usePipelineRunner from "hooks/usePipelineRunner";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -45,6 +47,17 @@ export default function ActivityWorkspacePage() {
 
   const { activity, activityLoading, activityError, mutateActivity } =
     useGetActivity(activityId);
+
+  // Last extraction run metadata (per-pipeline breakdown for wizard Step 1)
+  const { lastRun, runsByPipeline, mutateLastRun } =
+    useGetLastExtractionRun(activityId);
+
+  // Pipeline runner — owned here so pipelineState is accessible to header (F4)
+  const pipelineRunner = usePipelineRunner({
+    onSuccess: () => {
+      mutateLastRun();
+    },
+  });
 
   // Activity is locked when completed or cancelled — workspace becomes read-only
   const isLocked =
@@ -118,6 +131,9 @@ export default function ActivityWorkspacePage() {
             activity={activity}
             onSave={handleSaveField}
             isLocked={isLocked}
+            pipelineRunner={pipelineRunner}
+            lastRun={lastRun}
+            runsByPipeline={runsByPipeline}
           />
         );
       case "signals":
