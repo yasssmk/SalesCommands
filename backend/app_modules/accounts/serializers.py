@@ -250,7 +250,8 @@ class CompanyAccountSerializer(ContactDetailsSerializer, ClientScopeManager.Seri
     
     def get_profile_data(self, obj):
         """Get profile data from signals."""
-        return obj.get_profile_data()
+        # TODO: reconnect when SignalDataService is migrated to app_modules.signals
+        return None
     
     def get_qualification_data(self, obj):
         """Get qualification data from signals."""
