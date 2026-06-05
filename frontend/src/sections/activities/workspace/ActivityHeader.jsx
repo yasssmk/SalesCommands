@@ -30,7 +30,7 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Date formatting
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 
 // API
 import {
@@ -45,6 +45,9 @@ import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
+
+// Pipeline state
+import { PIPELINE_STATE } from "hooks/usePipelineRunner";
 
 // Modals
 import ActivityCompleteModal from "sections/accounts/activities/ActivityCompleteModal";
@@ -72,6 +75,9 @@ import {
   RightOutlined,
   UndoOutlined,
   AimOutlined,
+  ExperimentOutlined,
+  ExclamationCircleOutlined,
+  LoadingOutlined,
 } from "@ant-design/icons";
 
 // ==============================|| TYPE CONFIGURATION ||============================== //
@@ -110,6 +116,10 @@ export default function useActivityHeaderProps({
   onSave,
   onUpdate,
   isLocked = false,
+  pipelineState = PIPELINE_STATE.IDLE,
+  lastRun = null,
+  counts = null,
+  onPendingClick,
 }) {
   const theme = useTheme();
   const router = useRouter();
@@ -250,6 +260,94 @@ export default function useActivityHeaderProps({
       );
     }
   };
+  // ==============================|| AI STATUS BADGE HELPER ||============================== //
+
+  const renderAIBadge = () => {
+    if (pipelineState === PIPELINE_STATE.RUNNING) {
+      return (
+        <Stack key="ai-badge" direction="row" spacing={0.75} alignItems="center">
+          <LoadingOutlined
+            style={{ fontSize: theme.iconSizes.sm, color: theme.palette.primary.main, display: 'flex' }}
+          />
+          <Typography variant="body2" color="primary.main">
+            AI running…
+          </Typography>
+        </Stack>
+      );
+    }
+
+    if (pipelineState === PIPELINE_STATE.ERROR) {
+      return (
+        <Stack key="ai-badge" direction="row" spacing={0.75} alignItems="center">
+          <ExclamationCircleOutlined
+            style={{ fontSize: theme.iconSizes.sm, color: theme.palette.error.main, display: 'flex' }}
+          />
+          <Typography variant="body2" color="error.main">
+            AI run failed
+          </Typography>
+        </Stack>
+      );
+    }
+
+    if (lastRun?.last_run_at) {
+      const timeago = formatDistanceToNow(new Date(lastRun.last_run_at), { addSuffix: true });
+      const isPartial = lastRun.status === 'PARTIAL';
+      return (
+        <Stack key="ai-badge" direction="row" spacing={0.75} alignItems="center">
+          <ExperimentOutlined
+            style={{
+              fontSize: theme.iconSizes.sm,
+              color: isPartial ? theme.palette.warning.main : theme.palette.text.secondary,
+              display: 'flex',
+            }}
+          />
+          <Typography variant="body2" color={isPartial ? 'warning.main' : 'text.secondary'}>
+            {isPartial ? 'Partial run' : 'AI run'} · {timeago}
+          </Typography>
+        </Stack>
+      );
+    }
+
+    return null;
+  };
+
+  // ==============================|| PENDING COUNTER HELPER ||============================== //
+
+  const renderPendingCounter = () => {
+    const pending = counts?.pending;
+    if (!pending || pending <= 0) return null;
+
+    return (
+      <Stack
+        key="pending-counter"
+        direction="row"
+        spacing={0.75}
+        alignItems="center"
+        onClick={() => onPendingClick?.()}
+        sx={{
+          cursor: onPendingClick ? 'pointer' : 'default',
+          '&:hover .pending-label': onPendingClick ? { textDecoration: 'underline' } : {},
+        }}
+      >
+        <Typography
+          variant="caption"
+          className="pending-label"
+          sx={{
+            bgcolor: 'warning.main',
+            color: 'warning.contrastText',
+            px: 1,
+            py: 0.25,
+            borderRadius: 4,
+            fontWeight: 600,
+            lineHeight: 1.5,
+          }}
+        >
+          {pending} to validate
+        </Typography>
+      </Stack>
+    );
+  };
+
   // ==============================|| DATE INFO HELPER ||============================== //
 
   const renderDateInfo = () => {
@@ -609,6 +707,12 @@ export default function useActivityHeaderProps({
 
     // Date info
     renderDateInfo(),
+
+    // AI status badge
+    renderAIBadge(),
+
+    // Pending counter badge
+    renderPendingCounter(),
   ];
 
   // ==============================|| MODALS ||============================== //

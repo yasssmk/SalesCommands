@@ -6,6 +6,7 @@ from .cluster_views import SignalClusterListView, SignalClusterDetailView, Signa
 from .impact_signal_views import ImpactSignalViewSet
 from .blocker_signal_views import BlockerSignalViewSet
 from .next_step_signal_views import NextStepSignalViewSet
+from .signal_counts_view import SignalCountsByActivityView
 
 
 __all__ = [
@@ -26,4 +27,6 @@ __all__ = [
     'SignalClusterDetailView',
     'SignalClusterArchiveView',
     'SignalClusterUnarchiveView',
+    # Counts
+    'SignalCountsByActivityView',
 ]

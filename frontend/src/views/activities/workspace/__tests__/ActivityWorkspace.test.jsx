@@ -24,7 +24,7 @@ vi.mock("api/accounts/activities", () => ({
 
 // Mock ActivityHeader hook — returns the shape consumed by WorkspaceLayout.
 vi.mock("sections/activities/workspace/ActivityHeader", () => ({
-  default: () => ({
+  default: vi.fn(() => ({
     avatar: null,
     title: "Test Activity",
     onTitleSave: undefined,
@@ -33,7 +33,7 @@ vi.mock("sections/activities/workspace/ActivityHeader", () => ({
     chips: [],
     infoItems: [],
     modals: null,
-  }),
+  })),
 }));
 
 // Mock WorkspaceBreadcrumb — avoid pulling its full dependency tree.
@@ -47,6 +47,43 @@ vi.mock("components/WorkspaceBreadcrumb", () => ({
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(),
   displayErrorSnackbar: vi.fn(),
+}));
+
+// Mock lastRun hook
+vi.mock("api/aiPipelines/lastRun", () => ({
+  useGetLastExtractionRun: vi.fn(() => ({
+    lastRun: null,
+    runsByPipeline: { TRANSCRIPT_SIGNALS: null, NEXT_STEPS: null },
+    mutateLastRun: vi.fn(),
+  })),
+}));
+
+// Mock signal counts hook
+vi.mock("api/signals/signalCounts", () => ({
+  useActivitySignalCounts: vi.fn(() => ({
+    counts: null,
+    countsLoading: false,
+    countsError: null,
+    mutateCounts: vi.fn(),
+  })),
+}));
+
+// Mock usePipelineRunner
+vi.mock("hooks/usePipelineRunner", () => ({
+  default: vi.fn(() => ({
+    run: vi.fn(),
+    state: 'idle',
+    result: null,
+    error: null,
+    reset: vi.fn(),
+  })),
+  PIPELINE_STATE: {
+    IDLE: 'idle',
+    RUNNING: 'running',
+    SUCCESS: 'success',
+    PARTIAL: 'partial',
+    ERROR: 'error',
+  },
 }));
 
 // Mock tab components — avoids pulling heavy dependency trees (MUI date
@@ -75,6 +112,9 @@ vi.mock("sections/activities/workspace/ActivityNextStepsTab", () => ({
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import { useGetActivity } from "api/accounts/activities";
+import { useActivitySignalCounts } from "api/signals/signalCounts";
+import usePipelineRunner from "hooks/usePipelineRunner";
+import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
 import ActivityWorkspacePage from "views/activities/workspace";
 
 // ==============================|| TEST DATA ||============================== //
@@ -283,5 +323,150 @@ describe("ActivityWorkspacePage", () => {
     expect(overviewTab).toHaveAttribute("aria-selected", "true");
     // And the overview content is rendered
     expect(screen.getByTestId("tab-overview")).toBeInTheDocument();
+  });
+
+  // ------------------------------------------------------------------
+  // F4: Tab badges — pending counts appear on Signals and Next Steps
+  // ------------------------------------------------------------------
+  it("shows badge on Signals tab when pending signals exist", () => {
+    setupRouter("overview");
+    setupActivity();
+    vi.mocked(useActivitySignalCounts).mockReturnValue({
+      counts: {
+        pending: 5,
+        validated: 2,
+        rejected: 1,
+        by_type: {
+          pain: { pending: 2, validated: 1, rejected: 0 },
+          objective: { pending: 1, validated: 0, rejected: 0 },
+          impact: { pending: 1, validated: 1, rejected: 0 },
+          tech_stack: { pending: 0, validated: 0, rejected: 1 },
+          blocker: { pending: 1, validated: 0, rejected: 0 },
+          next_step: { pending: 0, validated: 0, rejected: 0 },
+        },
+      },
+      countsLoading: false,
+      countsError: null,
+      mutateCounts: vi.fn(),
+    });
+
+    render(<ActivityWorkspacePage />);
+
+    const tablist = screen.getAllByRole("tablist")[0];
+    const signalsTab = within(tablist).getAllByRole("tab").find(
+      (tab) => tab.textContent.includes("Signals"),
+    );
+    expect(signalsTab.textContent).toContain("5");
+  });
+
+  it("shows badge on Next Steps tab when pending next steps exist", () => {
+    setupRouter("overview");
+    setupActivity();
+    vi.mocked(useActivitySignalCounts).mockReturnValue({
+      counts: {
+        pending: 3,
+        validated: 0,
+        rejected: 0,
+        by_type: {
+          pain: { pending: 0, validated: 0, rejected: 0 },
+          objective: { pending: 0, validated: 0, rejected: 0 },
+          impact: { pending: 0, validated: 0, rejected: 0 },
+          tech_stack: { pending: 0, validated: 0, rejected: 0 },
+          blocker: { pending: 0, validated: 0, rejected: 0 },
+          next_step: { pending: 3, validated: 0, rejected: 0 },
+        },
+      },
+      countsLoading: false,
+      countsError: null,
+      mutateCounts: vi.fn(),
+    });
+
+    render(<ActivityWorkspacePage />);
+
+    const tablist = screen.getAllByRole("tablist")[0];
+    const nextStepsTab = within(tablist).getAllByRole("tab").find(
+      (tab) => tab.textContent.includes("Next Steps"),
+    );
+    expect(nextStepsTab.textContent).toContain("3");
+  });
+
+  it("does not show badge when no pending signals", () => {
+    setupRouter("overview");
+    setupActivity();
+    vi.mocked(useActivitySignalCounts).mockReturnValue({
+      counts: {
+        pending: 0,
+        validated: 5,
+        rejected: 2,
+        by_type: {
+          pain: { pending: 0, validated: 2, rejected: 0 },
+          objective: { pending: 0, validated: 1, rejected: 0 },
+          impact: { pending: 0, validated: 1, rejected: 1 },
+          tech_stack: { pending: 0, validated: 1, rejected: 1 },
+          blocker: { pending: 0, validated: 0, rejected: 0 },
+          next_step: { pending: 0, validated: 0, rejected: 0 },
+        },
+      },
+      countsLoading: false,
+      countsError: null,
+      mutateCounts: vi.fn(),
+    });
+
+    render(<ActivityWorkspacePage />);
+
+    const tablist = screen.getAllByRole("tablist")[0];
+    const signalsTab = within(tablist).getAllByRole("tab").find(
+      (tab) => tab.textContent.includes("Signals"),
+    );
+    expect(signalsTab.textContent).toBe("Signals");
+  });
+
+  // ------------------------------------------------------------------
+  // F4: Header props include pipelineState and counts
+  // ------------------------------------------------------------------
+  it("passes pipelineState and counts to header hook", () => {
+    setupRouter("overview");
+    setupActivity();
+    vi.mocked(usePipelineRunner).mockReturnValue({
+      run: vi.fn(),
+      state: 'running',
+      result: null,
+      error: null,
+      reset: vi.fn(),
+    });
+    vi.mocked(useActivitySignalCounts).mockReturnValue({
+      counts: { pending: 2, validated: 0, rejected: 0, by_type: {} },
+      countsLoading: false,
+      countsError: null,
+      mutateCounts: vi.fn(),
+    });
+
+    render(<ActivityWorkspacePage />);
+
+    expect(vi.mocked(useActivityHeaderProps)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pipelineState: 'running',
+        counts: expect.objectContaining({ pending: 2 }),
+      }),
+    );
+  });
+
+  // ------------------------------------------------------------------
+  // F4: Pending click navigates to signals tab
+  // ------------------------------------------------------------------
+  it("passes onPendingClick that navigates to signals tab", () => {
+    setupRouter("overview");
+    setupActivity();
+
+    render(<ActivityWorkspacePage />);
+
+    const headerCall = vi.mocked(useActivityHeaderProps).mock.calls[0][0];
+    expect(headerCall.onPendingClick).toBeInstanceOf(Function);
+
+    headerCall.onPendingClick();
+    expect(mockPush).toHaveBeenCalledWith(
+      expect.stringContaining("tab=signals"),
+      expect.anything(),
+    );
   });
 });

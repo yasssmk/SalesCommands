@@ -85,6 +85,18 @@ class TranscriptSignalsExtractInputSerializer(
         ),
     )
 
+    run_qualification = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text='Run qualification signals pipeline (Pain/Objective/Impact/TechStack/Blocker).',
+    )
+
+    run_next_steps = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text='Run next-step suggestions pipeline.',
+    )
+
     # =========================================================================
     # FIELD-LEVEL VALIDATION
     # =========================================================================
@@ -126,7 +138,14 @@ class TranscriptSignalsExtractInputSerializer(
                 requesting tenant. The error is identical in both
                 cases to avoid leaking the existence of cross-tenant
                 rows.
+            StandardizedValidationError -- NO_PIPELINE_SELECTED when
+                both run_qualification and run_next_steps are False.
         """
+        if not attrs.get('run_qualification') and not attrs.get('run_next_steps'):
+            raise StandardizedValidationError(
+                AIPipelineErrorMessages.NO_PIPELINE_SELECTED
+            )
+
         client_id = self._get_client_id_from_context()
         activity_id = attrs.pop('activity_id')
 
