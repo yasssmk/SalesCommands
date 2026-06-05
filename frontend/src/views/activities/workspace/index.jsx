@@ -185,7 +185,13 @@ export default function ActivityWorkspacePage() {
           />
         );
       case "signals":
-        return <ActivitySignalsTab activity={activity} isLocked={isLocked} />;
+        return (
+          <ActivitySignalsTab
+            activity={activity}
+            isLocked={isLocked}
+            mutateCounts={mutateCounts}
+          />
+        );
       case "next-steps":
         return <ActivityNextStepsTab activity={activity} isLocked={isLocked} />;
       default:

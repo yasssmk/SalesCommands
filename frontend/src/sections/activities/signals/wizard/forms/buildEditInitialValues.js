@@ -18,7 +18,7 @@
  * server-side because PATCH is partial — sending no source_activity
  * leaves the existing FK untouched.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'} signalType
  * @param {Object} signal - Backend read object for the signal
  * @returns {Object} Formik-ready initialValues
  */
@@ -35,6 +35,8 @@ export function buildEditInitialValues(signalType, signal) {
       return buildImpactInitialValues(signal);
     case "tech-stack":
       return buildTechStackInitialValues(signal);
+    case "blockers":
+      return buildBlockerInitialValues(signal);
     default:
       return {};
   }
@@ -249,5 +251,21 @@ function buildTechStackInitialValues(signal) {
     // S5 — Narrative
     source_quote: signal.source_quote ?? "",
     notes: signal.notes ?? "",
+  };
+}
+
+// ==============================|| BLOCKER ||============================== //
+
+/**
+ * @param {Object} signal - BlockerSignal read object
+ * @returns {Object}
+ *
+ * Blocker is free-text with an optional contact FK.
+ * No canonical axes (what/dimension), no cluster participation.
+ */
+function buildBlockerInitialValues(signal) {
+  return {
+    summary: signal.summary ?? "",
+    contact: signal.contact ?? null,
   };
 }
