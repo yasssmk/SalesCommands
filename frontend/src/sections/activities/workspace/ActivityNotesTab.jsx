@@ -22,9 +22,6 @@ import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
 
 // assets
 import ExperimentOutlined from '@ant-design/icons/ExperimentOutlined';
-import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
-import WarningOutlined from '@ant-design/icons/WarningOutlined';
-import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -69,9 +66,12 @@ export default function ActivityNotesTab({
     setWizardOpen(false);
   };
 
-  const handleConfirmWizard = (curatedTranscript) => {
+  const handleConfirmWizard = (curatedTranscript, objectives) => {
     setWizardOpen(false);
-    run(activityId, curatedTranscript);
+    run(activityId, curatedTranscript, {
+      run_qualification: objectives?.qualification ?? true,
+      run_next_steps: objectives?.nextSteps ?? true,
+    });
   };
 
   // --- Render helpers ---
@@ -97,53 +97,8 @@ export default function ActivityNotesTab({
       );
     }
 
-    if (effectiveState === 'success' || effectiveState === 'partial') {
-      const qualCount = getQualCount(pipelineState, pipelineResult, lastRun);
-      const nsCount = getNsCount(pipelineState, pipelineResult, lastRun);
-      const isPartial = effectiveState === 'partial';
-
-      const label = isPartial
-        ? `Partial · qualif (${qualCount}) + next-step (${nsCount})`
-        : `Last run · qualif (${qualCount}) + next-step (${nsCount})`;
-
-      return (
-        <Tooltip title={canRunAI ? 'Re-run with current transcript' : tooltipTitle}>
-          <span>
-            <Button
-              variant="outlined"
-              onClick={handleOpenWizard}
-              disabled={!canRunAI}
-              startIcon={isPartial ? <WarningOutlined /> : <CheckCircleOutlined />}
-              color={isPartial ? 'warning' : 'success'}
-            >
-              {label}
-            </Button>
-          </span>
-        </Tooltip>
-      );
-    }
-
-    if (effectiveState === 'error') {
-      return (
-        <Tooltip title={canRunAI ? 'Retry extraction' : tooltipTitle}>
-          <span>
-            <Button
-              variant="outlined"
-              color="error"
-              onClick={handleOpenWizard}
-              disabled={!canRunAI}
-              startIcon={<CloseCircleOutlined />}
-            >
-              Run failed · Retry
-            </Button>
-          </span>
-        </Tooltip>
-      );
-    }
-
-    // idle — no lastRun
     return (
-      <Tooltip title={tooltipTitle}>
+      <Tooltip title={canRunAI ? '' : tooltipTitle}>
         <span>
           <Button
             variant="contained"
@@ -268,20 +223,6 @@ function deriveEffectiveState(pipelineState, lastRun) {
   if (lastRun.status === 'SUCCESS') return 'success';
   if (lastRun.status === 'PARTIAL') return 'partial';
   return 'idle';
-}
-
-function getQualCount(pipelineState, pipelineResult, lastRun) {
-  if (pipelineState === PIPELINE_STATE.SUCCESS || pipelineState === PIPELINE_STATE.PARTIAL) {
-    return pipelineResult?.qualification_run?.created_signals_count ?? 0;
-  }
-  return lastRun?.created_signals_count ?? 0;
-}
-
-function getNsCount(pipelineState, pipelineResult, lastRun) {
-  if (pipelineState === PIPELINE_STATE.SUCCESS || pipelineState === PIPELINE_STATE.PARTIAL) {
-    return pipelineResult?.next_steps_run?.created_signals_count ?? 0;
-  }
-  return 0;
 }
 
 // ==============================|| PROP TYPES ||============================== //

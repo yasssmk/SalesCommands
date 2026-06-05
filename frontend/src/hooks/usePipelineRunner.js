@@ -42,7 +42,7 @@ export default function usePipelineRunner({ onSuccess, onError } = {}) {
   onSuccessRef.current = onSuccess;
   onErrorRef.current = onError;
 
-  const run = useCallback(async (activityId, curatedTranscript) => {
+  const run = useCallback(async (activityId, curatedTranscript, pipelineFlags = null) => {
     if (!activityId) return;
 
     setState(PIPELINE_STATE.RUNNING);
@@ -50,7 +50,7 @@ export default function usePipelineRunner({ onSuccess, onError } = {}) {
     setError(null);
 
     try {
-      const res = await runActivityExtraction(activityId, curatedTranscript, null);
+      const res = await runActivityExtraction(activityId, curatedTranscript, null, pipelineFlags);
 
       if (res.success) {
         const data = res.data || {};

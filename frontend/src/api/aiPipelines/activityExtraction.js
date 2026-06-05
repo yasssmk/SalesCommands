@@ -232,12 +232,16 @@ async function pollForResult(idempotencyKey, onProgress) {
  *                                     Backend enforces 50 <= len(stripped) <= 50,000.
  * @param {Function|null} onProgress - Optional polling progress callback:
  *                                     (attempt: number, maxAttempts: number) => void.
+ * @param {Object} [pipelineFlags] - Optional flags to select which pipelines to run.
+ * @param {boolean} [pipelineFlags.run_qualification=true]
+ * @param {boolean} [pipelineFlags.run_next_steps=true]
  * @returns {Promise<Object>} See module docstring for return shape.
  */
 export async function runActivityExtraction(
   activityId,
   curatedTranscript,
   onProgress = null,
+  pipelineFlags = null,
 ) {
   // === 1. Client-side validation ===
   if (!activityId || !isValidUUID(activityId)) {
@@ -278,12 +282,22 @@ export async function runActivityExtraction(
     requestConfig.headers = { "Idempotency-Key": idempotencyKey };
   }
 
+  const body = {
+    activity_id: activityId,
+    transcript: trimmedTranscript,
+  };
+  if (pipelineFlags) {
+    if (typeof pipelineFlags.run_qualification === 'boolean') {
+      body.run_qualification = pipelineFlags.run_qualification;
+    }
+    if (typeof pipelineFlags.run_next_steps === 'boolean') {
+      body.run_next_steps = pipelineFlags.run_next_steps;
+    }
+  }
+
   const result = await api.post(
     endpoints.activityExtractionRun,
-    {
-      activity_id: activityId,
-      transcript: trimmedTranscript,
-    },
+    body,
     requestConfig,
   );
 

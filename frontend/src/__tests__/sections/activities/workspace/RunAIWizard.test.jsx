@@ -184,6 +184,37 @@ describe('RunAIWizard', () => {
       );
     });
 
+    it('passes unchecked next-steps flag to onConfirm', async () => {
+      const onConfirm = vi.fn();
+      renderWizard({ onConfirm });
+
+      // Uncheck "Next-step suggestions" in Step 1
+      const nextStepsCheckbox = screen.getByText(/Next-step suggestions/)
+        .closest('label')
+        .querySelector('input[type="checkbox"]');
+      await act(async () => {
+        fireEvent.click(nextStepsCheckbox);
+      });
+
+      // Continue to Step 2
+      await act(async () => {
+        fireEvent.click(screen.getByText('Continue'));
+      });
+
+      // Confirm
+      await act(async () => {
+        fireEvent.click(screen.getByText('Run analysis'));
+      });
+
+      expect(onConfirm).toHaveBeenCalledWith(
+        LONG_TRANSCRIPT,
+        expect.objectContaining({
+          qualification: true,
+          nextSteps: false,
+        }),
+      );
+    });
+
     it('disables Run analysis when transcript is empty', async () => {
       await goToStep2({ transcript: '' });
 

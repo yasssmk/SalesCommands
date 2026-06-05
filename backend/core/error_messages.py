@@ -506,6 +506,10 @@ class AIPipelineErrorMessages:
     ACTIVITY_NOT_FOUND = _(
         "The specified activity does not exist or is not accessible."
     )
+    NO_PIPELINE_SELECTED = _(
+        "At least one pipeline must be selected "
+        "(run_qualification or run_next_steps)."
+    )
 
     # -----------------------------------------------------------------
     # Provider errors

@@ -175,7 +175,7 @@ describe('ActivityNotesTab', () => {
     expect(btn).toBeDisabled();
   });
 
-  it('shows success button after pipeline success', () => {
+  it('shows Run AI Analysis button after pipeline success', () => {
     renderTab({
       pipelineRunner: makePipelineRunner({
         state: PIPELINE_STATE.SUCCESS,
@@ -186,10 +186,11 @@ describe('ActivityNotesTab', () => {
       }),
     });
 
-    expect(screen.getByText(/Last run · qualif \(5\) \+ next-step \(3\)/)).toBeInTheDocument();
+    const btn = screen.getByText('Run AI Analysis').closest('button');
+    expect(btn).not.toBeDisabled();
   });
 
-  it('shows partial button after pipeline partial', () => {
+  it('shows Run AI Analysis button after pipeline partial', () => {
     renderTab({
       pipelineRunner: makePipelineRunner({
         state: PIPELINE_STATE.PARTIAL,
@@ -200,10 +201,11 @@ describe('ActivityNotesTab', () => {
       }),
     });
 
-    expect(screen.getByText(/Partial · qualif \(3\) \+ next-step \(0\)/)).toBeInTheDocument();
+    const btn = screen.getByText('Run AI Analysis').closest('button');
+    expect(btn).not.toBeDisabled();
   });
 
-  it('shows error button after pipeline error', () => {
+  it('shows error alert and Run AI Analysis button after pipeline error', () => {
     renderTab({
       pipelineRunner: makePipelineRunner({
         state: PIPELINE_STATE.ERROR,
@@ -211,7 +213,8 @@ describe('ActivityNotesTab', () => {
       }),
     });
 
-    expect(screen.getByText(/Run failed · Retry/)).toBeInTheDocument();
+    const btn = screen.getByText('Run AI Analysis').closest('button');
+    expect(btn).not.toBeDisabled();
     expect(screen.getByText('LLM provider error')).toBeInTheDocument();
   });
 
@@ -229,7 +232,7 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByText(/4 qualification signal\(s\) \+ 2 next-step suggestion\(s\) extracted/)).toBeInTheDocument();
   });
 
-  it('derives success state from lastRun when pipeline is idle', () => {
+  it('shows last analyzed caption when lastRun exists and pipeline is idle', () => {
     renderTab({
       lastRun: {
         last_run_at: '2026-06-03T14:32:00Z',
@@ -240,7 +243,8 @@ describe('ActivityNotesTab', () => {
       },
     });
 
-    expect(screen.getByText(/Last run · qualif \(5\) \+ next-step \(0\)/)).toBeInTheDocument();
+    const btn = screen.getByText('Run AI Analysis').closest('button');
+    expect(btn).not.toBeDisabled();
     expect(screen.getByText(/Last analyzed on/)).toBeInTheDocument();
   });
 

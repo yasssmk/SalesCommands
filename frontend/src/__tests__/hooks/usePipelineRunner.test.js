@@ -63,7 +63,25 @@ describe('usePipelineRunner', () => {
     expect(result.current.result).toEqual(data);
     expect(result.current.error).toBeNull();
     expect(onSuccess).toHaveBeenCalledWith(data);
-    expect(mockRunExtraction).toHaveBeenCalledWith('act-1', 'some transcript text', null);
+    expect(mockRunExtraction).toHaveBeenCalledWith('act-1', 'some transcript text', null, null);
+  });
+
+  it('forwards pipeline flags to extraction function', async () => {
+    mockRunExtraction.mockResolvedValue({
+      success: true,
+      data: { status: 'SUCCESS' },
+    });
+
+    const { result } = renderHook(() => usePipelineRunner());
+
+    await act(async () => {
+      result.current.run('act-1', 'transcript', { run_qualification: true, run_next_steps: false });
+    });
+
+    expect(mockRunExtraction).toHaveBeenCalledWith(
+      'act-1', 'transcript', null,
+      { run_qualification: true, run_next_steps: false },
+    );
   });
 
   it('transitions to partial on PARTIAL status', async () => {

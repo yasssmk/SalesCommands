@@ -161,6 +161,8 @@ class ActivityExtractionView(BaseAPIView):
         transcript = validated['transcript']
         client_id  = validated['client_id']
         client_id_str = str(client_id)
+        want_qualif = validated['run_qualification']
+        want_nextsteps = validated['run_next_steps']
 
         log_ctx = ctx_from_request(request) if callable(ctx_from_request) else {}
         log_ctx_base = {
@@ -224,21 +226,25 @@ class ActivityExtractionView(BaseAPIView):
         nextsteps_cached_run = None
 
         if AI_PIPELINE_BACKEND_DB_DEDUP_REQUIRED:
-            qualif_cached_run = self._find_existing_run(
-                client_id=client_id,
-                activity=activity,
-                input_hash=input_hash,
-                pipeline_type=AIPipelineType.TRANSCRIPT_SIGNALS,
-            )
-            nextsteps_cached_run = self._find_existing_run(
-                client_id=client_id,
-                activity=activity,
-                input_hash=input_hash,
-                pipeline_type=AIPipelineType.NEXT_STEPS,
-            )
+            if want_qualif:
+                qualif_cached_run = self._find_existing_run(
+                    client_id=client_id,
+                    activity=activity,
+                    input_hash=input_hash,
+                    pipeline_type=AIPipelineType.TRANSCRIPT_SIGNALS,
+                )
+            if want_nextsteps:
+                nextsteps_cached_run = self._find_existing_run(
+                    client_id=client_id,
+                    activity=activity,
+                    input_hash=input_hash,
+                    pipeline_type=AIPipelineType.NEXT_STEPS,
+                )
 
-        # Both cached → 409 ALREADY_EXTRACTED with full payload
-        if qualif_cached_run and nextsteps_cached_run:
+        # Both requested pipelines cached → 409 ALREADY_EXTRACTED
+        qualif_resolved = (not want_qualif) or (qualif_cached_run is not None)
+        nextsteps_resolved = (not want_nextsteps) or (nextsteps_cached_run is not None)
+        if qualif_resolved and nextsteps_resolved and (qualif_cached_run or nextsteps_cached_run):
             logger.info(
                 'activity_extraction.both_cached',
                 extra={
@@ -269,7 +275,7 @@ class ActivityExtractionView(BaseAPIView):
         nextsteps_error = None
 
         # --- Qualification ---
-        if qualif_cached_run is None:
+        if want_qualif and qualif_cached_run is None:
             try:
                 pipeline = QualificationSignalsPipeline()
                 qualif_result = pipeline.run(
@@ -286,7 +292,7 @@ class ActivityExtractionView(BaseAPIView):
                 )
 
         # --- Next Steps ---
-        if nextsteps_cached_run is None:
+        if want_nextsteps and nextsteps_cached_run is None:
             try:
                 pipeline = NextStepsPipeline()
                 nextsteps_result = pipeline.run(
@@ -305,20 +311,23 @@ class ActivityExtractionView(BaseAPIView):
         # -----------------------------------------------------------------
         # 5. Derive global status (strict: SUCCESS only if both are SUCCESS)
         # -----------------------------------------------------------------
-        qualif_status = self._get_sub_status(qualif_cached_run, qualif_result)
-        nextsteps_status = self._get_sub_status(nextsteps_cached_run, nextsteps_result)
+        qualif_status = self._get_sub_status(qualif_cached_run, qualif_result) if want_qualif else None
+        nextsteps_status = self._get_sub_status(nextsteps_cached_run, nextsteps_result) if want_nextsteps else None
 
-        qualif_ok = qualif_status in ('SUCCESS', 'PARTIAL')
-        nextsteps_ok = nextsteps_status in ('SUCCESS', 'PARTIAL')
+        qualif_ok = (not want_qualif) or qualif_status in ('SUCCESS', 'PARTIAL')
+        nextsteps_ok = (not want_nextsteps) or nextsteps_status in ('SUCCESS', 'PARTIAL')
 
-        if qualif_status == 'SUCCESS' and nextsteps_status == 'SUCCESS':
+        qualif_success = (not want_qualif) or qualif_status == 'SUCCESS'
+        nextsteps_success = (not want_nextsteps) or nextsteps_status == 'SUCCESS'
+
+        if qualif_success and nextsteps_success:
             global_status = 'SUCCESS'
         elif qualif_ok or nextsteps_ok:
             global_status = 'PARTIAL'
         else:
             global_status = 'FAILED'
 
-        # Both fresh pipelines crashed → record failure + raise
+        # Both fresh requested pipelines crashed → record failure + raise
         if qualif_error and nextsteps_error:
             self._record_failure(
                 client_id_str, idempotency_key, qualif_error, log_ctx_idemp,
