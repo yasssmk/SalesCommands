@@ -12,6 +12,8 @@ const MOCK_SIGNAL = {
   id: "s1",
   status: "PENDING",
   summary: "Lost 5h/week on consolidation",
+  what: "DATA",
+  dimension: "TIME",
   source_quote: "We lose about 5 hours per week just consolidating reports",
   what_display: "Data",
   dimension_display: "Time",
@@ -19,7 +21,7 @@ const MOCK_SIGNAL = {
   source: "LLM_EXTRACTED",
   contact: null,
   source_context: {
-    contact: { id: "c1", first_name: "Pierre", last_name: "Dupont" },
+    contacts: [{ id: "c1", first_name: "Pierre", last_name: "Dupont" }],
   },
 };
 
@@ -156,8 +158,12 @@ describe("SignalQuickDrawer", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('shows "No contact attributed" when no contact', () => {
-    const noContact = { ...MOCK_SIGNAL, source_context: { contact: null } };
+  it("hides contact line when no contact available", () => {
+    const noContact = {
+      ...MOCK_SIGNAL,
+      contact: null,
+      source_context: { contacts: [] },
+    };
     render(
       <SignalQuickDrawer
         open={true}
@@ -167,7 +173,8 @@ describe("SignalQuickDrawer", () => {
       />,
     );
 
-    expect(screen.getByText("No contact attributed")).toBeInTheDocument();
+    expect(screen.queryByText("No contact attributed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pierre Dupont")).not.toBeInTheDocument();
   });
 
   it("renders blocker contact directly from signal.contact", () => {

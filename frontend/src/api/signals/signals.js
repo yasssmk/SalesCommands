@@ -45,36 +45,42 @@ const endpoints = {
   painDetail: (id) => `/module-signals/pain/${id}/`,
   painValidate: (id) => `/module-signals/pain/${id}/validate/`,
   painReject: (id) => `/module-signals/pain/${id}/reject/`,
+  painReopen: (id) => `/module-signals/pain/${id}/reopen/`,
 
   // Objective
   objective: "/module-signals/objective/",
   objectiveDetail: (id) => `/module-signals/objective/${id}/`,
   objectiveValidate: (id) => `/module-signals/objective/${id}/validate/`,
   objectiveReject: (id) => `/module-signals/objective/${id}/reject/`,
+  objectiveReopen: (id) => `/module-signals/objective/${id}/reopen/`,
 
   // Impact
   impact: "/module-signals/impact/",
   impactDetail: (id) => `/module-signals/impact/${id}/`,
   impactValidate: (id) => `/module-signals/impact/${id}/validate/`,
   impactReject: (id) => `/module-signals/impact/${id}/reject/`,
+  impactReopen: (id) => `/module-signals/impact/${id}/reopen/`,
 
   // Tech Stack
   techStack: "/module-signals/tech-stack/",
   techStackDetail: (id) => `/module-signals/tech-stack/${id}/`,
   techStackValidate: (id) => `/module-signals/tech-stack/${id}/validate/`,
   techStackReject: (id) => `/module-signals/tech-stack/${id}/reject/`,
+  techStackReopen: (id) => `/module-signals/tech-stack/${id}/reopen/`,
 
   // Blocker
   blockers: "/module-signals/blockers/",
   blockersDetail: (id) => `/module-signals/blockers/${id}/`,
   blockersValidate: (id) => `/module-signals/blockers/${id}/validate/`,
   blockersReject: (id) => `/module-signals/blockers/${id}/reject/`,
+  blockersReopen: (id) => `/module-signals/blockers/${id}/reopen/`,
 
   // Next Step
   nextSteps: "/module-signals/next-steps/",
   nextStepsDetail: (id) => `/module-signals/next-steps/${id}/`,
   nextStepsValidate: (id) => `/module-signals/next-steps/${id}/validate/`,
   nextStepsReject: (id) => `/module-signals/next-steps/${id}/reject/`,
+  nextStepsReopen: (id) => `/module-signals/next-steps/${id}/reopen/`,
 };
 
 // ==============================|| ENDPOINT HELPERS ||============================== //
@@ -177,6 +183,32 @@ function getRejectEndpoint(signalType, id) {
       return endpoints.blockersReject(id);
     case "next-steps":
       return endpoints.nextStepsReject(id);
+    default:
+      return null;
+  }
+}
+
+/**
+ * Resolve reopen endpoint for a given signal type + id.
+ *
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {string} id - Signal UUID
+ * @returns {string} Reopen URL
+ */
+function getReopenEndpoint(signalType, id) {
+  switch (signalType) {
+    case "pain":
+      return endpoints.painReopen(id);
+    case "objective":
+      return endpoints.objectiveReopen(id);
+    case "impact":
+      return endpoints.impactReopen(id);
+    case "tech-stack":
+      return endpoints.techStackReopen(id);
+    case "blockers":
+      return endpoints.blockersReopen(id);
+    case "next-steps":
+      return endpoints.nextStepsReopen(id);
     default:
       return null;
   }
@@ -571,6 +603,38 @@ export async function rejectSignal(signalType, signalId, reason = null) {
   const url = getRejectEndpoint(signalType, signalId);
   const payload = reason ? { reason } : {};
   const result = await api.post(url, payload);
+
+  if (result.success) {
+    revalidateSignalLists();
+    const data = result.data?.data ?? result.data;
+    return { success: true, data };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status ?? 0,
+    response: result.response ?? null,
+  };
+}
+
+/**
+ * REOPEN SIGNAL
+ *
+ * POST /module-signals/{signalType}/{id}/reopen/
+ * Transitions a VALIDATED or REJECTED signal back to PENDING.
+ *
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {string} signalId - Signal UUID
+ * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
+ */
+export async function reopenSignal(signalType, signalId) {
+  if (!signalId || !isValidUUID(signalId)) {
+    return { success: false, error: "Invalid signal ID format", status: 400 };
+  }
+
+  const url = getReopenEndpoint(signalType, signalId);
+  const result = await api.post(url, {});
 
   if (result.success) {
     revalidateSignalLists();

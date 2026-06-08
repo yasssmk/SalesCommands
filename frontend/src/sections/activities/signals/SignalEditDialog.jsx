@@ -1,27 +1,12 @@
 // frontend/src/sections/activities/signals/SignalEditDialog.jsx
-/**
- * SignalEditDialog — Dialog for editing an existing signal of any type.
- *
- * Reuses the 3 InlineXxxForm components from the wizard.
- * Passes pre-filled initialValues via buildEditInitialValues().
- * Submits via updateSignal() (PATCH) instead of createSignal().
- *
- * No staging, no review step — single signal, single save action.
- *
- * Edit is available for PENDING and VALIDATED signals (per SignalCard actions).
- * The form is identical to the creation form for each type.
- *
- * Error handling:
- *   Field-level errors surfaced via handleFormikError if the backend returns
- *   structured validation errors. Generic errors shown via displayErrorSnackbar.
- */
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState } from "react";
 
 // material-ui
+import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogContent from "@mui/material/DialogContent";
@@ -32,14 +17,17 @@ import Stack from "@mui/material/Stack";
 
 // ant-design icons
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import { UndoOutlined } from "@ant-design/icons";
 
 // project imports
-import { updateSignal } from "api/signals/signals";
+import { updateSignal, reopenSignal } from "api/signals/signals";
 import {
   displayErrorSnackbar,
   displaySuccessSnackbar,
 } from "utils/displayError";
 
+import { getMissingFields } from "./signalValidationRules";
+import SignalIncompleteAlert from "./SignalIncompleteAlert";
 import { buildEditInitialValues } from "./wizard/forms/buildEditInitialValues";
 import InlinePainForm from "./wizard/forms/InlinePainForm";
 import InlineObjectiveForm from "./wizard/forms/InlineObjectiveForm";
@@ -59,18 +47,6 @@ const TYPE_LABELS = {
 
 // ==============================|| SIGNAL EDIT DIALOG ||============================== //
 
-/**
- * SignalEditDialog
- *
- * @param {boolean}  open           - Dialog open state
- * @param {Function} onClose        - Called on cancel / backdrop click
- * @param {Function} onSuccess      - Called after successful PATCH
- * @param {Object}   signal         - Signal object to edit (from backend read serializer)
- * @param {string}   signalType     - 'pain' | 'objective' | 'impact' | 'tech-stack'
- * @param {string}   accountId      - Account UUID — scopes contact search
- * @param {Object}   choices        - From useGetSignalChoices()
- * @param {boolean}  choicesLoading
- */
 export default function SignalEditDialog({
   open,
   onClose,
@@ -81,35 +57,14 @@ export default function SignalEditDialog({
   choices,
   choicesLoading,
 }) {
-  // ==============================|| INITIAL VALUES ||============================== //
+  const [reopening, setReopening] = useState(false);
 
-  /**
-   * Pre-fill form from backend signal object.
-   * Re-computed only when signal or signalType changes — stable reference
-   * prevents Formik from reinitializing on every render.
-   */
   const initialValues = useMemo(
     () => buildEditInitialValues(signalType, signal),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signal?.id, signalType],
   );
 
-  // ==============================|| SUBMIT HANDLER ||============================== //
-
-  /**
-   * Receives the built payload from the inline form's onSubmit.
-   * Calls PATCH, surfaces errors, closes on success.
-   *
-   * The inline form marks itself as submitting during this call via
-   * Formik's isSubmitting — the submit button is disabled automatically.
-   *
-   * Contact normalization (post-standardisation refactor)
-   * -----------------------------------------------------
-   * target_contact (Objective PERSONAL scope) is the only remaining
-   * contact-shaped field on the form payloads. Inline forms store it
-   * as a full contact object for AsyncContactSelect compatibility; the
-   * backend expects a UUID — we extract .id here before sending the PATCH.
-   */
   const handleSave = useCallback(
     async (payload) => {
       if (!signal?.id) return;
@@ -139,16 +94,28 @@ export default function SignalEditDialog({
     [signal, signalType, onSuccess, onClose],
   );
 
-  // ==============================|| RENDER ||============================== //
+  const handleReopen = useCallback(async () => {
+    if (!signal?.id) return;
+    setReopening(true);
+
+    const result = await reopenSignal(signalType, signal.id);
+
+    if (result.success) {
+      displaySuccessSnackbar("Signal reopened — now pending");
+      onSuccess();
+      onClose();
+    } else {
+      displayErrorSnackbar(result);
+    }
+
+    setReopening(false);
+  }, [signal, signalType, onSuccess, onClose]);
 
   const title = TYPE_LABELS[signalType] ?? "Edit Signal";
+  const canReopen =
+    signal &&
+    (signal.status === "VALIDATED" || signal.status === "REJECTED");
 
-  /**
-   * Shared props passed to all inline forms.
-   * initialValues pre-fills the form from the existing signal.
-   * submitLabel overrides the default "Add X" label.
-   * onCancel closes the dialog.
-   */
   const sharedFormProps = {
     choices,
     choicesLoading,
@@ -169,8 +136,26 @@ export default function SignalEditDialog({
     >
       {/* ---- Header ---- */}
       <DialogTitle id="signal-edit-dialog-title" sx={{ pr: 6 }}>
-        Edit {title}
-        {/* Close button */}
+        <Stack direction="row" spacing={1.5} alignItems="center">
+          <span>Edit {title}</span>
+          {canReopen && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={
+                reopening ? (
+                  <CircularProgress size={14} />
+                ) : (
+                  <UndoOutlined style={{ fontSize: 14 }} />
+                )
+              }
+              onClick={handleReopen}
+              disabled={reopening}
+            >
+              Reopen
+            </Button>
+          )}
+        </Stack>
         <IconButton
           size="small"
           onClick={onClose}
@@ -191,12 +176,14 @@ export default function SignalEditDialog({
       {/* ---- Form ---- */}
       <DialogContent sx={{ pt: 2.5, pb: 3 }}>
         {!signal ? (
-          // Guard — should not happen in practice
           <Stack alignItems="center" py={4}>
             <CircularProgress size={24} />
           </Stack>
         ) : (
           <>
+            <SignalIncompleteAlert
+              missingFields={getMissingFields(signal, signalType)}
+            />
             {signalType === "pain" && <InlinePainForm {...sharedFormProps} />}
             {signalType === "objective" && (
               <InlineObjectiveForm {...sharedFormProps} />
@@ -225,6 +212,7 @@ SignalEditDialog.propTypes = {
   onSuccess: PropTypes.func.isRequired,
   signal: PropTypes.shape({
     id: PropTypes.string.isRequired,
+    status: PropTypes.string,
   }),
   signalType: PropTypes.oneOf([
     "pain",

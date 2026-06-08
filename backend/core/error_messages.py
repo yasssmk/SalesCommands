@@ -367,6 +367,7 @@ class SignalErrorMessages:
     # -----------------------------------------------------------------
     NOT_PENDING_VALIDATED    = _("Only PENDING signals can be validated.")
     NOT_PENDING_REJECTED     = _("Only PENDING signals can be rejected.")
+    ALREADY_PENDING          = _("Signal is already pending.")
     NOT_EDITABLE             = _("Cannot edit a signal with status '{status}'.")
     INVALID_SIGNAL_TYPE      = _("Invalid signal type: '{signal_type}'.")
     SOURCE_CONTACT_REQUIRED  = _("A source contact is required for this signal type.")

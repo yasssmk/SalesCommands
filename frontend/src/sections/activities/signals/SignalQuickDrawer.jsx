@@ -11,6 +11,7 @@ import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
@@ -26,14 +27,15 @@ import {
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
+import { getMissingFields } from "./signalValidationRules";
+import SignalIncompleteAlert from "./SignalIncompleteAlert";
+import {
+  getTechSummary,
+  getContact,
+  formatContact,
+} from "./utils/signalDisplay";
 
 const DRAWER_WIDTH = 400;
-
-function formatContact(contact) {
-  if (!contact) return null;
-  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
-  return name || null;
-}
 
 function formatDate(dateStr) {
   if (!dateStr) return null;
@@ -52,20 +54,9 @@ function formatDate(dateStr) {
 
 function getSummary(signal, signalType) {
   if (signalType === "tech-stack") {
-    return (
-      signal.tech_catalog_entry?.product_name ||
-      signal.tech_catalog_entry?.company_name ||
-      "Unknown tool"
-    );
+    return getTechSummary(signal).name;
   }
   return signal.summary || "—";
-}
-
-function getContactFromSignal(signal, signalType) {
-  if (signalType === "blockers") {
-    return signal.contact;
-  }
-  return signal.source_context?.contact ?? null;
 }
 
 // ==============================|| SIGNAL QUICK DRAWER ||============================== //
@@ -83,8 +74,12 @@ export default function SignalQuickDrawer({
   if (!signal) return null;
 
   const isPending = signal.status === "PENDING";
-  const contact = getContactFromSignal(signal, signalType);
+  const contact = getContact(signal);
   const contactName = formatContact(contact);
+  const missingFields = isPending
+    ? getMissingFields(signal, signalType)
+    : [];
+  const validateDisabled = missingFields.length > 0;
 
   return (
     <Drawer
@@ -118,6 +113,9 @@ export default function SignalQuickDrawer({
 
       {/* Body */}
       <Box sx={{ px: 2.5, py: 2, flex: 1, overflow: "auto" }}>
+        {/* Incomplete alert */}
+        <SignalIncompleteAlert missingFields={missingFields} />
+
         {/* Summary */}
         <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>
           {getSummary(signal, signalType)}
@@ -158,12 +156,14 @@ export default function SignalQuickDrawer({
         )}
 
         {/* Contact */}
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-          <UserOutlined style={{ fontSize: 14, color: "#8c8c8c" }} />
-          <Typography variant="body2" color="text.secondary">
-            {contactName || "No contact attributed"}
-          </Typography>
-        </Stack>
+        {contactName && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+            <UserOutlined style={{ fontSize: 14, color: "#8c8c8c" }} />
+            <Typography variant="body2" color="text.secondary">
+              {contactName}
+            </Typography>
+          </Stack>
+        )}
 
         {/* Extraction date */}
         {signal.created_at && (
@@ -217,15 +217,28 @@ export default function SignalQuickDrawer({
               >
                 Reject
               </Button>
-              <Button
-                variant="contained"
-                size="small"
-                color="success"
-                startIcon={<CheckCircleOutlined style={{ fontSize: 14 }} />}
-                onClick={() => onValidate?.(signal, signalType)}
+              <Tooltip
+                title={
+                  validateDisabled
+                    ? "Complete missing fields before validating"
+                    : ""
+                }
               >
-                Validate
-              </Button>
+                <span>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    color="success"
+                    disabled={validateDisabled}
+                    startIcon={
+                      <CheckCircleOutlined style={{ fontSize: 14 }} />
+                    }
+                    onClick={() => onValidate?.(signal, signalType)}
+                  >
+                    Validate
+                  </Button>
+                </span>
+              </Tooltip>
             </>
           )}
         </Stack>
@@ -247,7 +260,7 @@ SignalQuickDrawer.propTypes = {
     source: PropTypes.string,
     contact: PropTypes.object,
     source_context: PropTypes.shape({
-      contact: PropTypes.object,
+      contacts: PropTypes.arrayOf(PropTypes.object),
     }),
     tech_catalog_entry: PropTypes.object,
   }),

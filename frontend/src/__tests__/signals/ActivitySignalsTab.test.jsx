@@ -30,6 +30,16 @@ vi.mock("hooks/useActivityAllSignals", () => ({
         dimension_display: "Time",
         _signalType: "objective",
       },
+      {
+        id: "r1",
+        status: "REJECTED",
+        summary: "Rejected signal C",
+        what: "DATA",
+        what_display: "Data",
+        dimension: "TIME",
+        dimension_display: "Time",
+        _signalType: "pain",
+      },
     ],
     blockerSignals: [
       {
@@ -115,23 +125,35 @@ describe("ActivitySignalsTab", () => {
     expect(screen.getByText("Pierre Dupont")).toBeInTheDocument();
   });
 
-  it("shows Flat placeholder when toggling to Flat view", () => {
+  it("shows Flat view with signal cards when toggling to Flat", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
 
     fireEvent.click(screen.getByRole("button", { name: /flat/i }));
-    expect(screen.getByText("Flat view coming soon")).toBeInTheDocument();
+    expect(screen.getByText(/Pain signal A/)).toBeInTheDocument();
+    expect(screen.getByText(/Budget frozen Q4/)).toBeInTheDocument();
   });
 
-  it("filters signals by status", () => {
+  it("default state excludes REJECTED signals", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
 
-    // Click Validated filter chip (matches "Validated (1)")
+    expect(screen.queryByText(/Rejected signal C/)).not.toBeInTheDocument();
+  });
+
+  it("filters signals by status (Validated only)", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+
     fireEvent.click(screen.getByText(/Validated \(/));
 
-    // Only validated signal should be visible
     expect(screen.getByText(/Objective signal B/)).toBeInTheDocument();
-    // Pending signals should be hidden
     expect(screen.queryByText(/Pain signal A/)).not.toBeInTheDocument();
+  });
+
+  it("include rejected checkbox shows REJECTED signals", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    expect(screen.getByText(/Rejected signal C/)).toBeInTheDocument();
   });
 
   it("calls validateSignal and mutates on validate action", async () => {
@@ -143,7 +165,6 @@ describe("ActivitySignalsTab", () => {
       />,
     );
 
-    // Click validate on first available signal (pain signal in theme block)
     const validateButtons = screen.getAllByRole("button", { name: /validate signal|validate blocker/i });
     await act(async () => {
       fireEvent.click(validateButtons[0]);

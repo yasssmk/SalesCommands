@@ -446,6 +446,43 @@ class BaseSignalViewSet(
         output = self.detail_serializer_class(updated, context={'request': request})
         return Response({'success': True, 'data': output.data})
 
+    @action(detail=True, methods=['post'], url_path='reopen')
+    @transaction.atomic
+    def reopen_signal(self, request, pk=None):
+        """
+        Reopen a VALIDATED or REJECTED signal back to PENDING.
+        POST /<signal-type>/{id}/reopen/
+        """
+        ctx      = ctx_from_request(request)
+        instance = self.get_object()
+
+        logger.info(f"{self.model_label}_reopen_requested", extra={
+            **ctx, 'signal_id': str(instance.id),
+        })
+
+        updated = SignalManager.reopen(signal=instance, user=request.user)
+
+        audit_log(
+            event=f'{self.model_label}_reopened',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type=self.model_label,
+            target_id=str(updated.id),
+            fields_changed=['status', 'validated_by', 'validated_at'],
+            outcome='success',
+        )
+
+        transaction.on_commit(
+            lambda: _invalidate_signal_caches(
+                self.get_client_id(),
+                invalidate_cluster_tag=self.invalidate_cluster_tag,
+            )
+        )
+
+        output = self.detail_serializer_class(updated, context={'request': request})
+        return Response({'success': True, 'data': output.data})
+
 
 # =============================================================================
 # CHOICES VIEW

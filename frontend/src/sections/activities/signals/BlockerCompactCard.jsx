@@ -20,12 +20,7 @@ import {
 
 // Project imports
 import SignalStatusChip from "components/chips/SignalStatusChip";
-
-function formatContact(contact) {
-  if (!contact) return null;
-  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
-  return name || null;
-}
+import { getContact, formatContact } from "./utils/signalDisplay";
 
 // ==============================|| BLOCKER COMPACT CARD ||============================== //
 
@@ -38,7 +33,7 @@ export default function BlockerCompactCard({
 }) {
   const isPending = signal.status === "PENDING";
   const isRejected = signal.status === "REJECTED";
-  const contactName = formatContact(signal.contact);
+  const contactName = formatContact(getContact(signal));
 
   return (
     <Box
@@ -132,6 +127,9 @@ BlockerCompactCard.propTypes = {
       id: PropTypes.string,
       first_name: PropTypes.string,
       last_name: PropTypes.string,
+    }),
+    source_context: PropTypes.shape({
+      contacts: PropTypes.arrayOf(PropTypes.object),
     }),
   }).isRequired,
   onSelect: PropTypes.func,

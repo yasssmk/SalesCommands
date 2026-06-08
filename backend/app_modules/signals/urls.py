@@ -83,6 +83,11 @@ def get_urlpatterns():
             PainSignalViewSet.as_view({'post': 'reject_signal'}),
             name='pain-reject',
         ),
+        path(
+            'pain/<uuid:pk>/reopen/',
+            PainSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='pain-reopen',
+        ),
 
         # =====================================================================
         # OBJECTIVE SIGNALS
@@ -112,6 +117,11 @@ def get_urlpatterns():
             'objective/<uuid:pk>/reject/',
             ObjectiveSignalViewSet.as_view({'post': 'reject_signal'}),
             name='objective-reject',
+        ),
+        path(
+            'objective/<uuid:pk>/reopen/',
+            ObjectiveSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='objective-reopen',
         ),
 
         # =====================================================================
@@ -143,6 +153,11 @@ def get_urlpatterns():
             ImpactSignalViewSet.as_view({'post': 'reject_signal'}),
             name='impact-reject',
         ),
+        path(
+            'impact/<uuid:pk>/reopen/',
+            ImpactSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='impact-reopen',
+        ),
 
         # =====================================================================
         # TECH STACK SIGNALS
@@ -172,6 +187,11 @@ def get_urlpatterns():
             'tech-stack/<uuid:pk>/reject/',
             TechStackSignalViewSet.as_view({'post': 'reject_signal'}),
             name='tech-stack-reject',
+        ),
+        path(
+            'tech-stack/<uuid:pk>/reopen/',
+            TechStackSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='tech-stack-reopen',
         ),
 
         # =====================================================================
@@ -203,6 +223,11 @@ def get_urlpatterns():
             BlockerSignalViewSet.as_view({'post': 'reject_signal'}),
             name='blocker-reject',
         ),
+        path(
+            'blockers/<uuid:pk>/reopen/',
+            BlockerSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='blocker-reopen',
+        ),
 
         # =====================================================================
         # NEXT STEP SIGNALS
@@ -232,6 +257,11 @@ def get_urlpatterns():
             'next-steps/<uuid:pk>/reject/',
             NextStepSignalViewSet.as_view({'post': 'reject_signal'}),
             name='next-step-reject',
+        ),
+        path(
+            'next-steps/<uuid:pk>/reopen/',
+            NextStepSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='next-step-reopen',
         ),
 
         # =====================================================================

@@ -31,9 +31,8 @@ import SignalsFilterBar from "sections/activities/signals/SignalsFilterBar";
 import SignalsGroupedView from "sections/activities/signals/SignalsGroupedView";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
-
-// Icons
-import { ThunderboltOutlined } from "@ant-design/icons";
+import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
+import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 
 // ==============================|| ACTIVITY SIGNALS TAB ||============================== //
 
@@ -61,7 +60,11 @@ export default function ActivitySignalsTab({
   const [view, setView] = useState(() => getPersistedView(activityId));
 
   // Filter state
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all-active");
+  const [includeRejected, setIncludeRejected] = useState(false);
+
+  // Sort state (flat view only)
+  const [sortKey, setSortKey] = useState("date-desc");
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -80,15 +83,25 @@ export default function ActivitySignalsTab({
   );
 
   // Filtered signals
-  const filteredQualification = useMemo(() => {
-    if (statusFilter === "all") return qualificationSignals;
-    return qualificationSignals.filter((s) => s.status === statusFilter);
-  }, [qualificationSignals, statusFilter]);
+  const filterFn = useCallback(
+    (s) => {
+      const isRejected = s.status === "REJECTED";
+      if (isRejected) return includeRejected;
+      if (statusFilter === "all-active") return true;
+      return s.status === statusFilter;
+    },
+    [statusFilter, includeRejected],
+  );
 
-  const filteredBlockers = useMemo(() => {
-    if (statusFilter === "all") return blockerSignals;
-    return blockerSignals.filter((s) => s.status === statusFilter);
-  }, [blockerSignals, statusFilter]);
+  const filteredQualification = useMemo(
+    () => qualificationSignals.filter(filterFn),
+    [qualificationSignals, filterFn],
+  );
+
+  const filteredBlockers = useMemo(
+    () => blockerSignals.filter(filterFn),
+    [blockerSignals, filterFn],
+  );
 
   // Handlers
   const handleSelect = useCallback((signal, signalType) => {
@@ -188,13 +201,20 @@ export default function ActivitySignalsTab({
         <SignalsFilterBar
           activeFilter={statusFilter}
           onChange={setStatusFilter}
+          includeRejected={includeRejected}
+          onToggleRejected={setIncludeRejected}
           signals={displayableSignals}
         />
-        <SignalsViewToggle
-          view={view}
-          onChange={setView}
-          activityId={activityId}
-        />
+        <Stack direction="row" spacing={1} alignItems="center">
+          {view === "flat" && (
+            <SignalsSortSelect value={sortKey} onChange={setSortKey} />
+          )}
+          <SignalsViewToggle
+            view={view}
+            onChange={setView}
+            activityId={activityId}
+          />
+        </Stack>
       </Stack>
 
       {/* Content */}
@@ -208,19 +228,14 @@ export default function ActivitySignalsTab({
           isLocked={isLocked}
         />
       ) : (
-        <Box
-          display="flex"
-          justifyContent="center"
-          alignItems="center"
-          minHeight="200px"
-        >
-          <Stack spacing={1} alignItems="center" textAlign="center">
-            <ThunderboltOutlined style={{ fontSize: 36, color: "#8c8c8c" }} />
-            <Typography variant="body2" color="text.secondary">
-              Flat view coming soon
-            </Typography>
-          </Stack>
-        </Box>
+        <SignalsFlatView
+          signals={[...filteredQualification, ...filteredBlockers]}
+          sortKey={sortKey}
+          onValidate={handleValidate}
+          onReject={handleReject}
+          onEdit={handleEdit}
+          isLocked={isLocked}
+        />
       )}
 
       {/* Quick Drawer */}

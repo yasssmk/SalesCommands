@@ -15,55 +15,70 @@ const MOCK_SIGNALS = [
   { id: "4", status: "REJECTED" },
 ];
 
-describe("SignalsFilterBar", () => {
-  it("renders all filter chips with counts", () => {
-    render(
-      <SignalsFilterBar
-        activeFilter="all"
-        onChange={vi.fn()}
-        signals={MOCK_SIGNALS}
-      />,
-    );
+const DEFAULT_PROPS = {
+  activeFilter: "all-active",
+  onChange: vi.fn(),
+  includeRejected: false,
+  onToggleRejected: vi.fn(),
+  signals: MOCK_SIGNALS,
+};
 
-    expect(screen.getByText("All (4)")).toBeInTheDocument();
+describe("SignalsFilterBar", () => {
+  it("renders 3 radio chips and 1 checkbox", () => {
+    render(<SignalsFilterBar {...DEFAULT_PROPS} />);
+
+    expect(screen.getByText("All Active (3)")).toBeInTheDocument();
     expect(screen.getByText("Pending (2)")).toBeInTheDocument();
     expect(screen.getByText("Validated (1)")).toBeInTheDocument();
-    expect(screen.getByText("Rejected (1)")).toBeInTheDocument();
+    expect(screen.getByText(/Include rejected \(1\)/)).toBeInTheDocument();
   });
 
   it("calls onChange with filter value on chip click", () => {
     const onChange = vi.fn();
-    render(
-      <SignalsFilterBar
-        activeFilter="all"
-        onChange={onChange}
-        signals={MOCK_SIGNALS}
-      />,
-    );
+    render(<SignalsFilterBar {...DEFAULT_PROPS} onChange={onChange} />);
 
     fireEvent.click(screen.getByText("Pending (2)"));
     expect(onChange).toHaveBeenCalledWith("PENDING");
   });
 
   it("highlights active filter chip", () => {
-    render(
-      <SignalsFilterBar
-        activeFilter="PENDING"
-        onChange={vi.fn()}
-        signals={MOCK_SIGNALS}
-      />,
-    );
+    render(<SignalsFilterBar {...DEFAULT_PROPS} activeFilter="PENDING" />);
 
     const pendingChip = screen.getByText("Pending (2)").closest(".MuiChip-root");
     expect(pendingChip).toHaveClass("MuiChip-filled");
   });
 
-  it("renders zero counts when no signals", () => {
+  it("calls onToggleRejected when checkbox is clicked", () => {
+    const onToggleRejected = vi.fn();
     render(
-      <SignalsFilterBar activeFilter="all" onChange={vi.fn()} signals={[]} />,
+      <SignalsFilterBar
+        {...DEFAULT_PROPS}
+        onToggleRejected={onToggleRejected}
+      />,
     );
 
-    expect(screen.getByText("All (0)")).toBeInTheDocument();
+    const checkbox = screen.getByRole("checkbox");
+    fireEvent.click(checkbox);
+    expect(onToggleRejected).toHaveBeenCalledWith(true);
+  });
+
+  it("shows checkbox as checked when includeRejected is true", () => {
+    render(<SignalsFilterBar {...DEFAULT_PROPS} includeRejected={true} />);
+
+    expect(screen.getByRole("checkbox")).toBeChecked();
+  });
+
+  it("renders zero counts when no signals", () => {
+    render(<SignalsFilterBar {...DEFAULT_PROPS} signals={[]} />);
+
+    expect(screen.getByText("All Active (0)")).toBeInTheDocument();
     expect(screen.getByText("Pending (0)")).toBeInTheDocument();
+    expect(screen.getByText(/Include rejected \(0\)/)).toBeInTheDocument();
+  });
+
+  it("does not include REJECTED in 'All Active' count", () => {
+    render(<SignalsFilterBar {...DEFAULT_PROPS} />);
+
+    expect(screen.getByText("All Active (3)")).toBeInTheDocument();
   });
 });
