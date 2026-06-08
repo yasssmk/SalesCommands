@@ -102,7 +102,7 @@ class TestActivityCreateWithNextStepSignal:
 
         assert response.status_code == 201, response.data
         activity_data = response.data['data']
-        assert activity_data['next_step_signal'] == str(next_step_signal_pending.id)
+        assert str(activity_data['next_step_signal']) == str(next_step_signal_pending.id)
 
         next_step_signal_pending.refresh_from_db()
         assert next_step_signal_pending.status == SignalStatus.VALIDATED
