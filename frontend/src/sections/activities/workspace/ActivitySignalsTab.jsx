@@ -47,6 +47,7 @@ export default function ActivitySignalsTab({
   // Signals data
   const {
     qualificationSignals,
+    techStackSignals,
     blockerSignals,
     loading,
     error,
@@ -76,10 +77,10 @@ export default function ActivitySignalsTab({
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // All displayable signals (qualification + blockers, excluding next-steps)
+  // All displayable signals (qualification + tech-stack + blockers, excluding next-steps)
   const displayableSignals = useMemo(
-    () => [...qualificationSignals, ...blockerSignals],
-    [qualificationSignals, blockerSignals],
+    () => [...qualificationSignals, ...techStackSignals, ...blockerSignals],
+    [qualificationSignals, techStackSignals, blockerSignals],
   );
 
   // Filtered signals
@@ -96,6 +97,11 @@ export default function ActivitySignalsTab({
   const filteredQualification = useMemo(
     () => qualificationSignals.filter(filterFn),
     [qualificationSignals, filterFn],
+  );
+
+  const filteredTechStack = useMemo(
+    () => techStackSignals.filter(filterFn),
+    [techStackSignals, filterFn],
   );
 
   const filteredBlockers = useMemo(
@@ -221,6 +227,7 @@ export default function ActivitySignalsTab({
       {view === "grouped" ? (
         <SignalsGroupedView
           qualificationSignals={filteredQualification}
+          techStackSignals={filteredTechStack}
           blockerSignals={filteredBlockers}
           onSelect={handleSelect}
           onValidate={handleValidate}
@@ -229,7 +236,7 @@ export default function ActivitySignalsTab({
         />
       ) : (
         <SignalsFlatView
-          signals={[...filteredQualification, ...filteredBlockers]}
+          signals={[...filteredQualification, ...filteredTechStack, ...filteredBlockers]}
           sortKey={sortKey}
           onValidate={handleValidate}
           onReject={handleReject}

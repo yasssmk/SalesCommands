@@ -167,17 +167,17 @@ class TranscriptSignalExtractor:
         persisted = []
         dropped_count = 0
 
+        # --- Phase 1: Build all data dicts (filter + transform) ---
+        candidates = []
         for raw in raw_signals:
             if not isinstance(raw, dict):
                 dropped_count += 1
                 continue
 
-            # --- Safety filter ---
             if not self._passes_safety_filter(raw, confidence_min, drop_inferred):
                 dropped_count += 1
                 continue
 
-            # --- Build the create() data dict ---
             data = self._build_signal_data(
                 stage=stage,
                 raw=raw,
@@ -185,12 +185,19 @@ class TranscriptSignalExtractor:
                 client_id=client_id,
             )
             if data is None:
-                # Malformed signal or defense-in-depth violation
-                # (logged inside the builder).
                 dropped_count += 1
                 continue
 
-            # --- Persist via SignalManager ---
+            candidates.append(data)
+
+        # --- Phase 1.5: Deduplicate TechStack candidates ---
+        if stage == 'techstack' and len(candidates) > 1:
+            before = len(candidates)
+            candidates = self._deduplicate_techstack(candidates)
+            dropped_count += before - len(candidates)
+
+        # --- Phase 2: Persist surviving candidates ---
+        for data in candidates:
             try:
                 signal = SignalManager.create(
                     data=data,
@@ -209,9 +216,6 @@ class TranscriptSignalExtractor:
                 )
                 dropped_count += 1
             except Exception as exc:
-                # Defensive catch-all: a malformed raw value could trigger
-                # a model-level ValidationError or a programming bug.
-                # Per-signal failure must not abort the batch.
                 logger.error(
                     'signal_create_unexpected_error',
                     extra={
@@ -240,6 +244,48 @@ class TranscriptSignalExtractor:
     def _passes_safety_filter(raw, confidence_min, drop_inferred):
         """Delegate to services.safety_filter.passes_safety_filter."""
         return passes_safety_filter(raw, confidence_min, drop_inferred)
+
+    # =========================================================================
+    # TECHSTACK DEDUPLICATION
+    # =========================================================================
+
+    @staticmethod
+    def _deduplicate_techstack(candidates):
+        """
+        Merge multiple TechStack candidates that refer to the same tool.
+
+        Grouping key:
+          - If tech_catalog_entry is set: its id (UUID).
+          - Otherwise: metadata.pending_tech_name (case-insensitive, stripped).
+
+        For each group the first candidate is kept as the winner. Additional
+        source_quote values are stored in metadata.additional_quotes for
+        traceability.
+        """
+        groups = {}
+        order = []
+
+        for data in candidates:
+            entry = data.get('tech_catalog_entry')
+            if entry is not None:
+                key = ('catalog', str(entry.id))
+            else:
+                pending = (data.get('metadata') or {}).get('pending_tech_name', '')
+                key = ('pending', pending.strip().lower())
+
+            if key not in groups:
+                groups[key] = data
+                order.append(key)
+            else:
+                winner = groups[key]
+                extra_quote = data.get('source_quote')
+                if extra_quote:
+                    if 'metadata' not in winner:
+                        winner['metadata'] = {}
+                    additional = winner['metadata'].setdefault('additional_quotes', [])
+                    additional.append(extra_quote)
+
+        return [groups[k] for k in order]
 
     # =========================================================================
     # DATA-DICT BUILDERS

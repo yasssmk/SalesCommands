@@ -94,13 +94,19 @@ describe("useActivityAllSignals", () => {
     expect(result.current.signalsByType["next-steps"]).toHaveLength(1);
   });
 
-  it("returns qualificationSignals with _signalType tag", () => {
+  it("returns qualificationSignals with _signalType tag (no tech-stack)", () => {
     const { result } = renderHook(() => useActivityAllSignals("act-1"));
 
-    expect(result.current.qualificationSignals).toHaveLength(3);
+    expect(result.current.qualificationSignals).toHaveLength(2);
     expect(result.current.qualificationSignals[0]._signalType).toBe("pain");
     expect(result.current.qualificationSignals[1]._signalType).toBe("objective");
-    expect(result.current.qualificationSignals[2]._signalType).toBe("tech-stack");
+  });
+
+  it("returns techStackSignals separately with _signalType tag", () => {
+    const { result } = renderHook(() => useActivityAllSignals("act-1"));
+
+    expect(result.current.techStackSignals).toHaveLength(1);
+    expect(result.current.techStackSignals[0]._signalType).toBe("tech-stack");
   });
 
   it("returns blockerSignals with _signalType tag", () => {
