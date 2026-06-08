@@ -20,6 +20,7 @@ import {
   EditOutlined,
   UserOutlined,
   CalendarOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 
 // Project imports
@@ -51,22 +52,29 @@ function formatDate(dateStr) {
   }
 }
 
+function getTechSummary(signal) {
+  if (signal.tech_catalog_entry?.product_name) {
+    return { name: signal.tech_catalog_entry.product_name, pending: false };
+  }
+  if (signal.metadata?.pending_tech_name) {
+    return { name: signal.metadata.pending_tech_name, pending: true };
+  }
+  return { name: "Unknown tool", pending: false };
+}
+
 function getSummary(signal, signalType) {
   if (signalType === "tech-stack") {
-    return (
-      signal.tech_catalog_entry?.product_name ||
-      signal.tech_catalog_entry?.company_name ||
-      "Unknown tool"
-    );
+    return getTechSummary(signal).name;
   }
   return signal.summary || "—";
 }
 
-function getContact(signal, signalType) {
-  if (signalType === "blockers") {
-    return signal.contact;
-  }
-  return signal.source_context?.contact ?? null;
+function getContact(signal) {
+  return (
+    signal.contact ||
+    signal.source_context?.contacts?.[0] ||
+    null
+  );
 }
 
 // ==============================|| SIGNAL DETAIL CARD ||============================== //
@@ -88,9 +96,11 @@ export default function SignalDetailCard({
   );
 
   const hasTheme = Boolean(signal.what_display && signal.dimension_display);
-  const contact = getContact(signal, signalType);
+  const contact = getContact(signal);
   const contactName = formatContact(contact);
   const validateDisabled = missingFields.length > 0;
+  const techPending =
+    signalType === "tech-stack" && getTechSummary(signal).pending;
 
   return (
     <Box
@@ -117,6 +127,15 @@ export default function SignalDetailCard({
           <Chip
             label={`${signal.what_display} × ${signal.dimension_display}`}
             size="small"
+            variant="outlined"
+          />
+        )}
+        {techPending && (
+          <Chip
+            icon={<WarningOutlined style={{ fontSize: 12 }} />}
+            label="Not in catalog"
+            size="small"
+            color="warning"
             variant="outlined"
           />
         )}
@@ -156,12 +175,14 @@ export default function SignalDetailCard({
       )}
 
       {/* Contact */}
-      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1 }}>
-        <UserOutlined style={{ fontSize: 13, color: "#8c8c8c" }} />
-        <Typography variant="caption" color="text.secondary">
-          {contactName || "No contact attributed"}
-        </Typography>
-      </Stack>
+      {contactName && (
+        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1 }}>
+          <UserOutlined style={{ fontSize: 13, color: "#8c8c8c" }} />
+          <Typography variant="caption" color="text.secondary">
+            {contactName}
+          </Typography>
+        </Stack>
+      )}
 
       {/* Date */}
       {signal.created_at && (
@@ -241,7 +262,7 @@ SignalDetailCard.propTypes = {
     created_at: PropTypes.string,
     contact: PropTypes.object,
     source_context: PropTypes.shape({
-      contact: PropTypes.object,
+      contacts: PropTypes.arrayOf(PropTypes.object),
     }),
     tech_catalog_entry: PropTypes.object,
     metadata: PropTypes.object,

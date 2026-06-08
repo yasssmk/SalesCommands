@@ -64,11 +64,12 @@ function getSummary(signal, signalType) {
   return signal.summary || "—";
 }
 
-function getContactFromSignal(signal, signalType) {
-  if (signalType === "blockers") {
-    return signal.contact;
-  }
-  return signal.source_context?.contact ?? null;
+function getContactFromSignal(signal) {
+  return (
+    signal.contact ||
+    signal.source_context?.contacts?.[0] ||
+    null
+  );
 }
 
 // ==============================|| SIGNAL QUICK DRAWER ||============================== //
@@ -86,7 +87,7 @@ export default function SignalQuickDrawer({
   if (!signal) return null;
 
   const isPending = signal.status === "PENDING";
-  const contact = getContactFromSignal(signal, signalType);
+  const contact = getContactFromSignal(signal);
   const contactName = formatContact(contact);
   const missingFields = isPending
     ? getMissingFields(signal, signalType)
@@ -168,12 +169,14 @@ export default function SignalQuickDrawer({
         )}
 
         {/* Contact */}
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-          <UserOutlined style={{ fontSize: 14, color: "#8c8c8c" }} />
-          <Typography variant="body2" color="text.secondary">
-            {contactName || "No contact attributed"}
-          </Typography>
-        </Stack>
+        {contactName && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+            <UserOutlined style={{ fontSize: 14, color: "#8c8c8c" }} />
+            <Typography variant="body2" color="text.secondary">
+              {contactName}
+            </Typography>
+          </Stack>
+        )}
 
         {/* Extraction date */}
         {signal.created_at && (
@@ -270,7 +273,7 @@ SignalQuickDrawer.propTypes = {
     source: PropTypes.string,
     contact: PropTypes.object,
     source_context: PropTypes.shape({
-      contact: PropTypes.object,
+      contacts: PropTypes.arrayOf(PropTypes.object),
     }),
     tech_catalog_entry: PropTypes.object,
   }),

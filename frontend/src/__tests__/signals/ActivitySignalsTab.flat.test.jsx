@@ -30,6 +30,17 @@ vi.mock("hooks/useActivityAllSignals", () => ({
         created_at: "2025-06-02T10:00:00Z",
         _signalType: "objective",
       },
+      {
+        id: "r1",
+        status: "REJECTED",
+        summary: "Rejected signal flat",
+        what: "DATA",
+        what_display: "Data",
+        dimension: "TIME",
+        dimension_display: "Time",
+        created_at: "2025-05-29T10:00:00Z",
+        _signalType: "pain",
+      },
     ],
     blockerSignals: [
       {
@@ -97,10 +108,8 @@ describe("ActivitySignalsTab — Flat view", () => {
   it("shows sort select only in flat view", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
 
-    // Grouped view — no sort select
     expect(screen.queryByLabelText("Sort")).not.toBeInTheDocument();
 
-    // Switch to flat
     switchToFlat();
     expect(screen.getByLabelText("Sort")).toBeInTheDocument();
   });
@@ -115,11 +124,10 @@ describe("ActivitySignalsTab — Flat view", () => {
     expect(screen.queryByLabelText("Sort")).not.toBeInTheDocument();
   });
 
-  it("filters signals in flat view", () => {
+  it("filters signals in flat view (Validated only)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     switchToFlat();
 
-    // Click "Validated" filter
     fireEvent.click(screen.getByText(/Validated \(/));
 
     expect(screen.getByText("Objective signal flat")).toBeInTheDocument();
@@ -140,22 +148,38 @@ describe("ActivitySignalsTab — Flat view", () => {
     switchToFlat();
 
     expect(
-      screen.queryByRole("button", { name: /^edit$/i }),
+      screen.queryByRole("button", { name: /edit edit/i }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /^validate$/i }),
+      screen.queryByRole("button", { name: /check-circle validate/i }),
     ).not.toBeInTheDocument();
   });
 
-  it("shows empty state in flat view when all filtered out", () => {
+  it("default excludes rejected signals in flat view", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     switchToFlat();
 
-    // Click "Rejected" filter — no rejected signals exist
-    fireEvent.click(screen.getByText(/Rejected \(/));
+    expect(screen.queryByText("Rejected signal flat")).not.toBeInTheDocument();
+  });
 
-    expect(
-      screen.getByText("No signals found for this activity"),
-    ).toBeInTheDocument();
+  it("include rejected checkbox shows REJECTED signals in flat view", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    switchToFlat();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    expect(screen.getByText("Rejected signal flat")).toBeInTheDocument();
+  });
+
+  it("shows empty state when all filtered out", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    switchToFlat();
+
+    // Click "Validated" — only one signal, then ensure others are hidden
+    fireEvent.click(screen.getByText(/Validated \(/));
+
+    // Only objective should remain
+    expect(screen.getByText("Objective signal flat")).toBeInTheDocument();
+    expect(screen.queryByText("Pain signal flat")).not.toBeInTheDocument();
   });
 });

@@ -14,17 +14,17 @@ describe("SignalsSortSelect", () => {
   it("renders with the selected value", () => {
     render(<SignalsSortSelect value="date-desc" onChange={vi.fn()} />);
 
-    expect(screen.getByText("Date (newest)")).toBeInTheDocument();
+    expect(screen.getByText("Date ↓")).toBeInTheDocument();
   });
 
-  it("exports SORT_OPTIONS with 5 entries", () => {
+  it("exports SORT_OPTIONS with 5 entries in correct order", () => {
     expect(SORT_OPTIONS).toHaveLength(5);
     expect(SORT_OPTIONS.map((o) => o.value)).toEqual([
-      "date-desc",
-      "date-asc",
       "type",
       "theme",
       "status",
+      "date-desc",
+      "date-asc",
     ]);
   });
 
@@ -38,27 +38,27 @@ describe("SignalsSortSelect", () => {
     const onChange = vi.fn();
     render(<SignalsSortSelect value="date-desc" onChange={onChange} />);
 
-    // Open the select dropdown
     const selectButton = screen.getByRole("combobox");
     fireEvent.mouseDown(selectButton);
 
-    // Click "Type" option
     const typeOption = screen.getByRole("option", { name: "Type" });
     fireEvent.click(typeOption);
 
     expect(onChange).toHaveBeenCalledWith("type");
   });
 
-  it("shows all 5 options in dropdown", () => {
+  it("shows all 5 options in dropdown with Date last", () => {
     render(<SignalsSortSelect value="date-desc" onChange={vi.fn()} />);
 
     const selectButton = screen.getByRole("combobox");
     fireEvent.mouseDown(selectButton);
 
-    expect(screen.getByRole("option", { name: "Date (newest)" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Date (oldest)" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Type" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Theme" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Status" })).toBeInTheDocument();
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(5);
+    expect(options[0]).toHaveTextContent("Type");
+    expect(options[1]).toHaveTextContent("Theme");
+    expect(options[2]).toHaveTextContent("Status");
+    expect(options[3]).toHaveTextContent("Date ↓");
+    expect(options[4]).toHaveTextContent("Date ↑");
   });
 });

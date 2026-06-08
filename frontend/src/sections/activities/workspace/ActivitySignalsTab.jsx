@@ -60,7 +60,8 @@ export default function ActivitySignalsTab({
   const [view, setView] = useState(() => getPersistedView(activityId));
 
   // Filter state
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all-active");
+  const [includeRejected, setIncludeRejected] = useState(false);
 
   // Sort state (flat view only)
   const [sortKey, setSortKey] = useState("date-desc");
@@ -82,15 +83,25 @@ export default function ActivitySignalsTab({
   );
 
   // Filtered signals
-  const filteredQualification = useMemo(() => {
-    if (statusFilter === "all") return qualificationSignals;
-    return qualificationSignals.filter((s) => s.status === statusFilter);
-  }, [qualificationSignals, statusFilter]);
+  const filterFn = useCallback(
+    (s) => {
+      const isRejected = s.status === "REJECTED";
+      if (isRejected) return includeRejected;
+      if (statusFilter === "all-active") return true;
+      return s.status === statusFilter;
+    },
+    [statusFilter, includeRejected],
+  );
 
-  const filteredBlockers = useMemo(() => {
-    if (statusFilter === "all") return blockerSignals;
-    return blockerSignals.filter((s) => s.status === statusFilter);
-  }, [blockerSignals, statusFilter]);
+  const filteredQualification = useMemo(
+    () => qualificationSignals.filter(filterFn),
+    [qualificationSignals, filterFn],
+  );
+
+  const filteredBlockers = useMemo(
+    () => blockerSignals.filter(filterFn),
+    [blockerSignals, filterFn],
+  );
 
   // Handlers
   const handleSelect = useCallback((signal, signalType) => {
@@ -190,6 +201,8 @@ export default function ActivitySignalsTab({
         <SignalsFilterBar
           activeFilter={statusFilter}
           onChange={setStatusFilter}
+          includeRejected={includeRejected}
+          onToggleRejected={setIncludeRejected}
           signals={displayableSignals}
         />
         <Stack direction="row" spacing={1} alignItems="center">

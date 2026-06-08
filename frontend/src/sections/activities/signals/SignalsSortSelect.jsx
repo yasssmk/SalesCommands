@@ -11,11 +11,11 @@ import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 
 const SORT_OPTIONS = [
-  { value: "date-desc", label: "Date (newest)" },
-  { value: "date-asc", label: "Date (oldest)" },
   { value: "type", label: "Type" },
   { value: "theme", label: "Theme" },
   { value: "status", label: "Status" },
+  { value: "date-desc", label: "Date ↓" },
+  { value: "date-asc", label: "Date ↑" },
 ];
 
 // ==============================|| SIGNALS SORT SELECT ||============================== //

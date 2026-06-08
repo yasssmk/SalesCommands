@@ -349,6 +349,39 @@ class SignalManager:
         return signal
 
     # =========================================================================
+    # REOPEN
+    # =========================================================================
+
+    @classmethod
+    def reopen(cls, signal, user) -> object:
+        """
+        Reopen a VALIDATED or REJECTED signal back to PENDING.
+
+        Clears validated_by and validated_at so the signal re-enters
+        the human review queue.
+
+        Args:
+            signal: Any concrete signal instance.
+            user:   Rep performing the reopen.
+
+        Returns:
+            Updated signal instance.
+
+        Raises:
+            StandardizedValidationError if signal is already PENDING.
+        """
+        if signal.status == SignalStatus.PENDING:
+            raise StandardizedValidationError(
+                SignalErrorMessages.ALREADY_PENDING
+            )
+
+        signal.status       = SignalStatus.PENDING
+        signal.validated_by = None
+        signal.validated_at = None
+        signal.save(user=user)
+        return signal
+
+    # =========================================================================
     # EDIT
     # =========================================================================
 
