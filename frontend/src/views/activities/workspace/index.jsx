@@ -193,7 +193,13 @@ export default function ActivityWorkspacePage() {
           />
         );
       case "next-steps":
-        return <ActivityNextStepsTab activity={activity} isLocked={isLocked} />;
+        return (
+          <ActivityNextStepsTab
+            activity={activity}
+            isLocked={isLocked}
+            mutateCounts={mutateCounts}
+          />
+        );
       default:
         return (
           <ActivityOverviewTab

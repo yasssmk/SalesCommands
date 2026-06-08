@@ -18,7 +18,7 @@
  * server-side because PATCH is partial — sending no source_activity
  * leaves the existing FK untouched.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
  * @param {Object} signal - Backend read object for the signal
  * @returns {Object} Formik-ready initialValues
  */
@@ -37,6 +37,8 @@ export function buildEditInitialValues(signalType, signal) {
       return buildTechStackInitialValues(signal);
     case "blockers":
       return buildBlockerInitialValues(signal);
+    case "next-steps":
+      return buildNextStepInitialValues(signal);
     default:
       return {};
   }
@@ -267,5 +269,23 @@ function buildBlockerInitialValues(signal) {
   return {
     summary: signal.summary ?? "",
     contact: signal.contact ?? null,
+  };
+}
+
+// ==============================|| NEXT STEP ||============================== //
+
+/**
+ * @param {Object} signal - NextStepSignal read object
+ * @returns {Object}
+ *
+ * NextStep is an operational suggestion with structured payload.
+ * No canonical axes (what/dimension), no cluster participation.
+ */
+function buildNextStepInitialValues(signal) {
+  return {
+    suggested_title: signal.suggested_title ?? "",
+    suggested_activity_type: signal.suggested_activity_type ?? "",
+    suggested_due_date: signal.suggested_due_date ?? "",
+    source_quote: signal.source_quote ?? "",
   };
 }

@@ -12,6 +12,7 @@ import {
   ThunderboltOutlined,
   ToolOutlined,
   StopOutlined,
+  ScheduleOutlined,
 } from "@ant-design/icons";
 
 const TYPE_CONFIG = {
@@ -20,6 +21,7 @@ const TYPE_CONFIG = {
   impact: { color: "warning", label: "Impact", Icon: ThunderboltOutlined },
   "tech-stack": { color: "primary", label: "Tech Stack", Icon: ToolOutlined },
   blockers: { color: "default", label: "Blocker", Icon: StopOutlined },
+  "next-steps": { color: "secondary", label: "Next Step", Icon: ScheduleOutlined },
 };
 
 // ==============================|| SIGNAL TYPE CHIP ||============================== //
@@ -53,6 +55,7 @@ SignalTypeChip.propTypes = {
     "impact",
     "tech-stack",
     "blockers",
+    "next-steps",
   ]),
   size: PropTypes.oneOf(["small", "medium"]),
 };

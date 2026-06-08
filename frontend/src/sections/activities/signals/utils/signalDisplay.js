@@ -19,3 +19,15 @@ export function formatContact(contact) {
   const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
   return name || null;
 }
+
+export function getNextStepSummary(signal) {
+  return signal?.suggested_title || "Untitled suggestion";
+}
+
+export function formatSuggestedContacts(contacts) {
+  if (!contacts || contacts.length === 0) return "";
+  return contacts
+    .map((c) => `${c.first_name || ""} ${c.last_name || ""}`.trim())
+    .filter(Boolean)
+    .join(" · ");
+}

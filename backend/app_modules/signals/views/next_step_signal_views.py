@@ -64,5 +64,5 @@ class NextStepSignalViewSet(BaseSignalViewSet):
         otherwise).
         """
         qs = super().get_queryset()
-        qs = qs.prefetch_related('suggested_contacts')
+        qs = qs.prefetch_related('suggested_contacts', 'created_activities')
         return qs

@@ -128,6 +128,7 @@ export default function ActivityModal({
   defaultActivityType = null,
   previousActivityId = null,
   sourceActivityId = null,
+  nextStepSignal = null,
   onSuccess,
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -179,28 +180,41 @@ export default function ActivityModal({
     }));
   }, [cycles]);
 
+  // Pre-fill from nextStepSignal when converting an AI suggestion
+  const signalContactIds = useMemo(() => {
+    if (!nextStepSignal?.suggested_contacts) return [];
+    return nextStepSignal.suggested_contacts.map((c) => c.id);
+  }, [nextStepSignal]);
+
   // Build initial values
   const initialValues = useMemo(
     () => ({
-      title: activity?.title || "",
+      title: activity?.title || nextStepSignal?.suggested_title || "",
       activity_type:
-        activity?.activity_type || defaultActivityType || "MEETING",
+        activity?.activity_type ||
+        nextStepSignal?.suggested_activity_type ||
+        defaultActivityType ||
+        "MEETING",
       status: activity?.status || "PLANNED",
       description: activity?.description || "",
       call_to_action: activity?.call_to_action || "",
       scheduled_date: activity?.scheduled_date
         ? dayjs(activity.scheduled_date)
-        : null,
+        : nextStepSignal?.suggested_due_date
+          ? dayjs(nextStepSignal.suggested_due_date)
+          : null,
       scheduled_time: activity?.scheduled_time
         ? dayjs(`2000-01-01T${activity.scheduled_time}`)
         : null,
       due_date: activity?.due_date ? dayjs(activity.due_date) : null,
-      contact_ids: activity?.contacts?.map((c) => c.id) || [],
+      contact_ids:
+        activity?.contacts?.map((c) => c.id) ||
+        (signalContactIds.length > 0 ? signalContactIds : []),
       has_inline_contact: false,
       decision_cycle_id: activity?.decision_cycle || decisionCycleId || "",
       decision_step_id: activity?.decision_step || decisionStepId || "",
     }),
-    [activity, defaultActivityType, decisionCycleId, decisionStepId],
+    [activity, nextStepSignal, signalContactIds, defaultActivityType, decisionCycleId, decisionStepId],
   );
 
   // Formik setup
@@ -270,6 +284,9 @@ export default function ActivityModal({
             if (sourceActivityId) {
               activityPayload.source_activity_id = sourceActivityId;
             }
+            if (nextStepSignal?.id) {
+              activityPayload.next_step_signal_id = nextStepSignal.id;
+            }
 
             result = await createActivityWithEntities({
               activity: activityPayload,
@@ -289,6 +306,9 @@ export default function ActivityModal({
             }
             if (sourceActivityId) {
               activityPayload.source_activity_id = sourceActivityId;
+            }
+            if (nextStepSignal?.id) {
+              activityPayload.next_step_signal_id = nextStepSignal.id;
             }
 
             result = await createActivity(activityPayload);
@@ -992,5 +1012,19 @@ ActivityModal.propTypes = {
   defaultActivityType: PropTypes.string,
   previousActivityId: PropTypes.string,
   sourceActivityId: PropTypes.string,
+  nextStepSignal: PropTypes.shape({
+    id: PropTypes.string,
+    suggested_title: PropTypes.string,
+    suggested_activity_type: PropTypes.string,
+    suggested_due_date: PropTypes.string,
+    suggested_contacts: PropTypes.arrayOf(
+      PropTypes.shape({
+        id: PropTypes.string,
+        first_name: PropTypes.string,
+        last_name: PropTypes.string,
+      }),
+    ),
+    source_quote: PropTypes.string,
+  }),
   onSuccess: PropTypes.func,
 };
