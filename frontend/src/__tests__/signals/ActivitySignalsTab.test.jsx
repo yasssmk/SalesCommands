@@ -115,11 +115,12 @@ describe("ActivitySignalsTab", () => {
     expect(screen.getByText("Pierre Dupont")).toBeInTheDocument();
   });
 
-  it("shows Flat placeholder when toggling to Flat view", () => {
+  it("shows Flat view with signal cards when toggling to Flat", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
 
     fireEvent.click(screen.getByRole("button", { name: /flat/i }));
-    expect(screen.getByText("Flat view coming soon")).toBeInTheDocument();
+    expect(screen.getByText(/Pain signal A/)).toBeInTheDocument();
+    expect(screen.getByText(/Budget frozen Q4/)).toBeInTheDocument();
   });
 
   it("filters signals by status", () => {

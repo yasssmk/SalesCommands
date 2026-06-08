@@ -12,6 +12,8 @@ const MOCK_SIGNAL = {
   id: "s1",
   status: "PENDING",
   summary: "Lost 5h/week on consolidation",
+  what: "DATA",
+  dimension: "TIME",
   source_quote: "We lose about 5 hours per week just consolidating reports",
   what_display: "Data",
   dimension_display: "Time",

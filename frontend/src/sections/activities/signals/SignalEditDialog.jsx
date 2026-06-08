@@ -40,6 +40,8 @@ import {
   displaySuccessSnackbar,
 } from "utils/displayError";
 
+import { getMissingFields } from "./signalValidationRules";
+import SignalIncompleteAlert from "./SignalIncompleteAlert";
 import { buildEditInitialValues } from "./wizard/forms/buildEditInitialValues";
 import InlinePainForm from "./wizard/forms/InlinePainForm";
 import InlineObjectiveForm from "./wizard/forms/InlineObjectiveForm";
@@ -197,6 +199,9 @@ export default function SignalEditDialog({
           </Stack>
         ) : (
           <>
+            <SignalIncompleteAlert
+              missingFields={getMissingFields(signal, signalType)}
+            />
             {signalType === "pain" && <InlinePainForm {...sharedFormProps} />}
             {signalType === "objective" && (
               <InlineObjectiveForm {...sharedFormProps} />

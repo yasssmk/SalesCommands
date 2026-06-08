@@ -11,6 +11,7 @@ import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
@@ -26,6 +27,8 @@ import {
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
+import { getMissingFields } from "./signalValidationRules";
+import SignalIncompleteAlert from "./SignalIncompleteAlert";
 
 const DRAWER_WIDTH = 400;
 
@@ -85,6 +88,10 @@ export default function SignalQuickDrawer({
   const isPending = signal.status === "PENDING";
   const contact = getContactFromSignal(signal, signalType);
   const contactName = formatContact(contact);
+  const missingFields = isPending
+    ? getMissingFields(signal, signalType)
+    : [];
+  const validateDisabled = missingFields.length > 0;
 
   return (
     <Drawer
@@ -118,6 +125,9 @@ export default function SignalQuickDrawer({
 
       {/* Body */}
       <Box sx={{ px: 2.5, py: 2, flex: 1, overflow: "auto" }}>
+        {/* Incomplete alert */}
+        <SignalIncompleteAlert missingFields={missingFields} />
+
         {/* Summary */}
         <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>
           {getSummary(signal, signalType)}
@@ -217,15 +227,28 @@ export default function SignalQuickDrawer({
               >
                 Reject
               </Button>
-              <Button
-                variant="contained"
-                size="small"
-                color="success"
-                startIcon={<CheckCircleOutlined style={{ fontSize: 14 }} />}
-                onClick={() => onValidate?.(signal, signalType)}
+              <Tooltip
+                title={
+                  validateDisabled
+                    ? "Complete missing fields before validating"
+                    : ""
+                }
               >
-                Validate
-              </Button>
+                <span>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    color="success"
+                    disabled={validateDisabled}
+                    startIcon={
+                      <CheckCircleOutlined style={{ fontSize: 14 }} />
+                    }
+                    onClick={() => onValidate?.(signal, signalType)}
+                  >
+                    Validate
+                  </Button>
+                </span>
+              </Tooltip>
             </>
           )}
         </Stack>
