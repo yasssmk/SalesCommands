@@ -101,7 +101,7 @@ class TestActivityCreateWithNextStepSignal:
         response = authed_api_a.post(self.URL, payload, format='json')
 
         assert response.status_code == 201, response.data
-        activity_data = response.data
+        activity_data = response.data['data']
         assert activity_data['next_step_signal'] == str(next_step_signal_pending.id)
 
         next_step_signal_pending.refresh_from_db()
@@ -143,4 +143,4 @@ class TestActivityCreateWithNextStepSignal:
         response = authed_api_a.post(self.URL, payload, format='json')
 
         assert response.status_code == 201
-        assert response.data.get('next_step_signal') is None
+        assert response.data['data'].get('next_step_signal') is None
