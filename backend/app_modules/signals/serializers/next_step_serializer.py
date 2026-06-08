@@ -82,6 +82,30 @@ class _NextStepDisplayMixin:
             for c in obj.suggested_contacts.all()
         ]
 
+    def get_linked_activity(self, obj):
+        """
+        Compact representation of the Activity materialized from this
+        suggestion (via Activity.next_step_signal FK, reverse accessor
+        ``created_activities``).  Returns None when no Activity has been
+        created yet.
+
+        Relies on the parent ViewSet having
+        ``prefetch_related('created_activities')`` on the queryset.
+        """
+        activity = obj.created_activities.first() if hasattr(obj, '_prefetched_objects_cache') and 'created_activities' in obj._prefetched_objects_cache else obj.created_activities.first()
+        if not activity:
+            return None
+        return {
+            'id':                    str(activity.id),
+            'title':                 activity.title,
+            'activity_type':         activity.activity_type,
+            'activity_type_display': activity.get_activity_type_display(),
+            'status':                activity.status,
+            'status_display':        activity.get_status_display(),
+            'scheduled_date':        activity.scheduled_date.isoformat() if activity.scheduled_date else None,
+            'due_date':              activity.due_date.isoformat() if activity.due_date else None,
+        }
+
 
 # =============================================================================
 # BASE FIELD STRIP
@@ -133,6 +157,7 @@ class NextStepSignalListSerializer(_NextStepDisplayMixin, BaseSignalListSerializ
 
     suggested_contacts             = serializers.SerializerMethodField()
     suggested_activity_type_display = serializers.SerializerMethodField()
+    linked_activity                = serializers.SerializerMethodField()
 
     def get_suggested_activity_type_display(self, obj):
         return obj.get_suggested_activity_type_display()
@@ -148,6 +173,7 @@ class NextStepSignalListSerializer(_NextStepDisplayMixin, BaseSignalListSerializ
             'suggested_activity_type_display',
             'suggested_due_date',
             'suggested_contacts',
+            'linked_activity',
         ]
         read_only_fields = fields
 
@@ -173,6 +199,7 @@ class NextStepSignalDetailSerializer(_NextStepDisplayMixin, BaseSignalDetailSeri
 
     suggested_contacts             = serializers.SerializerMethodField()
     suggested_activity_type_display = serializers.SerializerMethodField()
+    linked_activity                = serializers.SerializerMethodField()
 
     def get_suggested_activity_type_display(self, obj):
         return obj.get_suggested_activity_type_display()
@@ -188,6 +215,7 @@ class NextStepSignalDetailSerializer(_NextStepDisplayMixin, BaseSignalDetailSeri
             'suggested_activity_type_display',
             'suggested_due_date',
             'suggested_contacts',
+            'linked_activity',
         ]
         read_only_fields = fields
 

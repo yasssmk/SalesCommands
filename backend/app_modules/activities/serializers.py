@@ -13,6 +13,8 @@ from app_modules.accounts.models import CompanyAccount
 from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from end_users.models import User
+from django.db import transaction
+
 from .models import Activity
 from .constants import ActivityStatus, NoNextStepReason
 from .services import ActivitySequenceService, SequenceScope
@@ -798,6 +800,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     decision_cycle_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     decision_step_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
     source_activity_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
+    next_step_signal_id = serializers.UUIDField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Activity
@@ -813,7 +816,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # Relations
             'contact_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
-            'source_activity_id',
+            'source_activity_id', 'next_step_signal_id',
 
             # Future fields
             'transcript', 'preparation_notes'
@@ -975,6 +978,30 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
 
+            # =================================================================
+            # Validate next_step_signal (optional — AI suggestion provenance)
+            # =================================================================
+            next_step_signal_id = attrs.pop('next_step_signal_id', None)
+            if next_step_signal_id:
+                from app_modules.signals.models import NextStepSignal
+                from app_modules.signals.constants import SignalStatus
+                try:
+                    next_step_signal = NextStepSignal.objects.get(
+                        id=next_step_signal_id,
+                        client_id=client_id,
+                    )
+                except NextStepSignal.DoesNotExist:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.OBJECT_NOT_FOUND
+                    )
+                if next_step_signal.status != SignalStatus.PENDING:
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_FIELD.format(
+                            field='next_step_signal must be in PENDING status'
+                        )
+                    )
+                attrs['_next_step_signal'] = next_step_signal
+
             return attrs
             
         except StandardizedValidationError:
@@ -984,28 +1011,39 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 CoreErrorMessages.INVALID_DATA.format(detail=str(e))
             )
     
+    @transaction.atomic
     def create(self, validated_data):
         """Create activity with proper audit fields and M2M."""
         user = self.context.get('request').user if self.context.get('request') else None
         contacts = validated_data.pop('_contacts', [])
         invited_users = validated_data.pop('_invited_users', [])
+        next_step_signal = validated_data.pop('_next_step_signal', None)
         client_id = validated_data.pop('client_id', None)
-        
+
         # Set owner to current user
         validated_data['owner'] = user
-        
+
+        # Link the signal FK before creating the instance
+        if next_step_signal:
+            validated_data['next_step_signal'] = next_step_signal
+
         # Create instance
         instance = Activity(**validated_data)
         instance.save(user=user, client_id=client_id)
-        
+
         # Set M2M contacts
         if contacts:
             instance.contacts.set(contacts)
-        
+
         # Set M2M invited_users
         if invited_users:
             instance.invited_users.set(invited_users)
-        
+
+        # Auto-validate the NextStepSignal within the same transaction
+        if next_step_signal:
+            from app_modules.signals.services.signal_manager import SignalManager
+            SignalManager.validate(next_step_signal, user=user)
+
         return instance
 
 

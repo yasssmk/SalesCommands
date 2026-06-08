@@ -32,6 +32,8 @@ import {
   getTechSummary,
   getContact,
   formatContact,
+  getNextStepSummary,
+  formatSuggestedContacts,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS ||============================== //
@@ -55,6 +57,9 @@ function getSummary(signal, signalType) {
   if (signalType === "tech-stack") {
     return getTechSummary(signal).name;
   }
+  if (signalType === "next-steps") {
+    return getNextStepSummary(signal);
+  }
   return signal.summary || "—";
 }
 
@@ -76,9 +81,12 @@ export default function SignalDetailCard({
     [signal, signalType, isPending],
   );
 
-  const hasTheme = Boolean(signal.what_display && signal.dimension_display);
-  const contact = getContact(signal);
-  const contactName = formatContact(contact);
+  const isNextStep = signalType === "next-steps";
+  const hasTheme = !isNextStep && Boolean(signal.what_display && signal.dimension_display);
+  const contact = isNextStep ? null : getContact(signal);
+  const contactName = isNextStep
+    ? formatSuggestedContacts(signal.suggested_contacts)
+    : formatContact(contact);
   const validateDisabled = missingFields.length > 0;
   const techPending =
     signalType === "tech-stack" && getTechSummary(signal).pending;
@@ -254,6 +262,7 @@ SignalDetailCard.propTypes = {
     "impact",
     "tech-stack",
     "blockers",
+    "next-steps",
   ]).isRequired,
   onValidate: PropTypes.func,
   onReject: PropTypes.func,

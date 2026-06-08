@@ -34,6 +34,7 @@ import InlineObjectiveForm from "./wizard/forms/InlineObjectiveForm";
 import InlineImpactForm from "./wizard/forms/InlineImpactForm";
 import InlineTechStackForm from "./wizard/forms/InlineTechStackForm";
 import BlockerEditForm from "./BlockerEditForm";
+import NextStepEditForm from "./NextStepEditForm";
 
 // ==============================|| TYPE CONFIG ||============================== //
 
@@ -43,6 +44,7 @@ const TYPE_LABELS = {
   impact: "Impact Signal",
   "tech-stack": "Tech Stack Signal",
   blockers: "Blocker Signal",
+  "next-steps": "Next Step Suggestion",
 };
 
 // ==============================|| SIGNAL EDIT DIALOG ||============================== //
@@ -197,6 +199,9 @@ export default function SignalEditDialog({
             {signalType === "blockers" && (
               <BlockerEditForm {...sharedFormProps} />
             )}
+            {signalType === "next-steps" && (
+              <NextStepEditForm {...sharedFormProps} />
+            )}
           </>
         )}
       </DialogContent>
@@ -220,6 +225,7 @@ SignalEditDialog.propTypes = {
     "impact",
     "tech-stack",
     "blockers",
+    "next-steps",
   ]),
   accountId: PropTypes.string.isRequired,
   choices: PropTypes.object,
