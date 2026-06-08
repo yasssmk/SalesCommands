@@ -282,7 +282,10 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
           1. source=MANUAL → status=VALIDATED, confidence=None
              Manual signals are trusted by definition — no LLM
              confidence score. Universal across all concrete signal
-             types. Enforced on every save (idempotent).
+             types. Enforced only at CREATE time so that
+             SignalManager.reopen() and reject() can transition a
+             MANUAL signal away from VALIDATED without save()
+             overriding the new status.
 
           2. CREATE-time guard: source ∈ {LLM_EXTRACTED, LLM_MODIFIED}
              may not start with status=VALIDATED.
@@ -306,8 +309,8 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
              SignalSourceMixin in the base serializer. The rule
              became obsolete and was dropped.
         """
-        # Rule 1 — manual signals are immediately validated
-        if self.source == SignalSource.MANUAL:
+        # Rule 1 — manual signals are immediately validated (CREATE only)
+        if self._state.adding and self.source == SignalSource.MANUAL:
             self.status = SignalStatus.VALIDATED
             self.confidence = None
 

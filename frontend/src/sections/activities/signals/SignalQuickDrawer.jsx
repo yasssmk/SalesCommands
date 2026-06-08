@@ -29,14 +29,13 @@ import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
 import { getMissingFields } from "./signalValidationRules";
 import SignalIncompleteAlert from "./SignalIncompleteAlert";
+import {
+  getTechSummary,
+  getContact,
+  formatContact,
+} from "./utils/signalDisplay";
 
 const DRAWER_WIDTH = 400;
-
-function formatContact(contact) {
-  if (!contact) return null;
-  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
-  return name || null;
-}
 
 function formatDate(dateStr) {
   if (!dateStr) return null;
@@ -55,21 +54,9 @@ function formatDate(dateStr) {
 
 function getSummary(signal, signalType) {
   if (signalType === "tech-stack") {
-    return (
-      signal.tech_catalog_entry?.product_name ||
-      signal.tech_catalog_entry?.company_name ||
-      "Unknown tool"
-    );
+    return getTechSummary(signal).name;
   }
   return signal.summary || "—";
-}
-
-function getContactFromSignal(signal) {
-  return (
-    signal.contact ||
-    signal.source_context?.contacts?.[0] ||
-    null
-  );
 }
 
 // ==============================|| SIGNAL QUICK DRAWER ||============================== //
@@ -87,7 +74,7 @@ export default function SignalQuickDrawer({
   if (!signal) return null;
 
   const isPending = signal.status === "PENDING";
-  const contact = getContactFromSignal(signal);
+  const contact = getContact(signal);
   const contactName = formatContact(contact);
   const missingFields = isPending
     ? getMissingFields(signal, signalType)

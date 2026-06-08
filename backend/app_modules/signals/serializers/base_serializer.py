@@ -247,6 +247,7 @@ class BaseSignalListSerializer(
             'canonical_key',
             # Content
             'signal_category', 'signal_category_display',
+            'source_quote', 'metadata',
             # Lifecycle
             'status', 'status_display',
             'source', 'source_display',
@@ -313,7 +314,7 @@ class BaseSignalDetailSerializer(BaseSignalListSerializer):
         abstract = True
         fields = BaseSignalListSerializer.Meta.fields + [
             # Content extras
-            'source_quote', 'metadata', 'original_value',
+            'original_value',
             # Lifecycle detail
             'validated_at', 'validated_by',
             'language_original',

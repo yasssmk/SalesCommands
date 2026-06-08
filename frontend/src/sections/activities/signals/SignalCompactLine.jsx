@@ -6,6 +6,7 @@ import PropTypes from "prop-types";
 
 // MUI
 import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
@@ -15,11 +16,13 @@ import Typography from "@mui/material/Typography";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
+  WarningOutlined,
 } from "@ant-design/icons";
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
+import { getTechSummary } from "./utils/signalDisplay";
 
 function truncate(str, max = 80) {
   if (!str) return "—";
@@ -39,12 +42,9 @@ export default function SignalCompactLine({
   const isPending = signal.status === "PENDING";
   const isRejected = signal.status === "REJECTED";
 
-  const summaryText =
-    signalType === "tech-stack"
-      ? signal.tech_catalog_entry?.product_name ||
-        signal.tech_catalog_entry?.company_name ||
-        "Unknown tool"
-      : signal.summary;
+  const techInfo =
+    signalType === "tech-stack" ? getTechSummary(signal) : null;
+  const summaryText = techInfo ? techInfo.name : signal.summary;
 
   return (
     <Box
@@ -79,6 +79,17 @@ export default function SignalCompactLine({
       </Typography>
 
       <SignalStatusChip status={signal.status} size="small" />
+
+      {techInfo?.pending && (
+        <Chip
+          icon={<WarningOutlined style={{ fontSize: 10 }} />}
+          label="Not in catalog"
+          size="small"
+          color="warning"
+          variant="outlined"
+          sx={{ height: 20, fontSize: "0.7rem" }}
+        />
+      )}
 
       {isPending && !isLocked && (
         <Stack direction="row" spacing={0.25}>
@@ -123,6 +134,7 @@ SignalCompactLine.propTypes = {
       product_name: PropTypes.string,
       company_name: PropTypes.string,
     }),
+    metadata: PropTypes.object,
   }).isRequired,
   signalType: PropTypes.oneOf(["pain", "objective", "impact", "tech-stack"])
     .isRequired,

@@ -28,14 +28,13 @@ import SignalStatusChip from "components/chips/SignalStatusChip";
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
 import SignalIncompleteAlert from "sections/activities/signals/SignalIncompleteAlert";
+import {
+  getTechSummary,
+  getContact,
+  formatContact,
+} from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS ||============================== //
-
-function formatContact(contact) {
-  if (!contact) return null;
-  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
-  return name || null;
-}
 
 function formatDate(dateStr) {
   if (!dateStr) return null;
@@ -52,29 +51,11 @@ function formatDate(dateStr) {
   }
 }
 
-function getTechSummary(signal) {
-  if (signal.tech_catalog_entry?.product_name) {
-    return { name: signal.tech_catalog_entry.product_name, pending: false };
-  }
-  if (signal.metadata?.pending_tech_name) {
-    return { name: signal.metadata.pending_tech_name, pending: true };
-  }
-  return { name: "Unknown tool", pending: false };
-}
-
 function getSummary(signal, signalType) {
   if (signalType === "tech-stack") {
     return getTechSummary(signal).name;
   }
   return signal.summary || "—";
-}
-
-function getContact(signal) {
-  return (
-    signal.contact ||
-    signal.source_context?.contacts?.[0] ||
-    null
-  );
 }
 
 // ==============================|| SIGNAL DETAIL CARD ||============================== //
