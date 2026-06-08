@@ -464,6 +464,9 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             # Future fields (stubs)
             'transcript', 'preparation_notes',
 
+            # AI suggestion provenance
+            'next_step_signal',
+
             # Campaign retry tracking
             'no_answer_count',
             

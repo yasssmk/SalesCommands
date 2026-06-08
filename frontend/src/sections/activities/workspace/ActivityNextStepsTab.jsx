@@ -32,7 +32,7 @@ import {
 import AISuggestionCard from "components/cards/nextSteps/AISuggestionCard";
 import LinkedActivityCard from "components/cards/nextSteps/LinkedActivityCard";
 import NextStepsFilterBar from "sections/activities/nextSteps/NextStepsFilterBar";
-import LLMNextStepActivityFormModal from "sections/activities/nextSteps/LLMNextStepActivityFormModal";
+import ActivityModal from "sections/accounts/activities/ActivityModal";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 
 // ==============================|| ACTIVITY NEXT STEPS TAB ||============================== //
@@ -55,12 +55,9 @@ export default function ActivityNextStepsTab({
   const [activeFilter, setActiveFilter] = useState("all-active");
   const [includeRejected, setIncludeRejected] = useState(false);
 
-  // Modal state — convert to activity
-  const [convertModalOpen, setConvertModalOpen] = useState(false);
+  // Activity modal state (convert from signal OR manual add)
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [convertSignal, setConvertSignal] = useState(null);
-
-  // Modal state — manual add
-  const [addModalOpen, setAddModalOpen] = useState(false);
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -110,12 +107,12 @@ export default function ActivityNextStepsTab({
 
   const handleConvert = useCallback((signal) => {
     setConvertSignal(signal);
-    setConvertModalOpen(true);
+    setActivityModalOpen(true);
   }, []);
 
   const handleAddManually = useCallback(() => {
     setConvertSignal(null);
-    setAddModalOpen(true);
+    setActivityModalOpen(true);
   }, []);
 
   const handleEdit = useCallback((signal) => {
@@ -205,14 +202,22 @@ export default function ActivityNextStepsTab({
           )}
         </Stack>
 
-        {/* Manual add modal (no signal) */}
+        {/* Add activity modal */}
         {accountId && (
-          <LLMNextStepActivityFormModal
-            open={addModalOpen}
-            onClose={() => setAddModalOpen(false)}
-            onSuccess={handleConvertSuccess}
-            signal={null}
+          <ActivityModal
+            open={activityModalOpen}
+            onClose={() => {
+              setActivityModalOpen(false);
+              setConvertSignal(null);
+            }}
+            activity={null}
             accountId={accountId}
+            decisionStepId={activity?.decision_step || null}
+            decisionCycleId={activity?.decision_cycle || null}
+            defaultActivityType={convertSignal?.suggested_activity_type || "MEETING"}
+            previousActivityId={activity?.id}
+            nextStepSignal={convertSignal}
+            onSuccess={handleConvertSuccess}
           />
         )}
       </Box>
@@ -359,28 +364,22 @@ export default function ActivityNextStepsTab({
         )}
       </Box>
 
-      {/* Convert to Activity modal */}
+      {/* Activity modal (convert from signal or manual add) */}
       {accountId && (
-        <LLMNextStepActivityFormModal
-          open={convertModalOpen}
+        <ActivityModal
+          open={activityModalOpen}
           onClose={() => {
-            setConvertModalOpen(false);
+            setActivityModalOpen(false);
             setConvertSignal(null);
           }}
-          onSuccess={handleConvertSuccess}
-          signal={convertSignal}
+          activity={null}
           accountId={accountId}
-        />
-      )}
-
-      {/* Manual add modal */}
-      {accountId && (
-        <LLMNextStepActivityFormModal
-          open={addModalOpen}
-          onClose={() => setAddModalOpen(false)}
+          decisionStepId={activity?.decision_step || null}
+          decisionCycleId={activity?.decision_cycle || null}
+          defaultActivityType={convertSignal?.suggested_activity_type || "MEETING"}
+          previousActivityId={activity?.id}
+          nextStepSignal={convertSignal}
           onSuccess={handleConvertSuccess}
-          signal={null}
-          accountId={accountId}
         />
       )}
 

@@ -141,6 +141,22 @@ vi.mock("utils/displayError", () => ({
   displayErrorSnackbar: vi.fn(),
 }));
 
+vi.mock("sections/accounts/activities/ActivityModal", () => ({
+  default: ({ open, onClose, nextStepSignal }) =>
+    open ? (
+      <div data-testid="activity-modal">
+        <h2>Convert to Activity</h2>
+        {nextStepSignal && <span>{nextStepSignal.suggested_title}</span>}
+        <button onClick={onClose}>Close</button>
+      </div>
+    ) : null,
+}));
+
+vi.mock("sections/activities/signals/SignalEditDialog", () => ({
+  default: ({ open }) =>
+    open ? <div data-testid="signal-edit-dialog" /> : null,
+}));
+
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
@@ -242,7 +258,7 @@ describe("ActivityNextStepsTab", () => {
 
     fireEvent.click(screen.getByText("Convert to Activity"));
 
-    expect(screen.getByText("Convert to Activity", { selector: "h2" }) || screen.getByLabelText("Title")).toBeTruthy();
+    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
   });
 
   it("shows View Activity for VALIDATED signals with linked_activity", () => {
