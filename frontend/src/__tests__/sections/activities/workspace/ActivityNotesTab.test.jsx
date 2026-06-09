@@ -321,4 +321,82 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByText('Analyzing…')).toBeInTheDocument();
     expect(screen.queryByText(/Polling for result/)).not.toBeInTheDocument();
   });
+
+  // F8-3-FIX: Failed/stuck run banner
+  it('shows warning banner when latestRun is failed and no lastRun', () => {
+    renderTab({
+      lastRun: null,
+      latestRun: {
+        last_run_at: '2026-06-07T10:00:00Z',
+        last_run_by: null,
+        input_hash: 'a'.repeat(64),
+        status: 'LLM_ERROR',
+        created_signals_count: 0,
+        error_message: 'provider_error: connection refused',
+      },
+    });
+
+    expect(screen.getByText(/Last extraction failed/)).toBeInTheDocument();
+    expect(screen.getByText(/provider_error: connection refused/)).toBeInTheDocument();
+  });
+
+  it('shows warning banner when latestRun is stuck RUNNING', () => {
+    renderTab({
+      lastRun: null,
+      latestRun: {
+        last_run_at: '2026-06-07T10:00:00Z',
+        last_run_by: null,
+        input_hash: 'a'.repeat(64),
+        status: 'RUNNING',
+        created_signals_count: 0,
+        error_message: '',
+      },
+    });
+
+    expect(screen.getByText(/Last extraction stuck/)).toBeInTheDocument();
+  });
+
+  it('does NOT show banner when lastRun exists (successful run overshadows)', () => {
+    renderTab({
+      lastRun: {
+        last_run_at: '2026-06-08T10:00:00Z',
+        last_run_by: null,
+        input_hash: 'a'.repeat(64),
+        status: 'SUCCESS',
+        created_signals_count: 5,
+        error_message: '',
+      },
+      latestRun: {
+        last_run_at: '2026-06-07T10:00:00Z',
+        last_run_by: null,
+        input_hash: 'a'.repeat(64),
+        status: 'LLM_ERROR',
+        created_signals_count: 0,
+        error_message: 'old failure',
+      },
+    });
+
+    expect(screen.queryByText(/Last extraction failed/)).not.toBeInTheDocument();
+  });
+
+  it('banner is dismissible via close button', () => {
+    renderTab({
+      lastRun: null,
+      latestRun: {
+        last_run_at: '2026-06-07T10:00:00Z',
+        last_run_by: null,
+        input_hash: 'a'.repeat(64),
+        status: 'LLM_ERROR',
+        created_signals_count: 0,
+        error_message: '',
+      },
+    });
+
+    expect(screen.getByText(/Last extraction failed/)).toBeInTheDocument();
+
+    const dismissBtn = screen.getByRole('button', { name: /dismiss/i });
+    fireEvent.click(dismissBtn);
+
+    expect(screen.queryByText(/Last extraction failed/)).not.toBeInTheDocument();
+  });
 });

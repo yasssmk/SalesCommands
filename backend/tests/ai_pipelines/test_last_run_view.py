@@ -29,7 +29,7 @@ URL = '/module-ai-pipelines/last-run/'
 # HELPERS
 # =============================================================================
 
-def _create_run(activity, user, *, status='SUCCESS', pipeline_type=None, input_hash='a' * 64):
+def _create_run(activity, user, *, status='SUCCESS', pipeline_type=None, input_hash='a' * 64, error_message=''):
     return AIPipelineRun.objects.create(
         client_id=activity.client_id,
         source_activity=activity,
@@ -45,7 +45,7 @@ def _create_run(activity, user, *, status='SUCCESS', pipeline_type=None, input_h
         sub_calls=[],
         total_tokens_used=100,
         total_duration_ms=500,
-        error_message='',
+        error_message=error_message,
         created_signals_count=3,
     )
 
@@ -158,3 +158,47 @@ class TestLastRunView:
         assert resp.status_code == 200
         assert resp.data['last_run']['input_hash'] == 'b' * 64
         assert resp.data['last_run']['pipeline_type'] == 'NEXT_STEPS'
+
+    # ===== latest_run & error_message tests =====
+
+    def test_latest_run_returns_failed_run(self, authed_api_a, activity, user_a):
+        _create_run(activity, user_a, status=AIPipelineStatus.LLM_ERROR)
+
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        assert resp.data['last_run'] is None
+        assert resp.data['latest_run'] is not None
+        assert resp.data['latest_run']['status'] == 'LLM_ERROR'
+
+    def test_latest_run_shows_error_message(self, authed_api_a, activity, user_a):
+        _create_run(
+            activity, user_a,
+            status=AIPipelineStatus.LLM_ERROR,
+            error_message='Rate limit exceeded',
+        )
+
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        assert resp.data['latest_run']['error_message'] == 'Rate limit exceeded'
+
+    def test_latest_run_with_successful_run(self, authed_api_a, activity, user_a):
+        run = _create_run(activity, user_a, status='SUCCESS')
+
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        assert resp.data['last_run'] is not None
+        assert resp.data['latest_run'] is not None
+        assert resp.data['last_run']['input_hash'] == resp.data['latest_run']['input_hash']
+        assert resp.data['last_run']['status'] == 'SUCCESS'
+        assert resp.data['latest_run']['status'] == 'SUCCESS'
+
+    def test_error_message_empty_for_success(self, authed_api_a, activity, user_a):
+        _create_run(activity, user_a, status='SUCCESS', error_message='')
+
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        assert resp.data['last_run']['error_message'] == ''

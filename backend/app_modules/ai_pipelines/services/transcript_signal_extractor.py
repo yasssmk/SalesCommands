@@ -56,11 +56,17 @@ mismatch leads to a silent drop with a WARNING log.
 
 Concurrency / atomicity
 -----------------------
-Each SignalManager.create() runs as its own implicit Django save()
-transaction. We deliberately do NOT wrap the batch in a single
-transaction.atomic(): we WANT partial success when one signal fails
-validation -- the others should still be persisted and surfaced to
-the rep for review.
+As of F8-3-FIX, the pipeline wraps signal persistence in a single
+transaction.atomic() to enforce all-or-nothing semantics on hard crashes
+(Ctrl+C, DB errors, OOM). This inverts the prior partial-success design
+because:
+- Partial success creates ambiguous UX (user sees orphaned signals)
+- Idempotency keys make retries free (no risk of duplicates)
+- Hard crashes can't be caught by Python try/except — only PostgreSQL
+  atomic rollback can guarantee no orphan rows
+
+Note: per-stage LLM errors (timeout, rate-limit, parse error) STILL use
+local try/except and remain partial-success — that behavior is preserved.
 
 Statelessness
 -------------

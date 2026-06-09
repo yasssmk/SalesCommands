@@ -121,6 +121,8 @@ from ..providers.base import (
 )
 from .base import BasePipeline
 
+from django.db import transaction
+
 
 # Stage identifier used in AIPipelineRun.sub_calls entries. Single
 # stage, but the sub_calls JSON column still expects a string label.
@@ -181,42 +183,82 @@ class NextStepsPipeline(BasePipeline):
         )
 
         try:
-            context_layer = build_context_layer(activity)
-            request_layer = build_next_steps_request(transcript)
+            with transaction.atomic():
+                try:
+                    context_layer = build_context_layer(activity)
+                    request_layer = build_next_steps_request(transcript)
 
-            parsed, sub_call_meta = self._call_llm(
-                system_prompt=SYSTEM_PROMPT,
-                context=context_layer,
-                request=request_layer,
-            )
+                    parsed, sub_call_meta = self._call_llm(
+                        system_prompt=SYSTEM_PROMPT,
+                        context=context_layer,
+                        request=request_layer,
+                    )
 
-            # Defensive: if the LLM returned a JSON shape that lacks
-            # `signals` we treat it as "zero signals emitted" rather
-            # than an error -- the safety filter then drops nothing
-            # and emitted_count=0 is logged in sub_calls.
-            if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
-                raw_signals = parsed['signals']
-            else:
-                raw_signals = []
+                    # Defensive: if the LLM returned a JSON shape that lacks
+                    # `signals` we treat it as "zero signals emitted" rather
+                    # than an error -- the safety filter then drops nothing
+                    # and emitted_count=0 is logged in sub_calls.
+                    if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
+                        raw_signals = parsed['signals']
+                    else:
+                        raw_signals = []
 
-            persisted, dropped_count = NextStepExtractor().persist_extracted(
-                raw_signals=raw_signals,
-                activity=activity,
-                user=user,
-                client_id=client_id,
-                confidence_min=self.CONFIDENCE_MIN,
-                drop_inferred=self.DROP_INFERRED,
-            )
+                    persisted, dropped_count = NextStepExtractor().persist_extracted(
+                        raw_signals=raw_signals,
+                        activity=activity,
+                        user=user,
+                        client_id=client_id,
+                        confidence_min=self.CONFIDENCE_MIN,
+                        drop_inferred=self.DROP_INFERRED,
+                    )
 
-            self._log_sub_call(
-                run,
-                stage=_STAGE_NAME,
-                sub_call_meta=sub_call_meta,
-                parsed=parsed,
-                error=None,
-                dropped_count=dropped_count,
-            )
+                    self._log_sub_call(
+                        run,
+                        stage=_STAGE_NAME,
+                        sub_call_meta=sub_call_meta,
+                        parsed=parsed,
+                        error=None,
+                        dropped_count=dropped_count,
+                    )
 
+                # --- Specific subclasses first, then generic LLMProviderError ---
+                except LLMTimeoutError as exc:
+                    return self._finalize_failure(
+                        run,
+                        status=AIPipelineStatus.TIMEOUT,
+                        error_label='timeout',
+                        exc=exc,
+                    )
+                except LLMRateLimitError as exc:
+                    return self._finalize_failure(
+                        run,
+                        status=AIPipelineStatus.LLM_ERROR,
+                        error_label='rate_limit',
+                        exc=exc,
+                    )
+                except LLMAuthError as exc:
+                    return self._finalize_failure(
+                        run,
+                        status=AIPipelineStatus.LLM_ERROR,
+                        error_label='auth_error',
+                        exc=exc,
+                    )
+                except PromptParseError as exc:
+                    return self._finalize_failure(
+                        run,
+                        status=AIPipelineStatus.PARSE_ERROR,
+                        error_label='parse_error',
+                        exc=exc,
+                    )
+                except LLMProviderError as exc:
+                    return self._finalize_failure(
+                        run,
+                        status=AIPipelineStatus.LLM_ERROR,
+                        error_label='provider_error',
+                        exc=exc,
+                    )
+
+            # --- Atomic block committed: finalize the run as SUCCESS ---
             final_run = self._finalize_run(
                 run,
                 status=AIPipelineStatus.SUCCESS,
@@ -225,42 +267,14 @@ class NextStepsPipeline(BasePipeline):
             )
             return {'run': final_run, 'signals': persisted}
 
-        # --- Specific subclasses first, then generic LLMProviderError ---
-        except LLMTimeoutError as exc:
-            return self._finalize_failure(
-                run,
-                status=AIPipelineStatus.TIMEOUT,
-                error_label='timeout',
-                exc=exc,
-            )
-        except LLMRateLimitError as exc:
-            return self._finalize_failure(
+        except Exception as exc:
+            self._finalize_run(
                 run,
                 status=AIPipelineStatus.LLM_ERROR,
-                error_label='rate_limit',
-                exc=exc,
+                created_signals_count=0,
+                error_message=f'hard crash: {str(exc)[:1000]}',
             )
-        except LLMAuthError as exc:
-            return self._finalize_failure(
-                run,
-                status=AIPipelineStatus.LLM_ERROR,
-                error_label='auth_error',
-                exc=exc,
-            )
-        except PromptParseError as exc:
-            return self._finalize_failure(
-                run,
-                status=AIPipelineStatus.PARSE_ERROR,
-                error_label='parse_error',
-                exc=exc,
-            )
-        except LLMProviderError as exc:
-            return self._finalize_failure(
-                run,
-                status=AIPipelineStatus.LLM_ERROR,
-                error_label='provider_error',
-                exc=exc,
-            )
+            raise
 
     # =========================================================================
     # HELPERS
