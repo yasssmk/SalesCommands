@@ -22,7 +22,7 @@ Permission matrix:
     +----------+--------+---------+------------+
 
 Covered ViewSets / APIViews (all declare `module = 'ai_pipelines'`):
-  * TranscriptSignalsExtractView (POST extract endpoint — Phase G)
+  * ActivityExtractionView (POST unified extraction endpoint — Sprint B5)
   * Future read endpoints for AIPipelineRun audit display (out of
     scope for the current sprint but the registry is forward-compatible).
 
@@ -30,11 +30,11 @@ Notes on scope choices:
 
   * create = `client` for ALL tiers
         Every sales rep needs to extract signals from their own call
-        transcripts — that is the core UX of the Wrap-Up tab. The
+        transcripts — that is the core UX of the Activity workspace. The
         creation flow itself is gated by tenant isolation: the
-        `TranscriptSignalsExtractView` resolves the supplied
-        `activity_id` against a tenant-scoped queryset, so a rep
-        cannot trigger extraction on another tenant's activity.
+        `ActivityExtractionView` resolves the supplied `activity_id`
+        against a tenant-scoped queryset, so a rep cannot trigger
+        extraction on another tenant's activity.
 
   * read = `client` for ALL tiers
         AIPipelineRun documents are audit records, not sensitive

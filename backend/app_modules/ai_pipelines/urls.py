@@ -12,16 +12,12 @@ Routes
         Unified endpoint: orchestrates Qualification + NextSteps
         pipelines on a single transcript. Preferred entry point.
 
-    POST /module-ai-pipelines/transcript-signals/extract/
-        -> TranscriptSignalsExtractView (DEPRECATED — see TD-10)
-
-        Legacy qualification-only endpoint. Returns Deprecation +
-        Sunset headers. Will be removed after frontend migration.
+    (Legacy /transcript-signals/extract/ endpoint removed — TD-10 complete.)
 """
 
 from django.urls import path
 
-from .views import ActivityExtractionView, LastRunView, TranscriptSignalsExtractView
+from .views import ActivityExtractionView, LastRunView
 
 
 urlpatterns = [
@@ -34,10 +30,5 @@ urlpatterns = [
         'last-run/',
         LastRunView.as_view(),
         name='last-run',
-    ),
-    path(
-        'transcript-signals/extract/',
-        TranscriptSignalsExtractView.as_view(),
-        name='transcript-signals-extract',
     ),
 ]
