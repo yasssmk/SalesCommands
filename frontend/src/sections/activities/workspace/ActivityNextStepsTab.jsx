@@ -76,9 +76,11 @@ export default function ActivityNextStepsTab({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerSignal, setDrawerSignal] = useState(null);
 
-  // Activity modal state (convert from signal OR manual add)
+  // Activity modal state (convert from signal OR manual add OR campaign conversion)
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [convertSignal, setConvertSignal] = useState(null);
+  const [manualActivityType, setManualActivityType] = useState(null);
+  const [convertFromCampaign, setConvertFromCampaign] = useState(false);
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -176,8 +178,10 @@ export default function ActivityNextStepsTab({
   }, [mutateAll, mutateCounts]);
 
   const handleCreateActivity = useCallback(
-    (activityType) => {
+    (activityType, options = {}) => {
       setConvertSignal(null);
+      setManualActivityType(activityType || null);
+      setConvertFromCampaign(Boolean(options.convertFromCampaign));
       setActivityModalOpen(true);
     },
     [],
@@ -254,13 +258,16 @@ export default function ActivityNextStepsTab({
             onClose={() => {
               setActivityModalOpen(false);
               setConvertSignal(null);
+              setManualActivityType(null);
+              setConvertFromCampaign(false);
             }}
             activity={null}
             accountId={accountId}
             decisionStepId={activity?.decision_step || null}
-            decisionCycleId={activity?.decision_cycle || null}
-            defaultActivityType={convertSignal?.suggested_activity_type || "MEETING"}
+            decisionCycleId={convertFromCampaign ? null : (activity?.decision_cycle || null)}
+            defaultActivityType={convertSignal?.suggested_activity_type || manualActivityType || "MEETING"}
             previousActivityId={activity?.id}
+            sourceActivityId={convertFromCampaign ? activity?.id : null}
             nextStepSignal={convertSignal}
             onSuccess={handleConvertSuccess}
           />
@@ -378,13 +385,16 @@ export default function ActivityNextStepsTab({
           onClose={() => {
             setActivityModalOpen(false);
             setConvertSignal(null);
+            setManualActivityType(null);
+            setConvertFromCampaign(false);
           }}
           activity={null}
           accountId={accountId}
           decisionStepId={activity?.decision_step || null}
-          decisionCycleId={activity?.decision_cycle || null}
-          defaultActivityType={convertSignal?.suggested_activity_type || "MEETING"}
+          decisionCycleId={convertFromCampaign ? null : (activity?.decision_cycle || null)}
+          defaultActivityType={convertSignal?.suggested_activity_type || manualActivityType || "MEETING"}
           previousActivityId={activity?.id}
+          sourceActivityId={convertFromCampaign ? activity?.id : null}
           nextStepSignal={convertSignal}
           onSuccess={handleConvertSuccess}
         />

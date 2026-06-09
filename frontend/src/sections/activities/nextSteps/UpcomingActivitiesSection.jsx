@@ -16,6 +16,8 @@ import Typography from "@mui/material/Typography";
 // Icons
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import LinkOutlined from "@ant-design/icons/LinkOutlined";
+import TrophyOutlined from "@ant-design/icons/TrophyOutlined";
+import RocketOutlined from "@ant-design/icons/RocketOutlined";
 
 // Project imports
 import ActivityMiniCard from "components/cards/activities/ActivityMiniCard";
@@ -36,6 +38,13 @@ export default function UpcomingActivitiesSection({
     Boolean(activity?.decision_cycle) || Boolean(activity?.campaign_detail);
   const isCampaignActivity =
     Boolean(activity?.campaign_detail) && !activity?.decision_cycle;
+  const showConversionCta =
+    isCampaignActivity &&
+    (activity?.outcome === "SUCCESSFUL" ||
+      activity?.outcome === "MEETING_SCHEDULED");
+  const isLastInSequence =
+    sequenceContext?.position != null &&
+    sequenceContext?.position === sequenceContext?.total;
 
   const sorted = useMemo(
     () =>
@@ -156,8 +165,53 @@ export default function UpcomingActivitiesSection({
             color="text.secondary"
             textAlign="center"
           >
-            No upcoming activities in this sequence yet.
+            {!isLocked && isLastInSequence
+              ? "This is the last activity in the sequence. Create a follow-up to continue the cycle."
+              : !isLocked
+                ? "No activities scheduled after this one. Create a follow-up to continue."
+                : "No upcoming activities in this sequence yet."}
           </Typography>
+        </Box>
+      )}
+
+      {/* Campaign → Decision Cycle conversion CTA */}
+      {showConversionCta && !isLocked && (
+        <Box
+          sx={{
+            mt: 2,
+            p: 2,
+            borderRadius: 1,
+            bgcolor: theme.palette.success.lighter,
+            border: "1px solid",
+            borderColor: theme.palette.success.light,
+          }}
+        >
+          <Stack spacing={1}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TrophyOutlined
+                style={{ fontSize: 20, color: theme.palette.success.main }}
+              />
+              <Typography variant="subtitle2" color="success.dark">
+                Successful outcome — ready to convert
+              </Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              This prospect responded positively. Start a Decision Cycle to move
+              them into your pipeline.
+            </Typography>
+            <Button
+              variant="contained"
+              color="success"
+              size="small"
+              startIcon={<RocketOutlined />}
+              onClick={() =>
+                onCreateActivity("MEETING", { convertFromCampaign: true })
+              }
+              sx={{ alignSelf: "flex-start" }}
+            >
+              Start Decision Cycle
+            </Button>
+          </Stack>
         </Box>
       )}
     </Box>
