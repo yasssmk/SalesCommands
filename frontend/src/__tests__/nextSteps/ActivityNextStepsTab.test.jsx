@@ -6,7 +6,6 @@ import {
   screen,
   fireEvent,
   cleanup,
-  within,
 } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //
@@ -158,6 +157,26 @@ vi.mock("sections/activities/signals/SignalEditDialog", () => ({
     open ? <div data-testid="signal-edit-dialog" /> : null,
 }));
 
+vi.mock("sections/activities/nextSteps/UpcomingActivitiesSection", () => ({
+  default: ({ activity, onCreateActivity, isLocked }) => (
+    <div data-testid="upcoming-activities-section">
+      {!isLocked && (
+        <button onClick={() => onCreateActivity("MEETING")}>Quick Meeting</button>
+      )}
+    </div>
+  ),
+}));
+
+vi.mock("sections/activities/nextSteps/NextStepSuggestionDrawer", () => ({
+  default: ({ open, signal, onClose }) =>
+    open && signal ? (
+      <div data-testid="suggestion-drawer">
+        <span>{signal.suggested_title}</span>
+        <button onClick={onClose} aria-label="Close drawer">Close</button>
+      </div>
+    ) : null,
+}));
+
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
@@ -169,6 +188,11 @@ const mockActivity = {
   id: "activity-123",
   account: "account-456",
   status: "COMPLETED",
+  decision_step: "step-1",
+  decision_cycle: "dc-1",
+  sequence_context: {
+    next_activities: [],
+  },
 };
 
 // ==============================|| TESTS ||============================== //
@@ -182,7 +206,7 @@ describe("ActivityNextStepsTab", () => {
     cleanup();
   });
 
-  it("renders AI Suggestions section with PENDING signals", () => {
+  it("renders AI Suggestions section with sorted signals (PENDING first)", () => {
     render(
       <ActivityNextStepsTab
         activity={mockActivity}
@@ -193,10 +217,10 @@ describe("ActivityNextStepsTab", () => {
 
     expect(screen.getByText("AI Suggestions")).toBeInTheDocument();
     expect(screen.getByText("Follow up on pricing")).toBeInTheDocument();
-    expect(screen.getByText(/suggested 2026-06-15/)).toBeInTheDocument();
+    expect(screen.getByText("Send proposal")).toBeInTheDocument();
   });
 
-  it("renders Linked Activities section with VALIDATED signals", () => {
+  it("renders Upcoming Activities section", () => {
     render(
       <ActivityNextStepsTab
         activity={mockActivity}
@@ -205,8 +229,7 @@ describe("ActivityNextStepsTab", () => {
       />,
     );
 
-    expect(screen.getByText("Linked Activities")).toBeInTheDocument();
-    expect(screen.getByText("Send proposal email")).toBeInTheDocument();
+    expect(screen.getByTestId("upcoming-activities-section")).toBeInTheDocument();
   });
 
   it("hides REJECTED signals by default", () => {
@@ -262,7 +285,7 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
   });
 
-  it("shows View Activity for VALIDATED signals with linked_activity", () => {
+  it("opens drawer when clicking on a suggestion card", () => {
     render(
       <ActivityNextStepsTab
         activity={mockActivity}
@@ -271,10 +294,12 @@ describe("ActivityNextStepsTab", () => {
       />,
     );
 
-    expect(screen.getByText("Open Activity")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Follow up on pricing"));
+
+    expect(screen.getByTestId("suggestion-drawer")).toBeInTheDocument();
   });
 
-  it("navigates to activity workspace when clicking Open Activity", () => {
+  it("shows Converted to link for VALIDATED signals with linked activity", () => {
     render(
       <ActivityNextStepsTab
         activity={mockActivity}
@@ -283,11 +308,8 @@ describe("ActivityNextStepsTab", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("Open Activity"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith(
-      "/activities/act1/workspace?tab=overview",
-    );
+    expect(screen.getByText(/Converted to:/)).toBeInTheDocument();
+    expect(screen.getByText("Send proposal email")).toBeInTheDocument();
   });
 
   it("calls rejectSignal and mutates when rejecting a suggestion", async () => {
@@ -343,5 +365,17 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.queryByText("Convert to Activity")).not.toBeInTheDocument();
     expect(screen.queryByText("Reject")).not.toBeInTheDocument();
     expect(screen.queryByText("Add manually")).not.toBeInTheDocument();
+  });
+
+  it("shows Upcoming Activities heading", () => {
+    render(
+      <ActivityNextStepsTab
+        activity={mockActivity}
+        isLocked={false}
+        mutateCounts={mockMutateCounts}
+      />,
+    );
+
+    expect(screen.getByText("Upcoming Activities")).toBeInTheDocument();
   });
 });

@@ -11,7 +11,6 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
@@ -20,7 +19,6 @@ import {
   EditOutlined,
   CloseCircleOutlined,
   CheckCircleOutlined,
-  EyeOutlined,
 } from "@ant-design/icons";
 
 // Project imports
@@ -56,6 +54,7 @@ export default function AISuggestionCard({
   onEdit,
   onReject,
   onViewActivity,
+  onSelect,
   isLocked,
 }) {
   const status = signal?.status || "PENDING";
@@ -73,11 +72,14 @@ export default function AISuggestionCard({
       sx={{
         ...styles,
         transition: "opacity 0.3s ease",
+        cursor: "pointer",
+        "&:hover": { bgcolor: "action.hover" },
       }}
+      onClick={() => onSelect?.(signal)}
     >
       <CardContent sx={{ py: 1.5, px: 2, "&:last-child": { pb: 1.5 } }}>
         <Stack spacing={1}>
-          {/* Header — badge + type chip + due date */}
+          {/* Header — badge + type chip + due date + status */}
           <Stack
             direction="row"
             spacing={1}
@@ -124,36 +126,46 @@ export default function AISuggestionCard({
             {signal?.suggested_title || "Untitled suggestion"}
           </Typography>
 
-          {/* Source quote */}
+          {/* Source quote (compact: 2-line clamp) */}
           {signal?.source_quote && (
-            <Box
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              fontStyle="italic"
               sx={{
-                borderLeft: 3,
-                borderColor: "divider",
-                pl: 1.5,
-                py: 0.5,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
               }}
             >
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                fontStyle="italic"
-                sx={{
-                  display: "-webkit-box",
-                  WebkitLineClamp: 3,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}
-              >
-                &ldquo;{signal.source_quote}&rdquo;
-              </Typography>
-            </Box>
+              &ldquo;{signal.source_quote}&rdquo;
+            </Typography>
           )}
 
           {/* Contacts */}
           {contactNames.length > 0 && (
             <Typography variant="caption" color="text.secondary">
               {contactNames.join(" · ")}
+            </Typography>
+          )}
+
+          {/* Converted-to link for VALIDATED */}
+          {status === "VALIDATED" && linkedActivity && (
+            <Typography variant="caption" color="text.secondary">
+              Converted to:{" "}
+              <Typography
+                component="span"
+                variant="caption"
+                color="primary"
+                sx={{ cursor: "pointer", textDecoration: "underline" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onViewActivity?.(linkedActivity);
+                }}
+              >
+                {linkedActivity.title}
+              </Typography>
             </Typography>
           )}
 
@@ -166,46 +178,27 @@ export default function AISuggestionCard({
                   variant="contained"
                   color="primary"
                   startIcon={<CheckCircleOutlined style={{ fontSize: 14 }} />}
-                  onClick={() => onConvert?.(signal)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConvert?.(signal);
+                  }}
                 >
                   Convert to Activity
                 </Button>
-                <Tooltip title="Edit suggestion before converting">
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<EditOutlined style={{ fontSize: 14 }} />}
-                    onClick={() => onEdit?.(signal)}
-                  >
-                    Edit
-                  </Button>
-                </Tooltip>
                 <Button
                   size="small"
                   color="error"
                   startIcon={
                     <CloseCircleOutlined style={{ fontSize: 14 }} />
                   }
-                  onClick={() => onReject?.(signal)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReject?.(signal);
+                  }}
                 >
                   Reject
                 </Button>
               </>
-            )}
-            {status === "VALIDATED" && linkedActivity && (
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<EyeOutlined style={{ fontSize: 14 }} />}
-                onClick={() => onViewActivity?.(linkedActivity)}
-              >
-                View Activity
-              </Button>
-            )}
-            {status === "VALIDATED" && !linkedActivity && (
-              <Typography variant="caption" color="text.disabled">
-                Activity deleted
-              </Typography>
             )}
             {(status === "VALIDATED" || status === "REJECTED") &&
               !isLocked && (
@@ -213,9 +206,12 @@ export default function AISuggestionCard({
                   size="small"
                   variant="text"
                   startIcon={<EditOutlined style={{ fontSize: 14 }} />}
-                  onClick={() => onEdit?.(signal)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit?.(signal);
+                  }}
                 >
-                  Edit / Reopen
+                  {status === "REJECTED" ? "Reopen" : "Edit"}
                 </Button>
               )}
           </Stack>
@@ -251,5 +247,6 @@ AISuggestionCard.propTypes = {
   onEdit: PropTypes.func,
   onReject: PropTypes.func,
   onViewActivity: PropTypes.func,
+  onSelect: PropTypes.func,
   isLocked: PropTypes.bool,
 };
