@@ -323,7 +323,7 @@ describe('ActivityNotesTab', () => {
   });
 
   // F8-3-FIX: Failed/stuck run banner
-  it('shows warning banner when latestRun is failed and no lastRun', () => {
+  it('shows warning banner with static message when latestRun is failed', () => {
     renderTab({
       lastRun: null,
       latestRun: {
@@ -336,11 +336,11 @@ describe('ActivityNotesTab', () => {
       },
     });
 
-    expect(screen.getByText(/Last extraction failed/)).toBeInTheDocument();
-    expect(screen.getByText(/provider_error: connection refused/)).toBeInTheDocument();
+    expect(screen.getByText(/Last extraction failed.*Click Try Again to retry/)).toBeInTheDocument();
+    expect(screen.queryByText(/provider_error/)).not.toBeInTheDocument();
   });
 
-  it('shows warning banner when latestRun is stuck RUNNING', () => {
+  it('shows warning banner with pending message when latestRun is stuck RUNNING', () => {
     renderTab({
       lastRun: null,
       latestRun: {
@@ -353,7 +353,7 @@ describe('ActivityNotesTab', () => {
       },
     });
 
-    expect(screen.getByText(/Last extraction stuck/)).toBeInTheDocument();
+    expect(screen.getByText(/Last extraction stuck.*Extraction is still pending/)).toBeInTheDocument();
   });
 
   it('does NOT show banner when lastRun exists (successful run overshadows)', () => {
@@ -392,7 +392,7 @@ describe('ActivityNotesTab', () => {
       },
     });
 
-    expect(screen.getByText(/Last extraction failed/)).toBeInTheDocument();
+    expect(screen.getByText(/Last extraction failed.*Click Try Again to retry/)).toBeInTheDocument();
 
     const dismissBtn = screen.getByRole('button', { name: /dismiss/i });
     fireEvent.click(dismissBtn);

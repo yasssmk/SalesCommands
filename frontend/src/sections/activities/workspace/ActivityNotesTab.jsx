@@ -173,10 +173,9 @@ export default function ActivityNotesTab({
     const dateStr = latestRun.last_run_at
       ? format(new Date(latestRun.last_run_at), 'MMM d, yyyy HH:mm')
       : '';
-    const statusLabel = isStuck ? 'stuck' : 'failed';
-    const errorHint = latestRun.error_message
-      ? ` — ${latestRun.error_message}`
-      : '';
+    const bannerMessage = isStuck
+      ? `Last extraction stuck (${dateStr}). Extraction is still pending.`
+      : `Last extraction failed (${dateStr}). Click Try Again to retry.`;
 
     return (
       <Alert
@@ -193,7 +192,7 @@ export default function ActivityNotesTab({
           </Stack>
         }
       >
-        Last extraction {statusLabel} ({dateStr}){errorHint}
+        {bannerMessage}
       </Alert>
     );
   };

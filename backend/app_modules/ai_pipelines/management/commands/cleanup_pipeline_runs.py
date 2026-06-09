@@ -78,7 +78,7 @@ class Command(BaseCommand):
         with transaction.atomic():
             updated = qs.update(
                 status=AIPipelineStatus.LLM_ERROR,
-                error_message='Marked as zombie by cleanup_pipeline_runs management command.',
+                error_message='Extraction was interrupted and could not complete.',
             )
 
         self.stdout.write(self.style.SUCCESS(f'\nMarked {updated} run(s) as LLM_ERROR.'))
