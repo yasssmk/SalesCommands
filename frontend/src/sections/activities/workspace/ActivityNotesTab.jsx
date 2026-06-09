@@ -24,6 +24,7 @@ import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
 // assets
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import ExperimentOutlined from '@ant-design/icons/ExperimentOutlined';
+import WarningOutlined from '@ant-design/icons/WarningOutlined';
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -31,12 +32,15 @@ const MIN_TRANSCRIPT_LENGTH = 50;
 
 // ==============================|| ACTIVITY NOTES TAB ||============================== //
 
+const FAILED_STATUSES = new Set(['PARSE_ERROR', 'LLM_ERROR', 'TIMEOUT']);
+
 export default function ActivityNotesTab({
   activity,
   onSave,
   isLocked,
   pipelineRunner,
   lastRun,
+  latestRun,
   runsByPipeline,
 }) {
   const activityId = activity?.id ?? null;
@@ -47,6 +51,7 @@ export default function ActivityNotesTab({
 
   // --- Wizard open state ---
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // --- Derive effective display state from pipelineState + lastRun ---
   const effectiveState = deriveEffectiveState(pipelineState, lastRun);
@@ -156,6 +161,42 @@ export default function ActivityNotesTab({
     );
   };
 
+  const renderLatestRunBanner = () => {
+    if (bannerDismissed || pipelineState !== PIPELINE_STATE.IDLE) return null;
+    if (!latestRun) return null;
+
+    const isStuck = latestRun.status === 'RUNNING';
+    const isFailed = FAILED_STATUSES.has(latestRun.status);
+    if (!isStuck && !isFailed) return null;
+    if (lastRun) return null;
+
+    const dateStr = latestRun.last_run_at
+      ? format(new Date(latestRun.last_run_at), 'MMM d, yyyy HH:mm')
+      : '';
+    const bannerMessage = isStuck
+      ? `Last extraction stuck (${dateStr}). Extraction is still pending.`
+      : `Last extraction failed (${dateStr}). Click Try Again to retry.`;
+
+    return (
+      <Alert
+        severity="warning"
+        icon={<WarningOutlined />}
+        action={
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Button color="warning" size="small" onClick={handleOpenWizard}>
+              Try again
+            </Button>
+            <IconButton size="small" aria-label="dismiss" color="inherit" onClick={() => setBannerDismissed(true)}>
+              <CloseOutlined />
+            </IconButton>
+          </Stack>
+        }
+      >
+        {bannerMessage}
+      </Alert>
+    );
+  };
+
   // ==============================|| RENDER ||============================== //
 
   return (
@@ -186,6 +227,9 @@ export default function ActivityNotesTab({
 
         {/* Last analyzed caption */}
         {renderLastRunCaption()}
+
+        {/* Failed/stuck run banner */}
+        {renderLatestRunBanner()}
 
         {/* Extraction error */}
         {pipelineState === PIPELINE_STATE.ERROR && pipelineError && (
@@ -272,5 +316,6 @@ ActivityNotesTab.propTypes = {
     reset: PropTypes.func.isRequired,
   }).isRequired,
   lastRun: PropTypes.object,
+  latestRun: PropTypes.object,
   runsByPipeline: PropTypes.object,
 };

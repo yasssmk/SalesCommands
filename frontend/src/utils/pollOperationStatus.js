@@ -205,6 +205,15 @@ export async function pollOperationStatus(idempotencyKey, options = {}) {
       const result = await api.get(`/core/operations/${idempotencyKey}/status/`);
       
       if (!result.success) {
+        // 404 = operation not found (expired or never existed).
+        // Fail-fast: no point retrying, the key will never appear.
+        if (result.status === 404) {
+          return {
+            status: 'not_found',
+            error: result.error || 'Operation not found',
+          };
+        }
+
         // API call failed (network error, 500, etc.)
         console.error('[pollOperationStatus] API call failed:', result.error);
         

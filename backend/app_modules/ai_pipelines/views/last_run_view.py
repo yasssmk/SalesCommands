@@ -58,6 +58,7 @@ def _serialize_run(run):
         'pipeline_type': run.pipeline_type,
         'status': run.status,
         'created_signals_count': run.created_signals_count,
+        'error_message': run.error_message or '',
     }
 
 
@@ -106,7 +107,19 @@ class LastRunView(BaseAPIView):
                 base_qs.filter(pipeline_type=pt).first()
             )
 
+        latest_run_obj = (
+            AIPipelineRun.objects
+            .filter(
+                client_id=client_id,
+                source_activity=activity,
+            )
+            .select_related('created_by')
+            .order_by('-created_at')
+            .first()
+        )
+
         return Response({
             'last_run': _serialize_run(last_run),
             'runs_by_pipeline': runs_by_pipeline,
+            'latest_run': _serialize_run(latest_run_obj),
         })

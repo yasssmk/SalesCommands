@@ -158,6 +158,8 @@ from ..providers.base import (
 )
 from .base import BasePipeline
 
+from django.db import transaction
+
 
 # Stage descriptors: (stage_name, request_builder).
 # Ordered list = call order. Future stage insertions go here.
@@ -247,114 +249,125 @@ class QualificationSignalsPipeline(BasePipeline):
         total_persisted = 0
         fatal_aborted = False
 
-        for stage_name, request_builder in _STAGES:
-            try:
-                context_layer = build_context_layer(activity, target_stage=stage_name)
-                request_layer = request_builder(transcript)
+        try:
+            with transaction.atomic():
+                for stage_name, request_builder in _STAGES:
+                    try:
+                        context_layer = build_context_layer(activity, target_stage=stage_name)
+                        request_layer = request_builder(transcript)
 
-                parsed, sub_call_meta = self._call_llm(
-                    system_prompt=SYSTEM_PROMPT,
-                    context=context_layer,
-                    request=request_layer,
-                )
+                        parsed, sub_call_meta = self._call_llm(
+                            system_prompt=SYSTEM_PROMPT,
+                            context=context_layer,
+                            request=request_layer,
+                        )
 
-                # Defensive: if the LLM returned a JSON shape that lacks
-                # `signals` we treat it as "zero signals emitted" rather
-                # than an error -- the safety filter will then drop nothing
-                # and we log emitted_count=0 in sub_calls.
-                if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
-                    raw_signals = parsed['signals']
-                else:
-                    raw_signals = []
+                        # Defensive: if the LLM returned a JSON shape that lacks
+                        # `signals` we treat it as "zero signals emitted" rather
+                        # than an error -- the safety filter will then drop nothing
+                        # and we log emitted_count=0 in sub_calls.
+                        if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
+                            raw_signals = parsed['signals']
+                        else:
+                            raw_signals = []
 
-                persisted, dropped_count = extractor.persist_stage(
-                    stage=stage_name,
-                    raw_signals=raw_signals,
-                    activity=activity,
-                    user=user,
-                    client_id=client_id,
-                    confidence_min=self.CONFIDENCE_MIN,
-                    drop_inferred=self.DROP_INFERRED,
-                )
+                        persisted, dropped_count = extractor.persist_stage(
+                            stage=stage_name,
+                            raw_signals=raw_signals,
+                            activity=activity,
+                            user=user,
+                            client_id=client_id,
+                            confidence_min=self.CONFIDENCE_MIN,
+                            drop_inferred=self.DROP_INFERRED,
+                        )
 
-                signals_by_stage[stage_name] = persisted
-                total_persisted += len(persisted)
-                stage_outcomes[stage_name] = 'success'
+                        signals_by_stage[stage_name] = persisted
+                        total_persisted += len(persisted)
+                        stage_outcomes[stage_name] = 'success'
 
-                self._log_sub_call(
-                    run,
-                    stage=stage_name,
-                    sub_call_meta=sub_call_meta,
-                    parsed=parsed,
-                    error=None,
-                    dropped_count=dropped_count,
-                )
+                        self._log_sub_call(
+                            run,
+                            stage=stage_name,
+                            sub_call_meta=sub_call_meta,
+                            parsed=parsed,
+                            error=None,
+                            dropped_count=dropped_count,
+                        )
 
-            # --- Specific subclasses first, then generic LLMProviderError ---
+                    # --- Specific subclasses first, then generic LLMProviderError ---
 
-            except LLMAuthError as exc:
-                # Credential is dead -- abort the pipeline, do NOT attempt
-                # subsequent stages. The fatal flag is consumed in the
-                # final-status derivation.
-                stage_outcomes[stage_name] = 'auth_error'
-                self._log_sub_call(
-                    run,
-                    stage=stage_name,
-                    sub_call_meta=None,
-                    parsed=None,
-                    error=f'auth_error: {exc}',
-                    dropped_count=0,
-                )
-                fatal_aborted = True
-                break
+                    except LLMAuthError as exc:
+                        # Credential is dead -- abort the pipeline, do NOT attempt
+                        # subsequent stages. The fatal flag is consumed in the
+                        # final-status derivation.
+                        stage_outcomes[stage_name] = 'auth_error'
+                        self._log_sub_call(
+                            run,
+                            stage=stage_name,
+                            sub_call_meta=None,
+                            parsed=None,
+                            error=f'auth_error: {exc}',
+                            dropped_count=0,
+                        )
+                        fatal_aborted = True
+                        break
 
-            except LLMTimeoutError as exc:
-                stage_outcomes[stage_name] = 'timeout'
-                self._log_sub_call(
-                    run,
-                    stage=stage_name,
-                    sub_call_meta=None,
-                    parsed=None,
-                    error=f'timeout: {exc}',
-                    dropped_count=0,
-                )
+                    except LLMTimeoutError as exc:
+                        stage_outcomes[stage_name] = 'timeout'
+                        self._log_sub_call(
+                            run,
+                            stage=stage_name,
+                            sub_call_meta=None,
+                            parsed=None,
+                            error=f'timeout: {exc}',
+                            dropped_count=0,
+                        )
 
-            except LLMRateLimitError as exc:
-                stage_outcomes[stage_name] = 'rate_limit'
-                self._log_sub_call(
-                    run,
-                    stage=stage_name,
-                    sub_call_meta=None,
-                    parsed=None,
-                    error=f'rate_limit: {exc}',
-                    dropped_count=0,
-                )
+                    except LLMRateLimitError as exc:
+                        stage_outcomes[stage_name] = 'rate_limit'
+                        self._log_sub_call(
+                            run,
+                            stage=stage_name,
+                            sub_call_meta=None,
+                            parsed=None,
+                            error=f'rate_limit: {exc}',
+                            dropped_count=0,
+                        )
 
-            except PromptParseError as exc:
-                stage_outcomes[stage_name] = 'parse_error'
-                self._log_sub_call(
-                    run,
-                    stage=stage_name,
-                    sub_call_meta=None,
-                    parsed=None,
-                    error=f'parse_error: {exc}',
-                    dropped_count=0,
-                )
+                    except PromptParseError as exc:
+                        stage_outcomes[stage_name] = 'parse_error'
+                        self._log_sub_call(
+                            run,
+                            stage=stage_name,
+                            sub_call_meta=None,
+                            parsed=None,
+                            error=f'parse_error: {exc}',
+                            dropped_count=0,
+                        )
 
-            except LLMProviderError as exc:
-                # Generic provider failure -- catch-all for the
-                # LLMProviderError hierarchy AFTER the specific subclasses
-                # above. Order matters: Python catches the first matching
-                # except clause.
-                stage_outcomes[stage_name] = 'provider_error'
-                self._log_sub_call(
-                    run,
-                    stage=stage_name,
-                    sub_call_meta=None,
-                    parsed=None,
-                    error=f'provider_error: {exc}',
-                    dropped_count=0,
-                )
+                    except LLMProviderError as exc:
+                        # Generic provider failure -- catch-all for the
+                        # LLMProviderError hierarchy AFTER the specific subclasses
+                        # above. Order matters: Python catches the first matching
+                        # except clause.
+                        stage_outcomes[stage_name] = 'provider_error'
+                        self._log_sub_call(
+                            run,
+                            stage=stage_name,
+                            sub_call_meta=None,
+                            parsed=None,
+                            error=f'provider_error: {exc}',
+                            dropped_count=0,
+                        )
+
+        except Exception as exc:
+            self._finalize_run(
+                run,
+                status=AIPipelineStatus.LLM_ERROR,
+                created_signals_count=0,
+                error_message=f'hard crash: {str(exc)[:1000]}',
+            )
+            raise
 
         # --- Final status derivation + finalisation ---
         final_status, final_error = self._derive_final_status(

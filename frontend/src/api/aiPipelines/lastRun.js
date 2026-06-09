@@ -67,6 +67,7 @@ export function useGetLastExtractionRun(activityId) {
   return useMemo(
     () => ({
       lastRun: data?.last_run ?? null,
+      latestRun: data?.latest_run ?? null,
       runsByPipeline: data?.runs_by_pipeline ?? {
         TRANSCRIPT_SIGNALS: null,
         NEXT_STEPS: null,

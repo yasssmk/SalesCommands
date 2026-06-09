@@ -454,4 +454,44 @@ describe('runActivityExtraction', () => {
 
     expect(api.post).toHaveBeenCalledTimes(1);
   });
+
+  // ------------------------------------------------------------------
+  // F8-3-FIX: Polling not_found — expired idempotency key
+  // ------------------------------------------------------------------
+  it('returns user-friendly message when poll returns not_found', async () => {
+    api.post.mockResolvedValue({
+      success: true,
+      data: { __is202: true, __idempotency_key: 'key' },
+    });
+
+    pollOperationStatus.mockResolvedValue({
+      status: 'not_found',
+      error: "No operation found with key 'abc123'. It may have expired or never existed.",
+    });
+
+    const result = await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe(EXTRACTION_OUTCOME_CODES.POLL_FAILED);
+    expect(result.error).toBe('Previous extraction expired. Please retry.');
+  });
+
+  it('returns user-friendly message when client timeout poll returns not_found', async () => {
+    api.post.mockResolvedValue({
+      success: false,
+      isTimeout: true,
+      idempotencyKey: 'key',
+    });
+
+    pollOperationStatus.mockResolvedValue({
+      status: 'not_found',
+      error: "No operation found with key 'xyz'.",
+    });
+
+    const result = await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(result.success).toBe(false);
+    expect(result.code).toBe(EXTRACTION_OUTCOME_CODES.POLL_FAILED);
+    expect(result.error).toBe('Previous extraction expired. Please retry.');
+  });
 });

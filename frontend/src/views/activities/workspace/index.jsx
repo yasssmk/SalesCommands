@@ -53,7 +53,7 @@ export default function ActivityWorkspacePage() {
     useGetActivity(activityId);
 
   // Last extraction run metadata (per-pipeline breakdown for wizard Step 1)
-  const { lastRun, runsByPipeline, mutateLastRun } =
+  const { lastRun, latestRun, runsByPipeline, mutateLastRun } =
     useGetLastExtractionRun(activityId);
 
   // Signal counts for header pending badge
@@ -181,6 +181,7 @@ export default function ActivityWorkspacePage() {
             isLocked={isLocked}
             pipelineRunner={pipelineRunner}
             lastRun={lastRun}
+            latestRun={latestRun}
             runsByPipeline={runsByPipeline}
           />
         );
