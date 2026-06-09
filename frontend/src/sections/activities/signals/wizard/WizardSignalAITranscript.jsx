@@ -349,6 +349,9 @@ function ProcessingStep({
           >
             Back to transcript
           </Button>
+          <Button variant="contained" onClick={onRetry}>
+            Retry
+          </Button>
         </Stack>
       </Stack>
     );
@@ -387,6 +390,9 @@ function ProcessingStep({
             startIcon={<ArrowLeftOutlined />}
           >
             Back to transcript
+          </Button>
+          <Button variant="contained" onClick={onRetry}>
+            Retry
           </Button>
         </Stack>
       </Stack>

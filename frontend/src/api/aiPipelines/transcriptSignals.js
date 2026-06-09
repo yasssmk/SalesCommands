@@ -120,6 +120,39 @@ const SIGNAL_LIST_PREFIXES = [
   "/module-signals/tech-stack/",
 ];
 
+// ==============================|| NETWORK RETRY ||============================== //
+
+const RETRY_CONFIG = {
+  maxRetries: 2,
+  delayMs: 1000,
+};
+
+const RETRYABLE_STATUS_CODES = new Set([502, 503, 504]);
+
+function isRetryableError(result) {
+  if (!result) return true;
+  if (result.isTimeout) return false;
+  if (result.status && RETRYABLE_STATUS_CODES.has(result.status)) return true;
+  if (!result.status && !result.success && !result.data) return true;
+  return false;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function postWithRetry(url, body, config) {
+  let lastResult;
+  for (let attempt = 0; attempt <= RETRY_CONFIG.maxRetries; attempt++) {
+    if (attempt > 0) {
+      await delay(RETRY_CONFIG.delayMs);
+    }
+    lastResult = await api.post(url, body, config);
+    if (!isRetryableError(lastResult)) return lastResult;
+  }
+  return lastResult;
+}
+
 // ==============================|| HELPERS ||============================== //
 
 /**
@@ -347,7 +380,7 @@ export async function extractTranscriptSignals(
     requestConfig.headers = { "Idempotency-Key": idempotencyKey };
   }
 
-  const result = await api.post(
+  const result = await postWithRetry(
     endpoints.transcriptSignalsExtract,
     {
       activity_id: activityId,

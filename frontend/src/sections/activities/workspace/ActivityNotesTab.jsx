@@ -11,6 +11,7 @@ import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
+import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -21,6 +22,7 @@ import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
 
 // assets
+import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import ExperimentOutlined from '@ant-design/icons/ExperimentOutlined';
 
 // ==============================|| CONSTANTS ||============================== //
@@ -41,7 +43,7 @@ export default function ActivityNotesTab({
   const transcript = activity?.transcript ?? '';
   const outcomeNotes = activity?.outcome_notes ?? '';
 
-  const { run, state: pipelineState, result: pipelineResult, error: pipelineError } = pipelineRunner;
+  const { run, state: pipelineState, result: pipelineResult, error: pipelineError, pollProgress, reset: resetPipeline } = pipelineRunner;
 
   // --- Wizard open state ---
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -86,14 +88,22 @@ export default function ActivityNotesTab({
             : '';
 
     if (effectiveState === 'running') {
+      const isPolling = Boolean(pollProgress && pollProgress.max > 0);
       return (
-        <Button
-          variant="contained"
-          disabled
-          startIcon={<CircularProgress size={16} color="inherit" />}
-        >
-          Analyzing…
-        </Button>
+        <Stack spacing={0.5} alignItems="flex-end">
+          <Button
+            variant="contained"
+            disabled
+            startIcon={<CircularProgress size={16} color="inherit" />}
+          >
+            Analyzing…
+          </Button>
+          {isPolling && (
+            <Typography variant="caption" color="text.secondary">
+              Polling for result ({pollProgress.attempt}/{pollProgress.max})…
+            </Typography>
+          )}
+        </Stack>
       );
     }
 
@@ -179,7 +189,21 @@ export default function ActivityNotesTab({
 
         {/* Extraction error */}
         {pipelineState === PIPELINE_STATE.ERROR && pipelineError && (
-          <Alert severity="error">{pipelineError}</Alert>
+          <Alert
+            severity="error"
+            action={
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <Button color="error" size="small" onClick={handleOpenWizard}>
+                  Try again
+                </Button>
+                <IconButton size="small" aria-label="close" color="inherit" onClick={resetPipeline}>
+                  <CloseOutlined />
+                </IconButton>
+              </Stack>
+            }
+          >
+            {pipelineError}
+          </Alert>
         )}
 
         {/* Extraction result */}
@@ -241,6 +265,10 @@ ActivityNotesTab.propTypes = {
     state: PropTypes.string.isRequired,
     result: PropTypes.object,
     error: PropTypes.string,
+    pollProgress: PropTypes.shape({
+      attempt: PropTypes.number,
+      max: PropTypes.number,
+    }),
     reset: PropTypes.func.isRequired,
   }).isRequired,
   lastRun: PropTypes.object,

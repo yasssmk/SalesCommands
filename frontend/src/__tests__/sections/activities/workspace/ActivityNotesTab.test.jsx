@@ -254,4 +254,71 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByTestId('etb-input-transcript')).toHaveValue('');
     expect(screen.getByTestId('etb-input-outcome_notes')).toHaveValue('');
   });
+
+  // F8-3: "Try again" button on error
+  it('shows "Try again" button when pipeline has error', () => {
+    renderTab({
+      pipelineRunner: makePipelineRunner({
+        state: PIPELINE_STATE.ERROR,
+        error: 'Network error',
+      }),
+    });
+
+    expect(screen.getByText('Try again')).toBeInTheDocument();
+    expect(screen.getByText('Network error')).toBeInTheDocument();
+  });
+
+  it('clicking "Try again" opens the wizard', async () => {
+    renderTab({
+      pipelineRunner: makePipelineRunner({
+        state: PIPELINE_STATE.ERROR,
+        error: 'Network error',
+      }),
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try again'));
+    });
+
+    expect(screen.getByText(/Select objectives/)).toBeInTheDocument();
+  });
+
+  // F8-3: Dismissible error Alert
+  it('error alert is dismissible via close button', () => {
+    renderTab({
+      pipelineRunner: makePipelineRunner({
+        state: PIPELINE_STATE.ERROR,
+        error: 'Some error',
+      }),
+    });
+
+    const closeButton = screen.getByRole('button', { name: /close/i });
+    fireEvent.click(closeButton);
+
+    expect(mockReset).toHaveBeenCalled();
+  });
+
+  // F8-3: Polling progress caption
+  it('shows polling progress when running with pollProgress', () => {
+    renderTab({
+      pipelineRunner: makePipelineRunner({
+        state: PIPELINE_STATE.RUNNING,
+        pollProgress: { attempt: 3, max: 12 },
+      }),
+    });
+
+    expect(screen.getByText('Analyzing…')).toBeInTheDocument();
+    expect(screen.getByText('Polling for result (3/12)…')).toBeInTheDocument();
+  });
+
+  it('does not show polling progress when running without pollProgress', () => {
+    renderTab({
+      pipelineRunner: makePipelineRunner({
+        state: PIPELINE_STATE.RUNNING,
+      }),
+    });
+
+    expect(screen.getByText('Analyzing…')).toBeInTheDocument();
+    expect(screen.queryByText(/Polling for result/)).not.toBeInTheDocument();
+  });
 });
