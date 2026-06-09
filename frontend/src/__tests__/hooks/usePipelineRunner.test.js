@@ -63,7 +63,7 @@ describe('usePipelineRunner', () => {
     expect(result.current.result).toEqual(data);
     expect(result.current.error).toBeNull();
     expect(onSuccess).toHaveBeenCalledWith(data);
-    expect(mockRunExtraction).toHaveBeenCalledWith('act-1', 'some transcript text', null, null);
+    expect(mockRunExtraction).toHaveBeenCalledWith('act-1', 'some transcript text', expect.any(Function), null);
   });
 
   it('forwards pipeline flags to extraction function', async () => {
@@ -79,7 +79,7 @@ describe('usePipelineRunner', () => {
     });
 
     expect(mockRunExtraction).toHaveBeenCalledWith(
-      'act-1', 'transcript', null,
+      'act-1', 'transcript', expect.any(Function),
       { run_qualification: true, run_next_steps: false },
     );
   });
@@ -205,5 +205,92 @@ describe('usePipelineRunner', () => {
 
     expect(result.current.state).toBe(PIPELINE_STATE.IDLE);
     expect(mockRunExtraction).not.toHaveBeenCalled();
+  });
+
+  // F8-3: pollProgress state
+  it('exposes pollProgress as null initially', () => {
+    const { result } = renderHook(() => usePipelineRunner());
+    expect(result.current.pollProgress).toBeNull();
+  });
+
+  it('passes onProgress callback to runActivityExtraction', async () => {
+    mockRunExtraction.mockResolvedValue({ success: true, data: { status: 'SUCCESS' } });
+
+    const { result } = renderHook(() => usePipelineRunner());
+
+    await act(async () => {
+      result.current.run('act-1', 'transcript');
+    });
+
+    const onProgress = mockRunExtraction.mock.calls[0][2];
+    expect(typeof onProgress).toBe('function');
+  });
+
+  it('updates pollProgress when onProgress callback is invoked', async () => {
+    let capturedOnProgress;
+    mockRunExtraction.mockImplementation((_id, _tx, onProgress) => {
+      capturedOnProgress = onProgress;
+      return Promise.resolve({ success: true, data: { status: 'SUCCESS' } });
+    });
+
+    const { result } = renderHook(() => usePipelineRunner());
+
+    await act(async () => {
+      result.current.run('act-1', 'transcript');
+    });
+
+    act(() => {
+      capturedOnProgress(3, 12);
+    });
+
+    expect(result.current.pollProgress).toEqual({ attempt: 3, max: 12 });
+  });
+
+  it('resets pollProgress on reset()', async () => {
+    let capturedOnProgress;
+    mockRunExtraction.mockImplementation((_id, _tx, onProgress) => {
+      capturedOnProgress = onProgress;
+      return Promise.resolve({ success: true, data: { status: 'SUCCESS' } });
+    });
+
+    const { result } = renderHook(() => usePipelineRunner());
+
+    await act(async () => {
+      result.current.run('act-1', 'transcript');
+    });
+
+    act(() => {
+      capturedOnProgress(5, 12);
+    });
+    expect(result.current.pollProgress).toEqual({ attempt: 5, max: 12 });
+
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.pollProgress).toBeNull();
+  });
+
+  it('resets pollProgress on new run()', async () => {
+    let capturedOnProgress;
+    mockRunExtraction.mockImplementation((_id, _tx, onProgress) => {
+      capturedOnProgress = onProgress;
+      return Promise.resolve({ success: true, data: { status: 'SUCCESS' } });
+    });
+
+    const { result } = renderHook(() => usePipelineRunner());
+
+    await act(async () => {
+      result.current.run('act-1', 'transcript');
+    });
+
+    act(() => {
+      capturedOnProgress(3, 12);
+    });
+    expect(result.current.pollProgress).toEqual({ attempt: 3, max: 12 });
+
+    await act(async () => {
+      result.current.run('act-1', 'different transcript');
+    });
+    expect(result.current.pollProgress).toBeNull();
   });
 });

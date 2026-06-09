@@ -37,10 +37,15 @@ export default function usePipelineRunner({ onSuccess, onError } = {}) {
   const [state, setState] = useState(PIPELINE_STATE.IDLE);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [pollProgress, setPollProgress] = useState(null);
   const onSuccessRef = useRef(onSuccess);
   const onErrorRef = useRef(onError);
   onSuccessRef.current = onSuccess;
   onErrorRef.current = onError;
+
+  const handlePollProgress = useCallback((attempt, maxAttempts) => {
+    setPollProgress({ attempt, max: maxAttempts });
+  }, []);
 
   const run = useCallback(async (activityId, curatedTranscript, pipelineFlags = null) => {
     if (!activityId) return;
@@ -48,9 +53,10 @@ export default function usePipelineRunner({ onSuccess, onError } = {}) {
     setState(PIPELINE_STATE.RUNNING);
     setResult(null);
     setError(null);
+    setPollProgress(null);
 
     try {
-      const res = await runActivityExtraction(activityId, curatedTranscript, null, pipelineFlags);
+      const res = await runActivityExtraction(activityId, curatedTranscript, handlePollProgress, pipelineFlags);
 
       if (res.success) {
         const data = res.data || {};
@@ -83,15 +89,16 @@ export default function usePipelineRunner({ onSuccess, onError } = {}) {
       setError(err?.message || 'An unexpected error occurred.');
       onErrorRef.current?.(err);
     }
-  }, []);
+  }, [handlePollProgress]);
 
   const reset = useCallback(() => {
     setState(PIPELINE_STATE.IDLE);
     setResult(null);
     setError(null);
+    setPollProgress(null);
   }, []);
 
-  return { run, state, result, error, reset };
+  return { run, state, result, error, pollProgress, reset };
 }
 
 // ==============================|| PROP TYPES (for documentation) ||============================== //
@@ -101,5 +108,9 @@ export const PipelineRunnerPropTypes = {
   state: PropTypes.oneOf(Object.values(PIPELINE_STATE)).isRequired,
   result: PropTypes.object,
   error: PropTypes.string,
+  pollProgress: PropTypes.shape({
+    attempt: PropTypes.number,
+    max: PropTypes.number,
+  }),
   reset: PropTypes.func.isRequired,
 };

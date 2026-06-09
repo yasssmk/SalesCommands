@@ -342,4 +342,116 @@ describe('runActivityExtraction', () => {
     const sentPayload = api.post.mock.calls[0][1];
     expect(sentPayload.transcript).toBe(TRANSCRIPT);
   });
+
+  // ------------------------------------------------------------------
+  // F8-3: Network retry — success on first try (no retry)
+  // ------------------------------------------------------------------
+  it('does not retry when first POST succeeds', async () => {
+    api.post.mockResolvedValue(MOCK_SUCCESS_RESPONSE);
+
+    await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  // ------------------------------------------------------------------
+  // F8-3: Network retry — retries on network error then succeeds
+  // ------------------------------------------------------------------
+  it('retries on network error and succeeds on second attempt', async () => {
+    api.post
+      .mockResolvedValueOnce({ success: false })
+      .mockResolvedValueOnce(MOCK_SUCCESS_RESPONSE);
+
+    const result = await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(api.post).toHaveBeenCalledTimes(2);
+    expect(result.success).toBe(true);
+  });
+
+  // ------------------------------------------------------------------
+  // F8-3: Network retry — retries on 503 then succeeds
+  // ------------------------------------------------------------------
+  it('retries on 503 and succeeds on retry', async () => {
+    api.post
+      .mockResolvedValueOnce({ success: false, status: 503, error: 'Service Unavailable' })
+      .mockResolvedValueOnce(MOCK_SUCCESS_RESPONSE);
+
+    const result = await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(api.post).toHaveBeenCalledTimes(2);
+    expect(result.success).toBe(true);
+  });
+
+  // ------------------------------------------------------------------
+  // F8-3: Network retry — does NOT retry on 400/409/500
+  // ------------------------------------------------------------------
+  it('does not retry on 400 client error', async () => {
+    api.post.mockResolvedValue({
+      success: false,
+      status: 400,
+      error: 'Validation error',
+    });
+
+    const result = await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(400);
+  });
+
+  it('does not retry on 409 conflict', async () => {
+    api.post.mockResolvedValue({
+      success: false,
+      status: 409,
+      data: { code: 'ALREADY_EXTRACTED' },
+    });
+
+    await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry on 500 server error', async () => {
+    api.post.mockResolvedValue({
+      success: false,
+      status: 500,
+      error: 'Internal Server Error',
+    });
+
+    await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+
+  // ------------------------------------------------------------------
+  // F8-3: Network retry — exhausts retries and returns last result
+  // ------------------------------------------------------------------
+  it('exhausts all retries on persistent network error', async () => {
+    api.post.mockResolvedValue({ success: false });
+
+    const result = await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(api.post).toHaveBeenCalledTimes(3);
+    expect(result.success).toBe(false);
+  });
+
+  // ------------------------------------------------------------------
+  // F8-3: Network retry — does NOT retry on timeout (handled by polling)
+  // ------------------------------------------------------------------
+  it('does not retry on client timeout (isTimeout)', async () => {
+    api.post.mockResolvedValue({
+      success: false,
+      isTimeout: true,
+      idempotencyKey: 'key',
+    });
+
+    pollOperationStatus.mockResolvedValue({
+      status: 'succeeded',
+      result: { http_status: 200, data: { success: true, data: {} } },
+    });
+
+    await runActivityExtraction(ACTIVITY_ID, TRANSCRIPT);
+
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
 });
