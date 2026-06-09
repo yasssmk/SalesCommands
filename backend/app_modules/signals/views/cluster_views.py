@@ -36,11 +36,9 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
-
 from core.apps_shared_methods import BaseAPIView
 from core.cache_utils import invalidate_tag
-from core.error_messages import CoreErrorMessages, SignalErrorMessages
+from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import get_logger, ctx_from_request

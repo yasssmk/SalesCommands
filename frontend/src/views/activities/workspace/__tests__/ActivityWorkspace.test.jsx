@@ -96,9 +96,6 @@ vi.mock("sections/activities/workspace/ActivityOverviewTab", () => ({
 vi.mock("sections/activities/workspace/ActivityPreparationTab", () => ({
   default: () => <div data-testid="tab-preparation">Preparation Content</div>,
 }));
-vi.mock("sections/activities/workspace/ActivityWrapUpTab", () => ({
-  default: () => <div data-testid="tab-wrap-up">Wrap-up Content</div>,
-}));
 vi.mock("sections/activities/workspace/ActivityNotesTab", () => ({
   default: () => <div data-testid="tab-notes">Coming in Sprint F2</div>,
 }));
@@ -184,9 +181,9 @@ afterEach(() => {
 
 describe("ActivityWorkspacePage", () => {
   // ------------------------------------------------------------------
-  // 1. Render OK — all 6 tabs visible
+  // 1. Render OK — all 5 tabs visible
   // ------------------------------------------------------------------
-  it("renders all 6 tabs in happy path", () => {
+  it("renders all 5 tabs in happy path", () => {
     setupRouter("overview");
     setupActivity();
 
@@ -194,7 +191,7 @@ describe("ActivityWorkspacePage", () => {
 
     // MUI scrollable Tabs may duplicate tab DOM nodes for measurement.
     // Use getAllBy and verify at least one exists for each label.
-    const tabLabels = ["Overview", "Preparation", "Wrap-up", "Notes", "Signals", "Next Steps"];
+    const tabLabels = ["Overview", "Preparation", "Notes", "Signals", "Next Steps"];
     tabLabels.forEach((label) => {
       expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1);
     });

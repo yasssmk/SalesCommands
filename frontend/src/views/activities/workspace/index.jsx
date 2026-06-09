@@ -34,7 +34,6 @@ import {
 } from "sections/activities/workspace/ActivityTabs";
 import ActivityOverviewTab from "sections/activities/workspace/ActivityOverviewTab";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
-import ActivityWrapUpTab from "sections/activities/workspace/ActivityWrapUpTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
@@ -163,15 +162,6 @@ export default function ActivityWorkspacePage() {
       case "preparation":
         return (
           <ActivityPreparationTab activity={activity} isLocked={isLocked} />
-        );
-      case "wrap-up":
-        return (
-          <ActivityWrapUpTab
-            activity={activity}
-            onSave={handleSaveField}
-            onUpdate={mutateActivity}
-            isLocked={isLocked}
-          />
         );
       case "notes":
         return (

@@ -28,7 +28,6 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from core.apps_shared_methods import BaseAPIView
 from core.cache_utils import invalidate_tag
-from core.exceptions import StandardizedValidationError
 from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log

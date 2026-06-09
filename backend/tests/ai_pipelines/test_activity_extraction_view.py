@@ -14,8 +14,6 @@ Coverage:
   - Idempotency-key replay.
   - Permissions: unauthenticated → 401/403.
   - Multi-tenant isolation: cross-tenant activity → 400.
-  - Regression: old /transcript-signals/extract/ still works.
-  - Deprecation headers on old endpoint.
 """
 
 import hashlib
@@ -28,7 +26,6 @@ from app_modules.ai_pipelines.constants import (
     AIPipelineType,
 )
 from app_modules.ai_pipelines.models import AIPipelineRun
-from app_modules.ai_pipelines.config import TRANSCRIPT_SIGNALS_SUNSET_DATE
 
 from .conftest import (
     CANNED_REPLIES_HAPPY,
@@ -42,7 +39,6 @@ from .conftest import (
 # =============================================================================
 
 URL = '/module-ai-pipelines/activity-extraction/run/'
-OLD_URL = '/module-ai-pipelines/transcript-signals/extract/'
 
 TRANSCRIPT = (
     'Pierre: Bonjour, notre reporting prend 3 semaines chaque trimestre. '
@@ -87,20 +83,6 @@ _bypass_redis = [
     ),
 ]
 
-_bypass_redis_old = [
-    patch(
-        'app_modules.ai_pipelines.views.transcript_signals_view.start_op',
-        side_effect=_noop_start_op,
-    ),
-    patch(
-        'app_modules.ai_pipelines.views.transcript_signals_view.complete_op',
-        side_effect=_noop_complete_op,
-    ),
-    patch(
-        'app_modules.ai_pipelines.views.transcript_signals_view.fail_op',
-        side_effect=_noop_fail_op,
-    ),
-]
 
 
 def _apply_patches(patches):
@@ -526,49 +508,6 @@ class TestMultiTenantIsolation:
                 format='json',
             )
         assert resp.status_code == 400
-
-
-# =============================================================================
-# OLD ENDPOINT REGRESSION
-# =============================================================================
-
-@pytest.mark.django_db
-class TestOldEndpointRegression:
-    """The legacy /transcript-signals/extract/ still works."""
-
-    def test_old_endpoint_still_functional(
-        self, authed_api_a, activity, patch_active_provider, fake_provider,
-    ):
-        fake_provider.replies = {**CANNED_REPLIES_HAPPY}
-
-        with _apply_patches(_bypass_redis_old):
-            resp = authed_api_a.post(
-                OLD_URL,
-                {'activity_id': str(activity.id), 'transcript': TRANSCRIPT},
-                format='json',
-            )
-
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body['success'] is True
-        assert 'signals_by_stage' in body['data']
-
-    def test_deprecation_header_on_old_endpoint(
-        self, authed_api_a, activity, patch_active_provider, fake_provider,
-    ):
-        fake_provider.replies = {**CANNED_REPLIES_HAPPY}
-
-        with _apply_patches(_bypass_redis_old):
-            resp = authed_api_a.post(
-                OLD_URL,
-                {'activity_id': str(activity.id), 'transcript': TRANSCRIPT},
-                format='json',
-            )
-
-        assert resp.status_code == 200
-        assert resp['Deprecation'] == 'true'
-        assert resp['Sunset'] == TRANSCRIPT_SIGNALS_SUNSET_DATE
-        assert 'activity-extraction/run/' in resp['Link']
 
 
 # =============================================================================

@@ -22,9 +22,8 @@ from app_modules.ai_pipelines.constants import AIPipelineStatus
 from app_modules.ai_pipelines.providers.base import (
     LLMTimeoutError,
     LLMRateLimitError,
-    PromptParseError,
 )
-
+from app_modules.ai_pipelines.prompts.base import PromptParseError
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -175,7 +175,7 @@ describe("UpcomingActivitiesSection", () => {
     );
 
     expect(
-      screen.getByText("No upcoming activities in this sequence yet."),
+      screen.getByText("No activities scheduled after this one. Create a follow-up to continue."),
     ).toBeInTheDocument();
   });
 
