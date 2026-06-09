@@ -10,7 +10,6 @@ state mutation — all writes go through SignalManager.
 Public API:
   get_by_account(account_id, signal_type, status, **filters)
   get_by_contact(contact_id)
-  get_by_cycle(cycle_id)
   format_for_llm(queryset)
 
 Standardisation refactor notes
@@ -30,9 +29,7 @@ generalised to every signal type:
 
 decision_cycle / campaign remain direct FKs on Pain and Objective
 (populated by SignalManager._propagate_activity_context from
-source_activity at create time), so get_by_cycle uses the indexed
-direct filter for those two types and the activity traversal only for
-TechStack — same strategy as before. See Q1 architectural decision.
+source_activity at create time). See Q1 architectural decision.
 
 TechStackSignal still shadow-overrides decision_cycle, campaign, and
 signal_category. The per-type _RELATED_BY_TYPE map remains the single
@@ -265,59 +262,6 @@ class SignalDataService:
                 .select_related(*related)
                 .distinct()
             )
-            result[key] = qs
-        return result
-
-    # =========================================================================
-    # GET BY CYCLE
-    # =========================================================================
-
-    @classmethod
-    def get_by_cycle(cls, cycle_id) -> dict:
-        """
-        Return all signals associated with a decision cycle, across all types.
-
-        Args:
-            cycle_id: UUID of the decision cycle.
-
-        Returns:
-            dict with keys 'pain', 'objective', 'impact', 'tech_stack'.
-
-        TechStack semantics
-        -------------------
-        TechStackSignal has no decision_cycle FK (shadow-overridden —
-        a tool's existence at an account is account-level, not
-        deal-level). For TechStack, this method matches signals where
-        the source Activity belongs to the given decision cycle:
-
-            source_activity__decision_cycle_id = cycle_id
-
-        Mirror of the cluster service's filtering strategy — see
-        SignalClusterService._fetch_techstack_signals for the same
-        join path.
-
-        Signals with source_activity=NULL are excluded for TechStack
-        when filtering by cycle (no Activity → no DC context to match
-        on). This matches the INNER JOIN semantics through nullable FKs.
-        """
-        result = {}
-        for key, model_class in _SIGNAL_TYPE_MAP.items():
-            related = _RELATED_BY_TYPE.get(key, [])
-            if key == 'tech_stack':
-                # No direct decision_cycle FK on TechStack — traverse
-                # source_activity.decision_cycle instead. Same strategy
-                # as SignalClusterService.
-                qs = (
-                    model_class.objects
-                    .filter(source_activity__decision_cycle_id=cycle_id)
-                    .select_related(*related)
-                )
-            else:
-                qs = (
-                    model_class.objects
-                    .filter(decision_cycle_id=cycle_id)
-                    .select_related(*related)
-                )
             result[key] = qs
         return result
 
