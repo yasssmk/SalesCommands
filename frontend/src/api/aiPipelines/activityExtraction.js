@@ -199,6 +199,14 @@ function mapPollResult(pollResult) {
     };
   }
 
+  if (pollResult.status === "not_found") {
+    return {
+      success: false,
+      code: EXTRACTION_OUTCOME_CODES.POLL_FAILED,
+      error: "Previous extraction expired. Please retry.",
+    };
+  }
+
   if (pollResult.status === "failed") {
     const errMsg =
       (pollResult.error && (pollResult.error.message || pollResult.error)) ||

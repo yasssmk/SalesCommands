@@ -254,6 +254,15 @@ function mapPollResult(pollResult) {
     };
   }
 
+  // ---- Not found: operation expired from Redis / never existed ----
+  if (pollResult.status === "not_found") {
+    return {
+      success: false,
+      code: EXTRACTION_OUTCOME_CODES.POLL_FAILED,
+      error: "Previous extraction expired. Please retry.",
+    };
+  }
+
   // ---- Failed: the server marked the op as failed via fail_op ----
   if (pollResult.status === "failed") {
     const errMsg =
