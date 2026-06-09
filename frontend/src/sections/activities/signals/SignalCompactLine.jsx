@@ -22,7 +22,7 @@ import {
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
-import { getTechSummary } from "./utils/signalDisplay";
+import { getTechSummary, getContact, formatContact } from "./utils/signalDisplay";
 
 function truncate(str, max = 80) {
   if (!str) return "—";
@@ -45,6 +45,9 @@ export default function SignalCompactLine({
   const techInfo =
     signalType === "tech-stack" ? getTechSummary(signal) : null;
   const summaryText = techInfo ? techInfo.name : signal.summary;
+  const techSecondary = techInfo
+    ? signal.usage_scope_display || formatContact(getContact(signal))
+    : null;
 
   return (
     <Box
@@ -66,17 +69,32 @@ export default function SignalCompactLine({
     >
       <SignalTypeChip signalType={signalType} size="small" />
 
-      <Typography
-        variant="body2"
-        sx={{
-          flex: 1,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {truncate(summaryText)}
-      </Typography>
+      <Box sx={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
+        <Typography
+          variant="body2"
+          sx={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {truncate(summaryText)}
+        </Typography>
+        {techSecondary && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              display: "block",
+            }}
+          >
+            {techSecondary}
+          </Typography>
+        )}
+      </Box>
 
       <SignalStatusChip status={signal.status} size="small" />
 

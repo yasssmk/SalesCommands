@@ -42,6 +42,7 @@ vi.mock("hooks/useActivityAllSignals", () => ({
         _signalType: "pain",
       },
     ],
+    techStackSignals: [],
     blockerSignals: [
       {
         id: "b1",

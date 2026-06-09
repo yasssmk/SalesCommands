@@ -78,6 +78,7 @@ const mockNextStepSignals = [
 vi.mock("hooks/useActivityAllSignals", () => ({
   default: vi.fn(() => ({
     qualificationSignals: [],
+    techStackSignals: [],
     blockerSignals: [],
     nextStepSignals: mockNextStepSignals,
     allSignals: mockNextStepSignals,

@@ -7,20 +7,22 @@ import { useMemo } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
-import Divider from "@mui/material/Divider";
+import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import { StopOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import {
+  StopOutlined,
+  ThunderboltOutlined,
+  ToolOutlined,
+} from "@ant-design/icons";
 
 // Project imports
 import SignalThemeBlock from "./SignalThemeBlock";
 import BlockerCompactCard from "./BlockerCompactCard";
+import SignalCompactLine from "./SignalCompactLine";
 
-/**
- * Build theme key from what + dimension. Both can be null on edge cases.
- */
 function buildThemeKey(signal) {
   const w = signal.what || "unknown";
   const d = signal.dimension || "unknown";
@@ -37,6 +39,7 @@ function buildThemeLabel(signal) {
 
 export default function SignalsGroupedView({
   qualificationSignals,
+  techStackSignals,
   blockerSignals,
   onSelect,
   onValidate,
@@ -61,7 +64,8 @@ export default function SignalsGroupedView({
 
   const hasQualification = themes.length > 0;
   const hasBlockers = blockerSignals.length > 0;
-  const isEmpty = !hasQualification && !hasBlockers;
+  const hasTechStack = techStackSignals.length > 0;
+  const isEmpty = !hasQualification && !hasBlockers && !hasTechStack;
 
   if (isEmpty) {
     return (
@@ -82,18 +86,18 @@ export default function SignalsGroupedView({
   }
 
   return (
-    <Box>
-      {/* Qualification Section */}
-      {hasQualification && (
-        <Box sx={{ mb: 3 }}>
-          <Typography
-            variant="overline"
-            color="text.secondary"
-            sx={{ mb: 1.5, display: "block", letterSpacing: 1.5 }}
-          >
-            Qualification
-          </Typography>
-          {themes.map((theme) => (
+    <Grid container spacing={3}>
+      {/* Left column — Qualification */}
+      <Grid item xs={12} md={6}>
+        <Typography
+          variant="overline"
+          color="text.secondary"
+          sx={{ mb: 1.5, display: "block", letterSpacing: 1.5 }}
+        >
+          Qualification
+        </Typography>
+        {hasQualification ? (
+          themes.map((theme) => (
             <SignalThemeBlock
               key={theme.key}
               themeKey={theme.key}
@@ -104,32 +108,32 @@ export default function SignalsGroupedView({
               onReject={onReject}
               isLocked={isLocked}
             />
-          ))}
-        </Box>
-      )}
+          ))
+        ) : (
+          <EmptyZone text="No qualification signals extracted yet" />
+        )}
+      </Grid>
 
-      {/* Divider between sections */}
-      {hasQualification && hasBlockers && <Divider sx={{ mb: 3 }} />}
-
-      {/* Blockers Section */}
-      {hasBlockers && (
-        <Box>
-          <Stack
-            direction="row"
-            spacing={1}
-            alignItems="center"
-            sx={{ mb: 1.5 }}
+      {/* Right column — Blockers + TechStack stacked */}
+      <Grid item xs={12} md={6}>
+        {/* Blockers section */}
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{ mb: 1.5 }}
+        >
+          <StopOutlined style={{ fontSize: 16, color: "#8c8c8c" }} />
+          <Typography
+            variant="overline"
+            color="text.secondary"
+            sx={{ letterSpacing: 1.5 }}
           >
-            <StopOutlined style={{ fontSize: 16, color: "#8c8c8c" }} />
-            <Typography
-              variant="overline"
-              color="text.secondary"
-              sx={{ letterSpacing: 1.5 }}
-            >
-              Blockers / Objections
-            </Typography>
-          </Stack>
-          {blockerSignals.map((signal) => (
+            Blockers / Objections
+          </Typography>
+        </Stack>
+        {hasBlockers ? (
+          blockerSignals.map((signal) => (
             <BlockerCompactCard
               key={signal.id}
               signal={signal}
@@ -138,12 +142,71 @@ export default function SignalsGroupedView({
               onReject={onReject}
               isLocked={isLocked}
             />
-          ))}
-        </Box>
-      )}
+          ))
+        ) : (
+          <EmptyZone text="No blockers identified" />
+        )}
+
+        {/* TechStack section */}
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{ mt: 3, mb: 1.5 }}
+        >
+          <ToolOutlined style={{ fontSize: 16, color: "#8c8c8c" }} />
+          <Typography
+            variant="overline"
+            color="text.secondary"
+            sx={{ letterSpacing: 1.5 }}
+          >
+            Tech Stack
+          </Typography>
+        </Stack>
+        {hasTechStack ? (
+          <Stack spacing={0}>
+            {techStackSignals.map((signal) => (
+              <SignalCompactLine
+                key={signal.id}
+                signal={signal}
+                signalType="tech-stack"
+                onSelect={onSelect}
+                onValidate={onValidate}
+                onReject={onReject}
+                isLocked={isLocked}
+              />
+            ))}
+          </Stack>
+        ) : (
+          <EmptyZone text="No tools detected" />
+        )}
+      </Grid>
+    </Grid>
+  );
+}
+
+function EmptyZone({ text }) {
+  return (
+    <Box
+      sx={{
+        py: 3,
+        px: 2,
+        textAlign: "center",
+        bgcolor: "grey.50",
+        borderRadius: 1,
+        mb: 1.5,
+      }}
+    >
+      <Typography variant="body2" color="text.secondary">
+        {text}
+      </Typography>
     </Box>
   );
 }
+
+EmptyZone.propTypes = {
+  text: PropTypes.string.isRequired,
+};
 
 SignalsGroupedView.propTypes = {
   qualificationSignals: PropTypes.arrayOf(
@@ -154,6 +217,11 @@ SignalsGroupedView.propTypes = {
       what_display: PropTypes.string,
       dimension: PropTypes.string,
       dimension_display: PropTypes.string,
+    }),
+  ).isRequired,
+  techStackSignals: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
     }),
   ).isRequired,
   blockerSignals: PropTypes.arrayOf(

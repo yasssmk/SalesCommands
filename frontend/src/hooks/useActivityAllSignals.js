@@ -3,7 +3,7 @@
 import { useMemo, useCallback } from "react";
 import { useGetSignalsByActivity } from "api/signals/signals";
 
-const QUALIFICATION_TYPES = ["pain", "objective", "impact", "tech-stack"];
+const QUALIFICATION_TYPES = ["pain", "objective", "impact"];
 const ALL_TYPES = [...QUALIFICATION_TYPES, "blockers", "next-steps"];
 
 /**
@@ -45,9 +45,13 @@ export default function useActivityAllSignals(activityId) {
       ...pain.signals.map((s) => ({ ...s, _signalType: "pain" })),
       ...objective.signals.map((s) => ({ ...s, _signalType: "objective" })),
       ...impact.signals.map((s) => ({ ...s, _signalType: "impact" })),
-      ...techStack.signals.map((s) => ({ ...s, _signalType: "tech-stack" })),
     ],
-    [pain.signals, objective.signals, impact.signals, techStack.signals],
+    [pain.signals, objective.signals, impact.signals],
+  );
+
+  const techStackSignals = useMemo(
+    () => techStack.signals.map((s) => ({ ...s, _signalType: "tech-stack" })),
+    [techStack.signals],
   );
 
   const blockerSignals = useMemo(
@@ -61,8 +65,8 @@ export default function useActivityAllSignals(activityId) {
   );
 
   const allSignals = useMemo(
-    () => [...qualificationSignals, ...blockerSignals, ...nextStepSignals],
-    [qualificationSignals, blockerSignals, nextStepSignals],
+    () => [...qualificationSignals, ...techStackSignals, ...blockerSignals, ...nextStepSignals],
+    [qualificationSignals, techStackSignals, blockerSignals, nextStepSignals],
   );
 
   const loading =
@@ -100,6 +104,7 @@ export default function useActivityAllSignals(activityId) {
   return {
     signalsByType,
     qualificationSignals,
+    techStackSignals,
     blockerSignals,
     nextStepSignals,
     allSignals,
