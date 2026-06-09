@@ -18,6 +18,7 @@ import Typography from "@mui/material/Typography";
 import {
   PlusOutlined,
   InboxOutlined,
+  RocketOutlined,
 } from "@ant-design/icons";
 
 // Project imports
@@ -30,10 +31,26 @@ import {
 } from "utils/displayError";
 
 import AISuggestionCard from "components/cards/nextSteps/AISuggestionCard";
-import LinkedActivityCard from "components/cards/nextSteps/LinkedActivityCard";
 import NextStepsFilterBar from "sections/activities/nextSteps/NextStepsFilterBar";
+import NextStepSuggestionDrawer from "sections/activities/nextSteps/NextStepSuggestionDrawer";
+import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+
+// ==============================|| SORT HELPERS ||============================== //
+
+const STATUS_ORDER = { PENDING: 0, VALIDATED: 1, REJECTED: 2 };
+
+function sortSignals(signals) {
+  return [...signals].sort((a, b) => {
+    const orderA = STATUS_ORDER[a.status] ?? 3;
+    const orderB = STATUS_ORDER[b.status] ?? 3;
+    if (orderA !== orderB) return orderA - orderB;
+    const dateA = a.suggested_due_date || "";
+    const dateB = b.suggested_due_date || "";
+    return dateA.localeCompare(dateB);
+  });
+}
 
 // ==============================|| ACTIVITY NEXT STEPS TAB ||============================== //
 
@@ -55,6 +72,10 @@ export default function ActivityNextStepsTab({
   const [activeFilter, setActiveFilter] = useState("all-active");
   const [includeRejected, setIncludeRejected] = useState(false);
 
+  // Drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerSignal, setDrawerSignal] = useState(null);
+
   // Activity modal state (convert from signal OR manual add)
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [convertSignal, setConvertSignal] = useState(null);
@@ -63,12 +84,12 @@ export default function ActivityNextStepsTab({
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editSignal, setEditSignal] = useState(null);
 
-  // ==============================|| FILTERED SIGNALS ||============================== //
+  // ==============================|| FILTERED + SORTED SIGNALS ||============================== //
 
   const filteredSignals = useMemo(() => {
     if (!nextStepSignals) return [];
 
-    return nextStepSignals.filter((s) => {
+    const filtered = nextStepSignals.filter((s) => {
       if (s.status === "REJECTED") return includeRejected;
 
       if (activeFilter === "all-active") {
@@ -76,34 +97,34 @@ export default function ActivityNextStepsTab({
       }
       return s.status === activeFilter;
     });
+
+    return sortSignals(filtered);
   }, [nextStepSignals, activeFilter, includeRejected]);
 
-  // Separate PENDING (AI Suggestions) from VALIDATED (with linked activity)
-  const pendingSignals = useMemo(
-    () => filteredSignals.filter((s) => s.status === "PENDING"),
-    [filteredSignals],
+  const pendingCount = useMemo(
+    () => (nextStepSignals || []).filter((s) => s.status === "PENDING").length,
+    [nextStepSignals],
   );
 
-  const convertedSignals = useMemo(
-    () => filteredSignals.filter((s) => s.status === "VALIDATED"),
-    [filteredSignals],
-  );
-
-  const rejectedSignals = useMemo(
-    () => filteredSignals.filter((s) => s.status === "REJECTED"),
-    [filteredSignals],
-  );
-
-  // Linked activities from converted signals
-  const linkedActivities = useMemo(
+  const convertedCount = useMemo(
     () =>
-      convertedSignals
-        .map((s) => s.linked_activity)
-        .filter(Boolean),
-    [convertedSignals],
+      (nextStepSignals || []).filter(
+        (s) => s.status === "VALIDATED" && s.linked_activity,
+      ).length,
+    [nextStepSignals],
   );
 
   // ==============================|| HANDLERS ||============================== //
+
+  const handleSelect = useCallback((signal) => {
+    setDrawerSignal(signal);
+    setDrawerOpen(true);
+  }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    setDrawerOpen(false);
+    setDrawerSignal(null);
+  }, []);
 
   const handleConvert = useCallback((signal) => {
     setConvertSignal(signal);
@@ -127,11 +148,12 @@ export default function ActivityNextStepsTab({
         displaySuccessSnackbar("Suggestion rejected");
         mutateAll();
         mutateCounts?.();
+        handleCloseDrawer();
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts],
+    [mutateAll, mutateCounts, handleCloseDrawer],
   );
 
   const handleViewActivity = useCallback(
@@ -152,6 +174,14 @@ export default function ActivityNextStepsTab({
     mutateAll();
     mutateCounts?.();
   }, [mutateAll, mutateCounts]);
+
+  const handleCreateActivity = useCallback(
+    (activityType) => {
+      setConvertSignal(null);
+      setActivityModalOpen(true);
+    },
+    [],
+  );
 
   // ==============================|| LOADING / ERROR ||============================== //
 
@@ -202,6 +232,21 @@ export default function ActivityNextStepsTab({
           )}
         </Stack>
 
+        {/* Upcoming Activities section (always shown when in sequence) */}
+        {activity?.sequence_context && (
+          <Box mt={4}>
+            <Typography variant="h6" sx={{ mb: 1.5 }}>
+              <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
+              Upcoming Activities
+            </Typography>
+            <UpcomingActivitiesSection
+              activity={activity}
+              onCreateActivity={handleCreateActivity}
+              isLocked={isLocked}
+            />
+          </Box>
+        )}
+
         {/* Add activity modal */}
         {accountId && (
           <ActivityModal
@@ -250,11 +295,11 @@ export default function ActivityNextStepsTab({
 
       {/* Summary line */}
       <Typography variant="body2" color="text.secondary" mb={1.5}>
-        {pendingSignals.length > 0 &&
-          `${pendingSignals.length} AI suggestion${pendingSignals.length > 1 ? "s" : ""} to handle`}
-        {pendingSignals.length > 0 && linkedActivities.length > 0 && " · "}
-        {linkedActivities.length > 0 &&
-          `${linkedActivities.length} activit${linkedActivities.length > 1 ? "ies" : "y"} created`}
+        {pendingCount > 0 &&
+          `${pendingCount} AI suggestion${pendingCount > 1 ? "s" : ""} to handle`}
+        {pendingCount > 0 && convertedCount > 0 && " · "}
+        {convertedCount > 0 &&
+          `${convertedCount} activit${convertedCount > 1 ? "ies" : "y"} created`}
       </Typography>
 
       {/* Filter bar */}
@@ -266,9 +311,9 @@ export default function ActivityNextStepsTab({
         signals={nextStepSignals}
       />
 
+      {/* AI Suggestions */}
       <Box mt={2}>
-        {/* Section — AI Suggestions (PENDING) */}
-        {pendingSignals.length > 0 && (
+        {filteredSignals.length > 0 ? (
           <Box mb={3}>
             <Typography
               variant="subtitle2"
@@ -279,83 +324,21 @@ export default function ActivityNextStepsTab({
               AI Suggestions
             </Typography>
             <Stack spacing={1.5}>
-              {pendingSignals.map((signal) => (
+              {filteredSignals.map((signal) => (
                 <AISuggestionCard
                   key={signal.id}
                   signal={signal}
                   onConvert={handleConvert}
                   onEdit={handleEdit}
                   onReject={handleReject}
+                  onViewActivity={handleViewActivity}
+                  onSelect={handleSelect}
                   isLocked={isLocked}
                 />
               ))}
             </Stack>
           </Box>
-        )}
-
-        {/* Section — Converted (VALIDATED with linked activity) */}
-        {convertedSignals.length > 0 && (
-          <Box mb={3}>
-            {pendingSignals.length > 0 && <Divider sx={{ mb: 2 }} />}
-            <Typography
-              variant="subtitle2"
-              color="text.secondary"
-              mb={1}
-              fontWeight={600}
-            >
-              Linked Activities
-            </Typography>
-            <Stack spacing={1.5}>
-              {convertedSignals.map((signal) =>
-                signal.linked_activity ? (
-                  <LinkedActivityCard
-                    key={signal.id}
-                    activity={signal.linked_activity}
-                    onOpen={handleViewActivity}
-                  />
-                ) : (
-                  <AISuggestionCard
-                    key={signal.id}
-                    signal={signal}
-                    onEdit={handleEdit}
-                    onViewActivity={handleViewActivity}
-                    isLocked={isLocked}
-                  />
-                ),
-              )}
-            </Stack>
-          </Box>
-        )}
-
-        {/* Section — Rejected (only if includeRejected) */}
-        {rejectedSignals.length > 0 && (
-          <Box mb={3}>
-            {(pendingSignals.length > 0 || convertedSignals.length > 0) && (
-              <Divider sx={{ mb: 2 }} />
-            )}
-            <Typography
-              variant="subtitle2"
-              color="text.secondary"
-              mb={1}
-              fontWeight={600}
-            >
-              Rejected
-            </Typography>
-            <Stack spacing={1.5}>
-              {rejectedSignals.map((signal) => (
-                <AISuggestionCard
-                  key={signal.id}
-                  signal={signal}
-                  onEdit={handleEdit}
-                  isLocked={isLocked}
-                />
-              ))}
-            </Stack>
-          </Box>
-        )}
-
-        {/* Empty filtered state */}
-        {filteredSignals.length === 0 && (
+        ) : (
           <Box py={4} textAlign="center">
             <Typography variant="body2" color="text.secondary">
               No suggestions match the current filter.
@@ -363,6 +346,30 @@ export default function ActivityNextStepsTab({
           </Box>
         )}
       </Box>
+
+      {/* Upcoming Activities section */}
+      <Divider sx={{ my: 2 }} />
+      <Typography variant="h6" sx={{ mb: 1.5 }}>
+        <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
+        Upcoming Activities
+      </Typography>
+      <UpcomingActivitiesSection
+        activity={activity}
+        onCreateActivity={handleCreateActivity}
+        isLocked={isLocked}
+      />
+
+      {/* Suggestion Drawer */}
+      <NextStepSuggestionDrawer
+        open={drawerOpen}
+        signal={drawerSignal}
+        onClose={handleCloseDrawer}
+        onConvert={handleConvert}
+        onReject={handleReject}
+        onEdit={handleEdit}
+        onViewActivity={handleViewActivity}
+        isLocked={isLocked}
+      />
 
       {/* Activity modal (convert from signal or manual add) */}
       {accountId && (
@@ -408,6 +415,10 @@ ActivityNextStepsTab.propTypes = {
     id: PropTypes.string,
     account: PropTypes.string,
     status: PropTypes.string,
+    decision_step: PropTypes.string,
+    decision_cycle: PropTypes.string,
+    sequence_context: PropTypes.object,
+    campaign_detail: PropTypes.object,
   }),
   isLocked: PropTypes.bool,
   mutateCounts: PropTypes.func,

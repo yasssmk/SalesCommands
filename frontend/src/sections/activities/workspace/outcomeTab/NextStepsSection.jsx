@@ -28,24 +28,17 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
-import Chip from "@mui/material/Chip";
-import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // ant-design icons
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import LinkOutlined from "@ant-design/icons/LinkOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import RocketOutlined from "@ant-design/icons/RocketOutlined";
 import TrophyOutlined from "@ant-design/icons/TrophyOutlined";
 
 // project imports
-import {
-  ACTIVITY_TYPE_LABELS,
-  ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_COLORS,
-} from "api/accounts/activities";
+import ActivityMiniCard from "components/cards/activities/ActivityMiniCard";
 
 // ==============================|| SECTION CARD WRAPPER ||============================== //
 
@@ -92,125 +85,6 @@ SectionCard.propTypes = {
   action: PropTypes.node,
 };
 
-// ==============================|| ACTIVITY MINI CARD ||============================== //
-
-/**
- * Internal helper — compact card for an activity reference shown in
- * the "Upcoming in sequence" list. Click navigates to the activity
- * workspace; optional unlink action when caller passes showUnlink.
- */
-function ActivityMiniCard({
-  activity: activityItem,
-  onNavigate,
-  onUnlink,
-  showUnlink = false,
-}) {
-  const theme = useTheme();
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return null;
-    return new Date(dateStr).toLocaleDateString();
-  };
-
-  const displayDate = activityItem.scheduled_date || activityItem.due_date;
-  const stepName = activityItem.decision_step_name;
-
-  return (
-    <Card
-      variant="outlined"
-      sx={{
-        p: 1.5,
-        cursor: "pointer",
-        transition: "all 0.15s ease-in-out",
-        "&:hover": {
-          bgcolor: "action.hover",
-          borderColor: theme.palette.primary.light,
-        },
-      }}
-      onClick={() => onNavigate(activityItem.id)}
-    >
-      <Stack spacing={1}>
-        {/* Row 1: Type + Title */}
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <Chip
-            label={
-              ACTIVITY_TYPE_LABELS[activityItem.activity_type] ||
-              activityItem.activity_type
-            }
-            size="small"
-            variant="outlined"
-            sx={{ minWidth: 80 }}
-          />
-          <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1 }}>
-            {activityItem.title}
-          </Typography>
-          {showUnlink && (
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUnlink?.();
-              }}
-              sx={{ ml: "auto" }}
-            >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-          )}
-        </Stack>
-
-        {/* Row 2: Meta info (step, date, status) */}
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
-        >
-          {stepName && (
-            <Chip
-              label={stepName}
-              size="small"
-              variant="filled"
-              sx={{
-                height: 20,
-                fontSize: "0.7rem",
-                bgcolor: theme.palette.grey[100],
-                color: theme.palette.text.secondary,
-              }}
-            />
-          )}
-          {displayDate && (
-            <Typography variant="caption" color="text.secondary">
-              {formatDate(displayDate)}
-            </Typography>
-          )}
-          <Chip
-            label={
-              activityItem.is_overdue
-                ? "Overdue"
-                : ACTIVITY_STATUS_LABELS[activityItem.status] ||
-                  activityItem.status
-            }
-            size="small"
-            color={
-              activityItem.is_overdue
-                ? "error"
-                : ACTIVITY_STATUS_COLORS[activityItem.status] || "default"
-            }
-            sx={{ height: 20, fontSize: "0.7rem" }}
-          />
-        </Stack>
-      </Stack>
-    </Card>
-  );
-}
-
-ActivityMiniCard.propTypes = {
-  activity: PropTypes.object.isRequired,
-  onNavigate: PropTypes.func.isRequired,
-  onUnlink: PropTypes.func,
-  showUnlink: PropTypes.bool,
-};
 
 // ==============================|| NEXT STEPS SECTION ||============================== //
 
