@@ -32,8 +32,9 @@ class TestSingleActiveCycleInvariant:
             owner=user_a,
             name='Second Cycle',
             is_active=True,
+            client_id=account.client_id,   # match production: client_id set on the instance before save()
         )
-        second.save(user=user_a, client_id=account.client_id)
+        second.save(user=user_a)
 
         cycle.refresh_from_db()
         assert cycle.is_active is False
