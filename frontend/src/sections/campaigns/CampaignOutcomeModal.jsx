@@ -516,7 +516,8 @@ export default function CampaignOutcomeModal({
 
   // ── Derive context from active activity ──
   const actContacts = activeActivity?.contacts || [];
-  const account = activeActivity?.account || null;
+  const account = activeActivity?.account_detail
+    ?? (typeof activeActivity?.account === 'object' ? activeActivity.account : null);
 
   // In Mode A the user chose a specific contact; in Mode B use first contact.
   const primaryContact = isModeB
@@ -880,7 +881,7 @@ export default function CampaignOutcomeModal({
                 <ActivityModal
                   open={activityModalOpen}
                   onClose={() => setActivityModalOpen(false)}
-                  accountId={activeActivity.account?.id}
+                  accountId={activeActivity?.account_detail?.id ?? (typeof activeActivity?.account === 'string' ? activeActivity.account : activeActivity?.account?.id)}
                   sourceActivityId={activeActivity.id}
                   defaultActivityType="MEETING"
                   onSuccess={() => {
