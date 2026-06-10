@@ -446,9 +446,9 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
     def is_current(self):
         """
         Check if this is the current step.
-        Current = not VALIDATED/REJECTED and previous_step is VALIDATED (if any).
+        Current = not VALIDATED and previous_step is VALIDATED (if any).
         """
-        if self.status in [DecisionStepStatus.VALIDATED, DecisionStepStatus.REJECTED]:
+        if self.status == DecisionStepStatus.VALIDATED:
             return False
         
         if self.previous_step is None:
