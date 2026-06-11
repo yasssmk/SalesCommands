@@ -12,11 +12,11 @@ from rest_framework import status
 
 
 def _people_url(cycle_id):
-    return f'/decision-cycles/{cycle_id}/people/'
+    return f'/decision_cycles/{cycle_id}/people/'
 
 
 def _readiness_url(cycle_id):
-    return f'/decision-cycles/{cycle_id}/readiness/'
+    return f'/decision_cycles/{cycle_id}/readiness/'
 
 
 # =============================================================================

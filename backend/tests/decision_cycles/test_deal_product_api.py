@@ -13,11 +13,11 @@ from rest_framework import status
 
 
 def _products_url(cycle_id):
-    return f'/decision-cycles/{cycle_id}/products/'
+    return f'/decision_cycles/{cycle_id}/products/'
 
 
 def _product_detail_url(cycle_id, product_id):
-    return f'/decision-cycles/{cycle_id}/products/{product_id}/'
+    return f'/decision_cycles/{cycle_id}/products/{product_id}/'
 
 
 # =============================================================================

@@ -13,15 +13,15 @@ from rest_framework import status
 
 
 def _snapshots_url(cycle_id):
-    return f'/decision-cycles/{cycle_id}/health-snapshots/'
+    return f'/decision_cycles/{cycle_id}/health-snapshots/'
 
 
 def _snapshot_detail_url(cycle_id, snapshot_id):
-    return f'/decision-cycles/{cycle_id}/health-snapshots/{snapshot_id}/'
+    return f'/decision_cycles/{cycle_id}/health-snapshots/{snapshot_id}/'
 
 
 def _snapshot_latest_url(cycle_id):
-    return f'/decision-cycles/{cycle_id}/health-snapshots/latest/'
+    return f'/decision_cycles/{cycle_id}/health-snapshots/latest/'
 
 
 # =============================================================================

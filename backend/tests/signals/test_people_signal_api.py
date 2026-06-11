@@ -49,13 +49,14 @@ class TestPeopleSignalCreate:
         assert data['role'] == PeopleRole.CHAMPION
         assert data['status'] == SignalStatus.VALIDATED
 
-    def test_create_llm_extracted_starts_pending(self, authed_api_a, account, activity):
+    def test_create_llm_extracted_starts_pending(self, authed_api_a, account, activity, contact):
         payload = {
             'signal_type': 'people',
             'source': 'LLM_EXTRACTED',
             'account': str(account.id),
             'source_activity': str(activity.id),
             'role': PeopleRole.ECONOMIC_BUYER,
+            'target_contact': str(contact.id),
             'notes': 'Mentioned budget authority',
         }
         resp = authed_api_a.post(PEOPLE_URL, payload, format='json')
@@ -81,13 +82,14 @@ class TestPeopleSignalCreate:
 @pytest.mark.django_db
 class TestPeopleSignalRead:
 
-    def test_list_returns_people_signals(self, authed_api_a, account, activity):
+    def test_list_returns_people_signals(self, authed_api_a, account, activity, contact):
         authed_api_a.post(PEOPLE_URL, {
             'signal_type': 'people',
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
             'role': PeopleRole.END_USER,
+            'target_contact': str(contact.id),
         }, format='json')
 
         resp = authed_api_a.get(PEOPLE_URL)
@@ -95,13 +97,14 @@ class TestPeopleSignalRead:
         results = resp.json()['data']['results']
         assert len(results) >= 1
 
-    def test_retrieve_detail(self, authed_api_a, account, activity):
+    def test_retrieve_detail(self, authed_api_a, account, activity, contact):
         create_resp = authed_api_a.post(PEOPLE_URL, {
             'signal_type': 'people',
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
             'role': PeopleRole.DECISION_MAKER,
+            'target_contact': str(contact.id),
         }, format='json')
         pk = create_resp.json()['data']['id']
 
@@ -118,13 +121,14 @@ class TestPeopleSignalRead:
 @pytest.mark.django_db
 class TestPeopleSignalUpdate:
 
-    def test_patch_notes(self, authed_api_a, account, activity):
+    def test_patch_notes(self, authed_api_a, account, activity, contact):
         create_resp = authed_api_a.post(PEOPLE_URL, {
             'signal_type': 'people',
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
             'role': PeopleRole.CHAMPION,
+            'target_contact': str(contact.id),
         }, format='json')
         pk = create_resp.json()['data']['id']
 
@@ -145,24 +149,25 @@ class TestPeopleSignalUpdate:
 @pytest.mark.django_db
 class TestPeopleSignalLifecycle:
 
-    def _create_pending(self, authed_api, account, activity):
+    def _create_pending(self, authed_api, account, activity, contact):
         resp = authed_api.post(PEOPLE_URL, {
             'signal_type': 'people',
             'source': 'LLM_EXTRACTED',
             'account': str(account.id),
             'source_activity': str(activity.id),
             'role': PeopleRole.PROCUREMENT,
+            'target_contact': str(contact.id),
         }, format='json')
         return resp.json()['data']['id']
 
-    def test_validate(self, authed_api_a, account, activity):
-        pk = self._create_pending(authed_api_a, account, activity)
+    def test_validate(self, authed_api_a, account, activity, contact):
+        pk = self._create_pending(authed_api_a, account, activity, contact)
         resp = authed_api_a.post(_action_url(pk, 'validate'))
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()['data']['status'] == SignalStatus.VALIDATED
 
-    def test_reject(self, authed_api_a, account, activity):
-        pk = self._create_pending(authed_api_a, account, activity)
+    def test_reject(self, authed_api_a, account, activity, contact):
+        pk = self._create_pending(authed_api_a, account, activity, contact)
         resp = authed_api_a.post(
             _action_url(pk, 'reject'),
             {'reason': 'Incorrect attribution'},
@@ -171,16 +176,16 @@ class TestPeopleSignalLifecycle:
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()['data']['status'] == SignalStatus.REJECTED
 
-    def test_reopen_validated(self, authed_api_a, account, activity):
-        pk = self._create_pending(authed_api_a, account, activity)
+    def test_reopen_validated(self, authed_api_a, account, activity, contact):
+        pk = self._create_pending(authed_api_a, account, activity, contact)
         authed_api_a.post(_action_url(pk, 'validate'))
 
         resp = authed_api_a.post(_action_url(pk, 'reopen'))
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()['data']['status'] == SignalStatus.PENDING
 
-    def test_validate_non_pending_fails(self, authed_api_a, account, activity):
-        pk = self._create_pending(authed_api_a, account, activity)
+    def test_validate_non_pending_fails(self, authed_api_a, account, activity, contact):
+        pk = self._create_pending(authed_api_a, account, activity, contact)
         authed_api_a.post(_action_url(pk, 'validate'))
 
         resp = authed_api_a.post(_action_url(pk, 'validate'))
@@ -196,7 +201,7 @@ class TestPeopleSignalLifecycle:
 class TestPeopleSignalIsolation:
 
     def test_tenant_b_cannot_see_tenant_a_signal(
-        self, authed_api_a, authed_api_b, account, activity
+        self, authed_api_a, authed_api_b, account, activity, contact
     ):
         create_resp = authed_api_a.post(PEOPLE_URL, {
             'signal_type': 'people',
@@ -204,6 +209,7 @@ class TestPeopleSignalIsolation:
             'account': str(account.id),
             'source_activity': str(activity.id),
             'role': PeopleRole.CHAMPION,
+            'target_contact': str(contact.id),
         }, format='json')
         pk = create_resp.json()['data']['id']
 
