@@ -19,6 +19,8 @@ Usage:
     # result = {'qualified': [...], 'unqualified': [...]}
 """
 
+from django.db.models import Count
+
 from app_modules.signals.constants import SignalStatus
 
 
@@ -134,13 +136,13 @@ class PeopleConsolidationService:
             .select_related('standard_department')
         )
 
-        activity_counts = {}
-        for cid in all_ids:
-            activity_counts[cid] = (
-                Activity.objects
-                .filter(decision_cycle=dc, contacts__id=cid)
-                .count()
-            )
+        activity_counts = dict(
+            Activity.objects
+            .filter(decision_cycle=dc)
+            .exclude(contacts__id=None)
+            .values_list('contacts__id')
+            .annotate(n=Count('id'))
+        )
 
         result = []
         for c in contacts:

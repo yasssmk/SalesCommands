@@ -36,6 +36,7 @@ def _make_request_context(user, client_id, decision_cycle=None):
     }
     ctx = {
         'request': request,
+        'client_id': str(client_id),
     }
     if decision_cycle is not None:
         ctx['decision_cycle'] = decision_cycle

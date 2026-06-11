@@ -11,7 +11,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
-from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment
+from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment, DealHealthSnapshot, DealProduct
 from .constants import PipelineStep, DecisionStepStatus, PIPELINE_STEPS_CONFIG
 
 
@@ -1270,7 +1270,7 @@ class DealHealthSnapshotListSerializer(ClientScopeManager.SerializerMixin, seria
     """
 
     class Meta:
-        model = None  # set below after import
+        model = DealHealthSnapshot
         fields = [
             'id',
             'decision_cycle',
@@ -1290,7 +1290,7 @@ class DealHealthSnapshotDetailSerializer(ClientScopeManager.SerializerMixin, ser
     pipeline_run_summary = serializers.SerializerMethodField()
 
     class Meta:
-        model = None  # set below after import
+        model = DealHealthSnapshot
         fields = [
             'id',
             'decision_cycle',
@@ -1332,7 +1332,7 @@ class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.
     )
 
     class Meta:
-        model = None  # set below after import
+        model = DealProduct
         fields = [
             'id',
             'decision_cycle',
@@ -1373,7 +1373,7 @@ class DealProductCreateSerializer(ClientScopeManager.SerializerMixin, serializer
     """
 
     class Meta:
-        model = None  # set below after import
+        model = DealProduct
         fields = [
             'product_catalog_entry',
             'quantity',
@@ -1399,7 +1399,6 @@ class DealProductCreateSerializer(ClientScopeManager.SerializerMixin, serializer
             )
         attrs['decision_cycle'] = decision_cycle
 
-        from .models import DealProduct
         self.validate_client_scoped_uniqueness(
             data=attrs,
             unique_fields=['decision_cycle', 'product_catalog_entry'],
@@ -1413,7 +1412,6 @@ class DealProductCreateSerializer(ClientScopeManager.SerializerMixin, serializer
 
     def create(self, validated_data):
         user = self.context.get('request').user if self.context.get('request') else None
-        from .models import DealProduct
         instance = DealProduct(**validated_data)
         instance.save(user=user)
         return instance
@@ -1430,7 +1428,7 @@ class DealProductUpdateSerializer(ClientScopeManager.SerializerMixin, serializer
     """
 
     class Meta:
-        model = None  # set below after import
+        model = DealProduct
         fields = [
             'quantity',
             'unit_price',
@@ -1449,20 +1447,3 @@ class DealProductUpdateSerializer(ClientScopeManager.SerializerMixin, serializer
             setattr(instance, attr, value)
         instance.save(user=user)
         return instance
-
-
-# ============================================================================
-# DEFERRED META MODEL ASSIGNMENT
-# ============================================================================
-# Import models here (after all classes are defined) to avoid circular
-# imports — DecisionCycle is already imported at the top of this file,
-# but DealHealthSnapshot and DealProduct were added later in models.py
-# and may reference modules that import serializers.
-
-from .models import DealHealthSnapshot, DealProduct  # noqa: E402
-
-DealHealthSnapshotListSerializer.Meta.model = DealHealthSnapshot
-DealHealthSnapshotDetailSerializer.Meta.model = DealHealthSnapshot
-DealProductListSerializer.Meta.model = DealProduct
-DealProductCreateSerializer.Meta.model = DealProduct
-DealProductUpdateSerializer.Meta.model = DealProduct
