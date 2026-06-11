@@ -10,16 +10,12 @@ Security model mirrors DealProductViewSet: access is governed by the
 parent cycle via CycleScopedMixin._resolve_parent_cycle().
 """
 
-from django.http import Http404
-
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.apps_shared_methods import BaseAPIView
-from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import ctx_from_request, get_logger
 
@@ -40,7 +36,7 @@ class DealHealthSnapshotViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelVie
     """
     Read-only endpoints for DealHealthSnapshot, nested under a DecisionCycle.
 
-    Endpoints (mounted under /decision-cycles/{cycle_id}/health-snapshots/):
+    Endpoints (mounted under /decision_cycles/{cycle_id}/health-snapshots/):
       GET  /                → list (all snapshots, newest first)
       GET  /{pk}/           → retrieve
       GET  /latest/         → most recent snapshot
@@ -48,6 +44,7 @@ class DealHealthSnapshotViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelVie
 
     queryset = DealHealthSnapshot.objects.all()
     entity_name = 'deal_health_snapshot'
+    http_method_names = ['get', 'head', 'options']
 
     authentication_classes = [CustomJWTAuthentication]
     permission_classes = [IsAuthenticated, ScopedPermission]
@@ -112,7 +109,7 @@ class DealHealthSnapshotViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelVie
         return Response({'success': True, 'data': serializer.data})
 
     @action(detail=False, methods=['get'], url_path='latest')
-    def latest(self, request):
+    def latest(self, request, *args, **kwargs):
         ctx = ctx_from_request(request)
         cycle = self._resolve_parent_cycle()
 
@@ -131,19 +128,3 @@ class DealHealthSnapshotViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelVie
             snapshot, context=self.get_serializer_context(),
         )
         return Response({'success': True, 'data': serializer.data})
-
-    # =========================================================================
-    # BLOCKED WRITES — snapshots are created by the pipeline only
-    # =========================================================================
-
-    def create(self, request, *args, **kwargs):
-        raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
-
-    def update(self, request, *args, **kwargs):
-        raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
-
-    def partial_update(self, request, *args, **kwargs):
-        raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)
-
-    def destroy(self, request, *args, **kwargs):
-        raise StandardizedValidationError(CoreErrorMessages.PERMISSION_DENIED)

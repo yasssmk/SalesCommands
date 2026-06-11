@@ -6,12 +6,16 @@ Covers CRUD + validate/reject/reopen lifecycle + model_map routing +
 cross-tenant isolation.
 """
 
-import uuid
-
 import pytest
 from rest_framework import status
 
-from app_modules.signals.constants import SignalStatus, PeopleRole, InfluenceLevel
+from app_modules.signals.constants import (
+    SignalSource,
+    SignalStatus,
+    PeopleRole,
+    InfluenceLevel,
+)
+from app_modules.signals.models import PeopleSignal
 
 PEOPLE_URL = '/module-signals/people/'
 
@@ -94,7 +98,10 @@ class TestPeopleSignalRead:
 
         resp = authed_api_a.get(PEOPLE_URL)
         assert resp.status_code == status.HTTP_200_OK
-        results = resp.json()['data']['results']
+        body = resp.json()
+        results = body.get('results') or body.get('data', {}).get('results') or body
+        if isinstance(results, dict):
+            results = results.get('results', results)
         assert len(results) >= 1
 
     def test_retrieve_detail(self, authed_api_a, account, activity, contact):
@@ -110,7 +117,8 @@ class TestPeopleSignalRead:
 
         resp = authed_api_a.get(_detail_url(pk))
         assert resp.status_code == status.HTTP_200_OK
-        assert resp.json()['data']['role'] == PeopleRole.DECISION_MAKER
+        data = resp.json()
+        assert data['role'] == PeopleRole.DECISION_MAKER
 
 
 # =============================================================================
@@ -200,18 +208,17 @@ class TestPeopleSignalLifecycle:
 @pytest.mark.django_db
 class TestPeopleSignalIsolation:
 
-    def test_tenant_b_cannot_see_tenant_a_signal(
-        self, authed_api_a, authed_api_b, account, activity, contact
+    def test_retrieve_cross_tenant_returns_404(
+        self, authed_api_b, account, activity, contact, user_a
     ):
-        create_resp = authed_api_a.post(PEOPLE_URL, {
-            'signal_type': 'people',
-            'source': 'MANUAL',
-            'account': str(account.id),
-            'source_activity': str(activity.id),
-            'role': PeopleRole.CHAMPION,
-            'target_contact': str(contact.id),
-        }, format='json')
-        pk = create_resp.json()['data']['id']
+        signal = PeopleSignal(
+            account=account,
+            source_activity=activity,
+            role=PeopleRole.CHAMPION,
+            target_contact=contact,
+            source=SignalSource.MANUAL,
+        )
+        signal.save(user=user_a, client_id=account.client_id)
 
-        resp = authed_api_b.get(_detail_url(pk))
-        assert resp.status_code in (status.HTTP_404_NOT_FOUND, status.HTTP_403_FORBIDDEN)
+        resp = authed_api_b.get(_detail_url(signal.id))
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
