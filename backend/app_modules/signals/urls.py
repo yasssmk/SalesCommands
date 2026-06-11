@@ -24,6 +24,8 @@ def get_urlpatterns():
         TechStackSignalViewSet,
         BlockerSignalViewSet,
         NextStepSignalViewSet,
+        PeopleSignalViewSet,
+        ConstraintSignalViewSet,
         SignalChoicesView,
         SignalClusterListView,
         SignalClusterDetailView,
@@ -262,6 +264,76 @@ def get_urlpatterns():
             'next-steps/<uuid:pk>/reopen/',
             NextStepSignalViewSet.as_view({'post': 'reopen_signal'}),
             name='next-step-reopen',
+        ),
+
+        # =====================================================================
+        # PEOPLE SIGNALS
+        # =====================================================================
+
+        path(
+            'people/',
+            PeopleSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='people-list',
+        ),
+        path(
+            'people/<uuid:pk>/',
+            PeopleSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='people-detail',
+        ),
+        path(
+            'people/<uuid:pk>/validate/',
+            PeopleSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='people-validate',
+        ),
+        path(
+            'people/<uuid:pk>/reject/',
+            PeopleSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='people-reject',
+        ),
+        path(
+            'people/<uuid:pk>/reopen/',
+            PeopleSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='people-reopen',
+        ),
+
+        # =====================================================================
+        # CONSTRAINT SIGNALS
+        # =====================================================================
+
+        path(
+            'constraints/',
+            ConstraintSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='constraint-list',
+        ),
+        path(
+            'constraints/<uuid:pk>/',
+            ConstraintSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='constraint-detail',
+        ),
+        path(
+            'constraints/<uuid:pk>/validate/',
+            ConstraintSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='constraint-validate',
+        ),
+        path(
+            'constraints/<uuid:pk>/reject/',
+            ConstraintSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='constraint-reject',
+        ),
+        path(
+            'constraints/<uuid:pk>/reopen/',
+            ConstraintSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='constraint-reopen',
         ),
 
         # =====================================================================
