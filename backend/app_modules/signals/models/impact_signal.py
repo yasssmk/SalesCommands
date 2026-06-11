@@ -184,6 +184,24 @@ class ImpactSignal(BaseSignal):
     )
 
     # =========================================================================
+    # ATTRIBUTION
+    # =========================================================================
+
+    target_department = models.ForeignKey(
+        'core_modules.StandardDepartment',
+        on_delete=models.SET_NULL,
+        related_name='impact_signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Target Department'),
+        help_text=_(
+            'Department concerned by this impact. Purely descriptive — '
+            'no conditional enforcement. Source (who speaks) ≠ concerned '
+            '(the subject).'
+        ),
+    )
+
+    # =========================================================================
     # IMPACT NATURE (required)
     # =========================================================================
 

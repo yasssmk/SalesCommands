@@ -169,6 +169,25 @@ class PainSignal(BaseSignal):
     )
 
     # =========================================================================
+    # ATTRIBUTION
+    # =========================================================================
+
+    target_department = models.ForeignKey(
+        'core_modules.StandardDepartment',
+        on_delete=models.SET_NULL,
+        related_name='pain_signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Target Department'),
+        help_text=_(
+            'Department concerned by this pain. Purely descriptive — '
+            'no conditional enforcement (unlike ObjectiveSignal). '
+            'Source (who speaks) ≠ concerned (the subject): the CTO '
+            'may report a pain felt by Marketing.'
+        ),
+    )
+
+    # =========================================================================
     # NARRATIVE CONTENT
     # =========================================================================
 

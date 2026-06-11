@@ -190,6 +190,17 @@ class InfluenceLevel(models.TextChoices):
     LOW    = 'LOW',    _('Low')
 
 
+class Rigidity(models.TextChoices):
+    """
+    Whether a constraint is non-negotiable or a preference.
+
+    Used by ConstraintSignal to distinguish hard criteria (FIRM)
+    from flexible preferences (FLEXIBLE).
+    """
+    FIRM     = 'FIRM',     _('Firm')
+    FLEXIBLE = 'FLEXIBLE', _('Flexible')
+
+
 # =============================================================================
 # SIGNAL CANONICAL AXES — enums  (shared by Pain, Objective and Impact)
 # =============================================================================

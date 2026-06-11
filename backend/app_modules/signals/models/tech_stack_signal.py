@@ -32,15 +32,14 @@ Objective:
 Shadow-overrides (vs BaseSignal)
 --------------------------------
 TechStackSignal narrows the BaseSignal field set by shadow-overriding
-three inherited fields to `None`. Each override has a precise reason:
+two inherited fields to `None`. Each override has a precise reason:
 
-  * decision_cycle = None
-        A tool is account-level, not deal-level. Salesforce is used by
-        an account independently of which decision cycle is in flight.
-        The Pain ↔ TechStack indirection (PainSignal.related_techstack)
-        is the proper way to relate a deal to a tool. When deal context
-        is needed for a TechStack observation, it can be inferred at
-        read time via source_activity.decision_cycle.
+  * decision_cycle — RESTORED (no longer shadow-overridden).
+        A TechStack with decision_cycle=NULL represents a tool in place
+        at the account level (incumbent). A TechStack with a non-null
+        decision_cycle represents a tool being evaluated on that
+        specific deal (competitor in play). The distinction is driven
+        by the DC Workspace competitor model.
 
   * campaign = None
         Same logic — a campaign targets accounts, not their internal
@@ -165,11 +164,9 @@ class TechStackSignal(BaseSignal):
     # =========================================================================
     # SHADOW OVERRIDES — narrow the BaseSignal field set
     # =========================================================================
-    # See module docstring for the rationale of each override. Django
-    # treats `= None` on a concrete subclass as "this field does not
-    # exist on the concrete model" — no column is created, no
-    # get_FIELD_display, no serialization.
-    decision_cycle    = None
+    # See module docstring for the rationale of each override.
+    # decision_cycle is no longer overridden — it is inherited from
+    # BaseSignal to support the account-level vs deal-level distinction.
     campaign          = None
     signal_category   = None
 

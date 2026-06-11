@@ -5,6 +5,8 @@ from .tech_stack_signal import TechStackSignal
 from .impact_signal import ImpactSignal
 from .blocker_signal import BlockerSignal
 from .next_step_signal import NextStepSignal
+from .people_signal import PeopleSignal
+from .constraint_signal import ConstraintSignal
 from .signal_cluster_archival import SignalClusterArchival
 
 
@@ -16,5 +18,7 @@ __all__ = [
     'ImpactSignal',
     'BlockerSignal',
     'NextStepSignal',
+    'PeopleSignal',
+    'ConstraintSignal',
     'SignalClusterArchival',
 ]
