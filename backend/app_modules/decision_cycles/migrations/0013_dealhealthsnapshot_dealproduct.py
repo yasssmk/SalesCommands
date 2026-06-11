@@ -54,7 +54,7 @@ class Migration(migrations.Migration):
                 ),
                 (
                     "snapshot_date",
-                    models.DateField(auto_now_add=True, verbose_name="Snapshot Date"),
+                    models.DateTimeField(auto_now_add=True, verbose_name="Snapshot Date"),
                 ),
                 (
                     "created_by",

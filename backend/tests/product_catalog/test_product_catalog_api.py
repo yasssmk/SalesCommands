@@ -53,31 +53,8 @@ class TestProductCatalogCreate:
         # individual → permission denied
         assert resp.status_code in (201, 403)
 
-    def test_create_admin(
-        self, api, authenticate, client_account_a, db
-    ):
-        from end_users.models import User, UserRole
-
-        role = UserRole.objects.create(
-            client_account=client_account_a,
-            name='Admin',
-            is_admin=True,
-            is_manager=False,
-            is_individual=False,
-            read=True,
-            write=True,
-            modify=True,
-            can_delete=True,
-        )
-        admin = User.objects.create(
-            email='admin@tenant-a.test',
-            client_account=client_account_a,
-            role=role,
-            is_active=True,
-        )
-        authenticate(api, admin, client_account_a.id)
-
-        resp = api.post(BASE_URL, {
+    def test_create_admin(self, authed_admin_api_a):
+        resp = authed_admin_api_a.post(BASE_URL, {
             'name': 'Admin Product',
             'default_unit_price': '5000.00',
         })
@@ -89,29 +66,8 @@ class TestProductCatalogCreate:
 
 class TestProductCatalogUpdate:
 
-    def test_patch(self, api, authenticate, client_account_a, product_entry, db):
-        from end_users.models import User, UserRole
-
-        role = UserRole.objects.create(
-            client_account=client_account_a,
-            name='Admin',
-            is_admin=True,
-            is_manager=False,
-            is_individual=False,
-            read=True,
-            write=True,
-            modify=True,
-            can_delete=True,
-        )
-        admin = User.objects.create(
-            email='admin-upd@tenant-a.test',
-            client_account=client_account_a,
-            role=role,
-            is_active=True,
-        )
-        authenticate(api, admin, client_account_a.id)
-
-        resp = api.patch(
+    def test_patch(self, authed_admin_api_a, product_entry):
+        resp = authed_admin_api_a.patch(
             f'{BASE_URL}{product_entry.id}/',
             {'name': 'Renamed'},
             format='json',
@@ -122,29 +78,8 @@ class TestProductCatalogUpdate:
 
 class TestProductCatalogDelete:
 
-    def test_delete(self, api, authenticate, client_account_a, product_entry, db):
-        from end_users.models import User, UserRole
-
-        role = UserRole.objects.create(
-            client_account=client_account_a,
-            name='Admin',
-            is_admin=True,
-            is_manager=False,
-            is_individual=False,
-            read=True,
-            write=True,
-            modify=True,
-            can_delete=True,
-        )
-        admin = User.objects.create(
-            email='admin-del@tenant-a.test',
-            client_account=client_account_a,
-            role=role,
-            is_active=True,
-        )
-        authenticate(api, admin, client_account_a.id)
-
-        resp = api.delete(f'{BASE_URL}{product_entry.id}/')
+    def test_delete(self, authed_admin_api_a, product_entry):
+        resp = authed_admin_api_a.delete(f'{BASE_URL}{product_entry.id}/')
         assert resp.status_code == 200
         assert resp.json()['success'] is True
 

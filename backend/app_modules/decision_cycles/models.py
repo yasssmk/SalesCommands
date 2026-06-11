@@ -773,7 +773,7 @@ class DealHealthSnapshot(ModuleBaseModel, ClientScopeManager.ModelMixin):
         ),
     )
 
-    snapshot_date = models.DateField(
+    snapshot_date = models.DateTimeField(
         auto_now_add=True,
         verbose_name=_('Snapshot Date'),
     )
