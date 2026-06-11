@@ -1,0 +1,310 @@
+# app_modules/signals/serializers/people_serializer.py
+"""
+Serializers for PeopleSignal.
+
+Stack:
+  PeopleSignalListSerializer   — lightweight list view
+  PeopleSignalDetailSerializer — full detail (validated_*, requested_by,
+                                  source_quote, metadata, original_value
+                                  on top of the list payload)
+  PeopleSignalCreateSerializer — write path
+  PeopleSignalUpdateSerializer — restricted PATCH
+
+Notes:
+  - The model shadow-overrides `signal_category` to None on the
+    concrete PeopleSignal. Among the base serializer fields, only
+    `signal_category` (and its `signal_category_display` companion)
+    requires filtering — same pattern as BlockerSignalSerializer.
+
+  - PeopleSignal does not carry canonical axes (no `what` / `dimension`)
+    and does not participate in cluster aggregation. The inherited
+    `canonical_key` field stays in the base fields for shape
+    consistency but is always None on a PeopleSignal — see
+    PeopleSignal.save().
+
+  - `target_contact` (FK Contact) is the person playing this role;
+    `target_department` (FK StandardDepartment) is the department.
+    At least one must be provided (enforced in PeopleSignal.clean
+    and re-surfaced in the Create serializer).
+
+  - source_activity is required at the model layer (PeopleSignal.clean)
+    and re-surfaced at the Create serializer for a clean API error
+    payload, mirroring BlockerSignal.
+"""
+
+from rest_framework import serializers
+
+from core.error_messages import SignalErrorMessages
+from core.exceptions import StandardizedValidationError
+
+from ..models import PeopleSignal
+from .base_serializer import (
+    BaseSignalCreateSerializer,
+    BaseSignalDetailSerializer,
+    BaseSignalListSerializer,
+    BaseSignalUpdateSerializer,
+)
+
+
+# =============================================================================
+# HELPERS — display + compact FK payloads
+# =============================================================================
+
+class _PeopleDisplayMixin:
+    """Shared SerializerMethodField implementations for People serializers."""
+
+    def get_role_display(self, obj):
+        return obj.get_role_display() if obj.role else None
+
+    def get_influence_display(self, obj):
+        return obj.get_influence_display() if obj.influence else None
+
+    def get_target_contact(self, obj):
+        """
+        Compact contact payload — keeps the frontend from issuing a
+        separate /contacts/<id>/ fetch just to render the attribution
+        on a people card. Returns None when the FK is not set.
+        """
+        contact = obj.target_contact
+        if not contact:
+            return None
+        return {
+            'id':         str(contact.id),
+            'first_name': contact.first_name,
+            'last_name':  contact.last_name,
+            'job_title':  getattr(contact, 'job_title', None),
+        }
+
+    def get_target_department(self, obj):
+        """Compact department payload. Returns None when the FK is not set."""
+        dept = obj.target_department
+        if not dept:
+            return None
+        return {
+            'id':   str(dept.id),
+            'name': dept.get_name_display(),
+        }
+
+
+# =============================================================================
+# BASE FIELD STRIP
+# =============================================================================
+# PeopleSignal shadow-overrides `signal_category` to None on the
+# concrete model. Among the base serializer fields, only signal_category
+# and its signal_category_display companion need to be stripped — they
+# are declared at the top level of BaseSignalListSerializer /
+# BaseSignalDetailSerializer / BaseSignalCreateSerializer /
+# BaseSignalUpdateSerializer. We strip them here once and reuse the
+# resulting filtered lists in every Meta below — keeps the four
+# serializers in sync. Same pattern as BlockerSignalSerializer.
+
+_SHADOW_OVERRIDDEN_FIELDS = frozenset({
+    'signal_category',
+    'signal_category_display',
+})
+
+
+def _strip_shadow_fields(field_list):
+    """Return a copy of `field_list` without People's shadow-overridden fields."""
+    return [f for f in field_list if f not in _SHADOW_OVERRIDDEN_FIELDS]
+
+
+def _strip_shadow_extra_kwargs(extra_kwargs):
+    """Return a copy of `extra_kwargs` without People's shadow-overridden fields."""
+    return {
+        k: v for k, v in extra_kwargs.items()
+        if k not in _SHADOW_OVERRIDDEN_FIELDS
+    }
+
+
+# =============================================================================
+# LIST
+# =============================================================================
+
+class PeopleSignalListSerializer(_PeopleDisplayMixin, BaseSignalListSerializer):
+    """
+    Lightweight serializer for PeopleSignal list endpoints.
+
+    Exposes the stakeholder role, influence level, target contact
+    (compact payload), target department (compact payload), and notes.
+
+    signal_category / signal_category_display are stripped from
+    inherited fields (model shadow-overrides signal_category to None).
+    """
+
+    role_display       = serializers.SerializerMethodField()
+    influence_display  = serializers.SerializerMethodField()
+    target_contact     = serializers.SerializerMethodField()
+    target_department  = serializers.SerializerMethodField()
+
+    class Meta(BaseSignalListSerializer.Meta):
+        model = PeopleSignal
+
+        _base_fields = _strip_shadow_fields(BaseSignalListSerializer.Meta.fields)
+
+        fields = _base_fields + [
+            'role', 'role_display',
+            'influence', 'influence_display',
+            'target_contact',
+            'target_department',
+            'notes',
+        ]
+        read_only_fields = fields
+
+
+# =============================================================================
+# DETAIL
+# =============================================================================
+
+class PeopleSignalDetailSerializer(_PeopleDisplayMixin, BaseSignalDetailSerializer):
+    """
+    Full detail serializer for PeopleSignal retrieve endpoints.
+
+    Inherits validated_at / validated_by / requested_by / source_quote /
+    metadata / original_value from BaseSignalDetailSerializer.
+
+    signal_category / signal_category_display are stripped from
+    inherited fields (model shadow-overrides signal_category to None).
+    """
+
+    role_display       = serializers.SerializerMethodField()
+    influence_display  = serializers.SerializerMethodField()
+    target_contact     = serializers.SerializerMethodField()
+    target_department  = serializers.SerializerMethodField()
+
+    class Meta(BaseSignalDetailSerializer.Meta):
+        model = PeopleSignal
+
+        _base_fields = _strip_shadow_fields(BaseSignalDetailSerializer.Meta.fields)
+
+        fields = _base_fields + [
+            'role', 'role_display',
+            'influence', 'influence_display',
+            'target_contact',
+            'target_department',
+            'notes',
+        ]
+        read_only_fields = fields
+
+
+# =============================================================================
+# CREATE
+# =============================================================================
+
+class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
+    """
+    Write serializer for PeopleSignal creation.
+
+    signal_type is fixed to 'people' via HiddenField (consumed by
+    SignalManager.create()).
+
+    Required:
+      - account            (inherited)
+      - source_activity    — every people signal must be tied to a conversation
+      - role               — stakeholder role (PeopleRole enum)
+
+    Optional:
+      - influence          — perceived influence level
+      - target_contact     — FK to Contact playing this role
+      - target_department  — FK to StandardDepartment
+      - notes              — additional context
+      - source_quote, language_original, source, confidence,
+        is_inferred, metadata (inherited)
+
+    Stripped from BaseSignalCreateSerializer.Meta.fields:
+      signal_category — the model shadow-overrides it to None.
+
+    Validation (re-surfaced from PeopleSignal.clean()):
+      1. source_activity always required.
+      2. At least one of target_contact / target_department required.
+    """
+
+    signal_type = serializers.HiddenField(default='people')
+
+    class Meta(BaseSignalCreateSerializer.Meta):
+        model = PeopleSignal
+
+        _base_fields       = _strip_shadow_fields(BaseSignalCreateSerializer.Meta.fields)
+        _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalCreateSerializer.Meta.extra_kwargs)
+
+        fields = _base_fields + [
+            'role',
+            'influence',
+            'target_contact',
+            'target_department',
+            'notes',
+        ]
+        extra_kwargs = {
+            **_base_extra_kwargs,
+            'role':              {'required': True},
+            'influence':         {'required': False, 'allow_null': True},
+            'target_contact':    {'required': False, 'allow_null': True},
+            'target_department': {'required': False, 'allow_null': True},
+            'notes':             {'required': False, 'allow_blank': True},
+        }
+
+    def validate(self, attrs):
+        """
+        Enforce People-specific contextual rules, then delegate to base.
+
+        Rules (re-surfaced from PeopleSignal.clean()):
+          1. source_activity always required.
+          2. At least one of target_contact / target_department required.
+        """
+        if not attrs.get('source_activity'):
+            raise StandardizedValidationError(
+                SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
+            )
+
+        if not attrs.get('target_contact') and not attrs.get('target_department'):
+            raise StandardizedValidationError(
+                'At least one of target_contact or target_department is required.'
+            )
+
+        return super().validate(attrs)
+
+
+# =============================================================================
+# UPDATE
+# =============================================================================
+
+class PeopleSignalUpdateSerializer(BaseSignalUpdateSerializer):
+    """
+    Restricted PATCH serializer for PeopleSignal.
+
+    Allowed beyond base fields (source_quote, metadata):
+      - role               — stakeholder role may be corrected
+      - influence          — influence assessment may be refined
+      - target_contact     — attribution may be amended
+      - target_department  — department may be corrected
+      - notes              — free-text narrative may be refined
+
+    signal_category / signal_category_display are stripped from
+    inherited fields (model shadow-overrides signal_category to None).
+
+    Forbidden via PATCH (inherited):
+      status, validated_by, validated_at, source, account,
+      source_activity, decision_cycle, campaign.
+    """
+
+    class Meta(BaseSignalUpdateSerializer.Meta):
+        model = PeopleSignal
+
+        _base_fields       = _strip_shadow_fields(BaseSignalUpdateSerializer.Meta.fields)
+        _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalUpdateSerializer.Meta.extra_kwargs)
+
+        fields = _base_fields + [
+            'role',
+            'influence',
+            'target_contact',
+            'target_department',
+            'notes',
+        ]
+        extra_kwargs = {
+            **_base_extra_kwargs,
+            'role':              {'required': False},
+            'influence':         {'required': False, 'allow_null': True},
+            'target_contact':    {'required': False, 'allow_null': True},
+            'target_department': {'required': False, 'allow_null': True},
+            'notes':             {'required': False, 'allow_blank': True},
+        }

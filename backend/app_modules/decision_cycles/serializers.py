@@ -11,7 +11,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
-from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment
+from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment, DealHealthSnapshot, DealProduct
 from .constants import PipelineStep, DecisionStepStatus, PIPELINE_STEPS_CONFIG
 
 
@@ -1256,5 +1256,194 @@ class DecisionCycleUpdateSerializer(ClientScopeManager.SerializerMixin, serializ
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         
+        instance.save(user=user)
+        return instance
+
+
+# ============================================================================
+# DEAL HEALTH SNAPSHOT SERIALIZERS (read-only)
+# ============================================================================
+
+class DealHealthSnapshotListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """
+    Lightweight read-only serializer for DealHealthSnapshot list views.
+    """
+
+    class Meta:
+        model = DealHealthSnapshot
+        fields = [
+            'id',
+            'decision_cycle',
+            'diagnostic',
+            'snapshot_date',
+            'pipeline_run',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class DealHealthSnapshotDetailSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """
+    Full read-only serializer for DealHealthSnapshot retrieve views.
+    """
+
+    pipeline_run_summary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DealHealthSnapshot
+        fields = [
+            'id',
+            'decision_cycle',
+            'diagnostic',
+            'snapshot_date',
+            'pipeline_run',
+            'pipeline_run_summary',
+            'created_by',
+            'updated_by',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_pipeline_run_summary(self, obj):
+        run = obj.pipeline_run
+        if not run:
+            return None
+        return {
+            'id': str(run.id),
+            'pipeline_type': getattr(run, 'pipeline_type', None),
+            'status': getattr(run, 'status', None),
+            'created_at': run.created_at.isoformat() if run.created_at else None,
+        }
+
+
+# ============================================================================
+# DEAL PRODUCT SERIALIZERS
+# ============================================================================
+
+class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """
+    Read-only serializer for DealProduct list views.
+    """
+
+    product_catalog_entry_detail = serializers.SerializerMethodField()
+    line_total = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True,
+    )
+
+    class Meta:
+        model = DealProduct
+        fields = [
+            'id',
+            'decision_cycle',
+            'product_catalog_entry',
+            'product_catalog_entry_detail',
+            'quantity',
+            'unit_price',
+            'line_total',
+            'notes',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_product_catalog_entry_detail(self, obj):
+        entry = obj.product_catalog_entry
+        if not entry:
+            return None
+        return {
+            'id': str(entry.id),
+            'name': entry.name,
+            'default_unit_price': str(entry.default_unit_price) if entry.default_unit_price is not None else None,
+        }
+
+
+class DealProductCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """
+    Write serializer for DealProduct creation.
+
+    decision_cycle is NOT a serializer field — it is injected from the
+    view context (URL kwargs) in validate(). This matches the pattern
+    where the resource is nested under a cycle endpoint.
+
+    validators=[] bypasses the DRF auto-generated UniqueTogetherValidator
+    from the composite constraint (decision_cycle, product_catalog_entry,
+    client_id). Uniqueness is enforced explicitly via
+    validate_client_scoped_uniqueness().
+    """
+
+    class Meta:
+        model = DealProduct
+        fields = [
+            'product_catalog_entry',
+            'quantity',
+            'unit_price',
+            'notes',
+        ]
+        validators = []
+        extra_kwargs = {
+            'product_catalog_entry': {'required': True},
+            'quantity': {'required': False},
+            'unit_price': {'required': False, 'allow_null': True},
+            'notes': {'required': False, 'allow_blank': True},
+        }
+
+    def validate(self, attrs):
+        client_id = self._get_client_id_from_context()
+        attrs['client_id'] = client_id
+
+        decision_cycle = self.context.get('decision_cycle')
+        if not decision_cycle:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='decision_cycle')
+            )
+        attrs['decision_cycle'] = decision_cycle
+
+        self.validate_client_scoped_uniqueness(
+            data=attrs,
+            unique_fields=['decision_cycle', 'product_catalog_entry'],
+            model_class=DealProduct,
+            error_message=CoreErrorMessages.UNIQUE_CONSTRAINT.format(
+                fields='decision_cycle, product_catalog_entry'
+            ),
+        )
+
+        return attrs
+
+    def create(self, validated_data):
+        user = self.context.get('request').user if self.context.get('request') else None
+        instance = DealProduct(**validated_data)
+        instance.save(user=user)
+        return instance
+
+
+class DealProductUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """
+    Restricted PATCH serializer for DealProduct.
+
+    product_catalog_entry is not changeable after creation.
+    decision_cycle is immutable — not exposed.
+
+    validators=[] bypasses the DRF auto-generated UniqueTogetherValidator.
+    """
+
+    class Meta:
+        model = DealProduct
+        fields = [
+            'quantity',
+            'unit_price',
+            'notes',
+        ]
+        validators = []
+        extra_kwargs = {
+            'quantity': {'required': False},
+            'unit_price': {'required': False, 'allow_null': True},
+            'notes': {'required': False, 'allow_blank': True},
+        }
+
+    def update(self, instance, validated_data):
+        user = self.context.get('request').user if self.context.get('request') else None
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save(user=user)
         return instance
