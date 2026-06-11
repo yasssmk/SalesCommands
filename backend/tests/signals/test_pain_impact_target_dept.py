@@ -27,10 +27,9 @@ pytestmark = pytest.mark.django_db
 # =============================================================================
 
 @pytest.fixture
-def department(db, client_account_a, user_a):
+def department(db):
     from app_modules.core_modules.models import StandardDepartment
-    dept = StandardDepartment(name='Marketing')
-    dept.save(user=user_a, client_id=client_account_a.id)
+    dept, _ = StandardDepartment.objects.get_or_create(name='Marketing')
     return dept
 
 
