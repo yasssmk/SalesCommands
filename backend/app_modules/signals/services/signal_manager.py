@@ -16,6 +16,8 @@ Supported signal types (routed by SignalManager.create):
   tech_stack → TechStackSignal
   blocker    → BlockerSignal
   next_step  → NextStepSignal
+  people     → PeopleSignal
+  constraint → ConstraintSignal
 
 All methods raise StandardizedValidationError on guard violations.
 All write paths use model.save(user=user, client_id=...) so that
@@ -49,6 +51,8 @@ from ..models import (
     TechStackSignal,
     BlockerSignal,
     NextStepSignal,
+    PeopleSignal,
+    ConstraintSignal,
 )
 
 
@@ -121,6 +125,8 @@ class SignalManager:
             'tech_stack': TechStackSignal,
             'blocker':    BlockerSignal,
             'next_step':  NextStepSignal,
+            'people':     PeopleSignal,
+            'constraint': ConstraintSignal,
         }
         model_class = model_map.get(signal_type)
         if not model_class:

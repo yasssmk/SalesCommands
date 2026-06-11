@@ -92,12 +92,19 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     module = 'decision_cycles'
     
     # Action policies
-    # Action policies
     action_policies = {
         'by_account': {
             'crud': 'read',
-            'scope': 'client'
-        }
+            'scope': 'client',
+        },
+        'people': {
+            'crud': 'read',
+            'scope': 'client',
+        },
+        'readiness': {
+            'crud': 'read',
+            'scope': 'client',
+        },
     }
 
     # ==========================================================================
@@ -641,7 +648,53 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             'success': True,
             'data': serializer.data,
         })
-    
+
+    @action(detail=True, methods=['get'], url_path='people')
+    def people(self, request, pk=None):
+        """
+        Consolidated people view for a decision cycle.
+
+        GET /decision-cycles/{id}/people/
+
+        Returns qualified (with PeopleSignal) and unqualified contacts,
+        grouped by department.
+        """
+        ctx = ctx_from_request(request)
+        instance = self.get_object()
+
+        logger.info('decision_cycle_people_requested', extra={
+            **ctx, 'cycle_id': str(instance.id),
+        })
+
+        from ..services import PeopleConsolidationService
+        service = PeopleConsolidationService()
+        result = service.consolidate(instance)
+
+        return Response({'success': True, 'data': result})
+
+    @action(detail=True, methods=['get'], url_path='readiness')
+    def readiness(self, request, pk=None):
+        """
+        Readiness score for a decision cycle.
+
+        GET /decision-cycles/{id}/readiness/
+
+        Returns a deterministic score (0-100) indicating whether the cycle
+        has enough validated evidence for a useful Deal Health diagnostic.
+        """
+        ctx = ctx_from_request(request)
+        instance = self.get_object()
+
+        logger.info('decision_cycle_readiness_requested', extra={
+            **ctx, 'cycle_id': str(instance.id),
+        })
+
+        from ..services import ReadinessScoreService
+        service = ReadinessScoreService()
+        result = service.calculate(instance)
+
+        return Response({'success': True, 'data': result})
+
     def _produce_by_account(self, request, account_id, ctx):
         """Produce by_account data dict (cache-friendly, no Response wrapper)."""
         # Import models for prefetch
