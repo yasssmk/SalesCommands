@@ -318,6 +318,58 @@ def invalidate_on_next_step_delete(sender, instance, **kwargs):
 
 
 # =============================================================================
+# PEOPLE SIGNAL — invalidates 'signals' only
+# =============================================================================
+
+@receiver(post_save, sender='module_signals.PeopleSignal')
+def invalidate_on_people_save(sender, instance, **kwargs):
+    """Invalidate signal caches when a PeopleSignal is saved."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_signals_after_commit(str(client_id))
+
+
+@receiver(post_delete, sender='module_signals.PeopleSignal')
+def invalidate_on_people_delete(sender, instance, **kwargs):
+    """Invalidate signal caches when a PeopleSignal is deleted."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if client_id:
+        _invalidate_signals_after_commit(str(client_id))
+
+
+# =============================================================================
+# CONSTRAINT SIGNAL — invalidates 'signals' AND 'signal_clusters'
+# =============================================================================
+
+@receiver(post_save, sender='module_signals.ConstraintSignal')
+def invalidate_on_constraint_save(sender, instance, **kwargs):
+    """Invalidate both signal and cluster caches when a ConstraintSignal is saved."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if not client_id:
+        return
+    _invalidate_signals_after_commit(str(client_id))
+    _invalidate_clusters_after_commit(str(client_id))
+
+
+@receiver(post_delete, sender='module_signals.ConstraintSignal')
+def invalidate_on_constraint_delete(sender, instance, **kwargs):
+    """Invalidate both caches when a ConstraintSignal is deleted."""
+    if are_signals_disabled():
+        return
+    client_id = getattr(instance, 'client_id', None)
+    if not client_id:
+        return
+    _invalidate_signals_after_commit(str(client_id))
+    _invalidate_clusters_after_commit(str(client_id))
+
+
+# =============================================================================
 # SIGNAL CLUSTER ARCHIVAL — invalidates 'signal_clusters' only
 # =============================================================================
 #
