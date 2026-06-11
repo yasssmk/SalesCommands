@@ -43,6 +43,18 @@ from .next_step_serializer import (
     NextStepSignalCreateSerializer,
     NextStepSignalUpdateSerializer,
 )
+from .people_serializer import (
+    PeopleSignalListSerializer,
+    PeopleSignalDetailSerializer,
+    PeopleSignalCreateSerializer,
+    PeopleSignalUpdateSerializer,
+)
+from .constraint_serializer import (
+    ConstraintSignalListSerializer,
+    ConstraintSignalDetailSerializer,
+    ConstraintSignalCreateSerializer,
+    ConstraintSignalUpdateSerializer,
+)
 from .cluster_serializer import (
     SignalClusterListSerializer,
     SignalClusterDetailSerializer,
@@ -86,6 +98,16 @@ __all__ = [
     'NextStepSignalDetailSerializer',
     'NextStepSignalCreateSerializer',
     'NextStepSignalUpdateSerializer',
+    # People
+    'PeopleSignalListSerializer',
+    'PeopleSignalDetailSerializer',
+    'PeopleSignalCreateSerializer',
+    'PeopleSignalUpdateSerializer',
+    # Constraint
+    'ConstraintSignalListSerializer',
+    'ConstraintSignalDetailSerializer',
+    'ConstraintSignalCreateSerializer',
+    'ConstraintSignalUpdateSerializer',
     # Cluster
     'SignalClusterListSerializer',
     'SignalClusterDetailSerializer',
