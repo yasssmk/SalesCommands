@@ -75,6 +75,7 @@ urlpatterns = [
     path('module-signals/', include('app_modules.signals.urls')),
     path('module-ai-pipelines/', include('app_modules.ai_pipelines.urls')),
     path('tech-catalog/', include('app_modules.tech_catalog.urls')),
+    path('product-catalog/', include('app_modules.product_catalog.urls')),
 
     # Path to validate 
     path(app_key+'accounts/', include('apps.accounts.urls')),

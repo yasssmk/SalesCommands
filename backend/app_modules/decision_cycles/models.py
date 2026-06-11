@@ -750,3 +750,119 @@ class DecisionStepDepartment(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     def __str__(self):
         return f"{self.step.name} - {self.department.get_name_display()}"
+
+
+class DealHealthSnapshot(ModuleBaseModel, ClientScopeManager.ModelMixin):
+    """
+    Point-in-time diagnostic snapshot produced by the deal-health
+    AI pipeline. Stores the structured LLM output (7 dimensions,
+    gaps, levers, themes) for a given DecisionCycle.
+    """
+
+    decision_cycle = models.ForeignKey(
+        DecisionCycle,
+        on_delete=models.CASCADE,
+        related_name='health_snapshots',
+        verbose_name=_('Decision Cycle'),
+    )
+
+    diagnostic = models.JSONField(
+        verbose_name=_('Diagnostic'),
+        help_text=_(
+            'Structured JSON output: dimensions, gaps, levers, themes.'
+        ),
+    )
+
+    snapshot_date = models.DateField(
+        auto_now_add=True,
+        verbose_name=_('Snapshot Date'),
+    )
+
+    pipeline_run = models.ForeignKey(
+        'module_ai_pipelines.AIPipelineRun',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deal_health_snapshots',
+        verbose_name=_('Pipeline Run'),
+    )
+
+    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
+        index_fields=[],
+    )):
+        db_table = 'deal_health_snapshots'
+        verbose_name = _('Deal Health Snapshot')
+        verbose_name_plural = _('Deal Health Snapshots')
+        ordering = ['-snapshot_date']
+        indexes = [
+            models.Index(
+                fields=['decision_cycle', '-snapshot_date'],
+                name='dhs_cycle_date_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f"Snapshot {self.snapshot_date} — {self.decision_cycle.name}"
+
+
+class DealProduct(ModuleBaseModel, ClientScopeManager.ModelMixin):
+    """
+    Line item linking a ProductCatalog entry to a DecisionCycle
+    with quantity and optional price override.
+    """
+
+    decision_cycle = models.ForeignKey(
+        DecisionCycle,
+        on_delete=models.CASCADE,
+        related_name='deal_products',
+        verbose_name=_('Decision Cycle'),
+    )
+
+    product_catalog_entry = models.ForeignKey(
+        'product_catalog.ProductCatalog',
+        on_delete=models.PROTECT,
+        related_name='deal_products',
+        verbose_name=_('Product Catalog Entry'),
+    )
+
+    quantity = models.IntegerField(
+        default=1,
+        verbose_name=_('Quantity'),
+    )
+
+    unit_price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name=_('Unit Price Override'),
+        help_text=_('Overrides the catalog default_unit_price when set.'),
+    )
+
+    notes = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('Notes'),
+    )
+
+    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
+        unique_fields=['decision_cycle', 'product_catalog_entry'],
+    )):
+        db_table = 'deal_products'
+        verbose_name = _('Deal Product')
+        verbose_name_plural = _('Deal Products')
+
+    def __str__(self):
+        return (
+            f"{self.product_catalog_entry.name} x{self.quantity}"
+            f" — {self.decision_cycle.name}"
+        )
+
+    @property
+    def line_total(self):
+        price = self.unit_price
+        if price is None and self.product_catalog_entry_id:
+            price = self.product_catalog_entry.default_unit_price
+        if price is None:
+            return 0
+        return self.quantity * price
