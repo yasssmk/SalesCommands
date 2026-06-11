@@ -38,6 +38,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('module_activities', '0014_nullify_prev_next_activity'),
+        ('decision_cycles', '0012_decisioncycle_source_campaign'),
     ]
 
     operations = [
