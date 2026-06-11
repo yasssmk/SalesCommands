@@ -220,6 +220,7 @@ INSTALLED_APPS = [
     'app_modules.campaigns',
     'app_modules.signals',
     'app_modules.tech_catalog',  # Tenant-level technology master catalog
+    'app_modules.product_catalog',  # Tenant-level product master catalog
     'app_modules.ai_pipelines',  # LLM orchestration (transcript extraction, future game-plan, ...)
     'apps.signals',
     'apps.campaign',
@@ -706,6 +707,7 @@ PERMISSIONS_CONFIG = {
         'users': True,         # User management
         'products': False,      # Product catalog
         'tech_catalog': True,   # Tenant-level technology master catalog
+        'product_catalog': True,  # Tenant-level product master catalog
         'ai_pipelines': True,
         'signals': True,       # Signal management
     }
