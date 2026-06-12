@@ -12,7 +12,7 @@ import Typography from "@mui/material/Typography";
 // Project imports
 import WorkspaceLayout from "components/WorkspaceLayout";
 import { buildDCWorkspaceBreadcrumbs } from "components/WorkspaceBreadcrumb";
-import { useGetDecisionCycle } from "api/accounts/decisionCycles";
+import { useGetDecisionCyclesByAccount } from "api/accounts/decisionCycles";
 
 // Section imports
 import useDCWorkspaceHeaderProps from "sections/accounts/dc-workspace/DCWorkspaceHeader";
@@ -33,8 +33,9 @@ export default function DCWorkspacePage() {
   const cycleId = params?.cycleId;
   const currentTab = searchParams.get("tab") || DEFAULT_TAB;
 
-  const { cycle, cycleLoading, cycleError, mutateCycle } =
-    useGetDecisionCycle(cycleId);
+  const { cycles, cyclesLoading, cyclesError, mutateCycles } =
+    useGetDecisionCyclesByAccount(accountId);
+  const cycle = cycles?.find((c) => c.id === cycleId) || null;
 
   // Handle tab change via URL
   const handleTabChange = (newTab) => {
@@ -48,7 +49,7 @@ export default function DCWorkspacePage() {
   const headerProps = useDCWorkspaceHeaderProps({
     cycle,
     accountId,
-    onUpdate: mutateCycle,
+    onUpdate: mutateCycles,
   });
 
   // ==============================|| TAB CONTENT ||============================== //
@@ -60,7 +61,7 @@ export default function DCWorkspacePage() {
           <DCTimelineTab
             cycle={cycle}
             accountId={accountId}
-            onRefresh={mutateCycle}
+            onRefresh={mutateCycles}
           />
         );
       case "people":
@@ -79,7 +80,7 @@ export default function DCWorkspacePage() {
           <DCTimelineTab
             cycle={cycle}
             accountId={accountId}
-            onRefresh={mutateCycle}
+            onRefresh={mutateCycles}
           />
         );
     }
@@ -87,7 +88,7 @@ export default function DCWorkspacePage() {
 
   // ==============================|| LOADING ||============================== //
 
-  if (cycleLoading) {
+  if (cyclesLoading) {
     return (
       <Box
         display="flex"
@@ -102,9 +103,7 @@ export default function DCWorkspacePage() {
 
   // ==============================|| ERROR ||============================== //
 
-  if (cycleError) {
-    const isNotFound = cycleError?.response?.status === 404;
-
+  if (cyclesError) {
     return (
       <Box
         display="flex"
@@ -113,28 +112,17 @@ export default function DCWorkspacePage() {
         minHeight="400px"
       >
         <Stack spacing={2} alignItems="center">
-          {isNotFound ? (
-            <>
-              <Typography color="error">Decision cycle not found</Typography>
-              <Button variant="outlined" onClick={() => router.back()}>
-                Go Back
-              </Button>
-            </>
-          ) : (
-            <>
-              <Typography color="text.secondary">
-                Failed to load decision cycle
-              </Typography>
-              <Stack direction="row" spacing={2}>
-                <Button variant="contained" onClick={() => mutateCycle()}>
-                  Retry
-                </Button>
-                <Button variant="outlined" onClick={() => router.back()}>
-                  Go Back
-                </Button>
-              </Stack>
-            </>
-          )}
+          <Typography color="text.secondary">
+            Failed to load decision cycle
+          </Typography>
+          <Stack direction="row" spacing={2}>
+            <Button variant="contained" onClick={() => mutateCycles()}>
+              Retry
+            </Button>
+            <Button variant="outlined" onClick={() => router.back()}>
+              Go Back
+            </Button>
+          </Stack>
         </Stack>
       </Box>
     );
@@ -150,7 +138,12 @@ export default function DCWorkspacePage() {
         alignItems="center"
         minHeight="400px"
       >
-        <CircularProgress />
+        <Stack spacing={2} alignItems="center">
+          <Typography color="error">Decision cycle not found</Typography>
+          <Button variant="outlined" onClick={() => router.back()}>
+            Go Back
+          </Button>
+        </Stack>
       </Box>
     );
   }
@@ -173,7 +166,7 @@ export default function DCWorkspacePage() {
         tabs={DC_WORKSPACE_TABS}
         activeTab={currentTab}
         onTabChange={handleTabChange}
-        loading={cycleLoading}
+        loading={cyclesLoading}
       >
         {renderTabContent()}
       </WorkspaceLayout>
