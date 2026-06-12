@@ -19,6 +19,7 @@ from rest_framework import serializers
 
 from app_modules.decision_cycles.models import DecisionCycle
 from core.client_scope import ClientScopeManager
+from core.error_messages import AIPipelineErrorMessages
 from core.exceptions import StandardizedValidationError
 
 
@@ -53,8 +54,7 @@ class DealHealthRunInputSerializer(
             )
         except DecisionCycle.DoesNotExist:
             raise StandardizedValidationError(
-                'The specified decision cycle does not exist '
-                'or is not accessible.'
+                AIPipelineErrorMessages.CYCLE_NOT_FOUND
             )
 
         attrs['decision_cycle'] = decision_cycle

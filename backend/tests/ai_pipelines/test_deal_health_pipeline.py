@@ -96,7 +96,7 @@ def _run_kwargs():
     return_value='mock-diagnostic-request',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.deal_health.DealHealthEvidenceBuilder'
+    'app_modules.ai_pipelines.services.deal_health_evidence_builder.DealHealthEvidenceBuilder'
 )
 def test_success_creates_snapshot(
     mock_builder_cls,
@@ -113,7 +113,7 @@ def test_success_creates_snapshot(
          patch.object(pipeline, '_log_sub_call'), \
          patch.object(pipeline, '_finalize_run', return_value=MagicMock(status=AIPipelineStatus.SUCCESS)) as mock_finalize, \
          patch(
-             'app_modules.ai_pipelines.pipelines.deal_health.DealHealthWriter'
+             'app_modules.ai_pipelines.services.deal_health_writer.DealHealthWriter'
          ) as mock_writer_cls:
 
         mock_writer_cls.return_value.write.return_value = mock_snapshot
@@ -144,7 +144,7 @@ def test_success_creates_snapshot(
     return_value='mock-diagnostic-request',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.deal_health.DealHealthEvidenceBuilder'
+    'app_modules.ai_pipelines.services.deal_health_evidence_builder.DealHealthEvidenceBuilder'
 )
 def test_parse_error_finalized(
     mock_builder_cls,
@@ -183,7 +183,7 @@ def test_parse_error_finalized(
     return_value='mock-diagnostic-request',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.deal_health.DealHealthEvidenceBuilder'
+    'app_modules.ai_pipelines.services.deal_health_evidence_builder.DealHealthEvidenceBuilder'
 )
 def test_timeout_finalized(
     mock_builder_cls,
@@ -222,7 +222,7 @@ def test_timeout_finalized(
     return_value='mock-diagnostic-request',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.deal_health.DealHealthEvidenceBuilder'
+    'app_modules.ai_pipelines.services.deal_health_evidence_builder.DealHealthEvidenceBuilder'
 )
 def test_rate_limit_finalized(
     mock_builder_cls,
@@ -261,7 +261,7 @@ def test_rate_limit_finalized(
     return_value='mock-diagnostic-request',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.deal_health.DealHealthEvidenceBuilder'
+    'app_modules.ai_pipelines.services.deal_health_evidence_builder.DealHealthEvidenceBuilder'
 )
 def test_auth_error_finalized(
     mock_builder_cls,
@@ -300,7 +300,7 @@ def test_auth_error_finalized(
     return_value='mock-diagnostic-request',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.deal_health.DealHealthEvidenceBuilder'
+    'app_modules.ai_pipelines.services.deal_health_evidence_builder.DealHealthEvidenceBuilder'
 )
 def test_generic_provider_error_finalized(
     mock_builder_cls,
@@ -339,7 +339,7 @@ def test_generic_provider_error_finalized(
     return_value='mock-diagnostic-request',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.deal_health.DealHealthEvidenceBuilder'
+    'app_modules.ai_pipelines.services.deal_health_evidence_builder.DealHealthEvidenceBuilder'
 )
 def test_hard_crash_finalizes_and_reraises(
     mock_builder_cls,
@@ -354,7 +354,7 @@ def test_hard_crash_finalizes_and_reraises(
          patch.object(pipeline, '_log_sub_call'), \
          patch.object(pipeline, '_finalize_run', return_value=MagicMock()) as mock_finalize, \
          patch(
-             'app_modules.ai_pipelines.pipelines.deal_health.DealHealthWriter'
+             'app_modules.ai_pipelines.services.deal_health_writer.DealHealthWriter'
          ) as mock_writer_cls:
 
         mock_writer_cls.return_value.write.side_effect = RuntimeError('DB connection lost')
