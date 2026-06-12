@@ -12,7 +12,8 @@ view classes here and to __all__.
 """
 
 from .activity_extraction_view import ActivityExtractionView
+from .deal_health_view import DealHealthRunView
 from .last_run_view import LastRunView
 
 
-__all__ = ['ActivityExtractionView', 'LastRunView']
+__all__ = ['ActivityExtractionView', 'DealHealthRunView', 'LastRunView']

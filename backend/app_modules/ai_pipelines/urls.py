@@ -17,7 +17,7 @@ Routes
 
 from django.urls import path
 
-from .views import ActivityExtractionView, LastRunView
+from .views import ActivityExtractionView, DealHealthRunView, LastRunView
 
 
 urlpatterns = [
@@ -25,6 +25,11 @@ urlpatterns = [
         'activity-extraction/run/',
         ActivityExtractionView.as_view(),
         name='activity-extraction-run',
+    ),
+    path(
+        'deal-health/run/',
+        DealHealthRunView.as_view(),
+        name='deal-health-run',
     ),
     path(
         'last-run/',
