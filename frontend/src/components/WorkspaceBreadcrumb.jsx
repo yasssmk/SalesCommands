@@ -250,6 +250,28 @@ export function buildActivityBreadcrumbs({
 }
 
 /**
+ * Build breadcrumb items for Decision Cycle workspace
+ *
+ * @param {Object} params
+ * @param {string} params.accountId - Account UUID
+ * @param {string} params.accountName - Account display name
+ * @param {string} params.cycleName - Decision Cycle name (current page)
+ * @returns {Object[]} Breadcrumb items array
+ */
+export function buildDCWorkspaceBreadcrumbs({ accountId, accountName, cycleName }) {
+  return [
+    {
+      label: accountName || 'Account',
+      href: `/accounts/${accountId}?tab=decision-cycle`
+    },
+    {
+      label: cycleName || 'Decision Cycle'
+      // No href - current page
+    }
+  ];
+}
+
+/**
  * Build breadcrumb items for Territory workspace
  * 
  * @param {Object} params
