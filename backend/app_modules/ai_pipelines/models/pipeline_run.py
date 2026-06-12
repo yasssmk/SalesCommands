@@ -189,6 +189,21 @@ class AIPipelineRun(ModuleBaseModel, ClientScopeManager.ModelMixin):
         ),
     )
 
+    source_decision_cycle = models.ForeignKey(
+        'decision_cycles.DecisionCycle',
+        on_delete=models.SET_NULL,
+        related_name='ai_pipeline_runs',
+        null=True,
+        blank=True,
+        verbose_name=_('Source Decision Cycle'),
+        help_text=_(
+            'DecisionCycle this run operated on, for cycle-level '
+            'pipelines (deal-health). Null for activity-level '
+            'pipelines. SET_NULL on DecisionCycle deletion so the '
+            'audit row survives.'
+        ),
+    )
+
     input_hash = models.CharField(
         max_length=64,
         verbose_name=_('Input Hash (sha256)'),

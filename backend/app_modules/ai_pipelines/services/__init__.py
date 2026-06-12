@@ -13,9 +13,13 @@ etc.), add them here and to __all__.
 
 from .transcript_signal_extractor import TranscriptSignalExtractor
 from .next_step_extractor import NextStepExtractor
+from .deal_health_evidence_builder import DealHealthEvidenceBuilder
+from .deal_health_writer import DealHealthWriter
 
 
 __all__ = [
     'TranscriptSignalExtractor',
     'NextStepExtractor',
+    'DealHealthEvidenceBuilder',
+    'DealHealthWriter',
 ]
