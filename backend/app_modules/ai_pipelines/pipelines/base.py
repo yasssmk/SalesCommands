@@ -151,15 +151,17 @@ class BasePipeline(ABC):
             text = ''
         return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
-    def _create_run(self, *, user, client_id, source_activity, input_text):
+    def _create_run(self, *, user, client_id, source_activity, input_text,
+                    source_decision_cycle=None):
         """
         Open an AIPipelineRun row in RUNNING state.
 
         Args:
-            user:            end_users.User -- the rep who triggered the call.
-            client_id:       UUID -- tenant scope (from request auth).
-            source_activity: app_modules.activities.Activity or None.
-            input_text:      str -- the raw input. Hashed (sha256), not stored.
+            user:                    end_users.User -- the rep who triggered the call.
+            client_id:               UUID -- tenant scope (from request auth).
+            source_activity:         app_modules.activities.Activity or None.
+            input_text:              str -- the raw input. Hashed (sha256), not stored.
+            source_decision_cycle:   DecisionCycle or None -- for cycle-level pipelines.
 
         Returns:
             AIPipelineRun: persisted row, status=RUNNING, sub_calls=[].
@@ -171,6 +173,7 @@ class BasePipeline(ABC):
             model_name=self._provider_config['model'],
             temperature=self.TEMPERATURE,
             source_activity=source_activity,
+            source_decision_cycle=source_decision_cycle,
             input_hash=self._hash_input(input_text),
             status=AIPipelineStatus.RUNNING,
             sub_calls=[],

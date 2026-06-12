@@ -69,6 +69,16 @@ class AIPipelineType(models.TextChoices):
                             dedup filter that must learn about
                             pipeline_type in Sprint B5.
 
+      DEAL_HEALTH         — produced by DealHealthPipeline.
+                            Produces a single structured diagnostic
+                            snapshot (DealHealthSnapshot) for a
+                            DecisionCycle. Cycle-level pipeline — no
+                            source_activity, no signal creation (output
+                            is a JSON diagnostic, not individual signal
+                            rows). Single-stage, single LLM call.
+                            created_signals_count is always 0; the
+                            deliverable is the snapshot, not signals.
+
     Adding new values:
       Each new pipeline (game plan generation, semantic retrieval,
       ...) adds one value here AND a corresponding orchestrator
@@ -78,6 +88,7 @@ class AIPipelineType(models.TextChoices):
     """
     TRANSCRIPT_SIGNALS = 'TRANSCRIPT_SIGNALS', _('Transcript signal extraction')
     NEXT_STEPS         = 'NEXT_STEPS',         _('Next steps extraction')
+    DEAL_HEALTH        = 'DEAL_HEALTH',        _('Deal health diagnostic')
 
 
 # =============================================================================
