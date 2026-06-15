@@ -10,6 +10,7 @@ import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
 
 // Date formatting
 import { format } from "date-fns";
@@ -120,28 +121,52 @@ export default function useDCWorkspaceHeaderProps({
 
   // ==============================|| INFO ITEMS ||============================== //
 
-  const infoItems = [];
+  const infoItems = [
+    cycle?.account_name && (
+      <Stack key="account" direction="row" spacing={0.75} alignItems="center">
+        <BankOutlined
+          style={{
+            fontSize: theme.iconSizes?.sm,
+            color: theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
+        <Typography variant="body2" color="text.secondary">
+          {cycle.account_name}
+        </Typography>
+      </Stack>
+    ),
 
-  if (cycle?.account_name) {
-    infoItems.push({
-      icon: BankOutlined,
-      label: cycle.account_name,
-    });
-  }
+    cycle?.owner_name && (
+      <Stack key="owner" direction="row" spacing={0.75} alignItems="center">
+        <UserOutlined
+          style={{
+            fontSize: theme.iconSizes?.sm,
+            color: theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
+        <Typography variant="body2" color="text.secondary">
+          {cycle.owner_name}
+        </Typography>
+      </Stack>
+    ),
 
-  if (cycle?.owner_name) {
-    infoItems.push({
-      icon: UserOutlined,
-      label: cycle.owner_name,
-    });
-  }
-
-  if (cycle?.created_at) {
-    infoItems.push({
-      icon: CalendarOutlined,
-      label: format(new Date(cycle.created_at), "MMM d, yyyy"),
-    });
-  }
+    cycle?.created_at && (
+      <Stack key="date" direction="row" spacing={0.75} alignItems="center">
+        <CalendarOutlined
+          style={{
+            fontSize: theme.iconSizes?.sm,
+            color: theme.palette.text.secondary,
+            display: "flex",
+          }}
+        />
+        <Typography variant="body2" color="text.secondary">
+          {format(new Date(cycle.created_at), "MMM d, yyyy")}
+        </Typography>
+      </Stack>
+    ),
+  ];
 
   // ==============================|| HEADER ACTIONS ||============================== //
 
