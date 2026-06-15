@@ -265,8 +265,6 @@ function TabContent({
           <DecisionCycleTab
             accountId={accountId}
             accountName={account?.company_name}
-            selectedCycleId={selectedCycleId}
-            onCycleChange={onCycleChange}
           />
         </Box>
       )}

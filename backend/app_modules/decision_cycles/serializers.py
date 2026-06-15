@@ -188,6 +188,9 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
             
             # Timeline (model fields)
             'start_date', 'expected_end', 'completed_at',
+
+            # Step metadata (model fields)
+            'description', 'goal', 'criterias', 'metrics',
             
             # Summary (no DB queries - uses annotation)
             'stakeholder',
@@ -350,6 +353,8 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             'is_active',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
+            'readiness_score',
+            'estimated_value', 'estimated_timeline_days',
             'closed_by_name',
             'steps', 'steps_count', 'validated_steps_count',
             # Cycle-level insights
@@ -412,6 +417,7 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             'total_steps': 0,
             'validated_steps': 0,
             'current_step_name': None,
+            'current_step_order': None,
             'percentage': 0,
         })
 

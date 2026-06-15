@@ -46,15 +46,7 @@ import Divider from '@mui/material/Divider';
 import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Badge from '@mui/material/Badge';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import FormControl from '@mui/material/FormControl';
-import InputLabel from '@mui/material/InputLabel';
-import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
-import TextField from '@mui/material/TextField';
 
 // icons
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
@@ -76,23 +68,17 @@ import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
 import UserOutlined from '@ant-design/icons/UserOutlined';
 import LinkOutlined from '@ant-design/icons/LinkOutlined';
-import FormHelperText from '@mui/material/FormHelperText';
-
-import { useFormik } from 'formik';
-import * as Yup from 'yup';
-
-import { 
-  PIPELINE_STEPS_ORDER, 
-  PIPELINE_STEP_LABELS, 
+import {
+  PIPELINE_STEPS_ORDER,
+  PIPELINE_STEP_LABELS,
   PIPELINE_STEP_CONFIG,
   CYCLE_DERIVED_STATUS_LABELS,
   CYCLE_STATUS_COLORS,
-  closeCycle,
-  reopenCycle
 } from 'api/accounts/decisionCycles';
 
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 import LinkActivityModal from './LinkActivityModal';
+import CycleCloseDialog, { useCycleCloseReopen } from 'sections/accounts/dc-workspace/CycleCloseDialog';
 
 // ==============================|| LOCALSTORAGE HELPERS ||============================== //
 
@@ -1114,94 +1100,8 @@ export default function DecisionCycleTimeline({
     return furthest;
   }, [visibleSteps]);
 
-  // Cycle close/reopen state
-  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
-  const [reopenLoading, setReopenLoading] = useState(false);
-
-  // Close cycle — Formik + Yup validation
-  const closeFormik = useFormik({
-    initialValues: {
-      outcome: '',
-      outcome_notes: '',
-      hold_until: ''
-    },
-    validationSchema: Yup.object({
-      outcome: Yup.string().required('Please select an outcome'),
-      outcome_notes: Yup.string().when('outcome', {
-        is: 'ON_HOLD',
-        then: (schema) => schema.required('Notes are required for On Hold'),
-        otherwise: (schema) => schema.nullable()
-      }),
-      hold_until: Yup.string().when('outcome', {
-        is: 'ON_HOLD',
-        then: (schema) => schema
-          .required('Hold until date is required for On Hold')
-          .test(
-            'not-in-past',
-            'Hold until date cannot be in the past',
-            (value) => {
-              if (!value) return true;
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              return new Date(value) >= today;
-            }
-          ),
-        otherwise: (schema) => schema.nullable()
-      })
-    }),
-    enableReinitialize: true,
-    onSubmit: async (values, { setSubmitting, resetForm }) => {
-      if (!cycle?.id) return;
-      try {
-        const payload = {
-          outcome: values.outcome,
-          outcome_notes: values.outcome_notes.trim() || null
-        };
-        if (values.outcome === 'ON_HOLD' && values.hold_until) {
-          payload.hold_until = values.hold_until;
-        }
-        const result = await closeCycle(cycle.id, payload);
-        if (result.success) {
-          displaySuccessSnackbar('Decision cycle closed successfully');
-          setCloseDialogOpen(false);
-          resetForm();
-          onRefresh?.();
-        } else {
-          displayErrorSnackbar(result);
-        }
-      } catch (err) {
-        displayErrorSnackbar(err);
-      } finally {
-        setSubmitting(false);
-      }
-    }
-  });
-
-  // Reset form when dialog closes
-  const handleCloseDialogDismiss = useCallback(() => {
-    setCloseDialogOpen(false);
-    closeFormik.resetForm();
-  }, [closeFormik]);
-
-
-  // Reopen cycle handler
-  const handleReopenCycle = useCallback(async () => {
-    if (!cycle?.id) return;
-    setReopenLoading(true);
-    try {
-      const result = await reopenCycle(cycle.id);
-      if (result.success) {
-        displaySuccessSnackbar('Decision cycle reopened successfully');
-        onRefresh?.();
-      } else {
-        displayErrorSnackbar(result);
-      }
-    } catch (err) {
-      displayErrorSnackbar(err);
-    } finally {
-      setReopenLoading(false);
-    }
-  }, [cycle?.id, onRefresh]);
+  // Cycle close/reopen (shared hook)
+  const closeReopen = useCycleCloseReopen({ cycle, onRefresh });
   
   // Toggle column visibility
   // Rule: cannot hide a step that has visible (non-cancelled) activities
@@ -1425,17 +1325,17 @@ export default function DecisionCycleTimeline({
           <Button
             size="small"
             variant="outlined"
-            onClick={handleReopenCycle}
-            disabled={reopenLoading}
+            onClick={closeReopen.handleReopenCycle}
+            disabled={closeReopen.reopenLoading}
           >
-            {reopenLoading ? 'Reopening...' : 'Reopen Cycle'}
+            {closeReopen.reopenLoading ? 'Reopening...' : 'Reopen Cycle'}
           </Button>
         ) : (
           <Button
             size="small"
             variant="outlined"
             color="warning"
-            onClick={() => setCloseDialogOpen(true)}
+            onClick={() => closeReopen.setCloseDialogOpen(true)}
           >
             Close Cycle
           </Button>
@@ -1540,92 +1440,11 @@ export default function DecisionCycleTimeline({
       />
 
       {/* Close Cycle Dialog */}
-      <Dialog open={closeDialogOpen} onClose={handleCloseDialogDismiss} maxWidth="xs" fullWidth>
-        <DialogTitle>Close Decision Cycle</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <FormControl fullWidth error={closeFormik.touched.outcome && Boolean(closeFormik.errors.outcome)}>
-              <InputLabel>Outcome</InputLabel>
-              <Select
-                name="outcome"
-                value={closeFormik.values.outcome}
-                onChange={closeFormik.handleChange}
-                onBlur={closeFormik.handleBlur}
-                label="Outcome"
-              >
-                <MenuItem value="WON">
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <CheckCircleFilled style={{ color: theme.palette.success.main }} />
-                    <span>Won</span>
-                  </Stack>
-                </MenuItem>
-                <MenuItem value="LOST">
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <CloseCircleFilled style={{ color: theme.palette.error.main }} />
-                    <span>Lost</span>
-                  </Stack>
-                </MenuItem>
-                <MenuItem value="ON_HOLD">
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <PauseCircleOutlined style={{ color: theme.palette.warning.main }} />
-                    <span>On Hold</span>
-                  </Stack>
-                </MenuItem>
-                <MenuItem value="NOT_QUALIFIED">
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <MinusCircleOutlined style={{ color: theme.palette.grey[500] }} />
-                    <span>Not Qualified</span>
-                  </Stack>
-                </MenuItem>
-              </Select>
-              {closeFormik.touched.outcome && closeFormik.errors.outcome && (
-                <FormHelperText error>{closeFormik.errors.outcome}</FormHelperText>
-              )}
-            </FormControl>
-            
-            {closeFormik.values.outcome === 'ON_HOLD' && (
-              <TextField
-                name="hold_until"
-                label="Hold until"
-                type="date"
-                fullWidth
-                required
-                value={closeFormik.values.hold_until}
-                onChange={closeFormik.handleChange}
-                onBlur={closeFormik.handleBlur}
-                error={closeFormik.touched.hold_until && Boolean(closeFormik.errors.hold_until)}
-                helperText={closeFormik.touched.hold_until && closeFormik.errors.hold_until}
-                InputLabelProps={{ shrink: true }}
-                inputProps={{ min: new Date().toISOString().split('T')[0] }}
-              />
-            )}
-            
-            <TextField
-              name="outcome_notes"
-              label={closeFormik.values.outcome === 'ON_HOLD' ? 'Notes' : 'Notes (optional)'}
-              fullWidth
-              multiline
-              rows={2}
-              required={closeFormik.values.outcome === 'ON_HOLD'}
-              value={closeFormik.values.outcome_notes}
-              onChange={closeFormik.handleChange}
-              onBlur={closeFormik.handleBlur}
-              error={closeFormik.touched.outcome_notes && Boolean(closeFormik.errors.outcome_notes)}
-              helperText={closeFormik.touched.outcome_notes && closeFormik.errors.outcome_notes}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialogDismiss} disabled={closeFormik.isSubmitting}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={closeFormik.handleSubmit}
-            disabled={closeFormik.isSubmitting}
-          >
-            {closeFormik.isSubmitting ? 'Closing...' : 'Confirm'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <CycleCloseDialog
+        open={closeReopen.closeDialogOpen}
+        onClose={closeReopen.handleCloseDialogDismiss}
+        formik={closeReopen.closeFormik}
+      />
     </Box>
   );
 }

@@ -217,6 +217,12 @@ const endpoints = {
   closeCycle: (id) => `/decision_cycles/${id}/close/`,
   reopenCycle: (id) => `/decision_cycles/${id}/reopen/`,
   
+  // Cycle sub-resources
+  cyclePeople: (id) => `/decision_cycles/${id}/people/`,
+  cycleProducts: (id) => `/decision_cycles/${id}/products/`,
+  cycleProductDetail: (cycleId, productId) => `/decision_cycles/${cycleId}/products/${productId}/`,
+  cycleReadiness: (id) => `/decision_cycles/${id}/readiness/`,
+
   // Decision Steps
   steps: '/decision_cycles/steps/',
   stepDetail: (id) => `/decision_cycles/steps/${id}/`,
@@ -1013,28 +1019,249 @@ export async function deleteDecisionStep(stepId, cycleId = null) {
       status: 400
     };
   }
-  
+
   const result = await api.delete(endpoints.stepDetail(stepId));
-  
+
   if (result.success || result.status === 204) {
     const revalidatePaths = [
       endpoints.steps,
       endpoints.cycles,
       '/decision_cycles/by-account/'
     ];
-    
+
     if (cycleId) {
       revalidatePaths.push(endpoints.cycleDetail(cycleId));
     }
-    
+
     revalidateMultiple(revalidatePaths);
     return { success: true, status: result.status ?? 204 };
   }
-  
-  return { 
-    success: false, 
+
+  return {
+    success: false,
     error: result.error,
     status: result.status || 0,
     response: result.response || null
   };
+}
+
+// ==============================|| DC WORKSPACE — PEOPLE ||============================== //
+
+/**
+ * GET CONSOLIDATED PEOPLE for a decision cycle.
+ *
+ * GET /decision_cycles/{cycleId}/people/
+ *
+ * @param {string} cycleId - UUID of the cycle
+ * @returns {Object} { people, peopleLoading, peopleError, peopleValidating, mutatePeople }
+ */
+export function useGetDCPeople(cycleId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    return tenantKey(endpoints.cyclePeople(cycleId), tenantId);
+  }, [cycleId, tenantId]);
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  return useMemo(
+    () => ({
+      people: data?.data?.results ?? data?.data ?? [],
+      peopleLoading: isLoading,
+      peopleError: error,
+      peopleValidating: isValidating,
+      mutatePeople: mutate,
+    }),
+    [data, isLoading, error, isValidating, mutate],
+  );
+}
+
+// ==============================|| DC WORKSPACE — PRODUCTS ||============================== //
+
+/**
+ * GET DEAL PRODUCTS for a decision cycle.
+ *
+ * GET /decision_cycles/{cycleId}/products/
+ *
+ * @param {string} cycleId - UUID of the cycle
+ * @returns {Object} { products, productsLoading, productsError, productsValidating, mutateProducts }
+ */
+export function useGetDCProducts(cycleId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    return tenantKey(endpoints.cycleProducts(cycleId), tenantId);
+  }, [cycleId, tenantId]);
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  return useMemo(
+    () => ({
+      products: data?.data?.results ?? data?.data ?? [],
+      productsCount: data?.data?.count ?? 0,
+      productsLoading: isLoading,
+      productsError: error,
+      productsValidating: isValidating,
+      mutateProducts: mutate,
+    }),
+    [data, isLoading, error, isValidating, mutate],
+  );
+}
+
+/**
+ * CREATE DEAL PRODUCT
+ *
+ * POST /decision_cycles/{cycleId}/products/
+ *
+ * @param {string} cycleId - UUID of the cycle
+ * @param {Object} payload - Product creation payload
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+export async function createDCProduct(cycleId, payload) {
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return { success: false, error: 'Invalid cycle ID format', status: 400 };
+  }
+
+  const result = await api.post(endpoints.cycleProducts(cycleId), payload);
+
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.cycleProducts(cycleId),
+      endpoints.cycleDetail(cycleId),
+      '/decision_cycles/by-account/',
+    ]);
+    const data = result.data?.data || result.data;
+    return { success: true, data };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null,
+  };
+}
+
+/**
+ * UPDATE DEAL PRODUCT (PATCH)
+ *
+ * PATCH /decision_cycles/{cycleId}/products/{productId}/
+ *
+ * @param {string} cycleId - UUID of the cycle
+ * @param {string} productId - UUID of the product
+ * @param {Object} payload - Partial update payload
+ * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
+ */
+export async function updateDCProduct(cycleId, productId, payload) {
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return { success: false, error: 'Invalid cycle ID format', status: 400 };
+  }
+  if (!productId || !isValidUUID(productId)) {
+    return { success: false, error: 'Invalid product ID format', status: 400 };
+  }
+
+  const result = await api.patch(
+    endpoints.cycleProductDetail(cycleId, productId),
+    payload,
+  );
+
+  if (result.success) {
+    revalidateMultiple([
+      endpoints.cycleProducts(cycleId),
+      endpoints.cycleDetail(cycleId),
+      '/decision_cycles/by-account/',
+    ]);
+    const data = result.data?.data || result.data;
+    return { success: true, data };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null,
+  };
+}
+
+/**
+ * DELETE DEAL PRODUCT
+ *
+ * DELETE /decision_cycles/{cycleId}/products/{productId}/
+ *
+ * @param {string} cycleId - UUID of the cycle
+ * @param {string} productId - UUID of the product
+ * @returns {Promise<Object>} {success: boolean, status?: number, error?: string}
+ */
+export async function deleteDCProduct(cycleId, productId) {
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return { success: false, error: 'Invalid cycle ID format', status: 400 };
+  }
+  if (!productId || !isValidUUID(productId)) {
+    return { success: false, error: 'Invalid product ID format', status: 400 };
+  }
+
+  const result = await api.delete(
+    endpoints.cycleProductDetail(cycleId, productId),
+  );
+
+  if (result.success || result.status === 204) {
+    revalidateMultiple([
+      endpoints.cycleProducts(cycleId),
+      endpoints.cycleDetail(cycleId),
+      '/decision_cycles/by-account/',
+    ]);
+    return { success: true, status: result.status ?? 204 };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null,
+  };
+}
+
+// ==============================|| DC WORKSPACE — READINESS ||============================== //
+
+/**
+ * GET READINESS SCORE for a decision cycle.
+ *
+ * GET /decision_cycles/{cycleId}/readiness/
+ *
+ * @param {string} cycleId - UUID of the cycle
+ * @returns {Object} { readiness, readinessLoading, readinessError, mutateReadiness }
+ */
+export function useGetReadiness(cycleId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    return tenantKey(endpoints.cycleReadiness(cycleId), tenantId);
+  }, [cycleId, tenantId]);
+
+  const { data, isLoading, error, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  return useMemo(
+    () => ({
+      readiness: data?.data ?? null,
+      readinessLoading: isLoading,
+      readinessError: error,
+      mutateReadiness: mutate,
+    }),
+    [data, isLoading, error, mutate],
+  );
 }
