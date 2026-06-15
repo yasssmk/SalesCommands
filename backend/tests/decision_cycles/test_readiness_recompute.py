@@ -4,6 +4,10 @@ Tests for readiness_score auto-recompute via Django signals.
 
 Verifies that creating/deleting signals, products, and activities
 automatically updates DecisionCycle.readiness_score.
+
+All signal-triggered test classes use ``transaction=True`` so that
+``transaction.on_commit`` callbacks execute during the test (same
+pattern as tests/signals/test_blocker_model.py).
 """
 
 import pytest
@@ -18,9 +22,6 @@ from app_modules.signals.constants import (
     SignalDimension,
     Rigidity,
 )
-
-
-pytestmark = pytest.mark.django_db
 
 
 # =============================================================================
@@ -134,10 +135,23 @@ def _create_deal_product(cycle, user):
     return dp
 
 
+def _create_second_cycle(account, user):
+    from app_modules.decision_cycles.models import DecisionCycle
+    c = DecisionCycle(
+        account=account,
+        owner=user,
+        name='Second Cycle',
+        is_active=True,
+    )
+    c.save(user=user, client_id=account.client_id)
+    return c
+
+
 # =============================================================================
 # RECOMPUTE_AND_STORE METHOD
 # =============================================================================
 
+@pytest.mark.django_db(transaction=True)
 class TestRecomputeAndStore:
     """ReadinessScoreService.recompute_and_store persists the score."""
 
@@ -161,6 +175,7 @@ class TestRecomputeAndStore:
 # SIGNAL-TRIGGERED RECOMPUTE
 # =============================================================================
 
+@pytest.mark.django_db(transaction=True)
 class TestSignalTriggeredRecompute:
     """Django signals auto-recompute readiness_score on model changes."""
 
@@ -252,7 +267,22 @@ class TestSignalTriggeredRecompute:
         activity.save(user=user_a)
         assert _refresh(cycle) == 0
 
+    def test_activity_reassignment_recomputes_both_cycles(
+        self, cycle, account, activity, user_a,
+    ):
+        activity.decision_cycle = cycle
+        activity.save(user=user_a)
+        assert _refresh(cycle) == 5
 
+        cycle_b = _create_second_cycle(account, user_a)
+        activity.decision_cycle = cycle_b
+        activity.save(user=user_a)
+
+        assert _refresh(cycle) == 0
+        assert _refresh(cycle_b) == 5
+
+
+@pytest.mark.django_db(transaction=True)
 class TestSignalTriggeredFullCoverage:
     """Score reaches 100 when all dimensions are filled via signal triggers."""
 
@@ -273,10 +303,10 @@ class TestSignalTriggeredFullCoverage:
         assert _refresh(cycle) == 100
 
 
+@pytest.mark.django_db(transaction=True)
 class TestNoRecomputeWithoutCycle:
     """Signals on models not linked to a cycle should not error."""
 
     def test_activity_without_cycle_no_error(self, account, activity, user_a):
         activity.decision_cycle = None
         activity.save(user=user_a)
-        # No crash, no readiness_score to check
