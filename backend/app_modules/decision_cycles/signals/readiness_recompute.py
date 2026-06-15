@@ -24,7 +24,7 @@ Trigger matrix (from ReadinessScoreService._evaluate_dimensions):
 import logging
 
 from django.db import transaction
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from core.cache_utils import are_signals_disabled
@@ -36,12 +36,10 @@ logger = logging.getLogger(__name__)
 # HELPER — resolve DC and recompute after commit
 # =============================================================================
 
-def _recompute_after_commit(decision_cycle):
-    """Schedule readiness recompute after transaction commit."""
-    if decision_cycle is None:
+def _recompute_after_commit_by_id(cycle_id):
+    """Schedule readiness recompute for a cycle ID after transaction commit."""
+    if cycle_id is None:
         return
-
-    cycle_id = decision_cycle.pk
 
     def _do_recompute():
         try:
@@ -71,6 +69,13 @@ def _recompute_after_commit(decision_cycle):
         _do_recompute()
 
 
+def _recompute_after_commit(decision_cycle):
+    """Schedule readiness recompute after transaction commit."""
+    if decision_cycle is None:
+        return
+    _recompute_after_commit_by_id(decision_cycle.pk)
+
+
 def _handle_signal_change(instance):
     """Common handler for signal models that have a decision_cycle FK."""
     if are_signals_disabled():
@@ -80,8 +85,22 @@ def _handle_signal_change(instance):
         _recompute_after_commit(dc)
 
 
-def _handle_activity_change(instance):
-    """Handler for Activity model (decision_cycle FK is nullable)."""
+def _handle_activity_post_save(instance):
+    """Handler for Activity post_save — recompute new and old cycle."""
+    if are_signals_disabled():
+        return
+    new_dc = getattr(instance, 'decision_cycle', None)
+    old_cycle_id = getattr(instance, '_old_decision_cycle_id', None)
+
+    if new_dc is not None:
+        _recompute_after_commit(new_dc)
+
+    if old_cycle_id is not None and (new_dc is None or old_cycle_id != new_dc.pk):
+        _recompute_after_commit_by_id(old_cycle_id)
+
+
+def _handle_activity_delete(instance):
+    """Handler for Activity post_delete."""
     if are_signals_disabled():
         return
     dc = getattr(instance, 'decision_cycle', None)
@@ -188,14 +207,30 @@ def recompute_on_deal_product_delete(sender, instance, **kwargs):
 
 
 # =============================================================================
-# ACTIVITY
+# ACTIVITY — pre_save captures old cycle for unlink/reassignment
 # =============================================================================
+
+@receiver(pre_save, sender='module_activities.Activity')
+def capture_old_cycle_on_activity(sender, instance, **kwargs):
+    """Stash the previous decision_cycle_id so post_save can recompute it."""
+    if are_signals_disabled():
+        return
+    if instance.pk:
+        old_id = (
+            sender.objects.filter(pk=instance.pk)
+            .values_list('decision_cycle_id', flat=True)
+            .first()
+        )
+        instance._old_decision_cycle_id = old_id
+    else:
+        instance._old_decision_cycle_id = None
+
 
 @receiver(post_save, sender='module_activities.Activity')
 def recompute_on_activity_save(sender, instance, **kwargs):
-    _handle_activity_change(instance)
+    _handle_activity_post_save(instance)
 
 
 @receiver(post_delete, sender='module_activities.Activity')
 def recompute_on_activity_delete(sender, instance, **kwargs):
-    _handle_activity_change(instance)
+    _handle_activity_delete(instance)
