@@ -382,6 +382,7 @@ class CycleAggregationService:
                 'total_steps': 0,
                 'validated_steps': 0,
                 'current_step_name': None,
+                'current_step_order': None,
                 'percentage': 0,
             }
 
@@ -398,10 +399,12 @@ class CycleAggregationService:
 
         # Current step: first non-validated step in order
         current_name = None
+        current_order = None
         sorted_steps = sorted(steps, key=lambda s: s.order)
         for s in sorted_steps:
             if _get_status(s) != 'VALIDATED':
                 current_name = s.name
+                current_order = s.order
                 break
 
         percentage = round((validated / total) * 100) if total > 0 else 0
@@ -410,6 +413,7 @@ class CycleAggregationService:
             'total_steps': total,
             'validated_steps': validated,
             'current_step_name': current_name,
+            'current_step_order': current_order,
             'percentage': percentage,
         }
 

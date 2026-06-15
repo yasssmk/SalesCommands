@@ -351,6 +351,7 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'readiness_score',
+            'estimated_value', 'estimated_timeline_days',
             'closed_by_name',
             'steps', 'steps_count', 'validated_steps_count',
             # Cycle-level insights
@@ -413,6 +414,7 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             'total_steps': 0,
             'validated_steps': 0,
             'current_step_name': None,
+            'current_step_order': None,
             'percentage': 0,
         })
 
