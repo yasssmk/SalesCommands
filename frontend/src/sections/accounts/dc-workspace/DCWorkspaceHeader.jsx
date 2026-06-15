@@ -375,13 +375,15 @@ export default function useDCWorkspaceHeaderProps({
       <DealHealthRunButton cycleId={cycle?.id} disabled={isLocked} />
 
       <Tooltip title="Edit cycle">
-        <IconButton
-          size="small"
-          onClick={() => setEditModalOpen(true)}
-          disabled={isLocked}
-        >
-          <EditOutlined />
-        </IconButton>
+        <span>
+          <IconButton
+            size="small"
+            onClick={() => setEditModalOpen(true)}
+            disabled={isLocked}
+          >
+            <EditOutlined />
+          </IconButton>
+        </span>
       </Tooltip>
 
       {/* Close / Reopen */}
