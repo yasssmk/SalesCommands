@@ -7,11 +7,15 @@ import { useRouter } from "next/navigation";
 // Project imports
 import DecisionCycleTimeline from "sections/accounts/decision-cycles/DecisionCycleTimeline";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
+import StepDetailDrawer from "./StepDetailDrawer";
 
 // ==============================|| DC WORKSPACE - TIMELINE TAB ||============================== //
 
 export default function TimelineTab({ cycle, accountId, onRefresh }) {
   const router = useRouter();
+
+  // Step detail drawer state
+  const [drawerStep, setDrawerStep] = useState(null);
 
   // Activity Modal state (create within step)
   const [activityModalOpen, setActivityModalOpen] = useState(false);
@@ -21,7 +25,11 @@ export default function TimelineTab({ cycle, accountId, onRefresh }) {
     cycle?.outcome,
   );
 
-  const handleStepClick = useCallback(
+  const handleStepClick = useCallback((step) => {
+    setDrawerStep(step);
+  }, []);
+
+  const handleGoToStep = useCallback(
     (step) => {
       if (accountId) {
         router.push(`/accounts/${accountId}/decisionSteps/${step.id}`);
@@ -65,6 +73,13 @@ export default function TimelineTab({ cycle, accountId, onRefresh }) {
         onActivityClick={handleActivityClick}
         onAddActivity={handleAddActivity}
         onRefresh={onRefresh}
+      />
+
+      <StepDetailDrawer
+        open={Boolean(drawerStep)}
+        step={drawerStep}
+        onClose={() => setDrawerStep(null)}
+        onGoToStep={handleGoToStep}
       />
 
       <ActivityModal
