@@ -10,7 +10,7 @@ import ActivityModal from "sections/accounts/activities/ActivityModal";
 
 // ==============================|| DC WORKSPACE - TIMELINE TAB ||============================== //
 
-export default function DCTimelineTab({ cycle, accountId, onRefresh }) {
+export default function TimelineTab({ cycle, accountId, onRefresh }) {
   const router = useRouter();
 
   // Activity Modal state (create within step)
@@ -80,7 +80,7 @@ export default function DCTimelineTab({ cycle, accountId, onRefresh }) {
   );
 }
 
-DCTimelineTab.propTypes = {
+TimelineTab.propTypes = {
   cycle: PropTypes.object,
   accountId: PropTypes.string,
   onRefresh: PropTypes.func,

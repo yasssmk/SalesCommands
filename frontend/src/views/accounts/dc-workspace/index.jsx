@@ -20,7 +20,7 @@ import {
   DC_WORKSPACE_TABS,
   DEFAULT_TAB,
 } from "sections/accounts/dc-workspace/DCWorkspaceTabs";
-import DCTimelineTab from "sections/accounts/dc-workspace/DCTimelineTab";
+import TimelineTab from "sections/accounts/dc-workspace/TimelineTab";
 
 // ==============================|| DC WORKSPACE PAGE ||============================== //
 
@@ -58,7 +58,7 @@ export default function DCWorkspacePage() {
     switch (currentTab) {
       case "timeline":
         return (
-          <DCTimelineTab
+          <TimelineTab
             cycle={cycle}
             accountId={accountId}
             onRefresh={mutateCycles}
@@ -77,7 +77,7 @@ export default function DCWorkspacePage() {
         );
       default:
         return (
-          <DCTimelineTab
+          <TimelineTab
             cycle={cycle}
             accountId={accountId}
             onRefresh={mutateCycles}
