@@ -76,8 +76,15 @@ export default function StepDetailDrawer({ open, step, onClose, onGoToStep }) {
             <Chip
               label={step.derived_status_display}
               size="small"
-              color={step.derived_status_color || "default"}
               variant="outlined"
+              sx={
+                step.derived_status_color
+                  ? {
+                      borderColor: step.derived_status_color,
+                      color: step.derived_status_color,
+                    }
+                  : undefined
+              }
             />
           )}
         </Stack>
