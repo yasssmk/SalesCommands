@@ -13,6 +13,8 @@ import {
   ToolOutlined,
   StopOutlined,
   ScheduleOutlined,
+  TeamOutlined,
+  SafetyOutlined,
 } from "@ant-design/icons";
 
 const TYPE_CONFIG = {
@@ -22,6 +24,8 @@ const TYPE_CONFIG = {
   "tech-stack": { color: "primary", label: "Tech Stack", Icon: ToolOutlined },
   blockers: { color: "default", label: "Blocker", Icon: StopOutlined },
   "next-steps": { color: "secondary", label: "Next Step", Icon: ScheduleOutlined },
+  people: { color: "success", label: "People", Icon: TeamOutlined },
+  constraints: { color: "default", label: "Constraint", Icon: SafetyOutlined },
 };
 
 // ==============================|| SIGNAL TYPE CHIP ||============================== //
@@ -56,6 +60,8 @@ SignalTypeChip.propTypes = {
     "tech-stack",
     "blockers",
     "next-steps",
+    "people",
+    "constraints",
   ]),
   size: PropTypes.oneOf(["small", "medium"]),
 };
