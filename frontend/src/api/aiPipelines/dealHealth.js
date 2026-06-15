@@ -16,14 +16,21 @@
  *   { success: false, error, status, response }   → generic error
  */
 
+import useSWR from "swr";
+import { useMemo } from "react";
+import { useAuth } from "hooks/useAuth";
 import { api } from "utils/axiosClient";
-import { revalidateMultiple } from "api/_swr";
+import { tenantKey, revalidateMultiple } from "api/_swr";
 import { isValidUUID } from "utils/validators";
 
 // ==============================|| ENDPOINTS ||============================== //
 
 const endpoints = {
   dealHealthRun: "/module-ai-pipelines/deal-health/run/",
+  snapshotLatest: (cycleId) =>
+    `/decision_cycles/${cycleId}/health-snapshots/latest/`,
+  snapshotList: (cycleId) =>
+    `/decision_cycles/${cycleId}/health-snapshots/`,
 };
 
 // ==============================|| MUTATION ||============================== //
@@ -75,4 +82,75 @@ export async function runDealHealth(cycleId) {
     status: result.status || 0,
     response: result.response || null,
   };
+}
+
+// ==============================|| SWR HOOKS ||============================== //
+
+/**
+ * GET latest deal-health snapshot for a decision cycle.
+ *
+ * GET /decision_cycles/{cycleId}/health-snapshots/latest/
+ *
+ * Backend returns { success: true, data: <snapshot|null> }.
+ * When no snapshot exists, data is null — this is NOT an error.
+ *
+ * @param {string} cycleId - UUID of the DecisionCycle.
+ * @returns {Object} { snapshot, snapshotLoading, snapshotError, mutateSnapshot }
+ */
+export function useGetDealHealthSnapshot(cycleId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    return tenantKey(endpoints.snapshotLatest(cycleId), tenantId);
+  }, [cycleId, tenantId]);
+
+  const { data, isLoading, error, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  return useMemo(
+    () => ({
+      snapshot: data?.data ?? null,
+      snapshotLoading: isLoading,
+      snapshotError: error,
+      mutateSnapshot: mutate,
+    }),
+    [data, isLoading, error, mutate],
+  );
+}
+
+/**
+ * GET deal-health snapshot history for a decision cycle.
+ *
+ * GET /decision_cycles/{cycleId}/health-snapshots/
+ *
+ * @param {string} cycleId - UUID of the DecisionCycle.
+ * @returns {Object} { snapshots, snapshotsLoading, snapshotsError, mutateSnapshots }
+ */
+export function useGetDealHealthHistory(cycleId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    return tenantKey(endpoints.snapshotList(cycleId), tenantId);
+  }, [cycleId, tenantId]);
+
+  const { data, isLoading, error, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  return useMemo(
+    () => ({
+      snapshots: data?.data?.results ?? data?.data ?? [],
+      snapshotsLoading: isLoading,
+      snapshotsError: error,
+      mutateSnapshots: mutate,
+    }),
+    [data, isLoading, error, mutate],
+  );
 }

@@ -2,16 +2,18 @@
 /**
  * API hooks and mutations for the Signals module.
  *
- * Six signal types, each with its own endpoint group:
- *   'pain'       → /module-signals/pain/
- *   'objective'  → /module-signals/objective/
- *   'impact'     → /module-signals/impact/
- *   'tech-stack' → /module-signals/tech-stack/
- *   'blockers'   → /module-signals/blockers/
- *   'next-steps' → /module-signals/next-steps/
+ * Eight signal types, each with its own endpoint group:
+ *   'pain'        → /module-signals/pain/
+ *   'objective'   → /module-signals/objective/
+ *   'impact'      → /module-signals/impact/
+ *   'tech-stack'  → /module-signals/tech-stack/
+ *   'blockers'    → /module-signals/blockers/
+ *   'next-steps'  → /module-signals/next-steps/
+ *   'people'      → /module-signals/people/
+ *   'constraints' → /module-signals/constraints/
  *
  * Mutations accept a `signalType` param:
- *   'pain' | 'objective' | 'impact' | 'tech-stack' | 'blockers' | 'next-steps'
+ *   'pain' | 'objective' | 'impact' | 'tech-stack' | 'blockers' | 'next-steps' | 'people' | 'constraints'
  *
  * Follows the same patterns as api/accounts/activities.js.
  */
@@ -32,6 +34,8 @@ const SIGNAL_TYPES = [
   "tech-stack",
   "blockers",
   "next-steps",
+  "people",
+  "constraints",
 ];
 
 // ==============================|| ENDPOINTS ||============================== //
@@ -81,6 +85,20 @@ const endpoints = {
   nextStepsValidate: (id) => `/module-signals/next-steps/${id}/validate/`,
   nextStepsReject: (id) => `/module-signals/next-steps/${id}/reject/`,
   nextStepsReopen: (id) => `/module-signals/next-steps/${id}/reopen/`,
+
+  // People
+  people: "/module-signals/people/",
+  peopleDetail: (id) => `/module-signals/people/${id}/`,
+  peopleValidate: (id) => `/module-signals/people/${id}/validate/`,
+  peopleReject: (id) => `/module-signals/people/${id}/reject/`,
+  peopleReopen: (id) => `/module-signals/people/${id}/reopen/`,
+
+  // Constraint
+  constraints: "/module-signals/constraints/",
+  constraintsDetail: (id) => `/module-signals/constraints/${id}/`,
+  constraintsValidate: (id) => `/module-signals/constraints/${id}/validate/`,
+  constraintsReject: (id) => `/module-signals/constraints/${id}/reject/`,
+  constraintsReopen: (id) => `/module-signals/constraints/${id}/reopen/`,
 };
 
 // ==============================|| ENDPOINT HELPERS ||============================== //
@@ -88,7 +106,7 @@ const endpoints = {
 /**
  * Resolve base list endpoint for a given signal type.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @returns {string} Base URL
  */
 function getBaseEndpoint(signalType) {
@@ -105,6 +123,10 @@ function getBaseEndpoint(signalType) {
       return endpoints.blockers;
     case "next-steps":
       return endpoints.nextSteps;
+    case "people":
+      return endpoints.people;
+    case "constraints":
+      return endpoints.constraints;
     default:
       return null;
   }
@@ -113,7 +135,7 @@ function getBaseEndpoint(signalType) {
 /**
  * Resolve detail endpoint for a given signal type + id.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Detail URL
  */
@@ -131,6 +153,10 @@ function getDetailEndpoint(signalType, id) {
       return endpoints.blockersDetail(id);
     case "next-steps":
       return endpoints.nextStepsDetail(id);
+    case "people":
+      return endpoints.peopleDetail(id);
+    case "constraints":
+      return endpoints.constraintsDetail(id);
     default:
       return null;
   }
@@ -139,7 +165,7 @@ function getDetailEndpoint(signalType, id) {
 /**
  * Resolve validate endpoint for a given signal type + id.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Validate URL
  */
@@ -157,6 +183,10 @@ function getValidateEndpoint(signalType, id) {
       return endpoints.blockersValidate(id);
     case "next-steps":
       return endpoints.nextStepsValidate(id);
+    case "people":
+      return endpoints.peopleValidate(id);
+    case "constraints":
+      return endpoints.constraintsValidate(id);
     default:
       return null;
   }
@@ -165,7 +195,7 @@ function getValidateEndpoint(signalType, id) {
 /**
  * Resolve reject endpoint for a given signal type + id.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Reject URL
  */
@@ -183,6 +213,10 @@ function getRejectEndpoint(signalType, id) {
       return endpoints.blockersReject(id);
     case "next-steps":
       return endpoints.nextStepsReject(id);
+    case "people":
+      return endpoints.peopleReject(id);
+    case "constraints":
+      return endpoints.constraintsReject(id);
     default:
       return null;
   }
@@ -191,7 +225,7 @@ function getRejectEndpoint(signalType, id) {
 /**
  * Resolve reopen endpoint for a given signal type + id.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} id - Signal UUID
  * @returns {string} Reopen URL
  */
@@ -209,13 +243,17 @@ function getReopenEndpoint(signalType, id) {
       return endpoints.blockersReopen(id);
     case "next-steps":
       return endpoints.nextStepsReopen(id);
+    case "people":
+      return endpoints.peopleReopen(id);
+    case "constraints":
+      return endpoints.constraintsReopen(id);
     default:
       return null;
   }
 }
 
 /**
- * Revalidate all 6 signal list caches.
+ * Revalidate all 8 signal list caches.
  * Called after any write that could affect any signal list.
  */
 function revalidateSignalLists() {
@@ -226,6 +264,8 @@ function revalidateSignalLists() {
     endpoints.techStack,
     endpoints.blockers,
     endpoints.nextSteps,
+    endpoints.people,
+    endpoints.constraints,
   ]);
 }
 
@@ -290,7 +330,7 @@ function buildUrlWithParams(baseUrl, params = {}) {
  * Used internally by the public convenience hooks below.
  * Not exported — callers use useGetSignalsByAccount / useGetSignalsByActivity.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|null} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'|null} signalType
  * @param {Object} options - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
@@ -353,7 +393,7 @@ function useGetSignals(signalType, options = {}) {
  * Fetches signals of a given type for a specific account.
  *
  * @param {string} accountId - Account UUID
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {Object} options   - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
@@ -382,7 +422,7 @@ export function useGetSignalsByAccount(accountId, signalType, options = {}) {
  * Fetches signals of a given type linked to a specific source activity.
  *
  * @param {string} activityId - Activity UUID
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {Object} options    - { page, pageSize, search, ordering, filters }
  * @returns {Object} { signals, signalsCount, signalsLoading, signalsError,
  *                     signalsValidating, signalsEmpty, mutateSignals }
@@ -468,7 +508,7 @@ export function useGetSignalChoices() {
  *
  * POST /module-signals/{signalType}/
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {Object} payload - Signal creation payload
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
@@ -495,7 +535,7 @@ export async function createSignal(signalType, payload) {
  *
  * PATCH /module-signals/{signalType}/{id}/
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} signalId - Signal UUID
  * @param {Object} payload  - Partial update payload
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
@@ -527,7 +567,7 @@ export async function updateSignal(signalType, signalId, payload) {
  *
  * DELETE /module-signals/{signalType}/{id}/
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} signalId - Signal UUID
  * @returns {Promise<{success: boolean, status?: number, error?: string}>}
  */
@@ -558,7 +598,7 @@ export async function deleteSignal(signalType, signalId) {
  * POST /module-signals/{signalType}/{id}/validate/
  * Transitions signal from PENDING → VALIDATED.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} signalId - Signal UUID
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
@@ -590,7 +630,7 @@ export async function validateSignal(signalType, signalId) {
  * POST /module-signals/{signalType}/{id}/reject/
  * Body (optional): { reason: string }
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} signalId    - Signal UUID
  * @param {string|null} reason - Optional rejection reason
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
@@ -624,7 +664,7 @@ export async function rejectSignal(signalType, signalId, reason = null) {
  * POST /module-signals/{signalType}/{id}/reopen/
  * Transitions a VALIDATED or REJECTED signal back to PENDING.
  *
- * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'} signalType
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
  * @param {string} signalId - Signal UUID
  * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
  */
