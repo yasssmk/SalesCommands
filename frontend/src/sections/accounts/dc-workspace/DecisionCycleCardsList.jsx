@@ -56,7 +56,7 @@ function filterCycles(cycles, filter) {
   if (!cycles) return [];
   switch (filter) {
     case "active":
-      return cycles.filter((c) => c.is_active);
+      return cycles.filter((c) => !c.outcome);
     case "won":
       return cycles.filter((c) => c.outcome === "WON");
     case "lost":
