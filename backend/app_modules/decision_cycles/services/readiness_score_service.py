@@ -54,6 +54,15 @@ class ReadinessScoreService:
     def __init__(self, weights=None):
         self.weights = weights or self.DIMENSION_WEIGHTS.copy()
 
+    @classmethod
+    def recompute_and_store(cls, decision_cycle):
+        """Recompute readiness score and persist it on the cycle."""
+        service = cls()
+        result = service.calculate(decision_cycle)
+        decision_cycle.readiness_score = result['score']
+        decision_cycle.save(update_fields=['readiness_score'])
+        return result
+
     def calculate(self, decision_cycle):
         """
         Calculate readiness score for a decision cycle.

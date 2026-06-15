@@ -139,7 +139,16 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Hold Until'),
         help_text=_('Resume date when cycle is ON_HOLD. Required for ON_HOLD only.')
     )
-    
+
+    # READINESS
+    readiness_score = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name=_('Readiness Score'),
+        help_text=_('Auto-computed score (0-100) from validated signals and deal evidence.')
+    )
+
     # ==========================================================================
     # META
     # ==========================================================================
