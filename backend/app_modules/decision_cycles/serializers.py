@@ -188,6 +188,9 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
             
             # Timeline (model fields)
             'start_date', 'expected_end', 'completed_at',
+
+            # Step metadata (model fields)
+            'description', 'goal', 'criterias', 'metrics',
             
             # Summary (no DB queries - uses annotation)
             'stakeholder',
