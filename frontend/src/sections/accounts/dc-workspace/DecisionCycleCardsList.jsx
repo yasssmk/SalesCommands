@@ -116,9 +116,11 @@ function CycleCard({ cycle, accountId }) {
   const router = useRouter();
   const status = getStatusDisplay(cycle);
   const age = daysSince(cycle.created_at);
-  const stepsTotal = cycle.steps_count ?? 0;
-  const stepsValidated = cycle.validated_steps_count ?? 0;
-  const progress = cycle.progress ?? 0;
+  const progress = cycle.progress || {};
+  const percentage = progress.percentage ?? 0;
+  const stepsTotal = progress.total_steps ?? 0;
+  const stepsValidated = progress.validated_steps ?? 0;
+  const currentStepName = progress.current_step_name || null;
   const readiness = cycle.readiness_score;
 
   const handleClick = useCallback(() => {
@@ -193,16 +195,18 @@ function CycleCard({ cycle, accountId }) {
                   }}
                 />
                 <Typography variant="caption" color="text.secondary">
-                  {stepsValidated}/{stepsTotal} steps
+                  {currentStepName
+                    ? `${currentStepName} · ${stepsValidated}/${stepsTotal}`
+                    : `${stepsValidated}/${stepsTotal} steps`}
                 </Typography>
               </Stack>
               <Typography variant="caption" color="text.secondary">
-                {progress}%
+                {percentage}%
               </Typography>
             </Stack>
             <LinearProgress
               variant="determinate"
-              value={progress}
+              value={percentage}
               sx={{ height: 4, borderRadius: 2 }}
             />
           </Stack>
