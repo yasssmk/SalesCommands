@@ -31,3 +31,21 @@ export function formatSuggestedContacts(contacts) {
     .filter(Boolean)
     .join(" · ");
 }
+
+export function getPeopleSummary(signal) {
+  const role = signal.role_display || signal.role || "";
+  const contact = signal.target_contact;
+  const dept = signal.target_department;
+  const name = contact
+    ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim()
+    : null;
+  const deptName = dept?.name ?? null;
+  if (name && deptName) return `${role} — ${name} (${deptName})`;
+  if (name) return `${role} — ${name}`;
+  if (deptName) return `${role} — ${deptName}`;
+  return role || "—";
+}
+
+export function getConstraintSummary(signal) {
+  return signal.summary || "—";
+}

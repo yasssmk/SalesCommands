@@ -34,6 +34,8 @@ import {
   formatContact,
   getNextStepSummary,
   formatSuggestedContacts,
+  getPeopleSummary,
+  getConstraintSummary,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS ||============================== //
@@ -60,6 +62,12 @@ function getSummary(signal, signalType) {
   if (signalType === "next-steps") {
     return getNextStepSummary(signal);
   }
+  if (signalType === "people") {
+    return getPeopleSummary(signal);
+  }
+  if (signalType === "constraints") {
+    return getConstraintSummary(signal);
+  }
   return signal.summary || "—";
 }
 
@@ -82,11 +90,14 @@ export default function SignalDetailCard({
   );
 
   const isNextStep = signalType === "next-steps";
-  const hasTheme = !isNextStep && Boolean(signal.what_display && signal.dimension_display);
-  const contact = isNextStep ? null : getContact(signal);
+  const isPeople = signalType === "people";
+  const hasTheme = !isNextStep && !isPeople && Boolean(signal.what_display && signal.dimension_display);
+  const contact = isNextStep ? null : isPeople ? null : getContact(signal);
   const contactName = isNextStep
     ? formatSuggestedContacts(signal.suggested_contacts)
-    : formatContact(contact);
+    : isPeople
+      ? formatContact(signal.target_contact)
+      : formatContact(contact);
   const validateDisabled = missingFields.length > 0;
   const techPending =
     signalType === "tech-stack" && getTechSummary(signal).pending;
@@ -127,6 +138,15 @@ export default function SignalDetailCard({
             color="warning"
             variant="outlined"
           />
+        )}
+        {isPeople && signal.role_display && (
+          <Chip label={signal.role_display} size="small" variant="outlined" />
+        )}
+        {isPeople && signal.influence_display && (
+          <Chip label={signal.influence_display} size="small" variant="outlined" />
+        )}
+        {signalType === "constraints" && signal.rigidity_display && (
+          <Chip label={signal.rigidity_display} size="small" variant="outlined" />
         )}
         <SignalStatusChip status={signal.status} size="small" />
       </Stack>
@@ -263,6 +283,8 @@ SignalDetailCard.propTypes = {
     "tech-stack",
     "blockers",
     "next-steps",
+    "people",
+    "constraints",
   ]).isRequired,
   onValidate: PropTypes.func,
   onReject: PropTypes.func,
