@@ -24,7 +24,7 @@ Return contract:
 
 import json
 
-from ..constants import AIPipelineStatus, AIPipelineType
+from ..constants import AIPipelineStatus, AIPipelineType, PIPELINE_TEMPERATURES
 from ..prompts.base import PromptParseError
 from ..prompts.deal_health import (
     SYSTEM_PROMPT,
@@ -61,7 +61,7 @@ class DealHealthPipeline(BasePipeline):
         'diagnostic': DIAGNOSTIC_PROMPT_VERSION,
     }
 
-    TEMPERATURE = 0.2
+    TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.DEAL_HEALTH]
 
     # =========================================================================
     # MAIN ENTRY

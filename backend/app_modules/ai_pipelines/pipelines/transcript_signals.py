@@ -120,7 +120,7 @@ an import cycle if a future refactor has F.3 reading pipeline class
 attributes.
 """
 
-from ..constants import AIPipelineStatus, AIPipelineType
+from ..constants import AIPipelineStatus, AIPipelineType, PIPELINE_TEMPERATURES
 from ..prompts.base import PromptParseError
 from ..prompts.transcript_signals.system import (
     SYSTEM_PROMPT,
@@ -195,7 +195,7 @@ class QualificationSignalsPipeline(BasePipeline):
         'blocker':   BLOCKER_PROMPT_VERSION,
     }
 
-    TEMPERATURE = 0.0
+    TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.TRANSCRIPT_SIGNALS]
 
     # Safety filter knobs -- read by TranscriptSignalExtractor.persist_stage().
     # Strict defaults for signal extraction (vs. e.g. sentiment analysis):
