@@ -18,6 +18,7 @@ def get_urlpatterns():
         DecisionCycleChoicesView,
         DealProductViewSet,
         DealHealthSnapshotViewSet,
+        ManagerNoteViewSet,
     )
 
     return [
@@ -93,6 +94,19 @@ def get_urlpatterns():
         path('<uuid:cycle_id>/health-snapshots/<uuid:pk>/', DealHealthSnapshotViewSet.as_view({
             'get': 'retrieve',
         }), name='deal-health-snapshot-detail'),
+
+        # =====================================================================
+        # MANAGER NOTES — nested under a cycle
+        # =====================================================================
+        path('<uuid:cycle_id>/notes/', ManagerNoteViewSet.as_view({
+            'get': 'list',
+            'post': 'create',
+        }), name='manager-note-list'),
+
+        path('<uuid:cycle_id>/notes/<uuid:pk>/', ManagerNoteViewSet.as_view({
+            'get': 'retrieve',
+            'delete': 'destroy',
+        }), name='manager-note-detail'),
 
         # =====================================================================
         # DECISION STEPS - CRUD

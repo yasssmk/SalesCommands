@@ -11,7 +11,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
-from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment, DealHealthSnapshot, DealProduct
+from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment, DealHealthSnapshot, DealProduct, ManagerNote
 from .constants import PipelineStep, DecisionStepStatus, PIPELINE_STEPS_CONFIG
 
 
@@ -1451,5 +1451,73 @@ class DealProductUpdateSerializer(ClientScopeManager.SerializerMixin, serializer
         user = self.context.get('request').user if self.context.get('request') else None
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        instance.save(user=user)
+        return instance
+
+
+# ============================================================================
+# MANAGER NOTE SERIALIZERS
+# ============================================================================
+
+class ManagerNoteListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """
+    Read-only serializer for ManagerNote list views.
+    """
+
+    author_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ManagerNote
+        fields = [
+            'id',
+            'decision_cycle',
+            'content',
+            'created_by',
+            'author_name',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_author_name(self, obj):
+        user = obj.created_by
+        if not user:
+            return None
+        name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+        return name or user.email
+
+
+class ManagerNoteCreateSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+    """
+    Write serializer for ManagerNote creation.
+
+    decision_cycle is injected from the view context (URL kwargs).
+    """
+
+    class Meta:
+        model = ManagerNote
+        fields = [
+            'content',
+        ]
+        extra_kwargs = {
+            'content': {'required': True, 'allow_blank': False},
+        }
+
+    def validate(self, attrs):
+        client_id = self._get_client_id_from_context()
+        attrs['client_id'] = client_id
+
+        decision_cycle = self.context.get('decision_cycle')
+        if not decision_cycle:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='decision_cycle')
+            )
+        attrs['decision_cycle'] = decision_cycle
+
+        return attrs
+
+    def create(self, validated_data):
+        user = self.context.get('request').user if self.context.get('request') else None
+        instance = ManagerNote(**validated_data)
         instance.save(user=user)
         return instance
