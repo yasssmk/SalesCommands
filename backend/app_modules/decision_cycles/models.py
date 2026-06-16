@@ -875,3 +875,40 @@ class DealProduct(ModuleBaseModel, ClientScopeManager.ModelMixin):
         if price is None:
             return 0
         return self.quantity * price
+
+
+class ManagerNote(ModuleBaseModel, ClientScopeManager.ModelMixin):
+    """
+    Manager note attached to a DecisionCycle.
+
+    Forms a chronological thread of notes authored by managers/admins.
+    Author is tracked via ModuleBaseModel.created_by (auto-set by save(user=)).
+    """
+
+    decision_cycle = models.ForeignKey(
+        DecisionCycle,
+        on_delete=models.CASCADE,
+        related_name='manager_notes',
+        verbose_name=_('Decision Cycle'),
+    )
+
+    content = models.TextField(
+        verbose_name=_('Content'),
+    )
+
+    class Meta(ClientScopeManager.ModelMixin.get_meta_constraints(
+        index_fields=[],
+    )):
+        db_table = 'manager_notes'
+        verbose_name = _('Manager Note')
+        verbose_name_plural = _('Manager Notes')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=['decision_cycle', '-created_at'],
+                name='mn_cycle_date_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f"Note by {self.created_by_id} — {self.decision_cycle.name}"

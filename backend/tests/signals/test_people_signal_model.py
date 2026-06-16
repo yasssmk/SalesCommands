@@ -94,15 +94,42 @@ class TestPeopleSignalCanonicalKey:
 
 class TestPeopleSignalClean:
 
-    def test_clean_raises_without_source_activity(self, account, contact):
+    def test_clean_raises_without_source_activity_for_llm(self, account, contact):
+        """LLM-sourced signals always require source_activity."""
         s = PeopleSignal(
             account=account,
+            source=SignalSource.LLM_EXTRACTED,
             role=PeopleRole.CHAMPION,
             target_contact=contact,
         )
         with pytest.raises(ValidationError) as exc_info:
             s.clean()
         assert 'source_activity' in exc_info.value.message_dict
+
+    def test_clean_raises_manual_without_activity_or_cycle(self, account, contact):
+        """MANUAL without source_activity AND without decision_cycle → error."""
+        s = PeopleSignal(
+            account=account,
+            source=SignalSource.MANUAL,
+            role=PeopleRole.CHAMPION,
+            target_contact=contact,
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            s.clean()
+        assert 'source_activity' in exc_info.value.message_dict
+
+    def test_clean_passes_manual_with_decision_cycle(
+        self, account, decision_cycle, contact,
+    ):
+        """MANUAL + decision_cycle anchor (no source_activity) → valid."""
+        s = PeopleSignal(
+            account=account,
+            source=SignalSource.MANUAL,
+            decision_cycle=decision_cycle,
+            role=PeopleRole.CHAMPION,
+            target_contact=contact,
+        )
+        s.clean()
 
     def test_clean_raises_without_any_target(self, account, activity):
         s = PeopleSignal(
@@ -166,6 +193,23 @@ class TestPeopleSignalLifecycle:
         s.save(user=user_a, client_id=account.client_id)
         assert s.status == SignalStatus.VALIDATED
         assert s.confidence is None
+
+    def test_manual_dc_level_auto_validated(
+        self, account, decision_cycle, contact, user_a,
+    ):
+        """MANUAL + decision_cycle (no source_activity) → VALIDATED."""
+        s = PeopleSignal(
+            account=account,
+            decision_cycle=decision_cycle,
+            role=PeopleRole.ECONOMIC_BUYER,
+            target_contact=contact,
+            source=SignalSource.MANUAL,
+        )
+        s.save(user=user_a, client_id=account.client_id)
+        assert s.status == SignalStatus.VALIDATED
+        assert s.confidence is None
+        assert s.source_activity_id is None
+        assert s.decision_cycle_id == decision_cycle.id
 
     def test_llm_extracted_starts_pending(
         self, account, activity, contact, user_a,

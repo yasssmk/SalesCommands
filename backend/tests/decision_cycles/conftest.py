@@ -250,3 +250,22 @@ def deal_product(db, cycle, product_catalog_entry, user_a):
     )
     dp.save(user=user_a, client_id=cycle.client_id)
     return dp
+
+
+# =============================================================================
+# MANAGER NOTE — note on the cycle
+# =============================================================================
+
+@pytest.fixture
+def manager_note(db, cycle, user_a):
+    """
+    A ManagerNote on the default test cycle, authored by user_a.
+    """
+    from app_modules.decision_cycles.models import ManagerNote
+
+    note = ManagerNote(
+        decision_cycle=cycle,
+        content='Test manager note.',
+    )
+    note.save(user=user_a, client_id=cycle.client_id)
+    return note

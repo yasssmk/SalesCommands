@@ -300,6 +300,23 @@ def contact_extra(db, account, user_a):
 
 
 # =============================================================================
+# DECISION CYCLE — active cycle on tenant A
+# =============================================================================
+
+@pytest.fixture
+def decision_cycle(db, account, user_a):
+    from app_modules.decision_cycles.models import DecisionCycle
+    dc = DecisionCycle(
+        account=account,
+        owner=user_a,
+        name='Test Cycle',
+        is_active=True,
+    )
+    dc.save(user=user_a, client_id=account.client_id)
+    return dc
+
+
+# =============================================================================
 # API CLIENT
 # =============================================================================
 

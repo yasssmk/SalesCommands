@@ -275,7 +275,7 @@ function revalidateSignalLists() {
  * Build a list URL with query params for server-side filtering / pagination.
  *
  * Supported filters:
- *   account_id, source_activity_id, status, signal_category, source
+ *   account_id, source_activity_id, decision_cycle_id, status, signal_category, source
  *
  * Note: signal_type routing is handled by the URL itself, not a query param.
  *
@@ -307,6 +307,9 @@ function buildUrlWithParams(baseUrl, params = {}) {
   }
   if (filters.source_activity_id) {
     query.append("source_activity", filters.source_activity_id);
+  }
+  if (filters.decision_cycle_id) {
+    query.append("decision_cycle", filters.decision_cycle_id);
   }
   if (filters.status) {
     query.append("status", filters.status);

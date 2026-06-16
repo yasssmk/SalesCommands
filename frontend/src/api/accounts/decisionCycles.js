@@ -222,6 +222,8 @@ const endpoints = {
   cycleProducts: (id) => `/decision_cycles/${id}/products/`,
   cycleProductDetail: (cycleId, productId) => `/decision_cycles/${cycleId}/products/${productId}/`,
   cycleReadiness: (id) => `/decision_cycles/${id}/readiness/`,
+  cycleNotes: (id) => `/decision_cycles/${id}/notes/`,
+  cycleNoteDetail: (cycleId, noteId) => `/decision_cycles/${cycleId}/notes/${noteId}/`,
 
   // Decision Steps
   steps: '/decision_cycles/steps/',
@@ -1264,4 +1266,103 @@ export function useGetReadiness(cycleId) {
     }),
     [data, isLoading, error, mutate],
   );
+}
+
+// ==============================|| DC WORKSPACE — MANAGER NOTES ||============================== //
+
+/**
+ * GET MANAGER NOTES for a decision cycle.
+ *
+ * GET /decision_cycles/{cycleId}/notes/
+ *
+ * @param {string|null} cycleId
+ * @returns {Object} { notes, notesLoading, notesError, mutateNotes }
+ */
+export function useGetManagerNotes(cycleId) {
+  const { tenantId } = useAuth();
+
+  const swrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    return tenantKey(endpoints.cycleNotes(cycleId), tenantId);
+  }, [cycleId, tenantId]);
+
+  const { data, isLoading, error, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    shouldRetryOnError: true,
+  });
+
+  return useMemo(
+    () => ({
+      notes: data?.data ?? [],
+      notesLoading: isLoading,
+      notesError: error,
+      mutateNotes: mutate,
+    }),
+    [data, isLoading, error, mutate],
+  );
+}
+
+/**
+ * CREATE a manager note on a decision cycle.
+ *
+ * POST /decision_cycles/{cycleId}/notes/
+ *
+ * @param {string} cycleId
+ * @param {string} content
+ * @returns {Promise<Object>}
+ */
+export async function createManagerNote(cycleId, content) {
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return { success: false, error: 'Invalid cycle ID format', status: 400 };
+  }
+
+  const result = await api.post(endpoints.cycleNotes(cycleId), { content });
+
+  if (result.success) {
+    revalidateMultiple([endpoints.cycleNotes(cycleId)]);
+    const data = result.data?.data || result.data;
+    return { success: true, data };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null,
+  };
+}
+
+/**
+ * DELETE a manager note from a decision cycle.
+ *
+ * DELETE /decision_cycles/{cycleId}/notes/{noteId}/
+ *
+ * @param {string} cycleId
+ * @param {string} noteId
+ * @returns {Promise<Object>}
+ */
+export async function deleteManagerNote(cycleId, noteId) {
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return { success: false, error: 'Invalid cycle ID format', status: 400 };
+  }
+  if (!noteId || !isValidUUID(noteId)) {
+    return { success: false, error: 'Invalid note ID format', status: 400 };
+  }
+
+  const result = await api.delete(
+    endpoints.cycleNoteDetail(cycleId, noteId),
+  );
+
+  if (result.success || result.status === 204) {
+    revalidateMultiple([endpoints.cycleNotes(cycleId)]);
+    return { success: true, status: result.status ?? 204 };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status || 0,
+    response: result.response || null,
+  };
 }

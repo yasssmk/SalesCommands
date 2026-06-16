@@ -4,6 +4,7 @@
 from .views import DecisionCycleViewSet, DecisionStepViewSet, DecisionCycleChoicesView
 from .deal_product_views import DealProductViewSet
 from .deal_health_snapshot_views import DealHealthSnapshotViewSet
+from .manager_note_views import ManagerNoteViewSet
 
 __all__ = [
     'DecisionCycleViewSet',
@@ -11,4 +12,5 @@ __all__ = [
     'DecisionCycleChoicesView',
     'DealProductViewSet',
     'DealHealthSnapshotViewSet',
+    'ManagerNoteViewSet',
 ]

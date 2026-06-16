@@ -21,6 +21,11 @@ import {
   DEFAULT_TAB,
 } from "sections/accounts/dc-workspace/DCWorkspaceTabs";
 import TimelineTab from "sections/accounts/dc-workspace/TimelineTab";
+import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
+import ProductsTab from "sections/accounts/dc-workspace/ProductsTab";
+import PeopleTab from "sections/accounts/dc-workspace/PeopleTab";
+import StrategicTab from "sections/accounts/dc-workspace/StrategicTab";
+import OverviewTab from "sections/accounts/dc-workspace/OverviewTab";
 
 // ==============================|| DC WORKSPACE PAGE ||============================== //
 
@@ -56,6 +61,8 @@ export default function DCWorkspacePage() {
 
   const renderTabContent = () => {
     switch (currentTab) {
+      case "overview":
+        return <OverviewTab cycleId={cycleId} />;
       case "timeline":
         return (
           <TimelineTab
@@ -64,16 +71,19 @@ export default function DCWorkspacePage() {
             onRefresh={mutateCycles}
           />
         );
-      case "people":
-      case "products":
-      case "strategic":
       case "signals":
+        return <SignalsTab cycleId={cycleId} accountId={accountId} />;
+      case "products":
+        return <ProductsTab cycleId={cycleId} cycle={cycle} />;
+      case "people":
+        return <PeopleTab cycleId={cycleId} accountId={accountId} />;
+      case "strategic":
         return (
-          <Box sx={{ p: 3, textAlign: "center" }}>
-            <Typography color="text.secondary">
-              This tab is under construction.
-            </Typography>
-          </Box>
+          <StrategicTab
+            cycleId={cycleId}
+            accountId={accountId}
+            cycle={cycle}
+          />
         );
       default:
         return (

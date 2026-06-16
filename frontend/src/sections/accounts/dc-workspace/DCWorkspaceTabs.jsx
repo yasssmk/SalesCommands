@@ -3,6 +3,7 @@
 // ==============================|| TAB CONFIGURATION ||============================== //
 
 export const DC_WORKSPACE_TABS = [
+  { id: "overview", label: "Overview" },
   { id: "timeline", label: "Timeline" },
   { id: "people", label: "People" },
   { id: "products", label: "Products & Financial" },

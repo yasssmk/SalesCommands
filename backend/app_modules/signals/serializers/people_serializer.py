@@ -27,9 +27,9 @@ Notes:
     At least one must be provided (enforced in PeopleSignal.clean
     and re-surfaced in the Create serializer).
 
-  - source_activity is required at the model layer (PeopleSignal.clean)
-    and re-surfaced at the Create serializer for a clean API error
-    payload, mirroring BlockerSignal.
+  - source_activity is required for LLM-sourced signals. MANUAL signals
+    may omit it when anchored to a decision_cycle (DC-level qualification).
+    Re-surfaced at the Create serializer for a clean API error payload.
 """
 
 from rest_framework import serializers
@@ -37,6 +37,7 @@ from rest_framework import serializers
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
+from ..constants import SignalSource
 from ..models import PeopleSignal
 from .base_serializer import (
     BaseSignalCreateSerializer,
@@ -200,13 +201,15 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
 
     Required:
       - account            (inherited)
-      - source_activity    — every people signal must be tied to a conversation
       - role               — stakeholder role (PeopleRole enum)
+      - source_activity OR decision_cycle (for MANUAL source)
+      - source_activity    (always required for LLM-sourced signals)
 
     Optional:
       - influence          — perceived influence level
       - target_contact     — FK to Contact playing this role
       - target_department  — FK to StandardDepartment
+      - decision_cycle     — FK, required for DC-level manual creation
       - notes              — additional context
       - source_quote, language_original, source, confidence,
         is_inferred, metadata (inherited)
@@ -215,7 +218,7 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
       signal_category — the model shadow-overrides it to None.
 
     Validation (re-surfaced from PeopleSignal.clean()):
-      1. source_activity always required.
+      1. source_activity required unless source=MANUAL + decision_cycle.
       2. At least one of target_contact / target_department required.
     """
 
@@ -232,6 +235,7 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
             'influence',
             'target_contact',
             'target_department',
+            'decision_cycle',
             'notes',
         ]
         extra_kwargs = {
@@ -240,6 +244,7 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
             'influence':         {'required': False, 'allow_null': True},
             'target_contact':    {'required': False, 'allow_null': True},
             'target_department': {'required': False, 'allow_null': True},
+            'decision_cycle':    {'required': False, 'allow_null': True},
             'notes':             {'required': False, 'allow_blank': True},
         }
 
@@ -248,13 +253,16 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
         Enforce People-specific contextual rules, then delegate to base.
 
         Rules (re-surfaced from PeopleSignal.clean()):
-          1. source_activity always required.
+          1. source_activity required unless source=MANUAL with a
+             decision_cycle anchor (DC-level manual qualification).
           2. At least one of target_contact / target_department required.
         """
         if not attrs.get('source_activity'):
-            raise StandardizedValidationError(
-                SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
-            )
+            source = attrs.get('source', SignalSource.MANUAL)
+            if source != SignalSource.MANUAL or not attrs.get('decision_cycle'):
+                raise StandardizedValidationError(
+                    SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
+                )
 
         if not attrs.get('target_contact') and not attrs.get('target_department'):
             raise StandardizedValidationError(

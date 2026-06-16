@@ -32,6 +32,15 @@ const REQUIRED_FIELDS = {
     { key: "suggested_title", label: "Suggested title" },
     { key: "suggested_activity_type", label: "Suggested activity type" },
   ],
+  people: [
+    { key: "role", label: "Role" },
+  ],
+  constraints: [
+    { key: "what", label: "What" },
+    { key: "dimension", label: "Dimension" },
+    { key: "summary", label: "Summary" },
+    { key: "rigidity", label: "Rigidity" },
+  ],
 };
 
 /**
