@@ -23,6 +23,7 @@ import {
 import TimelineTab from "sections/accounts/dc-workspace/TimelineTab";
 import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
 import ProductsTab from "sections/accounts/dc-workspace/ProductsTab";
+import PeopleTab from "sections/accounts/dc-workspace/PeopleTab";
 
 // ==============================|| DC WORKSPACE PAGE ||============================== //
 
@@ -71,6 +72,7 @@ export default function DCWorkspacePage() {
       case "products":
         return <ProductsTab cycleId={cycleId} cycle={cycle} />;
       case "people":
+        return <PeopleTab cycleId={cycleId} accountId={accountId} />;
       case "strategic":
         return (
           <Box sx={{ p: 3, textAlign: "center" }}>
