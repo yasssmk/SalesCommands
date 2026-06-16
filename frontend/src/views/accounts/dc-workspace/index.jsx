@@ -25,6 +25,7 @@ import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
 import ProductsTab from "sections/accounts/dc-workspace/ProductsTab";
 import PeopleTab from "sections/accounts/dc-workspace/PeopleTab";
 import StrategicTab from "sections/accounts/dc-workspace/StrategicTab";
+import OverviewTab from "sections/accounts/dc-workspace/OverviewTab";
 
 // ==============================|| DC WORKSPACE PAGE ||============================== //
 
@@ -60,6 +61,8 @@ export default function DCWorkspacePage() {
 
   const renderTabContent = () => {
     switch (currentTab) {
+      case "overview":
+        return <OverviewTab cycleId={cycleId} />;
       case "timeline":
         return (
           <TimelineTab
