@@ -22,7 +22,8 @@ Standard SignalStatus flow:
 
 Required context (enforced in clean())
 --------------------------------------
-  - source_activity — every PeopleSignal must be tied to a conversation
+  - source_activity — required for LLM-sourced signals; MANUAL signals
+    may omit it when anchored to a decision_cycle instead
   - at least one of target_contact / target_department
 """
 
@@ -33,7 +34,7 @@ from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 
 from .base_model import BaseSignal
-from ..constants import PeopleRole, InfluenceLevel
+from ..constants import PeopleRole, InfluenceLevel, SignalSource
 
 
 class PeopleSignal(BaseSignal):
@@ -48,7 +49,8 @@ class PeopleSignal(BaseSignal):
       - notes            : additional context
 
     Required context (via clean()):
-      - source_activity (every PeopleSignal must be tied to a conversation)
+      - source_activity required for LLM-sourced signals; MANUAL signals
+        may omit it when anchored to a decision_cycle instead
       - at least one of target_contact / target_department
 
     Cluster identity:
@@ -163,9 +165,10 @@ class PeopleSignal(BaseSignal):
         errors = {}
 
         if not self.source_activity_id:
-            errors['source_activity'] = _(
-                'A people signal must be linked to a source activity.'
-            )
+            if self.source != SignalSource.MANUAL or not self.decision_cycle_id:
+                errors['source_activity'] = _(
+                    'A people signal must be linked to a source activity.'
+                )
 
         if not self.target_contact_id and not self.target_department_id:
             errors['target_contact'] = _(

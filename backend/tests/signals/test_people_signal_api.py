@@ -67,6 +67,41 @@ class TestPeopleSignalCreate:
         assert resp.status_code == status.HTTP_201_CREATED
         assert resp.json()['data']['status'] == SignalStatus.PENDING
 
+    def test_create_manual_dc_level_without_source_activity(
+        self, authed_api_a, account, decision_cycle, contact,
+    ):
+        """MANUAL + decision_cycle (no source_activity) → 201 + VALIDATED."""
+        payload = {
+            'signal_type': 'people',
+            'source': 'MANUAL',
+            'account': str(account.id),
+            'decision_cycle': str(decision_cycle.id),
+            'role': PeopleRole.CHAMPION,
+            'influence': InfluenceLevel.HIGH,
+            'target_contact': str(contact.id),
+            'notes': 'Qualified from DC workspace',
+        }
+        resp = authed_api_a.post(PEOPLE_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_201_CREATED
+        data = resp.json()['data']
+        assert data['role'] == PeopleRole.CHAMPION
+        assert data['status'] == SignalStatus.VALIDATED
+
+    def test_create_llm_without_source_activity_fails(
+        self, authed_api_a, account, decision_cycle, contact,
+    ):
+        """LLM source without source_activity → 400 even with decision_cycle."""
+        payload = {
+            'signal_type': 'people',
+            'source': 'LLM_EXTRACTED',
+            'account': str(account.id),
+            'decision_cycle': str(decision_cycle.id),
+            'role': PeopleRole.INFLUENCER,
+            'target_contact': str(contact.id),
+        }
+        resp = authed_api_a.post(PEOPLE_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
     def test_create_requires_account(self, authed_api_a, activity):
         payload = {
             'signal_type': 'people',
