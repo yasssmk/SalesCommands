@@ -24,6 +24,7 @@ import TimelineTab from "sections/accounts/dc-workspace/TimelineTab";
 import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
 import ProductsTab from "sections/accounts/dc-workspace/ProductsTab";
 import PeopleTab from "sections/accounts/dc-workspace/PeopleTab";
+import StrategicTab from "sections/accounts/dc-workspace/StrategicTab";
 
 // ==============================|| DC WORKSPACE PAGE ||============================== //
 
@@ -75,11 +76,11 @@ export default function DCWorkspacePage() {
         return <PeopleTab cycleId={cycleId} accountId={accountId} />;
       case "strategic":
         return (
-          <Box sx={{ p: 3, textAlign: "center" }}>
-            <Typography color="text.secondary">
-              This tab is under construction.
-            </Typography>
-          </Box>
+          <StrategicTab
+            cycleId={cycleId}
+            accountId={accountId}
+            cycle={cycle}
+          />
         );
       default:
         return (
