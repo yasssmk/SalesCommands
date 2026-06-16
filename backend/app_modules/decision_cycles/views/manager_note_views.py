@@ -26,7 +26,7 @@ from core.exceptions import StandardizedValidationError
 from permissions.mixins import ScopedPermission
 from permissions.compat import get_auth_ctx
 
-from ..models import ManagerNote
+from ..models import DecisionCycle, ManagerNote
 from ..serializers import (
     ManagerNoteListSerializer,
     ManagerNoteCreateSerializer,
@@ -61,6 +61,33 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
         'create':   {'crud': 'create', 'scope': 'mine'},
         'destroy':  {'crud': 'delete', 'scope': 'mine'},
     }
+
+    # =========================================================================
+    # CYCLE RESOLUTION — tenant-scoped override
+    # =========================================================================
+    # CycleScopedMixin delegates to DecisionCycleViewSet.get_queryset() which
+    # applies ownership scope (team/mine) for write actions. That is correct
+    # for DealProduct (owner-driven edits) but too restrictive for manager
+    # notes: a manager must coach ANY cycle in the tenant, not just their
+    # team's. We override to do a simple tenant-scoped lookup; the role gate
+    # in each CRUD method provides the real access control.
+    # =========================================================================
+
+    def _resolve_parent_cycle(self):
+        if hasattr(self, '_parent_cycle'):
+            return self._parent_cycle
+
+        cycle_id = self.kwargs.get('cycle_id')
+        ctx = get_auth_ctx(self.request)
+        client_id = ctx.client_id
+
+        try:
+            cycle = DecisionCycle.objects.get(id=cycle_id, client_id=client_id)
+        except DecisionCycle.DoesNotExist:
+            raise Http404
+
+        self._parent_cycle = cycle
+        return cycle
 
     # =========================================================================
     # SERIALIZER ROUTING
