@@ -21,6 +21,7 @@ import {
   DEFAULT_TAB,
 } from "sections/accounts/dc-workspace/DCWorkspaceTabs";
 import TimelineTab from "sections/accounts/dc-workspace/TimelineTab";
+import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
 
 // ==============================|| DC WORKSPACE PAGE ||============================== //
 
@@ -64,10 +65,11 @@ export default function DCWorkspacePage() {
             onRefresh={mutateCycles}
           />
         );
+      case "signals":
+        return <SignalsTab cycleId={cycleId} accountId={accountId} />;
       case "people":
       case "products":
       case "strategic":
-      case "signals":
         return (
           <Box sx={{ p: 3, textAlign: "center" }}>
             <Typography color="text.secondary">
