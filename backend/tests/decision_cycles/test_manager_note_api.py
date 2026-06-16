@@ -23,31 +23,42 @@ def _note_detail_url(cycle_id, note_id):
 
 
 # =============================================================================
-# FIXTURES — manager user on tenant A
+# FIXTURES — manager role + user on tenant A
 # =============================================================================
 
 @pytest.fixture
-def manager_user_a(db, client_account_a):
-    """A manager-tier user on tenant A."""
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-
-    user = User.objects.create_user(
-        email='manager@tenanta.com',
-        password='testpass123',
-        is_manager=True,
+def role_manager_a(db, client_account_a):
+    """Manager-tier role on tenant A."""
+    from end_users.models import UserRole
+    return UserRole.objects.create(
+        client_account=client_account_a,
+        name='Manager',
         is_admin=False,
+        is_manager=True,
         is_individual=False,
+        read=True,
+        write=True,
+        modify=True,
+        can_delete=True,
     )
-    user.client_id = client_account_a.id
-    user.save()
-    return user
+
+
+@pytest.fixture
+def manager_user_a(db, client_account_a, role_manager_a):
+    """A manager-tier user on tenant A."""
+    from end_users.models import User
+    return User.objects.create(
+        email='manager@tenant-a.test',
+        client_account=client_account_a,
+        role=role_manager_a,
+        is_active=True,
+    )
 
 
 @pytest.fixture
 def authed_api_manager(api, authenticate, manager_user_a, client_account_a):
     """Authenticated API client for the manager user on tenant A."""
-    authenticate(api, manager_user_a, client_account_a)
+    authenticate(api, manager_user_a, client_account_a.id)
     return api
 
 
@@ -147,22 +158,23 @@ class TestManagerNoteDelete:
         assert resp.status_code == status.HTTP_204_NO_CONTENT
         assert not ManagerNote.objects.filter(id=manager_note.id).exists()
 
-    def test_non_author_manager_cannot_delete(self, cycle, manager_note, db, api, authenticate, client_account_a):
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
+    def test_non_author_manager_cannot_delete(
+        self, cycle, manager_note, db, client_account_a, role_manager_a, authenticate,
+    ):
+        from end_users.models import User
+        from rest_framework.test import APIClient
 
-        other_manager = User.objects.create_user(
-            email='other_manager@tenanta.com',
-            password='testpass123',
-            is_manager=True,
-            is_admin=False,
-            is_individual=False,
+        other_manager = User.objects.create(
+            email='other-manager@tenant-a.test',
+            client_account=client_account_a,
+            role=role_manager_a,
+            is_active=True,
         )
-        other_manager.client_id = client_account_a.id
-        other_manager.save()
-        authenticate(api, other_manager, client_account_a)
 
-        resp = api.delete(_note_detail_url(cycle.id, manager_note.id))
+        other_api = APIClient()
+        authenticate(other_api, other_manager, client_account_a.id)
+
+        resp = other_api.delete(_note_detail_url(cycle.id, manager_note.id))
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
     def test_individual_cannot_delete(self, authed_api_a, cycle, manager_note):

@@ -24,6 +24,7 @@ from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 
 from permissions.mixins import ScopedPermission
+from permissions.compat import get_auth_ctx
 
 from ..models import ManagerNote
 from ..serializers import (
@@ -94,8 +95,28 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
     # PERMISSION HELPERS
     # =========================================================================
 
-    def _is_manager_or_admin(self, user):
-        return getattr(user, 'is_admin', False) or getattr(user, 'is_manager', False)
+    def _get_effective_tier(self, request):
+        """Resolve effective tier from JWT role flags (same logic as checks.py)."""
+        ctx = get_auth_ctx(request)
+        has_admin = ctx.is_superuser
+        has_manager = False
+        for role in ctx.roles:
+            if isinstance(role, dict):
+                if role.get('is_admin'):
+                    has_admin = True
+                if role.get('is_manager'):
+                    has_manager = True
+        if has_admin:
+            return 'admin'
+        if has_manager:
+            return 'manager'
+        return 'individual'
+
+    def _is_manager_or_admin(self, request):
+        return self._get_effective_tier(request) in ('admin', 'manager')
+
+    def _is_admin(self, request):
+        return self._get_effective_tier(request) == 'admin'
 
     def _is_cycle_owner(self, user):
         cycle = self._resolve_parent_cycle()
@@ -116,7 +137,7 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
         ctx = ctx_from_request(request)
         cycle = self._resolve_parent_cycle()
 
-        if not self._is_manager_or_admin(request.user) and not self._is_cycle_owner(request.user):
+        if not self._is_manager_or_admin(request) and not self._is_cycle_owner(request.user):
             return Response(
                 {'success': False, 'error': str(CoreErrorMessages.PERMISSION_DENIED)},
                 status=status.HTTP_403_FORBIDDEN,
@@ -133,7 +154,7 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         ctx = ctx_from_request(request)
 
-        if not self._is_manager_or_admin(request.user) and not self._is_cycle_owner(request.user):
+        if not self._is_manager_or_admin(request) and not self._is_cycle_owner(request.user):
             return Response(
                 {'success': False, 'error': str(CoreErrorMessages.PERMISSION_DENIED)},
                 status=status.HTTP_403_FORBIDDEN,
@@ -153,7 +174,7 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
         ctx = ctx_from_request(request)
         cycle = self._resolve_parent_cycle()
 
-        if not self._is_manager_or_admin(request.user):
+        if not self._is_manager_or_admin(request):
             return Response(
                 {'success': False, 'error': str(CoreErrorMessages.PERMISSION_DENIED)},
                 status=status.HTTP_403_FORBIDDEN,
@@ -195,9 +216,8 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
         client_id = instance.client_id
 
         is_author = instance.created_by_id and str(instance.created_by_id) == str(request.user.id)
-        is_admin = getattr(request.user, 'is_admin', False)
 
-        if not is_author and not is_admin:
+        if not is_author and not self._is_admin(request):
             return Response(
                 {'success': False, 'error': str(CoreErrorMessages.PERMISSION_DENIED)},
                 status=status.HTTP_403_FORBIDDEN,
