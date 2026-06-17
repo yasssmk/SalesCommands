@@ -175,6 +175,7 @@ if DEBUG:
         'registration': '5/hour', # Inscriptions
         'standard': '500/minute',  # GET endpoints (list/search/filter) - permissif en DEV
         'bulk': '5/minute',       # POST bulk operations - permissif en DEV pour tests
+        'ai': '60/minute',       # AI pipeline endpoints (extraction, deal-health)
     }
 else:
     # Production: Plus restrictif
@@ -188,6 +189,7 @@ else:
         'registration': '3/hour',
         'standard': '300/minute',  #  GET endpoints - évite blocage utilisateurs normaux
         'bulk': '3/minute',       # POST bulk operations - strict pour limiter abuse'
+        'ai': '30/minute',       # AI pipeline endpoints (extraction, deal-health)
     }
 
 

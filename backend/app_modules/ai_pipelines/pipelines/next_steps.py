@@ -99,7 +99,7 @@ graph clean (mirror of QualificationSignalsPipeline's lazy import of
 TranscriptSignalExtractor).
 """
 
-from ..constants import AIPipelineStatus, AIPipelineType
+from ..constants import AIPipelineStatus, AIPipelineType, PIPELINE_TEMPERATURES
 from ..prompts.base import PromptParseError
 from ..prompts.transcript_signals.system import (
     SYSTEM_PROMPT,
@@ -142,7 +142,7 @@ class NextStepsPipeline(BasePipeline):
         'next_steps': NEXT_STEPS_PROMPT_VERSION,
     }
 
-    TEMPERATURE = 0.0
+    TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.NEXT_STEPS]
 
     # Safety filter knobs -- read by NextStepExtractor.persist_extracted().
     # Same defaults as QualificationSignalsPipeline (evidence-anchored
@@ -210,6 +210,7 @@ class NextStepsPipeline(BasePipeline):
                         client_id=client_id,
                         confidence_min=self.CONFIDENCE_MIN,
                         drop_inferred=self.DROP_INFERRED,
+                        source_run=run,
                     )
 
                     self._log_sub_call(

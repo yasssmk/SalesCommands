@@ -128,6 +128,7 @@ class NextStepExtractor:
         client_id,
         confidence_min,
         drop_inferred,
+        source_run=None,
     ):
         """
         Apply safety filter + persist surviving next-step signals.
@@ -178,6 +179,9 @@ class NextStepExtractor:
                 # Malformed signal (logged inside the builder).
                 dropped_count += 1
                 continue
+
+            if source_run is not None:
+                data['source_run'] = source_run
 
             # --- Persist via SignalManager ---
             try:

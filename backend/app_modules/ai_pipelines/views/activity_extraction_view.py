@@ -85,6 +85,7 @@ from core.timeout_conventions import (
     POLLING_INTERVAL_SECONDS,
 )
 
+from core.throttling import AIRateThrottle
 from permissions.mixins import ScopedPermission
 
 from app_modules.signals.serializers.pain_serializer import (
@@ -129,6 +130,7 @@ class ActivityExtractionView(BaseAPIView):
 
     authentication_classes = [CustomJWTAuthentication]
     permission_classes     = [IsAuthenticated, ScopedPermission]
+    throttle_classes       = [AIRateThrottle]
     module                 = 'ai_pipelines'
 
     # =========================================================================
@@ -561,11 +563,11 @@ class ActivityExtractionView(BaseAPIView):
                 'tech-stack': [], 'blocker': [],
             }
 
-        pain = PainSignal.objects.filter(source_activity=activity)
-        objective = ObjectiveSignal.objects.filter(source_activity=activity)
-        impact = ImpactSignal.objects.filter(source_activity=activity)
-        techstack = TechStackSignal.objects.filter(source_activity=activity)
-        blocker = BlockerSignal.objects.filter(source_activity=activity)
+        pain = PainSignal.objects.filter(source_activity=activity, source_run=run)
+        objective = ObjectiveSignal.objects.filter(source_activity=activity, source_run=run)
+        impact = ImpactSignal.objects.filter(source_activity=activity, source_run=run)
+        techstack = TechStackSignal.objects.filter(source_activity=activity, source_run=run)
+        blocker = BlockerSignal.objects.filter(source_activity=activity, source_run=run)
 
         return {
             'pain':       PainSignalDetailSerializer(
@@ -592,7 +594,7 @@ class ActivityExtractionView(BaseAPIView):
         activity = run.source_activity
         if activity is None:
             return []
-        signals = NextStepSignal.objects.filter(source_activity=activity)
+        signals = NextStepSignal.objects.filter(source_activity=activity, source_run=run)
         return NextStepSignalDetailSerializer(
             signals, many=True, context=ser_ctx,
         ).data

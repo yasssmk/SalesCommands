@@ -144,7 +144,9 @@ class TestListSerializersExposeSourceQuote:
     ):
         ns = NextStepSignal(
             account=account, source_activity=activity,
-            summary='next step with quote', source=SignalSource.LLM_EXTRACTED,
+            suggested_title='next step with quote',
+            suggested_activity_type='CALL',
+            source=SignalSource.LLM_EXTRACTED,
             source_quote='Let us schedule a follow-up next week',
         )
         ns.save(user=user_a, client_id=account.client_id)

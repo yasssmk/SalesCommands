@@ -38,6 +38,7 @@ from rest_framework.response import Response
 from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
 
+from core.throttling import AIRateThrottle
 from permissions.mixins import ScopedPermission
 
 from app_modules.decision_cycles.serializers import (
@@ -61,6 +62,7 @@ class DealHealthRunView(BaseAPIView):
 
     authentication_classes = [CustomJWTAuthentication]
     permission_classes     = [IsAuthenticated, ScopedPermission]
+    throttle_classes       = [AIRateThrottle]
     module                 = 'ai_pipelines'
 
     def post(self, request, *args, **kwargs):

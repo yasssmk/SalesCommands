@@ -496,6 +496,29 @@ class BulkOperationThrottle(UserRateThrottle):
             self.num_requests, self.duration = self.parse_rate(self.rate)
 
 
+class AIRateThrottle(UserRateThrottle):
+    """
+    Throttle for AI pipeline endpoints (extraction, deal-health).
+    Prevents runaway LLM spend per user.
+    """
+    scope = 'ai'
+
+    def __init__(self):
+        super().__init__()
+        try:
+            from django.conf import settings
+            rates = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+            custom_rate = rates.get(self.scope)
+            if custom_rate:
+                self.rate = custom_rate
+            else:
+                self.rate = '30/minute'
+            self.num_requests, self.duration = self.parse_rate(self.rate)
+        except Exception:
+            self.rate = '30/minute'
+            self.num_requests, self.duration = self.parse_rate(self.rate)
+
+
 class RegistrationThrottle(AnonRateThrottle):
     """
     Throttle for user registration/signup.

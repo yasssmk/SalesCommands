@@ -151,3 +151,14 @@ class AIPipelineStatus(models.TextChoices):
     PARSE_ERROR = 'PARSE_ERROR', _('Parse error')
     LLM_ERROR   = 'LLM_ERROR',   _('LLM provider error')
     TIMEOUT     = 'TIMEOUT',     _('Timeout')
+
+
+# =============================================================================
+# PIPELINE TEMPERATURES
+# =============================================================================
+
+PIPELINE_TEMPERATURES = {
+    AIPipelineType.TRANSCRIPT_SIGNALS: 0.0,
+    AIPipelineType.NEXT_STEPS:         0.0,
+    AIPipelineType.DEAL_HEALTH:        0.2,
+}

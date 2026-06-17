@@ -13,12 +13,8 @@ Anthropic) and are NOT exposed here.
 
 Note on TEMPERATURE
 -------------------
-Temperature is intentionally NOT a config-level value. Each pipeline
-class declares its own TEMPERATURE constant (e.g.
-TranscriptSignalsPipeline.TEMPERATURE = 0.0 for deterministic
-extraction). Pipelines with different determinism requirements
-(creative generation vs. structured extraction) should not share a
-single global temperature — keep it inside the pipeline.
+Pipeline temperatures are centralized in constants.PIPELINE_TEMPERATURES.
+Each pipeline class reads its value from that dict via its AIPipelineType key.
 """
 
 from django.conf import settings
