@@ -1,11 +1,13 @@
 # Rapport UX/Workflow — Decision Cycle Workspace
 
-**Version** : 2 (mai 2026)
+**Version** : 2.1 (juin 2026)
 **Objectif** : décrire de façon exhaustive le workflow utilisateur et l'UX du Decision Cycle (la vue « opportunité » de SalesCommands). Document de référence pour la conversation d'implémentation : il doit permettre, en début de conversation, de comprendre le but, de disposer de toutes les informations nécessaires pour en dériver un plan d'implémentation et concevoir les méthodes / prompts LLM.
 **Scope** : la liste des DC côté Account (DC cards), le DC Workspace (onglets Timeline / People / Products & Financial / Strategic / Signals), le pipeline LLM `deal-health`, et les types de signaux qui alimentent ces vues.
 **Hors scope** : Activity Workspace (rapport post-call), Account Overview, Account Qualification, et la conception détaillée du pipeline `prep-call` (le contrat de données Prep Call est néanmoins esquissé).
 
 **Changements v1 → v2** : ajout du modèle mental unificateur ; clarification de la règle Themes <-> People (même matière, deux pivots) ; nouveaux types de signaux (People, Contrainte) ; gestion du concurrent par TechStack ; attribution `target_department` ; règle `human_impact` self-report ; Metric (M de MEDDPICC) logé dans Contrainte ; résistance rattachée à un acteur ; connexion People <-> Timeline ; migration des critères de step.
+
+**Changements v2 → v2.1** (juin 2026) : key names + endpoints alignés au code livré post-Step 7 DC Workspace. §10.3 : `global_diagnostic` → `global_reading`, `gaps` → `discovery_gaps`, kind `qualif` → `qualification`. §15 : snapshots endpoint aligned to `/decision-cycles/{cycle_id}/health-snapshots/` (and `.../latest/`).
 
 ---
 
@@ -326,7 +328,7 @@ Plus que les signaux validés : signaux validés + **transcripts liés** (pour l
 
 ### 10.3 Output — snapshot daté
 
-Diagnostic global - statut des 7 dimensions - evidence + manquant par dimension - Discovery Gaps (qualif + procéduraux) - leviers priorisés - themes - évolution - _(backend V2)_ `internal_follow_up_context` pour le Prep Call. Stockage : `DealHealthSnapshot` (modèle dédié — vote) vs `AIPipelineRun.output`.
+`global_reading` (lecture stratégique 2-4 phrases) - statut des 7 dimensions - evidence + manquant par dimension - `discovery_gaps` (`qualification` + procéduraux) - leviers priorisés - themes - évolution - _(backend V2)_ `internal_follow_up_context` pour le Prep Call. Stockage : `DealHealthSnapshot` (modèle dédié).
 
 ### 10.4 Règles de cadrage
 
@@ -424,7 +426,7 @@ Next.js App Router, JSX, MUI + `@ant-design/icons`, Formik+Yup, SWR+axios, PropT
 
 ### Créer
 
-`POST module-ai-pipelines/deal-health/run/` - `GET module-ai-pipelines/deal-health/by-cycle/{id}/` - `GET decision_cycles/{id}/readiness/` - `GET decision_cycles/{id}/stakeholders/` (acteurs par département + rôles + résumé/critères/résistances) - `POST decision_cycles/{id}/stakeholders/` (assignation rôle) - `GET decision_cycles/{id}/products/` + CRUD - `GET decision_cycles/{id}/themes/` - `POST decision_cycles/{id}/context/` (V2).
+`POST module-ai-pipelines/deal-health/run/` - `GET decision-cycles/{cycle_id}/health-snapshots/` (list) - `GET decision-cycles/{cycle_id}/health-snapshots/latest/` (latest snapshot) - `GET decision-cycles/{cycle_id}/health-snapshots/{id}/` (detail) - `GET decision_cycles/{id}/readiness/` - `GET decision_cycles/{id}/stakeholders/` (acteurs par département + rôles + résumé/critères/résistances) - `POST decision_cycles/{id}/stakeholders/` (assignation rôle) - `GET decision_cycles/{id}/products/` + CRUD - `GET decision_cycles/{id}/themes/` - `POST decision_cycles/{id}/context/` (V2).
 
 ### Cache
 
