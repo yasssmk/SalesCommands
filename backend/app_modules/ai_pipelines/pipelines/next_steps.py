@@ -210,6 +210,7 @@ class NextStepsPipeline(BasePipeline):
                         client_id=client_id,
                         confidence_min=self.CONFIDENCE_MIN,
                         drop_inferred=self.DROP_INFERRED,
+                        source_run=run,
                     )
 
                     self._log_sub_call(

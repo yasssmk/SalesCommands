@@ -563,11 +563,11 @@ class ActivityExtractionView(BaseAPIView):
                 'tech-stack': [], 'blocker': [],
             }
 
-        pain = PainSignal.objects.filter(source_activity=activity)
-        objective = ObjectiveSignal.objects.filter(source_activity=activity)
-        impact = ImpactSignal.objects.filter(source_activity=activity)
-        techstack = TechStackSignal.objects.filter(source_activity=activity)
-        blocker = BlockerSignal.objects.filter(source_activity=activity)
+        pain = PainSignal.objects.filter(source_activity=activity, source_run=run)
+        objective = ObjectiveSignal.objects.filter(source_activity=activity, source_run=run)
+        impact = ImpactSignal.objects.filter(source_activity=activity, source_run=run)
+        techstack = TechStackSignal.objects.filter(source_activity=activity, source_run=run)
+        blocker = BlockerSignal.objects.filter(source_activity=activity, source_run=run)
 
         return {
             'pain':       PainSignalDetailSerializer(
@@ -594,7 +594,7 @@ class ActivityExtractionView(BaseAPIView):
         activity = run.source_activity
         if activity is None:
             return []
-        signals = NextStepSignal.objects.filter(source_activity=activity)
+        signals = NextStepSignal.objects.filter(source_activity=activity, source_run=run)
         return NextStepSignalDetailSerializer(
             signals, many=True, context=ser_ctx,
         ).data

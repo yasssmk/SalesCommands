@@ -95,6 +95,20 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
         )
     )
 
+    source_run = models.ForeignKey(
+        'module_ai_pipelines.AIPipelineRun',
+        on_delete=models.SET_NULL,
+        related_name='%(class)s_signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Source Pipeline Run'),
+        help_text=_(
+            'AIPipelineRun that created this signal. Used to scope cache '
+            'replay queries to a single run and prevent cross-run leakage. '
+            'Null for manually created signals.'
+        )
+    )
+
     # =========================================================================
     # CONTEXT — optional
     # =========================================================================

@@ -279,6 +279,7 @@ class QualificationSignalsPipeline(BasePipeline):
                             client_id=client_id,
                             confidence_min=self.CONFIDENCE_MIN,
                             drop_inferred=self.DROP_INFERRED,
+                            source_run=run,
                         )
 
                         signals_by_stage[stage_name] = persisted

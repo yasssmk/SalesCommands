@@ -134,6 +134,7 @@ class TranscriptSignalExtractor:
         client_id,
         confidence_min,
         drop_inferred,
+        source_run=None,
     ):
         """
         Apply safety filter + persist surviving signals for one stage.
@@ -204,6 +205,8 @@ class TranscriptSignalExtractor:
 
         # --- Phase 2: Persist surviving candidates ---
         for data in candidates:
+            if source_run is not None:
+                data['source_run'] = source_run
             try:
                 signal = SignalManager.create(
                     data=data,
