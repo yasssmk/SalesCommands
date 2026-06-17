@@ -88,16 +88,16 @@ class DealHealthPipeline(BasePipeline):
         pack = DealHealthEvidenceBuilder().build(decision_cycle)
         input_text = json.dumps(pack, default=str)
 
-        run = self._create_run(
-            user=user,
-            client_id=client_id,
-            source_activity=None,
-            source_decision_cycle=decision_cycle,
-            input_text=input_text,
-        )
-
         try:
             with transaction.atomic():
+                run = self._create_run(
+                    user=user,
+                    client_id=client_id,
+                    source_activity=None,
+                    source_decision_cycle=decision_cycle,
+                    input_text=input_text,
+                )
+
                 try:
                     context_layer = build_context_layer(pack)
                     request_layer = build_diagnostic_request(pack)
@@ -161,12 +161,12 @@ class DealHealthPipeline(BasePipeline):
                         exc=exc,
                     )
 
-            final_run = self._finalize_run(
-                run,
-                status=AIPipelineStatus.SUCCESS,
-                created_signals_count=0,
-                error_message='',
-            )
+                final_run = self._finalize_run(
+                    run,
+                    status=AIPipelineStatus.SUCCESS,
+                    created_signals_count=0,
+                    error_message='',
+                )
             return {'run': final_run, 'snapshot': snapshot}
 
         except Exception as exc:

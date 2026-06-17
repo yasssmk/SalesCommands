@@ -85,6 +85,7 @@ from core.timeout_conventions import (
     POLLING_INTERVAL_SECONDS,
 )
 
+from core.throttling import AIRateThrottle
 from permissions.mixins import ScopedPermission
 
 from app_modules.signals.serializers.pain_serializer import (
@@ -129,6 +130,7 @@ class ActivityExtractionView(BaseAPIView):
 
     authentication_classes = [CustomJWTAuthentication]
     permission_classes     = [IsAuthenticated, ScopedPermission]
+    throttle_classes       = [AIRateThrottle]
     module                 = 'ai_pipelines'
 
     # =========================================================================

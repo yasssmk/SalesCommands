@@ -512,3 +512,16 @@ class TestThrottleConfiguration:
                 "BurstRateThrottle encore présent dans DEFAULT_THROTTLE_CLASSES. "
                 "Ceci peut être intentionnel pour rétrocompatibilité."
             )
+
+    def test_ai_throttle_rate_configured(self):
+        """Verify that 'ai' scope is present in THROTTLE_RATES."""
+        throttle_rates = settings.REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+
+        assert 'ai' in throttle_rates, (
+            "Scope 'ai' manquant dans THROTTLE_RATES"
+        )
+
+    def test_ai_rate_throttle_class_has_correct_scope(self):
+        """AIRateThrottle must declare scope='ai'."""
+        from core.throttling import AIRateThrottle
+        assert AIRateThrottle.scope == 'ai'

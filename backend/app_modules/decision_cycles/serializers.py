@@ -1030,7 +1030,7 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
             'stakeholder',
             'description', 'goal',
             'influence_score', 'criterias', 'metrics',
-            'contact_ids', 'manager_notes',
+            'contact_ids',
             'department_ids'
         ]
     

@@ -18,6 +18,7 @@ from app_modules.ai_pipelines.pipelines.transcript_signals import (
     QualificationSignalsPipeline,
 )
 from app_modules.ai_pipelines.pipelines.next_steps import NextStepsPipeline
+from app_modules.ai_pipelines.pipelines.deal_health import DealHealthPipeline
 from app_modules.ai_pipelines.constants import AIPipelineStatus
 from app_modules.ai_pipelines.providers.base import (
     LLMTimeoutError,
@@ -276,6 +277,103 @@ def test_next_steps_soft_error_finalized_correctly(
          patch.object(pipeline, '_finalize_run', return_value=MagicMock()) as mock_finalize:
 
         result = pipeline.run(**_run_kwargs())
+
+        mock_finalize.assert_called_once()
+        call_kwargs = mock_finalize.call_args
+        assert call_kwargs[1]['status'] == AIPipelineStatus.TIMEOUT
+
+
+# ---------------------------------------------------------------------------
+# DealHealthPipeline tests
+# ---------------------------------------------------------------------------
+
+def _deal_health_run_kwargs():
+    """Minimal kwargs for DealHealthPipeline.run()."""
+    return {
+        'decision_cycle': MagicMock(),
+        'user': MagicMock(),
+        'client_id': 'test-client-id',
+    }
+
+
+@pytest.mark.django_db
+@patch(
+    'app_modules.ai_pipelines.pipelines.deal_health.build_context_layer',
+    return_value='mock-context',
+)
+@patch(
+    'app_modules.ai_pipelines.pipelines.deal_health.build_diagnostic_request',
+    return_value='mock-diagnostic-request',
+)
+def test_deal_health_hard_crash_rolls_back(
+    _mock_request,
+    _mock_context,
+):
+    """
+    A RuntimeError raised by DealHealthWriter.write should escape the
+    atomic block, roll back the snapshot, finalise as LLM_ERROR with
+    'hard crash', and re-raise.
+    """
+    pipeline = _make_pipeline(DealHealthPipeline)
+
+    with patch.object(pipeline, '_create_run', return_value=MagicMock(id='test-run-id')), \
+         patch.object(pipeline, '_call_llm', return_value=_LLM_SUCCESS_RESPONSE), \
+         patch.object(pipeline, '_log_sub_call'), \
+         patch.object(pipeline, '_finalize_run', return_value=MagicMock()) as mock_finalize, \
+         patch(
+             'app_modules.ai_pipelines.services.deal_health_writer'
+             '.DealHealthWriter.write',
+             side_effect=RuntimeError('DB connection lost'),
+         ), \
+         patch(
+             'app_modules.ai_pipelines.services.deal_health_evidence_builder'
+             '.DealHealthEvidenceBuilder.build',
+             return_value={'some': 'pack'},
+         ):
+
+        with pytest.raises(RuntimeError, match='DB connection lost'):
+            pipeline.run(**_deal_health_run_kwargs())
+
+        mock_finalize.assert_called_once()
+        call_kwargs = mock_finalize.call_args
+        assert call_kwargs[1]['status'] == AIPipelineStatus.LLM_ERROR
+        assert 'hard crash' in call_kwargs[1]['error_message']
+
+
+@pytest.mark.django_db
+@patch(
+    'app_modules.ai_pipelines.pipelines.deal_health.build_context_layer',
+    return_value='mock-context',
+)
+@patch(
+    'app_modules.ai_pipelines.pipelines.deal_health.build_diagnostic_request',
+    return_value='mock-diagnostic-request',
+)
+def test_deal_health_soft_error_finalized_correctly(
+    _mock_request,
+    _mock_context,
+):
+    """
+    An LLMTimeoutError in the single-stage DealHealthPipeline should be
+    caught inside the atomic block and finalised via _finalize_failure
+    with AIPipelineStatus.TIMEOUT.
+    """
+    pipeline = _make_pipeline(DealHealthPipeline)
+
+    with patch.object(pipeline, '_create_run', return_value=MagicMock(id='test-run-id')), \
+         patch.object(
+             pipeline, '_call_llm',
+             side_effect=LLMTimeoutError('provider timed out'),
+         ), \
+         patch.object(pipeline, '_log_sub_call'), \
+         patch.object(pipeline, '_finalize_run', return_value=MagicMock()) as mock_finalize, \
+         patch(
+             'app_modules.ai_pipelines.services.deal_health_evidence_builder'
+             '.DealHealthEvidenceBuilder.build',
+             return_value={'some': 'pack'},
+         ):
+
+        result = pipeline.run(**_deal_health_run_kwargs())
 
         mock_finalize.assert_called_once()
         call_kwargs = mock_finalize.call_args

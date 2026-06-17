@@ -279,6 +279,8 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         })
         
         # Return full cycle with steps
+        self._invalidate_cycle_caches(str(self.get_client_id()))
+
         output_serializer = DecisionCycleSerializer(cycle)
         return Response({
             'success': True,
@@ -353,7 +355,9 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             **ctx,
             'cycle_id': str(instance.id)
         })
-        
+
+        self._invalidate_cycle_caches(str(self.get_client_id()))
+
         output_serializer = DecisionCycleSerializer(instance)
         return Response({
             'success': True,
@@ -391,7 +395,9 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             **ctx,
             'cycle_id': cycle_id
         })
-        
+
+        self._invalidate_cycle_caches(str(self.get_client_id()))
+
         return Response({
             'success': True,
             'message': 'Decision cycle deleted successfully'
