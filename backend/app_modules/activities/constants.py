@@ -18,6 +18,7 @@ class ActivityType(models.TextChoices):
     CALL = 'CALL', _('Phone Call')
     EMAIL = 'EMAIL', _('Email')
     MEETING = 'MEETING', _('Meeting')
+    DEMO = 'DEMO', _('Demo')
     TASK = 'TASK', _('Task')
     LINKEDIN = 'LINKEDIN', _('LinkedIn Message')
     OTHER = 'OTHER', _('Other')
