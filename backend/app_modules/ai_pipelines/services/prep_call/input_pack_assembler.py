@@ -42,7 +42,7 @@ class PrepInputPackAssembler:
         """
         dc = activity.decision_cycle
 
-        maturity = self._build_maturity_snapshot(dc)
+        maturity = self.build_maturity_snapshot(dc)
         signals = self._build_signals(dc) if dc else self._empty_signals()
 
         return {
@@ -173,7 +173,13 @@ class PrepInputPackAssembler:
     # =========================================================================
 
     @staticmethod
-    def _build_maturity_snapshot(dc):
+    def build_maturity_snapshot(dc):
+        """
+        Extract the maturity snapshot from the latest DealHealthSnapshot.
+
+        Public helper: called by the view to feed resolve_brief_mode()
+        BEFORE build(), so the brief_mode can be passed into build().
+        """
         if not dc:
             return None
 
