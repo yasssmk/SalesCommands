@@ -17,7 +17,13 @@ Routes
 
 from django.urls import path
 
-from .views import ActivityExtractionView, DealHealthRunView, LastRunView
+from .views import (
+    ActivityExtractionView,
+    DealHealthRunView,
+    LastRunView,
+    PrepCallByActivityView,
+    PrepCallRunView,
+)
 
 
 urlpatterns = [
@@ -35,5 +41,15 @@ urlpatterns = [
         'last-run/',
         LastRunView.as_view(),
         name='last-run',
+    ),
+    path(
+        'prep-call/run/',
+        PrepCallRunView.as_view(),
+        name='prep-call-run',
+    ),
+    path(
+        'prep-call/by-activity/<uuid:activity_id>/',
+        PrepCallByActivityView.as_view(),
+        name='prep-call-by-activity',
     ),
 ]

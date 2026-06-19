@@ -16,7 +16,9 @@ Note on package layout:
 """
 
 from .pipeline_run import AIPipelineRun
+from .prep_call import PrepCallSnapshot
 
 __all__ = [
     'AIPipelineRun',
+    'PrepCallSnapshot',
 ]

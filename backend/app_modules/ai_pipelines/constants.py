@@ -89,6 +89,7 @@ class AIPipelineType(models.TextChoices):
     TRANSCRIPT_SIGNALS = 'TRANSCRIPT_SIGNALS', _('Transcript signal extraction')
     NEXT_STEPS         = 'NEXT_STEPS',         _('Next steps extraction')
     DEAL_HEALTH        = 'DEAL_HEALTH',        _('Deal health diagnostic')
+    PREP_CALL          = 'PREP_CALL',          _('Prep call brief')
 
 
 # =============================================================================
@@ -161,4 +162,5 @@ PIPELINE_TEMPERATURES = {
     AIPipelineType.TRANSCRIPT_SIGNALS: 0.0,
     AIPipelineType.NEXT_STEPS:         0.0,
     AIPipelineType.DEAL_HEALTH:        0.2,
+    AIPipelineType.PREP_CALL:          0.3,
 }
