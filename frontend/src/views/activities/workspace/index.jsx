@@ -29,8 +29,8 @@ import {
 // Section imports
 import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
 import {
-  ACTIVITY_TABS,
   DEFAULT_TAB,
+  getVisibleTabs,
 } from "sections/activities/workspace/ActivityTabs";
 import ActivityOverviewTab from "sections/activities/workspace/ActivityOverviewTab";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
@@ -126,8 +126,13 @@ export default function ActivityWorkspacePage() {
 
   const nextStepsPending = counts?.by_type?.next_step?.pending || 0;
 
+  const visibleTabs = useMemo(
+    () => getVisibleTabs(activity?.activity_type),
+    [activity?.activity_type],
+  );
+
   const tabsWithBadges = useMemo(() => {
-    return ACTIVITY_TABS.map((tab) => {
+    return visibleTabs.map((tab) => {
       let badgeCount = 0;
       if (tab.id === "signals") badgeCount = signalsPending;
       if (tab.id === "next-steps") badgeCount = nextStepsPending;
@@ -144,7 +149,7 @@ export default function ActivityWorkspacePage() {
       }
       return tab;
     });
-  }, [signalsPending, nextStepsPending]);
+  }, [visibleTabs, signalsPending, nextStepsPending]);
 
   // ==============================|| RENDER - ERROR ||============================== //
 
