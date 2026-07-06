@@ -23,6 +23,7 @@ import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
 import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
 import StopOutlined from "@ant-design/icons/StopOutlined";
 import ReloadOutlined from "@ant-design/icons/ReloadOutlined";
+import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 
 // Project
 import ReusableTable from "components/table/Table";
