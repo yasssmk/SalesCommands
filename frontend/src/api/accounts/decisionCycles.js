@@ -1276,7 +1276,7 @@ export function useGetReadiness(cycleId) {
  * GET /decision_cycles/{cycleId}/notes/
  *
  * @param {string|null} cycleId
- * @returns {Object} { notes, notesLoading, notesError, mutateNotes }
+ * @returns {Object} { notes, notesLoading, notesError, notesErrorStatus, mutateNotes }
  */
 export function useGetManagerNotes(cycleId) {
   const { tenantId } = useAuth();
@@ -1297,6 +1297,7 @@ export function useGetManagerNotes(cycleId) {
       notes: data?.data ?? [],
       notesLoading: isLoading,
       notesError: error,
+      notesErrorStatus: error?.status ?? null,
       mutateNotes: mutate,
     }),
     [data, isLoading, error, mutate],
