@@ -35,6 +35,9 @@ from tests.signals.conftest import (  # noqa: F401
     account,
     contact,
     contact_extra,
+    api,
+    authenticate,
+    authed_api_a,
 )
 
 
@@ -84,25 +87,79 @@ def campaign_account(db, campaign, account, user_a):
 # =============================================================================
 
 @pytest.fixture
-def make_campaign_contact(db, campaign_account, contact, user_a):
+def make_campaign_contact(db, campaign_account, account, user_a):
     """
     Callable factory: make_campaign_contact(status=...) -> CampaignContact.
 
-    Defaults to PENDING. Persists the contact directly in the requested
-    status so terminal-state transition rules can be exercised without
-    driving the full sequence lifecycle.
+    Each call creates a fresh Contact (unique per call, so the factory can be
+    invoked several times without hitting the (campaign_account, contact)
+    uniqueness constraint) and enrolls it in the requested status.
     """
     from app_modules.campaigns.models import CampaignContact
     from app_modules.campaigns.constants import CampaignContactStatus
+    from app_modules.contacts.models import Contact
+
+    counter = {'n': 0}
 
     def _factory(status=CampaignContactStatus.PENDING, **overrides):
+        counter['n'] += 1
+        c = Contact(
+            account=account,
+            first_name=f'Contact{counter["n"]}',
+            last_name='Test',
+        )
+        c.save(user=user_a, client_id=account.client_id)
+
         cc = CampaignContact(
             campaign_account=campaign_account,
-            contact=contact,
+            contact=c,
             status=status,
             **overrides,
         )
         cc.save(user=user_a, client_id=campaign_account.client_id)
         return cc
+
+    return _factory
+
+
+# =============================================================================
+# CAMPAIGN ACTIVITY — factory for PLANNED sequence activities
+# =============================================================================
+
+@pytest.fixture
+def make_campaign_activity(db, campaign, campaign_account, account, user_a):
+    """
+    Callable factory building an Activity attached to the campaign chain:
+    make_campaign_activity(campaign_contact, scheduled_date, sequence_position=1, ...).
+    """
+    from app_modules.activities.models import Activity
+    from app_modules.activities.constants import ActivityType, ActivityStatus
+
+    def _factory(
+        campaign_contact,
+        scheduled_date,
+        sequence_position=1,
+        status=ActivityStatus.PLANNED,
+        is_callback_followup=False,
+        min_delay_days=0,
+        **overrides,
+    ):
+        a = Activity(
+            title=f'Step {sequence_position}',
+            activity_type=ActivityType.CALL,
+            status=status,
+            account=account,
+            owner=user_a,
+            campaign=campaign,
+            campaign_account=campaign_account,
+            campaign_contact=campaign_contact,
+            scheduled_date=scheduled_date,
+            sequence_position=sequence_position,
+            is_callback_followup=is_callback_followup,
+            min_delay_days=min_delay_days,
+            **overrides,
+        )
+        a.save(user=user_a, client_id=account.client_id)
+        return a
 
     return _factory

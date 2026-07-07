@@ -282,9 +282,6 @@ class CampaignExecutionService:
         """
         today = timezone.now().date()
 
-        # Lazy rescheduling: shift overdue chains to today before building playlist.
-        self._reschedule_overdue_chains(campaign, today)
-
         queryset = Activity.objects.filter(
             campaign=campaign,
             status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
@@ -306,8 +303,10 @@ class CampaignExecutionService:
         if executor:
             queryset = queryset.filter(owner=executor)
 
-        total_count = queryset.count()
+        # Single evaluation — the ordered result contains every matching row,
+        # so the total is its length (no separate COUNT query).
         activities = list(queryset)
+        total_count = len(activities)
 
         # Pre-compute min PLANNED sequence_position per campaign_contact (1 query).
         # Excludes callbacks — they don't block regular steps from appearing.
@@ -418,6 +417,12 @@ class CampaignExecutionService:
 
         if campaign_contact:
             next_activity = self._handle_outcome(campaign_contact, activity, result_data)
+
+        # Reschedule overdue chains for this campaign now that a contact's chain
+        # state has changed. This replaces the write-on-GET rescheduling that
+        # used to run inside get_playlist — the playlist endpoint is read-only.
+        # Scoped to this campaign only.
+        self._reschedule_overdue_chains(activity.campaign, timezone.now().date())
 
         logger.info("campaign_activity_result_processed", extra={
             'campaign_id': str(activity.campaign_id),
