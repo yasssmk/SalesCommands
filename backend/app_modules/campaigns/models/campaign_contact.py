@@ -106,6 +106,20 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # ==========================================================================
 
     def _transition_to(self, new_status, user=None, notes=None):
+        # Idempotent no-op: re-asserting the same terminal state is not an
+        # error (e.g. re-completing an already-completed contact). Notes may
+        # still be refreshed, but the status is not re-saved. Distinct
+        # terminal-to-terminal transitions (e.g. COMPLETED -> STOPPED) fall
+        # through and still raise via the transition table below.
+        if self.status in FINAL_CONTACT_STATES and new_status == self.status:
+            if notes:
+                self.notes = notes
+                self.save(user=user)
+            return {
+                'previous_status': self.status,
+                'new_status': self.status,
+            }
+
         allowed = CAMPAIGN_CONTACT_TRANSITIONS.get(self.status, [])
         if new_status not in allowed:
             raise StandardizedValidationError(
