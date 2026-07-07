@@ -11,8 +11,8 @@
  *   POST  /module-signals/clusters/archive/                → archive
  *   POST  /module-signals/clusters/unarchive/              → unarchive
  *
- * signalType is parameterized end-to-end so any clusterable signal type
- * works without refactor.
+ * signalType is parameterized end-to-end so any supported cluster signal
+ * type (pain / objective / impact) works without refactor.
  *
  * Follows the pattern established by api/signals/painImpacts.js (the
  * most recent module) for URL building, revalidation, and mutation

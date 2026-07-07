@@ -144,53 +144,6 @@ export const IMPACT_LEVEL_CONFIG = {
   },
 };
 
-// ==============================|| USAGE SCOPE ||============================== //
-
-/**
- * UsageScope mapping — used by TechStack cluster UI to render a
- * tool's organisational reach at the account.
- *
- * Distinct from IMPACT_LEVEL_CONFIG (Pain) and ScopeLevel (Objective):
- *
- *   ScopeLevel  (BUSINESS / DEPARTMENT / PERSONAL) — LEVEL of evidence
- *                                                    or goal
- *   UsageScope  (TEAM / DEPARTMENT / COMPANY / UNKNOWN) — BREADTH of
- *                                                         tool usage
- *
- * Different concept, different palette. A TechStack cluster card may
- * sit next to a Pain cluster card in the unified Qualification list,
- * and the visual language must not conflate "this department is
- * impacted by a pain" with "this department uses this tool".
- *
- * Color rationale:
- *   TEAM       → secondary (purple) — narrow, granular usage
- *   DEPARTMENT → info      (blue)   — clearly delimited, mid-breadth
- *   COMPANY    → success   (green)  — broad reach, strong signal
- *   UNKNOWN    → default   (grey)   — neutral, missing data
- *
- * Values mirror the backend UsageScope enum in
- * app_modules/signals/constants.py. If new values are added there,
- * keep this object in sync.
- */
-export const USAGE_SCOPE_CONFIG = {
-  TEAM: {
-    color: "secondary",
-    label: "Team",
-  },
-  DEPARTMENT: {
-    color: "info",
-    label: "Department",
-  },
-  COMPANY: {
-    color: "success",
-    label: "Company-wide",
-  },
-  UNKNOWN: {
-    color: "default",
-    label: "Unknown scope",
-  },
-};
-
 // ==============================|| HUMAN IMPACT ||============================== //
 
 /**
@@ -218,25 +171,17 @@ export const HUMAN_IMPACT_CONFIG = {
  * Color rationale:
  *   pain       → error   (red)   — matches PainCard's identity
  *   objective  → info    (blue)  — matches ObjectiveCard's identity
- *   tech_stack → primary         — matches TechStackCard's identity
  *
  * The label is what the type chip displays (capitalised, short form).
- * Tech Stack uses two words and stays compact in the chip — same
- * footprint as the other type chips on the cluster surface.
  *
  * If a future signal type joins the cluster service (people, etc.),
- * add an entry here to keep the cluster surface consistent.
+ * add an entry here to keep the cluster surface consistent. TechStack
+ * is intentionally absent — it is not clusterable (product decision).
  *
  * Canonical chip rendering note
  * -----------------------------
  * For pain / objective, the canonical chip displays "WHAT × DIMENSION"
  * derived from cluster.what_display + cluster.dimension_display.
- *
- * For tech_stack, there are no canonical axes — the canonical_key is
- * "techstack:<catalog_entry.id>". The cluster card / drawer instead
- * display "{company_name} {product_name}" sourced from
- * cluster.tech_catalog_entry. See SignalClusterCard and
- * SignalClusterDetailDrawer for the type-specific render.
  */
 export const SIGNAL_TYPE_VISUALS = {
   pain: {
@@ -246,10 +191,6 @@ export const SIGNAL_TYPE_VISUALS = {
   objective: {
     color: "info",
     label: "Objective",
-  },
-  tech_stack: {
-    color: "primary",
-    label: "Tech Stack",
   },
 };
 
@@ -289,11 +230,6 @@ const PRIORITY_FALLBACK = {
 };
 
 const IMPACT_LEVEL_FALLBACK = {
-  color: "default",
-  label: "—",
-};
-
-const USAGE_SCOPE_FALLBACK = {
   color: "default",
   label: "—",
 };
@@ -438,29 +374,6 @@ export function resolveSignalTypeVisuals(signalType) {
 export function resolveScopeLevel(level) {
   if (!level) return IMPACT_LEVEL_FALLBACK;
   return IMPACT_LEVEL_CONFIG[level] ?? IMPACT_LEVEL_FALLBACK;
-}
-
-/**
- * Resolve usage scope config (TEAM / DEPARTMENT / COMPANY / UNKNOWN)
- * with a safe default.
- *
- * Used by TechStack cluster UI (SignalClusterCard, SignalClusterDetailDrawer)
- * to render the cluster's predominant usage scope when one can be
- * derived from `scope_summary` on the payload. The same resolver may
- * also be reused by the individual TechStackCard for consistency,
- * though the card currently keeps a local copy for visual independence
- * — see TechStackCard.USAGE_SCOPE_CONFIG.
- *
- * Returns the FALLBACK shape ({ color: 'default', label: '—' }) for
- * any missing or unknown value so the UI never receives undefined
- * properties that would crash chip rendering.
- *
- * @param {'TEAM'|'DEPARTMENT'|'COMPANY'|'UNKNOWN'|null|undefined} scope
- * @returns {{ color: string, label: string }}
- */
-export function resolveUsageScope(scope) {
-  if (!scope) return USAGE_SCOPE_FALLBACK;
-  return USAGE_SCOPE_CONFIG[scope] ?? USAGE_SCOPE_FALLBACK;
 }
 
 /**
