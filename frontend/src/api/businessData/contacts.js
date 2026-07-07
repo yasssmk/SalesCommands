@@ -62,6 +62,12 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
     queryParams.append('account_id', filters.account_id);
   }
 
+  // Company owner filter — a contact's owner is its company account's owner.
+  // Used by CONTACT territories scoped to "Company's Owner = me".
+  if (filters.account_owner_id) {
+    queryParams.append('account_owner_id', filters.account_owner_id);
+  }
+
   // Influence level filter
   if (filters.influence_level) {
     queryParams.append('influence_level', filters.influence_level);

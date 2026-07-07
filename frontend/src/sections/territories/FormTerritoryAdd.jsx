@@ -160,9 +160,13 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
           if (values.filter_has_buying_authority !== '') {
             filter_definition.has_buying_authority = values.filter_has_buying_authority === 'true';
           }
-          // Contact owner scope
-          if (values.filter_contact_scope && values.filter_contact_scope !== 'other') {
-            filter_definition.contact_scope = values.filter_contact_scope;
+          // Company owner scope — the radio group writes filter_account_scope
+          // for both territory types. Persist it as contact_scope: a contact
+          // is scoped by its company account's owner (contacts have no owner
+          // of their own). 'other' (specific user) is not supported for
+          // contact territories, so it is not persisted here.
+          if (values.filter_account_scope && values.filter_account_scope !== 'other') {
+            filter_definition.contact_scope = values.filter_account_scope;
           }
         }
 
@@ -386,7 +390,7 @@ function FormTerritoryAdd({ closeModal, initialFilters = {} }) {
 
             {/* ==================== OWNER SCOPE ==================== */}
             <SectionTitle>
-              {values.type === TERRITORY_TYPES.CONTACT ? 'Contact Owner' : 'Account Owner'}
+              {values.type === TERRITORY_TYPES.CONTACT ? "Company's Owner" : 'Account Owner'}
             </SectionTitle>
             
             <Grid item xs={12}>
