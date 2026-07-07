@@ -391,13 +391,22 @@ export const handleApiError = (axiosError) => {
       if (process.env.NODE_ENV === 'development') {
         console.log('🔍 Checking for validation dict with keys:', keys);
       }
-      
-      // Extract all messages from all fields
-      const allMessages = extractAllMessages(data);
-      
-      if (allMessages.length > 0) {
-        const result = concatenateMessages(allMessages, 3); // Show up to 3 errors
-        
+
+      // Extract messages per field, prefixing each with its field name so the
+      // user sees WHICH field failed (e.g. "metric_text: This field may not be
+      // null."). non_field_errors carries no useful field name — keep it raw.
+      const fieldMessages = [];
+      Object.entries(data).forEach(([field, value]) => {
+        extractAllMessages(value).forEach((msg) => {
+          fieldMessages.push(
+            field === 'non_field_errors' ? msg : `${field}: ${msg}`
+          );
+        });
+      });
+
+      if (fieldMessages.length > 0) {
+        const result = concatenateMessages(fieldMessages, 3); // Show up to 3 errors
+
         if (process.env.NODE_ENV === 'development') {
           console.log('✅ Extracted from validation dict:', result);
           console.groupEnd();
