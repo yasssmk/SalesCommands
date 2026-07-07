@@ -119,3 +119,68 @@ class TestTechStackNoCanonicalKey:
         )
         signal.save(user=user_a, client_id=account.client_id)
         assert signal.canonical_key is None
+
+
+# =============================================================================
+# COMPAT KEYS — dead TechStack-compat keys stripped from Pain/Impact clusters
+# =============================================================================
+
+_TECHSTACK_COMPAT_KEYS = (
+    'tech_catalog_entry',
+    'lifecycle',
+    'scope_summary',
+    'has_renewal_soon',
+    'related_pain_clusters',
+)
+
+
+class TestTechStackCompatKeysStripped:
+    """
+    After removing TechStack from clustering, the neutral TechStack-compat
+    keys must no longer be emitted by the Pain / Impact cluster builders,
+    and the cluster serializers must no longer declare them (nor the
+    detail-only `all_observations`).
+    """
+
+    @pytest.fixture
+    def pain_cluster(self, account, activity, user_a):
+        from app_modules.signals.models import PainSignal
+        from app_modules.signals.constants import SignalWhat, SignalDimension
+        pain = PainSignal(
+            account=account,
+            source_activity=activity,
+            what=SignalWhat.OPS,
+            dimension=SignalDimension.TIME,
+            summary='Reporting is slow',
+            source_quote='it takes hours every week',
+            source=SignalSource.MANUAL,
+        )
+        pain.save(user=user_a, client_id=account.client_id)
+        clusters = SignalClusterService.list_clusters_for_account(
+            account_id=account.id,
+            signal_type='pain',
+        )
+        assert len(clusters) == 1
+        return clusters[0]
+
+    def test_builder_dict_omits_compat_keys(self, pain_cluster):
+        for key in _TECHSTACK_COMPAT_KEYS:
+            assert key not in pain_cluster
+
+    def test_list_serializer_omits_compat_keys(self, pain_cluster):
+        from app_modules.signals.serializers import SignalClusterListSerializer
+        data = SignalClusterListSerializer(pain_cluster).data
+        for key in _TECHSTACK_COMPAT_KEYS:
+            assert key not in data
+
+    def test_detail_serializer_omits_all_observations(self, account, pain_cluster):
+        from app_modules.signals.serializers import SignalClusterDetailSerializer
+        detail = SignalClusterService.get_cluster_detail(
+            account_id=account.id,
+            canonical_key=pain_cluster['canonical_key'],
+            signal_type='pain',
+        )
+        data = SignalClusterDetailSerializer(detail).data
+        assert 'all_observations' not in data
+        for key in _TECHSTACK_COMPAT_KEYS:
+            assert key not in data

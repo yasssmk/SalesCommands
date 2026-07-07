@@ -74,10 +74,10 @@ Each cluster dict contains:
     {
         # Identity
         'canonical_key':        'pain:OPS:TIME',
-        'signal_type':          'pain' | 'objective' | 'impact' | 'tech_stack',
-        'what':                 'OPS',     # null on TechStack
+        'signal_type':          'pain' | 'objective' | 'impact',
+        'what':                 'OPS',
         'what_display':         'Operations / Process',
-        'dimension':            'TIME',    # null on TechStack
+        'dimension':            'TIME',
         'dimension_display':    'Time / Speed',
         'summary':              '...',     # consolidated summary
 
@@ -99,13 +99,6 @@ Each cluster dict contains:
         'max_scope_level':       'BUSINESS' | ... | None,
         'target_dates':          [<iso-date>, ...],
         'has_target_date_soon':  bool,
-
-        # TechStack-specific (neutral defaults on other types)
-        'tech_catalog_entry':    {...} | None,
-        'lifecycle':             {...} | None,
-        'scope_summary':         {...} | None,
-        'has_renewal_soon':      bool,
-        'related_pain_clusters': [{...}, ...],
 
         # Priority
         'priority_score':   85,
@@ -677,7 +670,7 @@ class SignalClusterService:
         Base queryset for Impact cluster aggregation.
 
         Includes VALIDATED and PENDING signals (REJECTED excluded — same
-        product rule as Pain / Objective / TechStack).
+        product rule as Pain / Objective).
 
         ImpactSignal carries no Impact-specific FK (no equivalent to
         Pain's related_techstack, Objective's target_contact /
@@ -767,16 +760,15 @@ class SignalClusterService:
         `members` includes VALIDATED and PENDING signals for the same
         canonical_key on the same account. REJECTED are not in `members`.
 
-        Output shape — aligned with Objective, Impact, and TechStack on
-        shared keys (identity, corroboration, status, lifecycle,
-        priority, archival). Pain-specific additions beyond the common
-        keys:
+        Output shape — aligned with Objective and Impact on shared keys
+        (identity, corroboration, status, lifecycle, priority, archival).
+        Pain-specific additions beyond the common keys:
           - max_scope_level (the layer at which the pain is felt, read
                               directly from PainSignal.scope_level)
 
-        Objective-compat and TechStack-compat keys are emitted with
-        neutral values so the unified cluster serializer can render
-        any cluster type uniformly without branching on signal_type.
+        Objective-compat keys are emitted with neutral values so the
+        unified cluster serializer can render any cluster type uniformly
+        without branching on signal_type.
 
         Cluster identity:
           The reference signal (most recent VALIDATED, else most
@@ -798,7 +790,7 @@ class SignalClusterService:
         # distinct_contacts_count is computed across source_activity.contacts
         # (m2m). Contacts who participated in the source conversation are
         # derived from activity.contacts — the signal itself does not
-        # carry a source_contact FK. Mirrors Objective / Impact / TechStack.
+        # carry a source_contact FK. Mirrors Objective / Impact.
         distinct_contacts: set = set()
         for signal in validated:
             if signal.source_activity_id and signal.source_activity:
@@ -875,25 +867,6 @@ class SignalClusterService:
             'target_dates':          [],
             'has_target_date_soon':  False,
 
-            # TechStack-compat keys — neutral values for type-agnostic
-            # rendering. See _build_techstack_cluster for the populated
-            # shape on TechStack clusters.
-            'tech_catalog_entry':    None,
-            'lifecycle':             {
-                'usage_start_year':   None,
-                'renewal_date':       None,
-                'cost_description':   None,
-                'is_discontinued':    False,
-                'discontinued_date':  None,
-            },
-            'scope_summary':         {
-                'is_company_wide':   False,
-                'departments_using': [],
-                'summary_text':      None,
-            },
-            'has_renewal_soon':      False,
-            'related_pain_clusters': [],
-
             # Priority
             'priority_score':  score,
             'priority_bucket': bucket,
@@ -940,7 +913,7 @@ class SignalClusterService:
 
         # distinct_contacts_count is computed across source_activity.contacts
         # (m2m). Contacts who participated in the source conversation are
-        # derived from activity.contacts. Mirrors Pain / Impact / TechStack.
+        # derived from activity.contacts. Mirrors Pain / Impact.
         #
         # Note: target_contact (PERSONAL scope) is a distinct concept on
         # Objective — it captures who OWNS the objective, not who reported
@@ -1056,10 +1029,6 @@ class SignalClusterService:
         are emitted with neutral defaults — same stance Pain takes
         toward Objective-specific fields.
 
-        TechStack-compat keys are emitted with neutral values so the
-        unified cluster serializer can render any cluster type
-        uniformly without branching on signal_type.
-
         Cluster identity:
           The reference signal (most recent VALIDATED, else most recent
           member) carries the canonical axes (what, dimension) and the
@@ -1092,7 +1061,7 @@ class SignalClusterService:
         # distinct_contacts_count is computed across source_activity.contacts
         # (m2m). Contacts who participated in the source conversation are
         # derived from activity.contacts — the signal itself does not
-        # carry a source_contact FK. Mirrors Pain / Objective / TechStack.
+        # carry a source_contact FK. Mirrors Pain / Objective.
         distinct_contacts: set = set()
         for signal in validated:
             if signal.source_activity_id and signal.source_activity:
@@ -1173,25 +1142,6 @@ class SignalClusterService:
             # rendering.
             'target_dates':          [],
             'has_target_date_soon':  False,
-
-            # TechStack-compat keys — neutral values for type-agnostic
-            # rendering. See _build_techstack_cluster for the populated
-            # shape on TechStack clusters.
-            'tech_catalog_entry':    None,
-            'lifecycle':             {
-                'usage_start_year':   None,
-                'renewal_date':       None,
-                'cost_description':   None,
-                'is_discontinued':    False,
-                'discontinued_date':  None,
-            },
-            'scope_summary':         {
-                'is_company_wide':   False,
-                'departments_using': [],
-                'summary_text':      None,
-            },
-            'has_renewal_soon':      False,
-            'related_pain_clusters': [],
 
             # Priority
             'priority_score':  score,
