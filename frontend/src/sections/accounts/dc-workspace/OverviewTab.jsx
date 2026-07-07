@@ -20,19 +20,21 @@ export default function OverviewTab({ cycleId }) {
   const { notesErrorStatus } = useGetManagerNotes(cycleId);
 
   // A 403 means the current user may not read this cycle's notes (not the
-  // owner, not a manager/admin). Hide the whole block silently — heading
-  // included — rather than surfacing an error. Other errors fall through to
-  // the thread's own error handling.
-  if (notesErrorStatus === 403) {
-    return null;
-  }
+  // owner, not a manager/admin). Hide ONLY the Coaching Notes section — the
+  // rest of the Overview body renders normally. No error surfaced; other
+  // statuses fall through to the thread's own error handling.
+  const canViewNotes = notesErrorStatus !== 403;
 
   return (
     <Box>
-      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
-        Coaching Notes
-      </Typography>
-      <ManagerNotesThread cycleId={cycleId} />
+      {canViewNotes && (
+        <>
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
+            Coaching Notes
+          </Typography>
+          <ManagerNotesThread cycleId={cycleId} />
+        </>
+      )}
     </Box>
   );
 }
