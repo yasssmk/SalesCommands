@@ -9,7 +9,9 @@ Supported signal types:
   - Pain      — compute_pain_priority_score()
   - Objective — compute_objective_priority_score()
   - Impact    — compute_impact_priority_score()
-  - TechStack — compute_techstack_priority_score()
+
+(TechStack is NOT clustered — product decision — and therefore has no
+priority scorer here.)
 
 Each type has its own weights dict because the priority inputs differ:
   - Pain is scored on corroboration + breadth + freshness + max
@@ -22,15 +24,11 @@ Each type has its own weights dict because the priority inputs differ:
     Pain — observation-level metadata (impact_type, metric_text,
     human_impact) is deliberately NOT consumed by the scorer; see
     IMPACT_PRIORITY_WEIGHTS docstring for the rationale.
-  - TechStack is scored on corroboration + breadth + freshness +
-    catalog flags + cross-references with Pain clusters + renewal
-    proximity + discontinuation penalty.
 
 Pain, Objective, and Impact share an intentionally identical shape on
 the common axes (corroboration, breadth, freshness, scope_level). The
-only differences:
+only difference:
   - Objective adds a target_date proximity bonus (temporal urgency).
-  - Pain and Impact have no Objective- or TechStack-specific bonuses.
 
 Design choices
 --------------
@@ -40,8 +38,8 @@ Design choices
    obvious entry point for tuning.
 
 2. Weights centralized at the top
-   PAIN_PRIORITY_WEIGHTS, OBJECTIVE_PRIORITY_WEIGHTS,
-   IMPACT_PRIORITY_WEIGHTS, and TECHSTACK_PRIORITY_WEIGHTS are the
+   PAIN_PRIORITY_WEIGHTS, OBJECTIVE_PRIORITY_WEIGHTS, and
+   IMPACT_PRIORITY_WEIGHTS are the
    single sources of truth for "what matters" in each cluster type.
    Product can retune any dict in one place without touching the
    formulas — and unit tests can assert formulas independently of
@@ -249,89 +247,6 @@ IMPACT_PRIORITY_WEIGHTS = {
 }
 
 # =============================================================================
-# WEIGHTS — TECHSTACK CLUSTER
-# =============================================================================
-#
-# TechStack priority differs structurally from Pain, Objective, and
-# Impact. The three canonical-axes signal types share corroboration +
-# breadth + freshness + scope_level (with Objective adding target_date
-# proximity). TechStack discards the scope_level axis entirely — a
-# tool does not have a "scope at which it is felt" — and brings its
-# own signals of relevance:
-#     * cross-references with Pain clusters (a tool that hurts is hot)
-#     * catalog flags (competitor / integration target)
-#     * renewal-date proximity (a contract about to expire is hot)
-#     * discontinuation (a tool being phased out is cold)
-#
-# Score interpretation
-# --------------------
-#   ≥ 70  HIGH    — actionable: open replacement / integration play
-#   40–69 MEDIUM  — worth tracking, mention in next call prep
-#   < 40  LOW     — informational, no immediate action
-#
-# Discontinuation penalty
-# -----------------------
-# `is_discontinued` carries a strong negative weight (-50) because a
-# tool the account is dropping is the exact opposite of an opportunity
-# — it is a closed door. The penalty can drop the score below 0 before
-# clamping; this is intentional, the cluster ends up firmly in the LOW
-# bucket regardless of other signals.
-#
-# Product-tunable in a single place — the scoring function reads
-# everything from this dict.
-# =============================================================================
-
-TECHSTACK_PRIORITY_WEIGHTS = {
-    # Corroboration: multiple VALIDATED signals confirming the same tool
-    # at the account = stronger evidence the tool is genuinely in use.
-    # Same shape as Pain/Objective.
-    'corroboration_per_confirmation': 15,
-    'corroboration_cap':              5,
-
-    # Breadth: distinct contacts mentioning the tool. Uncapped — every
-    # extra independent voice strengthens the signal.
-    'width_per_distinct_contact':     10,
-
-    # Departmental breadth: distinct departments using the tool.
-    # Uncapped — multi-department adoption is a strong relevance signal
-    # for sales conversations (every department touched is a potential
-    # replacement / integration angle). Smaller weight than contacts
-    # because departments are typically fewer in number.
-    'width_per_distinct_department':  5,
-
-    # Recency of the last VALIDATED observation. Same shape as
-    # Pain/Objective for consistency.
-    'freshness': {
-        FreshnessStatus.FRESH:   20,
-        FreshnessStatus.DORMANT: 10,
-        FreshnessStatus.STALE:   0,
-    },
-
-    # Cross-reference with Pain clusters — when the tool is also called
-    # out as a problem source on the account, urgency multiplies.
-    # Capped at 3 to avoid runaway scores when a tool is referenced by
-    # many pain clusters (e.g. a generic CRM that everyone complains
-    # about — relevance is real but already saturated at 3+).
-    'related_pain_per_cluster':  15,
-    'related_pain_cap':          3,
-
-    # Catalog flags — these come from TechCatalog entry attributes
-    # (is_competitor / is_integration_target). They are the strongest
-    # commercial-relevance signals on a TechStack cluster.
-    'is_competitor_bonus':         25,
-    'is_integration_target_bonus': 10,
-
-    # Renewal proximity — a contract within
-    # TECHSTACK_RENEWAL_SOON_DAYS from today is a sharp commercial
-    # window. Same magnitude as Objective's target-date proximity but
-    # expressed differently in the data (renewal_date vs target_date).
-    'renewal_soon_bonus': 20,
-
-    # Discontinuation penalty — see header for rationale.
-    'is_discontinued_penalty': -50,
-}
-
-# =============================================================================
 # SCORE COMPUTATION
 # =============================================================================
 
@@ -534,102 +449,6 @@ def compute_impact_priority_score(cluster_stats: dict) -> int:
     if score > 100:
         return 100
     return score
-
-# =============================================================================
-# TECHSTACK PRIORITY
-# =============================================================================
-
-def compute_techstack_priority_score(cluster_stats: dict) -> int:
-    """
-    Compute a 0-100 priority score for a TechStack cluster.
-
-    Tuned differently from Pain and Objective (see
-    TECHSTACK_PRIORITY_WEIGHTS docstring for rationale):
-      - corroboration + breadth + freshness behave like Pain/Objective
-      - distinct departments contribute a separate (smaller) breadth bonus
-      - related Pain clusters add a major bonus, capped to avoid runaway
-        scores
-      - catalog flags (is_competitor / is_integration_target) add static
-        bonuses — these are the strongest commercial-relevance signals
-      - renewal proximity adds an urgency bonus
-      - is_discontinued is a strong NEGATIVE penalty: a tool being
-        phased out is a closed door, not an opportunity
-
-    Args:
-        cluster_stats: dict produced by SignalClusterService._build_techstack_cluster.
-            All keys expected — the service populates zero / False / None
-            defaults for fields that don't apply:
-              - confirmation_count           (int >= 0)
-              - distinct_contacts_count      (int >= 0)
-              - distinct_departments_count   (int >= 0)
-              - related_pain_count           (int >= 0) — number of
-                                                          Pain clusters
-                                                          referencing the
-                                                          same TechCatalog
-                                                          entry
-              - is_competitor                (bool)
-              - is_integration_target        (bool)
-              - has_renewal_soon             (bool)
-              - is_discontinued              (bool)
-              - freshness_status             (FreshnessStatus or None)
-
-    Returns:
-        int in [0, 100] — the priority score, clamped.
-
-    Notes:
-        Missing or None values for the categorical inputs
-        (freshness_status) contribute 0 — safe default for clusters
-        with no VALIDATED signal yet. The discontinuation penalty can
-        drive the un-clamped score below 0; clamping then lifts it back
-        to 0, which lands the cluster firmly in the LOW bucket.
-    """
-    weights = TECHSTACK_PRIORITY_WEIGHTS
-    score = 0
-
-    # --- Corroboration: count × weight, capped ---
-    confirmation_count = int(cluster_stats.get('confirmation_count', 0) or 0)
-    corroboration = min(confirmation_count, weights['corroboration_cap'])
-    score += corroboration * weights['corroboration_per_confirmation']
-
-    # --- Breadth: distinct contacts × weight (uncapped) ---
-    distinct_contacts = int(cluster_stats.get('distinct_contacts_count', 0) or 0)
-    score += distinct_contacts * weights['width_per_distinct_contact']
-
-    # --- Breadth: distinct departments × weight (uncapped, smaller) ---
-    distinct_departments = int(cluster_stats.get('distinct_departments_count', 0) or 0)
-    score += distinct_departments * weights['width_per_distinct_department']
-
-    # --- Freshness bonus ---
-    freshness = cluster_stats.get('freshness_status')
-    if freshness is not None:
-        score += weights['freshness'].get(freshness, 0)
-
-    # --- Cross-reference with Pain clusters (capped) ---
-    related_pain_count = int(cluster_stats.get('related_pain_count', 0) or 0)
-    related_pain = min(related_pain_count, weights['related_pain_cap'])
-    score += related_pain * weights['related_pain_per_cluster']
-
-    # --- Catalog flag bonuses (additive, both can apply) ---
-    if cluster_stats.get('is_competitor'):
-        score += weights['is_competitor_bonus']
-    if cluster_stats.get('is_integration_target'):
-        score += weights['is_integration_target_bonus']
-
-    # --- Renewal urgency ---
-    if cluster_stats.get('has_renewal_soon'):
-        score += weights['renewal_soon_bonus']
-
-    # --- Discontinuation penalty (can push score below 0) ---
-    if cluster_stats.get('is_discontinued'):
-        score += weights['is_discontinued_penalty']
-
-    # Clamp to [0, 100]
-    if score < 0:
-        return 0
-    if score > 100:
-        return 100
-    return score
-
 
 # =============================================================================
 # BUCKET RESOLUTION

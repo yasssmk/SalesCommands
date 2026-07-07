@@ -4,30 +4,24 @@ TechStackSignal — concrete signal for tools used by an account.
 
 Captures structured intelligence about a single tool observed at an
 account, anchored to a tenant-level master catalog entry (TechCatalog).
-The catalog FK is the cluster identity: every observation of the same
-tool on the same account aggregates into a single cluster, regardless
-of who reported it or when.
+The catalog FK identifies which tool the observation is about.
 
-Canonical key (auto-computed in save()):
-    canonical_key = "techstack:<tech_catalog_entry.id>"
-
-Because TechCatalog is tenant-level and the FK is scoped accordingly,
-the canonical_key is automatically tenant-deduplicated — no risk of
-two tenants producing colliding keys for distinct catalog entries.
+TechStack is NOT clusterable (product decision). Unlike Pain /
+Objective / Impact, TechStack observations are not aggregated into
+canonical clusters — the signal carries no canonical_key and is not
+served by SignalClusterService. Multiple observations of the same
+tool on an account are read as a flat, catalog-grouped list.
 
 Architectural alignment with Pain / Objective
 ---------------------------------------------
-TechStackSignal follows the same canonical-cluster pattern as Pain and
-Objective:
+TechStackSignal shares the BaseSignal lifecycle but, unlike Pain /
+Objective / Impact, does not participate in cluster aggregation:
 
   * Inherits from BaseSignal (shared lifecycle, audit, source tracking).
-  * canonical_key is auto-computed in save() before delegating to
-    BaseSignal.save() which applies the MANUAL → VALIDATED rule.
+  * Does not compute a canonical_key — TechStack is not clusterable.
   * Conditional validation lives in clean() and is mirrored by the
     Create / Update serializers (merged-state pattern as on
     ObjectiveSignal / ImpactSignal).
-  * Cluster aggregation is delegated entirely to SignalClusterService
-    via the shared dispatch — see _list_techstack_clusters_for_account.
 
 Shadow-overrides (vs BaseSignal)
 --------------------------------
@@ -77,8 +71,8 @@ Validation rules (enforced in clean() AND in Create/Update serializers)
 
   2. tech_catalog_entry is required, EXCEPT on PENDING LLM-extracted
      signals.
-       Without the catalog FK, the canonical_key cannot be computed
-       and cluster aggregation falls apart. The exception covers the
+       The catalog FK identifies the tool; validation requires it
+       (enforced by SignalManager.validate). The exception covers the
        LLM-extraction case where the mentioned tool could not be
        matched to the tenant catalog: the signal is persisted as
        PENDING with tech_catalog_entry=NULL and the raw name stored
@@ -114,8 +108,8 @@ Multi-mentions are expected
 ---------------------------
 There is intentionally NO UniqueConstraint on (account, tech_catalog_entry).
 Multiple signals for the same tool on the same account are the corroboration
-mechanism: each call where Salesforce comes up adds one signal, and the
-cluster service rolls them up. Mirror of the Pain/Objective stance.
+mechanism: each call where Salesforce comes up adds one signal. They are
+read as a flat, catalog-grouped list (TechStack is not clustered).
 """
 
 from django.core.exceptions import ValidationError
@@ -133,9 +127,9 @@ class TechStackSignal(BaseSignal):
     """
     Concrete signal for a tool used by an account.
 
-    Cluster identity:
-        canonical_key = "techstack:<tech_catalog_entry.id>"
-        — auto-computed in save() from the catalog FK.
+    Catalog anchor:
+        tech_catalog_entry (FK TechCatalog) identifies the tool.
+        TechStack is not clusterable — no canonical_key is computed.
 
     Required:
         - tech_catalog_entry (FK TechCatalog)
@@ -335,46 +329,20 @@ class TechStackSignal(BaseSignal):
                 fields=['is_discontinued'],
                 name='tssig_discontinued_idx',
             ),
-            # Composite index for the cluster lookup path:
-            # "list TechStack clusters for account X" iterates by
-            # account then groups by canonical_key.
+            # Retained composite index on (account, canonical_key).
+            # TechStack no longer computes canonical_key (not clusterable);
+            # this index is now inert — its removal is deferred because
+            # dropping it would require a migration (see TECH_DEBT.md).
             models.Index(
                 fields=['account', 'canonical_key'],
                 name='tssig_account_canon_idx',
             ),
-            # Renewal-date ordering surface — supports the priority
-            # scorer's renewal-soon detection on cluster aggregation.
+            # Renewal-date ordering surface for the account tech-stack list.
             models.Index(
                 fields=['renewal_date'],
                 name='tssig_renewal_idx',
             ),
         ]
-
-    # =========================================================================
-    # SAVE — canonical_key auto-computation
-    # =========================================================================
-
-    def save(self, *args, **kwargs):
-        """
-        Compute canonical_key before delegating to BaseSignal.save().
-
-        canonical_key = "techstack:<tech_catalog_entry.id>"
-
-        The catalog FK is required at clean() time, but save() may run
-        on a partially constructed instance during creation flows — we
-        guard the assignment so that a missing FK leaves canonical_key
-        as None rather than raising. The DB-level NOT NULL on
-        tech_catalog_entry will catch the missing FK regardless.
-
-        BaseSignal.save() then applies the shared business rules
-        (MANUAL → VALIDATED + confidence cleared).
-        """
-        if self.tech_catalog_entry_id:
-            self.canonical_key = f"techstack:{self.tech_catalog_entry_id}"
-        else:
-            self.canonical_key = None
-
-        super().save(*args, **kwargs)
 
     # =========================================================================
     # VALIDATION
