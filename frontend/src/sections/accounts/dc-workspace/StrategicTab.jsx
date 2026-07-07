@@ -25,11 +25,13 @@ import {
 import {
   useGetDealHealthSnapshot,
   runDealHealth,
+  pollForNewSnapshot,
 } from "api/aiPipelines/dealHealth";
 import { useGetReadiness } from "api/accounts/decisionCycles";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
+  displayWarningSnackbar,
 } from "utils/displayError";
 
 // Section imports
@@ -46,18 +48,44 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
 
   const [subTab, setSubTab] = useState("deal-health");
   const [runLoading, setRunLoading] = useState(false);
+  const [polling, setPolling] = useState(false);
+
+  const busy = runLoading || polling;
 
   const handleRun = useCallback(async () => {
+    const previousSnapshotId = snapshot?.id ?? snapshot?.snapshot_date ?? null;
+
     setRunLoading(true);
     const result = await runDealHealth(cycleId);
+    setRunLoading(false);
+
     if (result.success) {
       displaySuccessSnackbar("Deal health diagnostic completed");
       mutateSnapshot();
-    } else {
-      displayErrorSnackbar(result);
+      return;
     }
-    setRunLoading(false);
-  }, [cycleId, mutateSnapshot]);
+
+    // The pipeline is synchronous server-side but can outlast the client
+    // timeout. On a timeout the snapshot may still have been written — poll
+    // for a new one before surfacing an error.
+    if (result.isTimeout || result.status === 408) {
+      setPolling(true);
+      const polled = await pollForNewSnapshot(cycleId, previousSnapshotId);
+      setPolling(false);
+
+      if (polled.success) {
+        displaySuccessSnackbar("Deal health diagnostic completed");
+        mutateSnapshot();
+      } else {
+        displayWarningSnackbar(
+          "Analysis is taking longer than expected — please retry in a moment.",
+        );
+      }
+      return;
+    }
+
+    displayErrorSnackbar(result);
+  }, [cycleId, snapshot?.id, snapshot?.snapshot_date, mutateSnapshot]);
 
   // Loading
   if (snapshotLoading || readinessLoading) {
@@ -115,16 +143,20 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
           <Button
             variant="contained"
             startIcon={
-              runLoading ? (
+              busy ? (
                 <CircularProgress size={14} />
               ) : (
                 <ExperimentOutlined style={{ fontSize: 14 }} />
               )
             }
             onClick={handleRun}
-            disabled={runLoading}
+            disabled={busy}
           >
-            {runLoading ? "Running diagnostic…" : "Run Deal Health"}
+            {polling
+              ? "Analysis still running…"
+              : runLoading
+                ? "Running diagnostic…"
+                : "Run Deal Health"}
           </Button>
         </Stack>
       </Box>
@@ -165,16 +197,16 @@ export default function StrategicTab({ cycleId, accountId, cycle }) {
           size="small"
           variant="outlined"
           startIcon={
-            runLoading ? (
+            busy ? (
               <CircularProgress size={12} />
             ) : (
               <ExperimentOutlined style={{ fontSize: 12 }} />
             )
           }
           onClick={handleRun}
-          disabled={runLoading}
+          disabled={busy}
         >
-          {runLoading ? "Running…" : "Re-run"}
+          {polling ? "Analysis still running…" : runLoading ? "Running…" : "Re-run"}
         </Button>
       </Stack>
 

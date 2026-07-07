@@ -20,6 +20,7 @@ import ReusableTable from 'components/table/Table';
 // hooks
 import useLocalStorage from 'hooks/useLocalStorage';
 import { useAuth } from 'hooks/useAuth';
+import { useCurrentUser } from 'hooks/useCurrentUser';
 
 // api
 import { useGetContacts } from 'api/businessData/contacts';
@@ -65,6 +66,7 @@ const INFLUENCE_COLORS = {
  */
 export default function TerritoryContactsTab({ territoryId, territory }) {
   const { tenantId } = useAuth();
+  const { currentUser } = useCurrentUser();
   const router = useRouter();
 
   // ==============================|| PAGINATION STATE ||============================== //
@@ -92,6 +94,34 @@ export default function TerritoryContactsTab({ territoryId, territory }) {
 
   const swrKey = tenantKey('territory-contacts', tenantId);
 
+  // Translate the territory's saved filter_definition into Contact list
+  // filters. There is no backend territory_id resolution for contacts, so the
+  // segment is reproduced from its filters here (kept in sync with the
+  // scope-aware count in _count_contacts_for_territory).
+  const contactFilters = useMemo(() => {
+    const fd = territory?.filter_definition || {};
+    const f = {};
+
+    if (fd.influence_level?.length) {
+      f.influence_level = fd.influence_level;
+    }
+    if (fd.standard_department?.length) {
+      f.standard_department = fd.standard_department;
+    }
+    if (fd.has_buying_authority !== undefined && fd.has_buying_authority !== null) {
+      f.has_buying_authority = fd.has_buying_authority;
+    }
+
+    // "Company's Owner" scope. 'mine' -> contacts whose company account is
+    // owned by the current user. 'team' is not expressible as a simple FK
+    // filter yet (see TECH_DEBT) and currently lists unscoped.
+    if (fd.contact_scope === 'mine' && currentUser?.id) {
+      f.account_owner_id = currentUser.id;
+    }
+
+    return f;
+  }, [territory?.filter_definition, currentUser?.id]);
+
   const {
     contacts,
     contactsCount,
@@ -102,9 +132,7 @@ export default function TerritoryContactsTab({ territoryId, territory }) {
     pageSize: validPageSize,
     search,
     ordering,
-    filters: {
-      territory_id: territoryId
-    }
+    filters: contactFilters
   });
 
   // ==============================|| HANDLERS ||============================== //

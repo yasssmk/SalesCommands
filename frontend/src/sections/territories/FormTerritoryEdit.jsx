@@ -90,8 +90,14 @@ const buildInitialValues = (territory) => {
     filter_classification: toArray(territory?.filter_definition?.classification),
     filter_industry: toArray(territory?.filter_definition?.industry),
     filter_country: toArray(territory?.filter_definition?.country),
-    // Account owner scope fields
-    filter_account_scope: territory?.filter_definition?.account_scope || '',
+    // Owner scope fields — the single radio group is bound to
+    // filter_account_scope for both territory types. Seed it from whichever
+    // scope the saved territory carries so an edit round-trips instead of
+    // silently resetting a contact territory's scope to "All".
+    filter_account_scope:
+      territory?.filter_definition?.account_scope ||
+      territory?.filter_definition?.contact_scope ||
+      '',
     filter_account_owner: territory?.filter_definition?.account_owner || null,
     // Contact filter definition fields
     filter_influence_level: toArray(territory?.filter_definition?.influence_level),
@@ -174,9 +180,13 @@ function FormTerritoryEdit({ territory, closeModal }) {
         if (values.filter_has_buying_authority !== '') {
           filter_definition.has_buying_authority = values.filter_has_buying_authority === 'true';
         }
-        // Contact owner scope
-        if (values.filter_contact_scope && values.filter_contact_scope !== 'other') {
-          filter_definition.contact_scope = values.filter_contact_scope;
+        // Company owner scope — the radio group writes filter_account_scope
+        // for both territory types. Persist it as contact_scope: a contact is
+        // scoped by its company account's owner (contacts have no owner of
+        // their own). 'other' (specific user) is not supported for contact
+        // territories, so it is not persisted here.
+        if (values.filter_account_scope && values.filter_account_scope !== 'other') {
+          filter_definition.contact_scope = values.filter_account_scope;
         }
       }
 
@@ -409,7 +419,7 @@ function FormTerritoryEdit({ territory, closeModal }) {
 
             {/* ==================== OWNER SCOPE ==================== */}
             <SectionTitle>
-              {values.type === TERRITORY_TYPES.CONTACT ? 'Contact Owner' : 'Account Owner'}
+              {values.type === TERRITORY_TYPES.CONTACT ? "Company's Owner" : 'Account Owner'}
             </SectionTitle>
             
             <Grid item xs={12}>

@@ -100,7 +100,7 @@ NoteBubble.propTypes = {
 // ==============================|| MANAGER NOTES THREAD ||============================== //
 
 export default function ManagerNotesThread({ cycleId }) {
-  const { notes, notesLoading, notesError, mutateNotes } =
+  const { notes, notesLoading, notesError, notesErrorStatus, mutateNotes } =
     useGetManagerNotes(cycleId);
   const { isAdmin, isManager, currentUserId } = useUserPermissions();
 
@@ -170,6 +170,12 @@ export default function ManagerNotesThread({ cycleId }) {
         <CircularProgress size={28} />
       </Box>
     );
+  }
+
+  // Forbidden — the current user may not read this cycle's notes. Render
+  // nothing (no error text, no snackbar); the block is simply absent.
+  if (notesErrorStatus === 403) {
+    return null;
   }
 
   // Error

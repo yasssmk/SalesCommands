@@ -37,6 +37,10 @@ class ContactFilter(django_filters.FilterSet):
     # Single value filters
     account_id = UUIDFilter(field_name='account_id')
     standard_department_id = django_filters.NumberFilter(field_name='standard_department_id')
+    # A contact has no owner of its own — "the contact's owner" means the
+    # owner of the contact's company account. Used by CONTACT-type territories
+    # filtered on "Company's Owner".
+    account_owner_id = UUIDFilter(field_name='account__account_owner_id')
     
     # Location filters (multi-value, from ContactDetailsMixin)
     country = CharInFilter(field_name='country', lookup_expr='in')
@@ -61,7 +65,7 @@ class ContactFilter(django_filters.FilterSet):
     class Meta:
         model = Contact
         fields = [
-            'account_id', 'influence_level', 'standard_department_id',
+            'account_id', 'account_owner_id', 'influence_level', 'standard_department_id',
             'country', 'state', 'city',
             'opted_out', 'has_buying_authority', 'email_is_valid', 'phone_is_valid',
             'first_name', 'last_name', 'email', 'job_title', 'search'

@@ -26,7 +26,7 @@ import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import ArrowRightOutlined from '@ant-design/icons/ArrowRightOutlined';
 
 // api
-import { TERRITORY_TYPES } from 'api/territories/territories';
+import { TERRITORY_TYPES, useGetTerritoryWorkspace } from 'api/territories/territories';
 
 // ==============================|| TERRITORY CARD ||============================== //
 
@@ -55,6 +55,17 @@ export default function TerritoryCard({
 
   const isAccountType = territory.type === TERRITORY_TYPES.ACCOUNT;
   const isContactType = territory.type === TERRITORY_TYPES.CONTACT;
+
+  // Contact territories derive their count from the scope-aware workspace
+  // stats endpoint. Account territories keep the count passed by the list.
+  // The hook is keyed null (no fetch) for account territories.
+  const { stats: contactStats, loading: contactCountLoading } =
+    useGetTerritoryWorkspace(isContactType ? territory.id : null);
+
+  const displayCount = isContactType
+    ? contactStats?.contacts_count ?? 0
+    : accountsCount;
+  const displayLoading = isContactType ? contactCountLoading : loading;
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -278,7 +289,7 @@ export default function TerritoryCard({
         {/* Count */}
         <Box sx={{ mb: 2 }}>
           <Typography variant="h2" component="div" fontWeight={600}>
-            {loading ? '...' : accountsCount}
+            {displayLoading ? '...' : displayCount}
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {isAccountType ? 'accounts' : 'contacts'}

@@ -232,14 +232,15 @@ export default function InlineImpactForm({
       };
 
       // Optional fields — null is the explicit "clear this field" signal
-      // for nullable backend fields. impact_type/human_impact/metric_text
-      // are all nullable on the model.
+      // for nullable backend fields. human_impact is nullable on the model.
       payload.human_impact = values.human_impact || null;
 
+      // metric_text is a CharField(blank=True) — NOT NULL. Emit an empty
+      // string to clear it; sending null triggers a 400 "may not be null".
       payload.metric_text =
         values.metric_text && values.metric_text.trim()
           ? values.metric_text.trim()
-          : null;
+          : "";
 
       // source_quote is nullable at the DB level
       payload.source_quote =

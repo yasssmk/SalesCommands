@@ -80,8 +80,74 @@ export async function runDealHealth(cycleId) {
     success: false,
     error: result.error,
     status: result.status || 0,
+    isTimeout: result.isTimeout || false,
     response: result.response || null,
   };
+}
+
+/**
+ * Poll the latest snapshot until a new one appears (recovery after a client
+ * timeout).
+ *
+ * The deal-health pipeline runs synchronously server-side but can outlast the
+ * client's bulk-profile timeout. When runDealHealth times out, the snapshot
+ * may still have been written — this polls GET .../health-snapshots/latest/
+ * and resolves as soon as a snapshot newer than `previousSnapshotId` is seen.
+ *
+ * @param {string} cycleId - UUID of the DecisionCycle.
+ * @param {string|null} previousSnapshotId - id (or snapshot_date) of the
+ *   snapshot present before the run, or null if there was none.
+ * @param {Object} [opts]
+ * @param {number} [opts.intervalMs=4000] - Delay between attempts.
+ * @param {number} [opts.maxAttempts=5] - Maximum poll attempts.
+ * @returns {Promise<Object>} { success: true, data } on a new snapshot,
+ *   otherwise { success: false, timedOut: true }.
+ */
+export async function pollForNewSnapshot(
+  cycleId,
+  previousSnapshotId,
+  { intervalMs = 4000, maxAttempts = 5 } = {},
+) {
+  if (!cycleId || !isValidUUID(cycleId)) {
+    return { success: false, error: "Invalid cycle ID format" };
+  }
+
+  const snapshotPrefix = `/decision_cycles/${cycleId}/health-snapshots/`;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+    const result = await api.get(endpoints.snapshotLatest(cycleId));
+    if (result.success) {
+      const snapshot = result.data?.data ?? result.data ?? null;
+      const currentId = snapshot?.id ?? snapshot?.snapshot_date ?? null;
+      if (snapshot && currentId && currentId !== previousSnapshotId) {
+        revalidateMultiple([snapshotPrefix]);
+        return { success: true, data: snapshot };
+      }
+    }
+  }
+
+  return { success: false, timedOut: true };
+}
+
+/**
+ * Fetch the id (or snapshot_date fallback) of the latest snapshot, or null.
+ *
+ * Used to capture a baseline before a run so a subsequent poll can tell a
+ * newly written snapshot apart from a pre-existing one.
+ *
+ * @param {string} cycleId - UUID of the DecisionCycle.
+ * @returns {Promise<string|null>}
+ */
+export async function getLatestSnapshotId(cycleId) {
+  if (!cycleId || !isValidUUID(cycleId)) return null;
+
+  const result = await api.get(endpoints.snapshotLatest(cycleId));
+  if (!result.success) return null;
+
+  const snapshot = result.data?.data ?? result.data ?? null;
+  return snapshot?.id ?? snapshot?.snapshot_date ?? null;
 }
 
 // ==============================|| SWR HOOKS ||============================== //
