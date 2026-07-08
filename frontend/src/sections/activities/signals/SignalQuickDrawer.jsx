@@ -203,7 +203,7 @@ function ImpactDetails({ signal }) {
 }
 ImpactDetails.propTypes = { signal: PropTypes.object.isRequired };
 
-function TechStackDetails({ signal }) {
+function TechStackDetails({ signal, onEdit }) {
   const techInfo = getTechSummary(signal);
   const contactName = formatContact(getContact(signal));
   const catalogEntry = signal.tech_catalog_entry;
@@ -214,14 +214,27 @@ function TechStackDetails({ signal }) {
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="body2">{techInfo.name}</Typography>
             {techInfo.pending && (
-              <Chip
-                icon={<WarningOutlined style={{ fontSize: 10 }} />}
-                label="Not in catalog"
-                size="small"
-                color="warning"
-                variant="outlined"
-                sx={{ height: 20, fontSize: "0.7rem" }}
-              />
+              <Tooltip
+                title={
+                  onEdit
+                    ? "Attach a catalog entry to validate this tool"
+                    : "Not in your tech catalog"
+                }
+              >
+                <Chip
+                  icon={<WarningOutlined style={{ fontSize: 10 }} />}
+                  label="Not in catalog"
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  onClick={onEdit ? () => onEdit(signal, "tech-stack") : undefined}
+                  sx={{
+                    height: 20,
+                    fontSize: "0.7rem",
+                    ...(onEdit ? { cursor: "pointer" } : {}),
+                  }}
+                />
+              </Tooltip>
             )}
           </Stack>
         </DrawerFieldRow>
@@ -264,7 +277,10 @@ function TechStackDetails({ signal }) {
     </>
   );
 }
-TechStackDetails.propTypes = { signal: PropTypes.object.isRequired };
+TechStackDetails.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onEdit: PropTypes.func,
+};
 
 function BlockerDetails({ signal }) {
   const contactName = formatContact(getContact(signal));
@@ -309,12 +325,12 @@ function NextStepDetails({ signal }) {
 }
 NextStepDetails.propTypes = { signal: PropTypes.object.isRequired };
 
-function renderDetails(signal, signalType) {
+function renderDetails(signal, signalType, onEdit) {
   switch (signalType) {
     case "pain": return <PainDetails signal={signal} />;
     case "objective": return <ObjectiveDetails signal={signal} />;
     case "impact": return <ImpactDetails signal={signal} />;
-    case "tech-stack": return <TechStackDetails signal={signal} />;
+    case "tech-stack": return <TechStackDetails signal={signal} onEdit={onEdit} />;
     case "blockers": return <BlockerDetails signal={signal} />;
     case "next-steps": return <NextStepDetails signal={signal} />;
     default: return null;
@@ -398,7 +414,7 @@ export default function SignalQuickDrawer({
         {(signal.validated_by || signal.validated_at) && <Box sx={{ mb: 1.5 }} />}
 
         {/* Type-specific detail sections */}
-        {renderDetails(signal, signalType)}
+        {renderDetails(signal, signalType, onEdit)}
       </Box>
 
       <Divider />

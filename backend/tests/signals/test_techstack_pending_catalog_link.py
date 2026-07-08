@@ -191,3 +191,70 @@ class TestValidateFlow:
         sig.refresh_from_db()
         assert sig.status == SignalStatus.VALIDATED
         assert sig.tech_catalog_entry_id == entry.id
+
+
+# =============================================================================
+# DETECTED ACTION — GET /tech-stack/detected/
+# =============================================================================
+
+def _url_detected():
+    return reverse('module_signals:tech-stack-detected')
+
+
+def _extract_items(response):
+    """Return the list of serialized signals regardless of pagination shape."""
+    body = response.json()
+    if isinstance(body, dict):
+        if 'results' in body:
+            return body['results']
+        if 'data' in body:
+            return body['data']
+    return body
+
+
+class TestDetectedAction:
+
+    def test_detected_returns_only_pending_unmatched(
+        self, authed_api_a, account, activity, user_a, client_account_a,
+    ):
+        # (1) PENDING, unmatched → should appear
+        unmatched = _make_pending_unmatched(account, activity, user_a)
+
+        # (2) PENDING, matched (has catalog entry) → should NOT appear
+        entry = _make_catalog_entry(client_account_a.id, user_a)
+        matched = TechStackSignal(
+            account=account,
+            source_activity=activity,
+            tech_catalog_entry=entry,
+            source=SignalSource.LLM_EXTRACTED,
+        )
+        matched.save(user=user_a, client_id=account.client_id)
+
+        # (3) VALIDATED (MANUAL, with entry) → should NOT appear
+        validated = TechStackSignal(
+            account=account,
+            source_activity=activity,
+            tech_catalog_entry=_make_catalog_entry(
+                client_account_a.id, user_a, company='Notion', product='Notion',
+            ),
+            source=SignalSource.MANUAL,
+        )
+        validated.save(user=user_a, client_id=account.client_id)
+
+        response = authed_api_a.get(_url_detected())
+        assert response.status_code == status.HTTP_200_OK
+
+        ids = {item['id'] for item in _extract_items(response)}
+        assert str(unmatched.id) in ids
+        assert str(matched.id) not in ids
+        assert str(validated.id) not in ids
+
+    def test_detected_is_tenant_scoped(
+        self, authed_api_b, account, activity, user_a,
+    ):
+        # A tenant-A unmatched signal must not surface for tenant B.
+        _make_pending_unmatched(account, activity, user_a)
+
+        response = authed_api_b.get(_url_detected())
+        assert response.status_code == status.HTTP_200_OK
+        assert _extract_items(response) == []

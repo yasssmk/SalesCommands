@@ -131,13 +131,23 @@ export default function SignalDetailCard({
           />
         )}
         {techPending && (
-          <Chip
-            icon={<WarningOutlined style={{ fontSize: 12 }} />}
-            label="Not in catalog"
-            size="small"
-            color="warning"
-            variant="outlined"
-          />
+          <Tooltip
+            title={
+              onEdit
+                ? "Attach a catalog entry to validate this tool"
+                : "Not in your tech catalog"
+            }
+          >
+            <Chip
+              icon={<WarningOutlined style={{ fontSize: 12 }} />}
+              label="Not in catalog"
+              size="small"
+              color="warning"
+              variant="outlined"
+              onClick={onEdit ? () => onEdit(signal, signalType) : undefined}
+              sx={onEdit ? { cursor: "pointer" } : undefined}
+            />
+          </Tooltip>
         )}
         {isPeople && signal.role_display && (
           <Chip label={signal.role_display} size="small" variant="outlined" />
