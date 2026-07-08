@@ -426,6 +426,9 @@ class SignalErrorMessages:
     TECHSTACK_CATALOG_ENTRY_REQUIRED = _(
         "A tech stack signal must reference a tech catalog entry."
     )
+    TECHSTACK_CATALOG_ENTRY_LOCKED = _(
+        "The tech catalog entry cannot be changed once the signal is validated."
+    )
     TECHSTACK_DEPT_REQUIRES_DEPT = _(
         "Tech stack signals with usage_scope=DEPARTMENT require a usage department."
     )

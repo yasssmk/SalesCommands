@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import {
   getRequiredFields,
   getMissingFields,
+  canEditCatalogEntry,
 } from "sections/activities/signals/signalValidationRules";
 
 describe("getRequiredFields", () => {
@@ -99,16 +100,20 @@ describe("getMissingFields", () => {
     expect(missing[0].key).toBe("dimension");
   });
 
-  it("tech-stack: missing when no tech_catalog_entry and no pending_tech_name", () => {
+  it("tech-stack: missing when no tech_catalog_entry", () => {
     const signal = {};
     const missing = getMissingFields(signal, "tech-stack");
     expect(missing).toHaveLength(1);
     expect(missing[0].key).toBe("tech_catalog_entry");
   });
 
-  it("tech-stack: not missing when metadata.pending_tech_name present", () => {
+  it("tech-stack: still missing when only metadata.pending_tech_name present", () => {
+    // A catalog-less PENDING signal is NOT validatable as-is: the rep
+    // must attach a catalog entry first (mirrors the backend guard).
     const signal = { metadata: { pending_tech_name: "Notion" } };
-    expect(getMissingFields(signal, "tech-stack")).toEqual([]);
+    const missing = getMissingFields(signal, "tech-stack");
+    expect(missing).toHaveLength(1);
+    expect(missing[0].key).toBe("tech_catalog_entry");
   });
 
   it("tech-stack: not missing when tech_catalog_entry present", () => {
@@ -124,5 +129,24 @@ describe("getMissingFields", () => {
 
   it("blockers: complete when summary present", () => {
     expect(getMissingFields({ summary: "Blocked" }, "blockers")).toEqual([]);
+  });
+});
+
+describe("canEditCatalogEntry", () => {
+  it("editable in create mode (no signal)", () => {
+    expect(canEditCatalogEntry(null)).toBe(true);
+    expect(canEditCatalogEntry(undefined)).toBe(true);
+  });
+
+  it("editable while PENDING", () => {
+    expect(canEditCatalogEntry({ status: "PENDING" })).toBe(true);
+  });
+
+  it("locked once VALIDATED", () => {
+    expect(canEditCatalogEntry({ status: "VALIDATED" })).toBe(false);
+  });
+
+  it("locked when REJECTED", () => {
+    expect(canEditCatalogEntry({ status: "REJECTED" })).toBe(false);
   });
 });

@@ -79,6 +79,7 @@ import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // project imports
 import AsyncTechCatalogSelect from "components/AsyncSelection/AsyncTechCatalogSelect";
+import { canEditCatalogEntry } from "sections/activities/signals/signalValidationRules";
 import { useGetContactChoices } from "api/businessData/contacts";
 
 // ==============================|| CONSTANTS ||============================== //
@@ -447,6 +448,11 @@ export default function InlineTechStackForm({
 
   const isEditMode = Boolean(initialValuesProp);
 
+  // Catalog anchor is editable in create mode and while the signal is
+  // PENDING (so an LLM-extracted, unmatched signal can be linked before
+  // validation); locked once VALIDATED — mirrors the backend rule.
+  const catalogEditable = canEditCatalogEntry(initialValuesProp);
+
   // ==============================|| RENDER ||============================== //
 
   return (
@@ -508,23 +514,22 @@ export default function InlineTechStackForm({
                 formik.errors.tech_catalog_entry) ||
               undefined
             }
-            // In edit mode, the FK is immutable on the backend — disable
-            // the picker to prevent a UI choice the API would reject.
-            disabled={isEditMode}
+            // Editable while PENDING (link an unmatched signal before
+            // validation); locked once VALIDATED — mirrors the backend.
+            disabled={!catalogEditable}
           />
 
           {/* Compact preview — reinforces the choice */}
           <CatalogPreview entry={formik.values.tech_catalog_entry} />
 
-          {isEditMode && (
+          {isEditMode && !catalogEditable && (
             <Typography
               variant="caption"
               color="text.disabled"
               sx={{ fontStyle: "italic" }}
             >
-              The tool itself cannot be changed once a signal is created. To
-              point this signal at a different tool, delete it and create a new
-              one.
+              The tool cannot be changed once the signal is validated. To point
+              this signal at a different tool, delete it and create a new one.
             </Typography>
           )}
         </Stack>
