@@ -32,6 +32,9 @@ from core.cache_utils import (
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
 
+from app_modules.notifications.models import NotificationCategory
+from app_modules.notifications.services import NotificationService
+
 from ..models import DecisionCycle, DecisionStep
 from ..serializers import (
     DecisionCycleSerializer,
@@ -280,6 +283,30 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         
         # Return full cycle with steps
         self._invalidate_cycle_caches(str(self.get_client_id()))
+
+        # Notify the account owner that a new decision cycle was created on
+        # their account. The self-notify (creator == account owner) and
+        # owner-None guards live in NotificationService.emit(). Primitives are
+        # captured outside the commit closure.
+        account = cycle.account
+        account_owner_id = account.account_owner_id
+        company_name = account.company_name
+        cycle_id = cycle.id
+        client_id = cycle.client_id
+        actor = request.user
+
+        def _emit_owner_notification():
+            NotificationService.emit(
+                client_id=client_id,
+                recipient=account_owner_id,
+                actor=actor,
+                category=NotificationCategory.DECISION_CYCLE_CREATED,
+                title=f"New decision cycle on {company_name}",
+                related_object_type='decision_cycle',
+                related_object_id=cycle_id,
+            )
+
+        transaction.on_commit(_emit_owner_notification)
 
         output_serializer = DecisionCycleSerializer(cycle)
         return Response({
