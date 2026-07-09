@@ -281,7 +281,13 @@ class TranscriptSignalExtractor:
 
             tech_name = (signal.metadata or {}).get('pending_tech_name', '')
             signal_id = signal.id
-            title = f"Unknown technology detected: {tech_name}"
+            # System detection: no actor prefix. Account may be null on a
+            # signal, so append it only when present.
+            account_name = signal.account.company_name if signal.account_id else ''
+            if account_name:
+                title = f"Unknown technology detected: {tech_name} · {account_name}"
+            else:
+                title = f"Unknown technology detected: {tech_name}"
 
             def _emit():
                 # System detection: actor=None, so every admin is notified.

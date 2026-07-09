@@ -105,7 +105,14 @@ def test_unknown_tech_notifies_all_admins(account, activity, user_a, client_acco
     notif = notifs.first()
     assert notif.related_object_type == 'tech_stack_signal'
     assert str(notif.related_object_id) == str(signal.id)
-    assert notif.payload.get('tech_name') == 'FooDB'
+    # Rich title: tech name + account, but NO actor prefix (system detection).
+    assert 'FooDB' in notif.title
+    assert account.company_name in notif.title
+    # Payload carries only the tech name -- E4 is not click-through, so it
+    # must NOT contain routing ids.
+    assert notif.payload == {'tech_name': 'FooDB'}
+    assert 'account_id' not in notif.payload
+    assert 'cycle_id' not in notif.payload
 
 
 @pytest.mark.django_db(transaction=True)
