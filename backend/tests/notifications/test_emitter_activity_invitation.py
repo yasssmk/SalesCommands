@@ -67,6 +67,13 @@ def test_create_notifies_each_invited_user(account, user_a, user_a2, client_acco
     assert notif.recipient_id == user_a2.id
     assert notif.related_object_type == 'activity'
     assert str(notif.related_object_id) == str(activity.id)
+    # Routing payload for the frontend deep-link (activity page).
+    assert notif.payload == {'activity_id': str(activity.id)}
+    # Rich title: actor + activity + account.
+    actor_label = user_a.get_full_name() or user_a.email
+    assert actor_label in notif.title
+    assert activity.title in notif.title
+    assert account.company_name in notif.title
     assert _invitation_qs().filter(recipient=user_a).count() == 0
 
 
@@ -88,7 +95,9 @@ def test_update_notifies_only_new_invitees(account, user_a, user_a2, client_acco
 
     invitations = _invitation_qs()
     assert invitations.count() == 1
-    assert invitations.first().recipient_id == user_a3.id  # only the new one
+    notif = invitations.first()
+    assert notif.recipient_id == user_a3.id  # only the new one
+    assert notif.payload == {'activity_id': str(activity.id)}
 
 
 @pytest.mark.django_db(transaction=True)

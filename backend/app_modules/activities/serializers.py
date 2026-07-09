@@ -802,9 +802,13 @@ def notify_invited_users(activity, users, actor):
     if not recipient_ids:
         return
 
+    # Primitives captured outside the commit closure for the rich title
+    # and the routing payload the frontend deep-links with.
     client_id = activity.client_id
     activity_id = activity.id
-    title = f"You were invited to: {activity.title}"
+    actor_name = actor.get_full_name() or actor.email
+    account_name = activity.account.company_name
+    title = f"{actor_name} invited you to {activity.title} · {account_name}"
 
     def _emit():
         for recipient_id in recipient_ids:
@@ -816,6 +820,7 @@ def notify_invited_users(activity, users, actor):
                 title=title,
                 related_object_type='activity',
                 related_object_id=activity_id,
+                payload={'activity_id': str(activity_id)},
             )
 
     transaction.on_commit(_emit)
