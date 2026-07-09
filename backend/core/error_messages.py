@@ -693,3 +693,7 @@ class OpportunityErrorMessages:
     UNIQUE_CONSTRAINT_ACTIVITY_SUBSTAGE = _("An activity already exists for this substage in your organization")
     FAILED_TO_UPDATE_OVERDUE_STATUS = _("Failed to update overdue status for substage: {reason}")
     
+
+class NotificationErrorMessages:
+    """Notification specific error messages"""
+    NOTIFICATION_NOT_FOUND = _("Notification not found or access denied")
