@@ -228,6 +228,11 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
             outcome='success',
         )
 
+        # Primitives captured outside the commit closure for the rich title
+        # and the routing payload the frontend deep-links with.
+        actor_name = request.user.get_full_name() or request.user.email
+        account_name = cycle.account.company_name
+
         def _post_commit():
             self._invalidate_caches(cycle.client_id)
             # Notify the cycle owner that a note was added. The self-notify
@@ -237,9 +242,10 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
                 recipient=cycle.owner_id,
                 actor=request.user,
                 category=NotificationCategory.MANAGER_NOTE,
-                title=f"New note on {cycle.name}",
+                title=f"{actor_name} left a note on {cycle.name} · {account_name}",
                 related_object_type='decision_cycle',
                 related_object_id=cycle.id,
+                payload={'account_id': str(cycle.account_id), 'cycle_id': str(cycle.id)},
             )
 
         transaction.on_commit(_post_commit)

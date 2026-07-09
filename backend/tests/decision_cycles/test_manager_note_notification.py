@@ -77,6 +77,16 @@ def test_note_notifies_cycle_owner(authed_api_manager, cycle, user_a, manager_us
     assert str(notif.client_id) == str(cycle.client_id)
     assert str(notif.related_object_id) == str(cycle.id)
     assert notif.related_object_type == 'decision_cycle'
+    # Routing payload for the frontend deep-link (DC workspace).
+    assert notif.payload == {
+        'account_id': str(cycle.account_id),
+        'cycle_id': str(cycle.id),
+    }
+    # Rich title: actor + cycle + account.
+    actor_label = manager_user_a.get_full_name() or manager_user_a.email
+    assert actor_label in notif.title
+    assert cycle.name in notif.title
+    assert cycle.account.company_name in notif.title
     # The manager (author) must not be notified about their own note.
     assert Notification.objects.filter(recipient=manager_user_a).count() == 0
 
