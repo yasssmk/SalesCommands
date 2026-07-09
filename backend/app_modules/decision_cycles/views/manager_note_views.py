@@ -26,6 +26,9 @@ from core.exceptions import StandardizedValidationError
 from permissions.mixins import ScopedPermission
 from permissions.compat import get_auth_ctx
 
+from app_modules.notifications.models import NotificationCategory
+from app_modules.notifications.services import NotificationService
+
 from ..models import DecisionCycle, ManagerNote
 from ..serializers import (
     ManagerNoteListSerializer,
@@ -225,9 +228,21 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
             outcome='success',
         )
 
-        transaction.on_commit(
-            lambda: self._invalidate_caches(cycle.client_id)
-        )
+        def _post_commit():
+            self._invalidate_caches(cycle.client_id)
+            # Notify the cycle owner that a note was added. The self-notify
+            # and owner-None guards live in NotificationService.emit().
+            NotificationService.emit(
+                client_id=cycle.client_id,
+                recipient=cycle.owner_id,
+                actor=request.user,
+                category=NotificationCategory.MANAGER_NOTE,
+                title=f"New note on {cycle.name}",
+                related_object_type='decision_cycle',
+                related_object_id=cycle.id,
+            )
+
+        transaction.on_commit(_post_commit)
 
         output = ManagerNoteListSerializer(instance, context=self.get_serializer_context())
         return Response(
