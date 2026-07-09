@@ -15,6 +15,9 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from end_users.models import User
 from django.db import transaction
 
+from app_modules.notifications.models import NotificationCategory
+from app_modules.notifications.services import NotificationService
+
 from .models import Activity
 from .constants import ActivityStatus, NoNextStepReason
 from .services import ActivitySequenceService, SequenceScope
@@ -779,6 +782,51 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
 
 # ============================================================================
+# INVITATION NOTIFICATION HELPER
+# ============================================================================
+
+def notify_invited_users(activity, users, actor):
+    """
+    Emit an activity-invitation notification to each newly invited user.
+
+    Runs on transaction commit so invitations are only sent once the
+    activity (and its M2M) are persisted. The self-notify guard in
+    NotificationService.emit() skips the inviter (actor).
+
+    Args:
+        activity: The saved Activity instance.
+        users:    Iterable of newly invited User instances.
+        actor:    The user performing the invitation.
+    """
+    recipient_ids = [u.id for u in users]
+    if not recipient_ids:
+        return
+
+    # Primitives captured outside the commit closure for the rich title
+    # and the routing payload the frontend deep-links with.
+    client_id = activity.client_id
+    activity_id = activity.id
+    actor_name = actor.get_full_name() or actor.email
+    account_name = activity.account.company_name
+    title = f"{actor_name} invited you to {activity.title} · {account_name}"
+
+    def _emit():
+        for recipient_id in recipient_ids:
+            NotificationService.emit(
+                client_id=client_id,
+                recipient=recipient_id,
+                actor=actor,
+                category=NotificationCategory.ACTIVITY_INVITATION,
+                title=title,
+                related_object_type='activity',
+                related_object_id=activity_id,
+                payload={'activity_id': str(activity_id)},
+            )
+
+    transaction.on_commit(_emit)
+
+
+# ============================================================================
 # CREATE SERIALIZER
 # ============================================================================
 
@@ -1041,6 +1089,8 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         # Set M2M invited_users
         if invited_users:
             instance.invited_users.set(invited_users)
+            # On create every invited user is newly invited.
+            notify_invited_users(instance, invited_users, actor=user)
 
         # Auto-validate the NextStepSignal within the same transaction
         if next_step_signal:
@@ -1302,8 +1352,13 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         # Handle M2M invited_users
         invited_users = validated_data.pop('_invited_users', None)
         if invited_users is not None:
+            # Capture the existing set BEFORE .set() so we can notify only
+            # the users that are genuinely newly invited by this update.
+            existing_ids = set(instance.invited_users.values_list('id', flat=True))
             instance.invited_users.set(invited_users)
-        
+            new_users = [u for u in invited_users if u.id not in existing_ids]
+            notify_invited_users(instance, new_users, actor=user)
+
         # Update other fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)

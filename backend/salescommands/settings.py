@@ -224,6 +224,7 @@ INSTALLED_APPS = [
     'app_modules.tech_catalog',  # Tenant-level technology master catalog
     'app_modules.product_catalog',  # Tenant-level product master catalog
     'app_modules.ai_pipelines',  # LLM orchestration (transcript extraction, future game-plan, ...)
+    'app_modules.notifications',  # In-app notification system (tenant-scoped)
     'apps.signals',
     'apps.campaign',
     'apps.opportunities',

@@ -79,6 +79,7 @@ a different filter strategy could subclass).
 import logging
 import uuid as uuid_module
 
+from django.db import transaction
 from django.utils import timezone
 
 from app_modules.signals.constants import (
@@ -86,8 +87,12 @@ from app_modules.signals.constants import (
     SignalSource,
     SignalStatus,
 )
+from app_modules.signals.models import TechStackSignal
 from app_modules.signals.services.signal_manager import SignalManager
 from app_modules.tech_catalog.models import TechCatalog
+from app_modules.notifications.models import NotificationCategory
+from app_modules.notifications.services import NotificationService
+from end_users.models import User
 from core.exceptions import StandardizedValidationError
 
 from .safety_filter import passes_safety_filter, safe_float
@@ -214,6 +219,9 @@ class TranscriptSignalExtractor:
                     client_id=client_id,
                 )
                 persisted.append(signal)
+                # Notify tenant admins of a newly-detected unknown tech.
+                # Self-contained and non-raising (see helper docstring).
+                self._maybe_notify_unknown_tech(signal, client_id)
             except StandardizedValidationError as exc:
                 logger.warning(
                     'signal_create_validation_failed',
@@ -237,6 +245,79 @@ class TranscriptSignalExtractor:
                 dropped_count += 1
 
         return persisted, dropped_count
+
+    def _maybe_notify_unknown_tech(self, signal, client_id):
+        """
+        Notify tenant admins when a newly-detected unknown technology is
+        persisted: a PENDING, LLM-extracted TechStackSignal with no catalog
+        entry. Emission runs on transaction commit (so it never fires for a
+        rolled-back batch) and fans out one notification per active admin.
+
+        Non-raising by contract: the persist loop swallows per-signal
+        exceptions, so a notification failure must never propagate and make
+        an already-extracted signal disappear. Any error is logged and
+        swallowed here.
+        """
+        try:
+            is_unknown_tech = (
+                isinstance(signal, TechStackSignal)
+                and signal.tech_catalog_entry_id is None
+                and signal.source == SignalSource.LLM_EXTRACTED
+                and signal.status == SignalStatus.PENDING
+            )
+            if not is_unknown_tech:
+                return
+
+            # Resolve admin recipients now (before commit), as primitives.
+            admin_ids = list(
+                User.objects.filter(
+                    client_account_id=client_id,
+                    is_active=True,
+                    role__is_admin=True,
+                ).values_list('id', flat=True)
+            )
+            if not admin_ids:
+                return
+
+            tech_name = (signal.metadata or {}).get('pending_tech_name', '')
+            signal_id = signal.id
+            # System detection: no actor prefix. Account may be null on a
+            # signal, so append it only when present.
+            account_name = signal.account.company_name if signal.account_id else ''
+            if account_name:
+                title = f"Unknown technology detected: {tech_name} · {account_name}"
+            else:
+                title = f"Unknown technology detected: {tech_name}"
+
+            def _emit():
+                # System detection: actor=None, so every admin is notified.
+                # Guard each emit so a single failure neither stops the fan-out
+                # nor propagates out of the post-commit callback.
+                for admin_id in admin_ids:
+                    try:
+                        NotificationService.emit(
+                            client_id=client_id,
+                            recipient=admin_id,
+                            category=NotificationCategory.UNKNOWN_TECH_DETECTED,
+                            title=title,
+                            related_object_type='tech_stack_signal',
+                            related_object_id=signal_id,
+                            payload={'tech_name': tech_name},
+                        )
+                    except Exception:
+                        logger.warning(
+                            'unknown_tech_notify_emit_failed',
+                            extra={'event': 'ai_pipeline_persist'},
+                            exc_info=True,
+                        )
+
+            transaction.on_commit(_emit)
+        except Exception:
+            logger.warning(
+                'unknown_tech_notify_failed',
+                extra={'event': 'ai_pipeline_persist'},
+                exc_info=True,
+            )
 
     # =========================================================================
     # SAFETY FILTER (delegated to the shared module)
