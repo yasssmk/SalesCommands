@@ -154,6 +154,97 @@ class TestValidatedCatalogLocked:
 
 
 # =============================================================================
+# REGRESSION — validated edit that does NOT touch the catalog anchor
+# =============================================================================
+# The edit form emits tech_catalog_entry as a UUID and OMITS it entirely
+# when unchanged (mirror of the backend lock-on-change). These tests pin
+# the real payload shape: a scope/notes edit of a validated signal omits
+# the FK and must return 200. Before the frontend fix the form re-emitted
+# the compact catalog OBJECT, which the writable FK rejected as an invalid
+# UUID (400) — regression guard below.
+
+
+class TestValidatedNonCatalogEdit:
+
+    def _make_validated(self, account, activity, user, client_id):
+        entry = _make_catalog_entry(client_id, user)
+        sig = TechStackSignal(
+            account=account,
+            source_activity=activity,
+            tech_catalog_entry=entry,
+            source=SignalSource.MANUAL,
+        )
+        sig.save(user=user, client_id=account.client_id)
+        assert sig.status == SignalStatus.VALIDATED
+        return sig, entry
+
+    def test_scope_edit_omitting_catalog_returns_200(
+        self, authed_api_a, account, activity, user_a, client_account_a,
+    ):
+        # This is the payload the fixed form sends for a scope-only edit
+        # of a validated signal: tech_catalog_entry is omitted entirely.
+        sig, entry = self._make_validated(
+            account, activity, user_a, client_account_a.id,
+        )
+
+        response = authed_api_a.patch(
+            _url_detail(sig.id),
+            {'usage_scope': 'COMPANY'},
+            format='json',
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        sig.refresh_from_db()
+        assert sig.usage_scope == 'COMPANY'
+        # Anchor untouched.
+        assert sig.tech_catalog_entry_id == entry.id
+
+    def test_notes_edit_omitting_catalog_returns_200(
+        self, authed_api_a, account, activity, user_a, client_account_a,
+    ):
+        sig, entry = self._make_validated(
+            account, activity, user_a, client_account_a.id,
+        )
+
+        response = authed_api_a.patch(
+            _url_detail(sig.id),
+            {'notes': 'just a note'},
+            format='json',
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        sig.refresh_from_db()
+        assert sig.notes == 'just a note'
+        assert sig.tech_catalog_entry_id == entry.id
+
+    def test_catalog_sent_as_object_is_rejected(
+        self, authed_api_a, account, activity, user_a, client_account_a,
+    ):
+        # Contract guard: the backend FK expects a UUID and must NOT be
+        # loosened to swallow the compact catalog object. Sending the
+        # object (the pre-fix frontend shape) is a 400.
+        sig, entry = self._make_validated(
+            account, activity, user_a, client_account_a.id,
+        )
+
+        response = authed_api_a.patch(
+            _url_detail(sig.id),
+            {
+                'tech_catalog_entry': {
+                    'id': str(entry.id),
+                    'company_name': entry.company_name,
+                    'product_name': entry.product_name,
+                },
+            },
+            format='json',
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+        sig.refresh_from_db()
+        assert sig.tech_catalog_entry_id == entry.id
+
+
+# =============================================================================
 # C / D — validate() flow against the catalog anchor
 # =============================================================================
 
