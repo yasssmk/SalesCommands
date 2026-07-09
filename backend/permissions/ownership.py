@@ -159,6 +159,7 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
         'created_by': 'created_by',                 # ModuleBaseModel.created_by
         'assigned_to_user': '-',                    # Not applicable
         'account_fk': 'account_id',                 # Related account
+        'account_owner_user': 'account__account_owner_id',  # Parent-account owner reaches cycles created by others on their account (C6)
     },
     
     'campaigns': {
