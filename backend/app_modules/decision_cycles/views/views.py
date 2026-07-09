@@ -291,9 +291,11 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         account = cycle.account
         account_owner_id = account.account_owner_id
         company_name = account.company_name
+        account_id = cycle.account_id
         cycle_id = cycle.id
         client_id = cycle.client_id
         actor = request.user
+        actor_name = actor.get_full_name() or actor.email
 
         def _emit_owner_notification():
             NotificationService.emit(
@@ -301,9 +303,10 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 recipient=account_owner_id,
                 actor=actor,
                 category=NotificationCategory.DECISION_CYCLE_CREATED,
-                title=f"New decision cycle on {company_name}",
+                title=f"{actor_name} created a Decision Cycle on {company_name}",
                 related_object_type='decision_cycle',
                 related_object_id=cycle_id,
+                payload={'account_id': str(account_id), 'cycle_id': str(cycle_id)},
             )
 
         transaction.on_commit(_emit_owner_notification)

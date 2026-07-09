@@ -58,6 +58,16 @@ def test_cycle_creation_notifies_account_owner(
     assert notif.category == NotificationCategory.DECISION_CYCLE_CREATED
     assert notif.related_object_type == 'decision_cycle'
     assert str(notif.related_object_id) == str(cycle_id)
+    # Routing payload for the frontend deep-link (DC workspace), same shape
+    # as the manager-note notification (shared decision_cycle resolver).
+    assert notif.payload == {
+        'account_id': str(account.id),
+        'cycle_id': str(cycle_id),
+    }
+    # Rich title: actor + account.
+    actor_label = user_a.get_full_name() or user_a.email
+    assert actor_label in notif.title
+    assert account.company_name in notif.title
     # The creator (user_a) must not be notified.
     assert Notification.objects.filter(recipient=user_a).count() == 0
 
