@@ -7,6 +7,7 @@ import Box from '@mui/material/Box';
 import Search from './Search';
 import Profile from './Profile';
 import FullScreen from './FullScreen';
+import Notification from './Notification';
 
 import { MenuOrientation } from 'config';
 import useConfig from 'hooks/useConfig';
@@ -30,6 +31,8 @@ return (
       {downLG && <Box sx={{ flexGrow: 1, ml: 1 }} />}
 
       {!downLG && <FullScreen />}
+
+      <Notification />
 
       {/* Un seul Profile suffit (desktop + mobile) */}
       <Profile />
