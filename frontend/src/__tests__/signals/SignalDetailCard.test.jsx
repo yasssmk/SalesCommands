@@ -167,6 +167,27 @@ describe("SignalDetailCard", () => {
     expect(screen.getByText("Not in catalog")).toBeInTheDocument();
   });
 
+  it("'Not in catalog' chip opens the editor (calls onEdit) when editable", () => {
+    const onEdit = vi.fn();
+    const signal = {
+      id: "ts2",
+      status: "PENDING",
+      tech_catalog_entry: null,
+      metadata: { pending_tech_name: "Notion" },
+      source_context: { contacts: [] },
+    };
+    render(
+      <SignalDetailCard
+        signal={signal}
+        signalType="tech-stack"
+        onEdit={onEdit}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Not in catalog"));
+    expect(onEdit).toHaveBeenCalledWith(signal, "tech-stack");
+  });
+
   it("renders 'Unknown tool' when neither catalog entry nor pending name", () => {
     const signal = {
       id: "ts3",

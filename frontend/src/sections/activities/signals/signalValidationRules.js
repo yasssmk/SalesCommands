@@ -56,9 +56,11 @@ export function getRequiredFields(signalType) {
 /**
  * Determine which required fields are missing on a signal.
  *
- * Special case: TechStack signals with metadata.pending_tech_name
- * are considered complete even without tech_catalog_entry (the LLM
- * extracted a tool name that couldn't match the catalog).
+ * TechStack note: a signal whose LLM-extracted tool did not match the
+ * catalog is persisted PENDING with metadata.pending_tech_name and no
+ * tech_catalog_entry. It is NOT complete — the rep must attach a
+ * catalog entry (the picker is enabled while PENDING) before it can be
+ * validated. This mirrors the backend SignalManager.validate guard.
  *
  * @param {Object} signal
  * @param {string} signalType
@@ -72,16 +74,24 @@ export function getMissingFields(signal, signalType) {
   return required.filter((field) => {
     const value = signal[field.key];
 
-    if (
-      signalType === "tech-stack" &&
-      field.key === "tech_catalog_entry" &&
-      signal.metadata?.pending_tech_name
-    ) {
-      return false;
-    }
-
     if (value === null || value === undefined || value === "") return true;
 
     return false;
   });
+}
+
+/**
+ * Whether a TechStack signal's tech_catalog_entry may be edited.
+ *
+ * The catalog anchor is settable while the signal is PENDING (so an
+ * LLM-extracted signal with no catalog match can be linked before
+ * validation) and immutable once VALIDATED — mirrors the backend
+ * TechStackSignalUpdateSerializer lock. A falsy signal (create mode,
+ * no instance yet) is editable.
+ *
+ * @param {Object|null|undefined} signal - signal-like object with a `status`
+ * @returns {boolean}
+ */
+export function canEditCatalogEntry(signal) {
+  return !signal || signal.status === "PENDING";
 }

@@ -65,7 +65,6 @@ import UserOutlined from "@ant-design/icons/UserOutlined";
 // project imports
 import ObjectiveCard from "components/cards/signals/ObjectiveCard";
 import PainCard from "components/cards/signals/PainCard";
-import TechStackCard from "components/cards/signals/TechStackCard";
 import AddPainImpactDialog from "./pain/AddPainImpactDialog";
 import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDialog from "./SignalEditDialog";
@@ -90,7 +89,6 @@ import {
   resolveScopeLevel,
   resolveSignalTypeVisuals,
   resolveTargetDateUrgency,
-  resolveUsageScope,
 } from "sections/accounts/signals/signalClusters";
 
 // ==============================|| CONSTANTS ||============================== //
@@ -115,27 +113,6 @@ function formatShortDate(iso) {
   } catch {
     return null;
   }
-}
-
-/**
- * Build the canonical display label for a TechStack cluster from its
- * tech_catalog_entry payload. Mirror of TechStackCard.getCatalogLabel
- * and SignalClusterCard.getCatalogLabel — kept local for symmetry,
- * concat is too trivial to warrant a shared module.
- *
- *   { company_name: "Salesforce", product_name: "Sales Cloud" }
- *     → "Salesforce Sales Cloud"
- *   { company_name: "Notion", product_name: "Notion" }
- *     → "Notion"
- */
-function getCatalogLabel(entry) {
-  if (!entry) return "Unknown tool";
-  const company = entry.company_name?.trim() || "";
-  const product = entry.product_name?.trim() || "";
-  if (!company && !product) return "Unknown tool";
-  if (!company) return product;
-  if (!product || product === company) return company;
-  return `${company} ${product}`;
 }
 
 // ==============================|| STAT CELL ||============================== //
@@ -589,173 +566,6 @@ ByLevelAccordion.defaultProps = {
   byLevel: null,
 };
 
-// ==============================|| TECH STACK OBSERVATIONS ACCORDION ||============================== //
-
-/**
- * Per-field labels for the TechStack observations accordion.
- *
- * Each lifecycle field on TechStackSignal can have multiple distinct
- * values across the cluster's member signals (e.g. one rep recorded
- * usage_start_year=2019, another said 2020). The cluster's lifecycle
- * panel shows the predominant value; this accordion drills into the
- * full history per field, with the originating activity surfaced for
- * traceability.
- */
-const OBSERVATION_FIELD_LABELS = {
-  usage_start_year: "Usage start year",
-  renewal_date: "Renewal date",
-  cost_description: "Cost",
-  is_discontinued: "Discontinuation status",
-};
-
-/**
- * TechStackObservationsAccordion — TechStack-only drill-down.
- *
- * Renders one accordion per lifecycle field that has 2+ distinct
- * observations across the cluster's member signals. Single-observation
- * fields are already covered by the Lifecycle panel — repeating them
- * in an accordion would be noise.
- *
- * Each observation entry surfaces:
- *   value           → what was reported
- *   observed_at     → when (date only)
- *   source_activity_id → which conversation (truncated UUID for compactness)
- *
- * The detail body of each accordion stays text-only and dense — the
- * drawer is already a 560–640px column, no need for chips here.
- *
- * @param {Object} allObservations - Backend payload from /detail.
- *                  Shape: { field_name: [{ value, signal_id,
- *                  source_activity_id, observed_at }, ...] }
- */
-function TechStackObservationsAccordion({ allObservations }) {
-  // Defensive: empty / non-object → render nothing rather than crash.
-  if (!allObservations || typeof allObservations !== "object") {
-    return null;
-  }
-
-  // Filter to fields with 2+ observations — singletons already covered
-  // by the Lifecycle panel.
-  const renderableFields = Object.entries(allObservations).filter(
-    ([, obs]) => Array.isArray(obs) && obs.length >= 2,
-  );
-
-  if (renderableFields.length === 0) return null;
-
-  return (
-    <Box sx={{ mx: 2.5, mb: 2 }}>
-      <Typography
-        variant="caption"
-        color="text.disabled"
-        fontWeight={500}
-        sx={{ display: "block", mb: 0.75 }}
-      >
-        ALL OBSERVATIONS
-      </Typography>
-
-      <Stack spacing={0.5}>
-        {renderableFields.map(([fieldKey, obs]) => {
-          const label = OBSERVATION_FIELD_LABELS[fieldKey] ?? fieldKey;
-          return (
-            <Accordion
-              key={fieldKey}
-              disableGutters
-              elevation={0}
-              sx={{
-                border: "1px solid",
-                borderColor: "divider",
-                borderRadius: 1,
-                "&:before": { display: "none" },
-              }}
-            >
-              <AccordionSummary
-                expandIcon={<DownOutlined style={{ fontSize: 11 }} />}
-                sx={{
-                  minHeight: 36,
-                  "& .MuiAccordionSummary-content": { my: 0.5 },
-                }}
-              >
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  alignItems="center"
-                  sx={{ flex: 1 }}
-                >
-                  <Typography variant="body2" fontWeight={600}>
-                    {label}
-                  </Typography>
-                  <Chip
-                    label={`${obs.length} obs`}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.6rem", height: 16 }}
-                  />
-                </Stack>
-              </AccordionSummary>
-              <AccordionDetails sx={{ pt: 0, pb: 1.25 }}>
-                <Stack divider={<Divider flexItem />} spacing={0.5}>
-                  {obs.map((entry, idx) => (
-                    <Stack
-                      // Observations may legitimately repeat (same
-                      // value reported in different activities).
-                      // signal_id is the natural disambiguator; index
-                      // is the fallback for malformed entries.
-                      // eslint-disable-next-line react/no-array-index-key
-                      key={`${entry.signal_id || "noid"}-${idx}`}
-                      direction="row"
-                      spacing={1}
-                      alignItems="center"
-                      flexWrap="wrap"
-                      useFlexGap
-                      sx={{ py: 0.5 }}
-                    >
-                      <Typography variant="body2" fontWeight={500}>
-                        {String(entry.value ?? "—")}
-                      </Typography>
-                      {entry.observed_at && (
-                        <Typography variant="caption" color="text.disabled">
-                          · {String(entry.observed_at).slice(0, 10)}
-                        </Typography>
-                      )}
-                      {entry.source_activity_id && (
-                        <Typography variant="caption" color="text.disabled">
-                          · Activity #
-                          {String(entry.source_activity_id).slice(0, 8)}
-                        </Typography>
-                      )}
-                    </Stack>
-                  ))}
-                </Stack>
-              </AccordionDetails>
-            </Accordion>
-          );
-        })}
-      </Stack>
-    </Box>
-  );
-}
-
-TechStackObservationsAccordion.propTypes = {
-  allObservations: PropTypes.objectOf(
-    PropTypes.arrayOf(
-      PropTypes.shape({
-        value: PropTypes.oneOfType([
-          PropTypes.string,
-          PropTypes.number,
-          PropTypes.bool,
-        ]),
-        signal_id: PropTypes.string,
-        source_activity_id: PropTypes.string,
-        observed_at: PropTypes.string,
-      }),
-    ),
-  ),
-};
-
-TechStackObservationsAccordion.defaultProps = {
-  allObservations: null,
-};
-
 // ==============================|| DRAWER ||============================== //
 
 /**
@@ -794,7 +604,6 @@ export default function SignalClusterDetailDrawer({
   const signalType = clusterSummary?.signal_type ?? "pain";
   const isPain = signalType === "pain";
   const isObjective = signalType === "objective";
-  const isTechStack = signalType === "tech_stack";
 
   const typeVisuals = resolveSignalTypeVisuals(signalType);
 
@@ -862,88 +671,23 @@ export default function SignalClusterDetailDrawer({
     [display?.target_dates],
   );
 
-  // ============== TechStack-specific derived data ==============
-
   /**
-   * Catalog entry — compact dict { id, company_name, product_name,
-   * is_competitor, is_integration_target } from the cluster payload.
-   * Drives the type-aware title in the header and the strategic
-   * badge surface.
-   */
-  const techCatalogEntry = isTechStack ? display?.tech_catalog_entry : null;
-  const isCompetitor = Boolean(techCatalogEntry?.is_competitor);
-  const isIntegrationTarget = Boolean(techCatalogEntry?.is_integration_target);
-
-  /** Lifecycle nested dict — {usage_start_year, renewal_date,
-   *  cost_description, is_discontinued, discontinued_date}. */
-  const lifecycle = isTechStack ? display?.lifecycle : null;
-
-  /** Scope summary nested dict — {is_company_wide, departments_using:[],
-   *  summary_text}. */
-  const scopeSummary = isTechStack ? display?.scope_summary : null;
-
-  /**
-   * Departments using the tool — full list (no cap, drawer has the
-   * room). Skipped in render when is_company_wide is true.
-   */
-  const departmentsUsing = useMemo(() => {
-    if (!isTechStack) return [];
-    const list = scopeSummary?.departments_using;
-    return Array.isArray(list) ? list : [];
-  }, [isTechStack, scopeSummary]);
-
-  /**
-   * Related Pain clusters cross-referencing this tool. Strong
-   * commercial signal: a competitor tool with related Pains on the
-   * same account is a textbook displacement opportunity. Drawer
-   * surfaces the full list (no cap).
-   */
-  const relatedPainClusters = useMemo(() => {
-    if (!isTechStack) return [];
-    const list = display?.related_pain_clusters;
-    return Array.isArray(list) ? list : [];
-  }, [isTechStack, display?.related_pain_clusters]);
-
-  /**
-   * Per-field observations from /detail endpoint — TechStack only.
-   * Shape from the backend: { usage_start_year: [{value, signal_id,
-   * source_activity_id, observed_at}], renewal_date: [...], ... }.
-   * Drives the "All observations" accordion drill-down.
-   */
-  const allObservations = isTechStack ? cluster?.all_observations : null;
-
-  // ============================================================
-
-  /**
-   * Header title — type-aware resolution.
+   * Header title — "<What> × <Dimension>" labels resolved through
+   * choices.signal_whats / signal_dimensions. The canonical_key carries
+   * the raw codes ("pain:OPS:TIME"); we parse them and map to display
+   * labels via choices so the title matches what the user picked in the
+   * wizard.
    *
-   *   TechStack          → "<vendor> <product>" from the catalog entry
-   *                        (e.g. "Salesforce Sales Cloud"). Catalog
-   *                        identity, not narrative axes.
-   *   Pain / Objective   → "<What> × <Dimension>" labels resolved
-   *                        through choices.signal_whats /
-   *                        signal_dimensions. The canonical_key carries
-   *                        the raw codes ("pain:OPS:TIME"); we parse
-   *                        them and map to display labels via choices
-   *                        so the title matches what the user picked
-   *                        in the wizard.
-   *
-   * Returns null when the upstream data isn't ready (catalog entry
-   * missing for TechStack, choices not loaded yet for Pain/Objective,
-   * malformed canonical_key) — the caller suppresses the <Typography>
-   * via && so an absent title never renders an empty heading.
+   * Returns null when the upstream data isn't ready (choices not loaded
+   * yet, malformed canonical_key) — the caller suppresses the
+   * <Typography> via && so an absent title never renders an empty
+   * heading.
    */
   const canonicalText = useMemo(() => {
-    // TechStack — catalog label takes precedence.
-    if (isTechStack) {
-      if (!techCatalogEntry) return null;
-      return getCatalogLabel(techCatalogEntry);
-    }
-
-    // Pain / Objective — parse "<type>:<what>:<dimension>" and
-    // resolve the labels from choices. choices may not be loaded yet
-    // on first paint; fall back to the raw codes so the user sees
-    // something meaningful even before choices arrive.
+    // Parse "<type>:<what>:<dimension>" and resolve the labels from
+    // choices. choices may not be loaded yet on first paint; fall back
+    // to the raw codes so the user sees something meaningful even
+    // before choices arrive.
     const key = display?.canonical_key;
     if (!key || typeof key !== "string") return null;
 
@@ -959,7 +703,7 @@ export default function SignalClusterDetailDrawer({
         ?.label ?? dimensionCode;
 
     return `${whatLabel} × ${dimensionLabel}`;
-  }, [isTechStack, techCatalogEntry, display?.canonical_key, choices]);
+  }, [display?.canonical_key, choices]);
 
   const linkedCyclesCount = Array.isArray(display?.decision_cycle_ids)
     ? display.decision_cycle_ids.length
@@ -1198,73 +942,6 @@ export default function SignalClusterDetailDrawer({
             </Tooltip>
           )}
 
-          {/* TechStack strategic flags — surfaced in the header so the
-              rep sees them before scrolling through observations. */}
-          {isTechStack && isCompetitor && (
-            <Tooltip title="This vendor competes with us">
-              <Chip
-                label="Competitor"
-                color="error"
-                size="small"
-                sx={{ fontSize: "0.62rem", height: 18 }}
-              />
-            </Tooltip>
-          )}
-          {isTechStack && isIntegrationTarget && (
-            <Tooltip title="This vendor is an integration target">
-              <Chip
-                label="Integration"
-                color="info"
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.62rem", height: 18 }}
-              />
-            </Tooltip>
-          )}
-
-          {/* TechStack quick-status chips — company-wide / renewal /
-              discontinued. Co-located with priority/freshness so the
-              entire commercial state of the cluster reads in one row. */}
-          {isTechStack && scopeSummary?.is_company_wide && (
-            <Tooltip title="Used company-wide across multiple departments">
-              <Chip
-                label="Company-wide"
-                color="success"
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.68rem", height: 20 }}
-              />
-            </Tooltip>
-          )}
-          {isTechStack && display?.has_renewal_soon && (
-            <Tooltip title="Renewal date is within 90 days">
-              <Chip
-                icon={<CalendarOutlined style={{ fontSize: 11 }} />}
-                label="Renewal soon"
-                color="warning"
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.68rem", height: 20 }}
-              />
-            </Tooltip>
-          )}
-          {isTechStack && lifecycle?.is_discontinued && (
-            <Tooltip
-              title={
-                lifecycle.discontinued_date
-                  ? `Discontinued ${lifecycle.discontinued_date}`
-                  : "Tool no longer in use"
-              }
-            >
-              <Chip
-                label="Discontinued"
-                color="error"
-                size="small"
-                sx={{ fontSize: "0.68rem", height: 20 }}
-              />
-            </Tooltip>
-          )}
-
           {isArchived && (
             <Chip
               icon={<InboxOutlined style={{ fontSize: 11 }} />}
@@ -1292,11 +969,8 @@ export default function SignalClusterDetailDrawer({
         </Typography>
       )}
 
-      {/* Consolidated summary — Pain/Objective only.
-          TechStack does not carry a backend-aggregated summary; its
-          identity is the catalog entry, not narrative text. The scope
-          summary section below carries the equivalent narrative. */}
-      {!isTechStack && display?.summary && (
+      {/* Consolidated summary */}
+      {display?.summary && (
         <Typography
           variant="body2"
           color="text.secondary"
@@ -1452,38 +1126,6 @@ export default function SignalClusterDetailDrawer({
           </>
         )}
 
-        {/* TechStack top stats: distinct contacts (rep mentions), departments
-            count when not company-wide, decision cycles. The strategic
-            flags (competitor / integration / discontinued) live in the
-            header — they are state, not stats. */}
-        {isTechStack && (
-          <>
-            <StatCell
-              label="Distinct contacts"
-              value={display?.distinct_contacts_count ?? 0}
-              hint="Mentioned this tool"
-            />
-            <StatCell
-              label={
-                scopeSummary?.is_company_wide ? "Reach" : "Departments using"
-              }
-              value={
-                scopeSummary?.is_company_wide ? (
-                  <Chip
-                    label="Company-wide"
-                    color="success"
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.68rem", height: 20 }}
-                  />
-                ) : (
-                  departmentsUsing.length
-                )
-              }
-            />
-            <StatCell label="Decision cycles" value={linkedCyclesCount} />
-          </>
-        )}
       </Stack>
 
       {/* ============== LIFECYCLE ROW (universal) ============== */}
@@ -1606,195 +1248,6 @@ export default function SignalClusterDetailDrawer({
         </Stack>
       )}
 
-      {/* ============== TECHSTACK: Lifecycle ============== */}
-      {/*
-        Consolidated lifecycle view from the cluster's predominant
-        values. Each row renders only when its source field is set so
-        a brand-new cluster doesn't show four blank rows. The "All
-        observations" accordion below this Paper drills into per-field
-        history when multiple distinct values exist across members.
-      */}
-      {isTechStack && lifecycle && (
-        <Stack
-          spacing={0.75}
-          sx={{
-            mb:
-              departmentsUsing.length > 0 ||
-              scopeSummary?.summary_text ||
-              relatedPainClusters.length > 0
-                ? 1.5
-                : 0,
-          }}
-        >
-          <Typography variant="caption" color="text.disabled" fontWeight={500}>
-            Lifecycle
-          </Typography>
-          <Stack spacing={0.5}>
-            {lifecycle.usage_start_year && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography
-                  variant="caption"
-                  color="text.disabled"
-                  sx={{ minWidth: 110 }}
-                >
-                  Used since
-                </Typography>
-                <Typography variant="body2">
-                  {lifecycle.usage_start_year}
-                </Typography>
-              </Stack>
-            )}
-            {lifecycle.renewal_date && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography
-                  variant="caption"
-                  color="text.disabled"
-                  sx={{ minWidth: 110 }}
-                >
-                  Renewal date
-                </Typography>
-                <Typography variant="body2">
-                  {lifecycle.renewal_date}
-                </Typography>
-              </Stack>
-            )}
-            {lifecycle.cost_description?.trim() && (
-              <Stack direction="row" spacing={1} alignItems="flex-start">
-                <Typography
-                  variant="caption"
-                  color="text.disabled"
-                  sx={{ minWidth: 110, mt: 0.25 }}
-                >
-                  Cost
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{ flex: 1, whiteSpace: "pre-wrap" }}
-                >
-                  {lifecycle.cost_description}
-                </Typography>
-              </Stack>
-            )}
-            {lifecycle.is_discontinued && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Typography
-                  variant="caption"
-                  color="text.disabled"
-                  sx={{ minWidth: 110 }}
-                >
-                  Discontinued
-                </Typography>
-                <Typography variant="body2" color="error.main">
-                  {lifecycle.discontinued_date || "Yes (no date set)"}
-                </Typography>
-              </Stack>
-            )}
-          </Stack>
-        </Stack>
-      )}
-
-      {/* ============== TECHSTACK: Scope ============== */}
-      {isTechStack &&
-        scopeSummary &&
-        (scopeSummary.summary_text || departmentsUsing.length > 0) && (
-          <Stack
-            spacing={0.75}
-            sx={{ mb: relatedPainClusters.length > 0 ? 1.5 : 0 }}
-          >
-            <Typography
-              variant="caption"
-              color="text.disabled"
-              fontWeight={500}
-            >
-              Scope
-            </Typography>
-            {scopeSummary.summary_text && (
-              <Typography variant="body2" color="text.secondary">
-                {scopeSummary.summary_text}
-              </Typography>
-            )}
-            {/* Full department list — no cap (drawer has the room) */}
-            {!scopeSummary.is_company_wide && departmentsUsing.length > 0 && (
-              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                {departmentsUsing.map((dept) => {
-                  const cfg = resolveUsageScope("DEPARTMENT");
-                  return (
-                    <Chip
-                      key={dept.id}
-                      label={dept.name}
-                      size="small"
-                      color={cfg.color}
-                      variant="outlined"
-                      sx={{ fontSize: "0.65rem", height: 20 }}
-                    />
-                  );
-                })}
-              </Stack>
-            )}
-          </Stack>
-        )}
-
-      {/* ============== TECHSTACK: Related Pains ============== */}
-      {/*
-        Mini-list of Pain clusters cross-referencing this tool. Strong
-        commercial cue: a competitor with related Pains on the same
-        account is a textbook displacement opportunity. Each row is
-        informational for MVP — no navigation between clusters yet.
-      */}
-      {isTechStack && relatedPainClusters.length > 0 && (
-        <Stack spacing={0.75}>
-          <Typography variant="caption" color="text.disabled" fontWeight={500}>
-            Related Pains ({relatedPainClusters.length})
-          </Typography>
-          <Stack spacing={0.75}>
-            {relatedPainClusters.map((painCluster) => (
-              <Box
-                key={painCluster.canonical_key}
-                sx={{
-                  p: 1.25,
-                  border: "1px solid",
-                  borderColor: "error.light",
-                  borderRadius: 1,
-                  bgcolor: "error.lighter",
-                }}
-              >
-                <Stack
-                  direction="row"
-                  spacing={1}
-                  alignItems="center"
-                  flexWrap="wrap"
-                  useFlexGap
-                  sx={{ mb: 0.5 }}
-                >
-                  <Chip
-                    label="Pain"
-                    color="error"
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.6rem", height: 16 }}
-                  />
-                  {painCluster.priority_bucket && (
-                    <Chip
-                      label={painCluster.priority_bucket}
-                      size="small"
-                      sx={{ fontSize: "0.6rem", height: 16 }}
-                    />
-                  )}
-                  {painCluster.confirmation_count !== undefined && (
-                    <Typography variant="caption" color="text.disabled">
-                      {painCluster.confirmation_count} confirmation
-                      {painCluster.confirmation_count === 1 ? "" : "s"}
-                    </Typography>
-                  )}
-                </Stack>
-                <Typography variant="body2">
-                  {painCluster.summary || painCluster.canonical_key}
-                </Typography>
-              </Box>
-            ))}
-          </Stack>
-        </Stack>
-      )}
     </Paper>
   );
 
@@ -1878,19 +1331,6 @@ export default function SignalClusterDetailDrawer({
                 onDelete={handleDelete}
               />
             ))}
-
-          {isTechStack &&
-            members.map((member) => (
-              <TechStackCard
-                key={member.id}
-                techStack={member}
-                choices={choices}
-                onValidate={handleValidate}
-                onReject={handleRejectOpen}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            ))}
         </Stack>
       )}
     </Box>
@@ -1933,19 +1373,6 @@ export default function SignalClusterDetailDrawer({
             */}
             {isPain && cluster?.by_level && (
               <ByLevelAccordion byLevel={cluster.by_level} />
-            )}
-
-            {/*
-              All observations breakdown — TechStack only. Drills into
-              per-field history when multiple distinct values exist
-              across the cluster's member signals. Symmetric in spirit
-              to ByLevelAccordion for Pain — different content, same
-              visual placement (between stats panel and members list).
-            */}
-            {isTechStack && allObservations && (
-              <TechStackObservationsAccordion
-                allObservations={allObservations}
-              />
             )}
 
             <Divider sx={{ mx: 2.5 }} />

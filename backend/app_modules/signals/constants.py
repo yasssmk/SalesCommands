@@ -442,33 +442,38 @@ class UsageScope(models.TextChoices):
 # The enums below describe cluster-level attributes (freshness, priority)
 # that are computed on read — never stored on signal rows.
 #
-# Pain, Objective, Impact and Tech Stack signals are all clustered today.
-# SignalClusterType is intentionally extensible so future signal types can
-# plug in without introducing a second enum.
+# Pain, Objective and Impact signals are clustered. TechStack is NOT
+# clusterable (product decision). SignalClusterType is intentionally
+# extensible so future signal types can plug in without a second enum.
 # =============================================================================
 
 
 class SignalClusterType(models.TextChoices):
     """
-    Signal types that support cluster aggregation.
+    Signal types recognised by the cluster archival table.
 
-    PAIN, OBJECTIVE, TECH_STACK, and IMPACT all produce real clusters
-    today. The enum stays open-ended so that future signal types can
-    plug into the same SignalClusterArchival table without a schema
-    change.
+    PAIN, OBJECTIVE, and IMPACT produce real clusters. TECH_STACK is
+    NOT clusterable (product decision) — see the member comment below.
+    The enum stays open-ended so that future signal types can plug into
+    the same SignalClusterArchival table without a schema change.
 
     The string values intentionally match the keys used in
     SignalDataService._SIGNAL_TYPE_MAP (pain / objective / tech_stack /
     impact) so the same identifier travels through all layers.
 
-    Cluster identity per type:
+    Cluster identity per clusterable type:
       pain       — "pain:<SignalWhat>:<SignalDimension>"
       objective  — "objective:<SignalWhat>:<SignalDimension>"
-      tech_stack — "techstack:<TechCatalog.id>"
       impact     — "impact:<SignalWhat>:<SignalDimension>"
     """
     PAIN       = 'pain',       _('Pain')
     OBJECTIVE  = 'objective',  _('Objective')
+    # TECH_STACK is retained ONLY so historical SignalClusterArchival
+    # rows (signal_type='tech_stack') remain valid against the field's
+    # choices — dropping the member would force a migration. TechStack
+    # is NOT clusterable: it is absent from
+    # SignalClusterService._SUPPORTED_CLUSTER_TYPES and the service
+    # rejects it. Do not treat this member as an active cluster type.
     TECH_STACK = 'tech_stack', _('Tech Stack')
     IMPACT     = 'impact',     _('Impact')
 

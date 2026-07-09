@@ -33,10 +33,11 @@ Notes:
     canonical axes (what × dimension).
 
   - Conditional rules (mirror of TechStackSignal.clean()):
-      tech_catalog_entry required (Create + Update treat the FK as
-        immutable on Update — repointing a signal to a different tool
-        changes its cluster identity, which should be a delete +
-        recreate flow).
+      tech_catalog_entry required on Create. On Update the FK is
+        settable ONLY while the signal is still PENDING (so an
+        LLM-extracted signal with no catalog match can be linked before
+        validation); once VALIDATED it is immutable — attempting to
+        change it raises TECHSTACK_CATALOG_ENTRY_LOCKED.
       usage_scope = DEPARTMENT  → usage_department REQUIRED
       usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}
                                 → usage_department FORBIDDEN
@@ -51,7 +52,7 @@ from rest_framework import serializers
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
-from ..constants import UsageScope
+from ..constants import SignalStatus, UsageScope
 from ..models import TechStackSignal
 from .base_serializer import (
     BaseSignalCreateSerializer,
@@ -444,18 +445,25 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
     Restricted PATCH serializer for TechStackSignal.
 
     Allowed beyond inherited base fields:
+      - tech_catalog_entry  (PENDING-only — see below)
       - usage_scope, usage_department  (conditional pair)
       - usage_start_year, renewal_date, cost_description
       - is_discontinued, discontinued_date  (conditional pair)
       - notes
 
+    tech_catalog_entry — settable while PENDING, immutable after:
+      An LLM-extracted signal whose mentioned tool did not match the
+      tenant catalog is persisted as PENDING with tech_catalog_entry=None
+      (raw name in metadata['pending_tech_name']). The rep must be able
+      to attach a catalog entry before validating — so the FK is writable
+      while status == PENDING. Once the signal is VALIDATED (or REJECTED),
+      the FK is locked: any attempt to change it raises
+      TECHSTACK_CATALOG_ENTRY_LOCKED. Repointing a validated signal would
+      change the tool it identifies (its identity), which is a
+      delete + recreate flow, not an edit.
+
     NOT writable:
-      - tech_catalog_entry (immutable post-creation — repointing a signal
-        to a different tool changes its cluster identity. The proper
-        flow is: delete the signal and create a new one against the
-        correct catalog entry. Surfacing this constraint at the
-        serializer level prevents silent corruption of cluster stats.)
-      - canonical_key (auto-derived by model.save() from the FK)
+      - canonical_key (TechStack is not clustered; never set)
 
     Merged-state validation:
       A partial PATCH that touches `usage_scope`, `usage_department`,
@@ -493,6 +501,8 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalUpdateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
+            # Catalog anchor (writable only while PENDING — see validate())
+            'tech_catalog_entry',
             # Scope axis (conditional pair)
             'usage_scope',
             'usage_department',
@@ -508,6 +518,7 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
+            'tech_catalog_entry': {'required': False, 'allow_null': True},
             'usage_scope':        {'required': False, 'allow_null': True},
             'usage_department':   {'required': False, 'allow_null': True},
             'usage_start_year':   {'required': False, 'allow_null': True},
@@ -520,7 +531,17 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
 
     def validate(self, attrs):
         """
-        Merged-state coherence check on partial payloads.
+        Enforce the PENDING-only catalog lock, then run the merged-state
+        coherence checks on partial payloads.
+
+        Catalog lock:
+          `tech_catalog_entry` may only CHANGE while the signal is
+          PENDING. Re-sending the current entry (as the edit form always
+          does, even on an unrelated notes edit) is a no-op and allowed
+          at any status. Changing the anchor once the signal is VALIDATED
+          (or REJECTED) raises TECHSTACK_CATALOG_ENTRY_LOCKED — the FK
+          identifies the tool and repointing a validated signal is a
+          delete + recreate flow, not an edit.
 
         Two independent conditional pairs:
           A. usage_scope ↔ usage_department
@@ -532,6 +553,24 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
         unrelated PATCHes (e.g. a notes-only update).
         """
         instance = self.instance
+
+        # --- Catalog lock: tech_catalog_entry may only CHANGE while PENDING ---
+        # A no-op (the payload re-sending the current entry, as the edit
+        # form always does) is allowed at any status. An actual change of
+        # the anchor is allowed only while PENDING; once VALIDATED (or
+        # REJECTED) the FK is immutable — repointing changes the tool the
+        # signal identifies, which is a delete + recreate flow.
+        if 'tech_catalog_entry' in attrs and instance is not None:
+            new_entry = attrs['tech_catalog_entry']
+            new_entry_id = new_entry.id if new_entry is not None else None
+            if (
+                new_entry_id != instance.tech_catalog_entry_id
+                and instance.status != SignalStatus.PENDING
+            ):
+                raise StandardizedValidationError({
+                    'tech_catalog_entry':
+                        SignalErrorMessages.TECHSTACK_CATALOG_ENTRY_LOCKED,
+                })
 
         # --- Pair A: scope coherence ---
         touched_scope_fields = any(

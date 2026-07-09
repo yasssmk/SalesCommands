@@ -231,6 +231,11 @@ function buildImpactInitialValues(signal) {
  */
 function buildTechStackInitialValues(signal) {
   return {
+    // Status carried through so the form can gate catalog-entry editing
+    // (PENDING → editable, VALIDATED → locked). Not a form field — the
+    // submit handler emits an explicit payload and never spreads values.
+    status: signal.status ?? null,
+
     // S1 — Catalog anchor (object whole)
     tech_catalog_entry: signal.tech_catalog_entry ?? null,
 

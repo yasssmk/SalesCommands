@@ -73,6 +73,7 @@ import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // project imports
 import AsyncTechCatalogSelect from "components/AsyncSelection/AsyncTechCatalogSelect";
+import { canEditCatalogEntry } from "sections/activities/signals/signalValidationRules";
 import AsyncActivitySelect from "components/AsyncSelection/AsyncActivitySelect";
 import { useGetContactChoices } from "api/businessData/contacts";
 
@@ -378,10 +379,24 @@ export default function InlineTechStackForm({
       // stale value on the backend (mirror of InlineObjectiveForm's
       // strategy). Empty strings → null for nullable fields.
 
-      const payload = {
-        // S1 — required catalog anchor (object — wizard extracts UUID)
-        tech_catalog_entry: values.tech_catalog_entry,
+      // Catalog anchor: emit the UUID only. The field value is the
+      // compact catalog object (edit) or the selected option (create);
+      // the writable FK on the update serializer expects a UUID, not the
+      // object. Omit it entirely when unchanged in edit mode — a
+      // scope/notes edit must not touch or re-send the immutable anchor
+      // (mirrors the backend lock-on-change; create still requires it,
+      // so always emit there).
+      const catalogId =
+        values.tech_catalog_entry &&
+        typeof values.tech_catalog_entry === "object"
+          ? values.tech_catalog_entry.id
+          : values.tech_catalog_entry ?? null;
+      const originalCatalogId =
+        initialValuesProp?.tech_catalog_entry?.id ??
+        initialValuesProp?.tech_catalog_entry ??
+        null;
 
+      const payload = {
         // S2 — scope axis (always emit both for clean clear-on-change)
         usage_scope: values.usage_scope || null,
         usage_department:
@@ -411,6 +426,12 @@ export default function InlineTechStackForm({
         source_quote: values.source_quote?.trim() || null,
         notes: values.notes?.trim() || "",
       };
+
+      // S1 — catalog anchor (UUID): always on create; on edit only when
+      // it actually changed (attach on a PENDING signal).
+      if (!initialValuesProp || catalogId !== originalCatalogId) {
+        payload.tech_catalog_entry = catalogId;
+      }
 
       onAdd(payload);
 
@@ -450,6 +471,11 @@ export default function InlineTechStackForm({
   // ==============================|| DERIVED ||============================== //
 
   const isEditMode = Boolean(initialValuesProp);
+
+  // Catalog anchor is editable in create mode and while the signal is
+  // PENDING (so an LLM-extracted, unmatched signal can be linked before
+  // validation); locked once VALIDATED — mirrors the backend rule.
+  const catalogEditable = canEditCatalogEntry(initialValuesProp);
 
   // ==============================|| RENDER ||============================== //
 
@@ -512,23 +538,22 @@ export default function InlineTechStackForm({
                 formik.errors.tech_catalog_entry) ||
               undefined
             }
-            // In edit mode, the FK is immutable on the backend — disable
-            // the picker to prevent a UI choice the API would reject.
-            disabled={isEditMode}
+            // Editable while PENDING (link an unmatched signal before
+            // validation); locked once VALIDATED — mirrors the backend.
+            disabled={!catalogEditable}
           />
 
           {/* Compact preview — reinforces the choice */}
           <CatalogPreview entry={formik.values.tech_catalog_entry} />
 
-          {isEditMode && (
+          {isEditMode && !catalogEditable && (
             <Typography
               variant="caption"
               color="text.disabled"
               sx={{ fontStyle: "italic" }}
             >
-              The tool itself cannot be changed once a signal is created. To
-              point this signal at a different tool, delete it and create a new
-              one.
+              The tool cannot be changed once the signal is validated. To point
+              this signal at a different tool, delete it and create a new one.
             </Typography>
           )}
         </Stack>

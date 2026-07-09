@@ -8,18 +8,20 @@ Notes:
   * The model uses a catalog FK + structured lifecycle fields — see
     app_modules/signals/models/tech_stack_signal.py for the full
     architecture.
-  * `invalidate_cluster_tag = True` is set: TechStackSignal participates
-    in the cluster model (clusters grouped by
-    canonical_key = "techstack:<catalog_entry_id>" on an account). Every
-    write therefore mutates cluster membership, lifecycle stats, or
-    priority — must bust SIGNAL_CLUSTERS_CACHE_TAG in addition to
-    SIGNALS_CACHE_TAG. Same stance as PainSignalViewSet and
-    ObjectiveSignalViewSet.
+  * `invalidate_cluster_tag = False`: TechStack is NOT clusterable
+    (product decision) — it produces no clusters, so writes only need to
+    bust SIGNALS_CACHE_TAG, never SIGNAL_CLUSTERS_CACHE_TAG.
   * Search now traverses the catalog FK so the rep can search by
     company / product name without dragging the catalog ID through the
     UI.
 """
 
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+from core.logging import ctx_from_request, get_logger
+
+from ..constants import SignalStatus
 from ..models import TechStackSignal
 from ..serializers import (
     TechStackSignalListSerializer,
@@ -28,6 +30,8 @@ from ..serializers import (
     TechStackSignalUpdateSerializer,
 )
 from .base_views import BaseSignalViewSet
+
+logger = get_logger(__name__)
 
 
 class TechStackSignalViewSet(BaseSignalViewSet):
@@ -45,15 +49,10 @@ class TechStackSignalViewSet(BaseSignalViewSet):
       POST   /tech-stack/{id}/reject/      → reject_signal
 
     Cluster cache invalidation:
-      TechStackSignal participates in the cluster model — clusters are
-      grouped by canonical_key
-      = "techstack:<tech_catalog_entry.id>" on an account. Every write
-      on this ViewSet therefore mutates cluster membership, lifecycle
-      stats (usage_start_year, renewal_date, cost_description, ...) or
-      priority. The `invalidate_cluster_tag = True` flag below
-      instructs BaseSignalViewSet to bust SIGNAL_CLUSTERS_CACHE_TAG in
-      addition to SIGNALS_CACHE_TAG after every create / update /
-      delete / validate / reject.
+      TechStack is NOT clusterable (product decision) — it produces no
+      clusters. Writes on this ViewSet therefore never affect cluster
+      caches; `invalidate_cluster_tag = False` keeps invalidation scoped
+      to SIGNALS_CACHE_TAG only.
     """
 
     queryset                = TechStackSignal.objects.all()
@@ -63,9 +62,9 @@ class TechStackSignalViewSet(BaseSignalViewSet):
     create_serializer_class = TechStackSignalCreateSerializer
     update_serializer_class = TechStackSignalUpdateSerializer
 
-    # TechStackSignal participates in the cluster model (see class docstring).
-    # Writes here must bust the signal_clusters cache tag.
-    invalidate_cluster_tag = True
+    # TechStack is not clusterable (see class docstring) — writes here
+    # must NOT bust the signal_clusters cache tag.
+    invalidate_cluster_tag = False
 
     # Search across narrative fields and the catalog FK's text columns,
     # so a rep typing "Salesforce" in the search box hits matching
@@ -81,10 +80,9 @@ class TechStackSignalViewSet(BaseSignalViewSet):
         """
         Extend base queryset with TechStackSignal-specific select_related.
 
-        Adds tech_catalog_entry (always meaningful — drives canonical_key
-        and the compact catalog payload exposed by the serializers) and
-        usage_department (often null but exposed compactly when set;
-        prefetching avoids N+1 on list views).
+        Adds tech_catalog_entry (the compact catalog payload exposed by
+        the serializers) and usage_department (often null but exposed
+        compactly when set; prefetching avoids N+1 on list views).
         """
         qs = super().get_queryset()
         qs = qs.select_related(
@@ -92,3 +90,43 @@ class TechStackSignalViewSet(BaseSignalViewSet):
             'usage_department',
         )
         return qs
+
+    @action(detail=False, methods=['get'], url_path='detected')
+    def detected(self, request):
+        """
+        List "detected" TechStack signals: PENDING observations whose
+        LLM-extracted tool could not be matched to the tenant catalog
+        (tech_catalog_entry is null; the raw name lives in
+        metadata['pending_tech_name']).
+
+        GET /tech-stack/detected/
+
+        These are the signals an admin needs to reconcile — attach (or
+        create) a catalog entry, then validate. Attaching goes through
+        the normal PATCH path (TechStackSignalUpdateSerializer allows the
+        FK while PENDING); this endpoint only surfaces the work list.
+
+        Tenant-scoped (ScopedQuerysetMixin), paginated, ordered
+        most-recent-first (TechStackSignal.Meta.ordering).
+        """
+        logger.info(
+            'tech_stack_signal_detected_requested',
+            extra=ctx_from_request(request),
+        )
+
+        qs = self.get_queryset().filter(
+            status=SignalStatus.PENDING,
+            tech_catalog_entry__isnull=True,
+        )
+
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = self.list_serializer_class(
+                page, many=True, context={'request': request},
+            )
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.list_serializer_class(
+            qs, many=True, context={'request': request},
+        )
+        return Response({'success': True, 'data': serializer.data})

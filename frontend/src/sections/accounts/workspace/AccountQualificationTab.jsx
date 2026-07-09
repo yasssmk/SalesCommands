@@ -78,29 +78,17 @@ import {
  * 'all' translates to a CSV array so the backend returns clusters of
  * all clustered types in a single call, server-sorted by priority.
  *
- * Sprint TechStack — Tech Stack joins the cluster surface
- * -------------------------------------------------------
- * The TechStack cluster uses the canonical key "techstack:<entry.id>"
- * (see SignalClusterService). Mixed lists therefore stay key-unique
- * across types thanks to the per-type prefix. The card key in the
- * render loop combines signal_type + canonical_key, which already
- * disambiguates any future collisions.
- *
- * Note on the 'all' payload: we send the new type as 'tech_stack'
- * (snake_case, mirror of cluster.signal_type from the backend payload).
- * This is intentionally distinct from the URL-style 'tech-stack'
- * (kebab-case) used in SignalList / AccountSignalsTab, because the
- * backend cluster API and the underscore-style enum are aligned.
+ * TechStack is not clusterable (product decision) and is therefore
+ * absent from these options — the cluster API rejects 'tech_stack'.
  */
 const TYPE_FILTER_OPTIONS = [
   {
     value: "all",
     label: "All",
-    signalTypePayload: ["pain", "objective", "tech_stack"],
+    signalTypePayload: ["pain", "objective"],
   },
   { value: "pain", label: "Pain", signalTypePayload: "pain" },
   { value: "objective", label: "Objective", signalTypePayload: "objective" },
-  { value: "tech_stack", label: "Tech Stack", signalTypePayload: "tech_stack" },
 ];
 
 const TYPE_FILTER_BY_VALUE = TYPE_FILTER_OPTIONS.reduce((acc, opt) => {
