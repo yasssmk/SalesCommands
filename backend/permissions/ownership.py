@@ -4,13 +4,17 @@ Ownership Map for End Users Module
 Defines the canonical ownership fields used for scope filtering.
 These fields determine how 'mine' and 'team' scopes are applied.
 
-Canonical Keys (exactly 6, no more, no less):
+Canonical Keys (6 base keys + 1 optional inheritance key):
 1. client_account_fk: FK to ClientAccount (always required)
 2. owner_user: FK to User who owns the resource
 3. owner_team: FK to Team that owns the resource
 4. created_by: FK to User who created the resource
 5. assigned_to_user: FK to User assigned to the resource
 6. account_fk: FK to Account (for child entities like Contact)
+7. account_owner_user: user who owns the PARENT account, for child
+   entities (activities, decision cycles) whose account owner must reach
+   records created by anyone else on the account. Optional — only set
+   where account-owner inheritance applies.
 
 Special Cases:
 - ownership=none: Resources with no ownership (templates, products)
@@ -31,6 +35,7 @@ OwnershipKey = Literal[
     'created_by',
     'assigned_to_user',
     'account_fk',
+    'account_owner_user',
 ]
 
 # ============================================================================
@@ -144,8 +149,9 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
         'created_by': 'created_by',                  # ForeignKey — Python attr name is 'created_by' (not 'created_by_id')
         'assigned_to_user': '-',                    # Not applicable (use owner)
         'account_fk': 'account_id',                 # Not used in mine/team scope filtering — kept as-is
+        'account_owner_user': 'account__account_owner_id',  # Parent-account owner reaches activities created by others on their account (C6)
     },
-    
+
     'decision_cycles': {
         'client_account_fk': 'client_id',           # DecisionCycle.client_id
         'owner_user': 'owner',                      # DecisionCycle.owner (direct FK)
