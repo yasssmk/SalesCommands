@@ -44,6 +44,26 @@ export function deriveUnreadCount(data) {
   return typeof count === "number" && count > 0 ? count : 0;
 }
 
+/**
+ * Resolve the deep-link URL for a notification from its type + payload ids.
+ * Returns null when the notification is not click-through (unknown tech),
+ * an unknown type, or the routing ids are missing.
+ *
+ * @param {Object} notification - a notification row (related_object_type, payload)
+ * @returns {string|null}
+ */
+export function notificationHref(notification) {
+  const { related_object_type: type, payload = {} } = notification || {};
+  const ids = payload || {};
+  if (type === "decision_cycle" && ids.account_id && ids.cycle_id) {
+    return `/accounts/${ids.account_id}/dc/${ids.cycle_id}`;
+  }
+  if (type === "activity" && ids.activity_id) {
+    return `/activities/${ids.activity_id}`;
+  }
+  return null;
+}
+
 // ==============================|| READ HOOKS ||============================== //
 
 /**

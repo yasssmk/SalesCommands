@@ -32,6 +32,7 @@ import {
   useUnreadCount,
   markNotificationRead,
   deriveUnreadCount,
+  notificationHref,
   endpoints,
 } from 'api/notifications/notifications';
 
@@ -60,6 +61,40 @@ describe('deriveUnreadCount', () => {
     expect(deriveUnreadCount({})).toBe(0);
     expect(deriveUnreadCount({ data: {} })).toBe(0);
     expect(deriveUnreadCount({ count: -1 })).toBe(0);
+  });
+});
+
+describe('notificationHref', () => {
+  it('resolves a decision_cycle to the DC workspace URL', () => {
+    const href = notificationHref({
+      related_object_type: 'decision_cycle',
+      payload: { account_id: 'acc-1', cycle_id: 'cyc-1' },
+    });
+    expect(href).toBe('/accounts/acc-1/dc/cyc-1');
+  });
+
+  it('resolves an activity to the activity URL', () => {
+    const href = notificationHref({
+      related_object_type: 'activity',
+      payload: { activity_id: 'act-9' },
+    });
+    expect(href).toBe('/activities/act-9');
+  });
+
+  it('returns null for tech_stack_signal (not click-through)', () => {
+    expect(
+      notificationHref({ related_object_type: 'tech_stack_signal', payload: { tech_name: 'FooDB' } }),
+    ).toBeNull();
+  });
+
+  it('returns null for an unknown type', () => {
+    expect(notificationHref({ related_object_type: 'something_else', payload: {} })).toBeNull();
+  });
+
+  it('returns null when routing ids are missing', () => {
+    expect(notificationHref({ related_object_type: 'decision_cycle', payload: { account_id: 'acc-1' } })).toBeNull();
+    expect(notificationHref({ related_object_type: 'activity', payload: {} })).toBeNull();
+    expect(notificationHref(null)).toBeNull();
   });
 });
 

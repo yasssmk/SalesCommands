@@ -1,6 +1,9 @@
 import PropTypes from 'prop-types';
 import { useRef, useState } from 'react';
 
+// next
+import { useRouter } from 'next/navigation';
+
 // material-ui
 import { useTheme } from '@mui/material/styles';
 import Badge from '@mui/material/Badge';
@@ -20,11 +23,13 @@ import MainCard from 'components/MainCard';
 import Transitions from 'components/@extended/Transitions';
 import IconButton from 'components/@extended/IconButton';
 import { ThemeMode } from 'config';
+import { formatDateTime } from 'config/formatters';
 import { displayErrorSnackbar } from 'utils/displayError';
 import {
   useGetNotifications,
   useUnreadCount,
   markNotificationRead,
+  notificationHref,
 } from 'api/notifications/notifications';
 
 // assets
@@ -35,6 +40,7 @@ import BellOutlined from '@ant-design/icons/BellOutlined';
 export default function Notification() {
   const theme = useTheme();
 
+  const router = useRouter();
   const anchorRef = useRef(null);
   const [open, setOpen] = useState(false);
 
@@ -53,8 +59,8 @@ export default function Notification() {
     setOpen(false);
   };
 
-  const handleRead = async (notificationId) => {
-    const result = await markNotificationRead(notificationId);
+  const handleItemClick = async (item) => {
+    const result = await markNotificationRead(item.id);
     if (!result.success) {
       displayErrorSnackbar(result);
       return;
@@ -62,6 +68,12 @@ export default function Notification() {
     // Refresh both the unread badge and the open list.
     mutateUnreadCount();
     mutateNotifications();
+    // Mark-read first, then navigate if the notification is click-through.
+    const href = notificationHref(item);
+    if (href) {
+      setOpen(false);
+      router.push(href);
+    }
   };
 
   const iconBackColorOpen = theme.palette.mode === ThemeMode.DARK ? 'background.default' : 'grey.100';
@@ -125,7 +137,7 @@ export default function Notification() {
                       {notifications.map((item) => (
                         <ListItemButton
                           key={item.id}
-                          onClick={() => handleRead(item.id)}
+                          onClick={() => handleItemClick(item)}
                           sx={{ bgcolor: item.read_at ? 'transparent' : 'primary.lighter' }}
                         >
                           <ListItemText
@@ -137,7 +149,19 @@ export default function Notification() {
                                 <Typography variant="subtitle2">{item.title}</Typography>
                               </Stack>
                             }
-                            secondary={item.body || null}
+                            secondary={
+                              <Stack component="span" spacing={0.25}>
+                                {item.body ? (
+                                  <Typography variant="body2" color="text.secondary" component="span">
+                                    {item.body}
+                                  </Typography>
+                                ) : null}
+                                <Typography variant="caption" color="text.secondary" component="span">
+                                  {formatDateTime(item.created_at)}
+                                </Typography>
+                              </Stack>
+                            }
+                            secondaryTypographyProps={{ component: 'div' }}
                           />
                         </ListItemButton>
                       ))}
