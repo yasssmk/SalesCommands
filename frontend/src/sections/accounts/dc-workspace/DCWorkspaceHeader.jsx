@@ -101,12 +101,15 @@ export default function useDCWorkspaceHeaderProps({
 
   // ==============================|| TITLE SAVE ||============================== //
 
-  const handleTitleSave = async (newTitle) => {
+  // EditableField invokes onSave(fieldKey, newValue) — mirror the two-arg
+  // contract used by the activity workspace's handleSaveField. Binding only
+  // the first arg would capture the fieldKey ("title") instead of the value.
+  const handleTitleSave = async (fieldKey, newValue) => {
     if (isLocked || !cycle?.id) return false;
 
     try {
       const result = await updateDecisionCycle(cycle.id, {
-        name: newTitle.trim(),
+        name: newValue.trim(),
       });
       if (result.success) {
         displaySuccessSnackbar("Cycle name updated");
