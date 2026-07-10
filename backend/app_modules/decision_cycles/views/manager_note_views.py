@@ -152,6 +152,16 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
         cycle = self._resolve_parent_cycle()
         return cycle.owner_id and str(cycle.owner_id) == str(user.id)
 
+    def _is_account_owner(self, user):
+        # Account-owner inheritance (C6): the owner of the cycle's parent
+        # account can read notes on that cycle even when the cycle was
+        # created/owned by someone else on their account.
+        cycle = self._resolve_parent_cycle()
+        return (
+            cycle.account.account_owner_id
+            and str(cycle.account.account_owner_id) == str(user.id)
+        )
+
     # =========================================================================
     # CACHE HELPERS
     # =========================================================================
@@ -167,7 +177,11 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
         ctx = ctx_from_request(request)
         cycle = self._resolve_parent_cycle()
 
-        if not self._is_manager_or_admin(request) and not self._is_cycle_owner(request.user):
+        if (
+            not self._is_manager_or_admin(request)
+            and not self._is_cycle_owner(request.user)
+            and not self._is_account_owner(request.user)
+        ):
             return Response(
                 {'success': False, 'error': str(CoreErrorMessages.PERMISSION_DENIED)},
                 status=status.HTTP_403_FORBIDDEN,
@@ -184,7 +198,11 @@ class ManagerNoteViewSet(CycleScopedMixin, BaseAPIView, viewsets.ModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         ctx = ctx_from_request(request)
 
-        if not self._is_manager_or_admin(request) and not self._is_cycle_owner(request.user):
+        if (
+            not self._is_manager_or_admin(request)
+            and not self._is_cycle_owner(request.user)
+            and not self._is_account_owner(request.user)
+        ):
             return Response(
                 {'success': False, 'error': str(CoreErrorMessages.PERMISSION_DENIED)},
                 status=status.HTTP_403_FORBIDDEN,

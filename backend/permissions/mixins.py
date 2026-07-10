@@ -584,7 +584,23 @@ class ScopedQuerysetMixin:
                     'user_id': ctx.user_id,
                     'event': 'queryset_filter'
                 })
-            
+
+            # Check account_owner_user from OWNERSHIP_MAP
+            # Account-owner inheritance: for child entities (activities,
+            # decision cycles), the owner of the parent account can act on
+            # records created by anyone else on that account. The mapped
+            # value is a traversal (account__account_owner_id), accepted by
+            # is_valid_mine_field.
+            account_owner_field = resolve_field(module, 'account_owner_user')
+            if account_owner_field and is_valid_mine_field(account_owner_field):
+                q_filter |= Q(**{account_owner_field: ctx.user_id})
+                logger.debug("added_account_owner_filter_mine", extra={
+                    'correlation_id': get_correlation_id(),
+                    'field': account_owner_field,
+                    'user_id': ctx.user_id,
+                    'event': 'queryset_filter'
+                })
+
             if q_filter:
                 queryset = queryset.filter(q_filter)
                 logger.debug("applied_mine_scope_filter", extra={
