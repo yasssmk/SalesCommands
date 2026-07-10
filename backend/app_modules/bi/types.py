@@ -12,7 +12,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
+
+
+class Period(NamedTuple):
+    """A closed date window [start, end] used to filter/bucket a KPI.
+
+    Either bound may be None (open-ended). The compute layer resolves the
+    default window (e.g. the tenant's fiscal year) when the caller passes
+    period=None and the KPIDefinition declares default_period='fiscal_year'.
+    """
+
+    start: Optional[date] = None
+    end: Optional[date] = None
 
 
 class OutputShape(str, Enum):
