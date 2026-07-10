@@ -18,6 +18,7 @@ class BIConfig(AppConfig):
 
     def ready(self):
         # KPI definitions will be autodiscovered here in a later palier
-        # (once app_modules/bi/definitions/ exists). No-op for now — the
-        # registry is populated by importing definition modules.
-        pass
+        # (once app_modules/bi/definitions/ exists). Once discovered, wire the
+        # registry-driven cache invalidation. No-op while the registry is empty.
+        from .signals.cache_invalidation import connect_invalidation_receivers
+        connect_invalidation_receivers()
