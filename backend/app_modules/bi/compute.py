@@ -91,7 +91,7 @@ def _apply_period(queryset: QuerySet, period_field: str, period: Optional[Period
 
 
 def run(definition: KPIDefinition, auth_ctx, scope: str,
-        period: Optional[Period] = None) -> KPIResult:
+        period: Optional[Period] = None, params: Optional[dict] = None) -> KPIResult:
     """Compute a single KPI for (tenant, scope, period) and return a KPIResult.
 
     Args:
@@ -100,6 +100,8 @@ def run(definition: KPIDefinition, auth_ctx, scope: str,
             / team_id used for tenant + role scoping.
         scope: 'mine' | 'team' | 'client' — must be in definition.allowed_scopes.
         period: optional Period window; None = no period filtering.
+        params: optional parameters (e.g. {'territory_id': ...}) forwarded to a
+            custom compute_fn; ignored by the standard pipeline.
 
     Raises:
         ValueError: if `scope` is not allowed for this KPI.
@@ -110,7 +112,12 @@ def run(definition: KPIDefinition, auth_ctx, scope: str,
             f"(allowed: {definition.allowed_scopes})"
         )
 
-    # --- pipeline ---------------------------------------------------------
+    # Custom-compute escape hatch (ratios / parameterized KPIs). It must still
+    # scope via apply_role_scope and stay query-bounded — enforced by tests.
+    if definition.compute_fn is not None:
+        return definition.compute_fn(definition, auth_ctx, scope, period, params or {})
+
+    # --- standard pipeline ------------------------------------------------
     queryset = definition.source()
     queryset = _apply_tenant_filter(queryset, auth_ctx.client_id)
     queryset = apply_role_scope(

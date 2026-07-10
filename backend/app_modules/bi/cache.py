@@ -52,12 +52,20 @@ def _period_token(period: Optional[Period]) -> str:
     return f"{period.start}:{period.end}"
 
 
-def build_kpi_cache_key(definition: KPIDefinition, auth_ctx, scope: str,
-                        period: Optional[Period]) -> str:
-    """Build the cache key for a (KPI, tenant, user, scope, period).
+def _params_token(params: Optional[dict]) -> str:
+    if not params:
+        return 'none'
+    return ",".join(f"{k}={params[k]}" for k in sorted(params))
 
-    Reuses build_drf_cache_key. `extra` folds scope + period + the versions of
-    every cache_tag so any tag bump invalidates the entry.
+
+def build_kpi_cache_key(definition: KPIDefinition, auth_ctx, scope: str,
+                        period: Optional[Period],
+                        params: Optional[dict] = None) -> str:
+    """Build the cache key for a (KPI, tenant, user, scope, period, params).
+
+    Reuses build_drf_cache_key. `extra` folds scope + period + params + the
+    versions of every cache_tag so any tag bump invalidates the entry, and two
+    different parameterizations (e.g. two territory_ids) never collide.
     """
     client_id = auth_ctx.client_id
     primary_tag = definition.cache_tags[0] if definition.cache_tags else None
@@ -67,7 +75,10 @@ def build_kpi_cache_key(definition: KPIDefinition, auth_ctx, scope: str,
     tag_sig = ",".join(
         f"{t}={get_tag_version(client_id, t)}" for t in definition.cache_tags
     )
-    extra = f"scope={scope}|period={_period_token(period)}|tags={tag_sig}"
+    extra = (
+        f"scope={scope}|period={_period_token(period)}"
+        f"|params={_params_token(params)}|tags={tag_sig}"
+    )
 
     return build_drf_cache_key(
         namespace=definition.key,
@@ -81,20 +92,21 @@ def build_kpi_cache_key(definition: KPIDefinition, auth_ctx, scope: str,
 
 def cached_run(definition: KPIDefinition, auth_ctx, scope: str,
                period: Optional[Period] = None,
-               ttl: int = DEFAULT_TTL_SECONDS) -> KPIResult:
+               ttl: int = DEFAULT_TTL_SECONDS,
+               params: Optional[dict] = None) -> KPIResult:
     """Return the KPI result, from cache when warm, otherwise computing it.
 
     The producer is compute.run() from palier 1c. On non-Redis backends we
     bypass the cache and compute fresh.
     """
     def producer() -> KPIResult:
-        return compute.run(definition, auth_ctx, scope, period)
+        return compute.run(definition, auth_ctx, scope, period, params)
 
     # Non-Redis: bypass (tag-version invalidation is Redis-only).
     if not _is_redis_backend():
         return producer()
 
-    key = build_kpi_cache_key(definition, auth_ctx, scope, period)
+    key = build_kpi_cache_key(definition, auth_ctx, scope, period, params)
     primary_tag = definition.cache_tags[0] if definition.cache_tags else definition.key
     return cache_get_set(
         key=key,

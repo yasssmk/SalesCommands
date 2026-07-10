@@ -126,9 +126,9 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
 
     'territories': {
         'client_account_fk': 'client_id',           # Territory.client_id
-        'owner_user': 'owner_id',                   # Territory.owner
+        'owner_user': 'owner',                       # Territory.owner (bare field name — 'owner_id' is rejected by ScopedQuerysetMixin._is_valid_field, which matches _meta field names; consistent with decision_cycles/activities)
         'owner_team': 'owner__team_id',             # Via owner's team (manager can access team members' territories)
-        'created_by': 'created_by_id',              # BaseModel.created_by
+        'created_by': 'created_by',                  # ModuleBaseModel.created_by (bare field name)
         'assigned_to_user': '-',                    # Not applicable
         'account_fk': '-',                          # Not applicable
     },

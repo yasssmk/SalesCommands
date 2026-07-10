@@ -68,29 +68,58 @@ class KPIDefinition:
 
     key: str
     label: str
-    source: Callable[[], Any]
-    aggregation: Any
     scope_module: str
-    period_field: str
-    output_shape: OutputShape
+    # Standard-pipeline fields (required UNLESS compute_fn is set — see below).
+    source: Optional[Callable[[], Any]] = None
+    aggregation: Any = None
+    period_field: Optional[str] = None
+    output_shape: Optional[OutputShape] = None
     allowed_scopes: Tuple[str, ...] = ('mine', 'team', 'client')
     dimension: Optional[str] = None
     default_period: str = 'fiscal_year'
     target: Optional[Callable[..., Any]] = None
     cache_tags: Tuple[str, ...] = ()
     invalidation_sources: Tuple[str, ...] = ()
+    # Escape hatch for KPIs that are NOT a single aggregate over a scoped
+    # queryset (ratios, parameterized/per-entity metrics — e.g. coverage %,
+    # quota attainment). When set, compute.run() delegates to it instead of the
+    # standard pipeline: compute_fn(definition, auth_ctx, scope, period, params)
+    # -> KPIResult. It is a CALCULATION escape hatch, NOT a security one: it
+    # MUST still scope via permissions.scope_filter.apply_role_scope and MUST
+    # be query-bounded (no N+1).
+    compute_fn: Optional[Callable[..., Any]] = None
 
     def __post_init__(self):
         if not self.key:
             raise ValueError("KPIDefinition.key must be a non-empty string")
         if not self.label:
             raise ValueError(f"KPIDefinition '{self.key}': label must be non-empty")
-        if not callable(self.source):
-            raise TypeError(f"KPIDefinition '{self.key}': source must be callable")
-        if not isinstance(self.output_shape, OutputShape):
-            raise TypeError(
-                f"KPIDefinition '{self.key}': output_shape must be an OutputShape"
-            )
+        if not self.scope_module:
+            raise ValueError(f"KPIDefinition '{self.key}': scope_module must be non-empty")
+
+        if self.compute_fn is not None:
+            if not callable(self.compute_fn):
+                raise TypeError(
+                    f"KPIDefinition '{self.key}': compute_fn must be callable or None"
+                )
+        else:
+            # Standard-pipeline requirements (only when there is no custom compute).
+            if not callable(self.source):
+                raise TypeError(f"KPIDefinition '{self.key}': source must be callable")
+            if self.aggregation is None:
+                raise ValueError(f"KPIDefinition '{self.key}': aggregation is required")
+            if not self.period_field:
+                raise ValueError(f"KPIDefinition '{self.key}': period_field is required")
+            if not isinstance(self.output_shape, OutputShape):
+                raise TypeError(
+                    f"KPIDefinition '{self.key}': output_shape must be an OutputShape"
+                )
+            if self.output_shape is OutputShape.BREAKDOWN and not self.dimension:
+                raise ValueError(
+                    f"KPIDefinition '{self.key}': BREAKDOWN output requires a "
+                    f"`dimension` (group-by field)"
+                )
+
         if not self.allowed_scopes:
             raise ValueError(
                 f"KPIDefinition '{self.key}': allowed_scopes must not be empty"
@@ -100,11 +129,6 @@ class KPIDefinition:
             raise ValueError(
                 f"KPIDefinition '{self.key}': invalid allowed_scopes "
                 f"{sorted(invalid)} (valid: {sorted(VALID_SCOPES)})"
-            )
-        if self.output_shape is OutputShape.BREAKDOWN and not self.dimension:
-            raise ValueError(
-                f"KPIDefinition '{self.key}': BREAKDOWN output requires a "
-                f"`dimension` (group-by field)"
             )
         if self.target is not None and not callable(self.target):
             raise TypeError(

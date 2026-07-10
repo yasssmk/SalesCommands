@@ -13,12 +13,14 @@ from app_modules.bi import registry
 from . import activities as _activities
 from . import decision_cycles as _decision_cycles
 from . import leads as _leads
+from . import territory as _territory
 
 # Add new definition modules here as KPIs are declared.
 _MODULES = [
     _decision_cycles,
     _activities,
     _leads,
+    _territory,
 ]
 
 
