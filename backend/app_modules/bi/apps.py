@@ -17,8 +17,9 @@ class BIConfig(AppConfig):
     verbose_name = 'BI Foundation (Module)'
 
     def ready(self):
-        # KPI definitions will be autodiscovered here in a later palier
-        # (once app_modules/bi/definitions/ exists). Once discovered, wire the
-        # registry-driven cache invalidation. No-op while the registry is empty.
+        # Register the declared KPIs, then wire the registry-driven cache
+        # invalidation for their source models.
+        from .definitions import load_all
+        load_all()
         from .signals.cache_invalidation import connect_invalidation_receivers
         connect_invalidation_receivers()
