@@ -66,14 +66,27 @@ def _apply_tenant_filter(queryset: QuerySet, client_id) -> QuerySet:
 def _apply_period(queryset: QuerySet, period_field: str, period: Optional[Period]) -> QuerySet:
     """Filter to the closed date window on `period_field`. No-op when period is
     None (default-period resolution against the tenant's fiscal config is wired
-    when real KPIs are added)."""
+    when real KPIs are added).
+
+    For a DateTimeField period field (e.g. created_at) the bounds are applied at
+    DATE granularity (`__date`), so an end bound of `end` includes the whole day
+    — a plain `<= end` would drop everything on `end` after 00:00. DateField
+    period fields (scheduled_date, outcome_date, due_date) compare directly.
+    """
     if period is None:
         return queryset
+
+    try:
+        is_datetime = queryset.model._meta.get_field(period_field).get_internal_type() == 'DateTimeField'
+    except Exception:
+        is_datetime = False
+    lookup = f'{period_field}__date' if is_datetime else period_field
+
     flt = {}
     if period.start is not None:
-        flt[f'{period_field}__gte'] = period.start
+        flt[f'{lookup}__gte'] = period.start
     if period.end is not None:
-        flt[f'{period_field}__lte'] = period.end
+        flt[f'{lookup}__lte'] = period.end
     return queryset.filter(**flt) if flt else queryset
 
 
