@@ -11,6 +11,7 @@ clear the registry.
 from app_modules.bi import registry
 
 from . import activities as _activities
+from . import campaigns as _campaigns
 from . import decision_cycles as _decision_cycles
 from . import leads as _leads
 from . import territory as _territory
@@ -21,6 +22,7 @@ _MODULES = [
     _activities,
     _leads,
     _territory,
+    _campaigns,
 ]
 
 
