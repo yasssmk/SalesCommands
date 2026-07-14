@@ -51,3 +51,44 @@ def test_account_owner_id_unknown_owner_returns_none(
     ).qs
 
     assert filtered.count() == 0
+
+
+# =============================================================================
+# TD-59 — the department filter param is `standard_department` (app-wide key),
+# not `standard_department_id`. Regression guard: the old name was a silent
+# no-op (unknown params are ignored -> the whole queryset came back).
+# =============================================================================
+
+@pytest.mark.django_db
+def test_standard_department_filters_by_department(
+    contact_of_a, contact_of_a2, user_a
+):
+    from app_modules.core_modules.models.standar_dept import StandardDepartment
+
+    dept, _ = StandardDepartment.objects.get_or_create(name='IT')
+    contact_of_a.standard_department = dept          # only this contact has it
+    contact_of_a.save(user=user_a)
+
+    qs = Contact.objects.all()
+    assert qs.count() == 2                            # both contacts exist
+
+    filtered = ContactFilter({'standard_department': str(dept.id)}, queryset=qs).qs
+    ids = set(filtered.values_list('id', flat=True))
+    assert ids == {contact_of_a.id}                  # exactly the one — not a no-op returning both
+
+
+@pytest.mark.django_db
+def test_legacy_standard_department_id_param_is_no_longer_a_filter(
+    contact_of_a, contact_of_a2, user_a
+):
+    """The old `standard_department_id` param is gone: as an unknown param it is
+    ignored (returns all), documenting the rename is intentional."""
+    from app_modules.core_modules.models.standar_dept import StandardDepartment
+
+    dept, _ = StandardDepartment.objects.get_or_create(name='IT')
+    contact_of_a.standard_department = dept
+    contact_of_a.save(user=user_a)
+
+    qs = Contact.objects.all()
+    filtered = ContactFilter({'standard_department_id': str(dept.id)}, queryset=qs).qs
+    assert filtered.count() == 2                      # unknown param -> no filtering
