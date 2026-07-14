@@ -303,3 +303,80 @@ class TestTerritoryOwnerScope:
             auth_ctx=_ctx(owner_a, client_account_a),
         )
         assert qs.count() == 2  # client scope = whole tenant, no owner filter
+
+
+# =============================================================================
+# SALES-QUOTA OWNER SCOPE — guardrail for the OWNERSHIP_MAP['sales_quotas'] fix
+# (owner_user='user', owner_team='user__team_id', created_by='created_by').
+# A quota is PERSONAL, sensitive data: a user must not see another user's
+# quota (mine), and a manager sees their team's (team). Third symptom of the
+# same attname bug (after territories) — locked here independently of KPI 8.
+# =============================================================================
+
+def _mk_quota(user, client_account):
+    from datetime import date
+    from end_users.models import SalesQuota
+    q = SalesQuota(
+        user=user, name=f'Q-{user.email}', target_type='meetings',
+        target_value=10, recurrence_type='annual', fiscal_year=2026,
+        period_number=1, period_start=date(2026, 1, 1), period_end=date(2026, 12, 31),
+    )
+    q.save()  # client_id auto-set from user
+    return q
+
+
+def _quota_qs(client_account):
+    from end_users.models import SalesQuota
+    return SalesQuota.objects.filter(client_id=client_account.id)
+
+
+@pytest.fixture
+def q_user_a(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(email='q-a@tenant-a.test', client_account=client_account_a,
+                               role=role_individual_a, is_active=True)
+
+
+@pytest.fixture
+def q_user_b(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(email='q-b@tenant-a.test', client_account=client_account_a,
+                               role=role_individual_a, is_active=True)
+
+
+@pytest.mark.django_db
+class TestSalesQuotaOwnerScope:
+
+    def test_mine_sees_own_quota_not_others(self, q_user_a, q_user_b, client_account_a):
+        qa = _mk_quota(q_user_a, client_account_a)
+        qb = _mk_quota(q_user_b, client_account_a)
+        scoped = apply_role_scope(
+            _quota_qs(client_account_a), module='sales_quotas', scope='mine',
+            auth_ctx=_ctx(q_user_a, client_account_a),
+        )
+        ids = set(scoped.values_list('id', flat=True))
+        assert qa.id in ids          # own quota
+        assert qb.id not in ids      # NOT another user's (personal data)
+        assert scoped.count() == 1   # non-empty regression guard (not 0=none-bug, not 2=all)
+
+    def test_manager_team_scope_sees_members_quota(self, client_account_a, role_individual_a):
+        from end_users.models import User, Team
+
+        manager = User.objects.create(email='mgr@tenant-a.test', client_account=client_account_a,
+                                      role=role_individual_a, is_active=True)
+        team = Team.objects.create(name='Team X', client_account=client_account_a, manager=manager)
+        member = User.objects.create(email='member@tenant-a.test', client_account=client_account_a,
+                                     role=role_individual_a, is_active=True, team=team)
+        outsider = User.objects.create(email='out@tenant-a.test', client_account=client_account_a,
+                                       role=role_individual_a, is_active=True)
+
+        q_member = _mk_quota(member, client_account_a)
+        q_outsider = _mk_quota(outsider, client_account_a)
+
+        scoped = apply_role_scope(
+            _quota_qs(client_account_a), module='sales_quotas', scope='team',
+            auth_ctx=_ctx(manager, client_account_a),
+        )
+        ids = set(scoped.values_list('id', flat=True))
+        assert q_member.id in ids        # manager sees their team member's quota
+        assert q_outsider.id not in ids  # NOT an unrelated user's quota

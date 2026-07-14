@@ -86,10 +86,10 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     
     'sales_quotas': {
         'client_account_fk': 'user.client_account_id',  # Via user
-        'owner_user': 'user_id',                    # SalesQuota.user
-        'owner_team': 'user.team_id',               # Via user's team
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
-        'assigned_to_user': 'user_id',              # Same as owner
+        'owner_user': 'user',                        # SalesQuota.user (bare field name — 'user_id' attname is rejected by ScopedQuerysetMixin._is_valid_field; consistent with decision_cycles/activities/territories)
+        'owner_team': 'user__team_id',               # Via user's team (traversal '__', not '.', so apply_role_scope can use it)
+        'created_by': 'created_by',                  # BaseModelApp.created_by (bare field name)
+        'assigned_to_user': 'user',                  # Same as owner (bare field name)
         'account_fk': '-',                           # Not applicable
     },
     
