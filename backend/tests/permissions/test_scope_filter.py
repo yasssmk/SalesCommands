@@ -24,6 +24,7 @@ from django.utils import timezone
 from app_modules.activities.constants import ActivityStatus, ActivityType
 from app_modules.activities.models import Activity
 from app_modules.accounts.models import CompanyAccount
+from app_modules.territories.models import Territory
 from permissions.compat import AuthContext
 from permissions.scope_filter import apply_role_scope
 
@@ -221,3 +222,84 @@ class TestDivergenceGuardrail:
             auth_ctx=_ctx(ae_user, client_account_a),
         )
         assert sdr_activity.id in set(qs_shared.values_list('id', flat=True))
+
+
+# =============================================================================
+# TERRITORY OWNER SCOPE — the guardrail for the OWNERSHIP_MAP['territories'] fix
+# (owner_user='owner' / created_by='created_by', bare names). This locks the
+# behaviour independently of KPI 4, the same way the C6 tests above lock
+# account-owner inheritance: if the map ever regresses to the '_id' attnames,
+# _is_valid_field rejects them and mine/team silently returns none() — caught
+# here.
+# =============================================================================
+
+@pytest.fixture
+def owner_a(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(
+        email='terr-owner-a@tenant-a.test', client_account=client_account_a,
+        role=role_individual_a, is_active=True,
+    )
+
+
+@pytest.fixture
+def owner_b(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(
+        email='terr-owner-b@tenant-a.test', client_account=client_account_a,
+        role=role_individual_a, is_active=True,
+    )
+
+
+def _mk_territory(owner, client_account, name):
+    t = Territory(name=name, type='ACCOUNT', owner=owner, filter_definition={})
+    t.save(user=owner, client_id=client_account.id)
+    return t
+
+
+def _terr_qs(client_account):
+    return Territory.objects.filter(client_id=client_account.id)
+
+
+@pytest.mark.django_db
+class TestTerritoryOwnerScope:
+
+    def test_mine_includes_own_territory(self, owner_a, client_account_a):
+        t_a = _mk_territory(owner_a, client_account_a, 'Terr A')
+        qs = apply_role_scope(
+            _terr_qs(client_account_a), module='territories', scope='mine',
+            auth_ctx=_ctx(owner_a, client_account_a),
+        )
+        assert t_a.id in set(qs.values_list('id', flat=True))
+
+    def test_mine_excludes_other_owners_territory(self, owner_a, owner_b, client_account_a):
+        t_a = _mk_territory(owner_a, client_account_a, 'Terr A')
+        t_b = _mk_territory(owner_b, client_account_a, 'Terr B')
+        qs = apply_role_scope(
+            _terr_qs(client_account_a), module='territories', scope='mine',
+            auth_ctx=_ctx(owner_a, client_account_a),
+        )
+        ids = set(qs.values_list('id', flat=True))
+        assert t_a.id in ids          # owner sees their own
+        assert t_b.id not in ids      # NOT another owner's
+
+    def test_mine_is_not_empty_regression_guard(self, owner_a, owner_b, client_account_a):
+        """If OWNERSHIP_MAP['territories'] regressed to '_id' attnames, mine
+        would resolve no valid ownership field and return none(). Assert the
+        owner actually gets a non-empty scoped queryset."""
+        _mk_territory(owner_a, client_account_a, 'Terr A')
+        _mk_territory(owner_b, client_account_a, 'Terr B')
+        qs = apply_role_scope(
+            _terr_qs(client_account_a), module='territories', scope='mine',
+            auth_ctx=_ctx(owner_a, client_account_a),
+        )
+        assert qs.count() == 1  # exactly the owner's one — not 0 (none-bug), not 2 (all)
+
+    def test_client_scope_sees_all_territories(self, owner_a, owner_b, client_account_a):
+        _mk_territory(owner_a, client_account_a, 'Terr A')
+        _mk_territory(owner_b, client_account_a, 'Terr B')
+        qs = apply_role_scope(
+            _terr_qs(client_account_a), module='territories', scope='client',
+            auth_ctx=_ctx(owner_a, client_account_a),
+        )
+        assert qs.count() == 2  # client scope = whole tenant, no owner filter
