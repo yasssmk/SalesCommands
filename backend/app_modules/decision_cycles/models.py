@@ -6,6 +6,8 @@ DecisionCycle: Container for a buyer-seller decision process
 DecisionStep: Individual decision/validation step within a cycle
 """
 
+from decimal import Decimal
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
@@ -848,6 +850,14 @@ class DealProduct(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Overrides the catalog default_unit_price when set.'),
     )
 
+    discount_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_('Discount %'),
+        help_text=_('Percentage discount applied to this line (0–100).'),
+    )
+
     notes = models.TextField(
         blank=True,
         default='',
@@ -874,7 +884,11 @@ class DealProduct(ModuleBaseModel, ClientScopeManager.ModelMixin):
             price = self.product_catalog_entry.default_unit_price
         if price is None:
             return 0
-        return self.quantity * price
+        # Decimal arithmetic throughout — note Decimal('0.00') is falsy, so
+        # guard with an explicit Decimal to avoid float contamination.
+        discount = self.discount_percent if self.discount_percent is not None else Decimal('0')
+        discount_factor = Decimal('1') - discount / Decimal('100')
+        return self.quantity * price * discount_factor
 
 
 class ManagerNote(ModuleBaseModel, ClientScopeManager.ModelMixin):
