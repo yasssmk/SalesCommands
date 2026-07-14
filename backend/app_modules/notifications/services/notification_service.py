@@ -10,7 +10,7 @@ need to notify several users call emit() once per recipient.
 
 import logging
 
-from ..models import Notification
+from ..models import Notification, NotificationResponseStatus
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,15 @@ class NotificationService:
         if actor_id is not None and str(recipient_id) == str(actor_id):
             return None
 
+        # Actionable categories (E2 invitation, E3 handoff) start PENDING;
+        # informative ones (E1/E4) stay null. Driven by the model's declared
+        # ACTIONABLE_CATEGORIES so this needs no change per new category.
+        response_status = (
+            NotificationResponseStatus.PENDING
+            if category in Notification.ACTIONABLE_CATEGORIES
+            else None
+        )
+
         notification = Notification(
             recipient_id=recipient_id,
             category=category,
@@ -74,6 +83,7 @@ class NotificationService:
             related_object_type=related_object_type,
             related_object_id=related_object_id,
             payload=payload if payload is not None else {},
+            response_status=response_status,
         )
         # Only a real user instance can set the created_by audit field;
         # an actor passed as a bare id is used solely for the guard above.

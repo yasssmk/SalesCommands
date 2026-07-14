@@ -16,10 +16,22 @@ from end_users.models import User
 
 class NotificationCategory(models.TextChoices):
     """Category (machine key) driving frontend icon and deep-link routing."""
-    MANAGER_NOTE = 'MANAGER_NOTE', _('Manager note added')
-    ACTIVITY_INVITATION = 'ACTIVITY_INVITATION', _('Activity invitation')
-    DECISION_CYCLE_CREATED = 'DECISION_CYCLE_CREATED', _('Decision cycle created')
-    UNKNOWN_TECH_DETECTED = 'UNKNOWN_TECH_DETECTED', _('Unknown technology detected')
+    MANAGER_NOTE = 'MANAGER_NOTE', _('Manager note added')                 # E1
+    ACTIVITY_INVITATION = 'ACTIVITY_INVITATION', _('Activity invitation')   # E2
+    DECISION_CYCLE_CREATED = 'DECISION_CYCLE_CREATED', _('Decision cycle created')  # E3
+    UNKNOWN_TECH_DETECTED = 'UNKNOWN_TECH_DETECTED', _('Unknown technology detected')  # E4
+
+
+class NotificationResponseStatus(models.TextChoices):
+    """Response state for ACTIONABLE notifications (E2 invitation, E3 handoff).
+
+    null (no value) marks an INFORMATIVE notification (E1 manager note,
+    E4 unknown tech) that carries no action. A non-null value marks an
+    actionable notification and tracks the recipient's response.
+    """
+    PENDING = 'PENDING', _('Pending')
+    ACCEPTED = 'ACCEPTED', _('Accepted')
+    DECLINED = 'DECLINED', _('Declined')
 
 
 class Notification(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -106,6 +118,31 @@ class Notification(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Read At'),
         help_text=_('Timestamp the recipient read this notification; null = unread')
     )
+
+    # ==========================================================================
+    # RESPONSE STATE (actionable notifications only)
+    # ==========================================================================
+
+    response_status = models.CharField(
+        max_length=10,
+        choices=NotificationResponseStatus.choices,
+        blank=True,
+        null=True,
+        default=None,
+        verbose_name=_('Response Status'),
+        help_text=_(
+            'Response state for actionable notifications. null = informative '
+            '(E1/E4, no action); PENDING/ACCEPTED/DECLINED = actionable (E2/E3)'
+        )
+    )
+
+    # Categories whose notifications are ACTIONABLE — emitted as PENDING and
+    # tracked through the recipient's response. Declared here (not in the
+    # service) so adding an actionable category is a one-line change.
+    ACTIONABLE_CATEGORIES = frozenset({
+        NotificationCategory.ACTIVITY_INVITATION,      # E2 — invitation
+        NotificationCategory.DECISION_CYCLE_CREATED,   # E3 — DC handoff
+    })
 
     # ==========================================================================
     # META & METHODS
