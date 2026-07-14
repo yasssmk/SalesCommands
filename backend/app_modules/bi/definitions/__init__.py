@@ -14,6 +14,7 @@ from . import activities as _activities
 from . import campaigns as _campaigns
 from . import decision_cycles as _decision_cycles
 from . import leads as _leads
+from . import quotas as _quotas
 from . import territory as _territory
 
 # Add new definition modules here as KPIs are declared.
@@ -23,6 +24,7 @@ _MODULES = [
     _leads,
     _territory,
     _campaigns,
+    _quotas,
 ]
 
 
