@@ -117,9 +117,9 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     
     'accounts': {
         'client_account_fk': 'client_id',           # Account.client_id
-        'owner_user': 'account_owner_id',                   # Account.owner
-        'owner_team': 'account_owner__team_id',     # Via account_owner → team   
-        'created_by': '-',              # BaseModelApp.created_by
+        'owner_user': 'account_owner',              # CompanyAccount.account_owner (bare FK name — 'account_owner_id' attname is rejected by _is_valid_field, which matches _meta field names; consistent with territories/decision_cycles/activities)
+        'owner_team': 'account_owner__team_id',     # Via account_owner → team (traversal '__', already valid)
+        'created_by': '-',              # No created_by scope term for accounts
         'assigned_to_user': '-',                    # Use owner
         'account_fk': '-',                          # Self reference
     },

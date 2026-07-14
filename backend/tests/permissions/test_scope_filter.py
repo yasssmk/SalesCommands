@@ -380,3 +380,85 @@ class TestSalesQuotaOwnerScope:
         ids = set(scoped.values_list('id', flat=True))
         assert q_member.id in ids        # manager sees their team member's quota
         assert q_outsider.id not in ids  # NOT an unrelated user's quota
+
+
+# =============================================================================
+# ACCOUNT OWNER SCOPE — guardrail for the OWNERSHIP_MAP['accounts'] fix
+# (owner_user='account_owner', owner_team='account_owner__team_id'). CompanyAccount
+# is the MOST CENTRAL model: `account_owner_id` was the attname (rejected by
+# _is_valid_field) → mine returned none() (created_by/assigned are '-', so it
+# was the ONLY mine term). Same attname bug as territories/sales_quotas, locked
+# here independently. NOTE: this is distinct from the C6 tests above — those
+# assert account__account_owner_id traversal on OTHER modules (activities); this
+# asserts the accounts module's OWN owner scope.
+# =============================================================================
+
+def _mk_account(owner, client_account, name):
+    acc = CompanyAccount(company_name=name, has_buying_decision=True, account_owner=owner)
+    acc.save(user=owner, client_id=client_account.id)
+    return acc
+
+
+def _acc_qs(client_account):
+    return CompanyAccount.objects.filter(client_id=client_account.id)
+
+
+@pytest.fixture
+def acc_owner_a(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(email='acc-owner-a@tenant-a.test', client_account=client_account_a,
+                               role=role_individual_a, is_active=True)
+
+
+@pytest.fixture
+def acc_owner_b(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(email='acc-owner-b@tenant-a.test', client_account=client_account_a,
+                               role=role_individual_a, is_active=True)
+
+
+@pytest.mark.django_db
+class TestAccountOwnerScope:
+
+    def test_mine_sees_own_account_not_others(self, acc_owner_a, acc_owner_b, client_account_a):
+        acc_a = _mk_account(acc_owner_a, client_account_a, 'Owner A Corp (scope)')
+        acc_b = _mk_account(acc_owner_b, client_account_a, 'Owner B Corp (scope)')
+        scoped = apply_role_scope(
+            _acc_qs(client_account_a), module='accounts', scope='mine',
+            auth_ctx=_ctx(acc_owner_a, client_account_a),
+        )
+        ids = set(scoped.values_list('id', flat=True))
+        assert acc_a.id in ids          # owner sees their own account
+        assert acc_b.id not in ids      # NOT another owner's account
+        assert scoped.count() == 1      # non-empty regression guard (not 0=none-bug, not 2=all)
+
+    def test_manager_team_scope_sees_members_account(self, client_account_a, role_individual_a):
+        from end_users.models import User, Team
+
+        manager = User.objects.create(email='acc-mgr@tenant-a.test', client_account=client_account_a,
+                                      role=role_individual_a, is_active=True)
+        team = Team.objects.create(name='Team Acc', client_account=client_account_a, manager=manager)
+        member = User.objects.create(email='acc-member@tenant-a.test', client_account=client_account_a,
+                                     role=role_individual_a, is_active=True, team=team)
+        outsider = User.objects.create(email='acc-out@tenant-a.test', client_account=client_account_a,
+                                       role=role_individual_a, is_active=True)
+
+        acc_member = _mk_account(member, client_account_a, 'Member Corp (scope)')
+        acc_outsider = _mk_account(outsider, client_account_a, 'Outsider Corp (scope)')
+
+        scoped = apply_role_scope(
+            _acc_qs(client_account_a), module='accounts', scope='team',
+            auth_ctx=_ctx(manager, client_account_a),
+        )
+        ids = set(scoped.values_list('id', flat=True))
+        assert acc_member.id in ids        # manager sees their team member's account (account_owner__team_id)
+        assert acc_outsider.id not in ids  # NOT an unrelated owner's account
+
+    def test_client_scope_sees_all_accounts(self, acc_owner_a, acc_owner_b, client_account_a):
+        _mk_account(acc_owner_a, client_account_a, 'Owner A Corp (scope)')
+        _mk_account(acc_owner_b, client_account_a, 'Owner B Corp (scope)')
+        scoped = apply_role_scope(
+            _acc_qs(client_account_a), module='accounts', scope='client',
+            auth_ctx=_ctx(acc_owner_a, client_account_a),
+        )
+        assert scoped.count() == 2  # client scope = whole tenant, no owner filter
