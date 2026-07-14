@@ -29,9 +29,10 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 
 from app_modules.bi.registry import KPIDefinition
-from app_modules.bi.types import OutputShape
+from app_modules.bi.types import KPIResult, OutputShape
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
+from permissions.scope_filter import apply_role_scope
 
 
 # Per-line value, in SQL: quantity × price × (1 − discount%/100).
@@ -108,8 +109,94 @@ dc_won_value = KPIDefinition(
 )
 
 
+# KPI 9 — Decision-cycle STATE (not a %): current stage + derived status
+# (STALLED visible) + next action + secondary "X/N stages validated".
+# Reuses the REPAIRED derived logic (CycleAggregationService.get_bulk_summaries
+# over prefetched steps+activities → StepStatusDerivationService.derive_bulk);
+# no new progression logic, no percentage.
+def _cycle_state(definition, auth_ctx, scope, period, params):
+    cycle_id = params.get('cycle_id')
+    if not cycle_id:
+        raise ValueError(f"KPI '{definition.key}' requires params['cycle_id']")
+    client_id = auth_ctx.client_id
+
+    from app_modules.decision_cycles.services.cycle_aggregation_service import (
+        CycleAggregationService,
+    )
+
+    # RULE 1 — scope the cycle via the shared primitive (owner + C6).
+    cycles = DecisionCycle.objects.filter(client_id=client_id)
+    cycles = apply_role_scope(
+        cycles, module='decision_cycles', scope=scope, auth_ctx=auth_ctx
+    )
+    # Prefetch steps + activities so the derived logic runs from cache.
+    cycle = cycles.prefetch_related('steps__activities').filter(id=cycle_id).first()
+    if cycle is None:
+        return KPIResult(
+            key=definition.key, shape=OutputShape.SCALAR, value=None, scope=scope,
+            meta={'cycle_id': str(cycle_id), 'reason': 'out_of_scope_or_missing'},
+        )
+
+    summary = CycleAggregationService().get_bulk_summaries([cycle]).get(cycle.id, {})
+    cycle_status = summary.get('cycle_status', 'NOT_STARTED')
+    progress = summary.get('progress', {})
+    validated = progress.get('validated_steps', 0)
+    total = progress.get('total_steps', 0)
+    current_order = progress.get('current_step_order')
+    current_name = progress.get('current_step_name')
+
+    current_stage = None
+    if current_order is not None:
+        current_step = next(
+            (s for s in cycle.steps.all() if s.order == current_order), None
+        )
+        current_stage = current_step.stage if current_step else None
+
+    # Next action — the motivation lever, esp. when STALLED (act to unblock).
+    if cycle_status == 'STALLED':
+        next_action = 'Act: close the deal or define the next step'
+    elif cycle_status == 'OVERDUE':
+        next_action = 'Overdue — act on the current step now'
+    elif current_name:
+        next_action = f'Advance: {current_name}'
+    else:
+        next_action = None
+
+    return KPIResult(
+        key=definition.key, shape=OutputShape.SCALAR, value=cycle_status, scope=scope,
+        meta={
+            'cycle_id': str(cycle_id),
+            'cycle_status': cycle_status,        # derived — STALLED is visible
+            'current_stage': current_stage,
+            'current_step_name': current_name,
+            'current_step_order': current_order,
+            'next_action': next_action,
+            'validated_steps': validated,        # the "X"
+            'total_steps': total,                # the "N" (X/N stages validated)
+        },
+    )
+
+
+# KPI 9 — decision cycle state (custom compute; param cycle_id). No percentage.
+dc_cycle_state = KPIDefinition(
+    key='dc_cycle_state',
+    label='Decision cycle state',
+    scope_module='decision_cycles',
+    output_shape=OutputShape.SCALAR,
+    allowed_scopes=('mine', 'team', 'client'),
+    cache_tags=('decision_cycles', 'activities'),
+    invalidation_sources=(
+        'decision_cycles.DecisionCycle',
+        'decision_cycles.DecisionStep',
+        'module_activities.Activity',
+    ),
+    compute_fn=_cycle_state,
+)
+
+
 KPIS = [
     dc_cycles_by_outcome,
     dc_pipeline_value,
     dc_won_value,
+    dc_cycle_state,
 ]
