@@ -208,8 +208,22 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     @property
     def validated_steps_count(self):
-        """Return number of validated steps."""
-        return self.steps.filter(status=DecisionStepStatus.VALIDATED).count()
+        """Number of VALIDATED steps, from the DERIVED status (never the stale
+        stored `DecisionStep.status` column, which is only ever NOT_STARTED).
+
+        Costs ~2 queries per cycle (steps + activities prefetch) so derive_bulk
+        reads activities from cache; bounded per paginated page.
+        """
+        from .services.step_status_derivation_service import StepStatusDerivationService
+
+        steps = list(self.steps.prefetch_related('activities').all())
+        if not steps:
+            return 0
+        derived = StepStatusDerivationService().derive_bulk(steps)
+        return sum(
+            1 for st in derived.values()
+            if st.get('status') == DecisionStepStatus.VALIDATED
+        )
     
     # ==========================================================================
     # METHODS

@@ -191,11 +191,14 @@ class StepStatusDerivationService:
         Core status derivation logic.
 
         Priority:
-        1. OVERDUE — step deadline passed OR any PLANNED activity overdue
-        2. VALIDATED / STALLED — all completed, no planned in this step:
+        1. DONE (VALIDATED / STALLED) — all activities completed, none planned in
+           this step. Checked BEFORE overdue so a completed step never flips to
+           OVERDUE (a past expected_end on a done step is irrelevant — BUG 4):
            a. PLANNED exists elsewhere in cycle → VALIDATED (cycle still moving)
            b. No PLANNED in cycle + last completed step → STALLED (deal dormant)
            c. No PLANNED in cycle + not last completed step → VALIDATED
+        2. OVERDUE — step deadline passed OR any PLANNED activity overdue
+           (only reachable when the step still has outstanding/planned work)
         3. IN_PROGRESS — at least 1 PLANNED activity exists
         4. NOT_STARTED — no activities at all
         """
@@ -209,11 +212,9 @@ class StepStatusDerivationService:
         planned = [a for a in non_cancelled if a.status == 'PLANNED']
         completed = [a for a in non_cancelled if a.status == 'COMPLETED']
 
-        # Rule 1 — OVERDUE
-        if self._is_step_overdue(step, planned, today):
-            return DecisionStepStatus.OVERDUE
-
-        # Rule 2 — All completed, no planned in THIS step
+        # Rule 1 — DONE: all completed, no planned in THIS step (VALIDATED/STALLED).
+        # BUG 4 fix: evaluated BEFORE overdue so a completed step is never OVERDUE.
+        # STALLED semantics unchanged (intentional motivation lever — kept).
         if completed and not planned:
             if has_planned_in_cycle:
                 return DecisionStepStatus.VALIDATED
@@ -221,6 +222,10 @@ class StepStatusDerivationService:
             if is_last_completed_step:
                 return DecisionStepStatus.STALLED
             return DecisionStepStatus.VALIDATED
+
+        # Rule 2 — OVERDUE (only when outstanding/planned work is past due)
+        if self._is_step_overdue(step, planned, today):
+            return DecisionStepStatus.OVERDUE
 
         # Rule 3 — Has planned activities
         if planned:
