@@ -166,6 +166,9 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         indexes = [
             models.Index(fields=['account'], name='dc_account_idx'),
             models.Index(fields=['is_active'], name='dc_active_idx'),
+            # C5 perf — DC counts by outcome + won-value in a period. outcome
+            # first (equality/group-by), outcome_date second (range window).
+            models.Index(fields=['outcome', 'outcome_date'], name='dc_outcome_date_idx'),
         ]
     
     def __str__(self):

@@ -159,6 +159,14 @@ class Notification(ModuleBaseModel, ClientScopeManager.ModelMixin):
             models.Index(fields=['client_id'], name='module_notif_client_idx'),
             models.Index(fields=['recipient_id', 'client_id'], name='module_notif_recip_cli_idx'),
             models.Index(fields=['recipient_id', 'read_at'], name='module_notif_recip_read_idx'),
+            # C5 perf — serves the KPI 1 todo invited-path EXISTS
+            # (recipient=me, response_status=ACCEPTED, related_object_id=<activity>).
+            # recipient_id leads (always fixed to one user), response_status
+            # narrows to ACCEPTED, related_object_id is the correlated join key.
+            models.Index(
+                fields=['recipient_id', 'response_status', 'related_object_id'],
+                name='module_notif_todo_exists_idx',
+            ),
         ]
 
     def __str__(self):
