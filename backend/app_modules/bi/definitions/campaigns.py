@@ -24,9 +24,14 @@ from django.db.models import Count, Q
 
 from app_modules.bi.registry import KPIDefinition
 from app_modules.bi.types import KPIResult, OutputShape
-from app_modules.campaigns.constants import CampaignAccountStatus
+from app_modules.campaigns.constants import (
+    CampaignAccountStatus,
+    FINAL_ACCOUNT_STATES,
+    FINAL_CONTACT_STATES,
+)
 from app_modules.campaigns.models.campaign import Campaign
 from app_modules.campaigns.models.campaign_account import CampaignAccount
+from app_modules.campaigns.models.campaign_contact import CampaignContact
 from app_modules.campaigns.models.campaign_objective import CampaignObjective
 from permissions.scope_filter import apply_role_scope
 
@@ -110,6 +115,83 @@ campaign_progress = KPIDefinition(
 )
 
 
+def _campaign_coverage(definition, auth_ctx, scope, period, params):
+    """KPI 3 — campaign coverage = still-active targets / total targets.
+
+    Primary level = CampaignContact (what the UI/TargetsTab calls a target);
+    secondary level = CampaignAccount (consistent with the existing dashboard's
+    account-level completion). "Active" = status NOT in the FINAL set.
+    """
+    campaign_id = params.get('campaign_id')
+    if not campaign_id:
+        raise ValueError(f"KPI '{definition.key}' requires params['campaign_id']")
+    client_id = auth_ctx.client_id
+
+    # RULE 1 — scope the CAMPAIGN (owner + executor) via the shared primitive.
+    campaigns = Campaign.objects.filter(client_id=client_id)
+    campaigns = apply_role_scope(
+        campaigns, module='campaigns', scope=scope, auth_ctx=auth_ctx
+    )
+    campaign = campaigns.filter(id=campaign_id).first()             # query 1
+    if campaign is None:
+        return KPIResult(
+            key=definition.key, shape=OutputShape.SCALAR, value=None, scope=scope,
+            meta={'campaign_id': str(campaign_id),
+                  'reason': 'out_of_scope_or_missing'},
+        )
+
+    # Contact level (primary) — one grouped aggregate.
+    contacts = CampaignContact.objects.filter(
+        campaign_account__campaign=campaign
+    ).aggregate(
+        total=Count('id'),
+        active=Count('id', filter=~Q(status__in=FINAL_CONTACT_STATES)),
+    )                                                              # query 2
+
+    # Account level (secondary) — one grouped aggregate.
+    accounts = CampaignAccount.objects.filter(campaign=campaign).aggregate(
+        total=Count('id'),
+        active=Count('id', filter=~Q(status__in=FINAL_ACCOUNT_STATES)),
+    )                                                              # query 3
+
+    def _cov(active, total):
+        return round((active / total) * 100, 1) if total else 0.0
+
+    c_total, c_active = contacts['total'] or 0, contacts['active'] or 0
+    a_total, a_active = accounts['total'] or 0, accounts['active'] or 0
+
+    return KPIResult(
+        key=definition.key, shape=OutputShape.SCALAR,
+        value=_cov(c_active, c_total),  # headline = contact-level coverage
+        scope=scope,
+        meta={
+            'campaign_id': str(campaign_id),
+            'contacts': {'total': c_total, 'active': c_active,
+                         'coverage_pct': _cov(c_active, c_total)},
+            'accounts': {'total': a_total, 'active': a_active,
+                         'coverage_pct': _cov(a_active, a_total)},
+        },
+    )
+
+
+# KPI 3 — campaign coverage (custom compute; param campaign_id).
+campaign_coverage = KPIDefinition(
+    key='campaign_coverage',
+    label='Campaign coverage (active targets / total)',
+    scope_module='campaigns',
+    output_shape=OutputShape.SCALAR,
+    allowed_scopes=('mine', 'team', 'client'),
+    cache_tags=('campaigns',),
+    invalidation_sources=(
+        'module_campaigns.Campaign',
+        'module_campaigns.CampaignAccount',
+        'module_campaigns.CampaignContact',
+    ),
+    compute_fn=_campaign_coverage,
+)
+
+
 KPIS = [
     campaign_progress,
+    campaign_coverage,
 ]
