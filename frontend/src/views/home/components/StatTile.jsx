@@ -11,11 +11,21 @@ import MainCard from 'components/MainCard';
 
 /**
  * A single "smallest-number" tile: a title, a large count, an optional caption,
- * and a leading @ant-design icon. Used by the todo block.
+ * and a leading @ant-design icon. When `onClick` is given it acts as a filter
+ * button — clickable, and outlined in its color when `active`.
  */
-export default function StatTile({ title, count, caption, color = 'primary', icon = null }) {
+export default function StatTile({ title, count, caption, color = 'primary', icon = null, onClick, active = false }) {
+  const clickable = typeof onClick === 'function';
   return (
-    <MainCard contentSX={{ p: 2 }}>
+    <MainCard
+      contentSX={{ p: 2 }}
+      onClick={onClick}
+      sx={{
+        ...(clickable && { cursor: 'pointer', transition: 'box-shadow .15s ease' }),
+        ...(clickable && !active && { '&:hover': { boxShadow: 2 } }),
+        ...(active && { borderColor: `${color}.main`, borderWidth: 2, boxShadow: 3 }),
+      }}
+    >
       <Stack spacing={0.75}>
         <Stack direction="row" spacing={1} alignItems="center">
           {icon}
@@ -42,4 +52,6 @@ StatTile.propTypes = {
   caption: PropTypes.string,
   color: PropTypes.string,
   icon: PropTypes.node,
+  onClick: PropTypes.func,
+  active: PropTypes.bool,
 };

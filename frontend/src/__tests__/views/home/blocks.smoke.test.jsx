@@ -4,16 +4,17 @@
 // KPI-shaped data, and apply the goal-gradient framing ("only X left").
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 // MainCard pulls a next/font chain (via Highlighter/theme-config) that jsdom
-// can't evaluate; stub it, rendering its title as text so titles stay assertable.
+// can't evaluate; stub it, rendering its title as text and forwarding onClick
+// so titles stay assertable and clickable tiles work.
 vi.mock('next/font/google', () => ({
   Public_Sans: () => ({ className: 'mock-public-sans', style: { fontFamily: 'mock' } }),
 }));
 vi.mock('components/MainCard', () => ({
-  default: ({ children, title }) => (
-    <div data-testid="main-card">
+  default: ({ children, title, onClick }) => (
+    <div data-testid="main-card" onClick={onClick}>
       {title ? <div>{title}</div> : null}
       {children}
     </div>
@@ -27,17 +28,27 @@ import QuotaBlock from 'views/home/components/QuotaBlock';
 afterEach(() => cleanup());
 
 describe('TodoBlock', () => {
-  it('renders the todo buckets', () => {
-    render(<TodoBlock value={{ today: 2, overdue: 1, upcoming: 3 }} loading={false} />);
-    expect(screen.getByText('Today')).toBeInTheDocument();
+  const windows = { overdue: 1, today: 2, this_week: 3, this_month: 5 };
+
+  it('renders the 4 window tiles', () => {
+    render(<TodoBlock windows={windows} activeFilter="today" onSelect={vi.fn()} loading={false} />);
     expect(screen.getByText('Overdue')).toBeInTheDocument();
+    expect(screen.getByText('Today')).toBeInTheDocument();
     expect(screen.getByText('This week')).toBeInTheDocument();
+    expect(screen.getByText('This month')).toBeInTheDocument();
   });
 
   it('frames zero-today as all clear', () => {
-    render(<TodoBlock value={{ today: 0, overdue: 0, upcoming: 0 }} loading={false} />);
-    expect(screen.getByText('All clear for today')).toBeInTheDocument();
+    render(<TodoBlock windows={{ overdue: 0, today: 0, this_week: 0, this_month: 0 }} activeFilter="today" onSelect={vi.fn()} loading={false} />);
+    expect(screen.getByText('all clear for today')).toBeInTheDocument();
     expect(screen.getByText('nothing overdue')).toBeInTheDocument();
+  });
+
+  it('clicking a tile selects that window', () => {
+    const onSelect = vi.fn();
+    render(<TodoBlock windows={windows} activeFilter="today" onSelect={onSelect} loading={false} />);
+    fireEvent.click(screen.getByText('Overdue'));
+    expect(onSelect).toHaveBeenCalledWith('overdue');
   });
 });
 

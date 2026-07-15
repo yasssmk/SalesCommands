@@ -16,8 +16,19 @@ vi.mock('components/MainCard', () => ({
 }));
 
 vi.mock('api/bi/kpi', () => ({
-  useKpi: () => ({ kpi: { value: { today: 2, overdue: 1, upcoming: 3 } }, kpiLoading: false, kpiError: null }),
   useKpiBatch: () => ({ results: [], resultsLoading: false, resultsError: null }),
+}));
+vi.mock('api/bi/todo', () => ({
+  useGetTodoWindows: () => ({
+    windows: { overdue: 1, today: 2, this_week: 3, this_month: 5 },
+    windowsLoading: false,
+    windowsError: null,
+  }),
+  TODO_WINDOWS: { OVERDUE: 'overdue', TODAY: 'today', THIS_WEEK: 'this_week', THIS_MONTH: 'this_month' },
+}));
+// Stub the table (pulls ReusableTable/TanStack) so this test isolates the block wiring.
+vi.mock('views/home/components/RepActivityTable', () => ({
+  default: () => <div data-testid="rep-activity-table" />,
 }));
 vi.mock('api/campaigns/campaigns', () => ({ useGetMyCampaigns: () => ({ campaigns: [] }) }));
 vi.mock('api/territories/territories', () => ({ useGetTerritories: () => ({ territories: [], territoriesCount: 0 }) }));
@@ -34,8 +45,10 @@ describe('RepHome', () => {
     expect(screen.getByText('What I have to do')).toBeInTheDocument();
     expect(screen.getByText('My progress')).toBeInTheDocument();
     expect(screen.getByText('Where I am')).toBeInTheDocument();
-    // Todo value flowed into the block.
+    // Block a — window tiles + the activity table.
     expect(screen.getByText('Today')).toBeInTheDocument();
+    expect(screen.getByText('This month')).toBeInTheDocument();
+    expect(screen.getByTestId('rep-activity-table')).toBeInTheDocument();
     // Empty entity lists -> graceful empty states.
     expect(screen.getByText('No active campaigns.')).toBeInTheDocument();
     expect(screen.getByText('No active quota for this period.')).toBeInTheDocument();

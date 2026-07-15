@@ -6,14 +6,17 @@ import { useEffect, useMemo } from 'react';
 
 import Stack from '@mui/material/Stack';
 
-import { useKpi, useKpiBatch } from 'api/bi/kpi';
+import { useKpiBatch } from 'api/bi/kpi';
+import { useGetTodoWindows } from 'api/bi/todo';
 import { useGetMyCampaigns } from 'api/campaigns/campaigns';
 import { useGetTerritories } from 'api/territories/territories';
 import { useGetMyActiveQuotas } from 'api/quotas/quotas';
 import { displayErrorSnackbar } from 'utils/displayError';
+import useLocalStorage from 'hooks/useLocalStorage';
 
 import Section from './components/Section';
 import TodoBlock from './components/TodoBlock';
+import RepActivityTable from './components/RepActivityTable';
 import ProgressBlock from './components/ProgressBlock';
 import QuotaBlock from './components/QuotaBlock';
 
@@ -28,10 +31,9 @@ import QuotaBlock from './components/QuotaBlock';
  * lists are tenant-wide by design), then fires ONE batch of parameterized KPIs.
  */
 export default function RepHome() {
-  // Block a — standalone, paints first.
-  const { kpi: todo, kpiLoading: todoLoading, kpiError: todoError } = useKpi('todo_my_activities', {
-    scope: 'mine',
-  });
+  // Block a — window counts drive the table below; the active filter persists.
+  const [todoFilter, setTodoFilter] = useLocalStorage('repTodoFilter', 'today');
+  const { windows, windowsLoading, windowsError } = useGetTodoWindows({ scope: 'mine' });
 
   // Entity resolution (mine paths).
   const { campaigns } = useGetMyCampaigns({ filters: { status: 'ACTIVE' } });
@@ -66,16 +68,24 @@ export default function RepHome() {
 
   // Surface fetch errors via the shared snackbar (never a silent blank block).
   useEffect(() => {
-    if (todoError) displayErrorSnackbar(todoError);
-  }, [todoError]);
+    if (windowsError) displayErrorSnackbar(windowsError);
+  }, [windowsError]);
   useEffect(() => {
     if (resultsError) displayErrorSnackbar(resultsError);
   }, [resultsError]);
 
   return (
     <Stack spacing={4} sx={{ py: 1 }}>
-      <Section title="What I have to do" subtitle="Today, overdue and this week — accepted invitations included.">
-        <TodoBlock value={todo?.value} loading={todoLoading} />
+      <Section title="What I have to do" subtitle="Pick a window — overdue, today, this week, this month. Accepted invitations included.">
+        <Stack spacing={2}>
+          <TodoBlock
+            windows={windows}
+            activeFilter={todoFilter}
+            onSelect={setTodoFilter}
+            loading={windowsLoading}
+          />
+          <RepActivityTable window={todoFilter} scope="mine" />
+        </Stack>
       </Section>
 
       <Section title="My progress" subtitle="Where your active campaigns and territories stand.">
