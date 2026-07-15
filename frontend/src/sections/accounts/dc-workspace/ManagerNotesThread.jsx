@@ -202,6 +202,12 @@ export default function ManagerNotesThread({ cycleId }) {
         maxHeight: 600,
       }}
     >
+      {/* Title lives here (not in OverviewTab) so it never orphans above an
+          empty body: the 403 early-return above skips it entirely. */}
+      <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
+        Coaching Notes
+      </Typography>
+
       {/* Thread */}
       <Box
         sx={{
