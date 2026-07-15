@@ -16,8 +16,12 @@ import PersonTaskRow from './PersonTaskRow';
  * Manager bloc 1: each team member's pending tasks (today + overdue), by name,
  * overdue-first. People with nothing pending are omitted — the manager sees who
  * still has work, not a roll-call. Empty means the team is caught up.
+ *
+ * Each row is a drill-down: clicking it calls `onSelectPerson(id)` to filter the
+ * team activity table on that person (`selectedPersonId` highlights the active
+ * one); clicking the active row again clears the filter.
  */
-export default function TeamTodoBlock({ people = [], loading = false }) {
+export default function TeamTodoBlock({ people = [], loading = false, onSelectPerson, selectedPersonId = null }) {
   const max = people.reduce((m, p) => Math.max(m, p.total || 0), 0);
 
   return (
@@ -35,7 +39,15 @@ export default function TeamTodoBlock({ people = [], loading = false }) {
       ) : (
         <Stack>
           {people.map((p) => (
-            <PersonTaskRow key={p.id} name={p.name} overdue={p.overdue} total={p.total} max={max} />
+            <PersonTaskRow
+              key={p.id}
+              name={p.name}
+              overdue={p.overdue}
+              total={p.total}
+              max={max}
+              selected={String(p.id) === String(selectedPersonId)}
+              onSelect={onSelectPerson ? () => onSelectPerson(p.id) : undefined}
+            />
           ))}
         </Stack>
       )}
@@ -46,4 +58,6 @@ export default function TeamTodoBlock({ people = [], loading = false }) {
 TeamTodoBlock.propTypes = {
   people: PropTypes.array,
   loading: PropTypes.bool,
+  onSelectPerson: PropTypes.func,
+  selectedPersonId: PropTypes.string,
 };

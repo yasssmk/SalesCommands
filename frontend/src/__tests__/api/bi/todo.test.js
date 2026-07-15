@@ -16,6 +16,7 @@ import {
   useGetTodoWindows,
   useGetTodoActivities,
   buildTodoUrl,
+  buildTeamTodoUrl,
   TODO_WINDOWS,
 } from 'api/bi/todo';
 
@@ -32,6 +33,17 @@ describe('buildTodoUrl', () => {
   it('appends scope, window, page, page_size', () => {
     expect(buildTodoUrl({ scope: 'mine', window: 'today', page: 2, pageSize: 25 })).toBe(
       '/bi/todo/?scope=mine&window=today&page=2&page_size=25',
+    );
+  });
+});
+
+describe('buildTeamTodoUrl', () => {
+  it('builds the base team url with no options', () => {
+    expect(buildTeamTodoUrl()).toBe('/bi/todo/team/');
+  });
+  it('appends scope, team, owner, page, page_size', () => {
+    expect(buildTeamTodoUrl({ scope: 'team', team: 't1', owner: 'u9', page: 2, pageSize: 25 })).toBe(
+      '/bi/todo/team/?scope=team&team=t1&owner=u9&page=2&page_size=25',
     );
   });
 });

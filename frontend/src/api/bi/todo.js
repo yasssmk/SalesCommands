@@ -18,6 +18,7 @@ export const TODO_WINDOWS = {
 
 export const endpoints = {
   todo: '/bi/todo/',
+  teamTodo: '/bi/todo/team/',
 };
 
 /**
@@ -62,6 +63,58 @@ export function useGetTodoActivities(options = {}) {
   const url = useMemo(
     () => buildTodoUrl({ scope, window, page, pageSize }),
     [scope, window, page, pageSize],
+  );
+
+  const swrKey = useMemo(
+    () => (enabled ? tenantKey(url, tenantId) : null),
+    [enabled, url, tenantId],
+  );
+
+  const { data, isLoading, error, isValidating, mutate } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 5000,
+  });
+
+  return useMemo(
+    () => ({
+      activities: data?.data?.results || data?.results || [],
+      activitiesCount: data?.data?.count || data?.count || 0,
+      activitiesLoading: isLoading,
+      activitiesError: error,
+      activitiesValidating: isValidating,
+      mutateActivities: mutate,
+      swrKey,
+    }),
+    [data, isLoading, error, isValidating, mutate, swrKey],
+  );
+}
+
+export function buildTeamTodoUrl({ scope, team, owner, page, pageSize } = {}) {
+  const qs = new URLSearchParams();
+  if (scope) qs.append('scope', scope);
+  if (team) qs.append('team', team);
+  if (owner) qs.append('owner', owner);
+  if (page) qs.append('page', page);
+  if (pageSize) qs.append('page_size', pageSize);
+  const q = qs.toString();
+  return q ? `${endpoints.teamTodo}?${q}` : endpoints.teamTodo;
+}
+
+/**
+ * useGetTeamTodoActivities — the MANAGER view's team todo ROWS, paginated, from
+ * GET /bi/todo/team/. Same population as the todo_team_by_owner counts (open
+ * activities, role-scoped, no personal invited-accepted union); narrowable to a
+ * team subtree (team) and/or a single person (owner — the per-person drill-down
+ * behind clicking a name in bloc 1). Mirrors useGetTodoActivities' return shape.
+ */
+export function useGetTeamTodoActivities(options = {}) {
+  const { tenantId } = useAuth();
+  const { scope = 'team', team, owner, page = 1, pageSize = 10, enabled = true } = options;
+
+  const url = useMemo(
+    () => buildTeamTodoUrl({ scope, team, owner, page, pageSize }),
+    [scope, team, owner, page, pageSize],
   );
 
   const swrKey = useMemo(
