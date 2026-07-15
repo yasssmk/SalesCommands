@@ -1,8 +1,19 @@
+// frontend/src/app/(protected)/page.jsx
+
+import HomePage from 'views/home';
+
+// ==============================|| HOME PAGE ||============================== //
+
+/**
+ * Next.js App Router landing page (route "/").
+ * Role-aware Home, protected by AuthGuard (via the protected layout).
+ */
 export default function DashboardHome() {
-  return (
-    <div>
-      <h1>Dashboard Home - En construction</h1>
-      <p>Cette page utilisera DashboardLayout</p>
-    </div>
-  );
+  return <HomePage />;
 }
+
+// ==============================|| METADATA ||============================== //
+
+export const metadata = {
+  title: 'Home',
+};
