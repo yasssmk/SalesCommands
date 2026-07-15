@@ -26,7 +26,7 @@ class ContactFilter(django_filters.FilterSet):
     
     Supports:
     - Multi-value filters (comma-separated): influence_level
-    - Single value filters: account_id, standard_department_id
+    - Single value filters: account_id, standard_department
     - Boolean filters: opted_out, has_buying_authority, email_is_valid, phone_is_valid
     - Search filters: first_name, last_name, email, job_title
     """
@@ -36,7 +36,12 @@ class ContactFilter(django_filters.FilterSet):
     
     # Single value filters
     account_id = UUIDFilter(field_name='account_id')
-    standard_department_id = django_filters.NumberFilter(field_name='standard_department_id')
+    # TD-59: the query param is `standard_department` — the app-wide key used by
+    # territory filter_definitions and the contact serializer's nested field.
+    # The filter still resolves to the FK id column. (Previously exposed as
+    # `standard_department_id`, which no client sent -> the department filter was
+    # a silent no-op app-wide.)
+    standard_department = django_filters.NumberFilter(field_name='standard_department_id')
     # A contact has no owner of its own — "the contact's owner" means the
     # owner of the contact's company account. Used by CONTACT-type territories
     # filtered on "Company's Owner".
@@ -65,7 +70,7 @@ class ContactFilter(django_filters.FilterSet):
     class Meta:
         model = Contact
         fields = [
-            'account_id', 'account_owner_id', 'influence_level', 'standard_department_id',
+            'account_id', 'account_owner_id', 'influence_level', 'standard_department',
             'country', 'state', 'city',
             'opted_out', 'has_buying_authority', 'email_is_valid', 'phone_is_valid',
             'first_name', 'last_name', 'email', 'job_title', 'search'

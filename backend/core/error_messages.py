@@ -697,3 +697,5 @@ class OpportunityErrorMessages:
 class NotificationErrorMessages:
     """Notification specific error messages"""
     NOTIFICATION_NOT_FOUND = _("Notification not found or access denied")
+    NOTIFICATION_NOT_ACTIONABLE = _("This notification is informational and cannot be responded to")
+    INVALID_RESPONSE_STATUS = _("Invalid response status; expected ACCEPTED or DECLINED")

@@ -225,37 +225,39 @@ class SalesQuota(BaseModelApp, ClientScopeManager.ModelMixin):
 
     def get_current_progress(self) -> Dict[str, Any]:
         """
-        Méthode utilisée par les serializers pour récupérer les données de progression.
-        Utilise le UserPerformanceService existant.
+        Méthode utilisée par les serializers pour récupérer les données de
+        progression. Calculée sur app_modules (bi.quota), PLUS le legacy
+        UserPerformanceService.
         """
         try:
-            # Import ici pour éviter les dépendances circulaires
-            from ..services import UserPerformanceService
-            
-            # Récupérer les données de performance
-            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
-                user_id=self.user.id,
-                period_start=self.period_start,
-                period_end=self.period_end,
-                client_id=self.client_id
-            )
-            
-            # Extraire la valeur actuelle selon le target_type
-            current_value = self._extract_current_value_from_performance(performance_data)
-            
-            # Calculer les métriques
+            from app_modules.bi.quota import compute_quota_current_value
+
+            current_value = compute_quota_current_value(self)
             target_value = float(self.target_value)
+
+            # Unsupported target_type (leads_accepted, conversion_rate) -> not available.
+            if current_value is None:
+                return {
+                    'target_value': target_value,
+                    'current_value': None,
+                    'achievement_rate': None,
+                    'gap_value': target_value,
+                    'is_achieved': False,
+                    'available': False,
+                    'last_updated': timezone.now().isoformat()
+                }
+
             achievement_rate = (current_value / target_value * 100) if target_value > 0 else 0.0
-            
             return {
                 'target_value': target_value,
                 'current_value': current_value,
                 'achievement_rate': min(100.0, achievement_rate),
                 'gap_value': max(0.0, target_value - current_value),
                 'is_achieved': achievement_rate >= 100.0,
+                'available': True,
                 'last_updated': timezone.now().isoformat()
             }
-            
+
         except Exception as e:
             # Fallback sécurisé
             return {
@@ -264,6 +266,7 @@ class SalesQuota(BaseModelApp, ClientScopeManager.ModelMixin):
                 'achievement_rate': 0.0,
                 'gap_value': float(self.target_value),
                 'is_achieved': False,
+                'available': False,
                 'error': str(e),
                 'last_updated': timezone.now().isoformat()
             }
@@ -443,59 +446,35 @@ class SalesQuota(BaseModelApp, ClientScopeManager.ModelMixin):
     
     def get_current_value(self):
         """
-        Récupère la valeur actuelle pour ce quota via UserPerformanceService.
-        
+        Current value for this quota, computed on app_modules data
+        (DecisionCycle / Activity) via bi.quota — NOT the legacy
+        UserPerformanceService.
+
         Returns:
-            float: Valeur actuelle selon le type de quota
+            float | None: current value, or None when the target_type has no
+            clean app_modules source (leads_accepted, conversion_rate).
         """
-        try:
-            from end_users.services import UserPerformanceService
-            
-            # Récupérer les performances sur la période du quota
-            performance_data = UserPerformanceService.get_user_complete_performance_optimized(
-                user_id=self.user.id,
-                period_start=self.period_start,
-                period_end=min(self.period_end, date.today()),  # Ne pas dépasser aujourd'hui
-                client_id=self.client_id
-            )
-            
-            # Extraire la métrique selon le type de quota
-            if self.target_type == self.TargetType.CLOSED_WON:
-                return performance_data['opportunities']['won_value']
-            elif self.target_type == self.TargetType.PIPELINE:
-                return performance_data['opportunities']['pipeline_value']
-            elif self.target_type == self.TargetType.MEETINGS:
-                return performance_data['meetings']['completed_count']
-            elif self.target_type == self.TargetType.LEADS_ACCEPTED:
-                return performance_data['leads']['qualified_count']
-            elif self.target_type == self.TargetType.OPPORTUNITIES:
-                return performance_data['opportunities']['created_count']
-            elif self.target_type == self.TargetType.CONVERSION_RATE:
-                return performance_data['leads']['conversion_rate_percentage']
-            
-            return 0
-            
-        except Exception:
-            # Fallback gracieux en cas d'erreur
-            return 0
-    
+        from app_modules.bi.quota import compute_quota_current_value
+        return compute_quota_current_value(self)
+
     def get_progress_percentage(self):
         """
         Calcule le pourcentage de progression du quota.
-        
+
         Returns:
-            float: Pourcentage de progression (0-100)
+            float: Pourcentage de progression (0-100); 0.0 when the value is
+            not available (unsupported target_type).
         """
         try:
             current = self.get_current_value()
             target = float(self.target_value)
-            
-            if target == 0:
+
+            if current is None or target == 0:
                 return 0.0
-            
+
             progress = (current / target) * 100
             return min(100.0, progress)  # Plafonner à 100%
-            
+
         except Exception:
             return 0.0
     

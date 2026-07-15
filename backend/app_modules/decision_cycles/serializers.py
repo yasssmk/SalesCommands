@@ -333,9 +333,11 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     # Use timeline-optimized step serializer
     steps = DecisionStepTimelineSerializer(many=True, read_only=True)
     
-    # Annotated counts - use source to map from annotation names
+    # steps_count = correct total (annotation). validated_steps_count comes from
+    # the DERIVED progress (bulk context) — the stored-column annotation was
+    # permanently stale (~0) and contradicted progress.validated_steps.
     steps_count = serializers.IntegerField(source='_annotated_steps_count', read_only=True, default=0)
-    validated_steps_count = serializers.IntegerField(source='_annotated_validated_steps_count', read_only=True, default=0)
+    validated_steps_count = serializers.SerializerMethodField(read_only=True)
     
     # Cycle-level insights (from CycleAggregationService via context)
     cycle_status = serializers.SerializerMethodField(read_only=True)
@@ -420,6 +422,11 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             'current_step_order': None,
             'percentage': 0,
         })
+
+    def get_validated_steps_count(self, obj):
+        """DERIVED validated-step count (same source as progress.validated_steps)
+        — reads the bulk context, no extra query."""
+        return self._get_cycle_summary(obj).get('progress', {}).get('validated_steps', 0)
 
     def get_stalled_steps_count(self, obj):
         """Count of stalled steps. Reads from bulk context."""

@@ -16,6 +16,7 @@ def get_urlpatterns():
         NotificationListView,
         NotificationUnreadCountView,
         NotificationMarkReadView,
+        NotificationRespondView,
     )
 
     return [
@@ -28,6 +29,11 @@ def get_urlpatterns():
         # MARK READ
         # =====================================================================
         path('<uuid:pk>/read/', NotificationMarkReadView.as_view(), name='mark-read'),
+
+        # =====================================================================
+        # RESPOND (accept/decline an actionable notification)
+        # =====================================================================
+        path('<uuid:pk>/respond/', NotificationRespondView.as_view(), name='respond'),
 
         # =====================================================================
         # LIST

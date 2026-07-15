@@ -786,11 +786,8 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             'account', 'owner', 'updated_by'
         ).annotate(
             _annotated_steps_count=Count('steps', distinct=True),
-            _annotated_validated_steps_count=Count(
-                'steps',
-                filter=Q(steps__status='VALIDATED'),
-                distinct=True
-            )
+            # NOTE: validated_steps_count is now DERIVED (bulk context) in the
+            # timeline serializer — the stored-column annotation was stale (~0).
         ).prefetch_related(
             Prefetch('steps', queryset=steps_queryset),
             activities_prefetch

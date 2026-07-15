@@ -6,6 +6,8 @@ DecisionCycle: Container for a buyer-seller decision process
 DecisionStep: Individual decision/validation step within a cycle
 """
 
+from decimal import Decimal
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
@@ -164,6 +166,9 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         indexes = [
             models.Index(fields=['account'], name='dc_account_idx'),
             models.Index(fields=['is_active'], name='dc_active_idx'),
+            # C5 perf — DC counts by outcome + won-value in a period. outcome
+            # first (equality/group-by), outcome_date second (range window).
+            models.Index(fields=['outcome', 'outcome_date'], name='dc_outcome_date_idx'),
         ]
     
     def __str__(self):
@@ -206,8 +211,22 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     @property
     def validated_steps_count(self):
-        """Return number of validated steps."""
-        return self.steps.filter(status=DecisionStepStatus.VALIDATED).count()
+        """Number of VALIDATED steps, from the DERIVED status (never the stale
+        stored `DecisionStep.status` column, which is only ever NOT_STARTED).
+
+        Costs ~2 queries per cycle (steps + activities prefetch) so derive_bulk
+        reads activities from cache; bounded per paginated page.
+        """
+        from .services.step_status_derivation_service import StepStatusDerivationService
+
+        steps = list(self.steps.prefetch_related('activities').all())
+        if not steps:
+            return 0
+        derived = StepStatusDerivationService().derive_bulk(steps)
+        return sum(
+            1 for st in derived.values()
+            if st.get('status') == DecisionStepStatus.VALIDATED
+        )
     
     # ==========================================================================
     # METHODS
@@ -848,6 +867,14 @@ class DealProduct(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Overrides the catalog default_unit_price when set.'),
     )
 
+    discount_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name=_('Discount %'),
+        help_text=_('Percentage discount applied to this line (0–100).'),
+    )
+
     notes = models.TextField(
         blank=True,
         default='',
@@ -874,7 +901,11 @@ class DealProduct(ModuleBaseModel, ClientScopeManager.ModelMixin):
             price = self.product_catalog_entry.default_unit_price
         if price is None:
             return 0
-        return self.quantity * price
+        # Decimal arithmetic throughout — note Decimal('0.00') is falsy, so
+        # guard with an explicit Decimal to avoid float contamination.
+        discount = self.discount_percent if self.discount_percent is not None else Decimal('0')
+        discount_factor = Decimal('1') - discount / Decimal('100')
+        return self.quantity * price * discount_factor
 
 
 class ManagerNote(ModuleBaseModel, ClientScopeManager.ModelMixin):

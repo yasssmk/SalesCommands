@@ -12,13 +12,13 @@ from django.utils import timezone
 
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, ValidationError
 
 from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
 from core.error_messages import NotificationErrorMessages
 
-from ..models import Notification
+from ..models import Notification, NotificationResponseStatus
 from ..serializers import NotificationSerializer
 
 
@@ -102,6 +102,58 @@ class NotificationMarkReadView(BaseAPIView):
         # Idempotent: only flip on the first read.
         if notification.read_at is None:
             notification.read_at = timezone.now()
+            notification.save(user=request.user)
+
+        serializer = NotificationSerializer(notification, context={'request': request})
+        return Response({'success': True, 'data': serializer.data})
+
+
+class NotificationRespondView(BaseAPIView):
+    """
+    POST /notifications/{pk}/respond/ -> respond to an ACTIONABLE notification.
+
+    Body: {"response_status": "ACCEPTED" | "DECLINED"}.
+
+    Contract:
+      - Only the RECIPIENT can respond; another user's notification is a
+        scoped 404 (same isolation as mark-read).
+      - INFORMATIVE notifications (response_status is null, i.e. E1/E4) are
+        not actionable -> 400.
+      - Body must be ACCEPTED or DECLINED -> otherwise 400.
+      - Re-response is allowed: the recipient may change their mind
+        (ACCEPTED <-> DECLINED, or from PENDING) while the notification
+        stays actionable. Setting the same value again is an idempotent 200.
+        PENDING is the emission default and is not a user-selectable response.
+    """
+
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    entity_name = 'notification'
+
+    _ALLOWED_RESPONSES = (
+        NotificationResponseStatus.ACCEPTED,
+        NotificationResponseStatus.DECLINED,
+    )
+
+    def post(self, request, pk):
+        notification = self.filter_queryset_by_client(
+            Notification.objects.all()
+        ).filter(recipient=request.user, pk=pk).first()
+
+        if notification is None:
+            raise NotFound(NotificationErrorMessages.NOTIFICATION_NOT_FOUND)
+
+        # Informative notifications (null) carry no action to respond to.
+        if notification.response_status is None:
+            raise ValidationError(NotificationErrorMessages.NOTIFICATION_NOT_ACTIONABLE)
+
+        new_status = request.data.get('response_status')
+        if new_status not in self._ALLOWED_RESPONSES:
+            raise ValidationError(NotificationErrorMessages.INVALID_RESPONSE_STATUS)
+
+        # Idempotent: only write when the value actually changes.
+        if notification.response_status != new_status:
+            notification.response_status = new_status
             notification.save(user=request.user)
 
         serializer = NotificationSerializer(notification, context={'request': request})

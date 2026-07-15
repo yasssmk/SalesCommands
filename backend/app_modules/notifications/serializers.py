@@ -26,6 +26,7 @@ class NotificationSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             'related_object_id',
             'payload',
             'read_at',
+            'response_status',
             'created_at',
         ]
         read_only_fields = fields

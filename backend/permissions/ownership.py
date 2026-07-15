@@ -86,10 +86,10 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     
     'sales_quotas': {
         'client_account_fk': 'user.client_account_id',  # Via user
-        'owner_user': 'user_id',                    # SalesQuota.user
-        'owner_team': 'user.team_id',               # Via user's team
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
-        'assigned_to_user': 'user_id',              # Same as owner
+        'owner_user': 'user',                        # SalesQuota.user (bare field name — 'user_id' attname is rejected by ScopedQuerysetMixin._is_valid_field; consistent with decision_cycles/activities/territories)
+        'owner_team': 'user__team_id',               # Via user's team (traversal '__', not '.', so apply_role_scope can use it)
+        'created_by': 'created_by',                  # BaseModelApp.created_by (bare field name)
+        'assigned_to_user': 'user',                  # Same as owner (bare field name)
         'account_fk': '-',                           # Not applicable
     },
     
@@ -117,18 +117,18 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     
     'accounts': {
         'client_account_fk': 'client_id',           # Account.client_id
-        'owner_user': 'account_owner_id',                   # Account.owner
-        'owner_team': 'account_owner__team_id',     # Via account_owner → team   
-        'created_by': '-',              # BaseModelApp.created_by
+        'owner_user': 'account_owner',              # CompanyAccount.account_owner (bare FK name — 'account_owner_id' attname is rejected by _is_valid_field, which matches _meta field names; consistent with territories/decision_cycles/activities)
+        'owner_team': 'account_owner__team_id',     # Via account_owner → team (traversal '__', already valid)
+        'created_by': '-',              # No created_by scope term for accounts
         'assigned_to_user': '-',                    # Use owner
         'account_fk': '-',                          # Self reference
     },
 
     'territories': {
         'client_account_fk': 'client_id',           # Territory.client_id
-        'owner_user': 'owner_id',                   # Territory.owner
+        'owner_user': 'owner',                       # Territory.owner (bare field name — 'owner_id' is rejected by ScopedQuerysetMixin._is_valid_field, which matches _meta field names; consistent with decision_cycles/activities)
         'owner_team': 'owner__team_id',             # Via owner's team (manager can access team members' territories)
-        'created_by': 'created_by_id',              # BaseModel.created_by
+        'created_by': 'created_by',                  # ModuleBaseModel.created_by (bare field name)
         'assigned_to_user': '-',                    # Not applicable
         'account_fk': '-',                          # Not applicable
     },

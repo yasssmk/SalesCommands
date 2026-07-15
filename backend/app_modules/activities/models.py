@@ -393,6 +393,10 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
             ),
             models.Index(fields=['campaign'], name='act_campaign_idx'),
             models.Index(fields=['campaign_account'], name='act_camp_account_idx'),
+            # C5 perf — hot KPI filter/aggregate columns (territory coverage,
+            # completed-in-period, quota result).
+            models.Index(fields=['outcome'], name='act_outcome_idx'),
+            models.Index(fields=['completed_at'], name='act_completed_at_idx'),
         ]
     
     def __str__(self):
