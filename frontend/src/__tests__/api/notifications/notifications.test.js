@@ -177,6 +177,8 @@ describe('respondToNotification', () => {
     expect(api.post).toHaveBeenCalledWith(endpoints.respond('n1'), { response_status: 'ACCEPTED' });
     expect(result.success).toBe(true);
     expect(revalidateByPrefix).toHaveBeenCalledWith('/notifications/');
+    // Accepting/declining changes the BI todo — the Home must refresh too.
+    expect(revalidateByPrefix).toHaveBeenCalledWith('/bi/');
   });
 
   it('surfaces the error shape on failure without revalidating', async () => {

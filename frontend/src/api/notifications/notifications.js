@@ -188,6 +188,7 @@ export async function respondToNotification(notificationId, responseStatus) {
 
   if (result.success || result.status === 200) {
     revalidateByPrefix(NOTIFICATIONS_PREFIX);
+    revalidateByPrefix("/bi/"); // accepting an invitation changes the BI todo — refresh the Home
     return { success: true, data: result.data };
   }
 
