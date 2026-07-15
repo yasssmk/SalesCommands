@@ -157,6 +157,48 @@ todo_my_activities = KPIDefinition(
 )
 
 
+def _owner_labels(owner_ids):
+    """Resolve activity-owner ids to display names in ONE query.
+
+    Receives ONLY the ids present in the (already scope-filtered) breakdown, so
+    it never widens visibility beyond what the scope already returned. Mirrors
+    User.get_full_name(), falling back to the email when no name is set.
+    """
+    from end_users.models import User
+
+    labels = {}
+    for u in User.objects.filter(id__in=owner_ids).values(
+        'id', 'first_name', 'last_name', 'email'
+    ):
+        full = f"{(u['first_name'] or '').strip()} {(u['last_name'] or '').strip()}".strip()
+        labels[u['id']] = full or u['email']
+    return labels
+
+
+# Team todo, BY OWNER — the manager view's "were today's tasks done, WITH
+# NAMES". OPEN activities (PLANNED / ON_HOLD) grouped by owner (the responsible
+# person). This is ONE standard-pipeline BREAKDOWN declaration: the per-person
+# capability the manager view needs falls straight out of the registry via
+# dimension='owner' — no bespoke compute. Manager scopes only; owner ids are
+# resolved to names server-side via dimension_labels so the client never
+# resolves N ids (and never sees any name outside the scoped breakdown).
+todo_team_by_owner = KPIDefinition(
+    key='todo_team_by_owner',
+    label='Todo — team open activities by owner',
+    scope_module='activities',
+    source=lambda: Activity.objects.filter(status__in=TODO_STATUSES),
+    aggregation=Count('id'),
+    period_field=_TODO_PERIOD_FIELD,
+    output_shape=OutputShape.BREAKDOWN,
+    dimension='owner',
+    allowed_scopes=('team', 'client'),
+    dimension_labels=_owner_labels,
+    cache_tags=('activities',),
+    invalidation_sources=('module_activities.Activity',),
+)
+
+
 KPIS = [
     todo_my_activities,
+    todo_team_by_owner,
 ]

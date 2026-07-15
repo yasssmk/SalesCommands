@@ -83,6 +83,11 @@ dc_pipeline_value = KPIDefinition(
     period_field='created_at',           # STOCK — call with period=None (see module docstring)
     output_shape=OutputShape.SCALAR,
     allowed_scopes=('mine', 'team', 'client'),
+    # STOCK metric: the API default must NOT window it. default_period='all'
+    # makes the endpoint's "absent -> default_period" resolve to no period
+    # filter (correct by construction), instead of the fiscal-year default that
+    # would wrongly drop cycles created before this fiscal year.
+    default_period='all',
     cache_tags=('decision_cycles',),
     invalidation_sources=(
         'decision_cycles.DecisionCycle',

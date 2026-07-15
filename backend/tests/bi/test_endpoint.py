@@ -245,6 +245,33 @@ def test_batch_requires_requests_list(authed_api_a):
 
 
 # =============================================================================
+# END-TO-END — owner breakdown + server-side labels through the real endpoint
+# =============================================================================
+@pytest.mark.django_db
+def test_todo_team_by_owner_returns_owner_breakdown_with_labels(
+    authed_api_manager_a, manager_a, client_account_a, role_individual_a
+):
+    from end_users.models import Team, User
+
+    team = Team.objects.create(name='TX', client_account=client_account_a, manager=manager_a)
+    member = User.objects.create(
+        email='alice@a.test', client_account=client_account_a, role=role_individual_a,
+        is_active=True, first_name='Alice', last_name='Martin', team=team,
+    )
+    acc = _mk_account(member, client_account_a, 'M Corp')
+    _mk_activity(member, acc, client_account_a, 'a1')
+    _mk_activity(member, acc, client_account_a, 'a2')
+
+    resp = authed_api_manager_a.get('/bi/kpi/todo_team_by_owner/?scope=team&period=all')
+
+    assert resp.status_code == 200
+    data = resp.data['data']
+    assert data['shape'] == 'breakdown'
+    assert data['value'] == {str(member.id): 2}                     # by owner, JSON-safe keys
+    assert data['meta']['labels'] == {str(member.id): 'Alice Martin'}  # resolved server-side
+
+
+# =============================================================================
 # UNIT — serialize_result locks the breakdown/label form (no DB)
 # =============================================================================
 def test_serialize_result_stringifies_breakdown_keys_and_resolves_labels():
