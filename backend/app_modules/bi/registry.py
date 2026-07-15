@@ -88,6 +88,14 @@ class KPIDefinition:
     # MUST still scope via permissions.scope_filter.apply_role_scope and MUST
     # be query-bounded (no N+1).
     compute_fn: Optional[Callable[..., Any]] = None
+    # Optional resolver mapping the raw breakdown keys (FK ids, ALREADY
+    # scope-filtered by apply_role_scope) of a BREAKDOWN result to
+    # human-readable labels, in ONE query. Used by owner-dimensioned KPIs so
+    # the API can return names (e.g. {user_id: 'First Last'}) without the
+    # client resolving N ids — and without ever widening the query beyond the
+    # ids present in the (already scoped) breakdown.
+    # Signature: dimension_labels(ids: list) -> dict[id, str]. None = no labels.
+    dimension_labels: Optional[Callable[..., Any]] = None
 
     def __post_init__(self):
         if not self.key:
@@ -133,6 +141,10 @@ class KPIDefinition:
         if self.target is not None and not callable(self.target):
             raise TypeError(
                 f"KPIDefinition '{self.key}': target must be callable or None"
+            )
+        if self.dimension_labels is not None and not callable(self.dimension_labels):
+            raise TypeError(
+                f"KPIDefinition '{self.key}': dimension_labels must be callable or None"
             )
 
 
