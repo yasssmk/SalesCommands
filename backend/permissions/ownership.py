@@ -76,11 +76,11 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
     },
     
     'teams': {
-        'client_account_fk': 'organization.client_account_id',  # Via organization
-        'owner_user': 'manager_id',                 # Team.manager
+        'client_account_fk': 'client_account',       # Team.client_account (direct FK; the organization FK is commented out on the model)
+        'owner_user': 'manager',                     # Team.manager (bare FK name — 'manager_id' attname is rejected by _is_valid_field, which matches _meta field names; consistent with territories/accounts/sales_quotas)
         'owner_team': '-',                          # Teams don't belong to other teams
-        'created_by': 'created_by_id',              # BaseModelApp.created_by
-        'assigned_to_user': 'manager_id',           # Same as owner
+        'created_by': '-',                          # Team has no created_by field (extends core.models.BaseModel: id/created_at/updated_at only)
+        'assigned_to_user': 'manager',               # Same as owner (bare FK name)
         'account_fk': '-',                           # Not applicable
     },
     

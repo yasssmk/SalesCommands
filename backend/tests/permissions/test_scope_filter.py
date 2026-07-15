@@ -462,3 +462,83 @@ class TestAccountOwnerScope:
             auth_ctx=_ctx(acc_owner_a, client_account_a),
         )
         assert scoped.count() == 2  # client scope = whole tenant, no owner filter
+
+
+# =============================================================================
+# TEAM OWNER SCOPE — guardrail for the OWNERSHIP_MAP['teams'] fix
+# (owner_user='manager', assigned_to_user='manager', created_by='-',
+#  client_account_fk='client_account'). Team is a SENSITIVE org-structure model:
+# the previous entry used '_id' attnames ('manager_id', 'created_by_id') that
+# _is_valid_field rejects. Symptoms were the WORST of the attname family:
+#   - mine  -> no valid ownership term -> _apply_mine_scope returns none() (deny)
+#   - team  -> no valid term -> _apply_team_scope leaves the queryset UNCHANGED
+#              = every team in the tenant (intra-tenant OVER-EXPOSURE)
+# Reachable in production: TeamViewSet uses ScopedQuerysetMixin. Pre-existing,
+# not a sprint regression. Locked here like territories/sales_quotas/accounts.
+# =============================================================================
+
+def _mk_team(manager, client_account, name):
+    from end_users.models import Team
+    return Team.objects.create(name=name, client_account=client_account, manager=manager)
+
+
+def _team_qs(client_account):
+    from end_users.models import Team
+    return Team.objects.filter(client_account_id=client_account.id)
+
+
+@pytest.fixture
+def team_mgr_a(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(email='team-mgr-a@tenant-a.test', client_account=client_account_a,
+                               role=role_individual_a, is_active=True)
+
+
+@pytest.fixture
+def team_mgr_b(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(email='team-mgr-b@tenant-a.test', client_account=client_account_a,
+                               role=role_individual_a, is_active=True)
+
+
+@pytest.mark.django_db
+class TestTeamOwnerScope:
+
+    def test_mine_sees_own_team_not_others(self, team_mgr_a, team_mgr_b, client_account_a):
+        team_a = _mk_team(team_mgr_a, client_account_a, 'Team A (scope)')
+        team_b = _mk_team(team_mgr_b, client_account_a, 'Team B (scope)')
+        scoped = apply_role_scope(
+            _team_qs(client_account_a), module='teams', scope='mine',
+            auth_ctx=_ctx(team_mgr_a, client_account_a),
+        )
+        ids = set(scoped.values_list('id', flat=True))
+        assert team_a.id in ids          # manager sees the team they manage
+        assert team_b.id not in ids      # NOT a team managed by someone else
+        assert scoped.count() == 1       # non-empty regression guard (not 0=none-bug, not 2=all)
+
+    def test_team_scope_excludes_unrelated_teams_overexposure_guard(
+        self, team_mgr_a, team_mgr_b, client_account_a
+    ):
+        """THE over-exposure guard. Before the fix, team scope had no valid
+        ownership term, so _apply_team_scope returned the queryset UNCHANGED =
+        every team in the tenant. Assert the manager sees only the team(s) in
+        their own hierarchy, not an unrelated manager's team."""
+        team_a = _mk_team(team_mgr_a, client_account_a, 'Team A (scope)')
+        team_b = _mk_team(team_mgr_b, client_account_a, 'Team B (scope)')
+        scoped = apply_role_scope(
+            _team_qs(client_account_a), module='teams', scope='team',
+            auth_ctx=_ctx(team_mgr_a, client_account_a),
+        )
+        ids = set(scoped.values_list('id', flat=True))
+        assert team_a.id in ids          # own managed team
+        assert team_b.id not in ids      # NOT an unrelated manager's team (exposed before fix)
+        assert scoped.count() == 1       # exactly the hierarchy team — not 2 (over-exposure)
+
+    def test_client_scope_sees_all_teams(self, team_mgr_a, team_mgr_b, client_account_a):
+        _mk_team(team_mgr_a, client_account_a, 'Team A (scope)')
+        _mk_team(team_mgr_b, client_account_a, 'Team B (scope)')
+        scoped = apply_role_scope(
+            _team_qs(client_account_a), module='teams', scope='client',
+            auth_ctx=_ctx(team_mgr_a, client_account_a),
+        )
+        assert scoped.count() == 2  # client scope = whole tenant, no owner filter
