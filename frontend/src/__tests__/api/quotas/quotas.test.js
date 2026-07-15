@@ -18,7 +18,7 @@ vi.mock('api/_swr', () => ({
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
-import { useGetMyActiveQuotas, endpoints } from 'api/quotas/quotas';
+import { useGetMyActiveQuotas, useGetTeamQuotas, endpoints } from 'api/quotas/quotas';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -54,5 +54,33 @@ describe('useGetMyActiveQuotas', () => {
     expect(result.current.quotas).toHaveLength(1);
     expect(result.current.quotas[0].id).toBe(1);
     expect(result.current.quotasCount).toBe(1);
+  });
+});
+
+describe('useGetTeamQuotas', () => {
+  it('narrows to a team, current period + active, keyed by tenant', () => {
+    renderHook(() => useGetTeamQuotas('team-9'));
+    const [key] = useSWRMock.mock.calls[0];
+    expect(key).toEqual([endpoints.teamQuotas('team-9'), 'tenant-123']);
+    expect(endpoints.teamQuotas('team-9')).toContain('user__team=team-9');
+    expect(endpoints.teamQuotas('team-9')).toContain('current_period=true');
+    expect(endpoints.teamQuotas('team-9')).toContain('status=active');
+  });
+
+  it('passes a null key until the teamId is known', () => {
+    renderHook(() => useGetTeamQuotas(null));
+    const [key] = useSWRMock.mock.calls[0];
+    expect(key).toBeNull();
+  });
+
+  it('unwraps the team quota rows', () => {
+    useSWRMock.mockReturnValue({
+      data: { data: { results: [{ id: 5, user_id: 'u1', user_name: 'Alice' }], count: 1 } },
+      isLoading: false,
+      error: null,
+      mutate: vi.fn(),
+    });
+    const { result } = renderHook(() => useGetTeamQuotas('team-9'));
+    expect(result.current.quotas[0].user_id).toBe('u1');
   });
 });

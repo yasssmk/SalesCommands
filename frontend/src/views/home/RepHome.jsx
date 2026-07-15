@@ -2,12 +2,9 @@
 
 'use client';
 
-import PropTypes from 'prop-types';
 import { useEffect, useMemo } from 'react';
 
-import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
 
 import { useKpi, useKpiBatch } from 'api/bi/kpi';
 import { useGetMyCampaigns } from 'api/campaigns/campaigns';
@@ -15,33 +12,10 @@ import { useGetTerritories } from 'api/territories/territories';
 import { useGetMyActiveQuotas } from 'api/quotas/quotas';
 import { displayErrorSnackbar } from 'utils/displayError';
 
+import Section from './components/Section';
 import TodoBlock from './components/TodoBlock';
 import ProgressBlock from './components/ProgressBlock';
 import QuotaBlock from './components/QuotaBlock';
-
-// ==============================|| SECTION WRAPPER ||============================== //
-
-function Section({ title, subtitle, children }) {
-  return (
-    <Stack spacing={1.5}>
-      <Box>
-        <Typography variant="h5">{title}</Typography>
-        {subtitle ? (
-          <Typography variant="body2" color="text.secondary">
-            {subtitle}
-          </Typography>
-        ) : null}
-      </Box>
-      {children}
-    </Stack>
-  );
-}
-
-Section.propTypes = {
-  title: PropTypes.string,
-  subtitle: PropTypes.string,
-  children: PropTypes.node,
-};
 
 // ==============================|| REP HOME ||============================== //
 
