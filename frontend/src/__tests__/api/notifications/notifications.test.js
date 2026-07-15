@@ -31,6 +31,7 @@ import {
   useGetNotifications,
   useUnreadCount,
   markNotificationRead,
+  respondToNotification,
   deriveUnreadCount,
   notificationHref,
   endpoints,
@@ -156,6 +157,35 @@ describe('markNotificationRead', () => {
 
     expect(result.success).toBe(false);
     expect(result.status).toBe(404);
+    expect(revalidateByPrefix).not.toHaveBeenCalled();
+  });
+});
+
+describe('respondToNotification', () => {
+  it('returns 400 without calling the API for a missing id', async () => {
+    const result = await respondToNotification('', 'ACCEPTED');
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(400);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('POSTs the response_status body and revalidates on success', async () => {
+    api.post.mockResolvedValue({ success: true, data: { id: 'n1', response_status: 'ACCEPTED' } });
+
+    const result = await respondToNotification('n1', 'ACCEPTED');
+
+    expect(api.post).toHaveBeenCalledWith(endpoints.respond('n1'), { response_status: 'ACCEPTED' });
+    expect(result.success).toBe(true);
+    expect(revalidateByPrefix).toHaveBeenCalledWith('/notifications/');
+  });
+
+  it('surfaces the error shape on failure without revalidating', async () => {
+    api.post.mockResolvedValue({ success: false, error: 'Not actionable', status: 400 });
+
+    const result = await respondToNotification('n1', 'DECLINED');
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(400);
     expect(revalidateByPrefix).not.toHaveBeenCalled();
   });
 });

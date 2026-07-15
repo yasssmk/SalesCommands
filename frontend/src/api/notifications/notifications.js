@@ -24,6 +24,14 @@ export const endpoints = {
   list: "/notifications/",
   unreadCount: "/notifications/unread-count/",
   markRead: (id) => `/notifications/${id}/read/`,
+  respond: (id) => `/notifications/${id}/respond/`,
+};
+
+// Response statuses for actionable (invitation) notifications.
+export const ResponseStatus = {
+  PENDING: "PENDING",
+  ACCEPTED: "ACCEPTED",
+  DECLINED: "DECLINED",
 };
 
 // Prefix used to revalidate every notifications SWR key after a mutation.
@@ -146,6 +154,37 @@ export async function markNotificationRead(notificationId) {
   }
 
   const result = await api.post(endpoints.markRead(notificationId));
+
+  if (result.success || result.status === 200) {
+    revalidateByPrefix(NOTIFICATIONS_PREFIX);
+    return { success: true, data: result.data };
+  }
+
+  return { success: false, error: result.error, status: result.status || 0 };
+}
+
+// ==============================|| MUTATION - RESPOND (accept / decline) ||============================== //
+
+/**
+ * RESPOND TO AN ACTIONABLE NOTIFICATION
+ * POST /notifications/{id}/respond/  body { response_status: "ACCEPTED" | "DECLINED" }
+ *
+ * Recipient-only (a foreign notification is a scoped 404). Accepting an
+ * invitation is what makes it enter the recipient's todo, so on success we
+ * revalidate the whole notifications prefix (list + unread badge).
+ *
+ * @param {string} notificationId
+ * @param {"ACCEPTED"|"DECLINED"} responseStatus
+ * @returns {{success: boolean, data?: Object, error?: string, status?: number}}
+ */
+export async function respondToNotification(notificationId, responseStatus) {
+  if (!notificationId) {
+    return { success: false, error: "Invalid notification ID", status: 400 };
+  }
+
+  const result = await api.post(endpoints.respond(notificationId), {
+    response_status: responseStatus,
+  });
 
   if (result.success || result.status === 200) {
     revalidateByPrefix(NOTIFICATIONS_PREFIX);

@@ -48,6 +48,10 @@ export default defineConfig({
       "menu-items": path.resolve(__dirname, "src/menu-items"),
       api: path.resolve(__dirname, "src/api"),
       data: path.resolve(__dirname, "src/data"),
+      // Bare `config` resolves to the theme-config file (as in jsconfig); more
+      // specific config/* modules resolve to their file (Next does this via
+      // baseUrl). Keep the specific entry BEFORE `config` so it wins.
+      "config/formatters": path.resolve(__dirname, "src/config/formatters.js"),
       config: path.resolve(__dirname, "src/config/theme-config.js"),
     },
   },
