@@ -27,12 +27,15 @@ from rest_framework.exceptions import (
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from django.utils import timezone
+
 from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
 from permissions.compat import get_auth_ctx
 
 from . import registry
 from .cache import cached_run
+from .definitions.activities import build_todo_population, todo_window_q
 from .presentation import (
     DEFAULT_SCOPE,
     RESERVED_QUERY_PARAMS,
@@ -41,6 +44,7 @@ from .presentation import (
     scope_within,
     serialize_result,
 )
+from .serializers import TodoRowSerializer
 
 # Upper bound on batch size — the Home fires a handful; this caps abuse without
 # constraining legitimate use.
@@ -176,3 +180,51 @@ class KPIBatchView(BaseAPIView):
                 })
 
         return Response({'success': True, 'data': {'results': results}})
+
+
+class TodoListView(BaseAPIView):
+    """
+    GET /bi/todo/?scope=&window= -> the ROWS of the todo population, paginated.
+
+    Reads the SAME build_todo_population + todo_window_q as the todo_my_windows
+    count KPI, so a window's tile count equals its row count by construction.
+    scope is bounded by role (same invariant as the KPI endpoint); rows are
+    sorted by effective_date (COALESCE(due_date, scheduled_date)) — the field the
+    windows are defined on, so an activity with no due_date but scheduled today
+    sorts with today, not into the nulls.
+    """
+
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    entity_name = 'todo'
+
+    def get(self, request):
+        scope = request.query_params.get('scope') or DEFAULT_SCOPE
+
+        # SECURITY: scope is a user input — bound it by the caller's role on the
+        # activities module (same invariant as the KPI endpoint).
+        max_scope = resolve_max_scope(request, 'activities')
+        if not scope_within(scope, max_scope):
+            raise PermissionDenied(f"scope '{scope}' exceeds your permission on 'activities'")
+
+        auth_ctx = get_auth_ctx(request)
+        window = request.query_params.get('window')
+
+        queryset = (
+            build_todo_population(auth_ctx, scope)
+            .filter(todo_window_q(window, timezone.now().date()))
+            .select_related('account', 'decision_cycle', 'campaign')
+            .order_by('_effective_date', 'id')
+        )
+
+        page = self.paginate_queryset(queryset)
+        serializer = TodoRowSerializer(page, many=True, context={'request': request})
+        return Response({
+            'success': True,
+            'data': {
+                'results': serializer.data,
+                'count': self.paginator.page.paginator.count,
+                'next': self.paginator.get_next_link(),
+                'previous': self.paginator.get_previous_link(),
+            },
+        })

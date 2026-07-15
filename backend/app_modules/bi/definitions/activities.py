@@ -31,6 +31,9 @@ unchanged. The compute stays query-bounded (the invited path is an EXISTS
 sub-query, not an N+1).
 """
 
+import calendar
+from datetime import timedelta
+
 from django.db.models import Case, CharField, Count, Exists, OuterRef, Q, Value, When
 from django.db.models.functions import Coalesce
 from django.utils import timezone
@@ -52,6 +55,15 @@ class TodoBucket:
     TODAY = 'today'
     UPCOMING = 'upcoming'
     NO_DATE = 'no_date'
+
+
+# Todo windows (forward-looking + overdue) for the Rep todo table filters.
+# Nested by construction: today ⊂ this_week ⊂ this_month; overdue is the past.
+class TodoWindow:
+    OVERDUE = 'overdue'
+    TODAY = 'today'
+    THIS_WEEK = 'this_week'
+    THIS_MONTH = 'this_month'
 
 
 # Open statuses that make an activity a "todo".
@@ -99,14 +111,23 @@ def _accepted_invitation_exists(auth_ctx):
     )
 
 
-def _todo_compute(definition, auth_ctx, scope, period, params):
-    """Todo = (owner + C6, role-scoped) UNION (invited & ACCEPTED, personal),
-    deduplicated by activity id, bucketed by due-ness."""
+def build_todo_population(auth_ctx, scope):
+    """THE single definition of "my todo": the open activities the requesting
+    user must act on. Owner + C6 (role-scoped via apply_role_scope) UNION
+    invited-&-ACCEPTED (always personal), deduplicated by id, carrying the
+    ``_effective_date = COALESCE(due_date, scheduled_date)`` and ``due_bucket``
+    annotations from todo_activities_source().
+
+    Both the count KPIs (_todo_compute, _todo_windows_compute) AND the /bi/todo/
+    list endpoint read THIS queryset, so a window's counter and its rows are the
+    SAME population BY CONSTRUCTION — never a "5 shown above 4 rows" divergence.
+    Tenant + role scope are applied here, exactly as the viewsets do.
+    """
     base = todo_activities_source().filter(client_id=auth_ctx.client_id)  # tenant filter
 
     # Path 1 — owner + C6 via the shared primitive (mine / team / client + C6).
     owner = apply_role_scope(
-        base, module=definition.scope_module, scope=scope, auth_ctx=auth_ctx
+        base, module='activities', scope=scope, auth_ctx=auth_ctx
     )
 
     # Path 2 — invited & ACCEPTED, ALWAYS the requesting user (Option A): an
@@ -116,10 +137,36 @@ def _todo_compute(definition, auth_ctx, scope, period, params):
     )
 
     # UNION deduplicated by id: one row per activity even if owned AND invited.
-    final = base.filter(
+    return base.filter(
         Q(pk__in=owner.values('pk')) | Q(pk__in=invited.values('pk'))
     )
-    final = _apply_period(final, _TODO_PERIOD_FIELD, period)
+
+
+def todo_window_q(window, today):
+    """The predicate defining a todo window on ``_effective_date``. SINGLE source
+    of the window boundaries, used by BOTH the window counts and the /bi/todo/
+    list so "today count" and "today rows" are identical. Windows are
+    forward-looking and nested (today ⊂ this_week ⊂ this_month); overdue is the
+    past. An unknown/None window returns an empty Q (the whole population)."""
+    if window == TodoWindow.OVERDUE:
+        return Q(_effective_date__lt=today)
+    if window == TodoWindow.TODAY:
+        return Q(_effective_date=today)
+    if window == TodoWindow.THIS_WEEK:
+        end_of_week = today + timedelta(days=(6 - today.weekday()))
+        return Q(_effective_date__gte=today, _effective_date__lte=end_of_week)
+    if window == TodoWindow.THIS_MONTH:
+        end_of_month = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+        return Q(_effective_date__gte=today, _effective_date__lte=end_of_month)
+    return Q()
+
+
+def _todo_compute(definition, auth_ctx, scope, period, params):
+    """Todo counts by due-bucket. Reads the shared build_todo_population so it
+    stays iso with the /bi/todo/ list."""
+    final = _apply_period(
+        build_todo_population(auth_ctx, scope), _TODO_PERIOD_FIELD, period
+    )
 
     rows = final.values('due_bucket').annotate(_value=Count('id'))
     value = {row['due_bucket']: row['_value'] for row in rows}
@@ -131,6 +178,35 @@ def _todo_compute(definition, auth_ctx, scope, period, params):
         scope=scope,
         period_start=period.start if period else None,
         period_end=period.end if period else None,
+        meta={'scope_module': definition.scope_module},
+    )
+
+
+def _todo_windows_compute(definition, auth_ctx, scope, period, params):
+    """Counts of the todo population per FORWARD window (+ overdue), in one query
+    via conditional aggregation. Same population + same window predicates as the
+    /bi/todo/ list → counters and rows match by construction."""
+    pop = build_todo_population(auth_ctx, scope)
+    today = timezone.now().date()
+
+    agg = pop.aggregate(
+        overdue=Count('id', filter=todo_window_q(TodoWindow.OVERDUE, today)),
+        today=Count('id', filter=todo_window_q(TodoWindow.TODAY, today)),
+        this_week=Count('id', filter=todo_window_q(TodoWindow.THIS_WEEK, today)),
+        this_month=Count('id', filter=todo_window_q(TodoWindow.THIS_MONTH, today)),
+    )
+    value = {
+        TodoWindow.OVERDUE: agg['overdue'] or 0,
+        TodoWindow.TODAY: agg['today'] or 0,
+        TodoWindow.THIS_WEEK: agg['this_week'] or 0,
+        TodoWindow.THIS_MONTH: agg['this_month'] or 0,
+    }
+
+    return KPIResult(
+        key=definition.key,
+        shape=OutputShape.BREAKDOWN,
+        value=value,
+        scope=scope,
         meta={'scope_module': definition.scope_module},
     )
 
@@ -198,7 +274,29 @@ todo_team_by_owner = KPIDefinition(
 )
 
 
+# Todo BY WINDOW — the Rep todo table's tiles (overdue / today / this week /
+# this month). Counts from build_todo_population + todo_window_q, i.e. the SAME
+# population and SAME window predicates the /bi/todo/ list uses → each tile's
+# count equals its window's row count by construction.
+todo_my_windows = KPIDefinition(
+    key='todo_my_windows',
+    label='Todo — my activities by window (overdue / today / this week / this month)',
+    scope_module='activities',
+    period_field=_TODO_PERIOD_FIELD,
+    output_shape=OutputShape.BREAKDOWN,
+    dimension='window',
+    allowed_scopes=('mine', 'team', 'client'),
+    cache_tags=('activities', 'notifications'),
+    invalidation_sources=(
+        'module_activities.Activity',
+        'module_notifications.Notification',
+    ),
+    compute_fn=_todo_windows_compute,
+)
+
+
 KPIS = [
     todo_my_activities,
     todo_team_by_owner,
+    todo_my_windows,
 ]

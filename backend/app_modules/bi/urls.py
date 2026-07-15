@@ -12,12 +12,14 @@ app_name = 'module_bi'
 
 # Lazy imports to avoid circular import at module load.
 def get_urlpatterns():
-    from .views import KPIDetailView, KPIBatchView
+    from .views import KPIDetailView, KPIBatchView, TodoListView
 
     return [
         # Batch MUST come before the <key> route so 'batch' is not captured as a key.
         path('kpi/batch/', KPIBatchView.as_view(), name='kpi-batch'),
         path('kpi/<str:key>/', KPIDetailView.as_view(), name='kpi-detail'),
+        # Todo rows — the list counterpart of the todo_my_windows counts.
+        path('todo/', TodoListView.as_view(), name='todo-list'),
     ]
 
 
