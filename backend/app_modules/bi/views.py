@@ -222,7 +222,7 @@ class TodoListView(BaseAPIView):
         queryset = (
             build_todo_population(auth_ctx, scope)
             .filter(todo_window_q(window, timezone.now().date()))
-            .select_related('account', 'decision_cycle', 'campaign')
+            .select_related('owner', 'account', 'decision_cycle', 'campaign')
             .order_by('_effective_date', 'id')
         )
 
@@ -295,7 +295,7 @@ class TeamTodoListView(BaseAPIView):
 
         queryset = (
             queryset
-            .select_related('account', 'decision_cycle', 'campaign')
+            .select_related('owner', 'account', 'decision_cycle', 'campaign')
             .order_by('_effective_date', 'id')
         )
 

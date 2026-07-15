@@ -243,3 +243,15 @@ def test_population_uses_shared_todo_statuses_constant(as_mgr, org, client_accou
 
     data = _rows(as_mgr, team=str(org['france'].id))
     assert data['count'] == 2  # the two TODO_STATUSES rows; COMPLETED excluded
+
+
+@pytest.mark.django_db
+def test_rows_carry_owner_for_the_person_column(as_mgr, org, client_account_a):
+    """The manager table's "who" column: each row carries owner.id + owner name.
+    (select_related('owner') keeps it query-bounded — the row already needs the
+    account/DC joins.)"""
+    _mk_act(org['fra'], org['fra_acc'], client_account_a)
+
+    row = _rows(as_mgr, team=str(org['france'].id))['results'][0]
+    assert row['owner']['id'] == str(org['fra'].id)
+    assert row['owner']['full_name'] == 'Fabien Roux'
