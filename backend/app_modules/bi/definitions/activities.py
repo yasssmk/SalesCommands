@@ -142,6 +142,29 @@ def build_todo_population(auth_ctx, scope):
     )
 
 
+def build_team_todo_population(auth_ctx, scope):
+    """THE manager view's team todo ROWS: the open activities (TODO_STATUSES) a
+    manager is responsible for, role-scoped via apply_role_scope, carrying the
+    ``_effective_date = COALESCE(due_date, scheduled_date)`` annotation for
+    sorting and serialisation.
+
+    This is the ROW counterpart of the ``todo_team_by_owner`` COUNT KPI: both
+    read ``todo_activities_source()`` (SAME ``TODO_STATUSES`` constant) and apply
+    the SAME ``apply_role_scope(module='activities', scope=...)`` over the SAME
+    tenant filter — so a person's row count here equals their bucket in that KPI
+    BY CONSTRUCTION, never a "shown above ≠ rows" divergence.
+
+    Unlike ``build_todo_population`` it does NOT union the personal
+    invited-&-accepted path: the manager table is a view of the TEAM's OWNED
+    work, not the manager's personal inbox, so an activity the manager was merely
+    invited to (even accepted) never appears here.
+    """
+    base = todo_activities_source().filter(client_id=auth_ctx.client_id)  # tenant filter
+    return apply_role_scope(
+        base, module='activities', scope=scope, auth_ctx=auth_ctx
+    )
+
+
 def todo_window_q(window, today):
     """The predicate defining a todo window on ``_effective_date``. SINGLE source
     of the window boundaries, used by BOTH the window counts and the /bi/todo/

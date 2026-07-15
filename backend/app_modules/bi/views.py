@@ -35,7 +35,16 @@ from permissions.compat import get_auth_ctx
 
 from . import registry
 from .cache import cached_run
-from .definitions.activities import build_todo_population, todo_window_q
+from permissions.owner_scope import (
+    get_all_descendant_team_ids,
+    get_team_member_ids,
+)
+
+from .definitions.activities import (
+    build_team_todo_population,
+    build_todo_population,
+    todo_window_q,
+)
 from .presentation import (
     DEFAULT_SCOPE,
     RESERVED_QUERY_PARAMS,
@@ -213,6 +222,79 @@ class TodoListView(BaseAPIView):
         queryset = (
             build_todo_population(auth_ctx, scope)
             .filter(todo_window_q(window, timezone.now().date()))
+            .select_related('account', 'decision_cycle', 'campaign')
+            .order_by('_effective_date', 'id')
+        )
+
+        page = self.paginate_queryset(queryset)
+        serializer = TodoRowSerializer(page, many=True, context={'request': request})
+        return Response({
+            'success': True,
+            'data': {
+                'results': serializer.data,
+                'count': self.paginator.page.paginator.count,
+                'next': self.paginator.get_next_link(),
+                'previous': self.paginator.get_previous_link(),
+            },
+        })
+
+
+class TeamTodoListView(BaseAPIView):
+    """
+    GET /bi/todo/team/?scope=&team=&owner= -> the MANAGER view's team todo ROWS,
+    paginated.
+
+    Reads the SAME population as the todo_team_by_owner COUNT KPI
+    (build_team_todo_population: open activities, role-scoped, NO personal
+    invited-accepted union), so a person's row count here equals their bucket in
+    that KPI by construction. `scope` is a USER INPUT and is bounded by the
+    caller's role on 'activities' exactly as the other BI endpoints; it defaults
+    to 'team' (this IS the team view).
+
+    Optional narrowing — UX only, never widening, both applied INSIDE the role
+    scope:
+      - team=<id>: restrict to the members of that team AND its sub-teams
+        (get_all_descendant_team_ids -> get_team_member_ids -> owner_id__in). A
+        team OUTSIDE the caller's managed hierarchy yields ZERO rows: the role
+        scope has already excluded its members, so the intersection is empty.
+      - owner=<id>: restrict to a single person — the per-person drill-down
+        behind clicking a name in the manager's per-owner breakdown.
+
+    Rows sort by effective_date (COALESCE(due_date, scheduled_date)), the same
+    field the todo windows are defined on.
+    """
+
+    authentication_classes = [CustomJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    entity_name = 'todo'
+
+    def get(self, request):
+        scope = request.query_params.get('scope') or 'team'
+
+        # SECURITY: scope is a user input — bound it by the caller's role on the
+        # activities module (same invariant as the other BI endpoints).
+        max_scope = resolve_max_scope(request, 'activities')
+        if not scope_within(scope, max_scope):
+            raise PermissionDenied(f"scope '{scope}' exceeds your permission on 'activities'")
+
+        auth_ctx = get_auth_ctx(request)
+
+        queryset = build_team_todo_population(auth_ctx, scope)
+
+        # UX narrowing — a team subtree and/or a single owner, always INSIDE the
+        # role scope (an out-of-hierarchy team intersects the scope to empty).
+        team_id = request.query_params.get('team')
+        if team_id:
+            team_ids = get_all_descendant_team_ids([team_id], auth_ctx.client_id)
+            member_ids = get_team_member_ids(team_ids, auth_ctx.client_id)
+            queryset = queryset.filter(owner_id__in=member_ids)
+
+        owner_id = request.query_params.get('owner')
+        if owner_id:
+            queryset = queryset.filter(owner_id=owner_id)
+
+        queryset = (
+            queryset
             .select_related('account', 'decision_cycle', 'campaign')
             .order_by('_effective_date', 'id')
         )
