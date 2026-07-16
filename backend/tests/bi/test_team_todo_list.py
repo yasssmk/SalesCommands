@@ -39,7 +39,9 @@ from app_modules.activities.models import Activity
 from app_modules.bi import registry
 from app_modules.bi.cache import cached_run
 from app_modules.bi.definitions import load_all
-from app_modules.bi.definitions.activities import TODO_STATUSES, todo_team_by_owner
+from app_modules.bi.definitions.activities import (
+    TODO_STATUSES, TodoWindow, todo_team_by_owner,
+)
 from app_modules.notifications.models import (
     NotificationCategory, NotificationResponseStatus,
 )
@@ -96,15 +98,23 @@ def _ctx(user, ca):
     return AuthContext(user_id=str(user.id), client_id=str(ca.id), is_authenticated=True)
 
 
-def _rows(client, scope='team', team=None, owner=None):
+def _rows(client, scope='team', team=None, owner=None, window=None):
     url = f'/bi/todo/team/?scope={scope}'
     if team:
         url += f'&team={team}'
     if owner:
         url += f'&owner={owner}'
+    if window:
+        url += f'&window={window}'
     resp = client.get(url)
     assert resp.status_code == 200, resp.data
     return resp.data['data']
+
+
+def _team_windows(client, scope='team'):
+    resp = client.get(f'/bi/kpi/todo_team_windows/?scope={scope}')
+    assert resp.status_code == 200, resp.data
+    return resp.data['data']['value']
 
 
 # --- hierarchy fixture -------------------------------------------------------
@@ -322,6 +332,70 @@ def test_ordering_by_owner_last_name(as_mgr, org, client_account_a, role_individ
 
     desc = as_mgr.get('/bi/todo/team/?scope=team&ordering=-owner__last_name')
     assert [r['id'] for r in desc.data['data']['results']] == [str(west.id), str(roux.id)]
+
+
+# --- window tiles: parity with the team table + no personal-invitation leak ----
+
+@pytest.mark.django_db
+def test_team_windows_parity_tiles_equal_team_rows(as_mgr, org, client_account_a):
+    """THE parity invariant for the manager tiles: todo_team_windows[w] ==
+    /bi/todo/team/?window=w count, for every window — same population
+    (build_team_todo_population), same rolling predicates. The exact tile-vs-rows
+    guarantee the rep todo layer already has."""
+    fra, acc = org['fra'], org['fra_acc']
+    _mk_act(fra, acc, client_account_a, due=TODAY - timedelta(days=2))   # overdue
+    _mk_act(fra, acc, client_account_a, due=TODAY)                       # today
+    _mk_act(fra, acc, client_account_a, due=TODAY + timedelta(days=5))   # next 7 days
+    _mk_act(fra, acc, client_account_a, due=TODAY + timedelta(days=20))  # next 4 weeks
+    _mk_act(fra, acc, client_account_a, due=TODAY + timedelta(days=60))  # beyond every window
+
+    tiles = _team_windows(as_mgr)
+    for w in (TodoWindow.OVERDUE, TodoWindow.TODAY,
+              TodoWindow.NEXT_7_DAYS, TodoWindow.NEXT_4_WEEKS):
+        data = _rows(as_mgr, window=w)
+        assert data['count'] == tiles[w], f'{w}: tile {tiles[w]} != rows {data["count"]}'
+        assert len(data['results']) == tiles[w], f'{w}: rows != count'
+
+
+@pytest.mark.django_db
+def test_manager_personal_invitation_excluded_from_tiles_and_rows(
+    as_mgr, org, client_account_a
+):
+    """The bug-prevention proof. The manager's OWN accepted invitation to an
+    OUT-OF-HIERARCHY activity must NOT appear in the team tiles or the team table
+    — build_team_todo_population has no invited-accepted union. Reusing
+    todo_my_windows at scope='team' WOULD include it (that KPI reads
+    build_todo_population), which is exactly why todo_team_windows exists."""
+    from app_modules.notifications.models import (
+        NotificationCategory, NotificationResponseStatus,
+    )
+    from app_modules.notifications.services import NotificationService
+
+    us, us_acc, mgr = org['us'], org['us_acc'], org['mgr']  # us is NOT managed by mgr
+    act = _mk_act(us, us_acc, client_account_a, due=TODAY)   # owned out-of-hierarchy, due today
+
+    # The manager accepts an invitation to it (personal — not team-owned work).
+    act.invited_users.add(mgr)
+    n = NotificationService.emit(
+        client_id=client_account_a.id, recipient=mgr, actor=us,
+        category=NotificationCategory.ACTIVITY_INVITATION,
+        title='inv', related_object_type='activity', related_object_id=act.id,
+    )
+    n.response_status = NotificationResponseStatus.ACCEPTED
+    n.save(user=mgr)
+
+    # Team tiles + table EXCLUDE it: no invited union, and us is out of role scope.
+    tiles = _team_windows(as_mgr)
+    assert tiles[TodoWindow.TODAY] == 0
+    today_rows = _rows(as_mgr, window=TodoWindow.TODAY)
+    assert str(act.id) not in {r['id'] for r in today_rows['results']}
+
+    # CONTRAST: the rep-style my-windows at scope='team' DOES include it (the
+    # personal invited-accepted union) — proving the two KPIs differ and the
+    # team tiles read the parity-preserving source.
+    resp = as_mgr.get('/bi/kpi/todo_my_windows/?scope=team')
+    assert resp.status_code == 200, resp.data
+    assert resp.data['data']['value'][TodoWindow.TODAY] >= 1
 
 
 @pytest.mark.django_db

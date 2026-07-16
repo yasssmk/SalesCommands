@@ -388,6 +388,13 @@ class TeamTodoListView(BaseAPIView):
         if owner_id:
             queryset = queryset.filter(owner_id=owner_id)
 
+        # Window narrowing — the same rolling predicate the tiles use, so a tile's
+        # count equals this endpoint's row count for that window (parity with the
+        # todo_team_windows KPI, exactly as /bi/todo/ pairs with todo_my_windows).
+        # Absent window -> whole population (todo_window_q returns an empty Q).
+        window = request.query_params.get('window')
+        queryset = queryset.filter(todo_window_q(window, timezone.now().date()))
+
         # owner__team so the serializer's Team column resolves without a per-row
         # lookup (owner__team implies the owner join too).
         queryset = queryset.select_related('owner__team', 'account', 'decision_cycle', 'campaign')
