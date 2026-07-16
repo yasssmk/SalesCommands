@@ -155,3 +155,66 @@ def test_scope_isolates_cross_tenant(
 
     rows = _todo_rows(authed_api_a)['results']
     assert len(rows) == 1  # tenant A only
+
+
+def _mk_titled(owner, account, client_account, title, due):
+    a = Activity(title=title, activity_type=ActivityType.CALL,
+                 status=ActivityStatus.PLANNED, account=account, owner=owner, due_date=due)
+    a.save(user=owner, client_id=client_account.id)
+    return a
+
+
+@pytest.mark.django_db
+def test_search_filters_by_title_and_account(authed_api_a, user_a, client_account_a):
+    """Server-side search matches the activity title OR the account company name."""
+    acme = _mk_account(user_a, client_account_a, 'Acme Industries')
+    globex = _mk_account(user_a, client_account_a, 'Globex')
+    today = timezone.now().date()
+    by_title = _mk_titled(user_a, globex, client_account_a, 'Call the Widget team', today)
+    by_account = _mk_titled(user_a, acme, client_account_a, 'Prep deck', today)
+    _mk_titled(user_a, globex, client_account_a, 'Unrelated', today)  # matches neither
+
+    # Title match.
+    resp = authed_api_a.get('/bi/todo/?scope=mine&search=widget')
+    assert resp.status_code == 200
+    assert {r['id'] for r in resp.data['data']['results']} == {str(by_title.id)}
+
+    # Account-name match.
+    resp = authed_api_a.get('/bi/todo/?scope=mine&search=acme')
+    assert {r['id'] for r in resp.data['data']['results']} == {str(by_account.id)}
+
+
+@pytest.mark.django_db
+def test_ordering_by_account_name_asc_and_desc(authed_api_a, user_a, client_account_a):
+    alpha = _mk_account(user_a, client_account_a, 'Alpha Co')
+    zeta = _mk_account(user_a, client_account_a, 'Zeta Co')
+    today = timezone.now().date()
+    a = _mk_titled(user_a, alpha, client_account_a, 'a', today)
+    z = _mk_titled(user_a, zeta, client_account_a, 'z', today)
+
+    asc = authed_api_a.get('/bi/todo/?scope=mine&ordering=account__company_name')
+    assert [r['id'] for r in asc.data['data']['results']] == [str(a.id), str(z.id)]
+
+    desc = authed_api_a.get('/bi/todo/?scope=mine&ordering=-account__company_name')
+    assert [r['id'] for r in desc.data['data']['results']] == [str(z.id), str(a.id)]
+
+
+@pytest.mark.django_db
+def test_ordering_unknown_field_rejected(authed_api_a, user_a, client_account_a):
+    """Strict whitelist: a real-but-unlisted field (title) is a 400, not a silent
+    fallback."""
+    acc = _mk_account(user_a, client_account_a, 'A Corp')
+    _mk_act(user_a, acc, client_account_a, timezone.now().date())
+    resp = authed_api_a.get('/bi/todo/?scope=mine&ordering=title')
+    assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_default_ordering_unchanged_is_effective_date_asc(authed_api_a, user_a, client_account_a):
+    """No ordering param -> overdue first (effective_date asc), unchanged framing."""
+    acc = _mk_account(user_a, client_account_a, 'A Corp')
+    today = timezone.now().date()
+    later = _mk_titled(user_a, acc, client_account_a, 'later', today)
+    earlier = _mk_titled(user_a, acc, client_account_a, 'earlier', today - timedelta(days=4))
+    rows = _todo_rows(authed_api_a)['results']
+    assert [r['id'] for r in rows] == [str(earlier.id), str(later.id)]

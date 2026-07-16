@@ -27,6 +27,7 @@ from rest_framework.exceptions import (
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from django.db.models import Q
 from django.utils import timezone
 
 from core.apps_shared_methods import BaseAPIView
@@ -191,6 +192,60 @@ class KPIBatchView(BaseAPIView):
         return Response({'success': True, 'data': {'results': results}})
 
 
+# Server-side ordering for the todo lists — STRICT whitelist mapping a public
+# ordering name to its queryset field (annotation-aware: effective_date is the
+# COALESCE annotation). The default (no param) stays effective_date asc so the
+# overdue rows lead — the Home's motivation framing. An out-of-whitelist field is
+# a 400, never a silent fallback.
+TODO_ORDERING_FIELDS = {
+    'effective_date': '_effective_date',
+    'account__company_name': 'account__company_name',
+    'owner__last_name': 'owner__last_name',
+    'due_date': 'due_date',
+}
+
+
+def _apply_todo_search(queryset, search):
+    """Server-side search over the row's visible names: activity title, account
+    company name, owner first/last name. Blank/None is a no-op."""
+    search = (search or '').strip()
+    if not search:
+        return queryset
+    return queryset.filter(
+        Q(title__icontains=search)
+        | Q(account__company_name__icontains=search)
+        | Q(owner__first_name__icontains=search)
+        | Q(owner__last_name__icontains=search)
+    )
+
+
+def _apply_todo_ordering(queryset, ordering):
+    """Map a whitelisted `ordering` param (comma-separated, '-' prefix = desc) to
+    order_by, always tie-broken by id. No param -> effective_date asc (overdue
+    first, unchanged). A field outside TODO_ORDERING_FIELDS raises 400 — strict
+    rejection, never a silent fallback."""
+    ordering = (ordering or '').strip()
+    if not ordering:
+        return queryset.order_by('_effective_date', 'id')
+
+    order_by = []
+    for term in ordering.split(','):
+        term = term.strip()
+        if not term:
+            continue
+        desc = term.startswith('-')
+        name = term[1:] if desc else term
+        field = TODO_ORDERING_FIELDS.get(name)
+        if field is None:
+            raise ValidationError(f"Cannot order by '{name}'")
+        order_by.append(f'-{field}' if desc else field)
+
+    if not order_by:
+        return queryset.order_by('_effective_date', 'id')
+    order_by.append('id')
+    return queryset.order_by(*order_by)
+
+
 class TodoListView(BaseAPIView):
     """
     GET /bi/todo/?scope=&window= -> the ROWS of the todo population, paginated.
@@ -223,8 +278,9 @@ class TodoListView(BaseAPIView):
             build_todo_population(auth_ctx, scope)
             .filter(todo_window_q(window, timezone.now().date()))
             .select_related('owner', 'account', 'decision_cycle', 'campaign')
-            .order_by('_effective_date', 'id')
         )
+        queryset = _apply_todo_search(queryset, request.query_params.get('search'))
+        queryset = _apply_todo_ordering(queryset, request.query_params.get('ordering'))
 
         page = self.paginate_queryset(queryset)
         serializer = TodoRowSerializer(page, many=True, context={'request': request})
@@ -293,11 +349,9 @@ class TeamTodoListView(BaseAPIView):
         if owner_id:
             queryset = queryset.filter(owner_id=owner_id)
 
-        queryset = (
-            queryset
-            .select_related('owner', 'account', 'decision_cycle', 'campaign')
-            .order_by('_effective_date', 'id')
-        )
+        queryset = queryset.select_related('owner', 'account', 'decision_cycle', 'campaign')
+        queryset = _apply_todo_search(queryset, request.query_params.get('search'))
+        queryset = _apply_todo_ordering(queryset, request.query_params.get('ordering'))
 
         page = self.paginate_queryset(queryset)
         serializer = TodoRowSerializer(page, many=True, context={'request': request})

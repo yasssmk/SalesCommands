@@ -255,3 +255,40 @@ def test_rows_carry_owner_for_the_person_column(as_mgr, org, client_account_a):
     row = _rows(as_mgr, team=str(org['france'].id))['results'][0]
     assert row['owner']['id'] == str(org['fra'].id)
     assert row['owner']['full_name'] == 'Fabien Roux'
+
+
+@pytest.mark.django_db
+def test_search_by_owner_name(as_mgr, org, client_account_a, role_individual_a):
+    """Server-side search matches the owner's name — the manager's 'find a
+    person' path across the team rows."""
+    emma = _mk_user('emma@a.test', client_account_a, role_individual_a,
+                    first_name='Emma', last_name='West', team=org['emea'])
+    emma_acc = _mk_account('Emma Corp', emma, client_account_a)
+    _mk_act(org['fra'], org['fra_acc'], client_account_a)  # Fabien Roux (France)
+    _mk_act(emma, emma_acc, client_account_a)              # Emma West (EMEA)
+
+    resp = as_mgr.get('/bi/todo/team/?scope=team&search=roux')
+    assert resp.status_code == 200
+    assert {r['owner']['full_name'] for r in resp.data['data']['results']} == {'Fabien Roux'}
+
+
+@pytest.mark.django_db
+def test_ordering_by_owner_last_name(as_mgr, org, client_account_a, role_individual_a):
+    emma = _mk_user('emma@a.test', client_account_a, role_individual_a,
+                    first_name='Emma', last_name='West', team=org['emea'])
+    emma_acc = _mk_account('Emma Corp', emma, client_account_a)
+    roux = _mk_act(org['fra'], org['fra_acc'], client_account_a)  # Roux
+    west = _mk_act(emma, emma_acc, client_account_a)              # West
+
+    asc = as_mgr.get('/bi/todo/team/?scope=team&ordering=owner__last_name')
+    assert [r['id'] for r in asc.data['data']['results']] == [str(roux.id), str(west.id)]
+
+    desc = as_mgr.get('/bi/todo/team/?scope=team&ordering=-owner__last_name')
+    assert [r['id'] for r in desc.data['data']['results']] == [str(west.id), str(roux.id)]
+
+
+@pytest.mark.django_db
+def test_ordering_unknown_field_rejected(as_mgr, org, client_account_a):
+    _mk_act(org['fra'], org['fra_acc'], client_account_a)
+    resp = as_mgr.get('/bi/todo/team/?scope=team&ordering=status')
+    assert resp.status_code == 400
