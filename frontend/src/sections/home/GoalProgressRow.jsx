@@ -18,6 +18,15 @@ import LinearWithLabel from 'components/@extended/progress/LinearWithLabel';
 export default function GoalProgressRow({ label, gradient }) {
   const g = gradient || { pct: 0, mode: 'none', headline: '' };
   const remaining = g.mode === 'remaining';
+  const empty = g.mode === 'empty'; // no work to size — a setup state, not "0 done"
+
+  const headlineColor = g.mode === 'done'
+    ? 'success.main'
+    : remaining
+      ? 'warning.main'
+      : empty
+        ? 'text.secondary' // muted: distinct from an actionable count
+        : 'text.primary';  // neutral: 'queue' ("18 accounts to go") + accumulated
 
   return (
     <Stack spacing={0.5} sx={{ py: 1 }}>
@@ -25,14 +34,12 @@ export default function GoalProgressRow({ label, gradient }) {
         <Typography variant="body2" noWrap sx={{ maxWidth: '65%' }} title={label}>
           {label}
         </Typography>
-        <Typography
-          variant="subtitle2"
-          color={g.mode === 'done' ? 'success.main' : remaining ? 'warning.main' : 'text.primary'}
-        >
+        <Typography variant="subtitle2" color={headlineColor}>
           {g.headline}
         </Typography>
       </Stack>
-      <LinearWithLabel value={g.pct} color={g.pct >= 100 ? 'success' : 'primary'} />
+      {/* No bar for the empty state — "0% of nothing" would re-introduce the cold ratio. */}
+      {empty ? null : <LinearWithLabel value={g.pct} color={g.pct >= 100 ? 'success' : 'primary'} />}
     </Stack>
   );
 }

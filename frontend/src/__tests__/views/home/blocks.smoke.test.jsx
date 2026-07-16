@@ -53,19 +53,44 @@ describe('TodoBlock', () => {
 });
 
 describe('ProgressBlock', () => {
-  it('renders active campaigns and ranks territories, no hidden overflow', () => {
-    const campaigns = [{ entity: { id: 'c1', name: 'Q3 Outbound' }, result: { value: 40 } }];
+  it('frames campaigns/territories by REMAINING account counts (queue), not the %', () => {
+    // meta carries the real counts; the block must read those, never result.value.
+    const campaigns = [
+      { entity: { id: 'c1', name: 'Q3 Outbound' }, result: { value: 40, meta: { accounts_completed: 4, accounts_total: 10 } } },
+    ];
     const territories = [
-      { entity: { id: 't1', name: 'North' }, result: { value: 90 } },
-      { entity: { id: 't2', name: 'South' }, result: { value: 20 } },
+      { entity: { id: 't1', name: 'North' }, result: { value: 90, meta: { numerator: 9, denominator: 10 } } },
+      { entity: { id: 't2', name: 'South' }, result: { value: 20, meta: { numerator: 2, denominator: 10 } } },
     ];
     render(
       <ProgressBlock campaigns={campaigns} territories={territories} territoriesTotal={2} loading={false} />,
     );
     expect(screen.getByText('Active campaigns')).toBeInTheDocument();
     expect(screen.getByText('Q3 Outbound')).toBeInTheDocument();
-    // Lowest-coverage territory (South, 20%) is surfaced.
+    // Campaign: 6 remaining accounts — the action, not "40% done".
+    expect(screen.getByText('6 accounts to go')).toBeInTheDocument();
+    expect(screen.queryByText('40% done')).not.toBeInTheDocument();
+    // Lowest-coverage territory (South, 20%) is surfaced, framed by count (8 to go).
     expect(screen.getByText('South')).toBeInTheDocument();
+    expect(screen.getByText('8 accounts to go')).toBeInTheDocument();
+  });
+
+  it('a campaign at 0% frames the work as remaining ("N accounts to go"), never "0% done"', () => {
+    const campaigns = [
+      { entity: { id: 'c1', name: 'Fresh Camp' }, result: { value: 0, meta: { accounts_completed: 0, accounts_total: 12 } } },
+    ];
+    render(<ProgressBlock campaigns={campaigns} territories={[]} territoriesTotal={0} loading={false} />);
+    expect(screen.getByText('12 accounts to go')).toBeInTheDocument();
+    expect(screen.queryByText('0% done')).not.toBeInTheDocument();
+  });
+
+  it('distinguishes an empty campaign (no accounts assigned) from work to do', () => {
+    const campaigns = [
+      { entity: { id: 'c1', name: 'Empty Camp' }, result: { value: 0, meta: { accounts_completed: 0, accounts_total: 0 } } },
+    ];
+    render(<ProgressBlock campaigns={campaigns} territories={[]} territoriesTotal={0} loading={false} />);
+    expect(screen.getByText('No accounts assigned')).toBeInTheDocument();
+    expect(screen.queryByText('0 accounts to go')).not.toBeInTheDocument();
   });
 
   it('shows an empty state when there are no active campaigns', () => {

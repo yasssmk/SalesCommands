@@ -22,13 +22,28 @@ import { goalGradient } from 'sections/home/utils/goalGradient';
 const TERRITORY_TOP_N = 3;
 
 const UNAVAILABLE = { pct: 0, mode: 'none', headline: 'Unavailable' };
+const EMPTY = { pct: 0, mode: 'empty', done: 0, total: 0, remaining: 0, headline: 'No accounts assigned' };
 
-// campaign_progress / territory_coverage return a SCALAR percentage. Frame it on
-// the 0..100 scale so the goal-gradient headline reads "only X% left" near the end.
-function pctGradient(result) {
-  const value = typeof result?.value === 'number' ? result.value : null;
-  if (value == null) return UNAVAILABLE;
-  return goalGradient(value, 100, { unit: '%' });
+// A work-queue gradient over the ACTUAL account counts (never the %): campaigns
+// and territories are queues of accounts to work, so the remaining is the
+// actionable headline ("18 accounts to go" / "All done"). total===0 is a SETUP
+// state ("No accounts assigned"), not "0 of N" — kept distinct here so the
+// domain noun never leaks into the shared goalGradient.
+function queueGradient(done, total) {
+  if (!total) return EMPTY;
+  return goalGradient(done, total, { framing: 'queue', noun: 'accounts' });
+}
+
+// campaign_progress meta carries accounts_completed / accounts_total.
+function campaignGradient(result) {
+  if (result?.value == null || !result?.meta) return UNAVAILABLE;
+  return queueGradient(result.meta.accounts_completed, result.meta.accounts_total);
+}
+
+// territory_coverage meta carries numerator (covered) / denominator (total).
+function territoryGradient(result) {
+  if (result?.value == null || !result?.meta) return UNAVAILABLE;
+  return queueGradient(result.meta.numerator, result.meta.denominator);
 }
 
 function coverageOf(item) {
@@ -36,17 +51,17 @@ function coverageOf(item) {
   return typeof v === 'number' ? v : Number.POSITIVE_INFINITY; // unavailable ranks last
 }
 
-function Rows({ items }) {
+function Rows({ items, gradientOf }) {
   return (
     <Stack divider={null}>
       {items.map(({ entity, result }) => (
-        <GoalProgressRow key={entity.id} label={entity.name || 'Untitled'} gradient={pctGradient(result)} />
+        <GoalProgressRow key={entity.id} label={entity.name || 'Untitled'} gradient={gradientOf(result)} />
       ))}
     </Stack>
   );
 }
 
-Rows.propTypes = { items: PropTypes.array };
+Rows.propTypes = { items: PropTypes.array, gradientOf: PropTypes.func };
 
 function CardSkeleton() {
   return (
@@ -93,7 +108,7 @@ export default function ProgressBlock({
           ) : campaigns.length === 0 ? (
             <Empty text="No active campaigns." />
           ) : (
-            <Rows items={campaigns} />
+            <Rows items={campaigns} gradientOf={campaignGradient} />
           )}
         </MainCard>
       </Grid>
@@ -105,7 +120,7 @@ export default function ProgressBlock({
             <Empty text="No territories yet." />
           ) : (
             <Stack spacing={1}>
-              <Rows items={topTerritories} />
+              <Rows items={topTerritories} gradientOf={territoryGradient} />
               {hiddenCount > 0 ? (
                 <Link component={NextLink} href="/territories" variant="caption" underline="hover">
                   See all ({territoriesTotal || territories.length})
