@@ -75,16 +75,21 @@ export default function RepHome() {
     if (resultsError) displayErrorSnackbar(resultsError);
   }, [resultsError]);
 
+  // The section Stacks use `useFlexGap` so their spacing is CSS gap, not the
+  // default child-margin reset (`& > * { margin: 0 }`). That reset would strip
+  // the Grid blocks' negative-margin compensation and shift them off the
+  // full-width table's edges — see the aligned reference (users/list keeps its
+  // Grid out of a Stack).
   return (
     <Stack spacing={4} sx={{ py: 1 }}>
-      <Stack spacing={1.5}>
+      <Stack spacing={1.5} useFlexGap>
         <Box>
           <Typography variant="h5">What I have to do</Typography>
           <Typography variant="body2" color="text.secondary">
             Pick a window — overdue, today, next 7 days, next 4 weeks. Accepted invitations included.
           </Typography>
         </Box>
-        <Stack spacing={2}>
+        <Stack spacing={2} useFlexGap>
           <TodoBlock
             windows={windows}
             activeFilter={todoFilter}
@@ -95,7 +100,7 @@ export default function RepHome() {
         </Stack>
       </Stack>
 
-      <Stack spacing={1.5}>
+      <Stack spacing={1.5} useFlexGap>
         <Box>
           <Typography variant="h5">My progress</Typography>
           <Typography variant="body2" color="text.secondary">
@@ -110,7 +115,7 @@ export default function RepHome() {
         />
       </Stack>
 
-      <Stack spacing={1.5}>
+      <Stack spacing={1.5} useFlexGap>
         <Box>
           <Typography variant="h5">Where I am</Typography>
           <Typography variant="body2" color="text.secondary">
