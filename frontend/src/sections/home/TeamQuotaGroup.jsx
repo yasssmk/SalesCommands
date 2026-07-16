@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/TeamQuotaGroup.jsx
+// frontend/src/sections/home/TeamQuotaGroup.jsx
 
 'use client';
 
@@ -15,8 +15,8 @@ import LinearWithLabel from 'components/@extended/progress/LinearWithLabel';
 
 import { useGetTeamQuotas } from 'api/quotas/quotas';
 import { useKpiBatch } from 'api/bi/kpi';
-import { goalGradient } from 'views/home/utils/goalGradient';
-import { unitFor, labelForType } from 'views/home/utils/quotaFormat';
+import { goalGradient } from 'sections/home/utils/goalGradient';
+import { unitFor, labelForType } from 'sections/home/utils/quotaFormat';
 
 // ==============================|| TEAM QUOTA GROUP — one team's per-member attainment ||============================== //
 

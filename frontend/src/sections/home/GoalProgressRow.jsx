@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/GoalProgressRow.jsx
+// frontend/src/sections/home/GoalProgressRow.jsx
 
 import PropTypes from 'prop-types';
 

@@ -35,7 +35,7 @@ vi.mock('api/bi/todo', () => ({
   },
 }));
 
-import TeamActivityTable from 'views/home/components/TeamActivityTable';
+import TeamActivityTable from 'sections/home/TeamActivityTable';
 
 const colByHeader = (h) => capturedColumns.find((c) => c.header === h);
 

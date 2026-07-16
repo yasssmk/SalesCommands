@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/QuotaBlock.jsx
+// frontend/src/sections/home/QuotaBlock.jsx
 
 import PropTypes from 'prop-types';
 
@@ -10,8 +10,8 @@ import Typography from '@mui/material/Typography';
 import MainCard from 'components/MainCard';
 import LinearWithLabel from 'components/@extended/progress/LinearWithLabel';
 
-import { goalGradient } from 'views/home/utils/goalGradient';
-import { unitFor, labelForType, fmtVal } from 'views/home/utils/quotaFormat';
+import { goalGradient } from 'sections/home/utils/goalGradient';
+import { unitFor, labelForType, fmtVal } from 'sections/home/utils/quotaFormat';
 
 // ==============================|| QUOTA BLOCK — where I am vs target ||============================== //
 

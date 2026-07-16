@@ -4,7 +4,9 @@
 
 import { useEffect, useMemo } from 'react';
 
+import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
 
 import { useKpiBatch } from 'api/bi/kpi';
 import { useGetTodoWindows } from 'api/bi/todo';
@@ -14,11 +16,10 @@ import { useGetMyActiveQuotas } from 'api/quotas/quotas';
 import { displayErrorSnackbar } from 'utils/displayError';
 import useLocalStorage from 'hooks/useLocalStorage';
 
-import Section from './components/Section';
-import TodoBlock from './components/TodoBlock';
-import RepActivityTable from './components/RepActivityTable';
-import ProgressBlock from './components/ProgressBlock';
-import QuotaBlock from './components/QuotaBlock';
+import TodoBlock from 'sections/home/TodoBlock';
+import RepActivityTable from 'sections/home/RepActivityTable';
+import ProgressBlock from 'sections/home/ProgressBlock';
+import QuotaBlock from 'sections/home/QuotaBlock';
 
 // ==============================|| REP HOME ||============================== //
 
@@ -76,7 +77,13 @@ export default function RepHome() {
 
   return (
     <Stack spacing={4} sx={{ py: 1 }}>
-      <Section title="What I have to do" subtitle="Pick a window — overdue, today, next 7 days, next 4 weeks. Accepted invitations included.">
+      <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="h5">What I have to do</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Pick a window — overdue, today, next 7 days, next 4 weeks. Accepted invitations included.
+          </Typography>
+        </Box>
         <Stack spacing={2}>
           <TodoBlock
             windows={windows}
@@ -86,20 +93,32 @@ export default function RepHome() {
           />
           <RepActivityTable window={todoFilter} scope="mine" />
         </Stack>
-      </Section>
+      </Stack>
 
-      <Section title="My progress" subtitle="Where your active campaigns and territories stand.">
+      <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="h5">My progress</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Where your active campaigns and territories stand.
+          </Typography>
+        </Box>
         <ProgressBlock
           campaigns={campaignResults}
           territories={territoryResults}
           territoriesTotal={territoriesCount}
           loading={resultsLoading}
         />
-      </Section>
+      </Stack>
 
-      <Section title="Where I am" subtitle="Your result against target — and what's left.">
+      <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="h5">Where I am</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Your result against target — and what&apos;s left.
+          </Typography>
+        </Box>
         <QuotaBlock quotas={quotaResults} loading={resultsLoading} />
-      </Section>
+      </Stack>
     </Stack>
   );
 }

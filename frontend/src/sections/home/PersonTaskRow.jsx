@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/PersonTaskRow.jsx
+// frontend/src/sections/home/PersonTaskRow.jsx
 
 import PropTypes from 'prop-types';
 

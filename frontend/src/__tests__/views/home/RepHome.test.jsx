@@ -27,7 +27,7 @@ vi.mock('api/bi/todo', () => ({
   TODO_WINDOWS: { OVERDUE: 'overdue', TODAY: 'today', NEXT_7_DAYS: 'next_7_days', NEXT_4_WEEKS: 'next_4_weeks' },
 }));
 // Stub the table (pulls ReusableTable/TanStack) so this test isolates the block wiring.
-vi.mock('views/home/components/RepActivityTable', () => ({
+vi.mock('sections/home/RepActivityTable', () => ({
   default: () => <div data-testid="rep-activity-table" />,
 }));
 vi.mock('api/campaigns/campaigns', () => ({ useGetMyCampaigns: () => ({ campaigns: [] }) }));

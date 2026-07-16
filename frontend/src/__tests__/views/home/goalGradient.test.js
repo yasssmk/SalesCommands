@@ -2,7 +2,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { goalGradient } from 'views/home/utils/goalGradient';
+import { goalGradient } from 'sections/home/utils/goalGradient';
 
 describe('goalGradient', () => {
   it('frames accumulated progress early ("X done")', () => {

@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/TodoActivityTable.jsx
+// frontend/src/sections/home/TodoActivityTable.jsx
 
 'use client';
 

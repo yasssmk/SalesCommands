@@ -21,9 +21,9 @@ vi.mock('components/MainCard', () => ({
   ),
 }));
 
-import TodoBlock from 'views/home/components/TodoBlock';
-import ProgressBlock from 'views/home/components/ProgressBlock';
-import QuotaBlock from 'views/home/components/QuotaBlock';
+import TodoBlock from 'sections/home/TodoBlock';
+import ProgressBlock from 'sections/home/ProgressBlock';
+import QuotaBlock from 'sections/home/QuotaBlock';
 
 afterEach(() => cleanup());
 

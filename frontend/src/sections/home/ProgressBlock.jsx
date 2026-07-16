@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/ProgressBlock.jsx
+// frontend/src/sections/home/ProgressBlock.jsx
 
 import PropTypes from 'prop-types';
 import NextLink from 'next/link';
@@ -12,7 +12,7 @@ import Typography from '@mui/material/Typography';
 import MainCard from 'components/MainCard';
 
 import GoalProgressRow from './GoalProgressRow';
-import { goalGradient } from 'views/home/utils/goalGradient';
+import { goalGradient } from 'sections/home/utils/goalGradient';
 
 // ==============================|| PROGRESS BLOCK — my campaigns + territories ||============================== //
 

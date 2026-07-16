@@ -1,4 +1,4 @@
-// frontend/src/views/home/utils/goalGradient.js
+// frontend/src/sections/home/utils/goalGradient.js
 
 /**
  * Goal-gradient framing for a "done out of total" value.

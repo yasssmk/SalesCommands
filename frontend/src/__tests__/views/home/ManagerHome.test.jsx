@@ -39,7 +39,7 @@ vi.mock('api/quotas/quotas', () => ({
 // Stub the team activity table (pulls ReusableTable + the team todo hook) and
 // capture its props so we can assert the person drill-down flows through.
 let teamTableProps = null;
-vi.mock('views/home/components/TeamActivityTable', () => ({
+vi.mock('sections/home/TeamActivityTable', () => ({
   default: (props) => {
     teamTableProps = props;
     return <div data-testid="team-activity-table" />;

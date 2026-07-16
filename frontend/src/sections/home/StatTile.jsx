@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/StatTile.jsx
+// frontend/src/sections/home/StatTile.jsx
 
 import PropTypes from 'prop-types';
 

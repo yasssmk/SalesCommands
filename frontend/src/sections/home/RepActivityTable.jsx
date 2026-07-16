@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/RepActivityTable.jsx
+// frontend/src/sections/home/RepActivityTable.jsx
 
 'use client';
 

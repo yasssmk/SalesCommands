@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/TeamActivityTable.jsx
+// frontend/src/sections/home/TeamActivityTable.jsx
 
 'use client';
 

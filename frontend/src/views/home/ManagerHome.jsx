@@ -4,6 +4,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
+import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
@@ -14,11 +15,10 @@ import useTeamTodoFilters from 'hooks/useTeamTodoFilters';
 import { useGetTeams } from 'api/admin/teams';
 import { useKpiBatch } from 'api/bi/kpi';
 
-import Section from './components/Section';
-import TeamTodoBlock from './components/TeamTodoBlock';
-import TeamActivityTable from './components/TeamActivityTable';
-import TeamTodoFilterPanel from './components/TeamTodoFilterPanel';
-import TeamQuotaGroup from './components/TeamQuotaGroup';
+import TeamTodoBlock from 'sections/home/TeamTodoBlock';
+import TeamActivityTable from 'sections/home/TeamActivityTable';
+import TeamTodoFilterPanel from 'sections/home/TeamTodoFilterPanel';
+import TeamQuotaGroup from 'sections/home/TeamQuotaGroup';
 
 // Local ISO date (not UTC) — "today" must match the user's calendar day.
 function localISODate(d) {
@@ -202,16 +202,28 @@ export default function ManagerHome() {
 
   return (
     <Stack spacing={4} sx={{ py: 1 }}>
-      <Section title="Were today's tasks done?" subtitle="Open tasks per person — overdue called out first. Click a name to see their tasks below.">
+      <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="h5">Were today&apos;s tasks done?</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Open tasks per person — overdue called out first. Click a name to see their tasks below.
+          </Typography>
+        </Box>
         <TeamTodoBlock
           people={people}
           loading={todoLoading}
           onSelectPerson={handleSelectPerson}
           selectedPersonId={filters.owner || null}
         />
-      </Section>
+      </Stack>
 
-      <Section title="Team activity" subtitle="The open tasks behind the numbers — filter by team or person, or click a name above.">
+      <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="h5">Team activity</Typography>
+          <Typography variant="body2" color="text.secondary">
+            The open tasks behind the numbers — filter by team or person, or click a name above.
+          </Typography>
+        </Box>
         <TeamActivityTable
           team={apiFilters.team}
           owner={apiFilters.owner}
@@ -222,9 +234,15 @@ export default function ManagerHome() {
           onAdvancedFilterRemove={handleRemoveFilter}
           onAdvancedFilterClear={clearFilters}
         />
-      </Section>
+      </Stack>
 
-      <Section title="Progress by person" subtitle="Each member's quota attainment for the current period.">
+      <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="h5">Progress by person</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Each member&apos;s quota attainment for the current period.
+          </Typography>
+        </Box>
         {managedRoots.length === 0 ? (
           <MainCard>
             <Typography variant="body2" color="text.secondary">
@@ -238,7 +256,7 @@ export default function ManagerHome() {
             ))}
           </Stack>
         )}
-      </Section>
+      </Stack>
     </Stack>
   );
 }

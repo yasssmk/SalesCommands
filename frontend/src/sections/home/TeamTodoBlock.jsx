@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/TeamTodoBlock.jsx
+// frontend/src/sections/home/TeamTodoBlock.jsx
 
 import PropTypes from 'prop-types';
 

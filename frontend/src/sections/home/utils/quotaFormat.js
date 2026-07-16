@@ -1,4 +1,4 @@
-// frontend/src/views/home/utils/quotaFormat.js
+// frontend/src/sections/home/utils/quotaFormat.js
 
 // Shared quota-attainment display helpers, used by both the Rep "Where I am"
 // block and the Manager per-member quota cards.

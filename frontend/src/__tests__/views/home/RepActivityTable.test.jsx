@@ -36,7 +36,7 @@ vi.mock('api/bi/todo', () => ({
   },
 }));
 
-import RepActivityTable from 'views/home/components/RepActivityTable';
+import RepActivityTable from 'sections/home/RepActivityTable';
 
 const colByHeader = (h) => capturedColumns.find((c) => c.header === h);
 

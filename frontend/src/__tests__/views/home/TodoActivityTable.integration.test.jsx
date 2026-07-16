@@ -52,7 +52,7 @@ vi.mock('swr', () => ({ useSWRConfig: () => ({ mutate: vi.fn() }) }));
 // are NOT mocked, so this test faithfully reproduces the crash. Only the
 // react-csv leaf is aliased away (vitest.config.js).
 
-import TodoActivityTable from 'views/home/components/TodoActivityTable';
+import TodoActivityTable from 'sections/home/TodoActivityTable';
 
 const ROWS = [
   {

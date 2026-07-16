@@ -1,4 +1,4 @@
-// frontend/src/views/home/components/TeamTodoFilterPanel.jsx
+// frontend/src/sections/home/TeamTodoFilterPanel.jsx
 
 import PropTypes from 'prop-types';
 
