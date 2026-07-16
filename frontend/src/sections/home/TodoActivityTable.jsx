@@ -110,6 +110,12 @@ export default function TodoActivityTable({
       {
         header: 'Account',
         id: 'account', // -> account__company_name
+        // accessorFn is REQUIRED for the column to be sortable: TanStack's
+        // getCanSort() gates on !!column.accessorFn, so a display column (id +
+        // cell only) is never sortable — even in manualSorting. The value must
+        // mirror what the server orders by (account__company_name) so a reader
+        // never mistakes this for client-side sorting; sorting stays server-side.
+        accessorFn: (row) => row.account?.company_name || '',
         cell: ({ row }) => {
           const acc = row.original.account;
           return acc ? (
@@ -123,6 +129,9 @@ export default function TodoActivityTable({
         // The NATURE of the link — repo vocabulary for an activity's cycle/campaign.
         header: 'Context',
         id: 'context', // -> context_kind
+        // accessorFn -> sortable (see Account). context_kind is the server's
+        // Decision-Cycle-vs-Campaign ordering key; mirror it here.
+        accessorFn: (row) => (row.decision_cycle ? 'Decision Cycle' : row.campaign ? 'Campaign' : ''),
         cell: ({ row }) => {
           const { decision_cycle: dc, campaign } = row.original;
           const kind = dc ? 'Decision Cycle' : campaign ? 'Campaign' : null;
@@ -133,6 +142,9 @@ export default function TodoActivityTable({
         // The NAME of that cycle/campaign — the clickable link to its route.
         header: 'Name',
         id: 'name', // -> context_name = COALESCE(dc.name, campaign.name)
+        // accessorFn -> sortable (see Account). Mirror the server's
+        // context_name = COALESCE(dc.name, campaign.name).
+        accessorFn: (row) => row.decision_cycle?.name || row.campaign?.name || '',
         cell: ({ row }) => {
           const { account, decision_cycle: dc, campaign } = row.original;
           if (dc) {

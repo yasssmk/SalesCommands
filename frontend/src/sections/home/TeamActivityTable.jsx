@@ -93,6 +93,12 @@ export default function TeamActivityTable({
       {
         header: 'Person',
         id: 'owner', // -> owner__last_name (server ordering)
+        // accessorFn REQUIRED for sortability: TanStack getCanSort() gates on
+        // !!accessorFn, so a display column (id + cell) is never sortable. The
+        // server orders by owner__last_name; mirror the person's name here so a
+        // reader doesn't mistake it for client-side sorting (sorting stays
+        // server-side via onSortingChange -> ordering).
+        accessorFn: (row) => row.owner?.last_name || row.owner?.full_name || row.owner?.email || '',
         cell: ({ row }) => {
           const o = row.original.owner;
           return <Typography variant="body2">{o?.full_name || o?.email || '—'}</Typography>;
@@ -101,6 +107,8 @@ export default function TeamActivityTable({
       {
         header: 'Team',
         id: 'team', // -> owner__team__name
+        // accessorFn -> sortable (see Person). Mirror owner__team__name.
+        accessorFn: (row) => row.team?.name || '',
         cell: ({ row }) => (
           <Typography variant="body2">{row.original.team?.name || '—'}</Typography>
         ),
