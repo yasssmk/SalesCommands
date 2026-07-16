@@ -12,42 +12,18 @@ import MainCard from 'components/MainCard';
 
 import { useUserPermissions } from 'hooks/useUserPermissions';
 import useTeamTodoFilters from 'hooks/useTeamTodoFilters';
+import useLocalStorage from 'hooks/useLocalStorage';
 import { useGetTeams } from 'api/admin/teams';
-import { useKpiBatch } from 'api/bi/kpi';
+import { useGetTodoWindows } from 'api/bi/todo';
+import { useKpi } from 'api/bi/kpi';
 
-import TeamTodoBlock from 'sections/home/TeamTodoBlock';
+import TodoBlock from 'sections/home/TodoBlock';
 import TeamActivityTable from 'sections/home/TeamActivityTable';
 import TeamTodoFilterPanel from 'sections/home/TeamTodoFilterPanel';
 import TeamQuotaGroup from 'sections/home/TeamQuotaGroup';
 
-// Local ISO date (not UTC) — "today" must match the user's calendar day.
-function localISODate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-// Merge the overdue and today todo breakdowns into one per-person list.
-export function mergeTodo(results) {
-  const [overdueR, todayR] = results || [];
-  const overdue = overdueR?.value || {};
-  const today = todayR?.value || {};
-  const labels = { ...(todayR?.meta?.labels || {}), ...(overdueR?.meta?.labels || {}) };
-  const ids = new Set([...Object.keys(overdue), ...Object.keys(today)]);
-
-  return [...ids]
-    .map((id) => {
-      const o = overdue[id] || 0;
-      const t = today[id] || 0;
-      return { id, name: labels[id] || 'Unknown', overdue: o, today: t, total: o + t };
-    })
-    .filter((p) => p.total > 0)
-    .sort((a, b) => b.overdue - a.overdue || b.total - a.total);
-}
-
 // The full roster of owners with open tasks (a no-window todo_team_by_owner):
-// the Person filter's options, sorted by name.
+// the Owner filter's options + the chip name, sorted by name.
 export function rosterFromKpi(result) {
   const value = result?.value || {};
   const labels = result?.meta?.labels || {};
@@ -98,10 +74,11 @@ export function managedTeamSubtree(teams, userId) {
 // ==============================|| MANAGER HOME ||============================== //
 
 /**
- * The manager's observer view: were today's tasks done (per person, with names),
- * a team activity drill-down table with the standard filter (team + person), and
- * per-person quota progress. No personal-todo block — the manager watches the
- * team, they don't get their own action list here.
+ * The manager's Home — the SAME screen as the rep, widened to the team scope:
+ * the 4 window tiles (team totals) drive a team activity table. There is no
+ * per-person block; "who's behind" is reached by sorting/filtering the table on
+ * Owner. Extra dimensions the rep lacks: a Team filter and an Owner filter (+
+ * their chips). Quota stays per person below — a quota is inherently personal.
  */
 export default function ManagerHome() {
   const { currentUserId } = useUserPermissions();
@@ -111,14 +88,13 @@ export default function ManagerHome() {
     () => managedTeamSubtree(teams, currentUserId),
     [teams, currentUserId],
   );
-  // Bloc 3 quota groups list the roots the manager owns directly.
+  // The quota groups list the roots the manager owns directly.
   const managedRoots = useMemo(
     () => (teams || []).filter((t) => t?.manager && String(t.manager.id) === String(currentUserId)),
     [teams, currentUserId],
   );
 
-  // The shared filter state (team + owner): the standard filter panel AND the
-  // bloc-1 per-person drill-down both drive it.
+  // The shared filter state (team + owner), driven by the standard filter panel.
   const {
     filters,
     pendingFilters,
@@ -132,37 +108,20 @@ export default function ManagerHome() {
   } = useTeamTodoFilters();
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
 
-  // Bloc 1 — today + overdue, per person; + a no-window breakdown for the Person
-  // filter roster. One batch (team scope covers the whole hierarchy server-side).
-  const { today, yesterday } = useMemo(() => {
-    const now = new Date();
-    return {
-      today: localISODate(now),
-      yesterday: localISODate(new Date(now.getTime() - 86400000)),
-    };
-  }, []);
+  // Window is the third dimension (with team + owner). Persisted under a key
+  // distinct from the rep's 'repTodoFilter' so the two Homes never collide.
+  const [windowFilter, setWindowFilter] = useLocalStorage('managerTodoFilter', 'today');
 
-  const todoReqs = useMemo(
-    () => [
-      { key: 'todo_team_by_owner', scope: 'team', period: 'custom', period_start: '1970-01-01', period_end: yesterday },
-      { key: 'todo_team_by_owner', scope: 'team', period: 'custom', period_start: today, period_end: today },
-      { key: 'todo_team_by_owner', scope: 'team' }, // roster: all open, by owner
-    ],
-    [today, yesterday],
-  );
+  // Tiles: team totals per window, from todo_team_windows (the /bi/todo/team/
+  // population — NOT todo_my_windows, which would fold in the manager's personal
+  // accepted invitations). Same source as the table -> tile count == rows.
+  const { windows, windowsLoading } = useGetTodoWindows({ scope: 'team', kpiKey: 'todo_team_windows' });
 
-  const { results: todoResults, resultsLoading: todoLoading } = useKpiBatch(todoReqs);
-  const people = useMemo(() => mergeTodo(todoResults), [todoResults]);
-  const roster = useMemo(() => rosterFromKpi(todoResults?.[2]), [todoResults]);
-
-  // Clicking a person toggles the owner filter (immediate — no Apply step);
-  // clicking the active one clears it.
-  const handleSelectPerson = useCallback(
-    (id) => {
-      applyFilterImmediate({ owner: String(filters.owner) === String(id) ? '' : id });
-    },
-    [applyFilterImmediate, filters.owner],
-  );
+  // Roster: the no-window per-owner breakdown feeds the Owner filter's options
+  // AND resolves the Owner chip's name. (This is the ONLY todo_team_by_owner
+  // call left — the per-person overdue/today batches are gone with the block.)
+  const { kpi: rosterKpi } = useKpi('todo_team_by_owner', { scope: 'team' });
+  const roster = useMemo(() => rosterFromKpi(rosterKpi), [rosterKpi]);
 
   // Filter chips (rendered by the table): one per active filter, resolved to a name.
   const advancedFilters = useMemo(() => {
@@ -202,38 +161,35 @@ export default function ManagerHome() {
 
   return (
     <Stack spacing={4} sx={{ py: 1 }}>
-      <Stack spacing={1.5}>
+      {/* Tiles + table share a useFlexGap Stack so the tile Grid's negative
+          margins are not stripped by the default child-margin reset (same as
+          RepHome). */}
+      <Stack spacing={1.5} useFlexGap>
         <Box>
-          <Typography variant="h5">Were today&apos;s tasks done?</Typography>
+          <Typography variant="h5">What the team has to do</Typography>
           <Typography variant="body2" color="text.secondary">
-            Open tasks per person — overdue called out first. Click a name to see their tasks below.
+            Pick a window — overdue, today, next 7 days, next 4 weeks. Filter or sort by team and owner to zoom in.
           </Typography>
         </Box>
-        <TeamTodoBlock
-          people={people}
-          loading={todoLoading}
-          onSelectPerson={handleSelectPerson}
-          selectedPersonId={filters.owner || null}
-        />
-      </Stack>
-
-      <Stack spacing={1.5}>
-        <Box>
-          <Typography variant="h5">Team activity</Typography>
-          <Typography variant="body2" color="text.secondary">
-            The open tasks behind the numbers — filter by team or person, or click a name above.
-          </Typography>
-        </Box>
-        <TeamActivityTable
-          team={apiFilters.team}
-          owner={apiFilters.owner}
-          advancedFilterPanel={filterPanel}
-          advancedFilters={advancedFilters}
-          advancedFilterCount={activeFiltersCount}
-          onAdvancedFilterOpen={handleOpenPanel}
-          onAdvancedFilterRemove={handleRemoveFilter}
-          onAdvancedFilterClear={clearFilters}
-        />
+        <Stack spacing={2} useFlexGap>
+          <TodoBlock
+            windows={windows}
+            activeFilter={windowFilter}
+            onSelect={setWindowFilter}
+            loading={windowsLoading}
+          />
+          <TeamActivityTable
+            team={apiFilters.team}
+            owner={apiFilters.owner}
+            window={windowFilter}
+            advancedFilterPanel={filterPanel}
+            advancedFilters={advancedFilters}
+            advancedFilterCount={activeFiltersCount}
+            onAdvancedFilterOpen={handleOpenPanel}
+            onAdvancedFilterRemove={handleRemoveFilter}
+            onAdvancedFilterClear={clearFilters}
+          />
+        </Stack>
       </Stack>
 
       <Stack spacing={1.5}>

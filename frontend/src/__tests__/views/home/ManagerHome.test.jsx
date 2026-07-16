@@ -1,7 +1,7 @@
 // frontend/src/__tests__/views/home/ManagerHome.test.jsx
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 
 // ==============================|| MOCKS ||============================== //
 
@@ -9,15 +9,19 @@ vi.mock('next/font/google', () => ({
   Public_Sans: () => ({ className: 'mock-public-sans', style: { fontFamily: 'mock' } }),
 }));
 vi.mock('components/MainCard', () => ({
-  default: ({ children, title }) => (
-    <div data-testid="main-card">{title ? <div>{title}</div> : null}{children}</div>
+  default: ({ children, title, onClick }) => (
+    <div data-testid="main-card" onClick={onClick}>{title ? <div>{title}</div> : null}{children}</div>
   ),
 }));
 
 vi.mock('hooks/useUserPermissions', () => ({
   useUserPermissions: () => ({ currentUserId: 'mgr1' }),
 }));
-vi.mock('hooks/useLocalStorage', () => ({ default: () => ['', vi.fn()] }));
+// Stateful useLocalStorage so the window filter actually updates on a tile click.
+vi.mock('hooks/useLocalStorage', async () => {
+  const React = await import('react');
+  return { default: (_key, initial) => React.useState(initial) };
+});
 
 // Two teams — only the one managed by mgr1 must render a quota group.
 vi.mock('api/admin/teams', () => ({
@@ -29,15 +33,32 @@ vi.mock('api/admin/teams', () => ({
   }),
 }));
 
-vi.mock('api/quotas/quotas', () => ({
-  useGetTeamQuotas: () => ({
-    quotas: [{ id: 9, user_id: 'u1', user_name: 'Alice', target_type: 'meetings', name: 'Meetings Q3' }],
-    quotasLoading: false,
-  }),
+// Quota group is untouched by E2 — stub it (its internals are covered elsewhere).
+vi.mock('sections/home/TeamQuotaGroup', () => ({
+  default: ({ teamName }) => <div data-testid="quota-group">{teamName}</div>,
 }));
 
-// Stub the team activity table (pulls ReusableTable + the team todo hook) and
-// capture its props so we can assert the person drill-down flows through.
+// The tiles: capture the options so we can assert the TEAM windows KPI is used.
+let windowsOpts = null;
+vi.mock('api/bi/todo', () => ({
+  TODO_WINDOWS: { OVERDUE: 'overdue', TODAY: 'today', NEXT_7_DAYS: 'next_7_days', NEXT_4_WEEKS: 'next_4_weeks' },
+  useGetTodoWindows: (opts) => {
+    windowsOpts = opts;
+    return { windows: { overdue: 2, today: 5, next_7_days: 8, next_4_weeks: 12 }, windowsLoading: false };
+  },
+}));
+
+// Roster: the no-window per-owner breakdown feeds the Owner filter + chip.
+vi.mock('api/bi/kpi', () => ({
+  useKpi: (key) => {
+    if (key === 'todo_team_by_owner') {
+      return { kpi: { value: { u1: 3, u2: 3 }, meta: { labels: { u1: 'Alice', u2: 'Bob' } } } };
+    }
+    return { kpi: null };
+  },
+}));
+
+// Stub the team table (pulls ReusableTable + the team todo hook); capture props.
 let teamTableProps = null;
 vi.mock('sections/home/TeamActivityTable', () => ({
   default: (props) => {
@@ -46,58 +67,15 @@ vi.mock('sections/home/TeamActivityTable', () => ({
   },
 }));
 
-// useKpiBatch serves both blocks — branch on the request key.
-vi.mock('api/bi/kpi', () => ({
-  useKpiBatch: (reqs) => {
-    const key = reqs?.[0]?.key;
-    if (key === 'todo_team_by_owner') {
-      return {
-        results: [
-          { value: { u1: 2 }, meta: { labels: { u1: 'Alice' } } }, // overdue window
-          { value: { u1: 1, u2: 3 }, meta: { labels: { u1: 'Alice', u2: 'Bob' } } }, // today window
-          { value: { u1: 3, u2: 3 }, meta: { labels: { u1: 'Alice', u2: 'Bob' } } }, // roster (all open)
-        ],
-        resultsLoading: false,
-        resultsError: null,
-      };
-    }
-    if (key === 'quota_attainment') {
-      return {
-        results: [{ value: 80, meta: { current: 8, target: 10, target_type: 'meetings' } }],
-        resultsLoading: false,
-        resultsError: null,
-      };
-    }
-    return { results: [], resultsLoading: false, resultsError: null };
-  },
-}));
-
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
-import ManagerHome, { mergeTodo, managedTeamSubtree, rosterFromKpi } from 'views/home/ManagerHome';
+import ManagerHome, { managedTeamSubtree, rosterFromKpi } from 'views/home/ManagerHome';
 
-afterEach(() => {
-  cleanup();
+beforeEach(() => {
+  windowsOpts = null;
   teamTableProps = null;
 });
-
-describe('mergeTodo', () => {
-  it('merges overdue + today by owner, resolves names, sorts overdue-first, drops zeros', () => {
-    const people = mergeTodo([
-      { value: { u1: 2 }, meta: { labels: { u1: 'Alice' } } },
-      { value: { u1: 1, u2: 3 }, meta: { labels: { u1: 'Alice', u2: 'Bob' } } },
-    ]);
-    expect(people).toHaveLength(2);
-    // Alice: 2 overdue + 1 today = 3 total, ranked first (overdue-first).
-    expect(people[0]).toMatchObject({ name: 'Alice', overdue: 2, total: 3 });
-    expect(people[1]).toMatchObject({ name: 'Bob', overdue: 0, total: 3 });
-  });
-
-  it('omits people with nothing pending', () => {
-    const people = mergeTodo([{ value: {} }, { value: {} }]);
-    expect(people).toEqual([]);
-  });
-});
+afterEach(() => cleanup());
 
 describe('managedTeamSubtree', () => {
   // EMEA(me) └ France(managed by Bob!) └ Paris ; Sales US(Carol) └ NYC
@@ -111,7 +89,6 @@ describe('managedTeamSubtree', () => {
 
   it('includes a sub-team that has its OWN manager (the trap) and deep descendants', () => {
     const ids = managedTeamSubtree(teams, 'me').map((t) => t.id);
-    // France is Bob-managed but descends from EMEA (mine) -> INCLUDED. Paris (depth 2) too.
     expect(new Set(ids)).toEqual(new Set(['emea', 'france', 'paris']));
   });
 
@@ -128,63 +105,71 @@ describe('managedTeamSubtree', () => {
   });
 });
 
-describe('ManagerHome', () => {
-  it('renders the three blocks: per-person tasks, team activity table, per-member quota', () => {
+describe('ManagerHome — same screen as the rep, team scope', () => {
+  it('renders the 4 window tiles + the team table + the per-member quota section', () => {
     render(<ManagerHome />);
 
-    expect(screen.getByText("Were today's tasks done?")).toBeInTheDocument();
-    expect(screen.getByText('Team activity')).toBeInTheDocument();
-    expect(screen.getByText('Progress by person')).toBeInTheDocument();
-
-    // Bloc 1 — names + overdue callout. (Alice also appears in bloc 3's quota
-    // card, hence getAllByText.)
-    expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('Bob')).toBeInTheDocument();
-    expect(screen.getByText('2 overdue')).toBeInTheDocument();
-
-    // Bloc 2 — the team activity drill-down table is mounted.
+    expect(screen.getByText('What the team has to do')).toBeInTheDocument();
+    // the 4 tiles (real TodoBlock)
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    expect(screen.getByText('Today')).toBeInTheDocument();
+    expect(screen.getByText('Next 7 days')).toBeInTheDocument();
+    expect(screen.getByText('Next 4 weeks')).toBeInTheDocument();
+    // the table
     expect(screen.getByTestId('team-activity-table')).toBeInTheDocument();
-
-    // Bloc 3 — only the managed team (Alpha), member name + remaining framing.
+    // the quota section — only the managed team (Alpha), not Beta
+    expect(screen.getByText('Progress by person')).toBeInTheDocument();
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.queryByText('Beta')).not.toBeInTheDocument();
-    expect(screen.getByText('Meetings Q3')).toBeInTheDocument();
-    expect(screen.getByText('Only 2 left')).toBeInTheDocument();
   });
 
-  it('clicking a person filters the table on that owner AND surfaces a removable chip', () => {
+  it('feeds the tiles from the TEAM windows KPI, not the rep one', () => {
     render(<ManagerHome />);
-
-    // No owner filter initially — no chips.
-    expect(teamTableProps.owner).toBeUndefined();
-    expect(teamTableProps.advancedFilters).toEqual([]);
-    expect(teamTableProps.advancedFilterCount).toBe(0);
-
-    // Click Alice's bloc-1 row (index 0 — bloc 3 also renders "Alice").
-    fireEvent.click(screen.getAllByText('Alice')[0]);
-    expect(teamTableProps.owner).toBe('u1');
-    // The same state drives the standard filter chip.
-    expect(teamTableProps.advancedFilters).toEqual([{ key: 'owner', label: 'Owner', value: 'Alice' }]);
-    expect(teamTableProps.advancedFilterCount).toBe(1);
-
-    // Removing the chip (standard filter mechanism) clears the drill-down.
-    fireEvent.click(screen.getAllByText('Alice')[0]);
-    expect(teamTableProps.owner).toBeUndefined();
-    expect(teamTableProps.advancedFilters).toEqual([]);
+    expect(windowsOpts).toEqual({ scope: 'team', kpiKey: 'todo_team_windows' });
   });
 
-  it('removing the Owner chip via the table clears the owner filter', () => {
+  it('a tile drives the table window (default today; clicking Overdue switches it)', () => {
     render(<ManagerHome />);
-    fireEvent.click(screen.getAllByText('Alice')[0]);
-    expect(teamTableProps.owner).toBe('u1');
-    // The table calls onAdvancedFilterRemove('owner') when the chip's X is clicked.
-    act(() => teamTableProps.onAdvancedFilterRemove('owner'));
+    expect(teamTableProps.window).toBe('today'); // persisted default
+    fireEvent.click(screen.getByText('Overdue'));
+    expect(teamTableProps.window).toBe('overdue');
+  });
+
+  it('the roster feeds the Owner filter options + the chip name', () => {
+    render(<ManagerHome />);
+    // roster flows into the filter panel's person options...
+    const roster = teamTableProps.advancedFilterPanel.props.personOptions;
+    expect(roster).toEqual([
+      { id: 'u1', name: 'Alice' },
+      { id: 'u2', name: 'Bob' },
+    ]);
+    // ...and the subtree into the team options (both dimensions available).
+    expect(teamTableProps.advancedFilterPanel.props.teamOptions.map((t) => t.id)).toEqual(['t1']);
+  });
+
+  it('window + team + owner coexist as three independent dimensions on the table', () => {
+    render(<ManagerHome />);
+    // all three props are wired; window is the persisted one, team/owner start empty
+    expect(teamTableProps).toHaveProperty('window');
+    expect(teamTableProps).toHaveProperty('team');
+    expect(teamTableProps).toHaveProperty('owner');
+    // changing the window does not touch team/owner
+    fireEvent.click(screen.getByText('Next 7 days'));
+    expect(teamTableProps.window).toBe('next_7_days');
+    expect(teamTableProps.team).toBeUndefined();
+    expect(teamTableProps.owner).toBeUndefined();
+  });
+
+  it('removing the Owner chip via the table clears the owner filter (no crash without the drill-down)', () => {
+    render(<ManagerHome />);
+    // The table's chip-remove path still works; owner starts empty so this is a no-op that must not throw.
+    expect(() => teamTableProps.onAdvancedFilterRemove('owner')).not.toThrow();
     expect(teamTableProps.owner).toBeUndefined();
   });
 });
 
 describe('rosterFromKpi', () => {
-  it('builds the person options from a no-window breakdown, sorted by name', () => {
+  it('builds the owner options from a no-window breakdown, sorted by name', () => {
     const roster = rosterFromKpi({ value: { u2: 3, u1: 5 }, meta: { labels: { u1: 'Alice', u2: 'Bob' } } });
     expect(roster).toEqual([
       { id: 'u1', name: 'Alice' },

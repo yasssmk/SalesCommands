@@ -46,6 +46,7 @@ function toOrdering(sorting) {
 export default function TeamActivityTable({
   team,
   owner,
+  window,
   advancedFilterPanel,
   advancedFilters,
   advancedFilterCount,
@@ -61,13 +62,13 @@ export default function TeamActivityTable({
 
   const ordering = useMemo(() => toOrdering(sorting), [sorting]);
 
-  // A new team/person is a new list — back to page 1.
+  // A new window/team/person is a new list — back to page 1.
   useEffect(() => {
     setPage(1);
-  }, [team, owner]);
+  }, [team, owner, window]);
 
   const { activities, activitiesCount, activitiesLoading, activitiesError, swrKey } =
-    useGetTeamTodoActivities({ scope: 'team', team, owner, page, pageSize: validPageSize, search, ordering });
+    useGetTeamTodoActivities({ scope: 'team', team, owner, window, page, pageSize: validPageSize, search, ordering });
 
   const handlePaginationChange = useCallback(
     ({ page: newPage, pageSize: newSize }) => {
@@ -145,6 +146,7 @@ export default function TeamActivityTable({
 TeamActivityTable.propTypes = {
   team: PropTypes.string,
   owner: PropTypes.string,
+  window: PropTypes.string,
   advancedFilterPanel: PropTypes.node,
   advancedFilters: PropTypes.array,
   advancedFilterCount: PropTypes.number,

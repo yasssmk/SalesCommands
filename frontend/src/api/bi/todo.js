@@ -23,13 +23,18 @@ export const endpoints = {
 
 /**
  * useGetTodoWindows — the 4 tile counts (overdue / today / this week / this
- * month) from the todo_my_windows KPI. Reuses useKpi so it inherits the BI
- * endpoint conventions; windows and the /bi/todo/ rows share one backend
- * population, so a tile count equals its window's row count by construction.
+ * month). Reuses useKpi so it inherits the BI endpoint conventions; windows and
+ * the todo rows share ONE backend population, so a tile count equals its
+ * window's row count by construction.
+ *
+ * kpiKey selects the population: 'todo_my_windows' (rep, default — paired with
+ * /bi/todo/) or 'todo_team_windows' (manager — paired with /bi/todo/team/). The
+ * two are NOT interchangeable: the team KPI reads build_team_todo_population (no
+ * personal invited-accepted union), so pass scope:'team' with it.
  */
 export function useGetTodoWindows(options = {}) {
-  const { scope = 'mine', enabled = true } = options;
-  const { kpi, kpiLoading, kpiError, mutateKpi } = useKpi('todo_my_windows', { scope, enabled });
+  const { scope = 'mine', kpiKey = 'todo_my_windows', enabled = true } = options;
+  const { kpi, kpiLoading, kpiError, mutateKpi } = useKpi(kpiKey, { scope, enabled });
 
   return useMemo(
     () => ({
@@ -92,11 +97,12 @@ export function useGetTodoActivities(options = {}) {
   );
 }
 
-export function buildTeamTodoUrl({ scope, team, owner, page, pageSize, search, ordering } = {}) {
+export function buildTeamTodoUrl({ scope, team, owner, window, page, pageSize, search, ordering } = {}) {
   const qs = new URLSearchParams();
   if (scope) qs.append('scope', scope);
   if (team) qs.append('team', team);
   if (owner) qs.append('owner', owner);
+  if (window) qs.append('window', window);
   if (page) qs.append('page', page);
   if (pageSize) qs.append('page_size', pageSize);
   if (search) qs.append('search', search);
@@ -115,11 +121,11 @@ export function buildTeamTodoUrl({ scope, team, owner, page, pageSize, search, o
  */
 export function useGetTeamTodoActivities(options = {}) {
   const { tenantId } = useAuth();
-  const { scope = 'team', team, owner, page = 1, pageSize = 10, search, ordering, enabled = true } = options;
+  const { scope = 'team', team, owner, window, page = 1, pageSize = 10, search, ordering, enabled = true } = options;
 
   const url = useMemo(
-    () => buildTeamTodoUrl({ scope, team, owner, page, pageSize, search, ordering }),
-    [scope, team, owner, page, pageSize, search, ordering],
+    () => buildTeamTodoUrl({ scope, team, owner, window, page, pageSize, search, ordering }),
+    [scope, team, owner, window, page, pageSize, search, ordering],
   );
 
   const swrKey = useMemo(
