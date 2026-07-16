@@ -84,6 +84,13 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     filterset_fields = {
         'account': ['exact'],
         'is_active': ['exact'],
+        # outcome is the ONLY way to express "open": a cycle is open when
+        # outcome IS NULL (same definition as dc_pipeline_value). is_active is
+        # NOT a proxy — it flags the single displayed cycle per account, so a
+        # closed cycle can still be is_active and an open one is_active=False.
+        # Additive; the base queryset is still owner/client-scoped upstream, so
+        # ?outcome__isnull=true narrows within scope and never bypasses it.
+        'outcome': ['exact', 'isnull'],
     }
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'is_active', 'created_at', 'updated_at']
