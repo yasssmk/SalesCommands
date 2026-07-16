@@ -82,10 +82,10 @@ export default function TeamTodoFilterPanel({
           </FormControl>
 
           <FormControl fullWidth size="small">
-            <InputLabel id="team-todo-filter-person">Person</InputLabel>
+            <InputLabel id="team-todo-filter-person">Owner</InputLabel>
             <Select
               labelId="team-todo-filter-person"
-              label="Person"
+              label="Owner"
               value={pendingFilters?.owner || ''}
               onChange={(e) => onFilterChange('owner', e.target.value)}
             >

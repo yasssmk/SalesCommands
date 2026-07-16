@@ -1,11 +1,12 @@
 // frontend/src/__tests__/components/table/TableHeaderActions.test.jsx
 //
-// Proves the additive enableExport prop is backward-compatible: with the
-// defaults (enableExport=true, enableImport=true) the "⋮" menu still shows
-// Export + Import exactly as before; and the new gating hides Export / the whole
-// menu when the actions are disabled (the navigation-only Home tables).
+// Mounts the REAL shared toolbar. This is the backward-compat guard for the
+// 20+ tables in the repo: the "⋮" menu is ALWAYS present with Export CSV, and
+// enableImport gates ONLY the Import item. (A prior enableExport prop + a
+// whole-menu-hidden path were reverted — the original component already offered
+// everything the navigation-only Home needed via enableImport={false}.)
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 
@@ -40,7 +41,7 @@ const menuButton = () => document.querySelector('[aria-haspopup="true"]');
 afterEach(() => cleanup());
 
 describe('TableHeaderActions', () => {
-  it('DEFAULT (backward-compat): the ⋮ menu shows Export + Import', () => {
+  it('DEFAULT (all other tables): the ⋮ menu shows Export + Import', () => {
     renderWith({});
     expect(menuButton()).toBeTruthy();
     fireEvent.click(menuButton());
@@ -48,15 +49,12 @@ describe('TableHeaderActions', () => {
     expect(screen.getByText('Import CSV')).toBeInTheDocument();
   });
 
-  it('enableExport=false hides Export but keeps Import', () => {
-    renderWith({ enableExport: false, enableImport: true });
+  it('enableImport=false (the Home): the ⋮ menu stays, Export kept, Import gone', () => {
+    renderWith({ enableImport: false });
+    // the button is ALWAYS present — the whole point of the A4 revert
+    expect(menuButton()).toBeTruthy();
     fireEvent.click(menuButton());
-    expect(screen.queryByText('Export CSV')).toBeNull();
-    expect(screen.getByText('Import CSV')).toBeInTheDocument();
-  });
-
-  it('both disabled: no ⋮ menu at all (navigation-only)', () => {
-    renderWith({ enableExport: false, enableImport: false });
-    expect(menuButton()).toBeNull();
+    expect(screen.getByText('Export CSV')).toBeInTheDocument();
+    expect(screen.queryByText('Import CSV')).toBeNull();
   });
 });

@@ -173,7 +173,7 @@ export default function ManagerHome() {
     }
     if (filters.owner) {
       const p = roster.find((x) => String(x.id) === String(filters.owner));
-      chips.push({ key: 'owner', label: 'Person', value: p?.name || 'Person' });
+      chips.push({ key: 'owner', label: 'Owner', value: p?.name || 'Owner' });
     }
     return chips;
   }, [filters, subtree, roster]);

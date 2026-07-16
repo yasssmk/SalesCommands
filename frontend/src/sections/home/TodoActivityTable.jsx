@@ -193,7 +193,6 @@ export default function TodoActivityTable({
       onSearchChange={onSearchChange}
       showAddButton={false}
       enableImport={false}
-      enableExport={false}
       searchPlaceholder={searchPlaceholder}
       emptyMessage="Nothing here"
       emptyDescription={emptyDescription}

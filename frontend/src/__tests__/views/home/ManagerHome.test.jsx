@@ -164,7 +164,7 @@ describe('ManagerHome', () => {
     fireEvent.click(screen.getAllByText('Alice')[0]);
     expect(teamTableProps.owner).toBe('u1');
     // The same state drives the standard filter chip.
-    expect(teamTableProps.advancedFilters).toEqual([{ key: 'owner', label: 'Person', value: 'Alice' }]);
+    expect(teamTableProps.advancedFilters).toEqual([{ key: 'owner', label: 'Owner', value: 'Alice' }]);
     expect(teamTableProps.advancedFilterCount).toBe(1);
 
     // Removing the chip (standard filter mechanism) clears the drill-down.
@@ -173,7 +173,7 @@ describe('ManagerHome', () => {
     expect(teamTableProps.advancedFilters).toEqual([]);
   });
 
-  it('removing the Person chip via the table clears the owner filter', () => {
+  it('removing the Owner chip via the table clears the owner filter', () => {
     render(<ManagerHome />);
     fireEvent.click(screen.getAllByText('Alice')[0]);
     expect(teamTableProps.owner).toBe('u1');

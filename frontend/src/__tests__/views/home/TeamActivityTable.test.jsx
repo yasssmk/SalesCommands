@@ -52,8 +52,8 @@ describe('TeamActivityTable', () => {
     render(<TeamActivityTable />);
     expect(screen.getByTestId('reusable-table')).toBeInTheDocument();
     expect(capturedProps.showAddButton).toBe(false);
+    // Home is navigation-only: Import disabled (Export stays under the ⋮ menu).
     expect(capturedProps.enableImport).toBe(false);
-    expect(capturedProps.enableExport).toBe(false);
     expect(capturedColumns.map((c) => c.header)).toEqual([
       'Owner',
       'Team',
