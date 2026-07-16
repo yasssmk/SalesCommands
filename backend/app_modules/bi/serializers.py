@@ -48,3 +48,25 @@ class TodoRowSerializer(serializers.ModelSerializer):
         if obj.campaign_id:
             return {'id': str(obj.campaign_id), 'name': getattr(obj.campaign, 'name', None)}
         return None
+
+
+class TeamTodoRowSerializer(TodoRowSerializer):
+    """The manager team todo row = the shared todo row PLUS the owner's `team`
+    (the manager table's Team column). Only the team endpoint needs it, so it
+    lives here and NOT on the shared TodoRowSerializer — the rep list carries no
+    team and does no owner__team join. `team` is null when the owner has no team.
+    The team view select_related('owner__team') so this stays query-bounded (no
+    per-row lookup)."""
+
+    team = serializers.SerializerMethodField(read_only=True)
+
+    class Meta(TodoRowSerializer.Meta):
+        fields = TodoRowSerializer.Meta.fields + ['team']
+        read_only_fields = fields
+
+    def get_team(self, obj):
+        owner = obj.owner if obj.owner_id else None
+        team = getattr(owner, 'team', None) if owner else None
+        if team:
+            return {'id': str(team.id), 'name': team.name}
+        return None

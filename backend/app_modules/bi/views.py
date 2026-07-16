@@ -54,7 +54,7 @@ from .presentation import (
     scope_within,
     serialize_result,
 )
-from .serializers import TodoRowSerializer
+from .serializers import TeamTodoRowSerializer, TodoRowSerializer
 
 # Upper bound on batch size — the Home fires a handful; this caps abuse without
 # constraining legitimate use.
@@ -349,12 +349,14 @@ class TeamTodoListView(BaseAPIView):
         if owner_id:
             queryset = queryset.filter(owner_id=owner_id)
 
-        queryset = queryset.select_related('owner', 'account', 'decision_cycle', 'campaign')
+        # owner__team so the serializer's Team column resolves without a per-row
+        # lookup (owner__team implies the owner join too).
+        queryset = queryset.select_related('owner__team', 'account', 'decision_cycle', 'campaign')
         queryset = _apply_todo_search(queryset, request.query_params.get('search'))
         queryset = _apply_todo_ordering(queryset, request.query_params.get('ordering'))
 
         page = self.paginate_queryset(queryset)
-        serializer = TodoRowSerializer(page, many=True, context={'request': request})
+        serializer = TeamTodoRowSerializer(page, many=True, context={'request': request})
         return Response({
             'success': True,
             'data': {

@@ -27,6 +27,8 @@ Hierarchy under test (tenant A):
 
 import pytest
 from django.core.cache import cache
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from app_modules.accounts.models import CompanyAccount
@@ -292,3 +294,61 @@ def test_ordering_unknown_field_rejected(as_mgr, org, client_account_a):
     _mk_act(org['fra'], org['fra_acc'], client_account_a)
     resp = as_mgr.get('/bi/todo/team/?scope=team&ordering=status')
     assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_row_carries_owner_team(as_mgr, org, client_account_a):
+    """The manager Team column: each row carries the owner's team {id, name}."""
+    _mk_act(org['fra'], org['fra_acc'], client_account_a)
+    row = _rows(as_mgr, team=str(org['france'].id))['results'][0]
+    assert row['team'] == {'id': str(org['france'].id), 'name': 'France'}
+
+
+@pytest.mark.django_db
+def test_owner_without_team_yields_null(org, client_account_a, role_individual_a):
+    """An owner with no team -> team is null, NOT a crash. (Via team scope every
+    owner has a team — a manager is auto-assigned as a member of the team they
+    manage by team_signals — so the null branch is proven at the serializer over
+    a genuinely team-less owner.)"""
+    from app_modules.bi.definitions.activities import build_team_todo_population
+    from app_modules.bi.serializers import TeamTodoRowSerializer
+
+    loner = _mk_user('loner@a.test', client_account_a, role_individual_a,
+                     first_name='Lon', last_name='Er')  # no team
+    acc = _mk_account('Lon Corp', loner, client_account_a)
+    _mk_act(loner, acc, client_account_a)
+
+    # Same population + annotation the endpoint uses, client scope so the
+    # team-less loner is included.
+    qs = build_team_todo_population(_ctx(loner, client_account_a), scope='client') \
+        .select_related('owner__team')
+    rows = TeamTodoRowSerializer(qs, many=True).data
+    row = next(r for r in rows if r['owner']['id'] == str(loner.id))
+    assert row['team'] is None
+
+
+@pytest.mark.django_db
+def test_team_column_no_n_plus_one(as_mgr, org, client_account_a, role_individual_a):
+    """The Team column must not add a query per row — select_related('owner__team')
+    keeps the query count CONSTANT as rows/owners grow."""
+    _mk_act(org['fra'], org['fra_acc'], client_account_a)
+
+    with CaptureQueriesContext(connection) as ctx1:
+        r1 = as_mgr.get('/bi/todo/team/?scope=team')
+    assert r1.status_code == 200
+    n1 = len(ctx1.captured_queries)
+
+    # Add another owner (with a team) and more rows.
+    emma = _mk_user('emma@a.test', client_account_a, role_individual_a,
+                    first_name='Emma', last_name='West', team=org['emea'])
+    emma_acc = _mk_account('Emma Corp', emma, client_account_a)
+    _mk_act(emma, emma_acc, client_account_a)
+    _mk_act(org['fra'], org['fra_acc'], client_account_a)
+
+    with CaptureQueriesContext(connection) as ctx2:
+        r2 = as_mgr.get('/bi/todo/team/?scope=team')
+    assert r2.status_code == 200
+    n2 = len(ctx2.captured_queries)
+
+    assert n2 == n1, f"query count grew with rows ({n1} -> {n2}): N+1 on the Team column"
+    assert all(row['team'] for row in r2.data['data']['results'])  # every row resolved its team
