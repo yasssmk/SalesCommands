@@ -25,6 +25,8 @@ Hierarchy under test (tenant A):
     Sales US  (separate root, NOT managed by mgr; member: us)
 """
 
+from datetime import timedelta
+
 import pytest
 from django.core.cache import cache
 from django.db import connection
@@ -272,6 +274,39 @@ def test_search_by_owner_name(as_mgr, org, client_account_a, role_individual_a):
     resp = as_mgr.get('/bi/todo/team/?scope=team&search=roux')
     assert resp.status_code == 200
     assert {r['owner']['full_name'] for r in resp.data['data']['results']} == {'Fabien Roux'}
+
+
+@pytest.mark.django_db
+def test_search_by_context_name_and_team(as_mgr, org, client_account_a):
+    """Manager search matches the context name (DC OR campaign) AND — unlike the
+    rep table — the owner's team name (the manager view has a Team column)."""
+    from app_modules.campaigns.models.campaign import Campaign
+    from app_modules.decision_cycles.models import DecisionCycle
+
+    dc = DecisionCycle(account=org['fra_acc'], owner=org['fra'], name='Zephyr Deal')
+    dc.save(user=org['fra'], client_id=client_account_a.id)
+    a_dc = Activity(title='t', activity_type=ActivityType.CALL, status=ActivityStatus.PLANNED,
+                    account=org['fra_acc'], owner=org['fra'], decision_cycle=dc, due_date=TODAY)
+    a_dc.save(user=org['fra'], client_id=client_account_a.id)
+
+    camp = Campaign(name='Nimbus Push', campaign_type='OUTBOUND', owner=org['fra'],
+                    planned_start_date=TODAY, planned_end_date=TODAY + timedelta(days=30))
+    camp.save(user=org['fra'], client_id=client_account_a.id)
+    a_camp = Activity(title='t', activity_type=ActivityType.CALL, status=ActivityStatus.PLANNED,
+                      account=org['fra_acc'], owner=org['fra'], campaign=camp, due_date=TODAY)
+    a_camp.save(user=org['fra'], client_id=client_account_a.id)
+
+    plain = _mk_act(org['fra'], org['fra_acc'], client_account_a)  # no DC, no campaign
+
+    # Decision-cycle name.
+    r = as_mgr.get('/bi/todo/team/?scope=team&search=zephyr')
+    assert {x['id'] for x in r.data['data']['results']} == {str(a_dc.id)}
+    # Campaign name.
+    r = as_mgr.get('/bi/todo/team/?scope=team&search=nimbus')
+    assert {x['id'] for x in r.data['data']['results']} == {str(a_camp.id)}
+    # Team name (France) — matches every France member's row (manager-only search).
+    r = as_mgr.get('/bi/todo/team/?scope=team&search=france')
+    assert {x['id'] for x in r.data['data']['results']} == {str(a_dc.id), str(a_camp.id), str(plain.id)}
 
 
 @pytest.mark.django_db

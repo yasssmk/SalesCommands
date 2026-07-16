@@ -187,6 +187,59 @@ def test_search_filters_by_title_and_account(authed_api_a, user_a, client_accoun
 
 
 @pytest.mark.django_db
+def test_search_filters_by_context_name(authed_api_a, user_a, client_account_a):
+    """Search also matches the row's CONTEXT name — the decision cycle OR the
+    campaign (the 'Name' column) — on both the rep and manager tables."""
+    from app_modules.campaigns.models.campaign import Campaign
+    from app_modules.decision_cycles.models import DecisionCycle
+
+    acc = _mk_account(user_a, client_account_a, 'Neutral Corp')
+    today = timezone.now().date()
+
+    dc = DecisionCycle(account=acc, owner=user_a, name='Zephyr Renewal')
+    dc.save(user=user_a, client_id=client_account_a.id)
+    a_dc = Activity(title='step call', activity_type=ActivityType.CALL,
+                    status=ActivityStatus.PLANNED, account=acc, owner=user_a,
+                    decision_cycle=dc, due_date=today)
+    a_dc.save(user=user_a, client_id=client_account_a.id)
+
+    camp = Campaign(name='Nimbus Outbound', campaign_type='OUTBOUND', owner=user_a,
+                    planned_start_date=today, planned_end_date=today + timedelta(days=30))
+    camp.save(user=user_a, client_id=client_account_a.id)
+    a_camp = Activity(title='seq email', activity_type=ActivityType.CALL,
+                      status=ActivityStatus.PLANNED, account=acc, owner=user_a,
+                      campaign=camp, due_date=today)
+    a_camp.save(user=user_a, client_id=client_account_a.id)
+
+    _mk_titled(user_a, acc, client_account_a, 'Unrelated', today)  # neither DC nor campaign
+
+    # Decision-cycle name.
+    resp = authed_api_a.get('/bi/todo/?scope=mine&search=zephyr')
+    assert {r['id'] for r in resp.data['data']['results']} == {str(a_dc.id)}
+    # Campaign name.
+    resp = authed_api_a.get('/bi/todo/?scope=mine&search=nimbus')
+    assert {r['id'] for r in resp.data['data']['results']} == {str(a_camp.id)}
+
+
+@pytest.mark.django_db
+def test_rep_search_does_not_match_team_name(authed_api_a, user_a, client_account_a):
+    """The rep table has NO Team column, so team name is NOT searchable there
+    (include_team defaults to False). Proves the flag gating, not just the add."""
+    from end_users.models import Team
+
+    user_a.team = Team.objects.create(name='RepSquad', client_account=client_account_a)
+    user_a.save(update_fields=['team'])
+    acc = _mk_account(user_a, client_account_a, 'Plain Corp')
+    today = timezone.now().date()
+    _mk_titled(user_a, acc, client_account_a, 'A task', today)
+
+    # 'repsquad' matches only the team name — which the rep search must ignore.
+    resp = authed_api_a.get('/bi/todo/?scope=mine&search=repsquad')
+    assert resp.status_code == 200
+    assert resp.data['data']['results'] == []
+
+
+@pytest.mark.django_db
 def test_ordering_by_account_name_asc_and_desc(authed_api_a, user_a, client_account_a):
     alpha = _mk_account(user_a, client_account_a, 'Alpha Co')
     zeta = _mk_account(user_a, client_account_a, 'Zeta Co')

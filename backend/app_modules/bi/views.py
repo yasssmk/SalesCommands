@@ -230,18 +230,31 @@ def _annotate_todo_context(queryset):
     )
 
 
-def _apply_todo_search(queryset, search):
-    """Server-side search over the row's visible names: activity title, account
-    company name, owner first/last name. Blank/None is a no-op."""
+def _apply_todo_search(queryset, search, include_team=False):
+    """Server-side search over the row's VISIBLE names: activity title, account
+    company name, owner first/last name, and the row's context name (decision
+    cycle OR campaign — the "Name" column). include_team also matches the owner's
+    team name; it is opt-in because only the MANAGER table shows a Team column
+    (the rep table has none). Blank/None is a no-op.
+
+    All terms are to-one joins (account, owner, decision_cycle, campaign,
+    owner__team), so the OR filter adds no row multiplication (no .distinct())
+    and the accessed fields are already in the callers' select_related — no N+1.
+    """
     search = (search or '').strip()
     if not search:
         return queryset
-    return queryset.filter(
+    q = (
         Q(title__icontains=search)
         | Q(account__company_name__icontains=search)
         | Q(owner__first_name__icontains=search)
         | Q(owner__last_name__icontains=search)
+        | Q(decision_cycle__name__icontains=search)
+        | Q(campaign__name__icontains=search)
     )
+    if include_team:
+        q |= Q(owner__team__name__icontains=search)
+    return queryset.filter(q)
 
 
 def _apply_todo_ordering(queryset, ordering):
@@ -379,7 +392,8 @@ class TeamTodoListView(BaseAPIView):
         # lookup (owner__team implies the owner join too).
         queryset = queryset.select_related('owner__team', 'account', 'decision_cycle', 'campaign')
         queryset = _annotate_todo_context(queryset)
-        queryset = _apply_todo_search(queryset, request.query_params.get('search'))
+        # include_team: the manager table has a Team column, so its name is searchable.
+        queryset = _apply_todo_search(queryset, request.query_params.get('search'), include_team=True)
         queryset = _apply_todo_ordering(queryset, request.query_params.get('ordering'))
 
         page = self.paginate_queryset(queryset)
