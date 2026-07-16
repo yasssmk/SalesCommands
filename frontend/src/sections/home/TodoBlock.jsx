@@ -2,7 +2,7 @@
 
 import PropTypes from 'prop-types';
 
-import Grid from '@mui/material/Unstable_Grid2';
+import Grid from '@mui/material/Grid';
 import Skeleton from '@mui/material/Skeleton';
 
 import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined';
@@ -30,7 +30,7 @@ export default function TodoBlock({ windows = {}, activeFilter, onSelect, loadin
     return (
       <Grid container spacing={2}>
         {[0, 1, 2, 3].map((i) => (
-          <Grid xs={6} sm={3} key={i}>
+          <Grid item xs={6} sm={3} key={i}>
             <Skeleton variant="rounded" height={112} />
           </Grid>
         ))}
@@ -74,7 +74,7 @@ export default function TodoBlock({ windows = {}, activeFilter, onSelect, loadin
   return (
     <Grid container spacing={2}>
       {tiles.map((t) => (
-        <Grid xs={6} sm={3} key={t.key}>
+        <Grid item xs={6} sm={3} key={t.key}>
           <StatTile
             title={t.title}
             count={windows[t.key] || 0}

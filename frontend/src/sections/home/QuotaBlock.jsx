@@ -2,7 +2,7 @@
 
 import PropTypes from 'prop-types';
 
-import Grid from '@mui/material/Unstable_Grid2';
+import Grid from '@mui/material/Grid';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -25,7 +25,7 @@ export default function QuotaBlock({ quotas = [], loading = false }) {
     return (
       <Grid container spacing={2}>
         {[0, 1].map((i) => (
-          <Grid xs={12} md={6} key={i}>
+          <Grid item xs={12} md={6} key={i}>
             <Skeleton variant="rounded" height={140} />
           </Grid>
         ))}
@@ -53,7 +53,7 @@ export default function QuotaBlock({ quotas = [], loading = false }) {
         const title = entity.name || labelForType(meta.target_type);
 
         return (
-          <Grid xs={12} md={6} key={entity.id}>
+          <Grid item xs={12} md={6} key={entity.id}>
             <MainCard>
               <Stack spacing={1}>
                 <Typography variant="subtitle1">{title}</Typography>

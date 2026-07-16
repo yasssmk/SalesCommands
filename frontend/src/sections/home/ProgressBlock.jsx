@@ -3,7 +3,7 @@
 import PropTypes from 'prop-types';
 import NextLink from 'next/link';
 
-import Grid from '@mui/material/Unstable_Grid2';
+import Grid from '@mui/material/Grid';
 import Link from '@mui/material/Link';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
@@ -86,7 +86,7 @@ export default function ProgressBlock({
 
   return (
     <Grid container spacing={2}>
-      <Grid xs={12} md={6}>
+      <Grid item xs={12} md={6}>
         <MainCard title="Active campaigns">
           {loading ? (
             <CardSkeleton />
@@ -97,7 +97,7 @@ export default function ProgressBlock({
           )}
         </MainCard>
       </Grid>
-      <Grid xs={12} md={6}>
+      <Grid item xs={12} md={6}>
         <MainCard title="Territory coverage">
           {loading ? (
             <CardSkeleton />

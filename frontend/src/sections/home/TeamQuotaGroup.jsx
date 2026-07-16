@@ -5,7 +5,7 @@
 import PropTypes from 'prop-types';
 import { useMemo } from 'react';
 
-import Grid from '@mui/material/Unstable_Grid2';
+import Grid from '@mui/material/Grid';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -47,7 +47,7 @@ export default function TeamQuotaGroup({ teamId, teamName }) {
       {loading ? (
         <Grid container spacing={2}>
           {[0, 1].map((i) => (
-            <Grid xs={12} sm={6} key={i}>
+            <Grid item xs={12} sm={6} key={i}>
               <Skeleton variant="rounded" height={110} />
             </Grid>
           ))}
@@ -66,7 +66,7 @@ export default function TeamQuotaGroup({ teamId, teamName }) {
             const g = hasCounts ? goalGradient(meta.current, meta.target, { unit }) : null;
 
             return (
-              <Grid xs={12} sm={6} key={quota.id}>
+              <Grid item xs={12} sm={6} key={quota.id}>
                 <Stack spacing={0.5} sx={{ p: 1 }}>
                   <Typography variant="subtitle2" noWrap title={quota.user_name}>
                     {quota.user_name || 'Member'}
