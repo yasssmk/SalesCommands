@@ -48,7 +48,9 @@ vi.mock('api/bi/todo', () => ({
   },
 }));
 
-// Roster: the no-window per-owner breakdown feeds the Owner filter + chip.
+// Roster (useKpi) + the progress batch (useKpiBatch). Capture the batch requests
+// so we can assert scope:'team' reaches the KPIs.
+let kpiBatchReqs = null;
 vi.mock('api/bi/kpi', () => ({
   useKpi: (key) => {
     if (key === 'todo_team_by_owner') {
@@ -56,7 +58,33 @@ vi.mock('api/bi/kpi', () => ({
     }
     return { kpi: null };
   },
+  useKpiBatch: (reqs) => {
+    kpiBatchReqs = reqs;
+    const results = (reqs || []).map((r) => {
+      if (r.key === 'campaign_progress') return { value: 40, meta: { accounts_completed: 4, accounts_total: 10 } };
+      if (r.key === 'territory_coverage') return { value: 90, meta: { numerator: 9, denominator: 10 } };
+      return null;
+    });
+    return { results, resultsLoading: false, resultsError: null };
+  },
 }));
+
+// Team progress entity lists — capture the options to assert owner_scope=team.
+let campaignsOpts = null;
+let territoriesOpts = null;
+vi.mock('api/campaigns/campaigns', () => ({
+  useGetCampaigns: (opts) => {
+    campaignsOpts = opts;
+    return { campaigns: [{ id: 'c1', name: 'Q3 Outbound' }] };
+  },
+}));
+vi.mock('api/territories/territories', () => ({
+  useGetTerritories: (opts) => {
+    territoriesOpts = opts;
+    return { territories: [{ id: 't1', name: 'North' }], territoriesCount: 1 };
+  },
+}));
+vi.mock('utils/displayError', () => ({ displayErrorSnackbar: vi.fn() }));
 
 // Stub the team table (pulls ReusableTable + the team todo hook); capture props.
 let teamTableProps = null;
@@ -74,6 +102,9 @@ import ManagerHome, { managedTeamSubtree, rosterFromKpi } from 'views/home/Manag
 beforeEach(() => {
   windowsOpts = null;
   teamTableProps = null;
+  kpiBatchReqs = null;
+  campaignsOpts = null;
+  territoriesOpts = null;
 });
 afterEach(() => cleanup());
 
@@ -165,6 +196,41 @@ describe('ManagerHome — same screen as the rep, team scope', () => {
     // The table's chip-remove path still works; owner starts empty so this is a no-op that must not throw.
     expect(() => teamTableProps.onAdvancedFilterRemove('owner')).not.toThrow();
     expect(teamTableProps.owner).toBeUndefined();
+  });
+});
+
+describe('ManagerHome — team progress (the rep ProgressBlock in team scope)', () => {
+  it('reads the entity lists at owner_scope=team (never the tenant-wide bare list)', () => {
+    render(<ManagerHome />);
+    expect(campaignsOpts).toEqual({ filters: { owner_scope: 'team', status: 'ACTIVE' } });
+    expect(territoriesOpts).toEqual({ filters: { owner_scope: 'team' } });
+  });
+
+  it('runs the progress KPIs at scope=team, one request per entity', () => {
+    render(<ManagerHome />);
+    const byKey = (k) => kpiBatchReqs.filter((r) => r.key === k);
+    expect(byKey('campaign_progress')).toEqual([
+      { key: 'campaign_progress', scope: 'team', params: { campaign_id: 'c1' } },
+    ]);
+    expect(byKey('territory_coverage')).toEqual([
+      { key: 'territory_coverage', scope: 'team', params: { territory_id: 't1' } },
+    ]);
+  });
+
+  it('renders ProgressBlock with the inherited smallest-number framing (not a %)', () => {
+    render(<ManagerHome />);
+    expect(screen.getByText('Team progress')).toBeInTheDocument();
+    expect(screen.getByText('Q3 Outbound')).toBeInTheDocument();
+    // campaign meta 4/10 -> "6 accounts to go" (queue framing inherited from the rep block)
+    expect(screen.getByText('6 accounts to go')).toBeInTheDocument();
+    expect(screen.queryByText('40% done')).not.toBeInTheDocument();
+  });
+
+  it('does not cap the batch — every campaign+territory becomes a request (chunking is the hook\'s job, covered in kpi.test)', () => {
+    render(<ManagerHome />);
+    // 1 campaign + 1 territory here; the component passes all of them, so a large
+    // team fans out to the batch fetcher which chunks at BATCH_CAP (kpi.test.js).
+    expect(kpiBatchReqs).toHaveLength(2);
   });
 });
 

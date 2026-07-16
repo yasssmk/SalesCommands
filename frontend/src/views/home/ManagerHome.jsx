@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -15,11 +15,15 @@ import useTeamTodoFilters from 'hooks/useTeamTodoFilters';
 import useLocalStorage from 'hooks/useLocalStorage';
 import { useGetTeams } from 'api/admin/teams';
 import { useGetTodoWindows } from 'api/bi/todo';
-import { useKpi } from 'api/bi/kpi';
+import { useGetCampaigns } from 'api/campaigns/campaigns';
+import { useGetTerritories } from 'api/territories/territories';
+import { useKpi, useKpiBatch } from 'api/bi/kpi';
+import { displayErrorSnackbar } from 'utils/displayError';
 
 import TodoBlock from 'sections/home/TodoBlock';
 import TeamActivityTable from 'sections/home/TeamActivityTable';
 import TeamTodoFilterPanel from 'sections/home/TeamTodoFilterPanel';
+import ProgressBlock from 'sections/home/ProgressBlock';
 import TeamQuotaGroup from 'sections/home/TeamQuotaGroup';
 
 // The full roster of owners with open tasks (a no-window todo_team_by_owner):
@@ -123,6 +127,37 @@ export default function ManagerHome() {
   const { kpi: rosterKpi } = useKpi('todo_team_by_owner', { scope: 'team' });
   const roster = useMemo(() => rosterFromKpi(rosterKpi), [rosterKpi]);
 
+  // Team progress — the SAME ProgressBlock as the rep, in team scope. The entity
+  // LISTS are read=client, so owner_scope=team is REQUIRED (a bare list would be
+  // tenant-wide). Then ONE batch of parameterized KPIs at scope='team'.
+  const { campaigns } = useGetCampaigns({ filters: { owner_scope: 'team', status: 'ACTIVE' } });
+  const { territories, territoriesCount } = useGetTerritories({ filters: { owner_scope: 'team' } });
+
+  const entityReqs = useMemo(() => {
+    const reqs = [];
+    (campaigns || []).forEach((c) =>
+      reqs.push({ kind: 'campaign', entity: c, req: { key: 'campaign_progress', scope: 'team', params: { campaign_id: c.id } } }),
+    );
+    (territories || []).forEach((t) =>
+      reqs.push({ kind: 'territory', entity: t, req: { key: 'territory_coverage', scope: 'team', params: { territory_id: t.id } } }),
+    );
+    return reqs;
+  }, [campaigns, territories]);
+
+  // useKpiBatch chunks at BATCH_CAP (20) client-side, so a team with many
+  // campaigns+territories fans out over several POSTs and still zips by index.
+  const { results, resultsLoading, resultsError } = useKpiBatch(entityReqs.map((e) => e.req));
+  const enriched = useMemo(
+    () => entityReqs.map((e, i) => ({ ...e, result: results[i] || null })),
+    [entityReqs, results],
+  );
+  const campaignResults = enriched.filter((e) => e.kind === 'campaign');
+  const territoryResults = enriched.filter((e) => e.kind === 'territory');
+
+  useEffect(() => {
+    if (resultsError) displayErrorSnackbar(resultsError);
+  }, [resultsError]);
+
   // Filter chips (rendered by the table): one per active filter, resolved to a name.
   const advancedFilters = useMemo(() => {
     const chips = [];
@@ -190,6 +225,21 @@ export default function ManagerHome() {
             onAdvancedFilterClear={clearFilters}
           />
         </Stack>
+      </Stack>
+
+      <Stack spacing={1.5} useFlexGap>
+        <Box>
+          <Typography variant="h5">Team progress</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Where your team&apos;s active campaigns and territories stand.
+          </Typography>
+        </Box>
+        <ProgressBlock
+          campaigns={campaignResults}
+          territories={territoryResults}
+          territoriesTotal={territoriesCount}
+          loading={resultsLoading}
+        />
       </Stack>
 
       <Stack spacing={1.5}>
