@@ -4,8 +4,13 @@ Campaign KPI definitions.
 
 KPI 2 — Campaign progress + objectives. A single KPI (parameterized by
 campaign_id) that returns, for one campaign:
-- value = campaign advancement = CampaignAccount completion rate (COMPLETED /
-  total), matching the existing dashboard's completion_rate;
+- value = campaign advancement = CampaignAccount completion rate where a
+  WORKED-then-stopped account counts as DONE: (COMPLETED + STOPPED) / total.
+  STOPPED is a terminal OUTCOME (the target was contacted, then no-response /
+  opt-out), not a cancellation — so it belongs in the numerator, and the
+  denominator stays the raw total. The Home's "N accounts to go" = total - done
+  = the non-final accounts. This makes progress the exact complement of
+  campaign_coverage (progress% = 100% - coverage% at the account level);
 - meta.objectives = per objective_type: {target, current, progress_pct}, where
   current reuses CampaignObjective.get_current_value() (the existing service
   metric logic — MODULE objectives, not legacy).
@@ -60,10 +65,25 @@ def _campaign_progress(definition, auth_ctx, scope, period, params):
     agg = CampaignAccount.objects.filter(campaign=campaign).aggregate(
         total=Count('id'),
         completed=Count('id', filter=Q(status=CampaignAccountStatus.COMPLETED)),
+        stopped=Count('id', filter=Q(status=CampaignAccountStatus.STOPPED)),
     )                                                              # query 2
     total = agg['total'] or 0
-    completed = agg['completed'] or 0
-    completion_rate = round((completed / total) * 100, 1) if total else 0.0
+    completed_only = agg['completed'] or 0
+    stopped = agg['stopped'] or 0
+    # STOPPED counts as DONE. A stopped target was WORKED — contacted, then
+    # no-response / opt-out — the result is "stopped": a terminal OUTCOME, not a
+    # cancellation. Excluding it would say "it never existed" and erase real
+    # effort. So "done" = both final states (COMPLETED + STOPPED) and the
+    # denominator stays the raw total. "Remaining" = total - done = the
+    # NON-final accounts (PENDING + IN_PROGRESS) — never a stopped one.
+    #
+    # This makes campaign_progress the exact complement of campaign_coverage at
+    # the account level: progress% = done/total = final/total, coverage% =
+    # active/total = non-final/total, and final + non-final = total, so
+    # progress% = 100% - coverage%. Same classification of a STOPPED account
+    # (resolved / no-longer-to-do) on both sides.
+    done = completed_only + stopped
+    completion_rate = round((done / total) * 100, 1) if total else 0.0
 
     # Objective advancement — current/target per objective_type. campaign is
     # prefetched so get_current_value() is one query per objective.
@@ -88,8 +108,10 @@ def _campaign_progress(definition, auth_ctx, scope, period, params):
         meta={
             'campaign_id': str(campaign_id),
             'status': campaign.status,
-            'accounts_total': total,
-            'accounts_completed': completed,
+            'accounts_total': total,                    # raw total (denominator)
+            'accounts_completed': done,                 # DONE = COMPLETED + STOPPED (front reads this)
+            'accounts_completed_only': completed_only,  # strictly COMPLETED (decomposition)
+            'accounts_stopped': stopped,                # STOPPED counted as done (worked -> terminal)
             'objectives': objective_rows,
         },
     )

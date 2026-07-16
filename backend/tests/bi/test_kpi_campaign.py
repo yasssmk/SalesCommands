@@ -166,6 +166,57 @@ class TestValue:
 
 
 @pytest.mark.django_db
+class TestStoppedCountsAsDone:
+    """A STOPPED account was WORKED (contacted -> no-response / opt-out): a
+    terminal OUTCOME, not a cancellation. It counts as DONE (numerator), and the
+    denominator stays the raw total. "Remaining" = total - done = the non-final
+    accounts (PENDING + IN_PROGRESS) — never a stopped one."""
+
+    def _campaign_with_stopped(self, owner, ca):
+        # 5 accounts: 2 COMPLETED, 1 IN_PROGRESS, 1 PENDING, 1 STOPPED.
+        c = _mk_campaign(owner, ca)
+        accts = [_mk_account(f'S{i}', owner, ca) for i in range(5)]
+        _mk_campaign_account(c, accts[0], ca, CampaignAccountStatus.COMPLETED)
+        _mk_campaign_account(c, accts[1], ca, CampaignAccountStatus.COMPLETED)
+        _mk_campaign_account(c, accts[2], ca, CampaignAccountStatus.IN_PROGRESS)
+        _mk_campaign_account(c, accts[3], ca, CampaignAccountStatus.PENDING)
+        _mk_campaign_account(c, accts[4], ca, CampaignAccountStatus.STOPPED)
+        return c
+
+    def test_stopped_counts_as_done_denominator_is_raw_total(
+        self, kpi, owner, client_account_a
+    ):
+        c = self._campaign_with_stopped(owner, client_account_a)
+        res = cached_run(kpi, _ctx(owner, client_account_a), scope='mine',
+                         params={'campaign_id': str(c.id)})
+
+        # done = 2 COMPLETED + 1 STOPPED = 3 ; total = 5 (raw)
+        assert res.meta['accounts_total'] == 5              # raw total, stopped NOT dropped
+        assert res.meta['accounts_completed'] == 3          # DONE = completed + stopped
+        assert res.meta['accounts_completed_only'] == 2     # strictly COMPLETED
+        assert res.meta['accounts_stopped'] == 1
+        assert res.value == 60.0                            # 3 / 5, not 2/5 (=40) nor 2/4 (=50)
+
+        # The queue "remaining" the Home computes: total - done = the non-final
+        # accounts (IN_PROGRESS + PENDING), never the stopped one.
+        remaining = res.meta['accounts_total'] - res.meta['accounts_completed']
+        assert remaining == 2
+
+    def test_all_stopped_is_fully_done(self, kpi, owner, client_account_a):
+        c = _mk_campaign(owner, client_account_a)
+        acc = _mk_account('AllStop', owner, client_account_a)
+        _mk_campaign_account(c, acc, client_account_a, CampaignAccountStatus.STOPPED)
+        res = cached_run(kpi, _ctx(owner, client_account_a), scope='mine',
+                         params={'campaign_id': str(c.id)})
+        # a worked-then-stopped account is done -> 1/1 = 100%, nothing remaining
+        assert res.meta['accounts_total'] == 1
+        assert res.meta['accounts_completed'] == 1
+        assert res.meta['accounts_stopped'] == 1
+        assert res.value == 100.0
+        assert res.meta['accounts_total'] - res.meta['accounts_completed'] == 0
+
+
+@pytest.mark.django_db
 class TestScope:
 
     def test_owner_and_executor_see_it_outsider_does_not(
