@@ -27,7 +27,8 @@ from rest_framework.exceptions import (
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from django.db.models import Q
+from django.db.models import Case, CharField, Q, Value, When
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from core.apps_shared_methods import BaseAPIView
@@ -199,10 +200,34 @@ class KPIBatchView(BaseAPIView):
 # a 400, never a silent fallback.
 TODO_ORDERING_FIELDS = {
     'effective_date': '_effective_date',
-    'account__company_name': 'account__company_name',
-    'owner__last_name': 'owner__last_name',
     'due_date': 'due_date',
+    'title': 'title',
+    'activity_type': 'activity_type',
+    'account__company_name': 'account__company_name',
+    'owner__last_name': 'owner__last_name',       # manager Person column
+    'owner__team__name': 'owner__team__name',     # manager Team column
+    # Context = the activity's decision cycle OR campaign (an activity has one or
+    # the other). Both are order-by-only annotations added by
+    # _annotate_todo_context: _context_name = COALESCE(dc.name, campaign.name),
+    # _context_kind = which of the two.
+    'context_name': '_context_name',
+    'context_kind': '_context_kind',
 }
+
+
+def _annotate_todo_context(queryset):
+    """Annotate the context (decision cycle / campaign) sort fields — order-by
+    only, not serialized. Uses the joins already in select_related, so no extra
+    query. `_context_kind` is '' when the activity has neither."""
+    return queryset.annotate(
+        _context_name=Coalesce('decision_cycle__name', 'campaign__name'),
+        _context_kind=Case(
+            When(decision_cycle__isnull=False, then=Value('decision_cycle')),
+            When(campaign__isnull=False, then=Value('campaign')),
+            default=Value(''),
+            output_field=CharField(),
+        ),
+    )
 
 
 def _apply_todo_search(queryset, search):
@@ -279,6 +304,7 @@ class TodoListView(BaseAPIView):
             .filter(todo_window_q(window, timezone.now().date()))
             .select_related('owner', 'account', 'decision_cycle', 'campaign')
         )
+        queryset = _annotate_todo_context(queryset)
         queryset = _apply_todo_search(queryset, request.query_params.get('search'))
         queryset = _apply_todo_ordering(queryset, request.query_params.get('ordering'))
 
@@ -352,6 +378,7 @@ class TeamTodoListView(BaseAPIView):
         # owner__team so the serializer's Team column resolves without a per-row
         # lookup (owner__team implies the owner join too).
         queryset = queryset.select_related('owner__team', 'account', 'decision_cycle', 'campaign')
+        queryset = _annotate_todo_context(queryset)
         queryset = _apply_todo_search(queryset, request.query_params.get('search'))
         queryset = _apply_todo_ordering(queryset, request.query_params.get('ordering'))
 

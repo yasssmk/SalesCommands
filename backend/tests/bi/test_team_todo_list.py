@@ -297,6 +297,54 @@ def test_ordering_unknown_field_rejected(as_mgr, org, client_account_a):
 
 
 @pytest.mark.django_db
+def test_ordering_by_owner_team_name_no_n_plus_one(as_mgr, org, client_account_a, role_individual_a):
+    """Order by the owner's team name works, and select_related('owner__team')
+    keeps it query-bounded — the count stays constant as rows/owners grow."""
+    emma = _mk_user('emma@a.test', client_account_a, role_individual_a,
+                    first_name='Emma', last_name='West', team=org['emea'])
+    emma_acc = _mk_account('Emma Corp', emma, client_account_a)
+    fr = _mk_act(org['fra'], org['fra_acc'], client_account_a)   # team France
+    em = _mk_act(emma, emma_acc, client_account_a)               # team EMEA
+
+    # 'EMEA' < 'France' -> Emma first asc.
+    asc = as_mgr.get('/bi/todo/team/?scope=team&ordering=owner__team__name')
+    assert [r['id'] for r in asc.data['data']['results']] == [str(em.id), str(fr.id)]
+
+    with CaptureQueriesContext(connection) as ctx1:
+        as_mgr.get('/bi/todo/team/?scope=team&ordering=owner__team__name')
+    n1 = len(ctx1.captured_queries)
+    _mk_act(org['fra'], org['fra_acc'], client_account_a)
+    _mk_act(emma, emma_acc, client_account_a)
+    with CaptureQueriesContext(connection) as ctx2:
+        as_mgr.get('/bi/todo/team/?scope=team&ordering=owner__team__name')
+    assert len(ctx2.captured_queries) == n1, "ordering by the joined team added per-row queries"
+
+
+@pytest.mark.django_db
+def test_ordering_by_context_name_on_team_view(as_mgr, org, client_account_a):
+    """The context annotation is applied on the team view too."""
+    from app_modules.decision_cycles.models import DecisionCycle
+    from app_modules.campaigns.models import Campaign
+    from datetime import timedelta
+
+    dc = DecisionCycle(account=org['fra_acc'], owner=org['fra'], name='Zeta Cycle', is_active=True)
+    dc.save(user=org['fra'], client_id=client_account_a.id)
+    camp = Campaign(name='Alpha Camp', campaign_type='OUTBOUND', owner=org['fra'],
+                    planned_start_date=TODAY, planned_end_date=TODAY + timedelta(days=30))
+    camp.save(user=org['fra'], client_id=client_account_a.id)
+
+    on_dc = Activity(title='c1', activity_type=ActivityType.CALL, status=ActivityStatus.PLANNED,
+                     account=org['fra_acc'], owner=org['fra'], due_date=TODAY, decision_cycle=dc)
+    on_dc.save(user=org['fra'], client_id=client_account_a.id)
+    on_camp = Activity(title='c2', activity_type=ActivityType.CALL, status=ActivityStatus.PLANNED,
+                       account=org['fra_acc'], owner=org['fra'], due_date=TODAY, campaign=camp)
+    on_camp.save(user=org['fra'], client_id=client_account_a.id)
+
+    by_name = as_mgr.get('/bi/todo/team/?scope=team&ordering=context_name')  # Alpha < Zeta
+    assert [r['id'] for r in by_name.data['data']['results']] == [str(on_camp.id), str(on_dc.id)]
+
+
+@pytest.mark.django_db
 def test_row_carries_owner_team(as_mgr, org, client_account_a):
     """The manager Team column: each row carries the owner's team {id, name}."""
     _mk_act(org['fra'], org['fra_acc'], client_account_a)

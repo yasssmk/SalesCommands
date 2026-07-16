@@ -203,12 +203,73 @@ def test_ordering_by_account_name_asc_and_desc(authed_api_a, user_a, client_acco
 
 @pytest.mark.django_db
 def test_ordering_unknown_field_rejected(authed_api_a, user_a, client_account_a):
-    """Strict whitelist: a real-but-unlisted field (title) is a 400, not a silent
+    """Strict whitelist: a real-but-unlisted field (status) is a 400, not a silent
     fallback."""
     acc = _mk_account(user_a, client_account_a, 'A Corp')
     _mk_act(user_a, acc, client_account_a, timezone.now().date())
-    resp = authed_api_a.get('/bi/todo/?scope=mine&ordering=title')
+    resp = authed_api_a.get('/bi/todo/?scope=mine&ordering=status')
     assert resp.status_code == 400
+
+
+@pytest.mark.django_db
+def test_ordering_by_title(authed_api_a, user_a, client_account_a):
+    acc = _mk_account(user_a, client_account_a, 'A Corp')
+    today = timezone.now().date()
+    apple = _mk_titled(user_a, acc, client_account_a, 'Apple', today)
+    zebra = _mk_titled(user_a, acc, client_account_a, 'Zebra', today)
+    asc = authed_api_a.get('/bi/todo/?scope=mine&ordering=title')
+    assert [r['id'] for r in asc.data['data']['results']] == [str(apple.id), str(zebra.id)]
+
+
+@pytest.mark.django_db
+def test_ordering_by_activity_type_is_reversible(authed_api_a, user_a, client_account_a):
+    """Order by activity_type asc then desc — robust check without hardcoding the
+    enum values: desc is the reverse of asc."""
+    acc = _mk_account(user_a, client_account_a, 'A Corp')
+    today = timezone.now().date()
+    a = Activity(title='a', activity_type=ActivityType.CALL, status=ActivityStatus.PLANNED,
+                 account=acc, owner=user_a, due_date=today)
+    a.save(user=user_a, client_id=client_account_a.id)
+    b = Activity(title='b', activity_type=ActivityType.MEETING, status=ActivityStatus.PLANNED,
+                 account=acc, owner=user_a, due_date=today)
+    b.save(user=user_a, client_id=client_account_a.id)
+
+    asc = [r['id'] for r in authed_api_a.get('/bi/todo/?scope=mine&ordering=activity_type').data['data']['results']]
+    desc = [r['id'] for r in authed_api_a.get('/bi/todo/?scope=mine&ordering=-activity_type').data['data']['results']]
+    assert asc == list(reversed(desc))
+    assert set(asc) == {str(a.id), str(b.id)}
+
+
+@pytest.mark.django_db
+def test_ordering_by_context_name_and_kind(authed_api_a, user_a, client_account_a):
+    """Context sort: name = COALESCE(dc.name, campaign.name); kind = which one.
+    An activity has a decision cycle OR a campaign."""
+    from app_modules.decision_cycles.models import DecisionCycle
+    from app_modules.campaigns.models import Campaign
+
+    acc = _mk_account(user_a, client_account_a, 'A Corp')
+    today = timezone.now().date()
+
+    dc = DecisionCycle(account=acc, owner=user_a, name='Zeta Cycle', is_active=True)
+    dc.save(user=user_a, client_id=client_account_a.id)
+    camp = Campaign(name='Alpha Camp', campaign_type='OUTBOUND', owner=user_a,
+                    planned_start_date=today, planned_end_date=today + timedelta(days=30))
+    camp.save(user=user_a, client_id=client_account_a.id)
+
+    on_dc = Activity(title='c1', activity_type=ActivityType.CALL, status=ActivityStatus.PLANNED,
+                     account=acc, owner=user_a, due_date=today, decision_cycle=dc)
+    on_dc.save(user=user_a, client_id=client_account_a.id)
+    on_camp = Activity(title='c2', activity_type=ActivityType.CALL, status=ActivityStatus.PLANNED,
+                       account=acc, owner=user_a, due_date=today, campaign=camp)
+    on_camp.save(user=user_a, client_id=client_account_a.id)
+
+    # By name: 'Alpha Camp' < 'Zeta Cycle' -> campaign row first.
+    by_name = authed_api_a.get('/bi/todo/?scope=mine&ordering=context_name')
+    assert [r['id'] for r in by_name.data['data']['results']] == [str(on_camp.id), str(on_dc.id)]
+
+    # By kind: 'campaign' < 'decision_cycle' -> campaign row first.
+    by_kind = authed_api_a.get('/bi/todo/?scope=mine&ordering=context_kind')
+    assert [r['id'] for r in by_kind.data['data']['results']] == [str(on_camp.id), str(on_dc.id)]
 
 
 @pytest.mark.django_db
