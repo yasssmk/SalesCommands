@@ -37,6 +37,11 @@ export default defineConfig({
   resolve: {
     // Mirror jsconfig.json path aliases so test imports resolve identically to Next.js.
     alias: {
+      // `react-csv` is imported by the table's CSV export leaf but isn't
+      // installed in the test graph; alias it to a stub so the REAL ReusableTable
+      // (and its sorting/pagination children) can mount under test.
+      "react-csv": path.resolve(__dirname, "src/__tests__/_stubs/react-csv.jsx"),
+      "@dnd-kit/core": path.resolve(__dirname, "src/__tests__/_stubs/dnd-kit-core.jsx"),
       components: path.resolve(__dirname, "src/components"),
       layout: path.resolve(__dirname, "src/layout"),
       hooks: path.resolve(__dirname, "src/hooks"),

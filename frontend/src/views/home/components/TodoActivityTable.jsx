@@ -3,7 +3,7 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import Typography from '@mui/material/Typography';
@@ -68,6 +68,13 @@ export default function TodoActivityTable({
   emptyDescription = 'No activities in this window.',
 }) {
   const router = useRouter();
+
+  // ReusableTable runs TanStack in manual mode: the sorting state belongs to the
+  // caller (an undefined `sorting` overrides TanStack's default and crashes
+  // getSortedRowModel on `getState().sorting.length`). These rows are sorted
+  // server-side by effective_date and the columns are non-sortable, so this is a
+  // stable empty state — present for the contract, never mutated by the user.
+  const [sorting, setSorting] = useState([]);
 
   const columns = useMemo(
     () => [
@@ -147,6 +154,8 @@ export default function TodoActivityTable({
       currentPage={page}
       onPaginationChange={onPaginationChange}
       initialPageSize={pageSize}
+      sorting={sorting}
+      onSortingChange={setSorting}
       showAddButton={false}
       searchPlaceholder="Search todo…"
       emptyMessage="Nothing here"
