@@ -133,6 +133,7 @@ function ReusableTable({
   expandedRowContent = null,
   enableExpanding = false,
   enableImport = true,
+  enableExport = true,
   showAddButton = true,
   filterConfig = null,
 
@@ -519,6 +520,7 @@ function ReusableTable({
               exportHeaders={headers}
               exportFilename={exportFilename}
               enableImport={enableImport}
+              enableExport={enableExport}
             />
           </Stack>
         </Stack>
@@ -722,6 +724,7 @@ ReusableTable.propTypes = {
   expandedRowContent: PropTypes.func,
   enableExpanding: PropTypes.bool,
   enableImport: PropTypes.bool,
+  enableExport: PropTypes.bool,
   showAddButton: PropTypes.bool,
   filterConfig: PropTypes.object,
   // Advanced Filter Panel

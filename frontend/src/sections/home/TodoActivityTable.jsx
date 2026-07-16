@@ -92,8 +92,8 @@ export default function TodoActivityTable({
       ...leadingColumns,
       {
         header: 'Activity',
+        id: 'title', // -> title (server ordering)
         accessorKey: 'title',
-        enableSorting: false, // title is not in the backend ordering whitelist
         cell: ({ row }) => (
           <LinkCell
             label={row.original.title || 'Untitled'}
@@ -103,13 +103,13 @@ export default function TodoActivityTable({
       },
       {
         header: 'Type',
+        id: 'activity_type', // -> activity_type (server ordering; display is the label)
         accessorKey: 'activity_type_display',
-        enableSorting: false,
         cell: ({ getValue }) => <Typography variant="body2">{getValue() || '—'}</Typography>,
       },
       {
         header: 'Account',
-        id: 'account', // -> account__company_name (server ordering)
+        id: 'account', // -> account__company_name
         cell: ({ row }) => {
           const acc = row.original.account;
           return acc ? (
@@ -120,17 +120,29 @@ export default function TodoActivityTable({
         },
       },
       {
-        header: 'Decision cycle / Campaign',
-        id: 'context',
-        enableSorting: false,
+        // The NATURE of the link — repo vocabulary for an activity's cycle/campaign.
+        header: 'Context',
+        id: 'context', // -> context_kind
+        cell: ({ row }) => {
+          const { decision_cycle: dc, campaign } = row.original;
+          const kind = dc ? 'Decision Cycle' : campaign ? 'Campaign' : null;
+          return kind ? <Typography variant="body2">{kind}</Typography> : <Muted />;
+        },
+      },
+      {
+        // The NAME of that cycle/campaign — the clickable link to its route.
+        header: 'Name',
+        id: 'name', // -> context_name = COALESCE(dc.name, campaign.name)
         cell: ({ row }) => {
           const { account, decision_cycle: dc, campaign } = row.original;
-          if (dc && account) {
-            return (
+          if (dc) {
+            return account ? (
               <LinkCell
                 label={dc.name || 'Decision cycle'}
                 onClick={() => router.push(`/accounts/${account.id}/dc/${dc.id}`)}
               />
+            ) : (
+              <Typography variant="body2">{dc.name || 'Decision cycle'}</Typography>
             );
           }
           if (campaign) {
@@ -143,7 +155,8 @@ export default function TodoActivityTable({
       },
       {
         header: 'Due',
-        accessorKey: 'effective_date', // -> effective_date (server ordering; default asc)
+        id: 'effective_date', // -> effective_date (server ordering; default asc)
+        accessorKey: 'effective_date',
         cell: ({ row }) => (
           <Typography variant="body2">{formatDue(row.original.effective_date || row.original.due_date)}</Typography>
         ),
@@ -167,6 +180,8 @@ export default function TodoActivityTable({
       onSortingChange={onSortingChange}
       onSearchChange={onSearchChange}
       showAddButton={false}
+      enableImport={false}
+      enableExport={false}
       searchPlaceholder={searchPlaceholder}
       emptyMessage="Nothing here"
       emptyDescription={emptyDescription}

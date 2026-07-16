@@ -15,7 +15,11 @@ import TodoActivityTable from './TodoActivityTable';
 // Column id -> backend ordering field (the server whitelist). Only these columns
 // are sortable; the rest set enableSorting:false in TodoActivityTable.
 const COLUMN_TO_BACKEND_FIELD = {
+  title: 'title',
+  activity_type: 'activity_type',
   account: 'account__company_name',
+  context: 'context_kind',
+  name: 'context_name',
   effective_date: 'effective_date',
 };
 

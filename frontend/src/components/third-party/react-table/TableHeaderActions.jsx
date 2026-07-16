@@ -36,8 +36,12 @@ export default function TableHeaderActions({
   exportData = [],
   exportHeaders = [],
   exportFilename = 'export.csv',
-  enableImport = true
+  enableImport = true,
+  enableExport = true
 }) {
+  // The "More" menu only holds Export + Import; hide it entirely when both are
+  // disabled (e.g. a navigation-only table with no data actions).
+  const showMenu = enableExport || enableImport;
 
   console.log('🔵 TableHeaderActions render:', { 
     selectedRowCount, 
@@ -111,67 +115,75 @@ export default function TableHeaderActions({
         </Tooltip>
       )}
 
-      {/* More Menu Button - Always visible */}
-      <Tooltip title="More actions">
-        <IconButton
-          color="secondary"
-          onClick={handleMenuClick}
-          aria-controls={open ? 'table-actions-menu' : undefined}
-          aria-haspopup="true"
-          aria-expanded={open ? 'true' : undefined}
-        >
-          <MoreOutlined style={{ fontSize: '20px' }} />
-        </IconButton>
-      </Tooltip>
+      {/* More Menu — only when there is at least one action (Export or Import) */}
+      {showMenu && (
+        <Tooltip title="More actions">
+          <IconButton
+            color="secondary"
+            onClick={handleMenuClick}
+            aria-controls={open ? 'table-actions-menu' : undefined}
+            aria-haspopup="true"
+            aria-expanded={open ? 'true' : undefined}
+          >
+            <MoreOutlined style={{ fontSize: '20px' }} />
+          </IconButton>
+        </Tooltip>
+      )}
 
       {/* Hidden CSV Link */}
-      <CSVLink
-        data={exportData}
-        headers={exportHeaders}
-        filename={exportFilename}
-        ref={csvLinkRef}
-        style={{ display: 'none' }}
-      />
+      {enableExport && (
+        <CSVLink
+          data={exportData}
+          headers={exportHeaders}
+          filename={exportFilename}
+          ref={csvLinkRef}
+          style={{ display: 'none' }}
+        />
+      )}
 
       {/* Dropdown Menu */}
-      <Menu
-        id="table-actions-menu"
-        anchorEl={anchorEl}
-        open={open}
-        onClose={handleMenuClose}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'right'
-        }}
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'right'
-        }}
-      >
-        {/* Export CSV */}
-        <MenuItem onClick={handleExportClick} sx={{ py: 1 }}>
-          <ListItemIcon>
-            <UploadOutlined style={{ fontSize: '16px', color: theme.palette.text.secondary }} />
-          </ListItemIcon>
-          <ListItemText>
-            <Typography variant="h6" color="text.secondary">Export CSV</Typography>
-          </ListItemText>
-        </MenuItem>
+      {showMenu && (
+        <Menu
+          id="table-actions-menu"
+          anchorEl={anchorEl}
+          open={open}
+          onClose={handleMenuClose}
+          anchorOrigin={{
+            vertical: 'bottom',
+            horizontal: 'right'
+          }}
+          transformOrigin={{
+            vertical: 'top',
+            horizontal: 'right'
+          }}
+        >
+          {/* Export CSV */}
+          {enableExport && (
+            <MenuItem onClick={handleExportClick} sx={{ py: 1 }}>
+              <ListItemIcon>
+                <UploadOutlined style={{ fontSize: '16px', color: theme.palette.text.secondary }} />
+              </ListItemIcon>
+              <ListItemText>
+                <Typography variant="h6" color="text.secondary">Export CSV</Typography>
+              </ListItemText>
+            </MenuItem>
+          )}
 
-        {enableImport && <Divider />}
+          {enableExport && enableImport && <Divider />}
 
-        {/* Import CSV */}
-        {enableImport && (
-          <MenuItem onClick={handleImportClick} sx={{ py: 1 }}>
-            <ListItemIcon>
-              <DownloadOutlined style={{ fontSize: '18px', color: theme.palette.text.secondary }} />
-            </ListItemIcon>
-            <ListItemText>
-              <Typography variant="h6" color="text.secondary">Import CSV</Typography>
-            </ListItemText>
-          </MenuItem>
-        )}
-      </Menu>
+          {/* Import CSV */}
+          {enableImport && (
+            <MenuItem onClick={handleImportClick} sx={{ py: 1 }}>
+              <ListItemIcon>
+                <DownloadOutlined style={{ fontSize: '18px', color: theme.palette.text.secondary }} />
+              </ListItemIcon>
+              <ListItemText>
+                <Typography variant="h6" color="text.secondary">Import CSV</Typography>
+              </ListItemText>
+            </MenuItem>
+          )}
+        </Menu>
+      )}
     </Box>
   );
 }
@@ -184,5 +196,6 @@ TableHeaderActions.propTypes = {
   exportData: PropTypes.array,
   exportHeaders: PropTypes.array,
   exportFilename: PropTypes.string,
-  enableImport: PropTypes.bool
+  enableImport: PropTypes.bool,
+  enableExport: PropTypes.bool
 };

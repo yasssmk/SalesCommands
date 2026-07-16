@@ -18,7 +18,12 @@ import TodoActivityTable from './TodoActivityTable';
 // has no backend ordering field so it stays non-sortable.
 const COLUMN_TO_BACKEND_FIELD = {
   owner: 'owner__last_name',
+  team: 'owner__team__name',
+  title: 'title',
+  activity_type: 'activity_type',
   account: 'account__company_name',
+  context: 'context_kind',
+  name: 'context_name',
   effective_date: 'effective_date',
 };
 
@@ -95,8 +100,7 @@ export default function TeamActivityTable({
       },
       {
         header: 'Team',
-        id: 'team',
-        enableSorting: false, // no backend ordering field for team
+        id: 'team', // -> owner__team__name
         cell: ({ row }) => (
           <Typography variant="body2">{row.original.team?.name || '—'}</Typography>
         ),
