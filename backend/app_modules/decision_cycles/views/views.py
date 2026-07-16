@@ -31,6 +31,8 @@ from core.cache_utils import (
 
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
+from permissions.scope_filter import apply_role_scope
+from permissions.compat import get_auth_ctx
 
 from app_modules.notifications.models import NotificationCategory
 from app_modules.notifications.services import NotificationService
@@ -194,10 +196,29 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         else:
             # Create/Update/Delete: minimal - just account and owner
             queryset = queryset.select_related('account', 'owner')
-        
-        # Apply owner scope filter (mine/team/all)
-        queryset = self.apply_owner_scope_filter(queryset)
-        
+
+        # Apply owner scope filter (mine/team/all).
+        #
+        # For owner_scope=mine we deliberately DIVERGE from the shared
+        # OwnerScopeMixin (which matches owner_id only) and reuse the SAME
+        # primitive the BI layer uses — apply_role_scope('mine') — so the list's
+        # "mine" == the KPI's "mine": owner OR account-owner (C6). Without this,
+        # a cycle an SDR posted on the caller's account (which the caller can
+        # already read via C6, and which dc_cycle_state resolves) is silently
+        # dropped from the list — the asymmetry that hid an AE's own deals on
+        # the Home. C6 terms are to-one joins, so no .distinct() is needed, and
+        # this runs BEFORE the DjangoFilterBackend/pagination so the count is
+        # correct. team / all / absent stay on the mixin, unchanged (zero blast
+        # radius on the 8 other ViewSets that share it).
+        owner_scope = self.request.query_params.get('owner_scope')
+        if owner_scope == 'mine':
+            ctx = get_auth_ctx(self.request)
+            queryset = apply_role_scope(
+                queryset, module='decision_cycles', scope='mine', auth_ctx=ctx
+            )
+        else:
+            queryset = self.apply_owner_scope_filter(queryset)
+
         return queryset
     
     # ==========================================================================
