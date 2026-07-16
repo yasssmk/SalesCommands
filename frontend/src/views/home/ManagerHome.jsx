@@ -4,22 +4,20 @@
 
 import { useCallback, useMemo, useState } from 'react';
 
-import Chip from '@mui/material/Chip';
-import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
 import MainCard from 'components/MainCard';
 
 import { useUserPermissions } from 'hooks/useUserPermissions';
-import useLocalStorage from 'hooks/useLocalStorage';
+import useTeamTodoFilters from 'hooks/useTeamTodoFilters';
 import { useGetTeams } from 'api/admin/teams';
 import { useKpiBatch } from 'api/bi/kpi';
 
 import Section from './components/Section';
 import TeamTodoBlock from './components/TeamTodoBlock';
 import TeamActivityTable from './components/TeamActivityTable';
+import TeamTodoFilterPanel from './components/TeamTodoFilterPanel';
 import TeamQuotaGroup from './components/TeamQuotaGroup';
 
 // Local ISO date (not UTC) — "today" must match the user's calendar day.
@@ -48,6 +46,16 @@ export function mergeTodo(results) {
     .sort((a, b) => b.overdue - a.overdue || b.total - a.total);
 }
 
+// The full roster of owners with open tasks (a no-window todo_team_by_owner):
+// the Person filter's options, sorted by name.
+export function rosterFromKpi(result) {
+  const value = result?.value || {};
+  const labels = result?.meta?.labels || {};
+  return Object.keys(value)
+    .map((id) => ({ id, name: labels[id] || 'Unknown' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * The manager's managed team SUBTREE, reconstructed client-side exactly like the
  * backend's get_all_descendant_team_ids: start from the teams the user manages
@@ -55,7 +63,7 @@ export function mergeTodo(results) {
  * regardless of a sub-team's own manager. (A sub-team managed by someone else is
  * still in the subtree because it descends from a team the user manages; keying
  * on manager.id or effective_manager.id alone would wrongly drop it.) The
- * returned list drives the team selector; it is display-only — the server's role
+ * returned list drives the team filter; it is display-only — the server's role
  * scope is the real boundary, so a selection can only ever narrow, never widen.
  */
 export function managedTeamSubtree(teams, userId) {
@@ -91,9 +99,9 @@ export function managedTeamSubtree(teams, userId) {
 
 /**
  * The manager's observer view: were today's tasks done (per person, with names),
- * a team activity drill-down table, and per-person quota progress. No
- * personal-todo block — the manager watches the team, they don't get their own
- * action list here.
+ * a team activity drill-down table with the standard filter (team + person), and
+ * per-person quota progress. No personal-todo block — the manager watches the
+ * team, they don't get their own action list here.
  */
 export default function ManagerHome() {
   const { currentUserId } = useUserPermissions();
@@ -103,19 +111,29 @@ export default function ManagerHome() {
     () => managedTeamSubtree(teams, currentUserId),
     [teams, currentUserId],
   );
-  // Bloc 2 quota groups list the roots the manager owns directly.
+  // Bloc 3 quota groups list the roots the manager owns directly.
   const managedRoots = useMemo(
     () => (teams || []).filter((t) => t?.manager && String(t.manager.id) === String(currentUserId)),
     [teams, currentUserId],
   );
 
-  // Bloc 3 drill-down state: the selected team (persisted — a stable working
-  // context) and the selected person (ephemeral — a transient drill-down).
-  const [selectedTeam, setSelectedTeam] = useLocalStorage('managerTodoTeam', '');
-  const [selectedOwner, setSelectedOwner] = useState(null);
+  // The shared filter state (team + owner): the standard filter panel AND the
+  // bloc-1 per-person drill-down both drive it.
+  const {
+    filters,
+    pendingFilters,
+    apiFilters,
+    activeFiltersCount,
+    updatePendingFilter,
+    applyFilters,
+    clearFilters,
+    resetPendingFilters,
+    applyFilterImmediate,
+  } = useTeamTodoFilters();
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
 
-  // Bloc 1 — today + overdue, per person. One batch (team scope covers the whole
-  // hierarchy server-side), split into two windows so overdue can be flagged.
+  // Bloc 1 — today + overdue, per person; + a no-window breakdown for the Person
+  // filter roster. One batch (team scope covers the whole hierarchy server-side).
   const { today, yesterday } = useMemo(() => {
     const now = new Date();
     return {
@@ -128,36 +146,58 @@ export default function ManagerHome() {
     () => [
       { key: 'todo_team_by_owner', scope: 'team', period: 'custom', period_start: '1970-01-01', period_end: yesterday },
       { key: 'todo_team_by_owner', scope: 'team', period: 'custom', period_start: today, period_end: today },
+      { key: 'todo_team_by_owner', scope: 'team' }, // roster: all open, by owner
     ],
     [today, yesterday],
   );
 
   const { results: todoResults, resultsLoading: todoLoading } = useKpiBatch(todoReqs);
   const people = useMemo(() => mergeTodo(todoResults), [todoResults]);
+  const roster = useMemo(() => rosterFromKpi(todoResults?.[2]), [todoResults]);
 
-  // Clicking a person toggles the owner filter; clicking the active one clears it.
+  // Clicking a person toggles the owner filter (immediate — no Apply step);
+  // clicking the active one clears it.
   const handleSelectPerson = useCallback(
-    (id) => setSelectedOwner((prev) => (String(prev) === String(id) ? null : id)),
-    [],
-  );
-
-  // Picking a team is a fresh context — drop the person drill-down.
-  const handleSelectTeam = useCallback(
-    (value) => {
-      setSelectedTeam(value);
-      setSelectedOwner(null);
+    (id) => {
+      applyFilterImmediate({ owner: String(filters.owner) === String(id) ? '' : id });
     },
-    [setSelectedTeam],
+    [applyFilterImmediate, filters.owner],
   );
 
-  // The selected team may have disappeared (re-org); fall back to "all".
-  const teamValue = useMemo(
-    () => (subtree.some((t) => String(t.id) === String(selectedTeam)) ? selectedTeam : ''),
-    [subtree, selectedTeam],
+  // Filter chips (rendered by the table): one per active filter, resolved to a name.
+  const advancedFilters = useMemo(() => {
+    const chips = [];
+    if (filters.team) {
+      const t = subtree.find((x) => String(x.id) === String(filters.team));
+      chips.push({ key: 'team', label: 'Team', value: t?.name || 'Team' });
+    }
+    if (filters.owner) {
+      const p = roster.find((x) => String(x.id) === String(filters.owner));
+      chips.push({ key: 'owner', label: 'Person', value: p?.name || 'Person' });
+    }
+    return chips;
+  }, [filters, subtree, roster]);
+
+  const handleRemoveFilter = useCallback(
+    (key) => applyFilterImmediate({ [key]: '' }),
+    [applyFilterImmediate],
   );
-  const selectedOwnerName = useMemo(
-    () => people.find((p) => String(p.id) === String(selectedOwner))?.name || null,
-    [people, selectedOwner],
+  const handleOpenPanel = useCallback(() => {
+    resetPendingFilters(); // panel opens reflecting the applied state
+    setFilterPanelOpen(true);
+  }, [resetPendingFilters]);
+
+  const filterPanel = (
+    <TeamTodoFilterPanel
+      open={filterPanelOpen}
+      onClose={() => setFilterPanelOpen(false)}
+      pendingFilters={pendingFilters}
+      teamOptions={subtree}
+      personOptions={roster}
+      onFilterChange={updatePendingFilter}
+      onApply={applyFilters}
+      onClear={clearFilters}
+    />
   );
 
   return (
@@ -167,40 +207,21 @@ export default function ManagerHome() {
           people={people}
           loading={todoLoading}
           onSelectPerson={handleSelectPerson}
-          selectedPersonId={selectedOwner}
+          selectedPersonId={filters.owner || null}
         />
       </Section>
 
-      <Section title="Team activity" subtitle="The open tasks behind the numbers — filter by team, or click a person above.">
-        <Stack spacing={2}>
-          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
-            <TextField
-              select
-              size="small"
-              label="Team"
-              value={teamValue}
-              onChange={(e) => handleSelectTeam(e.target.value)}
-              sx={{ minWidth: 220 }}
-            >
-              <MenuItem value="">All my teams</MenuItem>
-              {subtree.map((t) => (
-                <MenuItem key={t.id} value={t.id}>
-                  {t.name}
-                </MenuItem>
-              ))}
-            </TextField>
-            {selectedOwner ? (
-              <Chip
-                label={`Person: ${selectedOwnerName || 'selected'}`}
-                onDelete={() => setSelectedOwner(null)}
-                color="primary"
-                variant="combined"
-                size="small"
-              />
-            ) : null}
-          </Stack>
-          <TeamActivityTable team={teamValue || undefined} owner={selectedOwner || undefined} />
-        </Stack>
+      <Section title="Team activity" subtitle="The open tasks behind the numbers — filter by team or person, or click a name above.">
+        <TeamActivityTable
+          team={apiFilters.team}
+          owner={apiFilters.owner}
+          advancedFilterPanel={filterPanel}
+          advancedFilters={advancedFilters}
+          advancedFilterCount={activeFiltersCount}
+          onAdvancedFilterOpen={handleOpenPanel}
+          onAdvancedFilterRemove={handleRemoveFilter}
+          onAdvancedFilterClear={clearFilters}
+        />
       </Section>
 
       <Section title="Progress by person" subtitle="Each member's quota attainment for the current period.">

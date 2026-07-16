@@ -1,11 +1,11 @@
 // frontend/src/__tests__/views/home/TeamActivityTable.test.jsx
 //
-// The manager table reuses the shared TodoActivityTable and prepends a "Person"
-// column. We stub ReusableTable to capture its `columns` and exercise the Person
-// cell + each entity-link cell to the VERIFIED routes.
+// The manager table reuses the shared TodoActivityTable and prepends Person +
+// Team columns. We stub ReusableTable to capture its `columns`/props and exercise
+// the cells, the sortability config, and the sort -> ordering wiring.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 
 let capturedColumns = null;
 let capturedProps = null;
@@ -48,12 +48,13 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('TeamActivityTable', () => {
-  it('is navigation-only with a leading Person column before the base columns', () => {
+  it('prepends Person + Team columns before the base columns', () => {
     render(<TeamActivityTable />);
     expect(screen.getByTestId('reusable-table')).toBeInTheDocument();
     expect(capturedProps.showAddButton).toBe(false);
     expect(capturedColumns.map((c) => c.header)).toEqual([
       'Person',
+      'Team',
       'Activity',
       'Type',
       'Account',
@@ -62,33 +63,56 @@ describe('TeamActivityTable', () => {
     ]);
   });
 
-  it('requests team scope and forwards the team + owner narrowing', () => {
+  it('makes Person sortable (owner__last_name) but Team non-sortable (no backend field)', () => {
+    render(<TeamActivityTable />);
+    expect(colByHeader('Person').enableSorting).not.toBe(false); // sortable (default)
+    expect(colByHeader('Team').enableSorting).toBe(false);
+    // Account + Due are sortable too; Activity/Type/context are not.
+    expect(colByHeader('Account').enableSorting).not.toBe(false);
+    expect(colByHeader('Due').enableSorting).not.toBe(false);
+    expect(colByHeader('Activity').enableSorting).toBe(false);
+  });
+
+  it('requests team scope and forwards team + owner narrowing', () => {
     render(<TeamActivityTable team="team-1" owner="owner-9" />);
     expect(capturedHookArgs).toMatchObject({ scope: 'team', team: 'team-1', owner: 'owner-9' });
   });
 
-  it('Person cell shows the owner full name', () => {
+  it('maps a column sort to the backend ordering field passed to the hook', () => {
+    render(<TeamActivityTable />);
+    expect(capturedHookArgs.ordering).toBe('');
+    // Sort by Person descending -> -owner__last_name.
+    act(() => capturedProps.onSortingChange([{ id: 'owner', desc: true }]));
+    expect(capturedHookArgs.ordering).toBe('-owner__last_name');
+    // Sort by Account ascending -> account__company_name.
+    act(() => capturedProps.onSortingChange([{ id: 'account', desc: false }]));
+    expect(capturedHookArgs.ordering).toBe('account__company_name');
+  });
+
+  it('forwards the search term to the hook', () => {
+    render(<TeamActivityTable />);
+    act(() => capturedProps.onSearchChange('acme'));
+    expect(capturedHookArgs.search).toBe('acme');
+  });
+
+  it('Person cell shows the owner full name; Team cell shows the team name', () => {
     render(<TeamActivityTable />);
     render(colByHeader('Person').cell({ row: { original: { owner: { id: 'u1', full_name: 'Fabien Roux' } } } }));
     expect(screen.getByText('Fabien Roux')).toBeInTheDocument();
+    render(colByHeader('Team').cell({ row: { original: { team: { id: 't1', name: 'France' } } } }));
+    expect(screen.getByText('France')).toBeInTheDocument();
   });
 
-  it('activity cell links to /activities/{id}', () => {
+  it('activity/account/context cells link to the verified routes', () => {
     render(<TeamActivityTable />);
     render(colByHeader('Activity').cell({ row: { original: { id: 'act1', title: 'Call Bob' } } }));
     fireEvent.click(screen.getByText('Call Bob'));
     expect(pushMock).toHaveBeenCalledWith('/activities/act1');
-  });
 
-  it('account cell links to /accounts/{id}', () => {
-    render(<TeamActivityTable />);
     render(colByHeader('Account').cell({ row: { original: { account: { id: 'acc1', company_name: 'Acme' } } } }));
     fireEvent.click(screen.getByText('Acme'));
     expect(pushMock).toHaveBeenCalledWith('/accounts/acc1');
-  });
 
-  it('context cell links a DC to /accounts/{id}/dc/{cycleId} and a campaign to /campaigns/{id}', () => {
-    render(<TeamActivityTable />);
     render(
       colByHeader('Decision cycle / Campaign').cell({
         row: { original: { account: { id: 'acc1' }, decision_cycle: { id: 'dc1', name: 'Cycle X' } } },
@@ -96,15 +120,5 @@ describe('TeamActivityTable', () => {
     );
     fireEvent.click(screen.getByText('Cycle X'));
     expect(pushMock).toHaveBeenCalledWith('/accounts/acc1/dc/dc1');
-
-    cleanup();
-    render(<TeamActivityTable />);
-    render(
-      colByHeader('Decision cycle / Campaign').cell({
-        row: { original: { campaign: { id: 'camp1', name: 'Q3 Push' } } },
-      }),
-    );
-    fireEvent.click(screen.getByText('Q3 Push'));
-    expect(pushMock).toHaveBeenCalledWith('/campaigns/camp1');
   });
 });

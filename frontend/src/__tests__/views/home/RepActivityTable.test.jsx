@@ -1,11 +1,12 @@
 // frontend/src/__tests__/views/home/RepActivityTable.test.jsx
 //
-// The table is navigation-only: it must define entity-link cells to the VERIFIED
-// routes. We stub ReusableTable to capture its `columns` and exercise each cell's
-// link without rendering the full TanStack table.
+// The table is navigation-only: it defines entity-link cells to the VERIFIED
+// routes, makes only the backend-sortable columns sortable, and wires
+// sort/search to the data hook (server-side). We stub ReusableTable to capture
+// its `columns`/props without rendering the full TanStack table.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 
 let capturedColumns = null;
 let capturedProps = null;
@@ -20,14 +21,19 @@ vi.mock('components/table/Table', () => ({
 const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: pushMock }) }));
 vi.mock('hooks/useLocalStorage', () => ({ default: () => [10, vi.fn()] }));
+
+let capturedHookArgs = null;
 vi.mock('api/bi/todo', () => ({
-  useGetTodoActivities: () => ({
-    activities: [],
-    activitiesCount: 0,
-    activitiesLoading: false,
-    activitiesError: null,
-    swrKey: null,
-  }),
+  useGetTodoActivities: (args) => {
+    capturedHookArgs = args;
+    return {
+      activities: [],
+      activitiesCount: 0,
+      activitiesLoading: false,
+      activitiesError: null,
+      swrKey: null,
+    };
+  },
 }));
 
 import RepActivityTable from 'views/home/components/RepActivityTable';
@@ -38,6 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   capturedColumns = null;
   capturedProps = null;
+  capturedHookArgs = null;
 });
 afterEach(() => cleanup());
 
@@ -53,6 +60,30 @@ describe('RepActivityTable', () => {
       'Decision cycle / Campaign',
       'Due',
     ]);
+  });
+
+  it('makes only the backend-sortable columns sortable', () => {
+    render(<RepActivityTable window="today" />);
+    expect(colByHeader('Account').enableSorting).not.toBe(false);
+    expect(colByHeader('Due').enableSorting).not.toBe(false);
+    expect(colByHeader('Activity').enableSorting).toBe(false);
+    expect(colByHeader('Type').enableSorting).toBe(false);
+    expect(colByHeader('Decision cycle / Campaign').enableSorting).toBe(false);
+  });
+
+  it('maps a column sort to the backend ordering field passed to the hook', () => {
+    render(<RepActivityTable window="today" />);
+    expect(capturedHookArgs.ordering).toBe('');
+    act(() => capturedProps.onSortingChange([{ id: 'account', desc: false }]));
+    expect(capturedHookArgs.ordering).toBe('account__company_name');
+    act(() => capturedProps.onSortingChange([{ id: 'effective_date', desc: true }]));
+    expect(capturedHookArgs.ordering).toBe('-effective_date');
+  });
+
+  it('forwards the search term to the hook', () => {
+    render(<RepActivityTable window="today" />);
+    act(() => capturedProps.onSearchChange('acme'));
+    expect(capturedHookArgs.search).toBe('acme');
   });
 
   it('activity cell links to /activities/{id}', () => {

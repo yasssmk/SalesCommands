@@ -35,6 +35,11 @@ describe('buildTodoUrl', () => {
       '/bi/todo/?scope=mine&window=today&page=2&page_size=25',
     );
   });
+  it('appends server-side search + ordering', () => {
+    expect(buildTodoUrl({ scope: 'mine', search: 'acme', ordering: '-effective_date' })).toBe(
+      '/bi/todo/?scope=mine&search=acme&ordering=-effective_date',
+    );
+  });
 });
 
 describe('buildTeamTodoUrl', () => {
@@ -44,6 +49,11 @@ describe('buildTeamTodoUrl', () => {
   it('appends scope, team, owner, page, page_size', () => {
     expect(buildTeamTodoUrl({ scope: 'team', team: 't1', owner: 'u9', page: 2, pageSize: 25 })).toBe(
       '/bi/todo/team/?scope=team&team=t1&owner=u9&page=2&page_size=25',
+    );
+  });
+  it('appends server-side search + ordering', () => {
+    expect(buildTeamTodoUrl({ scope: 'team', search: 'roux', ordering: 'owner__last_name' })).toBe(
+      '/bi/todo/team/?scope=team&search=roux&ordering=owner__last_name',
     );
   });
 });

@@ -3,7 +3,7 @@
 'use client';
 
 import PropTypes from 'prop-types';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 import Typography from '@mui/material/Typography';
@@ -14,16 +14,20 @@ import ReusableTable from 'components/table/Table';
 //
 // The presentational core shared by the rep todo table and the manager team
 // todo table: the entity-link columns (activity / account / DC / campaign) to
-// the verified routes, plus the ReusableTable wiring (navigation only — no
-// select/Actions columns). Callers own the data hook + pagination state and
-// pass the rows in; `leadingColumns` lets a caller prepend columns (the manager
-// adds a "Person" column) without duplicating the base column set.
+// the verified routes, plus the ReusableTable wiring. Callers own the data hook,
+// pagination, sorting (server-side, mapped to `ordering`) and search state and
+// pass them in; `leadingColumns` lets a caller prepend columns (the manager adds
+// Person + Team). Advanced-filter props are forwarded straight to ReusableTable
+// (the manager wires the standard filter panel + chips).
 
+// A navigable entity: default text color, primary + underline on HOVER only —
+// the repo's link convention (matches ActivityTable / accounts list). Non-link
+// values (Person, Team) are plain <Typography>, never wrapped in LinkCell.
 export function LinkCell({ label, onClick }) {
   return (
     <Typography
       variant="body2"
-      sx={{ cursor: 'pointer', color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}
+      sx={{ cursor: 'pointer', '&:hover': { color: 'primary.main', textDecoration: 'underline' } }}
       onClick={(event) => {
         // Each entity is its own link; stop the cell click from bubbling.
         event.stopPropagation();
@@ -52,8 +56,11 @@ function formatDue(value) {
 }
 
 /**
- * Renders todo rows for a window/scope. Every entity cell is its own link to the
- * verified route; pagination is manual (the caller owns page + page size).
+ * Renders todo rows. Every entity cell is its own link to the verified route;
+ * pagination/sorting/search are server-side and owned by the caller. Only the
+ * columns the backend can order (Account, Due — plus a manager's Person) are
+ * sortable; the rest set enableSorting:false so the "Sort by" control lists only
+ * what the server actually supports.
  */
 export default function TodoActivityTable({
   activities,
@@ -64,17 +71,21 @@ export default function TodoActivityTable({
   page,
   onPaginationChange,
   pageSize,
+  sorting = [],
+  onSortingChange,
+  onSearchChange,
   leadingColumns = [],
   emptyDescription = 'No activities in this window.',
+  searchPlaceholder = 'Search todo…',
+  // Advanced filter panel (manager): forwarded to ReusableTable.
+  advancedFilterPanel = null,
+  advancedFilters = [],
+  advancedFilterCount = 0,
+  onAdvancedFilterOpen,
+  onAdvancedFilterRemove,
+  onAdvancedFilterClear,
 }) {
   const router = useRouter();
-
-  // ReusableTable runs TanStack in manual mode: the sorting state belongs to the
-  // caller (an undefined `sorting` overrides TanStack's default and crashes
-  // getSortedRowModel on `getState().sorting.length`). These rows are sorted
-  // server-side by effective_date and the columns are non-sortable, so this is a
-  // stable empty state — present for the contract, never mutated by the user.
-  const [sorting, setSorting] = useState([]);
 
   const columns = useMemo(
     () => [
@@ -82,7 +93,7 @@ export default function TodoActivityTable({
       {
         header: 'Activity',
         accessorKey: 'title',
-        enableSorting: false,
+        enableSorting: false, // title is not in the backend ordering whitelist
         cell: ({ row }) => (
           <LinkCell
             label={row.original.title || 'Untitled'}
@@ -98,8 +109,7 @@ export default function TodoActivityTable({
       },
       {
         header: 'Account',
-        id: 'account',
-        enableSorting: false,
+        id: 'account', // -> account__company_name (server ordering)
         cell: ({ row }) => {
           const acc = row.original.account;
           return acc ? (
@@ -133,8 +143,7 @@ export default function TodoActivityTable({
       },
       {
         header: 'Due',
-        accessorKey: 'effective_date',
-        enableSorting: false,
+        accessorKey: 'effective_date', // -> effective_date (server ordering; default asc)
         cell: ({ row }) => (
           <Typography variant="body2">{formatDue(row.original.effective_date || row.original.due_date)}</Typography>
         ),
@@ -155,11 +164,18 @@ export default function TodoActivityTable({
       onPaginationChange={onPaginationChange}
       initialPageSize={pageSize}
       sorting={sorting}
-      onSortingChange={setSorting}
+      onSortingChange={onSortingChange}
+      onSearchChange={onSearchChange}
       showAddButton={false}
-      searchPlaceholder="Search todo…"
+      searchPlaceholder={searchPlaceholder}
       emptyMessage="Nothing here"
       emptyDescription={emptyDescription}
+      advancedFilterPanel={advancedFilterPanel}
+      advancedFilters={advancedFilters}
+      advancedFilterCount={advancedFilterCount}
+      onAdvancedFilterOpen={onAdvancedFilterOpen}
+      onAdvancedFilterRemove={onAdvancedFilterRemove}
+      onAdvancedFilterClear={onAdvancedFilterClear}
     />
   );
 }
@@ -173,6 +189,16 @@ TodoActivityTable.propTypes = {
   page: PropTypes.number,
   onPaginationChange: PropTypes.func,
   pageSize: PropTypes.number,
+  sorting: PropTypes.array,
+  onSortingChange: PropTypes.func,
+  onSearchChange: PropTypes.func,
   leadingColumns: PropTypes.array,
   emptyDescription: PropTypes.string,
+  searchPlaceholder: PropTypes.string,
+  advancedFilterPanel: PropTypes.node,
+  advancedFilters: PropTypes.array,
+  advancedFilterCount: PropTypes.number,
+  onAdvancedFilterOpen: PropTypes.func,
+  onAdvancedFilterRemove: PropTypes.func,
+  onAdvancedFilterClear: PropTypes.func,
 };

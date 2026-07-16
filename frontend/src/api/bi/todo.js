@@ -42,27 +42,29 @@ export function useGetTodoWindows(options = {}) {
   );
 }
 
-export function buildTodoUrl({ scope, window, page, pageSize } = {}) {
+export function buildTodoUrl({ scope, window, page, pageSize, search, ordering } = {}) {
   const qs = new URLSearchParams();
   if (scope) qs.append('scope', scope);
   if (window) qs.append('window', window);
   if (page) qs.append('page', page);
   if (pageSize) qs.append('page_size', pageSize);
+  if (search) qs.append('search', search);
+  if (ordering) qs.append('ordering', ordering);
   const q = qs.toString();
   return q ? `${endpoints.todo}?${q}` : endpoints.todo;
 }
 
 /**
  * useGetTodoActivities — the todo ROWS for one window, paginated, from
- * GET /bi/todo/. Same population as the tiles, sorted by effective_date.
+ * GET /bi/todo/. Same population as the tiles; server-side search + ordering.
  */
 export function useGetTodoActivities(options = {}) {
   const { tenantId } = useAuth();
-  const { scope = 'mine', window, page = 1, pageSize = 10, enabled = true } = options;
+  const { scope = 'mine', window, page = 1, pageSize = 10, search, ordering, enabled = true } = options;
 
   const url = useMemo(
-    () => buildTodoUrl({ scope, window, page, pageSize }),
-    [scope, window, page, pageSize],
+    () => buildTodoUrl({ scope, window, page, pageSize, search, ordering }),
+    [scope, window, page, pageSize, search, ordering],
   );
 
   const swrKey = useMemo(
@@ -90,13 +92,15 @@ export function useGetTodoActivities(options = {}) {
   );
 }
 
-export function buildTeamTodoUrl({ scope, team, owner, page, pageSize } = {}) {
+export function buildTeamTodoUrl({ scope, team, owner, page, pageSize, search, ordering } = {}) {
   const qs = new URLSearchParams();
   if (scope) qs.append('scope', scope);
   if (team) qs.append('team', team);
   if (owner) qs.append('owner', owner);
   if (page) qs.append('page', page);
   if (pageSize) qs.append('page_size', pageSize);
+  if (search) qs.append('search', search);
+  if (ordering) qs.append('ordering', ordering);
   const q = qs.toString();
   return q ? `${endpoints.teamTodo}?${q}` : endpoints.teamTodo;
 }
@@ -106,15 +110,16 @@ export function buildTeamTodoUrl({ scope, team, owner, page, pageSize } = {}) {
  * GET /bi/todo/team/. Same population as the todo_team_by_owner counts (open
  * activities, role-scoped, no personal invited-accepted union); narrowable to a
  * team subtree (team) and/or a single person (owner — the per-person drill-down
- * behind clicking a name in bloc 1). Mirrors useGetTodoActivities' return shape.
+ * behind clicking a name in bloc 1). Server-side search + ordering. Mirrors
+ * useGetTodoActivities' return shape.
  */
 export function useGetTeamTodoActivities(options = {}) {
   const { tenantId } = useAuth();
-  const { scope = 'team', team, owner, page = 1, pageSize = 10, enabled = true } = options;
+  const { scope = 'team', team, owner, page = 1, pageSize = 10, search, ordering, enabled = true } = options;
 
   const url = useMemo(
-    () => buildTeamTodoUrl({ scope, team, owner, page, pageSize }),
-    [scope, team, owner, page, pageSize],
+    () => buildTeamTodoUrl({ scope, team, owner, page, pageSize, search, ordering }),
+    [scope, team, owner, page, pageSize, search, ordering],
   );
 
   const swrKey = useMemo(

@@ -1,7 +1,7 @@
 // frontend/src/__tests__/views/home/ManagerHome.test.jsx
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 
 // ==============================|| MOCKS ||============================== //
 
@@ -55,6 +55,7 @@ vi.mock('api/bi/kpi', () => ({
         results: [
           { value: { u1: 2 }, meta: { labels: { u1: 'Alice' } } }, // overdue window
           { value: { u1: 1, u2: 3 }, meta: { labels: { u1: 'Alice', u2: 'Bob' } } }, // today window
+          { value: { u1: 3, u2: 3 }, meta: { labels: { u1: 'Alice', u2: 'Bob' } } }, // roster (all open)
         ],
         resultsLoading: false,
         resultsError: null,
@@ -73,7 +74,7 @@ vi.mock('api/bi/kpi', () => ({
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
-import ManagerHome, { mergeTodo, managedTeamSubtree } from 'views/home/ManagerHome';
+import ManagerHome, { mergeTodo, managedTeamSubtree, rosterFromKpi } from 'views/home/ManagerHome';
 
 afterEach(() => {
   cleanup();
@@ -151,18 +152,47 @@ describe('ManagerHome', () => {
     expect(screen.getByText('Only 2 left')).toBeInTheDocument();
   });
 
-  it('clicking a person filters the team activity table on that owner (drill-down)', () => {
+  it('clicking a person filters the table on that owner AND surfaces a removable chip', () => {
     render(<ManagerHome />);
 
-    // No owner filter initially.
+    // No owner filter initially — no chips.
     expect(teamTableProps.owner).toBeUndefined();
+    expect(teamTableProps.advancedFilters).toEqual([]);
+    expect(teamTableProps.advancedFilterCount).toBe(0);
 
     // Click Alice's bloc-1 row (index 0 — bloc 3 also renders "Alice").
     fireEvent.click(screen.getAllByText('Alice')[0]);
     expect(teamTableProps.owner).toBe('u1');
+    // The same state drives the standard filter chip.
+    expect(teamTableProps.advancedFilters).toEqual([{ key: 'owner', label: 'Person', value: 'Alice' }]);
+    expect(teamTableProps.advancedFilterCount).toBe(1);
 
-    // Clicking the active person again clears the filter.
+    // Removing the chip (standard filter mechanism) clears the drill-down.
     fireEvent.click(screen.getAllByText('Alice')[0]);
     expect(teamTableProps.owner).toBeUndefined();
+    expect(teamTableProps.advancedFilters).toEqual([]);
+  });
+
+  it('removing the Person chip via the table clears the owner filter', () => {
+    render(<ManagerHome />);
+    fireEvent.click(screen.getAllByText('Alice')[0]);
+    expect(teamTableProps.owner).toBe('u1');
+    // The table calls onAdvancedFilterRemove('owner') when the chip's X is clicked.
+    act(() => teamTableProps.onAdvancedFilterRemove('owner'));
+    expect(teamTableProps.owner).toBeUndefined();
+  });
+});
+
+describe('rosterFromKpi', () => {
+  it('builds the person options from a no-window breakdown, sorted by name', () => {
+    const roster = rosterFromKpi({ value: { u2: 3, u1: 5 }, meta: { labels: { u1: 'Alice', u2: 'Bob' } } });
+    expect(roster).toEqual([
+      { id: 'u1', name: 'Alice' },
+      { id: 'u2', name: 'Bob' },
+    ]);
+  });
+
+  it('is empty for a missing result', () => {
+    expect(rosterFromKpi(undefined)).toEqual([]);
   });
 });
