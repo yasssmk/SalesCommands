@@ -116,11 +116,11 @@ describe('Activity table sorting (real ReusableTable) — the columns are actual
     expect(lastRepArgs.ordering).toBe('effective_date');
   });
 
-  it('manager: the leading Person and Team columns are sortable too', () => {
+  it('manager: the leading Owner and Team columns are sortable too', () => {
     renderTeam();
     expect(lastTeamArgs.ordering).toBe('');
 
-    clickHeader('Person');
+    clickHeader('Owner');
     expect(lastTeamArgs.ordering).toBe('owner__last_name');
 
     clickHeader('Team');

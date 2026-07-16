@@ -48,14 +48,14 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('TeamActivityTable', () => {
-  it('prepends Person + Team before the base columns (Context/Name split), no data actions', () => {
+  it('prepends Owner + Team before the base columns (Context/Name split), no data actions', () => {
     render(<TeamActivityTable />);
     expect(screen.getByTestId('reusable-table')).toBeInTheDocument();
     expect(capturedProps.showAddButton).toBe(false);
     expect(capturedProps.enableImport).toBe(false);
     expect(capturedProps.enableExport).toBe(false);
     expect(capturedColumns.map((c) => c.header)).toEqual([
-      'Person',
+      'Owner',
       'Team',
       'Activity',
       'Type',
@@ -68,7 +68,7 @@ describe('TeamActivityTable', () => {
 
   it('every column is server-sortable (Team now maps to owner__team__name)', () => {
     render(<TeamActivityTable />);
-    ['Person', 'Team', 'Activity', 'Type', 'Account', 'Context', 'Name', 'Due'].forEach((h) => {
+    ['Owner', 'Team', 'Activity', 'Type', 'Account', 'Context', 'Name', 'Due'].forEach((h) => {
       expect(colByHeader(h).enableSorting).not.toBe(false);
     });
   });
@@ -104,9 +104,9 @@ describe('TeamActivityTable', () => {
     expect(capturedHookArgs.search).toBe('acme');
   });
 
-  it('Person shows owner name; Team shows team name; Context/Name split with links', () => {
+  it('Owner shows owner name; Team shows team name; Context/Name split with links', () => {
     render(<TeamActivityTable />);
-    render(colByHeader('Person').cell({ row: { original: { owner: { id: 'u1', full_name: 'Fabien Roux' } } } }));
+    render(colByHeader('Owner').cell({ row: { original: { owner: { id: 'u1', full_name: 'Fabien Roux' } } } }));
     expect(screen.getByText('Fabien Roux')).toBeInTheDocument();
     render(colByHeader('Team').cell({ row: { original: { team: { id: 't1', name: 'France' } } } }));
     expect(screen.getByText('France')).toBeInTheDocument();

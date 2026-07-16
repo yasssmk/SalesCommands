@@ -14,8 +14,8 @@ import TodoActivityTable from './TodoActivityTable';
 
 // ==============================|| TEAM ACTIVITY TABLE — the manager's team todo rows ||============================== //
 
-// Column id -> backend ordering field. Person (owner) sorts by last name; Team
-// has no backend ordering field so it stays non-sortable.
+// Column id -> backend ordering field. Owner sorts by last name; Team sorts by
+// owner__team__name.
 const COLUMN_TO_BACKEND_FIELD = {
   owner: 'owner__last_name',
   team: 'owner__team__name',
@@ -38,7 +38,7 @@ function toOrdering(sorting) {
 }
 
 /**
- * The manager view's team todo rows, from /bi/todo/team/. Adds leading Person +
+ * The manager view's team todo rows, from /bi/todo/team/. Adds leading Owner +
  * Team columns and owns page / page size / sorting / search; `team` and `owner`
  * come from the shared filter state (the standard filter panel + the bloc-1
  * drill-down). The advanced-filter panel/chips props are forwarded to the table.
@@ -91,7 +91,7 @@ export default function TeamActivityTable({
   const leadingColumns = useMemo(
     () => [
       {
-        header: 'Person',
+        header: 'Owner', // repo vocabulary (owner_user / owner__last_name)
         id: 'owner', // -> owner__last_name (server ordering)
         // accessorFn REQUIRED for sortability: TanStack getCanSort() gates on
         // !!accessorFn, so a display column (id + cell) is never sortable. The
@@ -107,7 +107,7 @@ export default function TeamActivityTable({
       {
         header: 'Team',
         id: 'team', // -> owner__team__name
-        // accessorFn -> sortable (see Person). Mirror owner__team__name.
+        // accessorFn -> sortable (see Owner). Mirror owner__team__name.
         accessorFn: (row) => row.team?.name || '',
         cell: ({ row }) => (
           <Typography variant="body2">{row.original.team?.name || '—'}</Typography>
