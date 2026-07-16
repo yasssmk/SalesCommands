@@ -12,7 +12,6 @@ Also: window counts are correct, rows sort by effective_date, and scope isolates
 (a rep sees only their own todo — cross-user AND cross-tenant).
 """
 
-import calendar
 from datetime import timedelta
 
 import pytest
@@ -76,20 +75,21 @@ def _todo_rows(client, window=None, scope='mine'):
 
 @pytest.mark.django_db
 def test_count_equals_rows_per_window_parity(authed_api_a, user_a, client_account_a):
-    """THE parity invariant: tile count == list count == len(rows), per window."""
+    """THE parity invariant: tile count == list count == len(rows), per window.
+    Rolling windows: today ⊂ next_7_days ([today, +7]) ⊂ next_4_weeks ([today, +28])."""
     acc = _mk_account(user_a, client_account_a, 'A Corp')
     today = timezone.now().date()
-    end_of_month = today.replace(day=calendar.monthrange(today.year, today.month)[1])
 
     _mk_act(user_a, acc, client_account_a, today - timedelta(days=3))   # overdue
     _mk_act(user_a, acc, client_account_a, today - timedelta(days=1))   # overdue
     _mk_act(user_a, acc, client_account_a, today)                       # today
-    _mk_act(user_a, acc, client_account_a, today + timedelta(days=2))   # soon (week/month)
-    nextm = _mk_act(user_a, acc, client_account_a, end_of_month + timedelta(days=1))  # beyond
+    _mk_act(user_a, acc, client_account_a, today + timedelta(days=2))   # next_7_days (& next_4_weeks)
+    _mk_act(user_a, acc, client_account_a, today + timedelta(days=14))  # next_4_weeks only
+    beyond = _mk_act(user_a, acc, client_account_a, today + timedelta(days=40))  # beyond every window
 
     counts = _kpi_windows(authed_api_a)
 
-    for window in (TodoWindow.OVERDUE, TodoWindow.TODAY, TodoWindow.THIS_WEEK, TodoWindow.THIS_MONTH):
+    for window in (TodoWindow.OVERDUE, TodoWindow.TODAY, TodoWindow.NEXT_7_DAYS, TodoWindow.NEXT_4_WEEKS):
         data = _todo_rows(authed_api_a, window=window)
         assert data['count'] == counts[window], f"count mismatch for {window}"
         assert len(data['results']) == counts[window], f"rows != count for {window}"
@@ -97,13 +97,15 @@ def test_count_equals_rows_per_window_parity(authed_api_a, user_a, client_accoun
     # Concrete + nesting checks.
     assert counts[TodoWindow.OVERDUE] == 2
     assert counts[TodoWindow.TODAY] == 1
-    assert counts[TodoWindow.THIS_MONTH] >= counts[TodoWindow.THIS_WEEK] >= counts[TodoWindow.TODAY]
+    assert counts[TodoWindow.NEXT_7_DAYS] == 2       # today + the +2d row
+    assert counts[TodoWindow.NEXT_4_WEEKS] == 3      # + the +14d row
+    assert counts[TodoWindow.NEXT_4_WEEKS] >= counts[TodoWindow.NEXT_7_DAYS] >= counts[TodoWindow.TODAY]
 
-    # The beyond-this-month activity is in the population but in NO forward window.
+    # The beyond-horizon activity is in the population but in NO forward window.
     all_rows = _todo_rows(authed_api_a)  # no window -> whole population
-    assert all_rows['count'] == 5
-    month_ids = {r['id'] for r in _todo_rows(authed_api_a, window=TodoWindow.THIS_MONTH)['results']}
-    assert str(nextm.id) not in month_ids
+    assert all_rows['count'] == 6
+    month_ids = {r['id'] for r in _todo_rows(authed_api_a, window=TodoWindow.NEXT_4_WEEKS)['results']}
+    assert str(beyond.id) not in month_ids
 
 
 @pytest.mark.django_db

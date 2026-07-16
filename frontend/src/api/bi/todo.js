@@ -12,8 +12,8 @@ import { useKpi } from 'api/bi/kpi';
 export const TODO_WINDOWS = {
   OVERDUE: 'overdue',
   TODAY: 'today',
-  THIS_WEEK: 'this_week',
-  THIS_MONTH: 'this_month',
+  NEXT_7_DAYS: 'next_7_days',
+  NEXT_4_WEEKS: 'next_4_weeks',
 };
 
 export const endpoints = {

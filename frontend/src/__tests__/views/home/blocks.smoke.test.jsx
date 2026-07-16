@@ -28,18 +28,18 @@ import QuotaBlock from 'views/home/components/QuotaBlock';
 afterEach(() => cleanup());
 
 describe('TodoBlock', () => {
-  const windows = { overdue: 1, today: 2, this_week: 3, this_month: 5 };
+  const windows = { overdue: 1, today: 2, next_7_days: 3, next_4_weeks: 5 };
 
   it('renders the 4 window tiles', () => {
     render(<TodoBlock windows={windows} activeFilter="today" onSelect={vi.fn()} loading={false} />);
     expect(screen.getByText('Overdue')).toBeInTheDocument();
     expect(screen.getByText('Today')).toBeInTheDocument();
-    expect(screen.getByText('This week')).toBeInTheDocument();
-    expect(screen.getByText('This month')).toBeInTheDocument();
+    expect(screen.getByText('Next 7 days')).toBeInTheDocument();
+    expect(screen.getByText('Next 4 weeks')).toBeInTheDocument();
   });
 
   it('frames zero-today as all clear', () => {
-    render(<TodoBlock windows={{ overdue: 0, today: 0, this_week: 0, this_month: 0 }} activeFilter="today" onSelect={vi.fn()} loading={false} />);
+    render(<TodoBlock windows={{ overdue: 0, today: 0, next_7_days: 0, next_4_weeks: 0 }} activeFilter="today" onSelect={vi.fn()} loading={false} />);
     expect(screen.getByText('all clear for today')).toBeInTheDocument();
     expect(screen.getByText('nothing overdue')).toBeInTheDocument();
   });

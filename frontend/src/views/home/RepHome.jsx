@@ -76,7 +76,7 @@ export default function RepHome() {
 
   return (
     <Stack spacing={4} sx={{ py: 1 }}>
-      <Section title="What I have to do" subtitle="Pick a window — overdue, today, this week, this month. Accepted invitations included.">
+      <Section title="What I have to do" subtitle="Pick a window — overdue, today, next 7 days, next 4 weeks. Accepted invitations included.">
         <Stack spacing={2}>
           <TodoBlock
             windows={windows}

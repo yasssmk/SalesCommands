@@ -20,11 +20,11 @@ vi.mock('api/bi/kpi', () => ({
 }));
 vi.mock('api/bi/todo', () => ({
   useGetTodoWindows: () => ({
-    windows: { overdue: 1, today: 2, this_week: 3, this_month: 5 },
+    windows: { overdue: 1, today: 2, next_7_days: 3, next_4_weeks: 5 },
     windowsLoading: false,
     windowsError: null,
   }),
-  TODO_WINDOWS: { OVERDUE: 'overdue', TODAY: 'today', THIS_WEEK: 'this_week', THIS_MONTH: 'this_month' },
+  TODO_WINDOWS: { OVERDUE: 'overdue', TODAY: 'today', NEXT_7_DAYS: 'next_7_days', NEXT_4_WEEKS: 'next_4_weeks' },
 }));
 // Stub the table (pulls ReusableTable/TanStack) so this test isolates the block wiring.
 vi.mock('views/home/components/RepActivityTable', () => ({
@@ -47,7 +47,7 @@ describe('RepHome', () => {
     expect(screen.getByText('Where I am')).toBeInTheDocument();
     // Block a — window tiles + the activity table.
     expect(screen.getByText('Today')).toBeInTheDocument();
-    expect(screen.getByText('This month')).toBeInTheDocument();
+    expect(screen.getByText('Next 4 weeks')).toBeInTheDocument();
     expect(screen.getByTestId('rep-activity-table')).toBeInTheDocument();
     // Empty entity lists -> graceful empty states.
     expect(screen.getByText('No active campaigns.')).toBeInTheDocument();

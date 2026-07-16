@@ -31,7 +31,6 @@ unchanged. The compute stays query-bounded (the invited path is an EXISTS
 sub-query, not an N+1).
 """
 
-import calendar
 from datetime import timedelta
 
 from django.db.models import Case, CharField, Count, Exists, OuterRef, Q, Value, When
@@ -58,12 +57,15 @@ class TodoBucket:
 
 
 # Todo windows (forward-looking + overdue) for the Rep todo table filters.
-# Nested by construction: today ⊂ this_week ⊂ this_month; overdue is the past.
+# ROLLING windows (not calendar): today ⊂ next_7_days ⊂ next_4_weeks; overdue is
+# the past. Rolling so the horizon never degenerates at a calendar boundary (on
+# the 29th "this month" would show almost nothing) — there is always a useful
+# look-ahead.
 class TodoWindow:
     OVERDUE = 'overdue'
     TODAY = 'today'
-    THIS_WEEK = 'this_week'
-    THIS_MONTH = 'this_month'
+    NEXT_7_DAYS = 'next_7_days'
+    NEXT_4_WEEKS = 'next_4_weeks'
 
 
 # Open statuses that make an activity a "todo".
@@ -169,18 +171,18 @@ def todo_window_q(window, today):
     """The predicate defining a todo window on ``_effective_date``. SINGLE source
     of the window boundaries, used by BOTH the window counts and the /bi/todo/
     list so "today count" and "today rows" are identical. Windows are
-    forward-looking and nested (today ⊂ this_week ⊂ this_month); overdue is the
-    past. An unknown/None window returns an empty Q (the whole population)."""
+    forward-looking and nested (today ⊂ next_7_days ⊂ next_4_weeks); overdue is
+    the past. Windows are ROLLING (relative to today), so the horizon never
+    collapses at a calendar boundary. An unknown/None window returns an empty Q
+    (the whole population)."""
     if window == TodoWindow.OVERDUE:
         return Q(_effective_date__lt=today)
     if window == TodoWindow.TODAY:
         return Q(_effective_date=today)
-    if window == TodoWindow.THIS_WEEK:
-        end_of_week = today + timedelta(days=(6 - today.weekday()))
-        return Q(_effective_date__gte=today, _effective_date__lte=end_of_week)
-    if window == TodoWindow.THIS_MONTH:
-        end_of_month = today.replace(day=calendar.monthrange(today.year, today.month)[1])
-        return Q(_effective_date__gte=today, _effective_date__lte=end_of_month)
+    if window == TodoWindow.NEXT_7_DAYS:
+        return Q(_effective_date__gte=today, _effective_date__lte=today + timedelta(days=7))
+    if window == TodoWindow.NEXT_4_WEEKS:
+        return Q(_effective_date__gte=today, _effective_date__lte=today + timedelta(days=28))
     return Q()
 
 
@@ -215,14 +217,14 @@ def _todo_windows_compute(definition, auth_ctx, scope, period, params):
     agg = pop.aggregate(
         overdue=Count('id', filter=todo_window_q(TodoWindow.OVERDUE, today)),
         today=Count('id', filter=todo_window_q(TodoWindow.TODAY, today)),
-        this_week=Count('id', filter=todo_window_q(TodoWindow.THIS_WEEK, today)),
-        this_month=Count('id', filter=todo_window_q(TodoWindow.THIS_MONTH, today)),
+        next_7_days=Count('id', filter=todo_window_q(TodoWindow.NEXT_7_DAYS, today)),
+        next_4_weeks=Count('id', filter=todo_window_q(TodoWindow.NEXT_4_WEEKS, today)),
     )
     value = {
         TodoWindow.OVERDUE: agg['overdue'] or 0,
         TodoWindow.TODAY: agg['today'] or 0,
-        TodoWindow.THIS_WEEK: agg['this_week'] or 0,
-        TodoWindow.THIS_MONTH: agg['this_month'] or 0,
+        TodoWindow.NEXT_7_DAYS: agg['next_7_days'] or 0,
+        TodoWindow.NEXT_4_WEEKS: agg['next_4_weeks'] or 0,
     }
 
     return KPIResult(

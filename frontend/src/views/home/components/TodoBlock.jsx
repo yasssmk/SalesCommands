@@ -19,10 +19,11 @@ import StatTile from './StatTile';
 const iconSx = { fontSize: 18 };
 
 /**
- * The rep's todo tiles: overdue / today / this week / this month. Each tile is
- * a filter button — clicking it drives the table below (onSelect), the active
- * one is outlined. The count is the motivating smallest-number; overdue turns
- * red to drive the chase.
+ * The rep's todo tiles: overdue / today / next 7 days / next 4 weeks. Each tile
+ * is a filter button — clicking it drives the table below (onSelect), the active
+ * one is outlined. Windows are ROLLING (not calendar) so the horizon never
+ * collapses at a month/week boundary. The count is the motivating
+ * smallest-number; overdue turns red to drive the chase.
  */
 export default function TodoBlock({ windows = {}, activeFilter, onSelect, loading = false }) {
   if (loading) {
@@ -55,17 +56,17 @@ export default function TodoBlock({ windows = {}, activeFilter, onSelect, loadin
       icon: <ClockCircleOutlined style={iconSx} />,
     },
     {
-      key: TODO_WINDOWS.THIS_WEEK,
-      title: 'This week',
+      key: TODO_WINDOWS.NEXT_7_DAYS,
+      title: 'Next 7 days',
       color: 'info',
-      caption: 'due this week',
+      caption: 'due within 7 days',
       icon: <CalendarOutlined style={iconSx} />,
     },
     {
-      key: TODO_WINDOWS.THIS_MONTH,
-      title: 'This month',
+      key: TODO_WINDOWS.NEXT_4_WEEKS,
+      title: 'Next 4 weeks',
       color: 'secondary',
-      caption: 'due this month',
+      caption: 'due within 4 weeks',
       icon: <ScheduleOutlined style={iconSx} />,
     },
   ];

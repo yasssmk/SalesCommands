@@ -63,8 +63,8 @@ describe('TODO_WINDOWS', () => {
     expect(TODO_WINDOWS).toEqual({
       OVERDUE: 'overdue',
       TODAY: 'today',
-      THIS_WEEK: 'this_week',
-      THIS_MONTH: 'this_month',
+      NEXT_7_DAYS: 'next_7_days',
+      NEXT_4_WEEKS: 'next_4_weeks',
     });
   });
 });
@@ -78,13 +78,13 @@ describe('useGetTodoWindows', () => {
 
   it('unwraps the window counts from the KPI value', () => {
     useSWRMock.mockReturnValue({
-      data: { data: { value: { overdue: 2, today: 1, this_week: 3, this_month: 5 } } },
+      data: { data: { value: { overdue: 2, today: 1, next_7_days: 3, next_4_weeks: 5 } } },
       isLoading: false,
       error: null,
       mutate: vi.fn(),
     });
     const { result } = renderHook(() => useGetTodoWindows());
-    expect(result.current.windows).toEqual({ overdue: 2, today: 1, this_week: 3, this_month: 5 });
+    expect(result.current.windows).toEqual({ overdue: 2, today: 1, next_7_days: 3, next_4_weeks: 5 });
   });
 });
 
