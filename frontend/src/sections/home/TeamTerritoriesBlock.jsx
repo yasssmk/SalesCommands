@@ -16,7 +16,7 @@ import TeamAggregateBlock from './TeamAggregateBlock';
 // team's uncovered accounts are its actionable backlog.
 
 export default function TeamTerritoriesBlock({ result = null, loading = false }) {
-  return <TeamAggregateBlock title="Team territories" result={result} loading={loading} />;
+  return <TeamAggregateBlock title="Team territories" result={result} loading={loading} emptyText="No territories yet." />;
 }
 
 TeamTerritoriesBlock.propTypes = {

@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import Box from '@mui/material/Box';
+import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
@@ -250,9 +251,18 @@ export default function ManagerHome() {
           </Typography>
         </Box>
         {/* Both compact aggregates (global + one line per managed team), each
-            from a SINGLE grouped request — no per-entity batch. */}
-        <TeamCampaignsBlock result={teamCampaigns} loading={campaignsLoading} />
-        <TeamTerritoriesBlock result={teamTerritories} loading={territoriesLoading} />
+            from a SINGLE grouped request — no per-entity batch. Side by side in
+            one row (md=6 each), the SAME layout as the rep's ProgressBlock; the
+            Grid's negative margins are protected by the useFlexGap Stack above
+            (the alignment pitfall). */}
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={6}>
+            <TeamCampaignsBlock result={teamCampaigns} loading={campaignsLoading} />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <TeamTerritoriesBlock result={teamTerritories} loading={territoriesLoading} />
+          </Grid>
+        </Grid>
       </Stack>
 
       {/* Data-driven: the section appears only when the team OWNS >=1 open cycle

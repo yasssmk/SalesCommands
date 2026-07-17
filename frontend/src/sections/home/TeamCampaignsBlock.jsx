@@ -20,7 +20,13 @@ const GLOBAL_NOTE = { caption: 'Shared campaigns count once', tooltip: GLOBAL_TO
 
 export default function TeamCampaignsBlock({ result = null, loading = false }) {
   return (
-    <TeamAggregateBlock title="Team campaigns" result={result} loading={loading} globalNote={GLOBAL_NOTE} />
+    <TeamAggregateBlock
+      title="Team campaigns"
+      result={result}
+      loading={loading}
+      emptyText="No active campaigns."
+      globalNote={GLOBAL_NOTE}
+    />
   );
 }
 

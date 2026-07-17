@@ -148,12 +148,14 @@ describe('TeamCampaignsBlock — the manager campaign aggregate', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it('renders nothing (data-driven) when there are no team campaign rows', () => {
-    const { container } = render(
+  it('renders the card with an empty state (NOT nothing) when there are no team campaign rows', () => {
+    // Symmetric with the rep ProgressBlock: the card stays, showing its empty
+    // message — never a phantom empty column in the two-card row.
+    render(
       <TeamCampaignsBlock result={{ value: {}, meta: { labels: {}, per_group: {}, global: null } }} loading={false} />,
     );
-    expect(container).toBeEmptyDOMElement();
-    expect(screen.queryByText('Team campaigns')).not.toBeInTheDocument();
+    expect(screen.getByText('Team campaigns')).toBeInTheDocument();
+    expect(screen.getByText('No active campaigns.')).toBeInTheDocument();
   });
 
   it('frames a fully-worked team as "All done"', () => {
@@ -206,12 +208,12 @@ describe('TeamTerritoriesBlock — the manager territory aggregate', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it('renders nothing (data-driven) when there are no team territory rows', () => {
-    const { container } = render(
+  it('renders the card with an empty state (NOT nothing) when there are no team territory rows', () => {
+    render(
       <TeamTerritoriesBlock result={{ value: {}, meta: { labels: {}, per_group: {}, global: null } }} loading={false} />,
     );
-    expect(container).toBeEmptyDOMElement();
-    expect(screen.queryByText('Team territories')).not.toBeInTheDocument();
+    expect(screen.getByText('Team territories')).toBeInTheDocument();
+    expect(screen.getByText('No territories yet.')).toBeInTheDocument();
   });
 });
 

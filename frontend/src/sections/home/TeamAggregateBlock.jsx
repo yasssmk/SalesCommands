@@ -56,14 +56,21 @@ function RowSkeleton() {
  * @param {string} title      - the card title ("Team campaigns" / "Team territories").
  * @param {Object} result     - the aggregate KPI result ({ meta:{ labels, per_group, global } }).
  * @param {boolean} loading
+ * @param {string} emptyText  - shown when there are no team rows (keeps the card
+ *        present, like the rep's ProgressBlock — same two-card row, never a
+ *        phantom empty column).
  * @param {?{caption:string, tooltip:string}} globalNote - optional caption+tooltip
  *        under the global row (campaigns only; territories pass none).
  */
-export default function TeamAggregateBlock({ title, result = null, loading = false, globalNote = null }) {
+export default function TeamAggregateBlock({
+  title,
+  result = null,
+  loading = false,
+  emptyText = 'Nothing yet.',
+  globalNote = null,
+}) {
   const rows = teamRows(result);
   const global = result?.meta?.global || null;
-
-  if (!loading && rows.length === 0) return null; // data-driven: no rows -> no block
 
   return (
     <MainCard title={title} contentSX={{ p: 0 }}>
@@ -74,6 +81,12 @@ export default function TeamAggregateBlock({ title, result = null, loading = fal
               <RowSkeleton key={i} />
             ))}
           </Stack>
+        ) : rows.length === 0 ? (
+          // Empty state, NOT null: the card stays so the manager row mirrors the
+          // rep's ProgressBlock (two cards, one showing its empty message).
+          <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+            {emptyText}
+          </Typography>
         ) : (
           <Stack divider={<Divider />}>
             {/* Global — all managed teams together. */}
@@ -111,6 +124,7 @@ TeamAggregateBlock.propTypes = {
   title: PropTypes.string,
   result: PropTypes.object,
   loading: PropTypes.bool,
+  emptyText: PropTypes.string,
   globalNote: PropTypes.shape({
     caption: PropTypes.string,
     tooltip: PropTypes.string,
