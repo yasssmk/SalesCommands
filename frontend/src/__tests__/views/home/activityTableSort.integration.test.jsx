@@ -126,4 +126,15 @@ describe('Activity table sorting (real ReusableTable) — the columns are actual
     clickHeader('Team');
     expect(lastTeamArgs.ordering).toBe('owner__team__name');
   });
+
+  it('the "Sort By" menu is gone — the header is the only sort control', () => {
+    renderRep();
+    // The removed SelectColumnSorting rendered a "Sort By" placeholder in the
+    // toolbar; it must be absent now...
+    expect(screen.queryByText(/^Sort By$/i)).toBeNull();
+    expect(screen.queryByText(/^Sort by \(/i)).toBeNull();
+    // ...while header sorting still works (the capable path remains).
+    clickHeader('Account');
+    expect(lastRepArgs.ordering).toBe('account__company_name');
+  });
 });

@@ -52,7 +52,6 @@ import {
   DebouncedInput,
   HeaderSort,
   RowSelection,
-  SelectColumnSorting,
   TablePagination,
 } from "components/third-party/react-table";
 
@@ -459,14 +458,10 @@ function ReusableTable({
           spacing={2}
           sx={{ width: { xs: "100%", sm: "auto" } }}
         >
-          <SelectColumnSorting
-            {...{
-              getState: tableInstance.getState,
-              getAllColumns: tableInstance.getAllColumns,
-              setSorting: onSortingChange,
-            }}
-            disabled={loading || !!error}
-          />
+          {/* "Sort by" menu removed: every sortable column is sorted from its
+              header (asc/desc toggle). The menu gated on accessorKey (so it
+              dropped accessorFn columns), was single-column + ascending-only,
+              and was a strict subset of the headers — an inferior duplicate. */}
           <Stack direction="row" spacing={2} alignItems="center">
             {showAddButton &&
               (matchDownSM ? (
