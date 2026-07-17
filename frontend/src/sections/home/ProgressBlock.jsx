@@ -28,8 +28,9 @@ const EMPTY = { pct: 0, mode: 'empty', done: 0, total: 0, remaining: 0, headline
 // and territories are queues of accounts to work, so the remaining is the
 // actionable headline ("18 accounts to go" / "All done"). total===0 is a SETUP
 // state ("No accounts assigned"), not "0 of N" — kept distinct here so the
-// domain noun never leaks into the shared goalGradient.
-function queueGradient(done, total) {
+// domain noun never leaks into the shared goalGradient. Exported so the manager
+// TeamCampaignsBlock frames its aggregate rows the same way (one queue vocab).
+export function queueGradient(done, total) {
   if (!total) return EMPTY;
   return goalGradient(done, total, { framing: 'queue', noun: 'accounts' });
 }
@@ -94,25 +95,33 @@ export default function ProgressBlock({
   territories = [],
   territoriesTotal = 0,
   loading = false,
+  showCampaigns = true,
 }) {
   const rankedTerritories = [...territories].sort((a, b) => coverageOf(a) - coverageOf(b));
   const topTerritories = rankedTerritories.slice(0, TERRITORY_TOP_N);
   const hiddenCount = (territoriesTotal || territories.length) - topTerritories.length;
 
+  // showCampaigns=false (manager) hides the campaigns card — its aggregate lives
+  // in TeamCampaignsBlock. The rep default (true) is unchanged; the lone
+  // territory card then spans full width.
+  const territoryMd = showCampaigns ? 6 : 12;
+
   return (
     <Grid container spacing={2}>
-      <Grid item xs={12} md={6}>
-        <MainCard title="Active campaigns">
-          {loading ? (
-            <CardSkeleton />
-          ) : campaigns.length === 0 ? (
-            <Empty text="No active campaigns." />
-          ) : (
-            <Rows items={campaigns} gradientOf={campaignGradient} />
-          )}
-        </MainCard>
-      </Grid>
-      <Grid item xs={12} md={6}>
+      {showCampaigns ? (
+        <Grid item xs={12} md={6}>
+          <MainCard title="Active campaigns">
+            {loading ? (
+              <CardSkeleton />
+            ) : campaigns.length === 0 ? (
+              <Empty text="No active campaigns." />
+            ) : (
+              <Rows items={campaigns} gradientOf={campaignGradient} />
+            )}
+          </MainCard>
+        </Grid>
+      ) : null}
+      <Grid item xs={12} md={territoryMd}>
         <MainCard title="Territory coverage">
           {loading ? (
             <CardSkeleton />
@@ -139,4 +148,5 @@ ProgressBlock.propTypes = {
   territories: PropTypes.array,
   territoriesTotal: PropTypes.number,
   loading: PropTypes.bool,
+  showCampaigns: PropTypes.bool,
 };

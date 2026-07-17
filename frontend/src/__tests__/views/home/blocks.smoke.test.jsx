@@ -23,6 +23,7 @@ vi.mock('components/MainCard', () => ({
 
 import TodoBlock from 'sections/home/TodoBlock';
 import ProgressBlock from 'sections/home/ProgressBlock';
+import TeamCampaignsBlock from 'sections/home/TeamCampaignsBlock';
 import QuotaBlock from 'sections/home/QuotaBlock';
 
 afterEach(() => cleanup());
@@ -96,6 +97,87 @@ describe('ProgressBlock', () => {
   it('shows an empty state when there are no active campaigns', () => {
     render(<ProgressBlock campaigns={[]} territories={[]} territoriesTotal={0} loading={false} />);
     expect(screen.getByText('No active campaigns.')).toBeInTheDocument();
+  });
+
+  it('showCampaigns={false} (manager) hides the campaigns card, keeps territories only', () => {
+    const territories = [
+      { entity: { id: 't1', name: 'North' }, result: { value: 90, meta: { numerator: 9, denominator: 10 } } },
+    ];
+    render(
+      <ProgressBlock territories={territories} territoriesTotal={1} loading={false} showCampaigns={false} />,
+    );
+    // no campaigns card at all — its aggregate lives in TeamCampaignsBlock.
+    expect(screen.queryByText('Active campaigns')).not.toBeInTheDocument();
+    // territory card still renders, still queue-framed (1 to go).
+    expect(screen.getByText('Territory coverage')).toBeInTheDocument();
+    expect(screen.getByText('North')).toBeInTheDocument();
+    expect(screen.getByText('1 accounts to go')).toBeInTheDocument();
+  });
+});
+
+describe('TeamCampaignsBlock — the manager campaign aggregate', () => {
+  // A global that is LESS than the sum of team rows: shared campaigns counted
+  // once (10 global vs 6+8 team totals) — the case the tooltip explains.
+  const result = {
+    value: { t1: 50, t2: 25 },
+    meta: {
+      dimension: 'team',
+      labels: { t1: 'Alpha', t2: 'Gamma' },
+      per_group: {
+        t1: { total: 6, done: 3, progress_pct: 50 },
+        t2: { total: 8, done: 2, progress_pct: 25 },
+      },
+      global: { total: 10, done: 5, progress_pct: 50 },
+    },
+  };
+
+  it('renders the global "All teams" line + one line per managed team, queue-framed', () => {
+    render(<TeamCampaignsBlock result={result} loading={false} />);
+    expect(screen.getByText('Team campaigns')).toBeInTheDocument();
+    expect(screen.getByText('All teams')).toBeInTheDocument();
+    // global 5/10 -> "5 accounts to go"; Alpha 3/6 -> "3"; Gamma 2/8 -> "6".
+    expect(screen.getByText('5 accounts to go')).toBeInTheDocument();
+    expect(screen.getByText('3 accounts to go')).toBeInTheDocument();
+    expect(screen.getByText('6 accounts to go')).toBeInTheDocument();
+    // queue vocab throughout — never a cold "% done".
+    expect(screen.queryByText('50% done')).not.toBeInTheDocument();
+  });
+
+  it('orders the team rows lowest-progress first (most action needed)', () => {
+    render(<TeamCampaignsBlock result={result} loading={false} />);
+    const gamma = screen.getByText('Gamma'); // 25%
+    const alpha = screen.getByText('Alpha'); // 50%
+    // Gamma precedes Alpha in the DOM.
+    expect(gamma.compareDocumentPosition(alpha) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('flags the shared-campaign global with the discreet "counts once" note', () => {
+    render(<TeamCampaignsBlock result={result} loading={false} />);
+    expect(screen.getByText('Shared campaigns count once')).toBeInTheDocument();
+  });
+
+  it('has no "See detail" affordance (the dedicated view does not exist yet)', () => {
+    render(<TeamCampaignsBlock result={result} loading={false} />);
+    expect(screen.queryByText(/see detail/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('renders nothing (data-driven) when there are no team campaign rows', () => {
+    const { container } = render(
+      <TeamCampaignsBlock result={{ value: {}, meta: { labels: {}, per_group: {}, global: null } }} loading={false} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText('Team campaigns')).not.toBeInTheDocument();
+  });
+
+  it('frames a fully-worked team as "All done"', () => {
+    const done = {
+      value: { t1: 100 },
+      meta: { labels: { t1: 'Alpha' }, per_group: { t1: { total: 4, done: 4, progress_pct: 100 } }, global: { total: 4, done: 4, progress_pct: 100 } },
+    };
+    render(<TeamCampaignsBlock result={done} loading={false} />);
+    // both the global and the team row read "All done".
+    expect(screen.getAllByText('All done').length).toBeGreaterThanOrEqual(2);
   });
 });
 

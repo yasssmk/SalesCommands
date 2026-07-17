@@ -15,7 +15,6 @@ import useTeamTodoFilters from 'hooks/useTeamTodoFilters';
 import useLocalStorage from 'hooks/useLocalStorage';
 import { useGetTeams } from 'api/admin/teams';
 import { useGetTodoWindows } from 'api/bi/todo';
-import { useGetCampaigns } from 'api/campaigns/campaigns';
 import { useGetTerritories } from 'api/territories/territories';
 import { useGetDecisionCycles } from 'api/accounts/decisionCycles';
 import { useKpi, useKpiBatch } from 'api/bi/kpi';
@@ -25,6 +24,7 @@ import TodoBlock from 'sections/home/TodoBlock';
 import TeamActivityTable from 'sections/home/TeamActivityTable';
 import TeamTodoFilterPanel from 'sections/home/TeamTodoFilterPanel';
 import ProgressBlock from 'sections/home/ProgressBlock';
+import TeamCampaignsBlock from 'sections/home/TeamCampaignsBlock';
 import DecisionCyclesBlock from 'sections/home/DecisionCyclesBlock';
 import TeamQuotaGroup from 'sections/home/TeamQuotaGroup';
 
@@ -129,11 +129,17 @@ export default function ManagerHome() {
   const { kpi: rosterKpi } = useKpi('todo_team_by_owner', { scope: 'team' });
   const roster = useMemo(() => rosterFromKpi(rosterKpi), [rosterKpi]);
 
-  // Team progress + team decision cycles — the SAME blocks as the rep, in team
-  // scope. The entity LISTS are read=client, so owner_scope=team is REQUIRED (a
-  // bare list would be tenant-wide). Then ONE batch of parameterized KPIs at
-  // scope='team'.
-  const { campaigns } = useGetCampaigns({ filters: { owner_scope: 'team', status: 'ACTIVE' } });
+  // Campaigns — the AGGREGATE, not per-campaign. campaign_progress_by_team
+  // returns the global + one line per managed team in ONE request (a manager can
+  // have 100+ active campaigns; the per-campaign path was 100+ requests). No
+  // owner_scope=team list needed here — the KPI scopes and groups server-side.
+  const { kpi: teamCampaigns, kpiLoading: campaignsLoading } = useKpi(
+    'campaign_progress_by_team', { scope: 'team' },
+  );
+
+  // Team territories + decision cycles — still per-entity for now (territories get
+  // their aggregate next). The entity LISTS are read=client, so owner_scope=team
+  // is REQUIRED (a bare list would be tenant-wide).
   const { territories, territoriesCount } = useGetTerritories({ filters: { owner_scope: 'team' } });
   // My team's OPEN decision cycles. owner_scope=team routes through the mixin
   // (unchanged by the C6 fix, which only diverted 'mine'); open == outcome IS NULL.
@@ -143,9 +149,6 @@ export default function ManagerHome() {
 
   const entityReqs = useMemo(() => {
     const reqs = [];
-    (campaigns || []).forEach((c) =>
-      reqs.push({ kind: 'campaign', entity: c, req: { key: 'campaign_progress', scope: 'team', params: { campaign_id: c.id } } }),
-    );
     (territories || []).forEach((t) =>
       reqs.push({ kind: 'territory', entity: t, req: { key: 'territory_coverage', scope: 'team', params: { territory_id: t.id } } }),
     );
@@ -153,16 +156,15 @@ export default function ManagerHome() {
       reqs.push({ kind: 'dc', entity: c, req: { key: 'dc_cycle_state', scope: 'team', params: { cycle_id: c.id } } }),
     );
     return reqs;
-  }, [campaigns, territories, openCycles]);
+  }, [territories, openCycles]);
 
   // useKpiBatch chunks at BATCH_CAP (20) client-side, so a team with many
-  // campaigns+territories+cycles fans out over several POSTs and still zips by index.
+  // territories+cycles fans out over several POSTs and still zips by index.
   const { results, resultsLoading, resultsError } = useKpiBatch(entityReqs.map((e) => e.req));
   const enriched = useMemo(
     () => entityReqs.map((e, i) => ({ ...e, result: results[i] || null })),
     [entityReqs, results],
   );
-  const campaignResults = enriched.filter((e) => e.kind === 'campaign');
   const territoryResults = enriched.filter((e) => e.kind === 'territory');
   const cycleItems = useMemo(
     () => enriched.filter((e) => e.kind === 'dc').map((e) => ({ cycle: e.entity, result: e.result })),
@@ -250,11 +252,16 @@ export default function ManagerHome() {
             Where your team&apos;s active campaigns and territories stand.
           </Typography>
         </Box>
+        {/* Campaigns: the compact aggregate (global + per managed team) from the
+            single campaign_progress_by_team request. Territories: still per-entity
+            for now, so the shared ProgressBlock renders territories only
+            (showCampaigns={false}) — the campaigns card lives in the block above. */}
+        <TeamCampaignsBlock result={teamCampaigns} loading={campaignsLoading} />
         <ProgressBlock
-          campaigns={campaignResults}
           territories={territoryResults}
           territoriesTotal={territoriesCount}
           loading={resultsLoading}
+          showCampaigns={false}
         />
       </Stack>
 
