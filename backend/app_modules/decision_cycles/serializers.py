@@ -1100,15 +1100,23 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
     """
     account_name = serializers.SerializerMethodField(read_only=True)
     owner_name = serializers.SerializerMethodField(read_only=True)
+    # Email fallback for the owner's IDENTITY: first/last_name are nullable on
+    # User, so a name-less owner would otherwise be anonymous. The manager DC
+    # block shows owner_name || owner_email so "who carries this deal" is never
+    # hidden behind a dash.
+    owner_email = serializers.SerializerMethodField(read_only=True)
+    # The owner's team (the manager DC block's Team line). null when the owner
+    # has no team. Resolved from the owner__team select_related — no per-row query.
+    team = serializers.SerializerMethodField(read_only=True)
     steps_count = serializers.IntegerField(read_only=True)
     validated_steps_count = serializers.IntegerField(read_only=True)
-    
+
     class Meta:
         model = DecisionCycle
         fields = [
             'id', 'name', 'description',
             'account', 'account_name',
-            'owner', 'owner_name',
+            'owner', 'owner_name', 'owner_email', 'team',
             'is_active',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
@@ -1116,14 +1124,21 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
             'created_at', 'updated_at'
         ]
         read_only_fields = fields
-    
+
     def get_account_name(self, obj):
         return obj.account.company_name if obj.account else None
-    
+
     def get_owner_name(self, obj):
         if obj.owner:
             return f"{obj.owner.first_name or ''} {obj.owner.last_name or ''}".strip()
         return None
+
+    def get_owner_email(self, obj):
+        return obj.owner.email if obj.owner else None
+
+    def get_team(self, obj):
+        team = getattr(obj.owner, 'team', None) if obj.owner else None
+        return {'id': str(team.id), 'name': team.name} if team else None
 
 
 class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):

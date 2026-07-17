@@ -23,9 +23,12 @@ Proves:
 """
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 
 from app_modules.decision_cycles.models import DecisionCycle
+from app_modules.decision_cycles.serializers import DecisionCycleListSerializer
 from app_modules.accounts.models import CompanyAccount
 
 LIST_URL = '/decision_cycles/'
@@ -176,3 +179,83 @@ class TestOtherScopesUnchanged:
         ids = _ids(resp)
         assert str(own.id) in ids
         assert str(sdr_c6.id) not in ids  # team != mine-with-C6
+
+
+# =============================================================================
+# SERIALIZER — owner_name / owner_email / team on the list rows (manager DC block)
+# =============================================================================
+
+def _row_for(resp, cycle):
+    return next(r for r in _rows(resp) if r['id'] == str(cycle.id))
+
+
+@pytest.mark.django_db
+class TestListSerializerOwnerTeam:
+
+    def test_exposes_owner_name_email_and_team(
+        self, api, authenticate, ae, client_account_a, ae_account
+    ):
+        from end_users.models import Team
+        team = Team.objects.create(name='EMEA', client_account=client_account_a)
+        ae.first_name, ae.last_name, ae.team = 'Alice', 'Ng', team
+        ae.save(update_fields=['first_name', 'last_name', 'team'])
+        cyc = _cycle(ae, client_account_a, ae_account, 'Deal')
+
+        authenticate(api, ae, client_account_a.id)
+        row = _row_for(api.get(LIST_URL, {'owner_scope': 'mine'}), cyc)
+        assert row['owner_name'] == 'Alice Ng'
+        assert row['owner_email'] == ae.email
+        assert row['team'] == {'id': str(team.id), 'name': 'EMEA'}
+
+    def test_team_is_null_when_owner_has_no_team(
+        self, api, authenticate, ae, client_account_a, ae_account
+    ):
+        # ae has no team assigned.
+        cyc = _cycle(ae, client_account_a, ae_account, 'Deal')
+        authenticate(api, ae, client_account_a.id)
+        row = _row_for(api.get(LIST_URL, {'owner_scope': 'mine'}), cyc)
+        assert row['team'] is None
+
+    def test_email_is_the_identity_fallback_for_a_name_less_owner(
+        self, api, authenticate, ae, client_account_a, ae_account
+    ):
+        # first/last_name are nullable on User -> a name-less owner is real. The
+        # block shows owner_name || owner_email, so email carries the identity.
+        cyc = _cycle(ae, client_account_a, ae_account, 'Deal')  # ae has no name set
+        authenticate(api, ae, client_account_a.id)
+        row = _row_for(api.get(LIST_URL, {'owner_scope': 'mine'}), cyc)
+        assert row['owner_name'] == ''          # no name
+        assert row['owner_email'] == ae.email   # ...but identity is not hidden
+
+    def test_owner_and_team_resolve_from_select_related_zero_queries(
+        self, db, ae, client_account_a, role_individual_a
+    ):
+        """owner + team come from the list's owner__team select_related, so
+        serializing them over N cycles (distinct owners + teams) issues ZERO
+        per-row queries. Isolated to the fields THIS change added — the list's
+        pre-existing per-cycle steps_count/validated_steps_count cost is a
+        separate matter and out of scope here."""
+        from end_users.models import Team, User
+
+        acc = _account(ae, client_account_a, 'Portfolio')
+        for i in range(4):
+            t = Team.objects.create(name=f'T{i}', client_account=client_account_a)
+            u = User.objects.create(email=f'own{i}@a.test', client_account=client_account_a,
+                                    role=role_individual_a, is_active=True,
+                                    first_name=f'F{i}', last_name=f'L{i}', team=t)
+            _cycle(u, client_account_a, acc, f'deal-{i}')
+
+        # Fetch exactly the way the list action does (owner__team select_related).
+        cycles = list(
+            DecisionCycle.objects.filter(client_id=client_account_a.id)
+            .select_related('account', 'owner', 'owner__team')
+        )
+        assert len(cycles) == 4
+        ser = DecisionCycleListSerializer()
+        with CaptureQueriesContext(connection) as q:
+            for c in cycles:
+                # the owner/team fields this change added — must not touch the DB
+                ser.get_owner_name(c)
+                ser.get_owner_email(c)
+                assert ser.get_team(c)['name'].startswith('T')  # resolved, no query
+        assert len(q) == 0  # owner + team already joined -> no per-row query

@@ -164,8 +164,11 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         queryset = super().get_queryset()
         
         if self.action == 'list':
-            # List: minimal data for table display (no activities, no deep nesting)
-            queryset = queryset.select_related('account', 'owner').prefetch_related(
+            # List: minimal data for table display (no activities, no deep nesting).
+            # owner__team so DecisionCycleListSerializer.get_team resolves the
+            # owner's team without a per-row lookup (the manager DC block's Team
+            # line). owner__team implies the owner join too.
+            queryset = queryset.select_related('account', 'owner', 'owner__team').prefetch_related(
                 Prefetch(
                     'steps',
                     queryset=DecisionStep.objects.only(
