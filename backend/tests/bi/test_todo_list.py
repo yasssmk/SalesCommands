@@ -222,6 +222,25 @@ def test_search_filters_by_context_name(authed_api_a, user_a, client_account_a):
 
 
 @pytest.mark.django_db
+def test_search_owner_full_name_and_email_rep_source(authed_api_a, user_a, client_account_a):
+    """The owner search fix lives in the shared helper, so the rep path covers
+    the full name + email too (guarding it for the day the rep table shows Owner)."""
+    user_a.first_name = 'Nadia'
+    user_a.last_name = 'Khan'
+    user_a.save(update_fields=['first_name', 'last_name'])
+    acc = _mk_account(user_a, client_account_a, 'Zeta Corp')
+    today = timezone.now().date()
+    a = _mk_titled(user_a, acc, client_account_a, 'A task', today)
+
+    # Full name as displayed.
+    r = authed_api_a.get('/bi/todo/', {'scope': 'mine', 'search': 'Nadia Khan'})
+    assert {x['id'] for x in r.data['data']['results']} == {str(a.id)}
+    # Email.
+    r = authed_api_a.get('/bi/todo/', {'scope': 'mine', 'search': user_a.email})
+    assert {x['id'] for x in r.data['data']['results']} == {str(a.id)}
+
+
+@pytest.mark.django_db
 def test_rep_search_does_not_match_team_name(authed_api_a, user_a, client_account_a):
     """The rep table has NO Team column, so team name is NOT searchable there
     (include_team defaults to False). Proves the flag gating, not just the add."""

@@ -28,7 +28,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from django.db.models import Case, CharField, Q, Value, When
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Concat
 from django.utils import timezone
 
 from core.apps_shared_methods import BaseAPIView
@@ -232,10 +232,17 @@ def _annotate_todo_context(queryset):
 
 def _apply_todo_search(queryset, search, include_team=False):
     """Server-side search over the row's VISIBLE names: activity title, account
-    company name, owner first/last name, and the row's context name (decision
-    cycle OR campaign — the "Name" column). include_team also matches the owner's
-    team name; it is opt-in because only the MANAGER table shows a Team column
-    (the rep table has none). Blank/None is a no-op.
+    company name, OWNER (the full name "First Last" as shown, AND the email
+    fallback the column shows when no name is set), and the row's context name
+    (decision cycle OR campaign — the "Name" column). include_team also matches
+    the owner's team name; it is opt-in because only the MANAGER table shows a
+    Team column (the rep table has none). Blank/None is a no-op.
+
+    Owner is matched on the CONCATENATED full name (annotated), not first/last
+    separately: a user searches what the Owner column DISPLAYS ("Fabien Roux"),
+    which no single field contains. Concat matches that exactly in one SQL pass —
+    unlike a token split, which would false-positive ("Fabien Martin" + "Pierre
+    Roux" both matching "Fabien Roux").
 
     All terms are to-one joins (account, owner, decision_cycle, campaign,
     owner__team), so the OR filter adds no row multiplication (no .distinct())
@@ -244,11 +251,22 @@ def _apply_todo_search(queryset, search, include_team=False):
     search = (search or '').strip()
     if not search:
         return queryset
+
+    # Annotate the displayed owner name ("First Last"); Coalesce nulls to '' so a
+    # name-less owner is a harmless " " (never a spurious match).
+    queryset = queryset.annotate(
+        _owner_full_name=Concat(
+            Coalesce('owner__first_name', Value('')),
+            Value(' '),
+            Coalesce('owner__last_name', Value('')),
+            output_field=CharField(),
+        ),
+    )
     q = (
         Q(title__icontains=search)
         | Q(account__company_name__icontains=search)
-        | Q(owner__first_name__icontains=search)
-        | Q(owner__last_name__icontains=search)
+        | Q(_owner_full_name__icontains=search)      # the full name as displayed
+        | Q(owner__email__icontains=search)          # the email fallback the column shows
         | Q(decision_cycle__name__icontains=search)
         | Q(campaign__name__icontains=search)
     )

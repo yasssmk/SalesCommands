@@ -287,6 +287,26 @@ def test_search_by_owner_name(as_mgr, org, client_account_a, role_individual_a):
 
 
 @pytest.mark.django_db
+def test_search_owner_by_full_name_and_email(as_mgr, org, client_account_a):
+    """Search matches what the Owner column DISPLAYS: the full name "First Last"
+    and the email fallback. The old first/last-separately search returned nothing
+    for the full name (the smoke bug). A lone token still works (non-regression)."""
+    act = _mk_act(org['fra'], org['fra_acc'], client_account_a)  # Fabien Roux, fra@a.test
+
+    # Full name as displayed -> finds (first/last separately would MISS this).
+    r = as_mgr.get('/bi/todo/team/', {'scope': 'team', 'search': 'Fabien Roux'})
+    assert {x['id'] for x in r.data['data']['results']} == {str(act.id)}
+
+    # Email fallback (what the column shows when no name is set) -> finds.
+    r = as_mgr.get('/bi/todo/team/', {'scope': 'team', 'search': org['fra'].email})
+    assert {x['id'] for x in r.data['data']['results']} == {str(act.id)}
+
+    # A single token still matches (non-regression).
+    r = as_mgr.get('/bi/todo/team/', {'scope': 'team', 'search': 'roux'})
+    assert {x['id'] for x in r.data['data']['results']} == {str(act.id)}
+
+
+@pytest.mark.django_db
 def test_search_by_context_name_and_team(as_mgr, org, client_account_a):
     """Manager search matches the context name (DC OR campaign) AND — unlike the
     rep table — the owner's team name (the manager view has a Team column)."""
