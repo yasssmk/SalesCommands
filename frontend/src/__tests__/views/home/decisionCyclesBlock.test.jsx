@@ -138,3 +138,40 @@ describe('DecisionCyclesBlock', () => {
     expect(screen.getByText('NoKpi Inc')).toBeInTheDocument();
   });
 });
+
+// The manager view adds an Owner · Team line + a custom title (showOwner/title).
+describe('DecisionCyclesBlock — showOwner (manager)', () => {
+  const withOwner = (over = {}) => ({
+    cycle: {
+      id: 'dc-9', name: 'Zeta deal', account: 'acc-9', account_name: 'Zeta Corp',
+      owner_name: 'Alice Ng', owner_email: 'alice@a.test', team: { id: 't1', name: 'EMEA' },
+      ...over,
+    },
+    result: { value: 'IN_PROGRESS', meta: { cycle_status: 'IN_PROGRESS', current_step_name: 'Qualification', validated_steps: 1, total_steps: 5 } },
+  });
+
+  it('rep (default): NO owner/team line even when the data carries owner fields', () => {
+    render(<DecisionCyclesBlock items={[withOwner()]} loading={false} />);
+    expect(screen.getByText('Zeta deal')).toBeInTheDocument();
+    expect(screen.queryByText('Alice Ng')).not.toBeInTheDocument(); // owner is always the rep — no line
+    expect(screen.queryByText('EMEA')).not.toBeInTheDocument();
+  });
+
+  it('manager (showOwner): renders the owner name + team, and the custom title', () => {
+    render(<DecisionCyclesBlock items={[withOwner()]} loading={false} showOwner title="Team decision cycles" />);
+    expect(screen.getByText('Team decision cycles')).toBeInTheDocument();
+    expect(screen.getByText('Alice Ng')).toBeInTheDocument();
+    expect(screen.getByText('EMEA')).toBeInTheDocument();
+  });
+
+  it('falls back to email when the owner has no name (identity never hidden)', () => {
+    render(<DecisionCyclesBlock items={[withOwner({ owner_name: '' })]} loading={false} showOwner />);
+    expect(screen.getByText('alice@a.test')).toBeInTheDocument();
+  });
+
+  it('renders the owner alone when there is no team (no crash)', () => {
+    render(<DecisionCyclesBlock items={[withOwner({ team: null })]} loading={false} showOwner />);
+    expect(screen.getByText('Alice Ng')).toBeInTheDocument();
+    expect(screen.queryByText('EMEA')).not.toBeInTheDocument();
+  });
+});

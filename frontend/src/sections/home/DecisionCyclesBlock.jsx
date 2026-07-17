@@ -77,7 +77,7 @@ function RowSkeleton() {
   );
 }
 
-function CycleRow({ cycle, result }) {
+function CycleRow({ cycle, result, showOwner = false }) {
   const router = useRouter();
 
   const meta = result?.meta || {};
@@ -93,6 +93,11 @@ function CycleRow({ cycle, result }) {
   const hasStages = typeof validated === 'number' && typeof total === 'number' && total > 0;
   const nextAction = meta.next_action || null;
 
+  // Manager only: "who carries this deal". Name first, EMAIL fallback (names are
+  // nullable on User) so identity is never hidden behind a dash.
+  const ownerLabel = cycle.owner_name || cycle.owner_email || '—';
+  const teamName = cycle.team?.name || null;
+
   return (
     <Stack spacing={0.5} sx={{ py: 1.25 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
@@ -103,6 +108,22 @@ function CycleRow({ cycle, result }) {
         />
         {statusLabel ? <Chip size="small" label={statusLabel} color={statusColor} /> : null}
       </Stack>
+
+      {showOwner ? (
+        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Typography variant="body2" color="text.secondary">
+            {ownerLabel}
+          </Typography>
+          {teamName ? (
+            <>
+              <Dot />
+              <Typography variant="body2" color="text.secondary">
+                {teamName}
+              </Typography>
+            </>
+          ) : null}
+        </Stack>
+      ) : null}
 
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <RowLink
@@ -140,6 +161,7 @@ function CycleRow({ cycle, result }) {
 CycleRow.propTypes = {
   cycle: PropTypes.object,
   result: PropTypes.object,
+  showOwner: PropTypes.bool,
 };
 
 /**
@@ -152,12 +174,20 @@ CycleRow.propTypes = {
  * @param {Array} items - [{ cycle, result }] index-aligned; cycle from the list
  *                        hook, result from the dc_cycle_state batch.
  * @param {boolean} loading - the KPI batch is still resolving (cycles known).
+ * @param {boolean} showOwner - render the "Owner · Team" line (manager view;
+ *                              the rep is always the owner, so it stays off).
+ * @param {string} title - card title ("My decision cycles" / "Team decision cycles").
  */
-export default function DecisionCyclesBlock({ items = [], loading = false }) {
+export default function DecisionCyclesBlock({
+  items = [],
+  loading = false,
+  showOwner = false,
+  title = 'My decision cycles',
+}) {
   if (!loading && items.length === 0) return null; // data-driven: no open cycle -> no block
 
   return (
-    <MainCard title="My decision cycles" contentSX={{ p: 0 }}>
+    <MainCard title={title} contentSX={{ p: 0 }}>
       {loading ? (
         <Box sx={{ px: 2.5 }}>
           <Stack divider={<Divider />}>
@@ -170,7 +200,7 @@ export default function DecisionCyclesBlock({ items = [], loading = false }) {
         <Box sx={{ px: 2.5 }}>
           <Stack divider={<Divider />}>
             {items.map(({ cycle, result }) => (
-              <CycleRow key={cycle.id} cycle={cycle} result={result} />
+              <CycleRow key={cycle.id} cycle={cycle} result={result} showOwner={showOwner} />
             ))}
           </Stack>
         </Box>
@@ -182,4 +212,6 @@ export default function DecisionCyclesBlock({ items = [], loading = false }) {
 DecisionCyclesBlock.propTypes = {
   items: PropTypes.array,
   loading: PropTypes.bool,
+  showOwner: PropTypes.bool,
+  title: PropTypes.string,
 };
