@@ -21,12 +21,11 @@ Denominator uses AccountFilterService (the territory's filter_definition),
 NOT the accounts-count endpoint (a placeholder that returns 0).
 """
 
-from app_modules.accounts.models import CompanyAccount
-from app_modules.accounts.services.filter_service import AccountFilterService
 from app_modules.bi.periods import current_fiscal_year_period
 from app_modules.bi.registry import KPIDefinition
 from app_modules.bi.types import KPIResult, OutputShape
 from app_modules.territories.models import Territory
+from app_modules.territories.services.coverage import compute_territory_coverage_counts
 from permissions.scope_filter import apply_role_scope
 
 
@@ -57,23 +56,12 @@ def _territory_coverage(definition, auth_ctx, scope, period, params):
     # Default period = the tenant's current fiscal year.
     resolved = period or current_fiscal_year_period(client_id)      # query (only if period is None)
 
-    # Denominator — accounts in the territory (dynamic filter, evaluated ONCE).
-    # Start tenant-scoped so isolation holds regardless of the filter definition.
-    base = CompanyAccount.objects.filter(client_id=client_id)
-    accounts = AccountFilterService.apply_filters(
-        base, territory.filter_definition or {},
-        client_id=client_id, user=territory.owner,
+    # Denominator + numerator via the SHARED core (queries 2 & 3) — the same
+    # counts the manager-aggregate snapshot will materialise, so the live KPI
+    # and the snapshot can never encode two different coverage definitions.
+    numerator, denominator = compute_territory_coverage_counts(
+        territory, client_id, resolved,
     )
-    denominator = accounts.count()                                  # query 2
-
-    # Numerator — accounts touched with a response (Activity.outcome set) in the
-    # period. One query (JOIN + COUNT DISTINCT), no per-account loop.
-    touched = accounts.filter(activities__outcome__isnull=False)
-    if resolved and resolved.start is not None:
-        touched = touched.filter(activities__scheduled_date__gte=resolved.start)
-    if resolved and resolved.end is not None:
-        touched = touched.filter(activities__scheduled_date__lte=resolved.end)
-    numerator = touched.distinct().count()                          # query 3
 
     coverage = round(100.0 * numerator / denominator, 1) if denominator else 0.0
     return KPIResult(
