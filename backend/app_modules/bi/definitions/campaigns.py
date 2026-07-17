@@ -39,7 +39,13 @@ from app_modules.campaigns.models.campaign import Campaign
 from app_modules.campaigns.models.campaign_account import CampaignAccount
 from app_modules.campaigns.models.campaign_contact import CampaignContact
 from app_modules.campaigns.models.campaign_objective import CampaignObjective
-from permissions.owner_scope import get_all_descendant_team_ids, get_team_member_ids
+from app_modules.bi.definitions.aggregates import (
+    managed_team_ids as _managed_team_ids,
+    pct as _pct,
+    person_labels as _person_labels,
+    team_labels as _team_labels,
+)
+from permissions.owner_scope import get_team_member_ids
 from permissions.scope_filter import apply_role_scope
 
 
@@ -257,38 +263,6 @@ campaign_coverage = KPIDefinition(
 # coarse activities tag (which campaign_progress needs only for its
 # meta.objectives, not computed here).
 # ============================================================================
-
-
-def _pct(done, total):
-    return round(100.0 * done / total, 1) if total else 0.0
-
-
-def _team_labels(ids):
-    from end_users.models import Team
-    return {str(t['id']): t['name']
-            for t in Team.objects.filter(id__in=ids).values('id', 'name')}
-
-
-def _person_labels(ids):
-    from end_users.models import User
-    labels = {}
-    for u in User.objects.filter(id__in=ids).values('id', 'first_name', 'last_name', 'email'):
-        full = f"{(u['first_name'] or '').strip()} {(u['last_name'] or '').strip()}".strip()
-        labels[str(u['id'])] = full or u['email']
-    return labels
-
-
-def _managed_team_ids(auth_ctx):
-    """The manager's managed subtree team ids: teams he manages directly (+ his
-    own team) and all descendants. Same set apply_role_scope('team') is built on;
-    used to surface ONLY the manager's hierarchy (relevance)."""
-    from end_users.models import Team
-    roots = {str(t) for t in Team.objects.filter(
-        client_account_id=auth_ctx.client_id, manager_id=auth_ctx.user_id
-    ).values_list('id', flat=True)}
-    if getattr(auth_ctx, 'team_id', None):
-        roots.add(str(auth_ctx.team_id))
-    return get_all_descendant_team_ids(roots, auth_ctx.client_id) if roots else set()
 
 
 def _grouped_campaign_progress(auth_ctx, scope, owner_path, executor_path, keep_ids):
