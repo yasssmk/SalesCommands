@@ -144,6 +144,70 @@ class TestMineScopeC6:
 
 
 # =============================================================================
+# POSITIVE — team scope carries the SAME C6 (a NON-member's activity on a
+# MEMBER's account), bounded to team members so the boundary holds.
+# =============================================================================
+
+@pytest.mark.django_db
+class TestTeamScopeC6:
+
+    def _manager_of(self, ae_user, client_account_a):
+        """Make a manager whose team the AE belongs to. Returns the manager."""
+        from end_users.models import Team, User
+        mgr = User.objects.create(email='mgr-scope@tenant-a.test',
+                                  client_account=client_account_a,
+                                  role=ae_user.role, is_active=True)
+        team = Team.objects.create(name='EMEA (scope)', client_account=client_account_a,
+                                   manager=mgr)
+        ae_user.team = team
+        ae_user.save(update_fields=['team'])
+        return mgr
+
+    def test_team_includes_non_member_activity_on_a_member_account(
+        self, ae_user, sdr_user, client_account_a, account_ae, sdr_activity
+    ):
+        """The AE is a team member; the SDR (NOT a member) posted an activity on
+        the AE's account. Under `team` the manager must see it (C6) — the exact
+        pendant of mine's C6, one level up. This is the manager DC-block / todo
+        fix at the primitive level."""
+        mgr = self._manager_of(ae_user, client_account_a)
+        qs = apply_role_scope(
+            _base_qs(client_account_a),
+            module='activities',
+            scope='team',
+            auth_ctx=_ctx(mgr, client_account_a),
+        )
+        assert sdr_activity.id in set(qs.values_list('id', flat=True))
+
+    def test_team_boundary_excludes_activity_on_out_of_hierarchy_account(
+        self, ae_user, sdr_user, other_user, client_account_a, account_ae, sdr_activity
+    ):
+        """C6 is bounded to team members as the account owner: an activity on an
+        account owned OUTSIDE the manager's hierarchy never enters team scope."""
+        mgr = self._manager_of(ae_user, client_account_a)
+        # other_user is NOT in the manager's team; an account they own, worked by
+        # the SDR -> must stay out of the manager's team scope.
+        out_acc = CompanyAccount(company_name='Outsider Corp (scope)',
+                                 has_buying_decision=True, account_owner=other_user)
+        out_acc.save(user=other_user, client_id=client_account_a.id)
+        out_act = Activity(title='SDR call on outsider account',
+                           activity_type=ActivityType.MEETING, status=ActivityStatus.PLANNED,
+                           account=out_acc, owner=sdr_user,
+                           scheduled_date=timezone.now().date() + timedelta(days=5))
+        out_act.save(user=sdr_user, client_id=client_account_a.id)
+
+        qs = apply_role_scope(
+            _base_qs(client_account_a),
+            module='activities',
+            scope='team',
+            auth_ctx=_ctx(mgr, client_account_a),
+        )
+        ids = set(qs.values_list('id', flat=True))
+        assert sdr_activity.id in ids       # on a member's account -> in
+        assert out_act.id not in ids        # on an outsider's account -> out (boundary)
+
+
+# =============================================================================
 # NEGATIVE — a rep who owns neither the account nor the activity sees nothing
 # =============================================================================
 
@@ -460,5 +524,85 @@ class TestAccountOwnerScope:
         scoped = apply_role_scope(
             _acc_qs(client_account_a), module='accounts', scope='client',
             auth_ctx=_ctx(acc_owner_a, client_account_a),
+        )
+        assert scoped.count() == 2  # client scope = whole tenant, no owner filter
+
+
+# =============================================================================
+# TEAM OWNER SCOPE — guardrail for the OWNERSHIP_MAP['teams'] fix
+# (owner_user='manager', assigned_to_user='manager', created_by='-',
+#  client_account_fk='client_account'). Team is a SENSITIVE org-structure model:
+# the previous entry used '_id' attnames ('manager_id', 'created_by_id') that
+# _is_valid_field rejects. Symptoms were the WORST of the attname family:
+#   - mine  -> no valid ownership term -> _apply_mine_scope returns none() (deny)
+#   - team  -> no valid term -> _apply_team_scope leaves the queryset UNCHANGED
+#              = every team in the tenant (intra-tenant OVER-EXPOSURE)
+# Reachable in production: TeamViewSet uses ScopedQuerysetMixin. Pre-existing,
+# not a sprint regression. Locked here like territories/sales_quotas/accounts.
+# =============================================================================
+
+def _mk_team(manager, client_account, name):
+    from end_users.models import Team
+    return Team.objects.create(name=name, client_account=client_account, manager=manager)
+
+
+def _team_qs(client_account):
+    from end_users.models import Team
+    return Team.objects.filter(client_account_id=client_account.id)
+
+
+@pytest.fixture
+def team_mgr_a(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(email='team-mgr-a@tenant-a.test', client_account=client_account_a,
+                               role=role_individual_a, is_active=True)
+
+
+@pytest.fixture
+def team_mgr_b(db, client_account_a, role_individual_a):
+    from end_users.models import User
+    return User.objects.create(email='team-mgr-b@tenant-a.test', client_account=client_account_a,
+                               role=role_individual_a, is_active=True)
+
+
+@pytest.mark.django_db
+class TestTeamOwnerScope:
+
+    def test_mine_sees_own_team_not_others(self, team_mgr_a, team_mgr_b, client_account_a):
+        team_a = _mk_team(team_mgr_a, client_account_a, 'Team A (scope)')
+        team_b = _mk_team(team_mgr_b, client_account_a, 'Team B (scope)')
+        scoped = apply_role_scope(
+            _team_qs(client_account_a), module='teams', scope='mine',
+            auth_ctx=_ctx(team_mgr_a, client_account_a),
+        )
+        ids = set(scoped.values_list('id', flat=True))
+        assert team_a.id in ids          # manager sees the team they manage
+        assert team_b.id not in ids      # NOT a team managed by someone else
+        assert scoped.count() == 1       # non-empty regression guard (not 0=none-bug, not 2=all)
+
+    def test_team_scope_excludes_unrelated_teams_overexposure_guard(
+        self, team_mgr_a, team_mgr_b, client_account_a
+    ):
+        """THE over-exposure guard. Before the fix, team scope had no valid
+        ownership term, so _apply_team_scope returned the queryset UNCHANGED =
+        every team in the tenant. Assert the manager sees only the team(s) in
+        their own hierarchy, not an unrelated manager's team."""
+        team_a = _mk_team(team_mgr_a, client_account_a, 'Team A (scope)')
+        team_b = _mk_team(team_mgr_b, client_account_a, 'Team B (scope)')
+        scoped = apply_role_scope(
+            _team_qs(client_account_a), module='teams', scope='team',
+            auth_ctx=_ctx(team_mgr_a, client_account_a),
+        )
+        ids = set(scoped.values_list('id', flat=True))
+        assert team_a.id in ids          # own managed team
+        assert team_b.id not in ids      # NOT an unrelated manager's team (exposed before fix)
+        assert scoped.count() == 1       # exactly the hierarchy team — not 2 (over-exposure)
+
+    def test_client_scope_sees_all_teams(self, team_mgr_a, team_mgr_b, client_account_a):
+        _mk_team(team_mgr_a, client_account_a, 'Team A (scope)')
+        _mk_team(team_mgr_b, client_account_a, 'Team B (scope)')
+        scoped = apply_role_scope(
+            _team_qs(client_account_a), module='teams', scope='client',
+            auth_ctx=_ctx(team_mgr_a, client_account_a),
         )
         assert scoped.count() == 2  # client scope = whole tenant, no owner filter

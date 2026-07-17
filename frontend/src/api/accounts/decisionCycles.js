@@ -234,20 +234,25 @@ const endpoints = {
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
 
 /**
- * Build URL with query params for server-side pagination/filtering
+ * Build URL with query params for server-side pagination/filtering.
+ *
+ * Exported for direct unit testing (same pattern as buildKpiUrl). Every param
+ * is ADDITIVE: it is appended only when explicitly present, so an existing
+ * caller that never passes owner_scope / outcome__isnull produces byte-for-byte
+ * the same URL as before.
  */
-const buildUrlWithParams = (baseUrl, params = {}) => {
+export const buildUrlWithParams = (baseUrl, params = {}) => {
   const { page, pageSize, search, ordering, filters = {} } = params;
   const queryParams = new URLSearchParams();
-  
+
   if (page !== undefined && page !== null) {
     queryParams.append('page', page);
   }
-  
+
   if (pageSize !== undefined && pageSize !== null) {
     queryParams.append('page_size', pageSize);
   }
-  
+
   if (search !== undefined && search !== null && search !== '') {
     queryParams.append('search', search);
   }
@@ -260,7 +265,7 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (filters.account) {
     queryParams.append('account', filters.account);
   }
-  
+
   if (filters.is_active !== undefined) {
     queryParams.append('is_active', filters.is_active);
   }
@@ -276,7 +281,19 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (filters.status) {
     queryParams.append('status', filters.status);
   }
-  
+
+  // Owner scope (mine/team/all) — narrows the tenant-wide read=client list to
+  // the caller's own cycles. Absent -> not forwarded -> backend default.
+  if (filters.owner_scope) {
+    queryParams.append('owner_scope', filters.owner_scope);
+  }
+
+  // "Open" filter: outcome IS NULL. Boolean-ish; append the backend's
+  // true/false string only when the key is explicitly set (never on absent).
+  if (filters.outcome__isnull !== undefined && filters.outcome__isnull !== null) {
+    queryParams.append('outcome__isnull', filters.outcome__isnull);
+  }
+
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
 };

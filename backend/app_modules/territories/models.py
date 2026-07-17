@@ -100,7 +100,43 @@ class Territory(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Owner'),
         help_text=_('User who owns this territory')
     )
-    
+
+    # ==========================================================================
+    # COVERAGE SNAPSHOT (manager aggregate)
+    # ==========================================================================
+    # A LAZY, read-refreshed materialisation of this territory's coverage counts,
+    # so the manager's team aggregate is a single GROUP BY over these columns
+    # instead of 2 queries × N territories on every Home load. These are
+    # DELIBERATELY not live: they are refreshed on read when older than a TTL
+    # (~2h) or when the fiscal period changes, and are NOT invalidated by account
+    # or activity writes. The per-territory KPI (rep Home) stays live and ignores
+    # these. All nullable: a null coverage_computed_at means "never computed"
+    # (treated as stale). See territories.services.snapshot.
+
+    coverage_numerator = models.IntegerField(
+        null=True, blank=True,
+        verbose_name=_('Coverage numerator (snapshot)'),
+        help_text=_('Accounts touched with a response in the period — snapshot, not live')
+    )
+
+    coverage_denominator = models.IntegerField(
+        null=True, blank=True,
+        verbose_name=_('Coverage denominator (snapshot)'),
+        help_text=_('Total accounts in the territory — snapshot, not live')
+    )
+
+    coverage_period_key = models.CharField(
+        max_length=64, blank=True, default='',
+        verbose_name=_('Coverage period key (snapshot)'),
+        help_text=_('The period the snapshot was computed for; a mismatch forces a recompute')
+    )
+
+    coverage_computed_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name=_('Coverage computed at (snapshot)'),
+        help_text=_('When the snapshot was last refreshed; null = never (stale)')
+    )
+
     # ==========================================================================
     # META
     # ==========================================================================

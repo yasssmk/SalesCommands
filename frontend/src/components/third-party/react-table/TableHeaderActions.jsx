@@ -38,12 +38,6 @@ export default function TableHeaderActions({
   exportFilename = 'export.csv',
   enableImport = true
 }) {
-
-  console.log('🔵 TableHeaderActions render:', { 
-    selectedRowCount, 
-    hasOnEdit: typeof onEdit === 'function',
-    hasOnDelete: typeof onDelete === 'function'});
-
   const theme = useTheme();
   const [anchorEl, setAnchorEl] = useState(null);
   const csvLinkRef = useRef(null);

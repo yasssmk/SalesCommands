@@ -328,16 +328,20 @@ class SalesQuotaSummarySerializer(ClientScopeManager.SerializerMixin, serializer
         read_only=True
     )
     
+    # Expose the owner's id alongside user_name so a consumer can link a quota
+    # to its user without a name-based join. The `user` FK already exists on the
+    # model (it is the scope field); this only surfaces it in the list contract.
+    user_id = serializers.PrimaryKeyRelatedField(source='user', read_only=True)
     user_name = serializers.SerializerMethodField(read_only=True)
     team_name = serializers.SerializerMethodField(read_only=True)
     performance_status = serializers.SerializerMethodField(read_only=True)
     days_remaining = serializers.SerializerMethodField(read_only=True)
     is_active = serializers.SerializerMethodField(read_only=True)
-    
+
     class Meta:
         model = SalesQuota
         fields = [
-            'id', 'user_name', 'team_name', 'target_type', 'target_type_display',
+            'id', 'user_id', 'user_name', 'team_name', 'target_type', 'target_type_display',
             'target_value', 'unit', 'period_start', 'period_end',
             'performance_status', 'days_remaining', 'is_active', 'status',
             'created_at'

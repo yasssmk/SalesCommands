@@ -31,6 +31,8 @@ from core.cache_utils import (
 
 from permissions.mixins import ScopedPermission, ScopedQuerysetMixin
 from permissions.owner_scope import OwnerScopeMixin
+from permissions.scope_filter import apply_role_scope
+from permissions.compat import get_auth_ctx
 
 from app_modules.notifications.models import NotificationCategory
 from app_modules.notifications.services import NotificationService
@@ -84,6 +86,13 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     filterset_fields = {
         'account': ['exact'],
         'is_active': ['exact'],
+        # outcome is the ONLY way to express "open": a cycle is open when
+        # outcome IS NULL (same definition as dc_pipeline_value). is_active is
+        # NOT a proxy — it flags the single displayed cycle per account, so a
+        # closed cycle can still be is_active and an open one is_active=False.
+        # Additive; the base queryset is still owner/client-scoped upstream, so
+        # ?outcome__isnull=true narrows within scope and never bypasses it.
+        'outcome': ['exact', 'isnull'],
     }
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'is_active', 'created_at', 'updated_at']
@@ -155,8 +164,11 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         queryset = super().get_queryset()
         
         if self.action == 'list':
-            # List: minimal data for table display (no activities, no deep nesting)
-            queryset = queryset.select_related('account', 'owner').prefetch_related(
+            # List: minimal data for table display (no activities, no deep nesting).
+            # owner__team so DecisionCycleListSerializer.get_team resolves the
+            # owner's team without a per-row lookup (the manager DC block's Team
+            # line). owner__team implies the owner join too.
+            queryset = queryset.select_related('account', 'owner', 'owner__team').prefetch_related(
                 Prefetch(
                     'steps',
                     queryset=DecisionStep.objects.only(
@@ -187,10 +199,32 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         else:
             # Create/Update/Delete: minimal - just account and owner
             queryset = queryset.select_related('account', 'owner')
-        
-        # Apply owner scope filter (mine/team/all)
-        queryset = self.apply_owner_scope_filter(queryset)
-        
+
+        # Apply owner scope filter (mine/team/all).
+        #
+        # For owner_scope=mine AND team we deliberately DIVERGE from the shared
+        # OwnerScopeMixin (which matches owner_id only) and reuse the SAME
+        # primitive the BI layer uses — apply_role_scope — so the list's scope ==
+        # the KPI's scope: owner (+ team members) OR account-owner (C6). Without
+        # this, a cycle an SDR posted on a caller's / team member's account
+        # (which they can already read via C6, and which dc_cycle_state resolves)
+        # is silently dropped from the list — the asymmetry that hid an AE's deals
+        # on the Home (mine) and hid a team member's SDR-posted deals from the
+        # manager block (team). C6 terms are to-one joins, so no .distinct() is
+        # needed, and this runs BEFORE the DjangoFilterBackend/pagination so the
+        # count is correct. Diverting team also aligns the ROOTS with the KPI
+        # (teams managed via manager_id, not just the caller's own team_id).
+        # all / absent stay on the mixin, unchanged (zero blast radius on the 8
+        # other ViewSets that share it).
+        owner_scope = self.request.query_params.get('owner_scope')
+        if owner_scope in ('mine', 'team'):
+            ctx = get_auth_ctx(self.request)
+            queryset = apply_role_scope(
+                queryset, module='decision_cycles', scope=owner_scope, auth_ctx=ctx
+            )
+        else:
+            queryset = self.apply_owner_scope_filter(queryset)
+
         return queryset
     
     # ==========================================================================

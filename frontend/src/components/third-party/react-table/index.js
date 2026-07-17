@@ -10,7 +10,6 @@ export { default as TablePagination } from './TablePagination';
 export { default as DraggableColumnHeader } from './DraggableColumnHeader';
 export { default as IndeterminateCheckbox } from './IndeterminateCheckbox';
 export { default as SelectColumnVisibility } from './SelectColumnVisibility';
-export { default as SelectColumnSorting } from './SelectColumnSorting';
 
 
 export { default as TableHeaderActions } from './TableHeaderActions';

@@ -10,11 +10,8 @@ import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
 import ClickAwayListener from '@mui/material/ClickAwayListener';
 import List from '@mui/material/List';
-import ListItemButton from '@mui/material/ListItemButton';
-import ListItemText from '@mui/material/ListItemText';
 import Paper from '@mui/material/Paper';
 import Popper from '@mui/material/Popper';
-import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
@@ -23,14 +20,16 @@ import MainCard from 'components/MainCard';
 import Transitions from 'components/@extended/Transitions';
 import IconButton from 'components/@extended/IconButton';
 import { ThemeMode } from 'config';
-import { formatDateTime } from 'config/formatters';
 import { displayErrorSnackbar } from 'utils/displayError';
 import {
   useGetNotifications,
   useUnreadCount,
   markNotificationRead,
+  respondToNotification,
   notificationHref,
 } from 'api/notifications/notifications';
+
+import NotificationRow from './NotificationRow';
 
 // assets
 import BellOutlined from '@ant-design/icons/BellOutlined';
@@ -74,6 +73,18 @@ export default function Notification() {
       setOpen(false);
       router.push(href);
     }
+  };
+
+  const handleRespond = async (item, responseStatus) => {
+    const result = await respondToNotification(item.id, responseStatus);
+    if (!result.success) {
+      displayErrorSnackbar(result);
+      return;
+    }
+    // Accepting an invitation moves it into the todo; refresh badge + list so
+    // the buttons disappear (no longer PENDING) and the count updates.
+    mutateUnreadCount();
+    mutateNotifications();
   };
 
   const iconBackColorOpen = theme.palette.mode === ThemeMode.DARK ? 'background.default' : 'grey.100';
@@ -135,35 +146,12 @@ export default function Notification() {
                   ) : (
                     <List sx={{ p: 0, maxHeight: 400, overflowY: 'auto' }}>
                       {notifications.map((item) => (
-                        <ListItemButton
+                        <NotificationRow
                           key={item.id}
+                          item={item}
                           onClick={() => handleItemClick(item)}
-                          sx={{ bgcolor: item.read_at ? 'transparent' : 'primary.lighter' }}
-                        >
-                          <ListItemText
-                            primary={
-                              <Stack direction="row" spacing={1} alignItems="center">
-                                {!item.read_at && (
-                                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'primary.main' }} />
-                                )}
-                                <Typography variant="subtitle2">{item.title}</Typography>
-                              </Stack>
-                            }
-                            secondary={
-                              <Stack component="span" spacing={0.25}>
-                                {item.body ? (
-                                  <Typography variant="body2" color="text.secondary" component="span">
-                                    {item.body}
-                                  </Typography>
-                                ) : null}
-                                <Typography variant="caption" color="text.secondary" component="span">
-                                  {formatDateTime(item.created_at)}
-                                </Typography>
-                              </Stack>
-                            }
-                            secondaryTypographyProps={{ component: 'div' }}
-                          />
-                        </ListItemButton>
+                          onRespond={(responseStatus) => handleRespond(item, responseStatus)}
+                        />
                       ))}
                     </List>
                   )}
