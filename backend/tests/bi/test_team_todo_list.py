@@ -205,6 +205,38 @@ def test_parity_owner_rows_equal_kpi_bucket(as_mgr, org, client_account_a):
 
 
 @pytest.mark.django_db
+def test_c6_sdr_activity_on_member_account_enters_tiles_owner_and_rows(
+    as_mgr, org, client_account_a, role_individual_a
+):
+    """C6 expansion (team): a NON-member SDR's open activity on a MEMBER's account
+    now enters team scope, bucketed under the SDR. It appears IDENTICALLY in the
+    tiles, the by_owner breakdown, and the list rows (all three read the same
+    apply_role_scope('team')), so parity holds and the roster expands to the SDR
+    — no drop, no orphan. This is the manager-side of the C6 fix on activities."""
+    fra_owned = _mk_act(org['fra'], org['fra_acc'], client_account_a)     # member-owned, today
+    sdr = _mk_user('sdr-c6@a.test', client_account_a, role_individual_a)  # NOT a member
+    sdr_c6 = _mk_act(sdr, org['fra_acc'], client_account_a)               # C6 on member's account, today
+
+    # by_owner: an SDR bucket now exists (roster expands to the owner present).
+    counts = cached_run(todo_team_by_owner, _ctx(org['mgr'], client_account_a), scope='team').value
+    assert counts.get(org['fra'].id) == 1
+    assert counts.get(sdr.id) == 1
+
+    # tiles: both are due today -> the C6 activity is counted in the tile too.
+    windows = _team_windows(as_mgr)
+    assert windows[TodoWindow.TODAY] == 2
+
+    # list rows: the SDR-posted activity on the member's account is present.
+    ids = {r['id'] for r in _rows(as_mgr)['results']}
+    assert {str(fra_owned.id), str(sdr_c6.id)} <= ids
+
+    # PARITY: rows filtered to the SDR == the SDR's by_owner bucket == 1.
+    sdr_rows = _rows(as_mgr, owner=str(sdr.id))
+    assert sdr_rows['count'] == counts[sdr.id] == 1
+    assert {r['id'] for r in sdr_rows['results']} == {str(sdr_c6.id)}
+
+
+@pytest.mark.django_db
 def test_scope_negative_cross_user_and_cross_tenant(
     as_mgr, org, client_account_a, client_account_b, role_individual_b
 ):

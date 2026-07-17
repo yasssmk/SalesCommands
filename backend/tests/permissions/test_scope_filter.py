@@ -144,6 +144,70 @@ class TestMineScopeC6:
 
 
 # =============================================================================
+# POSITIVE — team scope carries the SAME C6 (a NON-member's activity on a
+# MEMBER's account), bounded to team members so the boundary holds.
+# =============================================================================
+
+@pytest.mark.django_db
+class TestTeamScopeC6:
+
+    def _manager_of(self, ae_user, client_account_a):
+        """Make a manager whose team the AE belongs to. Returns the manager."""
+        from end_users.models import Team, User
+        mgr = User.objects.create(email='mgr-scope@tenant-a.test',
+                                  client_account=client_account_a,
+                                  role=ae_user.role, is_active=True)
+        team = Team.objects.create(name='EMEA (scope)', client_account=client_account_a,
+                                   manager=mgr)
+        ae_user.team = team
+        ae_user.save(update_fields=['team'])
+        return mgr
+
+    def test_team_includes_non_member_activity_on_a_member_account(
+        self, ae_user, sdr_user, client_account_a, account_ae, sdr_activity
+    ):
+        """The AE is a team member; the SDR (NOT a member) posted an activity on
+        the AE's account. Under `team` the manager must see it (C6) — the exact
+        pendant of mine's C6, one level up. This is the manager DC-block / todo
+        fix at the primitive level."""
+        mgr = self._manager_of(ae_user, client_account_a)
+        qs = apply_role_scope(
+            _base_qs(client_account_a),
+            module='activities',
+            scope='team',
+            auth_ctx=_ctx(mgr, client_account_a),
+        )
+        assert sdr_activity.id in set(qs.values_list('id', flat=True))
+
+    def test_team_boundary_excludes_activity_on_out_of_hierarchy_account(
+        self, ae_user, sdr_user, other_user, client_account_a, account_ae, sdr_activity
+    ):
+        """C6 is bounded to team members as the account owner: an activity on an
+        account owned OUTSIDE the manager's hierarchy never enters team scope."""
+        mgr = self._manager_of(ae_user, client_account_a)
+        # other_user is NOT in the manager's team; an account they own, worked by
+        # the SDR -> must stay out of the manager's team scope.
+        out_acc = CompanyAccount(company_name='Outsider Corp (scope)',
+                                 has_buying_decision=True, account_owner=other_user)
+        out_acc.save(user=other_user, client_id=client_account_a.id)
+        out_act = Activity(title='SDR call on outsider account',
+                           activity_type=ActivityType.MEETING, status=ActivityStatus.PLANNED,
+                           account=out_acc, owner=sdr_user,
+                           scheduled_date=timezone.now().date() + timedelta(days=5))
+        out_act.save(user=sdr_user, client_id=client_account_a.id)
+
+        qs = apply_role_scope(
+            _base_qs(client_account_a),
+            module='activities',
+            scope='team',
+            auth_ctx=_ctx(mgr, client_account_a),
+        )
+        ids = set(qs.values_list('id', flat=True))
+        assert sdr_activity.id in ids       # on a member's account -> in
+        assert out_act.id not in ids        # on an outsider's account -> out (boundary)
+
+
+# =============================================================================
 # NEGATIVE — a rep who owns neither the account nor the activity sees nothing
 # =============================================================================
 

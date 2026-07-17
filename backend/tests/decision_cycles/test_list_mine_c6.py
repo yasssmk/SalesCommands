@@ -7,10 +7,15 @@ The shared OwnerScopeMixin matches owner_id ONLY, which drops cycles an SDR
 posted on the caller's own account — deals the caller can already read (C6) and
 that dc_cycle_state resolves. The list therefore UNDER-showed an AE's portfolio.
 
-Fix (DC-only): for owner_scope=mine the ViewSet reuses the SAME primitive the BI
-layer uses, apply_role_scope('decision_cycles','mine') = owner OR account-owner
-(C6), so the list's "mine" == the KPI's "mine". team / all / absent stay on the
-mixin (unchanged — zero blast radius on the 8 other ViewSets).
+Fix: for owner_scope=mine AND team the ViewSet reuses the SAME primitive the BI
+layer uses, apply_role_scope('decision_cycles', <scope>) = owner (+ team members)
+OR account-owner (C6), so the list's scope == the KPI's scope. all / absent stay
+on the mixin (unchanged — zero blast radius on the 8 other ViewSets).
+
+NOTE: team was ORIGINALLY left on the mixin here (owner-id only). It was later
+diverted too — see test_team_scope_now_includes_c6_by_intention below and
+test_list_team_c6.py — because the owner-id-only team scope hid a member's
+SDR-posted deals from the manager block (the same C6 asymmetry, one level up).
 
 Proves:
 - the fix: rep owns 1 cycle + 2 posted by an SDR on the rep's account -> mine
@@ -18,8 +23,8 @@ Proves:
 - boundary: another rep's cycle on another account -> excluded,
 - boundary: cross-tenant -> excluded,
 - the paginated count is correct with the C6 cycles (C6 -> filter -> paginate),
-- non-regression: owner_scope=team and owner_scope absent are UNCHANGED (still
-  the mixin's owner_id-only / no-filter behaviour).
+- owner_scope absent is UNCHANGED (mixin no-op -> client-wide),
+- owner_scope=team now ALSO carries C6 (changed BY INTENTION — see the test).
 """
 
 import pytest
@@ -165,12 +170,23 @@ class TestOtherScopesUnchanged:
         # client-wide: the SDR's cycle on the SDR's own account is present too
         assert str(sdr_only.id) in _ids(resp)
 
-    def test_team_scope_unchanged_owner_id_semantics(
+    def test_team_scope_now_includes_c6_by_intention(
         self, api, authenticate, ae, sdr, client_account_a, ae_account
     ):
-        """owner_scope=team still routes through the mixin. An individual (no
-        managed team) falls back to owner_id -> only the AE-owned cycle, NOT the
-        SDR's C6 cycle (proving team did not silently gain C6)."""
+        """CHANGED BY INTENTION (this test formerly asserted the OPPOSITE).
+
+        owner_scope=team used to stay on the mixin (owner-id only), so a cycle a
+        non-member SDR posted on an account owner's account was DROPPED. That was
+        the same C6 asymmetry as mine, one level up: it hid a team member's
+        SDR-posted deals from the manager DC block. team now diverts to
+        apply_role_scope('team'), which — like mine — carries the C6 term. So the
+        SDR's cycle on the account owner's account surfaces under team too.
+
+        This is NOT a tolerated regression: it is the fix. The boundary still
+        holds (C6 is bounded to team members as the account owner — an
+        out-of-hierarchy account is still excluded; see test_list_team_c6.py for
+        the manager + negative-boundary proof). Here `ae` manages no team, so
+        'team' collapses to self + C6."""
         own = _cycle(ae, client_account_a, ae_account, 'AE deal')
         sdr_c6 = _cycle(sdr, client_account_a, ae_account, 'SDR C6 deal')
 
@@ -178,7 +194,7 @@ class TestOtherScopesUnchanged:
         resp = api.get(LIST_URL, {'owner_scope': 'team'})
         ids = _ids(resp)
         assert str(own.id) in ids
-        assert str(sdr_c6.id) not in ids  # team != mine-with-C6
+        assert str(sdr_c6.id) in ids  # team now includes C6 — BY INTENTION (was: excluded)
 
 
 # =============================================================================

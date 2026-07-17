@@ -121,6 +121,28 @@ def test_team_scope_breaks_down_by_owner_excludes_outsider(
 
 
 @pytest.mark.django_db
+def test_team_by_owner_includes_c6_sdr_bucket_on_member_account(
+    kpi, manager, member1, client_account_a, role_individual_a
+):
+    """C6 expansion (team): a NON-member SDR's open activity on a MEMBER's account
+    now enters team scope, bucketed under the SDR. The manager roster is built
+    from this breakdown, so it expands to the SDR automatically — no drop, no
+    orphan owner (the outsider-on-own-account case above still stays out)."""
+    acc = _mk_account('M1 Corp', member1, client_account_a)
+    _mk_act(member1, acc, client_account_a)                             # member1: 1 owned
+    sdr = _mk_user('sdr-c6@a.test', client_account_a, role_individual_a)  # NOT a member
+    _mk_act(sdr, acc, client_account_a)                                # C6 on member's account
+    _mk_act(sdr, acc, client_account_a)
+
+    res = cached_run(kpi, _ctx(manager, client_account_a), scope='team')
+    # member1's own bucket + an SDR bucket via C6 (the SDR is the account's worker)
+    assert res.value == {member1.id: 1, sdr.id: 2}
+    # the label resolver covers the SDR too -> the roster/filter options expand
+    labels = kpi.dimension_labels(list(res.value.keys()))
+    assert sdr.id in labels
+
+
+@pytest.mark.django_db
 def test_cross_tenant_isolation(
     kpi, manager, member1, client_account_a, client_account_b, role_individual_b
 ):

@@ -14,7 +14,11 @@ Behaviour contract (unchanged from the mixin):
 - scope ``'client'``         -> queryset returned unchanged (tenant filtering
   is applied by the caller BEFORE this function)
 - scope ``'team'``           -> OR of owner_team / owner_user / created_by /
-  assigned_to_user over the manager's team (+ sub-teams) members
+  assigned_to_user / account_owner_user (C6) over the manager's team (+
+  sub-teams) members. The C6 term (a record on a MEMBER's account, posted by
+  anyone) is the team-level pendant of mine's C6: it stays bounded to
+  ``team_member_ids`` as the account owner, so a record on an account owned
+  OUTSIDE the hierarchy never enters — the boundary holds.
 - scope ``'mine'``           -> OR of owner_user / created_by /
   assigned_to_user / account_owner_user (C6) for the current user; empty
   ``queryset.none()`` when the module declares no ownership field
@@ -132,6 +136,16 @@ def _apply_team_scope(queryset: QuerySet, module: str, auth_ctx) -> QuerySet:
     assigned_field = resolve_field(module, 'assigned_to_user')
     if assigned_field and _is_valid_field(assigned_field, model_fields):
         q_filter |= Q(**{f'{assigned_field}__in': team_member_ids})
+
+    # account_owner_user IN team_member_ids  (C6 account-owner inheritance, team
+    # level). Mapped to a traversal (account__account_owner_id). The pendant of
+    # _apply_mine_scope's C6: a cycle/activity a NON-member posted on a MEMBER's
+    # account is the team's work, so it belongs in team scope. Bounded to
+    # team_member_ids as the account owner -> a record on an account owned
+    # OUTSIDE the hierarchy never enters (the boundary holds by construction).
+    account_owner_field = resolve_field(module, 'account_owner_user')
+    if account_owner_field and _is_valid_field(account_owner_field, model_fields) and team_member_ids:
+        q_filter |= Q(**{f'{account_owner_field}__in': team_member_ids})
 
     if q_filter:
         queryset = queryset.filter(q_filter)

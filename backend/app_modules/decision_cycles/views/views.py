@@ -202,22 +202,25 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
 
         # Apply owner scope filter (mine/team/all).
         #
-        # For owner_scope=mine we deliberately DIVERGE from the shared
+        # For owner_scope=mine AND team we deliberately DIVERGE from the shared
         # OwnerScopeMixin (which matches owner_id only) and reuse the SAME
-        # primitive the BI layer uses — apply_role_scope('mine') — so the list's
-        # "mine" == the KPI's "mine": owner OR account-owner (C6). Without this,
-        # a cycle an SDR posted on the caller's account (which the caller can
-        # already read via C6, and which dc_cycle_state resolves) is silently
-        # dropped from the list — the asymmetry that hid an AE's own deals on
-        # the Home. C6 terms are to-one joins, so no .distinct() is needed, and
-        # this runs BEFORE the DjangoFilterBackend/pagination so the count is
-        # correct. team / all / absent stay on the mixin, unchanged (zero blast
-        # radius on the 8 other ViewSets that share it).
+        # primitive the BI layer uses — apply_role_scope — so the list's scope ==
+        # the KPI's scope: owner (+ team members) OR account-owner (C6). Without
+        # this, a cycle an SDR posted on a caller's / team member's account
+        # (which they can already read via C6, and which dc_cycle_state resolves)
+        # is silently dropped from the list — the asymmetry that hid an AE's deals
+        # on the Home (mine) and hid a team member's SDR-posted deals from the
+        # manager block (team). C6 terms are to-one joins, so no .distinct() is
+        # needed, and this runs BEFORE the DjangoFilterBackend/pagination so the
+        # count is correct. Diverting team also aligns the ROOTS with the KPI
+        # (teams managed via manager_id, not just the caller's own team_id).
+        # all / absent stay on the mixin, unchanged (zero blast radius on the 8
+        # other ViewSets that share it).
         owner_scope = self.request.query_params.get('owner_scope')
-        if owner_scope == 'mine':
+        if owner_scope in ('mine', 'team'):
             ctx = get_auth_ctx(self.request)
             queryset = apply_role_scope(
-                queryset, module='decision_cycles', scope='mine', auth_ctx=ctx
+                queryset, module='decision_cycles', scope=owner_scope, auth_ctx=ctx
             )
         else:
             queryset = self.apply_owner_scope_filter(queryset)
