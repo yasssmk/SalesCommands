@@ -63,6 +63,9 @@ vi.mock('api/bi/kpi', () => ({
     const results = (reqs || []).map((r) => {
       if (r.key === 'campaign_progress') return { value: 40, meta: { accounts_completed: 4, accounts_total: 10 } };
       if (r.key === 'territory_coverage') return { value: 90, meta: { numerator: 9, denominator: 10 } };
+      if (r.key === 'dc_cycle_state') {
+        return { value: 'IN_PROGRESS', meta: { cycle_status: 'IN_PROGRESS', current_step_name: 'Qualification', validated_steps: 1, total_steps: 5 } };
+      }
       return null;
     });
     return { results, resultsLoading: false, resultsError: null };
@@ -86,6 +89,20 @@ vi.mock('api/territories/territories', () => ({
 }));
 vi.mock('utils/displayError', () => ({ displayErrorSnackbar: vi.fn() }));
 
+// Team decision cycles list — capture the options (owner_scope=team guard); the
+// return is mutable so the visibility test can make it empty.
+let cyclesOpts = null;
+let decisionCyclesReturn = { cycles: [] };
+vi.mock('api/accounts/decisionCycles', () => ({
+  useGetDecisionCycles: (opts) => {
+    cyclesOpts = opts;
+    return decisionCyclesReturn;
+  },
+  // The real DecisionCyclesBlock imports these status maps from this module.
+  CYCLE_DERIVED_STATUS_LABELS: { IN_PROGRESS: 'In Progress', STALLED: 'Stalled', OVERDUE: 'Overdue', NOT_STARTED: 'Not Started' },
+  CYCLE_STATUS_COLORS: { IN_PROGRESS: 'info', STALLED: 'warning', OVERDUE: 'error', NOT_STARTED: 'default' },
+}));
+
 // Stub the team table (pulls ReusableTable + the team todo hook); capture props.
 let teamTableProps = null;
 vi.mock('sections/home/TeamActivityTable', () => ({
@@ -99,12 +116,19 @@ vi.mock('sections/home/TeamActivityTable', () => ({
 
 import ManagerHome, { managedTeamSubtree, rosterFromKpi } from 'views/home/ManagerHome';
 
+const TEAM_CYCLE = {
+  id: 'dc-1', name: 'Globex deal', account: 'acc-1', account_name: 'Globex',
+  owner_name: 'Bob Li', owner_email: 'bob@a.test', team: { id: 't9', name: 'AMER' },
+};
+
 beforeEach(() => {
   windowsOpts = null;
   teamTableProps = null;
   kpiBatchReqs = null;
   campaignsOpts = null;
   territoriesOpts = null;
+  cyclesOpts = null;
+  decisionCyclesReturn = { cycles: [TEAM_CYCLE] };
 });
 afterEach(() => cleanup());
 
@@ -228,9 +252,40 @@ describe('ManagerHome — team progress (the rep ProgressBlock in team scope)', 
 
   it('does not cap the batch — every campaign+territory becomes a request (chunking is the hook\'s job, covered in kpi.test)', () => {
     render(<ManagerHome />);
-    // 1 campaign + 1 territory here; the component passes all of them, so a large
-    // team fans out to the batch fetcher which chunks at BATCH_CAP (kpi.test.js).
-    expect(kpiBatchReqs).toHaveLength(2);
+    // 1 campaign + 1 territory + 1 team cycle here; the component passes all of
+    // them, so a large team fans out to the batch fetcher (chunks at BATCH_CAP).
+    expect(kpiBatchReqs).toHaveLength(3);
+  });
+});
+
+describe('ManagerHome — team decision cycles (the rep block, team scope + showOwner)', () => {
+  it('reads the OPEN team cycles at owner_scope=team (never the tenant-wide bare list)', () => {
+    render(<ManagerHome />);
+    expect(cyclesOpts).toEqual({ filters: { owner_scope: 'team', outcome__isnull: true } });
+  });
+
+  it('runs dc_cycle_state at scope=team, one request per open cycle', () => {
+    render(<ManagerHome />);
+    expect(kpiBatchReqs.filter((r) => r.key === 'dc_cycle_state')).toEqual([
+      { key: 'dc_cycle_state', scope: 'team', params: { cycle_id: 'dc-1' } },
+    ]);
+  });
+
+  it('renders the block with showOwner (Owner · Team) + the team title', () => {
+    render(<ManagerHome />);
+    // section heading + the block's card title both read "Team decision cycles".
+    expect(screen.getAllByText('Team decision cycles').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Globex deal')).toBeInTheDocument();
+    expect(screen.getByText('Bob Li')).toBeInTheDocument();   // showOwner line
+    expect(screen.getByText('AMER')).toBeInTheDocument();     // team on the same line
+  });
+
+  it('DATA-DRIVEN VISIBILITY: no open team cycle -> no block, no heading', () => {
+    decisionCyclesReturn = { cycles: [] };
+    render(<ManagerHome />);
+    expect(screen.queryByText('Team decision cycles')).not.toBeInTheDocument();
+    // and dc_cycle_state is not requested when there are no cycles
+    expect(kpiBatchReqs.filter((r) => r.key === 'dc_cycle_state')).toEqual([]);
   });
 });
 

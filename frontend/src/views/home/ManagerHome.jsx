@@ -17,6 +17,7 @@ import { useGetTeams } from 'api/admin/teams';
 import { useGetTodoWindows } from 'api/bi/todo';
 import { useGetCampaigns } from 'api/campaigns/campaigns';
 import { useGetTerritories } from 'api/territories/territories';
+import { useGetDecisionCycles } from 'api/accounts/decisionCycles';
 import { useKpi, useKpiBatch } from 'api/bi/kpi';
 import { displayErrorSnackbar } from 'utils/displayError';
 
@@ -24,6 +25,7 @@ import TodoBlock from 'sections/home/TodoBlock';
 import TeamActivityTable from 'sections/home/TeamActivityTable';
 import TeamTodoFilterPanel from 'sections/home/TeamTodoFilterPanel';
 import ProgressBlock from 'sections/home/ProgressBlock';
+import DecisionCyclesBlock from 'sections/home/DecisionCyclesBlock';
 import TeamQuotaGroup from 'sections/home/TeamQuotaGroup';
 
 // The full roster of owners with open tasks (a no-window todo_team_by_owner):
@@ -127,11 +129,17 @@ export default function ManagerHome() {
   const { kpi: rosterKpi } = useKpi('todo_team_by_owner', { scope: 'team' });
   const roster = useMemo(() => rosterFromKpi(rosterKpi), [rosterKpi]);
 
-  // Team progress — the SAME ProgressBlock as the rep, in team scope. The entity
-  // LISTS are read=client, so owner_scope=team is REQUIRED (a bare list would be
-  // tenant-wide). Then ONE batch of parameterized KPIs at scope='team'.
+  // Team progress + team decision cycles — the SAME blocks as the rep, in team
+  // scope. The entity LISTS are read=client, so owner_scope=team is REQUIRED (a
+  // bare list would be tenant-wide). Then ONE batch of parameterized KPIs at
+  // scope='team'.
   const { campaigns } = useGetCampaigns({ filters: { owner_scope: 'team', status: 'ACTIVE' } });
   const { territories, territoriesCount } = useGetTerritories({ filters: { owner_scope: 'team' } });
+  // My team's OPEN decision cycles. owner_scope=team routes through the mixin
+  // (unchanged by the C6 fix, which only diverted 'mine'); open == outcome IS NULL.
+  const { cycles: openCycles } = useGetDecisionCycles({
+    filters: { owner_scope: 'team', outcome__isnull: true },
+  });
 
   const entityReqs = useMemo(() => {
     const reqs = [];
@@ -141,11 +149,14 @@ export default function ManagerHome() {
     (territories || []).forEach((t) =>
       reqs.push({ kind: 'territory', entity: t, req: { key: 'territory_coverage', scope: 'team', params: { territory_id: t.id } } }),
     );
+    (openCycles || []).forEach((c) =>
+      reqs.push({ kind: 'dc', entity: c, req: { key: 'dc_cycle_state', scope: 'team', params: { cycle_id: c.id } } }),
+    );
     return reqs;
-  }, [campaigns, territories]);
+  }, [campaigns, territories, openCycles]);
 
   // useKpiBatch chunks at BATCH_CAP (20) client-side, so a team with many
-  // campaigns+territories fans out over several POSTs and still zips by index.
+  // campaigns+territories+cycles fans out over several POSTs and still zips by index.
   const { results, resultsLoading, resultsError } = useKpiBatch(entityReqs.map((e) => e.req));
   const enriched = useMemo(
     () => entityReqs.map((e, i) => ({ ...e, result: results[i] || null })),
@@ -153,6 +164,11 @@ export default function ManagerHome() {
   );
   const campaignResults = enriched.filter((e) => e.kind === 'campaign');
   const territoryResults = enriched.filter((e) => e.kind === 'territory');
+  const cycleItems = useMemo(
+    () => enriched.filter((e) => e.kind === 'dc').map((e) => ({ cycle: e.entity, result: e.result })),
+    [enriched],
+  );
+  const hasOpenCycles = (openCycles || []).length > 0;
 
   useEffect(() => {
     if (resultsError) displayErrorSnackbar(resultsError);
@@ -241,6 +257,25 @@ export default function ManagerHome() {
           loading={resultsLoading}
         />
       </Stack>
+
+      {/* Data-driven: the section appears only when the team OWNS >=1 open cycle
+          — no role test. Owner · Team line via showOwner ("who carries this"). */}
+      {hasOpenCycles ? (
+        <Stack spacing={1.5} useFlexGap>
+          <Box>
+            <Typography variant="h5">Team decision cycles</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Where each open team deal stands — and who carries it.
+            </Typography>
+          </Box>
+          <DecisionCyclesBlock
+            items={cycleItems}
+            loading={resultsLoading}
+            showOwner
+            title="Team decision cycles"
+          />
+        </Stack>
+      ) : null}
 
       <Stack spacing={1.5}>
         <Box>
