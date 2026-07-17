@@ -24,6 +24,7 @@ vi.mock('components/MainCard', () => ({
 import TodoBlock from 'sections/home/TodoBlock';
 import ProgressBlock from 'sections/home/ProgressBlock';
 import TeamCampaignsBlock from 'sections/home/TeamCampaignsBlock';
+import TeamTerritoriesBlock from 'sections/home/TeamTerritoriesBlock';
 import QuotaBlock from 'sections/home/QuotaBlock';
 
 afterEach(() => cleanup());
@@ -98,21 +99,6 @@ describe('ProgressBlock', () => {
     render(<ProgressBlock campaigns={[]} territories={[]} territoriesTotal={0} loading={false} />);
     expect(screen.getByText('No active campaigns.')).toBeInTheDocument();
   });
-
-  it('showCampaigns={false} (manager) hides the campaigns card, keeps territories only', () => {
-    const territories = [
-      { entity: { id: 't1', name: 'North' }, result: { value: 90, meta: { numerator: 9, denominator: 10 } } },
-    ];
-    render(
-      <ProgressBlock territories={territories} territoriesTotal={1} loading={false} showCampaigns={false} />,
-    );
-    // no campaigns card at all — its aggregate lives in TeamCampaignsBlock.
-    expect(screen.queryByText('Active campaigns')).not.toBeInTheDocument();
-    // territory card still renders, still queue-framed (1 to go).
-    expect(screen.getByText('Territory coverage')).toBeInTheDocument();
-    expect(screen.getByText('North')).toBeInTheDocument();
-    expect(screen.getByText('1 accounts to go')).toBeInTheDocument();
-  });
 });
 
 describe('TeamCampaignsBlock — the manager campaign aggregate', () => {
@@ -178,6 +164,54 @@ describe('TeamCampaignsBlock — the manager campaign aggregate', () => {
     render(<TeamCampaignsBlock result={done} loading={false} />);
     // both the global and the team row read "All done".
     expect(screen.getAllByText('All done').length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('TeamTerritoriesBlock — the manager territory aggregate', () => {
+  // A territory has ONE owner -> global == the sum of the team rows (12 == 6+6).
+  // No shared-territory case exists, so there is NO "counts once" note.
+  const result = {
+    value: { t1: 50, t2: 25 },
+    meta: {
+      dimension: 'team',
+      labels: { t1: 'AMER', t2: 'EMEA' },
+      per_group: {
+        t1: { total: 6, done: 3, progress_pct: 50 },
+        t2: { total: 8, done: 2, progress_pct: 25 },
+      },
+      global: { total: 14, done: 5, progress_pct: 35.7 },
+    },
+  };
+
+  it('renders the global "All teams" line + one line per managed team, queue-framed', () => {
+    render(<TeamTerritoriesBlock result={result} loading={false} />);
+    expect(screen.getByText('Team territories')).toBeInTheDocument();
+    expect(screen.getByText('All teams')).toBeInTheDocument();
+    // global 5/14 -> "9 accounts to go"; AMER 3/6 -> "3"; EMEA 2/8 -> "6".
+    expect(screen.getByText('9 accounts to go')).toBeInTheDocument();
+    expect(screen.getByText('3 accounts to go')).toBeInTheDocument();
+    expect(screen.getByText('6 accounts to go')).toBeInTheDocument();
+    expect(screen.queryByText(/% done/)).not.toBeInTheDocument();
+  });
+
+  it('has NO "counts once" note (global == sum of rows for territories — a note would be false)', () => {
+    render(<TeamTerritoriesBlock result={result} loading={false} />);
+    expect(screen.queryByText(/counts once/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/shared/i)).not.toBeInTheDocument();
+  });
+
+  it('has no "See detail" affordance either', () => {
+    render(<TeamTerritoriesBlock result={result} loading={false} />);
+    expect(screen.queryByText(/see detail/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('renders nothing (data-driven) when there are no team territory rows', () => {
+    const { container } = render(
+      <TeamTerritoriesBlock result={{ value: {}, meta: { labels: {}, per_group: {}, global: null } }} loading={false} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText('Team territories')).not.toBeInTheDocument();
   });
 });
 

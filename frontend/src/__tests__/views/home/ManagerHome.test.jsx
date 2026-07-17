@@ -48,11 +48,15 @@ vi.mock('api/bi/todo', () => ({
   },
 }));
 
-// Roster + the campaign aggregate (useKpi) + the progress batch (useKpiBatch).
-// Capture the aggregate's scope and the batch requests so we can assert
-// scope:'team' reaches the KPIs.
+// Roster + the two aggregates (useKpi) + the DC batch (useKpiBatch). Capture the
+// aggregates' scope and the batch requests so we can assert scope:'team' reaches
+// the KPIs and that NO per-entity progress request remains.
 let kpiBatchReqs = null;
 let campaignKpiOpts = null;
+let territoryKpiOpts = null;
+function _aggregate(labels, perGroup, global) {
+  return { kpi: { value: {}, meta: { dimension: 'team', labels, per_group: perGroup, global } }, kpiLoading: false };
+}
 vi.mock('api/bi/kpi', () => ({
   useKpi: (key, opts) => {
     if (key === 'todo_team_by_owner') {
@@ -60,47 +64,33 @@ vi.mock('api/bi/kpi', () => ({
     }
     if (key === 'campaign_progress_by_team') {
       campaignKpiOpts = opts;
-      // The aggregate: global (all managed teams) + one per-team row. Shared
-      // campaigns make global.total < sum of per-team totals here (10 < 6+8).
-      return {
-        kpi: {
-          value: { tc1: 50, tc2: 25 },
-          meta: {
-            dimension: 'team',
-            // Distinct labels: they must not collide with the quota-group team
-            // names (Alpha/Beta) or the DC block team (AMER) rendered alongside.
-            labels: { tc1: 'Squad One', tc2: 'Squad Two' },
-            per_group: {
-              tc1: { total: 6, done: 3, progress_pct: 50 },
-              tc2: { total: 8, done: 2, progress_pct: 25 },
-            },
-            global: { total: 10, done: 5, progress_pct: 50 },
-          },
-        },
-        kpiLoading: false,
-      };
+      // Distinct labels: must not collide with the quota-group team names
+      // (Alpha/Beta) or the DC block team (AMER) rendered alongside.
+      return _aggregate(
+        { tc1: 'Squad One', tc2: 'Squad Two' },
+        { tc1: { total: 6, done: 3, progress_pct: 50 }, tc2: { total: 8, done: 2, progress_pct: 25 } },
+        { total: 10, done: 5, progress_pct: 50 },
+      );
+    }
+    if (key === 'territory_progress_by_team') {
+      territoryKpiOpts = opts;
+      return _aggregate(
+        { tr1: 'Region One', tr2: 'Region Two' },
+        { tr1: { total: 5, done: 4, progress_pct: 80 }, tr2: { total: 10, done: 3, progress_pct: 30 } },
+        { total: 15, done: 7, progress_pct: 46.7 },
+      );
     }
     return { kpi: null };
   },
   useKpiBatch: (reqs) => {
     kpiBatchReqs = reqs;
     const results = (reqs || []).map((r) => {
-      if (r.key === 'territory_coverage') return { value: 90, meta: { numerator: 9, denominator: 10 } };
       if (r.key === 'dc_cycle_state') {
         return { value: 'IN_PROGRESS', meta: { cycle_status: 'IN_PROGRESS', current_step_name: 'Qualification', validated_steps: 1, total_steps: 5 } };
       }
       return null;
     });
     return { results, resultsLoading: false, resultsError: null };
-  },
-}));
-
-// Team progress entity list — capture the options to assert owner_scope=team.
-let territoriesOpts = null;
-vi.mock('api/territories/territories', () => ({
-  useGetTerritories: (opts) => {
-    territoriesOpts = opts;
-    return { territories: [{ id: 't1', name: 'North' }], territoriesCount: 1 };
   },
 }));
 vi.mock('utils/displayError', () => ({ displayErrorSnackbar: vi.fn() }));
@@ -142,7 +132,7 @@ beforeEach(() => {
   teamTableProps = null;
   kpiBatchReqs = null;
   campaignKpiOpts = null;
-  territoriesOpts = null;
+  territoryKpiOpts = null;
   cyclesOpts = null;
   decisionCyclesReturn = { cycles: [TEAM_CYCLE] };
 });
@@ -239,50 +229,47 @@ describe('ManagerHome — same screen as the rep, team scope', () => {
   });
 });
 
-describe('ManagerHome — team progress (campaign aggregate + territory-only block)', () => {
-  it('reads the territory list at owner_scope=team (never the tenant-wide bare list)', () => {
-    render(<ManagerHome />);
-    expect(territoriesOpts).toEqual({ filters: { owner_scope: 'team' } });
-  });
-
-  it('fetches campaigns as ONE aggregate (campaign_progress_by_team, scope=team) — never a per-campaign batch', () => {
+describe('ManagerHome — team progress (two compact aggregates, no per-entity batch)', () => {
+  it('fetches BOTH progress dimensions as aggregates at scope=team (campaign + territory)', () => {
     render(<ManagerHome />);
     expect(campaignKpiOpts).toEqual({ scope: 'team' });
-    // The scale fix: the per-campaign path is gone entirely from the batch.
-    expect(kpiBatchReqs.filter((r) => r.key === 'campaign_progress')).toEqual([]);
+    expect(territoryKpiOpts).toEqual({ scope: 'team' });
   });
 
-  it('runs territory_coverage at scope=team, one request per territory', () => {
+  it('THE SCALE FIX: neither per-entity progress request survives in the batch', () => {
     render(<ManagerHome />);
-    expect(kpiBatchReqs.filter((r) => r.key === 'territory_coverage')).toEqual([
-      { key: 'territory_coverage', scope: 'team', params: { territory_id: 't1' } },
-    ]);
+    // both per-entity paths are gone entirely — the whole point of the aggregates.
+    expect(kpiBatchReqs.filter((r) => r.key === 'campaign_progress')).toEqual([]);
+    expect(kpiBatchReqs.filter((r) => r.key === 'territory_coverage')).toEqual([]);
   });
 
-  it('renders the compact team-campaigns aggregate: global + per-team, queue framing (not %)', () => {
+  it('renders the compact campaign aggregate (global + per-team, queue framing, counts-once note)', () => {
     render(<ManagerHome />);
     expect(screen.getByText('Team progress')).toBeInTheDocument();
     expect(screen.getByText('Team campaigns')).toBeInTheDocument();
-    expect(screen.getByText('All teams')).toBeInTheDocument();
-    // global 5/10 -> "5 accounts to go"; team Gamma 2/8 -> "6 accounts to go".
-    // Queue framing inherited from the rep block — never a "% done".
+    // campaign global 5/10 -> "5 accounts to go"; team Squad Two 2/8 -> "6".
     expect(screen.getByText('5 accounts to go')).toBeInTheDocument();
-    expect(screen.getByText('6 accounts to go')).toBeInTheDocument();
     expect(screen.queryByText('50% done')).not.toBeInTheDocument();
-    // the discreet "counts once" note that flags the shared-campaign global.
+    // campaigns DO flag the shared-campaign global.
     expect(screen.getByText('Shared campaigns count once')).toBeInTheDocument();
   });
 
-  it('renders the territory card only — no "Active campaigns" card (that aggregate is the block above)', () => {
+  it('renders the compact territory aggregate — NO campaigns/territory cards, NO counts-once note', () => {
     render(<ManagerHome />);
-    expect(screen.getByText('Territory coverage')).toBeInTheDocument();
+    expect(screen.getByText('Team territories')).toBeInTheDocument();
+    // territory global 7/15 -> "8 accounts to go"; Region Two 3/10 -> "7".
+    expect(screen.getByText('8 accounts to go')).toBeInTheDocument();
+    // the per-entity ProgressBlock cards are gone entirely.
     expect(screen.queryByText('Active campaigns')).not.toBeInTheDocument();
+    expect(screen.queryByText('Territory coverage')).not.toBeInTheDocument();
+    // (the territory block carries NO counts-once note of its own — proven in
+    // isolation in blocks.smoke; on the full page the CAMPAIGN note is present.)
   });
 
-  it('does not cap the batch — every territory+cycle becomes a request (campaigns are aggregated out of it)', () => {
+  it('the batch carries only the decision-cycle requests now (1 cycle here)', () => {
     render(<ManagerHome />);
-    // 1 territory + 1 team cycle; campaigns no longer fan out per entity.
-    expect(kpiBatchReqs).toHaveLength(2);
+    expect(kpiBatchReqs).toHaveLength(1);
+    expect(kpiBatchReqs[0].key).toBe('dc_cycle_state');
   });
 });
 
