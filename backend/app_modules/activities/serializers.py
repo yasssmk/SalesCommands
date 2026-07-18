@@ -232,7 +232,7 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     
     # Computed fields
     scheduled_date = serializers.SerializerMethodField(read_only=True)
-    is_overdue = serializers.BooleanField(read_only=True)
+    is_overdue = serializers.SerializerMethodField(read_only=True)
     is_scheduled = serializers.BooleanField(read_only=True)
     contacts_count = serializers.SerializerMethodField(read_only=True)
     contacts = serializers.SerializerMethodField(read_only=True)
@@ -362,18 +362,26 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         return None
     
     def get_scheduled_date(self, obj):
-        """Return scheduled_date. Campaign activities always have confirmed DB dates."""
+        """Return the date shown on the card.
+
+        On the campaign playlist the queryset carries ``_actionable_date`` =
+        max(scheduled_date, today) (the shared todo clamp), so an overdue step
+        shows today instead of its frozen original date. Every other list has no
+        such annotation and shows the raw stored ``scheduled_date`` unchanged.
+        """
+        actionable = getattr(obj, '_actionable_date', None)
+        if actionable is not None:
+            return str(actionable)
         return str(obj.scheduled_date) if obj.scheduled_date else None
 
     def get_is_overdue(self, obj):
-        """Overdue = PLANNED/IN_PROGRESS with scheduled_date in the past."""
-        from django.utils import timezone
-
-        if obj.status in (ActivityStatus.COMPLETED, ActivityStatus.CANCELLED):
+        """Overdue flag. A campaign playlist row (carrying ``_actionable_date``)
+        is never overdue — an outbound step is a chasing cadence, not a client
+        commitment. Any other list keeps the model's overdue behaviour verbatim.
+        """
+        if getattr(obj, '_actionable_date', None) is not None:
             return False
-        if not obj.scheduled_date:
-            return False
-        return obj.scheduled_date < timezone.now().date()
+        return obj.is_overdue
 
 
 # ============================================================================

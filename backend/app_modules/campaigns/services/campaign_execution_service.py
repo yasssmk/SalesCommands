@@ -13,7 +13,7 @@ Architecture:
 """
 
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Case, Count, DateField, F, Prefetch, Q, When
 from django.utils import timezone
 from datetime import timedelta
 
@@ -24,6 +24,7 @@ from core.error_messages import CampaignModuleErrorMessages, CoreErrorMessages
 
 from app_modules.activities.models import Activity
 from app_modules.activities.constants import ActivityType, ActivityStatus, ActivityOutcome
+from app_modules.activities.todo_rules import campaign_actionable_date_expr
 from app_modules.contacts.models import Contact
 from app_modules.sequences.sequence_dispatcher import SequenceDispatcher
 
@@ -298,6 +299,19 @@ class CampaignExecutionService:
             ),
         ).annotate(
             _contacts_count=Count('contacts'),
+            # Read-time actionable date for the card: PLANNED steps show
+            # max(scheduled_date, today) (the shared todo clamp) so an overdue
+            # step displays today instead of its frozen date. Grouping below
+            # still keys off the raw scheduled_date — this annotation is
+            # display-only and never written.
+            _actionable_date=Case(
+                When(
+                    status=ActivityStatus.PLANNED,
+                    then=campaign_actionable_date_expr(today),
+                ),
+                default=F('scheduled_date'),
+                output_field=DateField(),
+            ),
         )
 
         if executor:
@@ -996,7 +1010,8 @@ class CampaignExecutionService:
         Lazy rescheduling: for each CampaignContact with overdue PLANNED activities,
         anchor the first pending step to today and cascade the rest of the chain.
 
-        Called at the start of get_playlist() — no cron required.
+        Called from process_result() on the log-response POST flow — the playlist
+        GET endpoint is read-only (Q6), so this write never runs on a read.
 
         Rules:
             - Only processes the first PLANNED step per CampaignContact (lowest sequence_position).
