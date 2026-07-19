@@ -109,6 +109,10 @@ export default function PlaylistActivityCard({
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
   const isOnHold = activity.status === "ON_HOLD";
+  // The contact is awaiting its callback. On Hold takes precedence (a single
+  // marker at a time), so this only drives the card when it is NOT On Hold.
+  const isCallbackPending =
+    !isOnHold && activity.campaign_contact_status === "CALLBACK_PENDING";
   // scheduled_date is either a string (non-campaign) or {date, confirmed} (campaign sequence)
   const scheduledDateRaw = activity.scheduled_date;
   const isScheduledObject =
@@ -146,6 +150,12 @@ export default function PlaylistActivityCard({
 
   const getBorderColor = () => {
     if (isOnHold) return theme.palette.warning.light;
+    // Callback-pending wins over the greyed (Upcoming) styling — like On Hold —
+    // so the whole paused chain is tinted. Guarded so a late/finished activity
+    // still keeps its own colour: a campaign callback step never takes a
+    // late/overdue colour (invariant).
+    if (isCallbackPending && !isCancelled && !isCompleted && !isOverdue && !isBeyondEndDate)
+      return alpha(theme.palette.warning.main, 0.50);
     if (isGreyedOut) return theme.palette.divider;
     if (isCancelled) return theme.palette.grey[300];
     if (isCompleted) {
@@ -160,6 +170,10 @@ export default function PlaylistActivityCard({
 
   const getBgColor = () => {
     if (isOnHold) return alpha(theme.palette.warning.main, 0.06);
+    // Callback-pending wins over greyed (like On Hold), lighter than On Hold
+    // (0.05 vs 0.06). Guarded so a finished/late activity keeps its own colour.
+    if (isCallbackPending && !isCancelled && !isCompleted && !isOverdue)
+      return alpha(theme.palette.warning.main, 0.05);
     if (isGreyedOut) return alpha(theme.palette.grey[500], 0.03);
     if (isCancelled) return alpha(theme.palette.grey[500], 0.04);
     if (isCompleted) {
@@ -239,6 +253,21 @@ export default function PlaylistActivityCard({
                       color: "text.secondary",
                     },
                   }}
+                />
+              )}
+
+              {/* Callback-pending marker — carried by every activity of a contact
+                  awaiting its callback (campaign_contact_status), so the whole
+                  chain is flagged, like On Hold. Additive: the date stays visible
+                  and nothing is greyed. On Hold takes precedence (isCallbackPending
+                  is false when the activity is On Hold), so only one marker shows. */}
+              {isCallbackPending && (
+                <Chip
+                  label="Callback pending"
+                  size="small"
+                  color="warning"
+                  variant="filled"
+                  sx={{ height: 20, flexShrink: 0, fontSize: "0.7rem" }}
                 />
               )}
 
