@@ -139,6 +139,10 @@ export default function PlaylistActivityCard({
     : null;
   const outcomeCategory = outcomeConfig?.category || "neutral";
 
+  // Completion marker — always success green: a done activity reads as done.
+  // The outcome (positive/negative) is already carried by the chip on the right.
+  const completedColor = theme.palette.success.main;
+
   // CALL retry tracking — derived from CampaignAccount.no_answer_count via serializer.
   const isCall = activity.activity_type === "CALL";
   const noAnswerCount = activity.no_answer_count || 0;
@@ -297,6 +301,20 @@ export default function PlaylistActivityCard({
                   variant="filled"
                   sx={{ height: 22, fontSize: "0.7rem" }}
                 />
+              ) : isCompleted && activity.completed_at ? (
+                /* Completed: the completion date + an outcome-coloured check
+                   (the check means "done"; the colour says how it went). */
+                <Stack direction="row" alignItems="center" spacing={0.5}>
+                  <CheckCircleOutlined
+                    style={{ fontSize: 12, color: completedColor }}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{ color: completedColor, fontWeight: 500 }}
+                  >
+                    {formatRelativeDate(activity.completed_at)}
+                  </Typography>
+                </Stack>
               ) : activityDateStr ? (
                 <Stack direction="row" alignItems="center" spacing={0.5}>
                   <ClockCircleOutlined

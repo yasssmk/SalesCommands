@@ -110,3 +110,54 @@ describe("PlaylistActivityCard — Callback pending chip", () => {
     expect(cb.backgroundColor).not.toBe(plain.backgroundColor);
   });
 });
+
+describe("PlaylistActivityCard — completed cards (D6)", () => {
+  it("shows the completion date + check icon, not the scheduled clock", () => {
+    const { container } = render(
+      <PlaylistActivityCard
+        activity={mk({
+          status: "COMPLETED",
+          outcome: "SUCCESSFUL",
+          completed_at: "2020-01-15T12:00:00Z",
+          scheduled_date: "2020-06-20T12:00:00Z",
+        })}
+        isGreyedOut
+      />,
+    );
+    expect(container.querySelector('[aria-label="check-circle"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="clock-circle"]')).toBeNull();
+    expect(screen.getByText("Jan 15")).toBeInTheDocument(); // completed_at
+    expect(screen.queryByText("Jun 20")).not.toBeInTheDocument(); // not scheduled_date
+  });
+
+  it("check is always green (success), regardless of outcome", () => {
+    const pos = render(
+      <PlaylistActivityCard
+        activity={mk({ status: "COMPLETED", outcome: "SUCCESSFUL", completed_at: "2020-01-15T12:00:00Z" })}
+        isGreyedOut
+      />,
+    );
+    const neg = render(
+      <PlaylistActivityCard
+        activity={mk({ status: "COMPLETED", outcome: "NOT_INTERESTED", completed_at: "2020-01-15T12:00:00Z" })}
+        isGreyedOut
+      />,
+    );
+    const posIcon = pos.container.querySelector('[aria-label="check-circle"]');
+    const negIcon = neg.container.querySelector('[aria-label="check-circle"]');
+    expect(posIcon).not.toBeNull();
+    expect(negIcon).not.toBeNull();
+    // Same success colour for both — a done activity is a green check, the
+    // outcome is conveyed by the chip, not the check.
+    expect(getComputedStyle(negIcon).color).toBe(getComputedStyle(posIcon).color);
+  });
+
+  it("leaves a PLANNED card unchanged — clock + scheduled date, no check", () => {
+    const { container } = render(
+      <PlaylistActivityCard activity={mk({ status: "PLANNED", scheduled_date: "2020-06-20T12:00:00Z" })} />,
+    );
+    expect(container.querySelector('[aria-label="clock-circle"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="check-circle"]')).toBeNull();
+    expect(screen.getByText("Jun 20")).toBeInTheDocument();
+  });
+});
