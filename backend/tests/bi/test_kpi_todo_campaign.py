@@ -389,3 +389,48 @@ class TestManagerParity:
         assert count_res.value.get(member1.id) == 2      # callback + original step 2
         assert rows.count() == 2
         assert count_res.value.get(member1.id) == rows.count()
+
+
+@pytest.mark.django_db
+class TestCallbackResolutionCacheHonesty:
+    """Cache honesty for the callback-resolution loop: logging the callback
+    resumes the contact AND the Home todo reflects the new state — the callback
+    activity completion busts the `activities` tag, so no separate
+    contact-status invalidation is needed on this base (the todo does not depend
+    on contact status here; re-add CampaignContact as an invalidation source
+    with D3 if D3 makes it depend on the status again)."""
+
+    def test_logging_callback_resumes_and_todo_reflects(
+        self, windows_kpi, user_a, account_a, client_account_a,
+        django_capture_on_commit_callbacks,
+    ):
+        from app_modules.campaigns.services.campaign_execution_service import (
+            CampaignExecutionService,
+        )
+
+        campaign, ca = _mk_chain(user_a, account_a, client_account_a,
+                                 planned_end=TODAY + timedelta(days=30))
+        contact = _mk_contact(account_a, user_a, client_account_a, 1)
+        cc = _mk_campaign_contact(ca, contact, user_a, client_account_a,
+                                  status=CampaignContactStatus.CALLBACK_PENDING)
+        callback = _mk_step(user_a, account_a, client_account_a, campaign, ca, cc,
+                            sched=TODAY, position=2, is_callback=True)
+        _mk_step(user_a, account_a, client_account_a, campaign, ca, cc,
+                 sched=TODAY, position=3)
+
+        # Warm the cache: the pending callback + the next step both surface.
+        assert _windows(windows_kpi, user_a, client_account_a)[TodoWindow.NEXT_4_WEEKS] == 2
+
+        # Execute the on_commit BI-invalidation callbacks the writes schedule.
+        with django_capture_on_commit_callbacks(execute=True):
+            CampaignExecutionService(
+                user=user_a, client_id=account_a.client_id
+            ).process_result(callback, {'outcome': 'NO_ANSWER', 'callback_date': None})
+
+        cc.refresh_from_db()
+        assert cc.status == CampaignContactStatus.IN_PROGRESS      # resolution (the RED)
+
+        # The completed callback busted the activities tag → the todo recomputed:
+        # the callback is gone (COMPLETED), only the next step remains. A stale
+        # cache would still read 2.
+        assert _windows(windows_kpi, user_a, client_account_a)[TodoWindow.NEXT_4_WEEKS] == 1

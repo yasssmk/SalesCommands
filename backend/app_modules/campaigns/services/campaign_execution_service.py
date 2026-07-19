@@ -432,6 +432,24 @@ class CampaignExecutionService:
         if campaign_contact:
             next_activity = self._handle_outcome(campaign_contact, activity, result_data)
 
+        # Logging the callback itself resolves the pause: the rep has made the
+        # agreed resume call, so the sequence continues and the contact returns
+        # to IN_PROGRESS. Skipped when the outcome already moved the contact to a
+        # final state (SUCCESSFUL -> COMPLETED, terminal -> STOPPED) or requested
+        # a fresh callback (has_callback) — those pauses/ends must stand. Carried
+        # by the CALLBACK activity only; logging an ordinary step of a paused
+        # contact never lifts the pause.
+        if (
+            activity.is_callback_followup
+            and not has_callback
+            and campaign_contact
+            and campaign_contact.status == CampaignContactStatus.CALLBACK_PENDING
+        ):
+            campaign_contact.resume_from_callback(
+                user=self.user,
+                notes="Callback logged — sequence resumed",
+            )
+
         # Reschedule overdue chains for this campaign now that a contact's chain
         # state has changed. This replaces the write-on-GET rescheduling that
         # used to run inside get_playlist — the playlist endpoint is read-only.
