@@ -109,10 +109,16 @@ export default function PlaylistActivityCard({
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
   const isOnHold = activity.status === "ON_HOLD";
-  // The contact is awaiting its callback. On Hold takes precedence (a single
-  // marker at a time), so this only drives the card when it is NOT On Hold.
+  // The contact is awaiting its callback. Marks only ACTIVE cards: On Hold takes
+  // precedence (a single marker at a time), and a completed/cancelled activity
+  // is done — it is not itself "awaiting reprise" (the pending state belongs to
+  // the future callback activity). Excluding completed/cancelled here aligns the
+  // chip with the tint, which already guards them.
   const isCallbackPending =
-    !isOnHold && activity.campaign_contact_status === "CALLBACK_PENDING";
+    !isOnHold &&
+    !isCompleted &&
+    !isCancelled &&
+    activity.campaign_contact_status === "CALLBACK_PENDING";
   // scheduled_date is either a string (non-campaign) or {date, confirmed} (campaign sequence)
   const scheduledDateRaw = activity.scheduled_date;
   const isScheduledObject =

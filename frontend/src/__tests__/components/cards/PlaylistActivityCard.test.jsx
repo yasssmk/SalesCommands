@@ -66,6 +66,20 @@ describe("PlaylistActivityCard — Callback pending chip", () => {
     expect(screen.queryByText("Callback pending")).not.toBeInTheDocument();
   });
 
+  it("shows no chip on a COMPLETED card even if the contact is still pending", () => {
+    render(
+      <PlaylistActivityCard
+        activity={mk({
+          status: "COMPLETED",
+          completed_at: "2020-01-15T12:00:00Z",
+          campaign_contact_status: "CALLBACK_PENDING",
+        })}
+        isGreyedOut
+      />,
+    );
+    expect(screen.queryByText("Callback pending")).not.toBeInTheDocument();
+  });
+
   it("On Hold takes precedence: paused AND callback-pending shows On Hold only", () => {
     render(
       <PlaylistActivityCard
