@@ -3,7 +3,6 @@
 // assets
 import DatabaseOutlined from "@ant-design/icons/DatabaseOutlined";
 import BankOutlined from "@ant-design/icons/BankOutlined";
-import ContactsOutlined from "@ant-design/icons/ContactsOutlined";
 import ShoppingOutlined from "@ant-design/icons/ShoppingOutlined";
 import AppstoreOutlined from "@ant-design/icons/AppstoreOutlined";
 import DeploymentUnitOutlined from "@ant-design/icons/DeploymentUnitOutlined";
@@ -14,7 +13,6 @@ import { isFeatureEnabled } from "../config/features";
 const icons = {
   DatabaseOutlined,
   BankOutlined,
-  ContactsOutlined,
   ShoppingOutlined,
   AppstoreOutlined,
   DeploymentUnitOutlined,
@@ -57,18 +55,6 @@ const businessData = {
           breadcrumbs: true,
           disabled: !isFeatureEnabled("DECISION_CYCLES"),
           tooltip: !isFeatureEnabled("DECISION_CYCLES") ? "Soon" : null,
-        },
-        {
-          id: "contacts-management",
-          title: "contacts-management",
-          type: "item",
-          url: isFeatureEnabled("CONTACTS_MANAGEMENT")
-            ? "/businessData/contacts"
-            : "#",
-          icon: icons.ContactsOutlined,
-          breadcrumbs: true,
-          disabled: !isFeatureEnabled("CONTACTS_MANAGEMENT"),
-          tooltip: !isFeatureEnabled("CONTACTS_MANAGEMENT") ? "Soon" : null,
         },
         {
           id: "products-management",

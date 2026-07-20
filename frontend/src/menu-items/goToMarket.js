@@ -2,7 +2,6 @@
 
 // assets
 import RocketOutlined from '@ant-design/icons/RocketOutlined';
-import ThunderboltOutlined from '@ant-design/icons/ThunderboltOutlined';
 import GlobalOutlined from '@ant-design/icons/GlobalOutlined';
 import NotificationOutlined from '@ant-design/icons/NotificationOutlined';
 import FundProjectionScreenOutlined from '@ant-design/icons/FundProjectionScreenOutlined';
@@ -12,7 +11,6 @@ import { isFeatureEnabled } from '../config/features';
 // icons
 const icons = {
   RocketOutlined,
-  ThunderboltOutlined,
   GlobalOutlined,
   NotificationOutlined,
   FundProjectionScreenOutlined
@@ -32,16 +30,6 @@ const goToMarket = {
       icon: icons.RocketOutlined,
       breadcrumbs: true,
       children: [
-        {
-          id: 'action-center',
-          title: 'action-center',
-          type: 'item',
-          url: isFeatureEnabled('ACTION_CENTER') ? '/action-center' : '#',
-          icon: icons.ThunderboltOutlined,
-          breadcrumbs: true,
-          disabled: !isFeatureEnabled('ACTION_CENTER'),
-          tooltip: !isFeatureEnabled('ACTION_CENTER') ? 'Soon' : null,
-        },
         {
           id: 'territories',
           title: 'territories',

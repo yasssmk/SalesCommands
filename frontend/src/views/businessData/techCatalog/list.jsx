@@ -371,6 +371,7 @@ export default function TechCatalogListPage() {
         onSortingChange={handleSortingChange}
         initialPageSize={validPageSize}
         // Customization
+        enableImport={false}
         addButtonLabel="Add tech"
         addButtonTooltip="Add tech"
         searchPlaceholder={`Search ${entriesCount} entries...`}
