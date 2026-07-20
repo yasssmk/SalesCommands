@@ -1,27 +1,25 @@
-// src/views/businessData/techCatalog/list.jsx
+// src/views/businessData/products/list.jsx
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
 
 // material-ui
-import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import Link from "@mui/material/Link";
 
 // project imports
 import IconButton from "components/@extended/IconButton";
 import ReusableTable from "components/table/Table";
-import TechCatalogModal from "sections/businessdata/techCatalog/TechCatalogModal";
-import AlertTechCatalogDelete from "sections/businessdata/techCatalog/AlertTechCatalogDelete";
+import ProductCatalogModal from "sections/businessData/products/ProductCatalogModal";
+import AlertProductCatalogDelete from "sections/businessData/products/AlertProductCatalogDelete";
 
 // hooks
 import useLocalStorage from "hooks/useLocalStorage";
 import { useAuth } from "hooks/useAuth";
 
 // api
-import { useGetTechCatalogEntries } from "api/businessData/techCatalog";
+import { useGetProductCatalogEntries } from "api/businessData/productCatalog";
 import { tenantKey } from "api/_swr";
 
 // utils
@@ -35,39 +33,57 @@ import EditOutlined from "@ant-design/icons/EditOutlined";
 
 /**
  * Map frontend column ids to backend ordering field names.
- * Critical for server-side sorting to work as expected.
+ * Only the columns the backend can order on are listed
+ * (ProductCatalogViewSet.ordering_fields).
  */
 const COLUMN_TO_BACKEND_FIELD = {
-  company_name: "company_name",
-  product_name: "product_name",
+  name: "name",
+  default_unit_price: "default_unit_price",
   updated_at: "updated_at",
 };
 
-// ==============================|| TECH CATALOG LIST PAGE ||============================== //
+// ==============================|| PRICE FORMAT ||============================== //
 
 /**
- * TechCatalog admin list page.
- *
- * Pure CRUD surface — no tabs, no advanced filters, no bulk operations.
- * The TechCatalog is a small reference list curated by tenant admins:
- * the simplest table that lets them keep it tidy is what's needed.
- *
- * Architecture:
- *   - Uses ReusableTable directly with a flat column set.
- *   - Server-side pagination + search + ordering via useGetTechCatalogEntries.
- *   - Single-row interactions only (click row → edit, click delete → confirm).
- *   - Add button opens the same modal in create mode.
+ * Format the default unit price for table display.
+ * The model carries no currency code, so the raw decimal is shown with
+ * grouped thousands and two fraction digits; null renders as a dash.
  */
-export default function TechCatalogListPage() {
+function formatPrice(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const n = Number(value);
+  if (Number.isNaN(n)) return "-";
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+// ==============================|| PRODUCT CATALOG LIST PAGE ||============================== //
+
+/**
+ * Product catalog admin list page.
+ *
+ * Pure CRUD surface calqued on the TechCatalog table — no tabs, no
+ * advanced filters, no bulk operations, no import. The product catalog is
+ * a tenant-level reference list curated by admins.
+ *
+ * Writes are admin-only, enforced server-side by ScopedPermission (a
+ * non-admin action returns 403, handled like everywhere else). The UI
+ * shows the same controls to everyone — no front-side gating, matching
+ * the TechCatalog pattern.
+ *
+ * Server-side pagination + search + ordering via useGetProductCatalogEntries.
+ */
+export default function ProductCatalogListPage() {
   const { tenantId } = useAuth();
   const MAX_PAGE_SIZE = 100;
 
   // ==============================|| STATE ||============================== //
 
-  // Pagination state with localStorage persistence
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useLocalStorage(
-    "techCatalogTablePageSize",
+    "productCatalogTablePageSize",
     20,
   );
 
@@ -77,15 +93,12 @@ export default function TechCatalogListPage() {
     return Math.min(parsed, MAX_PAGE_SIZE);
   }, [pageSize]);
 
-  // Search and sorting
   const [search, setSearch] = useState("");
   const [sorting, setSorting] = useState([]);
 
-  // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState(null);
 
-  // Delete confirmation state
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [entryToDelete, setEntryToDelete] = useState(null);
 
@@ -93,11 +106,11 @@ export default function TechCatalogListPage() {
 
   /**
    * Convert TanStack sorting state to a Django-compatible ordering string.
-   * Example: [{ id: 'company_name', desc: true }] → '-company_name'
+   * Example: [{ id: 'name', desc: true }] → '-name'
    */
   const ordering = useMemo(() => {
     if (!Array.isArray(sorting) || sorting.length === 0) {
-      return "company_name";
+      return "name";
     }
     return sorting
       .map(({ id, desc }) => {
@@ -114,21 +127,21 @@ export default function TechCatalogListPage() {
     entriesCount = 0,
     entriesLoading = false,
     entriesError = null,
-  } = useGetTechCatalogEntries({
+  } = useGetProductCatalogEntries({
     page,
     pageSize: validPageSize,
     search,
     ordering,
   });
 
-  // SWR key for ReusableTable cache hooks (same shape as accounts list)
+  // SWR key for ReusableTable cache hooks (same shape as techCatalog list)
   const swrKey = useMemo(() => {
     const params = new URLSearchParams();
     params.append("page", page);
     params.append("page_size", validPageSize);
     if (search) params.append("search", search);
     if (ordering) params.append("ordering", ordering);
-    const url = `/tech-catalog/${
+    const url = `/product-catalog/${
       params.toString() ? `?${params.toString()}` : ""
     }`;
     return tenantKey(url, tenantId);
@@ -189,10 +202,10 @@ export default function TechCatalogListPage() {
 
   const columns = useMemo(
     () => [
-      // Company name — clickable, opens edit modal
+      // Product name — clickable, opens edit modal
       {
-        header: "Company",
-        accessorKey: "company_name",
+        header: "Product",
+        accessorKey: "name",
         cell: ({ row, getValue }) => (
           <Typography
             variant="subtitle2"
@@ -213,61 +226,24 @@ export default function TechCatalogListPage() {
         ),
       },
 
-      // Product name
+      // Default unit price
       {
-        header: "Product",
-        accessorKey: "product_name",
+        header: "Default Unit Price",
+        accessorKey: "default_unit_price",
+        meta: { className: "cell-right" },
         cell: ({ getValue }) => (
-          <Typography variant="body2">{getValue() || "-"}</Typography>
+          <Typography variant="body2">{formatPrice(getValue())}</Typography>
         ),
       },
 
-      // Competitor flag
+      // Description — truncated to keep the row readable
       {
-        header: "Competitor",
-        accessorKey: "is_competitor",
-        cell: ({ getValue }) =>
-          getValue() ? (
-            <Chip
-              label="Competitor"
-              color="error"
-              size="small"
-              variant="light"
-            />
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              -
-            </Typography>
-          ),
-      },
-
-      // Integration target flag
-      {
-        header: "Integration",
-        accessorKey: "is_integration_target",
-        cell: ({ getValue }) =>
-          getValue() ? (
-            <Chip
-              label="Integration"
-              color="success"
-              size="small"
-              variant="light"
-            />
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              -
-            </Typography>
-          ),
-      },
-
-      // Vendor URL
-      {
-        header: "Vendor URL",
-        accessorKey: "vendor_url",
+        header: "Description",
+        accessorKey: "description",
         enableSorting: false,
         cell: ({ getValue }) => {
-          const url = getValue();
-          if (!url) {
+          const v = getValue();
+          if (!v) {
             return (
               <Typography variant="body2" color="text.secondary">
                 -
@@ -275,23 +251,20 @@ export default function TechCatalogListPage() {
             );
           }
           return (
-            <Link
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              underline="hover"
-              variant="body2"
-              onClick={(e) => e.stopPropagation()}
-              sx={{
-                display: "inline-block",
-                maxWidth: 240,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {url}
-            </Link>
+            <Tooltip title={v}>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{
+                  maxWidth: 320,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {v}
+              </Typography>
+            </Tooltip>
           );
         },
       },
@@ -372,23 +345,23 @@ export default function TechCatalogListPage() {
         initialPageSize={validPageSize}
         // Customization
         enableImport={false}
-        addButtonLabel="Add tech"
-        addButtonTooltip="Add tech"
-        searchPlaceholder={`Search ${entriesCount} entries...`}
-        exportFilename="tech-catalog.csv"
-        emptyMessage="No catalog entries found"
-        emptyDescription="Start by adding your first technology"
+        addButtonLabel="Add product"
+        addButtonTooltip="Add product"
+        searchPlaceholder={`Search ${entriesCount} products...`}
+        exportFilename="product-catalog.csv"
+        emptyMessage="No products found"
+        emptyDescription="Start by adding your first product"
       />
 
       {/* Add / Edit Modal */}
-      <TechCatalogModal
+      <ProductCatalogModal
         open={modalOpen}
         modalToggler={setModalOpen}
         entry={selectedEntry}
       />
 
       {/* Single Delete Confirmation */}
-      <AlertTechCatalogDelete
+      <AlertProductCatalogDelete
         entry={entryToDelete}
         open={deleteOpen}
         handleClose={handleDeleteClose}

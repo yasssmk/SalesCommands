@@ -294,6 +294,13 @@ export const buildUrlWithParams = (baseUrl, params = {}) => {
     queryParams.append('outcome__isnull', filters.outcome__isnull);
   }
 
+  // Closed-cycle outcome filter (exact). Backend DecisionCycleViewSet declares
+  // outcome: ['exact', 'isnull'], so this narrows to a single terminal outcome
+  // (WON / LOST / ON_HOLD / NOT_QUALIFIED).
+  if (filters.outcome) {
+    queryParams.append('outcome', filters.outcome);
+  }
+
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
 };
