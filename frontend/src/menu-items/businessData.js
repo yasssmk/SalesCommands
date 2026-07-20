@@ -6,6 +6,7 @@ import BankOutlined from "@ant-design/icons/BankOutlined";
 import ContactsOutlined from "@ant-design/icons/ContactsOutlined";
 import ShoppingOutlined from "@ant-design/icons/ShoppingOutlined";
 import AppstoreOutlined from "@ant-design/icons/AppstoreOutlined";
+import DeploymentUnitOutlined from "@ant-design/icons/DeploymentUnitOutlined";
 
 import { isFeatureEnabled } from "../config/features";
 
@@ -16,6 +17,7 @@ const icons = {
   ContactsOutlined,
   ShoppingOutlined,
   AppstoreOutlined,
+  DeploymentUnitOutlined,
 };
 
 // ==============================|| MENU ITEMS - BUSINESS DATA ||============================== //
@@ -43,6 +45,18 @@ const businessData = {
           breadcrumbs: true,
           disabled: !isFeatureEnabled("ACCOUNT_MANAGEMENT"),
           tooltip: !isFeatureEnabled("ACCOUNT_MANAGEMENT") ? "Soon" : null,
+        },
+        {
+          id: "decision-cycles",
+          title: "decision-cycles",
+          type: "item",
+          url: isFeatureEnabled("DECISION_CYCLES")
+            ? "/businessData/decisionCycles"
+            : "#",
+          icon: icons.DeploymentUnitOutlined,
+          breadcrumbs: true,
+          disabled: !isFeatureEnabled("DECISION_CYCLES"),
+          tooltip: !isFeatureEnabled("DECISION_CYCLES") ? "Soon" : null,
         },
         {
           id: "contacts-management",

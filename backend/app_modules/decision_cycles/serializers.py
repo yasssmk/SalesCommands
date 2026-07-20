@@ -1099,6 +1099,9 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
     Lightweight serializer for cycle lists.
     """
     account_name = serializers.SerializerMethodField(read_only=True)
+    # Alias of `name`, mirroring the DecisionStep serializers' `cycle_name`
+    # convention so consumers can read the cycle's name under one stable key.
+    cycle_name = serializers.CharField(source='name', read_only=True)
     owner_name = serializers.SerializerMethodField(read_only=True)
     # Email fallback for the owner's IDENTITY: first/last_name are nullable on
     # User, so a name-less owner would otherwise be anonymous. The manager DC
@@ -1114,10 +1117,11 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
     class Meta:
         model = DecisionCycle
         fields = [
-            'id', 'name', 'description',
+            'id', 'name', 'cycle_name', 'description',
             'account', 'account_name',
             'owner', 'owner_name', 'owner_email', 'team',
             'is_active',
+            'estimated_value',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'steps_count', 'validated_steps_count',

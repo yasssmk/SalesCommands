@@ -50,7 +50,8 @@ export const FEATURES = {
   // BUSINESS DATA FEATURES
   // ============================================
   ACCOUNT_MANAGEMENT: true,   // Account CRUD - Active
-  CONTACTS_MANAGEMENT: false, // Contact management 
+  DECISION_CYCLES: true,      // Decision cycles list - Active
+  CONTACTS_MANAGEMENT: false, // Contact management
   PRODUCTS_MANAGEMENT: true,  // Product catalog - Active
 
   
