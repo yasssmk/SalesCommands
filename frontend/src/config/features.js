@@ -51,7 +51,7 @@ export const FEATURES = {
   // ============================================
   ACCOUNT_MANAGEMENT: true,   // Account CRUD - Active
   CONTACTS_MANAGEMENT: false, // Contact management 
-  PRODUCTS_MANAGEMENT: false, // Product catalog - Coming soon
+  PRODUCTS_MANAGEMENT: true,  // Product catalog - Active
 
   
   // ============================================
