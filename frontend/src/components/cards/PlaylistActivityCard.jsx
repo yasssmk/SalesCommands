@@ -109,6 +109,16 @@ export default function PlaylistActivityCard({
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
   const isOnHold = activity.status === "ON_HOLD";
+  // The contact is awaiting its callback. Marks only ACTIVE cards: On Hold takes
+  // precedence (a single marker at a time), and a completed/cancelled activity
+  // is done — it is not itself "awaiting reprise" (the pending state belongs to
+  // the future callback activity). Excluding completed/cancelled here aligns the
+  // chip with the tint, which already guards them.
+  const isCallbackPending =
+    !isOnHold &&
+    !isCompleted &&
+    !isCancelled &&
+    activity.campaign_contact_status === "CALLBACK_PENDING";
   // scheduled_date is either a string (non-campaign) or {date, confirmed} (campaign sequence)
   const scheduledDateRaw = activity.scheduled_date;
   const isScheduledObject =
@@ -135,6 +145,10 @@ export default function PlaylistActivityCard({
     : null;
   const outcomeCategory = outcomeConfig?.category || "neutral";
 
+  // Completion marker — always success green: a done activity reads as done.
+  // The outcome (positive/negative) is already carried by the chip on the right.
+  const completedColor = theme.palette.success.main;
+
   // CALL retry tracking — derived from CampaignAccount.no_answer_count via serializer.
   const isCall = activity.activity_type === "CALL";
   const noAnswerCount = activity.no_answer_count || 0;
@@ -146,6 +160,12 @@ export default function PlaylistActivityCard({
 
   const getBorderColor = () => {
     if (isOnHold) return theme.palette.warning.light;
+    // Callback-pending wins over the greyed (Upcoming) styling — like On Hold —
+    // so the whole paused chain is tinted. Guarded so a late/finished activity
+    // still keeps its own colour: a campaign callback step never takes a
+    // late/overdue colour (invariant).
+    if (isCallbackPending && !isCancelled && !isCompleted && !isOverdue && !isBeyondEndDate)
+      return alpha(theme.palette.warning.main, 0.50);
     if (isGreyedOut) return theme.palette.divider;
     if (isCancelled) return theme.palette.grey[300];
     if (isCompleted) {
@@ -160,6 +180,10 @@ export default function PlaylistActivityCard({
 
   const getBgColor = () => {
     if (isOnHold) return alpha(theme.palette.warning.main, 0.06);
+    // Callback-pending wins over greyed (like On Hold), lighter than On Hold
+    // (0.05 vs 0.06). Guarded so a finished/late activity keeps its own colour.
+    if (isCallbackPending && !isCancelled && !isCompleted && !isOverdue)
+      return alpha(theme.palette.warning.main, 0.05);
     if (isGreyedOut) return alpha(theme.palette.grey[500], 0.03);
     if (isCancelled) return alpha(theme.palette.grey[500], 0.04);
     if (isCompleted) {
@@ -242,6 +266,21 @@ export default function PlaylistActivityCard({
                 />
               )}
 
+              {/* Callback-pending marker — carried by every activity of a contact
+                  awaiting its callback (campaign_contact_status), so the whole
+                  chain is flagged, like On Hold. Additive: the date stays visible
+                  and nothing is greyed. On Hold takes precedence (isCallbackPending
+                  is false when the activity is On Hold), so only one marker shows. */}
+              {isCallbackPending && (
+                <Chip
+                  label="Callback pending"
+                  size="small"
+                  color="warning"
+                  variant="filled"
+                  sx={{ height: 20, flexShrink: 0, fontSize: "0.7rem" }}
+                />
+              )}
+
               {/* Title (truncated) */}
               <Typography
                 variant="body2"
@@ -268,6 +307,20 @@ export default function PlaylistActivityCard({
                   variant="filled"
                   sx={{ height: 22, fontSize: "0.7rem" }}
                 />
+              ) : isCompleted && activity.completed_at ? (
+                /* Completed: the completion date + an outcome-coloured check
+                   (the check means "done"; the colour says how it went). */
+                <Stack direction="row" alignItems="center" spacing={0.5}>
+                  <CheckCircleOutlined
+                    style={{ fontSize: 12, color: completedColor }}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{ color: completedColor, fontWeight: 500 }}
+                  >
+                    {formatRelativeDate(activity.completed_at)}
+                  </Typography>
+                </Stack>
               ) : activityDateStr ? (
                 <Stack direction="row" alignItems="center" spacing={0.5}>
                   <ClockCircleOutlined

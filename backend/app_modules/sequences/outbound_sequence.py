@@ -21,6 +21,8 @@ class OutboundSequence(Sequence):
     Standard variant: 10 steps, alternating calls and emails over ~4 weeks.
     """
 
+    PREFIX = "OUT"
+
     @classmethod
     def get_sequence_name(cls) -> str:
         return "Outbound"
@@ -35,27 +37,27 @@ class OutboundSequence(Sequence):
         10-step sequence alternating calls and emails.
         Covers ~4 weeks of outreach with escalating urgency.
         """
-        # return {
-        #     1:  {'type': ActivityType.CALL,  'min_delay': 0,  'description': 'Initial Outreach Call'},
-        #     2:  {'type': ActivityType.EMAIL, 'min_delay': 1,  'description': 'Follow-up Email'},
-        #     3:  {'type': ActivityType.CALL,  'min_delay': 2,  'description': 'Second Call Attempt'},
-        #     4:  {'type': ActivityType.EMAIL, 'min_delay': 3,  'description': 'Value Proposition Email'},
-        #     5:  {'type': ActivityType.CALL,  'min_delay': 2,  'description': 'Third Call Attempt'},
-        #     6:  {'type': ActivityType.EMAIL, 'min_delay': 4,  'description': 'Case Study Email'},
-        #     7:  {'type': ActivityType.CALL,  'min_delay': 3,  'description': 'Fourth Call Attempt'},
-        #     8:  {'type': ActivityType.EMAIL, 'min_delay': 7,  'description': 'Last Opportunity Email'},
-        #     9:  {'type': ActivityType.CALL,  'min_delay': 3,  'description': 'Final Call'},
-        #     10: {'type': ActivityType.EMAIL, 'min_delay': 7,  'description': 'Breakup Email'},
-        # }
+        return {
+            1:  {'type': ActivityType.CALL,  'min_delay': 0,  'description': 'Initial Outreach Call'},
+            2:  {'type': ActivityType.EMAIL, 'min_delay': 1,  'description': 'Follow-up Email'},
+            3:  {'type': ActivityType.CALL,  'min_delay': 2,  'description': 'Second Call Attempt'},
+            4:  {'type': ActivityType.EMAIL, 'min_delay': 3,  'description': 'Value Proposition Email'},
+            5:  {'type': ActivityType.CALL,  'min_delay': 2,  'description': 'Third Call Attempt'},
+            6:  {'type': ActivityType.EMAIL, 'min_delay': 4,  'description': 'Case Study Email'},
+            7:  {'type': ActivityType.CALL,  'min_delay': 3,  'description': 'Fourth Call Attempt'},
+            8:  {'type': ActivityType.EMAIL, 'min_delay': 7,  'description': 'Last Opportunity Email'},
+            9:  {'type': ActivityType.CALL,  'min_delay': 3,  'description': 'Final Call'},
+            10: {'type': ActivityType.EMAIL, 'min_delay': 7,  'description': 'Breakup Email'},
+        }
 
         #Sequence TEST
 
-        return {
-            1: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 1 - Initial Call'},
-            2: {'type': ActivityType.EMAIL,   'min_delay': 0, 'description': '[TEST] Step 2 - Follow-up Email'},
-            3: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 3 - Second Call'},
-            4: {'type': ActivityType.EMAIL, 'min_delay': 0, 'description': '[TEST] Step 4 - Last Email'},
-}
+        # return {
+        #     1: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 1 - Initial Call'},
+        #     2: {'type': ActivityType.EMAIL,   'min_delay': 0, 'description': '[TEST] Step 2 - Follow-up Email'},
+        #     3: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 3 - Second Call'},
+        #     4: {'type': ActivityType.EMAIL, 'min_delay': 0, 'description': '[TEST] Step 4 - Last Email'},
+        # }
 
     # =========================================================================
     # WITHOUT PHONE — email only
@@ -66,21 +68,21 @@ class OutboundSequence(Sequence):
         """
         5-step email-only sequence for contacts without a valid phone number.
         """
-        # return {
-        #     1: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Initial Email Outreach'},
-        #     2: {'type': ActivityType.EMAIL, 'min_delay': 2,  'description': 'Follow-up Email'},
-        #     3: {'type': ActivityType.EMAIL, 'min_delay': 4,  'description': 'Value Proposition Email'},
-        #     4: {'type': ActivityType.EMAIL, 'min_delay': 7,  'description': 'Case Study Email'},
-        #     5: {'type': ActivityType.EMAIL, 'min_delay': 10, 'description': 'Final Email Attempt'},
-        # }
-    
-    # Test
-
         return {
             1: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Initial Email Outreach'},
-            2: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Follow-up Email'},
-            3: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Value Proposition Email'},
+            2: {'type': ActivityType.EMAIL, 'min_delay': 2,  'description': 'Follow-up Email'},
+            3: {'type': ActivityType.EMAIL, 'min_delay': 4,  'description': 'Value Proposition Email'},
+            4: {'type': ActivityType.EMAIL, 'min_delay': 7,  'description': 'Case Study Email'},
+            5: {'type': ActivityType.EMAIL, 'min_delay': 10, 'description': 'Final Email Attempt'},
         }
+
+    # Test
+
+        # return {
+        #     1: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Initial Email Outreach'},
+        #     2: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Follow-up Email'},
+        #     3: {'type': ActivityType.EMAIL, 'min_delay': 0,  'description': 'Value Proposition Email'},
+        # }
 
     # =========================================================================
     # WITHOUT EMAIL — phone + LinkedIn
@@ -114,18 +116,18 @@ class OutboundSequence(Sequence):
         """
         5-step call-only sequence for contacts with phone only.
         """
-        # return {
-        #     1: {'type': ActivityType.CALL, 'min_delay': 0,  'description': 'Initial Outreach Call'},
-        #     2: {'type': ActivityType.CALL, 'min_delay': 2,  'description': 'Follow-up Call'},
-        #     3: {'type': ActivityType.CALL, 'min_delay': 4,  'description': 'Third Call Attempt'},
-        #     4: {'type': ActivityType.CALL, 'min_delay': 7,  'description': 'Fourth Call Attempt'},
-        #     5: {'type': ActivityType.CALL, 'min_delay': 10, 'description': 'Final Call Attempt'},
-        # }
-    
-        # Test
         return {
-            1: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 1 - Initial Call'},
-            2: {'type': ActivityType.CALL,   'min_delay': 0, 'description': '[TEST] Step 2 - Follow-up Email'},
-            3: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 3 - Second Call'},
-            4: {'type': ActivityType.CALL, 'min_delay': 0, 'description': '[TEST] Step 4 - Last Email'},
+            1: {'type': ActivityType.CALL, 'min_delay': 0,  'description': 'Initial Outreach Call'},
+            2: {'type': ActivityType.CALL, 'min_delay': 2,  'description': 'Follow-up Call'},
+            3: {'type': ActivityType.CALL, 'min_delay': 4,  'description': 'Third Call Attempt'},
+            4: {'type': ActivityType.CALL, 'min_delay': 7,  'description': 'Fourth Call Attempt'},
+            5: {'type': ActivityType.CALL, 'min_delay': 10, 'description': 'Final Call Attempt'},
         }
+
+        # Test
+        # return {
+        #     1: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 1 - Initial Call'},
+        #     2: {'type': ActivityType.CALL,   'min_delay': 0, 'description': '[TEST] Step 2 - Follow-up Email'},
+        #     3: {'type': ActivityType.CALL,    'min_delay': 0, 'description': '[TEST] Step 3 - Second Call'},
+        #     4: {'type': ActivityType.CALL, 'min_delay': 0, 'description': '[TEST] Step 4 - Last Email'},
+        # }

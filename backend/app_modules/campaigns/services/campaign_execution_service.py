@@ -13,7 +13,7 @@ Architecture:
 """
 
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Case, Count, DateField, F, Prefetch, Q, When
 from django.utils import timezone
 from datetime import timedelta
 
@@ -24,6 +24,7 @@ from core.error_messages import CampaignModuleErrorMessages, CoreErrorMessages
 
 from app_modules.activities.models import Activity
 from app_modules.activities.constants import ActivityType, ActivityStatus, ActivityOutcome
+from app_modules.activities.todo_rules import campaign_actionable_date_expr
 from app_modules.contacts.models import Contact
 from app_modules.sequences.sequence_dispatcher import SequenceDispatcher
 
@@ -52,6 +53,10 @@ SUCCESSFUL_OUTCOMES: frozenset = frozenset({
     ActivityOutcome.SUCCESSFUL,
     ActivityOutcome.MEETING_SCHEDULED,
 })
+
+# Fallback title prefix for campaign activities whose campaign runs without an
+# automated sequence (sequence_type is empty, so no sequence declares a prefix).
+DEFAULT_CAMPAIGN_PREFIX = "CMP"
 
 class CampaignExecutionService:
     """
@@ -298,6 +303,19 @@ class CampaignExecutionService:
             ),
         ).annotate(
             _contacts_count=Count('contacts'),
+            # Read-time actionable date for the card: PLANNED steps show
+            # max(scheduled_date, today) (the shared todo clamp) so an overdue
+            # step displays today instead of its frozen date. Grouping below
+            # still keys off the raw scheduled_date — this annotation is
+            # display-only and never written.
+            _actionable_date=Case(
+                When(
+                    status=ActivityStatus.PLANNED,
+                    then=campaign_actionable_date_expr(today),
+                ),
+                default=F('scheduled_date'),
+                output_field=DateField(),
+            ),
         )
 
         if executor:
@@ -418,6 +436,24 @@ class CampaignExecutionService:
         if campaign_contact:
             next_activity = self._handle_outcome(campaign_contact, activity, result_data)
 
+        # Logging the callback itself resolves the pause: the rep has made the
+        # agreed resume call, so the sequence continues and the contact returns
+        # to IN_PROGRESS. Skipped when the outcome already moved the contact to a
+        # final state (SUCCESSFUL -> COMPLETED, terminal -> STOPPED) or requested
+        # a fresh callback (has_callback) — those pauses/ends must stand. Carried
+        # by the CALLBACK activity only; logging an ordinary step of a paused
+        # contact never lifts the pause.
+        if (
+            activity.is_callback_followup
+            and not has_callback
+            and campaign_contact
+            and campaign_contact.status == CampaignContactStatus.CALLBACK_PENDING
+        ):
+            campaign_contact.resume_from_callback(
+                user=self.user,
+                notes="Callback logged — sequence resumed",
+            )
+
         # Reschedule overdue chains for this campaign now that a contact's chain
         # state has changed. This replaces the write-on-GET rescheduling that
         # used to run inside get_playlist — the playlist endpoint is read-only.
@@ -523,6 +559,39 @@ class CampaignExecutionService:
 
         return list(queryset)
 
+    def _build_activity_title(self, campaign, account, contact, step_name):
+        """
+        Compose a campaign activity title — the single source of the format.
+
+        Shape: "<PREFIX> · [<campaign> · ]<account> › <contact> — <step_name>"
+        The head is common to every activity of the same campaign, so a list
+        groups them visually — "<PREFIX> · <campaign>" for Outbound (an account
+        may be in several), "<PREFIX> · <account>" for Targeted (one per account,
+        so the campaign name is redundant and omitted). Only step_name varies
+        within a contact's chain (a callback reads "… — Callback"). No date, no
+        step number — both are mutable and must not be frozen into the name.
+
+        The prefix and whether the campaign name is included are both properties
+        of the sequence; a campaign without a sequence falls back to
+        DEFAULT_CAMPAIGN_PREFIX and keeps its name.
+        """
+        seq_type = getattr(campaign, 'sequence_type', '') or ''
+        prefix = SequenceDispatcher.get_prefix(seq_type) or DEFAULT_CAMPAIGN_PREFIX
+        include_campaign_name = SequenceDispatcher.get_include_campaign_name(seq_type)
+
+        contact_name = (
+            f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+            if contact else ""
+        )
+        parts = [prefix]
+        if include_campaign_name:
+            parts.append(campaign.name)
+        parts.append(account.company_name)
+        head = " · ".join(parts)
+        if contact_name:
+            head = f"{head} › {contact_name}"
+        return f"{head} — {step_name}" if step_name else head
+
     def _create_activity(self, campaign, campaign_account, campaign_contact,
                          account, contact, activity_type, position, owner=None,
                          step_config=None, sequence_variant=None,
@@ -533,16 +602,8 @@ class CampaignExecutionService:
         """
         owner = owner or self.user
 
-        contact_name = ""
-        if contact:
-            contact_name = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
-
-        if step_config:
-            step_label = step_config.get('description', f'Step {position}')
-            date_str = str(scheduled_date) if scheduled_date else ''
-            title = f"{campaign.name} — {contact_name} — {step_label} — {date_str}".strip(' —')
-        else:
-            title = f"{campaign.name} — {contact_name}".strip(' —')
+        step_name = step_config.get('description', '') if step_config else ''
+        title = self._build_activity_title(campaign, account, contact, step_name)
 
         # Populate call_to_action:
         # 1. Explicit step config value (sequence-defined objective)
@@ -612,11 +673,6 @@ class CampaignExecutionService:
                 )
 
             contact = activity.contacts.first()
-            contact_name = (
-                f"{contact.first_name or ''} {contact.last_name or ''}".strip()
-                if contact else "Contact"
-            )
-
 
             campaign_contact.request_callback(
                 callback_date=callback_date,
@@ -626,7 +682,9 @@ class CampaignExecutionService:
             followup = self._create_followup(
                 activity,
                 campaign_contact=campaign_contact,
-                title=f"Callback — {contact_name}",
+                title=self._build_activity_title(
+                    activity.campaign, activity.account, contact, "Callback"
+                ),
                 activity_type=next_activity_type or activity.activity_type,
                 scheduled_date=callback_date,
                 scheduled_time=callback_time,
@@ -816,8 +874,24 @@ class CampaignExecutionService:
         position = (source_activity.sequence_position or 0) + 1
         activity_type = activity_type or source_activity.activity_type
 
+        if is_callback_followup:
+            # Make room for the callback at `position`: shift every later step of
+            # this contact up by one. Inserting the callback would otherwise
+            # collide with the step that already occupies `position` (two rows at
+            # the same sequence_position -> wrong "Step N" chips, disordered
+            # timeline). A single set-based UPDATE — Postgres applies it as one
+            # atomic statement, so no transient duplicate is ever visible; the
+            # whole flow runs inside the request's transaction.
+            Activity.objects.filter(
+                campaign_contact=campaign_contact,
+                sequence_position__gte=position,
+            ).update(sequence_position=F('sequence_position') + 1)
+
         if not title:
-            title = f"{activity_type} — {source_activity.account.company_name} (Follow-up)"
+            title = self._build_activity_title(
+                source_activity.campaign, source_activity.account,
+                source_activity.contacts.first(), "Follow-up",
+            )
 
         followup = Activity(
             title=title,
@@ -996,7 +1070,8 @@ class CampaignExecutionService:
         Lazy rescheduling: for each CampaignContact with overdue PLANNED activities,
         anchor the first pending step to today and cascade the rest of the chain.
 
-        Called at the start of get_playlist() — no cron required.
+        Called from process_result() on the log-response POST flow — the playlist
+        GET endpoint is read-only (Q6), so this write never runs on a read.
 
         Rules:
             - Only processes the first PLANNED step per CampaignContact (lowest sequence_position).
@@ -1059,6 +1134,37 @@ class CampaignExecutionService:
             if next_activity:
                 self._cascade_schedule_from(next_activity, base_date=today)
     
+    def reschedule_after_callback_date_change(self, callback_activity):
+        """
+        Recale a contact's chain after its callback date was edited.
+
+        When the rep moves a callback's scheduled_date (the one editable date in
+        a campaign chain), the remaining regular steps must follow the new date.
+        Reuses the existing cascade from the step right after the callback, so
+        nothing else in the schedule logic changes. Only scheduled_date moves —
+        positions and the contact's CALLBACK_PENDING status are untouched.
+
+        No-op for anything that is not a dated callback still linked to a contact.
+        """
+        if not (
+            callback_activity.is_callback_followup
+            and callback_activity.campaign_contact_id
+            and callback_activity.scheduled_date
+        ):
+            return
+
+        next_regular = Activity.objects.filter(
+            campaign_contact_id=callback_activity.campaign_contact_id,
+            sequence_position__gt=callback_activity.sequence_position,
+            status=ActivityStatus.PLANNED,
+            is_callback_followup=False,
+        ).order_by('sequence_position').first()
+
+        if next_regular:
+            self._cascade_schedule_from(
+                next_regular, base_date=callback_activity.scheduled_date
+            )
+
     def _cascade_schedule_from(self, start_activity, base_date):
         """
         Cascade estimated scheduled_date for all PLANNED activities in a contact's

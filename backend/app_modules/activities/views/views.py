@@ -469,9 +469,28 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         user = self.request.user
         client_id = self.get_client_id()
         instance = serializer.instance
-        
+
+        # Capture the pre-save date to detect a callback date move (below).
+        old_scheduled_date = instance.scheduled_date
+
         serializer.save()
-        
+
+        # Editing a callback's date is the one allowed date change in a campaign
+        # chain: recale the remaining regular steps behind the new date via the
+        # existing cascade. Runs inside this PATCH's transaction (Q6-safe — never
+        # a GET) and only for a callback whose date actually changed.
+        if (
+            instance.is_callback_followup
+            and instance.campaign_id
+            and instance.scheduled_date != old_scheduled_date
+        ):
+            from app_modules.campaigns.services.campaign_execution_service import (
+                CampaignExecutionService,
+            )
+            CampaignExecutionService(
+                user=user, client_id=client_id
+            ).reschedule_after_callback_date_change(instance)
+
         # Audit log
         audit_log(
             event='activity_update_success',

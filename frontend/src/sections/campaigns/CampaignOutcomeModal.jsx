@@ -584,7 +584,11 @@ export default function CampaignOutcomeModal({
     const outcome = resolveOutcome(group, failOption);
     const payload = { outcome, outcome_notes: notes || undefined };
     if (group === "callback" && callbackDate) {
-      payload.callback_date = callbackDate.toISOString().split("T")[0];
+      // Format in local time: the rep picks a calendar day, so the payload must
+      // carry that day. toISOString() converts to UTC first, shifting the date
+      // back one day for any timezone east of UTC (e.g. a day picked in UTC+2
+      // near midnight would ship as the previous day).
+      payload.callback_date = callbackDate.format("YYYY-MM-DD");
     }
 
     try {

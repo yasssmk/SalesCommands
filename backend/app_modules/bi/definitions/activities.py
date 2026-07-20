@@ -34,11 +34,14 @@ sub-query, not an N+1).
 from datetime import timedelta
 
 from django.db.models import Case, CharField, Count, Exists, OuterRef, Q, Value, When
-from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from app_modules.activities.constants import ActivityStatus
 from app_modules.activities.models import Activity
+from app_modules.activities.todo_rules import (
+    only_next_pending_campaign_steps,
+    todo_effective_date_expr,
+)
 from app_modules.bi.compute import _apply_period
 from app_modules.bi.registry import KPIDefinition
 from app_modules.bi.types import KPIResult, OutputShape
@@ -81,13 +84,19 @@ def todo_activities_source():
     Shared, UNSCOPED base for BOTH membership paths (owner+C6, invited+accepted).
     `today` is resolved at call time; within the 30s cache TTL the buckets are
     stable, and a fresh compute re-resolves it across the boundary.
+
+    The effective date is the shared todo rule (app_modules.activities.todo_rules):
+    campaign PENDING steps bucket on max(scheduled_date, today) — so they can
+    never fall in OVERDUE — while every non-campaign activity keeps
+    COALESCE(due_date, scheduled_date) and its real overdue behaviour. Superseded
+    campaign steps (not the next pending one for their contact) are dropped so a
+    neglected chain does not flood the todo.
     """
     today = timezone.now().date()
-    effective_date = Coalesce('due_date', 'scheduled_date')
-    return (
+    return only_next_pending_campaign_steps(
         Activity.objects
         .filter(status__in=TODO_STATUSES)
-        .annotate(_effective_date=effective_date)
+        .annotate(_effective_date=todo_effective_date_expr(today))
         .annotate(due_bucket=Case(
             When(_effective_date__lt=today, then=Value(TodoBucket.OVERDUE)),
             When(_effective_date=today, then=Value(TodoBucket.TODAY)),
@@ -305,11 +314,16 @@ def _owner_labels(owner_ids):
 # dimension='owner' — no bespoke compute. Manager scopes only; owner ids are
 # resolved to names server-side via dimension_labels so the client never
 # resolves N ids (and never sees any name outside the scoped breakdown).
+# Applies the SAME only_next_pending_campaign_steps rule as todo_activities_source
+# so this per-owner count stays iso with the build_team_todo_population rows (a
+# superseded campaign step is counted in neither).
 todo_team_by_owner = KPIDefinition(
     key='todo_team_by_owner',
     label='Todo — team open activities by owner',
     scope_module='activities',
-    source=lambda: Activity.objects.filter(status__in=TODO_STATUSES),
+    source=lambda: only_next_pending_campaign_steps(
+        Activity.objects.filter(status__in=TODO_STATUSES)
+    ),
     aggregation=Count('id'),
     period_field=_TODO_PERIOD_FIELD,
     output_shape=OutputShape.BREAKDOWN,

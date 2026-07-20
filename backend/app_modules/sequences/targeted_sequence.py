@@ -27,6 +27,11 @@ class TargetedSequence(Sequence):
     Email-led to avoid pressure, backed by check-in calls.
     """
 
+    PREFIX = "TGT"
+    # An account is in at most one Targeted campaign, so the campaign name is
+    # redundant in the title and is omitted.
+    INCLUDE_CAMPAIGN_NAME = False
+
     @classmethod
     def get_sequence_name(cls) -> str:
         return "Targeted"
