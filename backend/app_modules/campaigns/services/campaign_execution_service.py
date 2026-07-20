@@ -848,6 +848,19 @@ class CampaignExecutionService:
         position = (source_activity.sequence_position or 0) + 1
         activity_type = activity_type or source_activity.activity_type
 
+        if is_callback_followup:
+            # Make room for the callback at `position`: shift every later step of
+            # this contact up by one. Inserting the callback would otherwise
+            # collide with the step that already occupies `position` (two rows at
+            # the same sequence_position -> wrong "Step N" chips, disordered
+            # timeline). A single set-based UPDATE — Postgres applies it as one
+            # atomic statement, so no transient duplicate is ever visible; the
+            # whole flow runs inside the request's transaction.
+            Activity.objects.filter(
+                campaign_contact=campaign_contact,
+                sequence_position__gte=position,
+            ).update(sequence_position=F('sequence_position') + 1)
+
         if not title:
             title = f"{activity_type} — {source_activity.account.company_name} (Follow-up)"
 
