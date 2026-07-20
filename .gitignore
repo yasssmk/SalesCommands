@@ -304,3 +304,6 @@ dist
 .yarn/install-state.gz
 .pnp.*
 backend/test.db
+
+# Redis snapshot (created by a local redis-server during tests)
+dump.rdb
