@@ -480,7 +480,10 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
             # Campaign retry tracking
             'no_answer_count',
-            
+            # Callback marker — lets the UI treat the callback step specially
+            # (e.g. its scheduled_date is editable while ordinary steps are not).
+            'is_callback_followup',
+
             # Computed
             'is_overdue', 'is_scheduled',
             'created_by', 'updated_by', 'created_at', 'updated_at'
@@ -492,7 +495,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'decision_cycle_detail', 'decision_step_detail',
             'previous_activity_info', 'next_activity_info', 'campaign_detail',
             'no_next_step_reason_display', 'has_next_in_sequence', 'effective_has_next_step',
-            'is_overdue', 'is_scheduled',
+            'is_overdue', 'is_scheduled', 'is_callback_followup',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]
     

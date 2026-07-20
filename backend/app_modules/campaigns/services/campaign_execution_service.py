@@ -1134,6 +1134,37 @@ class CampaignExecutionService:
             if next_activity:
                 self._cascade_schedule_from(next_activity, base_date=today)
     
+    def reschedule_after_callback_date_change(self, callback_activity):
+        """
+        Recale a contact's chain after its callback date was edited.
+
+        When the rep moves a callback's scheduled_date (the one editable date in
+        a campaign chain), the remaining regular steps must follow the new date.
+        Reuses the existing cascade from the step right after the callback, so
+        nothing else in the schedule logic changes. Only scheduled_date moves —
+        positions and the contact's CALLBACK_PENDING status are untouched.
+
+        No-op for anything that is not a dated callback still linked to a contact.
+        """
+        if not (
+            callback_activity.is_callback_followup
+            and callback_activity.campaign_contact_id
+            and callback_activity.scheduled_date
+        ):
+            return
+
+        next_regular = Activity.objects.filter(
+            campaign_contact_id=callback_activity.campaign_contact_id,
+            sequence_position__gt=callback_activity.sequence_position,
+            status=ActivityStatus.PLANNED,
+            is_callback_followup=False,
+        ).order_by('sequence_position').first()
+
+        if next_regular:
+            self._cascade_schedule_from(
+                next_regular, base_date=callback_activity.scheduled_date
+            )
+
     def _cascade_schedule_from(self, start_activity, base_date):
         """
         Cascade estimated scheduled_date for all PLANNED activities in a contact's
