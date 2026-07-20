@@ -21,6 +21,8 @@ class OutboundSequence(Sequence):
     Standard variant: 10 steps, alternating calls and emails over ~4 weeks.
     """
 
+    PREFIX = "OUT"
+
     @classmethod
     def get_sequence_name(cls) -> str:
         return "Outbound"

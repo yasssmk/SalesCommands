@@ -54,6 +54,10 @@ SUCCESSFUL_OUTCOMES: frozenset = frozenset({
     ActivityOutcome.MEETING_SCHEDULED,
 })
 
+# Fallback title prefix for campaign activities whose campaign runs without an
+# automated sequence (sequence_type is empty, so no sequence declares a prefix).
+DEFAULT_CAMPAIGN_PREFIX = "CMP"
+
 class CampaignExecutionService:
     """
     Service for generating and managing campaign activities.
@@ -555,6 +559,39 @@ class CampaignExecutionService:
 
         return list(queryset)
 
+    def _build_activity_title(self, campaign, account, contact, step_name):
+        """
+        Compose a campaign activity title — the single source of the format.
+
+        Shape: "<PREFIX> · [<campaign> · ]<account> › <contact> — <step_name>"
+        The head is common to every activity of the same campaign, so a list
+        groups them visually — "<PREFIX> · <campaign>" for Outbound (an account
+        may be in several), "<PREFIX> · <account>" for Targeted (one per account,
+        so the campaign name is redundant and omitted). Only step_name varies
+        within a contact's chain (a callback reads "… — Callback"). No date, no
+        step number — both are mutable and must not be frozen into the name.
+
+        The prefix and whether the campaign name is included are both properties
+        of the sequence; a campaign without a sequence falls back to
+        DEFAULT_CAMPAIGN_PREFIX and keeps its name.
+        """
+        seq_type = getattr(campaign, 'sequence_type', '') or ''
+        prefix = SequenceDispatcher.get_prefix(seq_type) or DEFAULT_CAMPAIGN_PREFIX
+        include_campaign_name = SequenceDispatcher.get_include_campaign_name(seq_type)
+
+        contact_name = (
+            f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+            if contact else ""
+        )
+        parts = [prefix]
+        if include_campaign_name:
+            parts.append(campaign.name)
+        parts.append(account.company_name)
+        head = " · ".join(parts)
+        if contact_name:
+            head = f"{head} › {contact_name}"
+        return f"{head} — {step_name}" if step_name else head
+
     def _create_activity(self, campaign, campaign_account, campaign_contact,
                          account, contact, activity_type, position, owner=None,
                          step_config=None, sequence_variant=None,
@@ -565,16 +602,8 @@ class CampaignExecutionService:
         """
         owner = owner or self.user
 
-        contact_name = ""
-        if contact:
-            contact_name = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
-
-        if step_config:
-            step_label = step_config.get('description', f'Step {position}')
-            date_str = str(scheduled_date) if scheduled_date else ''
-            title = f"{campaign.name} — {contact_name} — {step_label} — {date_str}".strip(' —')
-        else:
-            title = f"{campaign.name} — {contact_name}".strip(' —')
+        step_name = step_config.get('description', '') if step_config else ''
+        title = self._build_activity_title(campaign, account, contact, step_name)
 
         # Populate call_to_action:
         # 1. Explicit step config value (sequence-defined objective)
@@ -644,11 +673,6 @@ class CampaignExecutionService:
                 )
 
             contact = activity.contacts.first()
-            contact_name = (
-                f"{contact.first_name or ''} {contact.last_name or ''}".strip()
-                if contact else "Contact"
-            )
-
 
             campaign_contact.request_callback(
                 callback_date=callback_date,
@@ -658,7 +682,9 @@ class CampaignExecutionService:
             followup = self._create_followup(
                 activity,
                 campaign_contact=campaign_contact,
-                title=f"Callback — {contact_name}",
+                title=self._build_activity_title(
+                    activity.campaign, activity.account, contact, "Callback"
+                ),
                 activity_type=next_activity_type or activity.activity_type,
                 scheduled_date=callback_date,
                 scheduled_time=callback_time,
@@ -862,7 +888,10 @@ class CampaignExecutionService:
             ).update(sequence_position=F('sequence_position') + 1)
 
         if not title:
-            title = f"{activity_type} — {source_activity.account.company_name} (Follow-up)"
+            title = self._build_activity_title(
+                source_activity.campaign, source_activity.account,
+                source_activity.contacts.first(), "Follow-up",
+            )
 
         followup = Activity(
             title=title,

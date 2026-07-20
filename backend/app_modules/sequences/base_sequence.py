@@ -35,6 +35,30 @@ class Sequence(ABC):
     """
 
     # =========================================================================
+    # TITLE PREFIX — short, distinctive code for this sequence's activities
+    # =========================================================================
+
+    # Each concrete sequence declares its own prefix (e.g. "OUT", "TGT"). The
+    # base default is empty so the dispatch and coming-soon sequences that have
+    # not declared one keep working.
+    PREFIX: str = ""
+
+    @classmethod
+    def get_prefix(cls) -> str:
+        """Short code prepended to this sequence's activity titles."""
+        return cls.PREFIX
+
+    # Whether the campaign name belongs in this sequence's activity titles.
+    # True when an account can be in several campaigns of this kind (the name
+    # disambiguates); False when the account is in at most one (name redundant).
+    INCLUDE_CAMPAIGN_NAME: bool = True
+
+    @classmethod
+    def get_include_campaign_name(cls) -> bool:
+        """Whether to include the campaign name in this sequence's titles."""
+        return cls.INCLUDE_CAMPAIGN_NAME
+
+    # =========================================================================
     # SEQUENCE VARIANT CONSTANTS
     # =========================================================================
 

@@ -101,6 +101,22 @@ class SequenceDispatcher:
         return sequence_type
 
     @classmethod
+    def get_prefix(cls, sequence_type: str) -> str:
+        """Short title prefix for a sequence type, or '' if there is no sequence."""
+        sequence_class = cls.get_sequence_class(sequence_type)
+        return sequence_class.get_prefix() if sequence_class else ""
+
+    @classmethod
+    def get_include_campaign_name(cls, sequence_type: str) -> bool:
+        """Whether titles for this sequence type include the campaign name.
+
+        Defaults to True when there is no sequence (a non-sequence campaign
+        keeps the name, like Outbound).
+        """
+        sequence_class = cls.get_sequence_class(sequence_type)
+        return sequence_class.get_include_campaign_name() if sequence_class else True
+
+    @classmethod
     def get_variant_display_name(cls, sequence_type: str, variant: str) -> str:
         """Human-readable label for a sequence variant."""
         sequence_class = cls.get_sequence_class(sequence_type)
