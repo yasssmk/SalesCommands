@@ -6,10 +6,9 @@ import { useRouter } from "next/navigation";
 // material-ui
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
-import CardActions from "@mui/material/CardActions";
 import CardContent from "@mui/material/CardContent";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
-import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
@@ -27,7 +26,6 @@ import {
 } from "api/campaigns/campaigns";
 
 // icons
-import EditOutlined from "@ant-design/icons/EditOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import AimOutlined from "@ant-design/icons/AimOutlined";
 import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
@@ -47,13 +45,22 @@ import TeamOutlined from "@ant-design/icons/TeamOutlined";
  * - Date range
  * - Action buttons
  */
-export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
+export default function CampaignCard({
+  campaign,
+  onOpen,
+  onDelete,
+  // Selection props
+  selected = false,
+  onSelect,
+  selectionMode = false,
+}) {
   const router = useRouter();
   const theme = useTheme();
 
   // ==============================|| DERIVED VALUES ||============================== //
 
   const isOutbound = campaign.campaign_type === "OUTBOUND";
+  const isTargeted = campaign.campaign_type === "TARGETED";
   const activityProgress = getCampaignProgress(campaign);
   const objectiveProgress = getObjectiveProgress(campaign);
   const isOverdue =
@@ -64,17 +71,19 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
   // ==============================|| HANDLERS ||============================== //
 
   const handleCardClick = () => {
+    // Don't navigate if in selection mode
+    if (selectionMode) return;
     onOpen?.(campaign);
-  };
-
-  const handleEdit = (e) => {
-    e.stopPropagation();
-    onEdit?.(campaign);
   };
 
   const handleDelete = (e) => {
     e.stopPropagation();
     onDelete?.(campaign);
+  };
+
+  const handleSelect = (event) => {
+    event.stopPropagation();
+    onSelect?.(campaign.id);
   };
 
   // ==============================|| HELPERS ||============================== //
@@ -112,18 +121,24 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
       sx={{
         position: "relative",
         border: "1px solid",
-        borderColor: "divider",
+        borderColor: selected ? "error.main" : "divider",
         height: "100%",
         display: "flex",
         flexDirection: "column",
         transition: "all 0.2s ease-in-out",
-        cursor: "pointer",
+        cursor: selectionMode ? "default" : "pointer",
+        bgcolor: selected ? "error.lighter" : "background.paper",
         "&:hover": {
-          borderColor: "primary.main",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          borderColor: selectionMode ? "divider" : "primary.main",
+          boxShadow: selectionMode ? "none" : "0 4px 12px rgba(0,0,0,0.08)",
         },
+        // Single shared mechanism: the same Card :hover state hides the status
+        // AND reveals the delete, so the two can never desynchronise. Protected
+        // (TARGETED) cards carry neither class, so their status stays visible.
+        "&:hover .gtm-card-status": { opacity: 0 },
+        "&:hover .gtm-card-delete": { opacity: 1 },
         "&:active": {
-          transform: "scale(0.99)",
+          transform: selectionMode ? "none" : "scale(0.99)",
         },
       }}
     >
@@ -183,18 +198,30 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
             </Box>
           </Stack>
 
-          {/* Status Badge + Overdue */}
-          <Stack direction="row" spacing={0.5} alignItems="center">
-            <CampaignStatusBadge status={campaign.status} />
-            {isOverdue && (
-              <Chip
-                label="Overdue"
-                size="small"
-                color="error"
-                sx={{ height: 20, fontSize: "0.7rem", fontWeight: 600 }}
-              />
-            )}
-          </Stack>
+          {/* Status Badge + Overdue — the top-right corner "at rest" occupant.
+              Always shown for TARGETED. For normal cards it is dropped in
+              selection mode (the checkbox takes the corner) and faded out on
+              hover via the shared .gtm-card-status rule, paired with the delete
+              reveal so the corner never shows two elements at once. */}
+          {(isTargeted || !selectionMode) && (
+            <Stack
+              className={isTargeted ? undefined : "gtm-card-status"}
+              direction="row"
+              spacing={0.5}
+              alignItems="center"
+              sx={{ transition: "opacity 0.2s ease-in-out" }}
+            >
+              <CampaignStatusBadge status={campaign.status} />
+              {isOverdue && (
+                <Chip
+                  label="Overdue"
+                  size="small"
+                  color="error"
+                  sx={{ height: 20, fontSize: "0.7rem", fontWeight: 600 }}
+                />
+              )}
+            </Stack>
+          )}
         </Stack>
 
         {/* Description */}
@@ -337,27 +364,51 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
         </Stack>
       </CardContent>
 
-      <Divider />
-
-      {/* Actions */}
-      <CardActions sx={{ justifyContent: "flex-end", px: 2, py: 1.5 }}>
-        <Stack direction="row" spacing={0}>
-          <Tooltip title="Edit">
-            <span>
-              <IconButton size="small" onClick={handleEdit}>
-                <EditOutlined style={{ fontSize: 16 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Delete">
-            <span>
-              <IconButton size="small" onClick={handleDelete}>
+      {/* Top-right corner — exclusive state machine (non-protected cards only):
+          exactly one element at a time. Selection mode shows the checkbox;
+          otherwise the individual delete reveals on hover (replacing the status
+          via the shared :hover rule above). TARGETED campaigns are protected:
+          no checkbox, no delete — their status stays in the header always. */}
+      {!isTargeted && (
+        selectionMode ? (
+          <Box sx={{ position: "absolute", top: 8, right: 8, zIndex: 1 }}>
+            <Checkbox
+              checked={selected}
+              onChange={handleSelect}
+              onClick={(e) => e.stopPropagation()}
+              size="small"
+              sx={{
+                bgcolor: "background.paper",
+                borderRadius: 1,
+                "&:hover": { bgcolor: "background.paper" },
+              }}
+            />
+          </Box>
+        ) : (
+          <Box
+            className="gtm-card-delete"
+            sx={{
+              position: "absolute",
+              top: 8,
+              right: 8,
+              zIndex: 1,
+              opacity: 0,
+              transition: "opacity 0.2s ease-in-out",
+            }}
+          >
+            <Tooltip title="Delete">
+              <IconButton
+                size="small"
+                color="error"
+                onClick={handleDelete}
+                sx={{ bgcolor: "error.lighter", "&:hover": { bgcolor: "error.light" } }}
+              >
                 <DeleteOutlined style={{ fontSize: 16 }} />
               </IconButton>
-            </span>
-          </Tooltip>
-        </Stack>
-      </CardActions>
+            </Tooltip>
+          </Box>
+        )
+      )}
     </Card>
   );
 }
@@ -383,6 +434,9 @@ CampaignCard.propTypes = {
     members: PropTypes.array,
   }).isRequired,
   onOpen: PropTypes.func,
-  onEdit: PropTypes.func,
   onDelete: PropTypes.func,
+  // Selection props
+  selected: PropTypes.bool,
+  onSelect: PropTypes.func,
+  selectionMode: PropTypes.bool,
 };

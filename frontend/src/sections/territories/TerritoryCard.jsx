@@ -7,11 +7,9 @@ import { useRouter } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
-import CardActions from '@mui/material/CardActions';
 import CardContent from '@mui/material/CardContent';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
@@ -20,7 +18,6 @@ import Typography from '@mui/material/Typography';
 // icons
 import BankOutlined from '@ant-design/icons/BankOutlined';
 import ContactsOutlined from '@ant-design/icons/ContactsOutlined';
-import EditOutlined from '@ant-design/icons/EditOutlined';
 import CopyOutlined from '@ant-design/icons/CopyOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import ArrowRightOutlined from '@ant-design/icons/ArrowRightOutlined';
@@ -40,11 +37,10 @@ import { TERRITORY_TYPES, useGetTerritoryWorkspace } from 'api/territories/terri
  * - Filter summary
  * - Action buttons
  */
-export default function TerritoryCard({ 
-  territory, 
+export default function TerritoryCard({
+  territory,
   accountsCount = 0,
   loading = false,
-  onEdit,
   onDelete,
   // Selection props
   selected = false,
@@ -107,13 +103,8 @@ export default function TerritoryCard({
   };
 
 
-  const handleEdit = () => {
-    if (onEdit) {
-      onEdit(territory);
-    }
-  };
-
-   const handleDelete = () => {
+   const handleDelete = (e) => {
+    e.stopPropagation();
     if (onDelete) {
       onDelete(territory);
     }
@@ -196,41 +187,24 @@ export default function TerritoryCard({
       sx={{ 
         position: 'relative',
         border: '1px solid',
-        borderColor: selected ? 'primary.main' : 'divider',
+        borderColor: selected ? 'error.main' : 'divider',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         transition: 'all 0.2s ease-in-out',
         cursor: selectionMode ? 'default' : 'pointer',
-        bgcolor: selected ? 'primary.lighter' : 'background.paper',
+        bgcolor: selected ? 'error.lighter' : 'background.paper',
         '&:hover': {
           borderColor: selectionMode ? 'divider' : 'primary.main',
           boxShadow: selectionMode ? 'none' : '0 4px 12px rgba(0,0,0,0.08)'
         },
+        '&:hover .gtm-card-delete': { opacity: 1 },
         '&:active': {
           transform: selectionMode ? 'none' : 'scale(0.99)'
         }
       }}
     >
       <CardContent sx={{ flexGrow: 1 }}>
-        {/* Selection Checkbox */}
-        {selectionMode && (
-          <Box sx={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}>
-            <Checkbox
-              checked={selected}
-              onChange={handleSelect}
-              onClick={(e) => e.stopPropagation()}
-              disabled={territory.is_system}
-              size="small"
-              sx={{
-                bgcolor: 'background.paper',
-                borderRadius: 1,
-                '&:hover': { bgcolor: 'background.paper' }
-              }}
-            />
-          </Box>
-        )}
-
         {/* Header */}
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
           <Stack direction="row" spacing={1.5} alignItems="center">
@@ -302,35 +276,51 @@ export default function TerritoryCard({
         </Typography>
       </CardContent>
 
-      <Divider />
-
-      {/* Actions */}
-      <CardActions sx={{ justifyContent: 'flex-end', px: 2, py: 1.5 }}>
-      {/* Action icons */}
-      <Stack direction="row" spacing={0}>
-        <Tooltip title={territory.is_system ? "Edit (limited)" : "Edit"}>
-          <span>
-            <IconButton 
-              size="small" 
-              onClick={handleEdit}
-            >
-              <EditOutlined style={{ fontSize: 16 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={territory.is_system ? "Cannot delete system territory" : "Delete"}>
-          <span>
-            <IconButton 
-              size="small" 
-              onClick={handleDelete}
-              disabled={territory.is_system}
-            >
-              <DeleteOutlined style={{ fontSize: 16 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </Stack>
-    </CardActions>
+      {/* Top-right corner — exclusive state machine (non-protected cards only):
+          exactly one element at a time. Selection mode shows the checkbox;
+          otherwise the individual delete reveals on hover. System territories
+          are protected: they never show a checkbox or delete here, and their
+          status ("System" chip) stays in the header in every state. */}
+      {!territory.is_system && (
+        selectionMode ? (
+          <Box sx={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}>
+            <Checkbox
+              checked={selected}
+              onChange={handleSelect}
+              onClick={(e) => e.stopPropagation()}
+              size="small"
+              sx={{
+                bgcolor: 'background.paper',
+                borderRadius: 1,
+                '&:hover': { bgcolor: 'background.paper' }
+              }}
+            />
+          </Box>
+        ) : (
+          <Box
+            className="gtm-card-delete"
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              zIndex: 1,
+              opacity: 0,
+              transition: 'opacity 0.2s ease-in-out'
+            }}
+          >
+            <Tooltip title="Delete">
+              <IconButton
+                size="small"
+                color="error"
+                onClick={handleDelete}
+                sx={{ bgcolor: 'error.lighter', '&:hover': { bgcolor: 'error.light' } }}
+              >
+                <DeleteOutlined style={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )
+      )}
     </Card>
   );
 }
@@ -348,7 +338,6 @@ TerritoryCard.propTypes = {
   }).isRequired,
   accountsCount: PropTypes.number,
   loading: PropTypes.bool,
-  onEdit: PropTypes.func,
   onDelete: PropTypes.func,
   // Selection props
   selected: PropTypes.bool,

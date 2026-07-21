@@ -15,6 +15,7 @@ def get_urlpatterns():
     """Lazy imports to avoid circular import."""
     from .views import (
         CampaignViewSet,
+        CampaignBulkViewSet,
         CampaignAccountViewSet,
         CampaignContactViewSet,
         CampaignObjectiveViewSet,
@@ -31,6 +32,13 @@ def get_urlpatterns():
         path('targeted/', CampaignViewSet.as_view({
             'get': 'get_or_create_targeted'
         }), name='targeted'),
+
+        # =================================================================
+        # BULK OPERATIONS (before CRUD to avoid {id} conflict)
+        # =================================================================
+        path('bulk-delete/', CampaignBulkViewSet.as_view({
+            'delete': 'bulk_delete'
+        }), name='bulk-delete'),
 
         # =================================================================
         # CAMPAIGN — CRUD

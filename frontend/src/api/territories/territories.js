@@ -88,7 +88,11 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (filters.owner) {
     queryParams.append('owner', filters.owner);
   }
-  
+
+  if (filters.team) {
+    queryParams.append('team', filters.team);
+  }
+
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
 };

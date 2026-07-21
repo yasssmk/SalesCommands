@@ -100,7 +100,7 @@ END_USERS_REGISTRY: Dict[str, ModulePermissions] = {
         'read': {
             'admin': 'client',      # Admin sees all teams
             'manager': 'client',     # Managers see all teams
-            'individual': 'mine',    # Individuals see their team(s)
+            'individual': 'client',  # Individuals read all teams (for the campaign team filter); write stays denied
         },
         'update': {
             'admin': 'client',      # Admin can update any team

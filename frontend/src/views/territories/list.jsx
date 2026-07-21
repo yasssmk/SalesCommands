@@ -11,6 +11,8 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
+import Badge from '@mui/material/Badge';
+import IconButton from '@mui/material/IconButton';
 import Grid from '@mui/material/Grid';
 import Pagination from '@mui/material/Pagination';
 import Slide from '@mui/material/Slide';
@@ -26,10 +28,10 @@ import TerritoryCard from 'sections/territories/TerritoryCard';
 import TerritoryModal from 'sections/territories/TerritoryModal';
 import AlertTerritoryDelete from 'sections/territories/AlertTerritoryDelete';
 import AlertTerritoryBulkDelete from 'sections/territories/AlertTerritoryBulkDelete';
-import OwnerScopeTabs from 'components/filters/OwnerScopeTabs';
+import TerritoryListFilterPanel from 'sections/territories/TerritoryListFilterPanel';
 
 // hooks
-import useOwnerScope from 'hooks/useOwnerScope';
+import useTerritoryListFilters from 'hooks/useTerritoryListFilters';
 
 // api
 import { useGetTerritories, TERRITORY_TYPES } from 'api/territories/territories';
@@ -37,6 +39,7 @@ import { useGetAccounts } from 'api/admin/accounts';
 
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
+import FilterOutlined from '@ant-design/icons/FilterOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
@@ -77,15 +80,20 @@ const [selectionMode, setSelectionMode] = useState(false);
 // Initial filters from URL (for "Save as Territory" from filter panel)
 const [initialFilters, setInitialFilters] = useState({});
 
-// Owner scope filter
+// Filter drawer
+const [filterPanelOpen, setFilterPanelOpen] = useState(false);
 const {
-  scope: ownerScope,
-  setScope: setOwnerScope,
-  visibleOptions: ownerScopeOptions,
-  apiParams: ownerScopeParams,
-  chipLabel: ownerScopeChipLabel,
-  isFiltered: isOwnerFiltered
-} = useOwnerScope({ storageKey: 'territories' });
+  filters,
+  pendingFilters,
+  activeFiltersCount,
+  hasPendingChanges,
+  apiFilters,
+  updatePendingFilter,
+  applyFilters,
+  clearFilters,
+  resetPendingFilters,
+  removeFilter
+} = useTerritoryListFilters();
 
 // Auto-open Add modal if action=create in URL
 useEffect(() => {
@@ -132,7 +140,7 @@ useEffect(() => {
   page: 1,
   pageSize: 100,
   search: globalFilter,
-  filters: ownerScopeParams
+  filters: apiFilters
 });
 
   // ==============================|| FILTERED TERRITORIES ||============================== //
@@ -160,6 +168,34 @@ useEffect(() => {
   const handleSearchChange = (value) => {
     setGlobalFilter(String(value));
     setPage(1); // Reset to first page on search
+  };
+
+  // ==============================|| FILTER HANDLERS ||============================== //
+
+  const handleOpenFilterPanel = () => setFilterPanelOpen(true);
+  const handleCloseFilterPanel = () => {
+    resetPendingFilters();
+    setFilterPanelOpen(false);
+  };
+  const handleApplyFilters = () => {
+    applyFilters();
+    setPage(1);
+    setFilterPanelOpen(false);
+  };
+  const handleClearFilters = () => {
+    clearFilters();
+    setPage(1);
+  };
+  const handleRemoveFilter = (key) => {
+    removeFilter(
+      key,
+      key === 'owner_scope'
+        ? 'all'
+        : key === 'owner' || key === 'team'
+          ? null
+          : ''
+    );
+    setPage(1);
   };
 
    // ==============================|| MODAL HANDLERS ||============================== //
@@ -230,10 +266,6 @@ useEffect(() => {
     }
   };
 
-  const handleClearSelection = () => {
-    setSelectedRows(new Set());
-  };
-
   const handleOpenBulkDeleteModal = () => {
     if (selectedRows.size > 0) {
       setBulkDeleteModalOpen(true);
@@ -273,13 +305,6 @@ useEffect(() => {
 
   return (
     <>
-    {/* ==================== OWNER SCOPE TABS ==================== */}
-    <OwnerScopeTabs
-      value={ownerScope}
-      onChange={setOwnerScope}
-      visibleOptions={ownerScopeOptions}
-    />
-
       {/* ==================== HEADER ==================== */}
       <Box sx={{ position: 'relative', marginBottom: 3 }}>
         <Stack direction="row" alignItems="center">
@@ -297,21 +322,62 @@ useEffect(() => {
               placeholder={`Search ${territoriesCount} territories...`}
             />
 
-            {/* Actions */}
+            {/* Actions — funnel (filter) | Select cluster | New. The funnel
+                stays visible and usable in selection mode (filtering while
+                selecting is legitimate). The counter lives only in the icon
+                tooltips — there is no full-width band. */}
             <Stack direction={matchDownSM ? 'column' : 'row'} alignItems="center" spacing={1}>
-              <Tooltip title={selectionMode ? 'Exit selection mode' : 'Select territories'}>
-                <Button
-                  variant={selectionMode ? 'contained' : 'outlined'}
-                  color={selectionMode ? 'primary' : 'secondary'}
-                  startIcon={selectionMode ? <CloseOutlined /> : <CheckSquareOutlined />}
-                  onClick={handleToggleSelectionMode}
+              <Badge
+                badgeContent={activeFiltersCount}
+                color="primary"
+                invisible={activeFiltersCount === 0}
+              >
+                <IconButton color="secondary" onClick={handleOpenFilterPanel}>
+                  <FilterOutlined />
+                </IconButton>
+              </Badge>
+              {selectionMode ? (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={0.5}
+                  sx={{ bgcolor: 'error.lighter', borderRadius: 1, px: 0.5 }}
                 >
-                  {selectionMode ? 'Cancel' : 'Select'}
-                </Button>
-              </Tooltip>
-              <Button 
-                variant="contained" 
-                startIcon={<PlusOutlined />} 
+                  <Tooltip title={`Select all (${selectableCount})`}>
+                    <Checkbox
+                      checked={allSelected}
+                      indeterminate={someSelected}
+                      onChange={handleSelectAll}
+                      size="small"
+                    />
+                  </Tooltip>
+                  <Tooltip title="Cancel selection">
+                    <IconButton color="secondary" onClick={handleToggleSelectionMode}>
+                      <CloseOutlined />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={`Delete ${selectedRows.size} selected`}>
+                    <span>
+                      <IconButton
+                        color="error"
+                        onClick={handleOpenBulkDeleteModal}
+                        disabled={selectedRows.size === 0}
+                      >
+                        <DeleteOutlined />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
+              ) : (
+                <Tooltip title="Select">
+                  <IconButton color="secondary" onClick={handleToggleSelectionMode}>
+                    <CheckSquareOutlined />
+                  </IconButton>
+                </Tooltip>
+              )}
+              <Button
+                variant="contained"
+                startIcon={<PlusOutlined />}
                 onClick={handleOpenAddModal}
               >
                 New Territory
@@ -321,59 +387,40 @@ useEffect(() => {
         </Stack>
       </Box>
 
-      {/* ==================== BULK ACTION BAR ==================== */}
-      {selectionMode && (
-        <Box 
-          sx={{ 
-            mb: 2, 
-            p: 1.5, 
-            bgcolor: 'primary.lighter', 
-            borderRadius: 1,
-            border: '1px solid',
-            borderColor: 'primary.light'
-          }}
-        >
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Stack direction="row" alignItems="center" spacing={2}>
-              <Checkbox
-                checked={allSelected}
-                indeterminate={someSelected}
-                onChange={handleSelectAll}
-                size="small"
-              />
-              <Typography variant="body2">
-                {selectedRows.size > 0 
-                  ? `${selectedRows.size} territory${selectedRows.size > 1 ? 'ies' : 'y'} selected`
-                  : `Select territories (${selectableCount} available)`
-                }
-              </Typography>
-            </Stack>
-            <Stack direction="row" spacing={1}>
-              {selectedRows.size > 0 && (
-                <>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="secondary"
-                    onClick={handleClearSelection}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    color="error"
-                    startIcon={<DeleteOutlined />}
-                    onClick={handleOpenBulkDeleteModal}
-                  >
-                    Delete ({selectedRows.size})
-                  </Button>
-                </>
-              )}
-            </Stack>
-          </Stack>
-        </Box>
+      {/* ==================== ACTIVE FILTER CHIPS ==================== */}
+      {activeFiltersCount > 0 && (
+        <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }} useFlexGap>
+          {filters.owner_scope !== 'all' && (
+            <Chip
+              size="small"
+              label={`Scope: ${filters.owner_scope === 'mine' ? 'Mine' : 'My Team'}`}
+              onDelete={() => handleRemoveFilter('owner_scope')}
+            />
+          )}
+          {filters.owner?.id && (
+            <Chip
+              size="small"
+              label={`Owner: ${`${filters.owner.first_name || ''} ${filters.owner.last_name || ''}`.trim() || filters.owner.email || 'Selected'}`}
+              onDelete={() => handleRemoveFilter('owner')}
+            />
+          )}
+          {filters.team?.id && (
+            <Chip
+              size="small"
+              label={`Team: ${filters.team.name || 'Selected'}`}
+              onDelete={() => handleRemoveFilter('team')}
+            />
+          )}
+          {filters.type && (
+            <Chip
+              size="small"
+              label={`Type: ${filters.type === 'ACCOUNT' ? 'Accounts' : 'Contacts'}`}
+              onDelete={() => handleRemoveFilter('type')}
+            />
+          )}
+        </Stack>
       )}
+
 
       {/* ==================== TERRITORIES GRID ==================== */}
       <Grid container spacing={3}>
@@ -456,6 +503,19 @@ useEffect(() => {
         open={bulkDeleteModalOpen}
         handleClose={handleCloseBulkDeleteModal}
         onDeleteComplete={handleBulkDeleteComplete}
+      />
+
+      {/* Filter Drawer */}
+      <TerritoryListFilterPanel
+        open={filterPanelOpen}
+        onClose={handleCloseFilterPanel}
+        pendingFilters={pendingFilters}
+        onFilterChange={updatePendingFilter}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        hasPendingChanges={hasPendingChanges}
+        matchingCount={territoriesCount}
+        loading={territoriesLoading}
       />
     </>
   );

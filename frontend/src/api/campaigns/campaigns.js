@@ -111,6 +111,7 @@ const endpoints = {
   // Campaign CRUD
   campaigns: "/campaigns/",
   campaignDetail: (id) => `/campaigns/${id}/`,
+  campaignsBulkDelete: "/campaigns/bulk-delete/",
 
   // Lifecycle
   campaignStart: (id) => `/campaigns/${id}/start/`,
@@ -186,10 +187,17 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (ordering) queryParams.append("ordering", ordering);
   if (filters.owner_scope)
     queryParams.append("owner_scope", filters.owner_scope);
+  if (filters.owner) queryParams.append("owner", filters.owner);
   if (filters.status) queryParams.append("status", filters.status);
   if (filters.campaign_type)
     queryParams.append("campaign_type", filters.campaign_type);
-  if (filters.territory) queryParams.append("territory", filters.territory);
+  // Backend filter key is `territories` (the M2M), not `territory`.
+  if (filters.territories)
+    queryParams.append("territories", filters.territories);
+  if (filters.executor) queryParams.append("executor", filters.executor);
+  if (filters.channel_override)
+    queryParams.append("channel_override", filters.channel_override);
+  if (filters.team) queryParams.append("team", filters.team);
 
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;
@@ -848,6 +856,122 @@ export async function deleteCampaign(campaignId) {
     response: result.response || null,
   };
 }
+
+// ==============================|| BULK OPERATIONS ||============================== //
+
+/**
+ * BULK DELETE CAMPAIGNS
+ *
+ * Delete multiple campaigns in a single request.
+ * Mirrors bulkDeleteTerritories (api/territories/territories.js) — the
+ * backend endpoint is synchronous (no 202/polling), so no sync callbacks
+ * are needed here.
+ *
+ * @param {Array<string>} campaignIds - Array of campaign UUIDs to delete
+ * @param {string} mode - 'partial' (continue on error) or 'strict' (all or nothing)
+ * @returns {Promise<Object>} {success, summary, results}
+ */
+export const bulkDeleteCampaigns = async (campaignIds, mode = "partial") => {
+  try {
+    console.log("[bulkDeleteCampaigns] start", {
+      count: campaignIds?.length ?? 0,
+      mode,
+    });
+
+    if (!Array.isArray(campaignIds) || campaignIds.length === 0) {
+      return {
+        success: false,
+        message: "No campaign IDs provided",
+        summary: { total_requested: 0, successful: 0, failed: 0 },
+        results: { success: [], failed: [] },
+      };
+    }
+
+    const invalidIds = campaignIds.filter((id) => !isValidUUID(id));
+    if (invalidIds.length > 0) {
+      console.error("[bulkDeleteCampaigns] invalid UUIDs", {
+        count: invalidIds.length,
+      });
+      return {
+        success: false,
+        message: `${invalidIds.length} invalid campaign ID(s) detected`,
+        summary: {
+          total_requested: campaignIds.length,
+          successful: 0,
+          failed: campaignIds.length,
+        },
+        results: {
+          success: [],
+          failed: invalidIds.map((id) => ({ id, errors: ["Invalid UUID format"] })),
+        },
+      };
+    }
+
+    const result = await api.delete(endpoints.campaignsBulkDelete, {
+      data: { ids: campaignIds, mode },
+      profile: "bulk",
+    });
+
+    console.log("[bulkDeleteCampaigns] API response:", {
+      success: result.success,
+      status: result.status,
+    });
+
+    if (result.success) {
+      console.log("[bulkDeleteCampaigns] success", {
+        deleted: result.data?.summary?.successful ?? 0,
+      });
+
+      revalidateMultiple([endpoints.campaigns, endpoints.myCampaigns]);
+
+      return result.data;
+    }
+
+    // Error handling
+    const status = result.status || 0;
+    const message = result.error || "Bulk delete failed";
+    console.error("[bulkDeleteCampaigns] error", { status, message });
+
+    if (result.data && typeof result.data === "object") {
+      if (result.data.results || result.data.summary) {
+        return {
+          ...result.data,
+          success: false,
+          status: result.status,
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: message,
+      error: { status, message, response: result.response || null },
+      summary: {
+        total_requested: campaignIds.length,
+        successful: 0,
+        failed: campaignIds.length,
+      },
+      results: {
+        success: [],
+        failed: campaignIds.map((id) => ({ id, errors: [message] })),
+      },
+    };
+  } catch (err) {
+    console.error("[bulkDeleteCampaigns] thrown", err);
+
+    return {
+      success: false,
+      message: err?.message || "Unknown error",
+      error: { message: err?.message || String(err) },
+      summary: {
+        total_requested: campaignIds?.length ?? 0,
+        successful: 0,
+        failed: campaignIds?.length ?? 0,
+      },
+      results: { success: [], failed: [] },
+    };
+  }
+};
 
 // ==============================|| MUTATION FUNCTIONS - LIFECYCLE ||============================== //
 
