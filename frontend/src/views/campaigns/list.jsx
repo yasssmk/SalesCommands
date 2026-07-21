@@ -8,9 +8,11 @@ import { useState, useMemo } from "react";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import Badge from "@mui/material/Badge";
 import IconButton from "@mui/material/IconButton";
+import Tooltip from "@mui/material/Tooltip";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -29,6 +31,7 @@ import CampaignCard from "sections/campaigns/CampaignCard";
 import CampaignCreateModal from "sections/campaigns/create/CampaignCreateModal";
 import CampaignFilterPanel from "sections/campaigns/CampaignFilterPanel";
 import AlertCampaignDelete from "sections/campaigns/AlertCampaignDelete";
+import AlertCampaignBulkDelete from "sections/campaigns/AlertCampaignBulkDelete";
 
 // hooks
 import useCampaignListFilters from "hooks/useCampaignListFilters";
@@ -43,6 +46,9 @@ import { useRouter } from "next/navigation";
 // assets
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import FilterOutlined from "@ant-design/icons/FilterOutlined";
+import CheckSquareOutlined from "@ant-design/icons/CheckSquareOutlined";
+import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 
 // filter chip label maps
 const STATUS_LABELS = {
@@ -75,6 +81,11 @@ export default function CampaignsListPage() {
   // Delete confirmation state
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Selection states
+  const [selectedRows, setSelectedRows] = useState(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
 
   // Filter drawer
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
@@ -178,10 +189,6 @@ export default function CampaignsListPage() {
     router.push(`/campaigns/${campaign.id}`);
   };
 
-  const handleEditCampaign = (campaign) => {
-    router.push(`/campaigns/${campaign.id}`);
-  };
-
   const handleDeleteCampaign = (campaign) => {
     setDeleteTarget(campaign);
   };
@@ -190,6 +197,66 @@ export default function CampaignsListPage() {
     setDeleteTarget(null);
     mutateCampaigns();
   };
+
+  // ==============================|| SELECTION HANDLERS ||============================== //
+
+  const handleToggleSelectionMode = () => {
+    setSelectionMode((prev) => !prev);
+    if (selectionMode) {
+      // Exiting selection mode - clear selection
+      setSelectedRows(new Set());
+    }
+  };
+
+  const handleSelectRow = (campaignId) => {
+    setSelectedRows((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(campaignId)) {
+        newSet.delete(campaignId);
+      } else {
+        newSet.add(campaignId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    // Select all non-TARGETED campaigns on current page (the TARGETED
+    // singleton is protected and cannot be bulk-deleted).
+    const selectableIds = paginatedCampaigns
+      .filter((c) => c.campaign_type !== "TARGETED")
+      .map((c) => c.id);
+
+    if (selectedRows.size === selectableIds.length) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(selectableIds));
+    }
+  };
+
+  const handleOpenBulkDeleteModal = () => {
+    if (selectedRows.size > 0) {
+      setBulkDeleteModalOpen(true);
+    }
+  };
+
+  const handleCloseBulkDeleteModal = () => {
+    setBulkDeleteModalOpen(false);
+  };
+
+  const handleBulkDeleteComplete = () => {
+    setSelectedRows(new Set());
+    setSelectionMode(false);
+  };
+
+  // Computed selection values
+  const selectableCount = paginatedCampaigns.filter(
+    (c) => c.campaign_type !== "TARGETED",
+  ).length;
+  const allSelected =
+    selectableCount > 0 && selectedRows.size === selectableCount;
+  const someSelected =
+    selectedRows.size > 0 && selectedRows.size < selectableCount;
 
   // ==============================|| RENDER ||============================== //
 
@@ -212,7 +279,10 @@ export default function CampaignsListPage() {
               placeholder={`Search ${campaignsCount} campaigns...`}
             />
 
-            {/* Actions — funnel (filter) | [Select: commit 4] | New */}
+            {/* Actions — funnel (filter) | Select cluster | New. The funnel
+                stays visible and usable in selection mode (filtering while
+                selecting is legitimate). The counter lives only in the icon
+                tooltips — there is no full-width band. */}
             <Stack
               direction={matchDownSM ? "column" : "row"}
               alignItems="center"
@@ -227,6 +297,51 @@ export default function CampaignsListPage() {
                   <FilterOutlined />
                 </IconButton>
               </Badge>
+              {selectionMode ? (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={0.5}
+                  sx={{ bgcolor: "error.lighter", borderRadius: 1, px: 0.5 }}
+                >
+                  <Tooltip title={`Select all (${selectableCount})`}>
+                    <Checkbox
+                      checked={allSelected}
+                      indeterminate={someSelected}
+                      onChange={handleSelectAll}
+                      size="small"
+                    />
+                  </Tooltip>
+                  <Tooltip title="Cancel selection">
+                    <IconButton
+                      color="secondary"
+                      onClick={handleToggleSelectionMode}
+                    >
+                      <CloseOutlined />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={`Delete ${selectedRows.size} selected`}>
+                    <span>
+                      <IconButton
+                        color="error"
+                        onClick={handleOpenBulkDeleteModal}
+                        disabled={selectedRows.size === 0}
+                      >
+                        <DeleteOutlined />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
+              ) : (
+                <Tooltip title="Select">
+                  <IconButton
+                    color="secondary"
+                    onClick={handleToggleSelectionMode}
+                  >
+                    <CheckSquareOutlined />
+                  </IconButton>
+                </Tooltip>
+              )}
               <Button
                 variant="contained"
                 startIcon={<PlusOutlined />}
@@ -320,8 +435,10 @@ export default function CampaignsListPage() {
                 <CampaignCard
                   campaign={campaign}
                   onOpen={handleOpenCampaign}
-                  onEdit={handleEditCampaign}
                   onDelete={handleDeleteCampaign}
+                  selected={selectedRows.has(campaign.id)}
+                  onSelect={handleSelectRow}
+                  selectionMode={selectionMode}
                 />
               </Grid>
             </Slide>
@@ -372,12 +489,20 @@ export default function CampaignsListPage() {
         onSuccess={mutateCampaigns}
       />
 
-      {/* ==================== DELETE CAMPAIGN DIALOG ==================== */}
+      {/* ==================== DELETE CAMPAIGN DIALOG (single) ==================== */}
       <AlertCampaignDelete
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         campaign={deleteTarget}
         onSuccess={handleDeleteSuccess}
+      />
+
+      {/* ==================== BULK DELETE DIALOG ==================== */}
+      <AlertCampaignBulkDelete
+        selectedIds={Array.from(selectedRows)}
+        open={bulkDeleteModalOpen}
+        handleClose={handleCloseBulkDeleteModal}
+        onDeleteComplete={handleBulkDeleteComplete}
       />
 
       {/* Filter Drawer */}
