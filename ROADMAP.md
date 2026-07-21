@@ -34,6 +34,10 @@ résultats et causalité), sans sur-structurer pour un usage hypothétique.
   avant d'avancer.
 - **Repro rouge d'abord** pour les corrections de bug.
 - **Q6** : jamais d'écriture dans un GET.
+- **UI psychologique** : s'assurer que la solution EXHORTE l'utilisateur à
+  agir. Cadrer pour l'action ("X to go", proximité du but), célébrer
+  l'over-achievement, éviter le décourageant ("0% done", totaux froids).
+  Principe issu de la Home (framing 'queue'), à appliquer partout.
 
 ---
 
@@ -71,15 +75,64 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ## Sprints planifiés — phase fonctionnelle
 
-### S7b — Peaufinage des vues existantes
-- **Objectif** : cohérence et complétude des vues déjà en place.
-- **Problématique** : multi-select absent (Tech Catalogue), asymétrie
-  Campaign/Territory, cartes GTM disparates (TerritoryCard/CampaignCard),
-  pas de clic pleine ligne sur ReusableTable partagé.
-- **Solution** : à cadrer — commencer par une analyse de différence entre
-  les vues à harmoniser (structure + visualisation), puis le PO définit le
-  comportement attendu.
-- **Validation** : à définir après l'analyse de différence.
+### S7b — Peaufinage vues Go-to-Market (Territory + Campaign) — EN COURS
+- **Objectif** : cohérence et complétude des vues GTM (Territory + Campaign).
+- **Branche** : `claude/views-inventory-audit-b4sjxe` (part de `main` 924a46a).
+- **Ordre des commits** (décidé avec le PO) : recherche → delete → filtre
+  drawer → multi-select → enrichissement cartes.
+
+#### Commits FAITS et validés à l'écran
+- **Commit 1 ✅** — recherche limitée à nom + owner + exécutant (les deux
+  vues).
+- **Commit 2 ✅** — retrait bouton edit ; delete individuel au hover (coin
+  haut-droite, error light, `stopPropagation` pour ne pas rediriger).
+- **Commit 3 ✅ (en finalisation)** — filtre entonnoir + drawer sur les
+  deux vues, harmonisé (onglets Mine/Team/All retirés, `owner_scope` dans le
+  drawer en radio, défaut neutre `all`).
+  - **Territory** : `owner_scope`, type (contact/account/both), owner
+    (async).
+  - **Campaign** : `owner_scope`, statut, type, territoire, exécutant
+    (async), channel strategy (auto/email only), team (async, OR
+    owner/exécutant), owner (async).
+  - **Sélecteurs async** : `AsyncUserSelect` (existant) + `AsyncTeamSelect`
+    (créé).
+  - **Tri par défaut** = date de création (`created_at desc`). Pas de
+    sélecteur de tri (abandonné).
+  - **DÉCISION EN COURS D'INTÉGRATION** : `teams.read` pour `individual`
+    passe de `mine` à `client` (un AE peut LIRE toutes les équipes — read
+    seulement, create/update/delete restent interdits) pour débloquer le
+    filtre team.
+
+#### Commits RESTANTS
+- **Commit 4** — multi-select refait sur Territory ET Campaign :
+  - Bouton Select = icône seule, à côté de l'entonnoir.
+  - Cases à cocher en HAUT À DROITE des cartes (pas à gauche).
+  - Sélection active → highlight error (pas success).
+  - Dès ≥1 sélectionné : bouton Select devient X (annuler) + icône delete,
+    fond error light, aligné avec l'entonnoir.
+  - Plus de bande verte "N selected" : compteur près des icônes (façon
+    ReusableTable).
+  - Légende au hover sur les icônes.
+  - Unification du coin haut-droite des cartes, priorité : normal → icône
+    statut · hover → icône delete · multi-select → case.
+  - Multi-select sur les DEUX (Campaign l'aura aussi, pour bulk delete).
+- **Commit 5** — enrichissement des cartes (FAIT AVEC LE PO) :
+  - **Territory** : icône + nom, chip contact/account (les deux en
+    secondary, tonalités light/dark différentes), nb contacts/comptes,
+    territory coverage, "is in active campaign", owner + team, DATE DE
+    CRÉATION (à afficher car tri par date).
+  - **Campaign** : logo + nom + chip type (garder), statut reflété par la
+    DATE (en cours : start–end date en secondary, sauf end date passée →
+    warning light ; finished : "completed the {date}"), nom contact + nb
+    comptes, avancement "X contacts left to contact" (via `queueGradient`
+    copié de la Home — framing 'queue', pas de seuil), retrait de
+    "Sequence: Targeted Campaign", zone objectif PRÉPARÉE (données en S8).
+  - **Perf** : cartes déjà en batch 1-requête (`territory-metrics/batch`,
+    `campaign-batch`) — enrichir le payload, pas de N+1.
+  - **Logique de progression** : réutiliser `queueGradient` de la Home
+    (`goalGradient.js`), ne pas réinventer de seuil.
+- **Validation** : chaque commit validé à l'écran (smoke) + tests avant
+  d'avancer.
 
 ### S7c — Filtres avancés DC + câblage Home "See all"
 - **Objectif** : filtres DC complets + destinations réelles pour les "See
@@ -108,6 +161,14 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Problématique** : la Home affiche déjà des quotas et objectifs NON
   configurables → la BI n'est pas vérifiable de bout en bout.
 - **Solution** : UI de définition des quotas + des objectifs de campagne.
+- **Connexion cartes GTM** : l'avancement des objectifs sur les cartes GTM
+  (zone préparée en S7b commit 5) sera CONNECTÉ ici.
+- **Over-achievement (>100%)** : afficher le dépassement (ex "102%"),
+  couleur warning dark (doré, palette standard) + icône étoile. À construire
+  À LA FOIS sur les cartes ET sur la Home (cohérence).
+  - **NOTE** : la Home aujourd'hui écrête à 100% (`goalGradient.js` clampe
+    `remaining` et `pct`) — l'over-achievement est un comportement NEUF à
+    créer des deux côtés.
 - **Validation** : poser un quota/objectif → la Home le reflète.
 - **Note** : candidat à remonter avant Sprint B (ferme une incohérence
   visible) — arbitrage PO en attente.
@@ -154,8 +215,21 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Note** : à implémenter seulement quand les structures commerciales sont
   stables (post-S13) pour éviter des snapshots incohérents entre eux.
 
-### S14 — Deal Health · S15 — Campaign UX · S16 — Homogénéisation UI · S17 — Filtres & Recherche
+### S14 — Deal Health · S15 — Campaign UX
 À cadrer.
+
+### Sprint Filtres — Filtres & recherche transverses (AVANT le sprint UI)
+- **Ordre** : INVERSÉ avec le sprint UI — les Filtres passent AVANT l'UI.
+  Raison PO : tout doit être fonctionnel avant d'attaquer l'UI.
+- **Objectif** : filtres & recherche transverses sur l'ensemble des vues.
+- **Note** : le modal de création Territory est en réalité un sujet UI
+  (filtres avancés), traité dans le sprint UI ci-dessous — pas ici.
+
+### Sprint UI — Homogénéisation UI (EN DERNIER de la phase fonctionnelle)
+- **Objectif** : homogénéisation UI + FINIR TOUS LES MODALS.
+- **Inclut le modal de création Territory** : filtres avancés (Tech Stack,
+  Buying Process, Signals, Owner) — actuellement bridé avec un placeholder
+  "coming soon". Les signaux sont mûrs, pas de blocage de dépendance.
 
 ---
 
@@ -221,3 +295,40 @@ IA (pipelines signaux, prep call). Métering + plafonds par tenant.
 - Dette technique détaillée : TECH_DEBT.md
 - Ce document évolue : toute décision de roadmap prise en session est
   ajoutée ici via un commit docs(roadmap) séparé.
+
+### Rappel dette critique (renvoi TECH_DEBT.md)
+TD critiques non traités :
+- **build-health URGENT** : casses d'import (`businessData`/`businessdata`
+  + `userCSVConfig`) ; deps absentes de `package.json` (`react-csv`,
+  `@dnd-kit/core`+`sortable`+`utilities`) ; version `@mui/x-tree-view`
+  `^6`→`^7`.
+- **TD-97 / 99 / 101 / 102 / 103** (sprint S6).
+
+---
+
+## Prompt de reprise Claude assistant
+
+_(à coller en nouvelle conversation)_
+
+> Reprise du travail sur SalesCommands. Contexte :
+> - Le ROADMAP.md (à jour) et TECH_DEBT.md sont dans le repo — je peux te
+>   les recoller.
+> - On est en plein sprint S7b (peaufinage vues Go-to-Market Territory +
+>   Campaign), sur la branche `claude/views-inventory-audit-b4sjxe` (part de
+>   `main` 924a46a).
+> - Méthode de travail : audit CC d'abord → tu ajustes → prompts CC → CC
+>   implémente → je valide localement (pytest/vitest + smoke à l'écran) →
+>   merge via PR squash. Un commit par item, validé à l'écran avant
+>   d'avancer. Règles clés : NE RIEN EXTRAPOLER (se baser sur l'existant,
+>   citer le fichier de référence avant de coder), audit-first, repro rouge
+>   d'abord pour les bugs, Q6 (pas d'écriture en GET).
+> - État S7b : commits 1 (recherche), 2 (retrait edit + delete hover), 3
+>   (filtre drawer) FAITS et validés. Reste commit 4 (multi-select refait)
+>   et commit 5 (enrichissement cartes, à faire avec moi).
+> - Décision en cours d'intégration au commit 3 : `teams.read` pour
+>   `individual` passe de `mine` à `client` (AE peut lire toutes les
+>   équipes, read seulement) pour débloquer le filtre team.
+> - Détail complet des commits 4 et 5 : dans ROADMAP.md (section S7b).
+>
+> Reprends là où on en est : [dis-moi ce que tu veux faire — finaliser le
+> commit 3 avec la permission team, ou attaquer le commit 4].
