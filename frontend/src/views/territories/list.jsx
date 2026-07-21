@@ -266,10 +266,6 @@ useEffect(() => {
     }
   };
 
-  const handleClearSelection = () => {
-    setSelectedRows(new Set());
-  };
-
   const handleOpenBulkDeleteModal = () => {
     if (selectedRows.size > 0) {
       setBulkDeleteModalOpen(true);
@@ -326,7 +322,10 @@ useEffect(() => {
               placeholder={`Search ${territoriesCount} territories...`}
             />
 
-            {/* Actions — funnel (filter) | Select (multi-select) | New */}
+            {/* Actions — funnel (filter) | Select cluster | New. The funnel
+                stays visible and usable in selection mode (filtering while
+                selecting is legitimate). The counter lives only in the icon
+                tooltips — there is no full-width band. */}
             <Stack direction={matchDownSM ? 'column' : 'row'} alignItems="center" spacing={1}>
               <Badge
                 badgeContent={activeFiltersCount}
@@ -337,19 +336,48 @@ useEffect(() => {
                   <FilterOutlined />
                 </IconButton>
               </Badge>
-              <Tooltip title={selectionMode ? 'Exit selection mode' : 'Select territories'}>
-                <Button
-                  variant={selectionMode ? 'contained' : 'outlined'}
-                  color={selectionMode ? 'primary' : 'secondary'}
-                  startIcon={selectionMode ? <CloseOutlined /> : <CheckSquareOutlined />}
-                  onClick={handleToggleSelectionMode}
+              {selectionMode ? (
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={0.5}
+                  sx={{ bgcolor: 'error.lighter', borderRadius: 1, px: 0.5 }}
                 >
-                  {selectionMode ? 'Cancel' : 'Select'}
-                </Button>
-              </Tooltip>
-              <Button 
-                variant="contained" 
-                startIcon={<PlusOutlined />} 
+                  <Tooltip title={`Select all (${selectableCount})`}>
+                    <Checkbox
+                      checked={allSelected}
+                      indeterminate={someSelected}
+                      onChange={handleSelectAll}
+                      size="small"
+                    />
+                  </Tooltip>
+                  <Tooltip title="Cancel selection">
+                    <IconButton color="secondary" onClick={handleToggleSelectionMode}>
+                      <CloseOutlined />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={`Delete ${selectedRows.size} selected`}>
+                    <span>
+                      <IconButton
+                        color="error"
+                        onClick={handleOpenBulkDeleteModal}
+                        disabled={selectedRows.size === 0}
+                      >
+                        <DeleteOutlined />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
+              ) : (
+                <Tooltip title="Select">
+                  <IconButton color="secondary" onClick={handleToggleSelectionMode}>
+                    <CheckSquareOutlined />
+                  </IconButton>
+                </Tooltip>
+              )}
+              <Button
+                variant="contained"
+                startIcon={<PlusOutlined />}
                 onClick={handleOpenAddModal}
               >
                 New Territory
@@ -393,59 +421,6 @@ useEffect(() => {
         </Stack>
       )}
 
-      {/* ==================== BULK ACTION BAR ==================== */}
-      {selectionMode && (
-        <Box 
-          sx={{ 
-            mb: 2, 
-            p: 1.5, 
-            bgcolor: 'primary.lighter', 
-            borderRadius: 1,
-            border: '1px solid',
-            borderColor: 'primary.light'
-          }}
-        >
-          <Stack direction="row" alignItems="center" justifyContent="space-between">
-            <Stack direction="row" alignItems="center" spacing={2}>
-              <Checkbox
-                checked={allSelected}
-                indeterminate={someSelected}
-                onChange={handleSelectAll}
-                size="small"
-              />
-              <Typography variant="body2">
-                {selectedRows.size > 0 
-                  ? `${selectedRows.size} territory${selectedRows.size > 1 ? 'ies' : 'y'} selected`
-                  : `Select territories (${selectableCount} available)`
-                }
-              </Typography>
-            </Stack>
-            <Stack direction="row" spacing={1}>
-              {selectedRows.size > 0 && (
-                <>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="secondary"
-                    onClick={handleClearSelection}
-                  >
-                    Clear
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    color="error"
-                    startIcon={<DeleteOutlined />}
-                    onClick={handleOpenBulkDeleteModal}
-                  >
-                    Delete ({selectedRows.size})
-                  </Button>
-                </>
-              )}
-            </Stack>
-          </Stack>
-        </Box>
-      )}
 
       {/* ==================== TERRITORIES GRID ==================== */}
       <Grid container spacing={3}>
