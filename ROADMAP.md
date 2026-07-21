@@ -86,22 +86,26 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
   vues).
 - **Commit 2 ✅** — retrait bouton edit ; delete individuel au hover (coin
   haut-droite, error light, `stopPropagation` pour ne pas rediriger).
-- **Commit 3 ✅ (en finalisation)** — filtre entonnoir + drawer sur les
-  deux vues, harmonisé (onglets Mine/Team/All retirés, `owner_scope` dans le
-  drawer en radio, défaut neutre `all`).
-  - **Territory** : `owner_scope`, type (contact/account/both), owner
-    (async).
-  - **Campaign** : `owner_scope`, statut, type, territoire, exécutant
-    (async), channel strategy (auto/email only), team (async, OR
+- **Commit 3 ✅** — filtre entonnoir + drawer sur les deux vues, harmonisé
+  et COMPLET (validé à l'écran).
+  - Onglets Mine/My Team/All retirés des deux vues.
+  - `owner_scope` dans le drawer (radio, défaut neutre `all`).
+  - **Filtres Territory** : `owner_scope`, type (contact/account/both),
+    owner (async), team (async, `owner__team` simple — pas de OR car
+    Territory n'a pas d'exécutant).
+  - **Filtres Campaign** : `owner_scope`, statut, type, territoire,
+    exécutant (async), channel strategy (auto/email only), team (async, OR
     owner/exécutant), owner (async).
   - **Sélecteurs async** : `AsyncUserSelect` (existant) + `AsyncTeamSelect`
-    (créé).
-  - **Tri par défaut** = date de création (`created_at desc`). Pas de
-    sélecteur de tri (abandonné).
-  - **DÉCISION EN COURS D'INTÉGRATION** : `teams.read` pour `individual`
-    passe de `mine` à `client` (un AE peut LIRE toutes les équipes — read
-    seulement, create/update/delete restent interdits) pour débloquer le
-    filtre team.
+    (créé — wrapper `AsyncSelect` + `useGetTeams`).
+  - **Bug corrigé au passage** : signature `onChange` de `AsyncUserSelect`
+    `(event, user)`.
+  - **Permission élargie INTÉGRÉE** (commit séparé, poussé et validé) :
+    `teams.read` pour `individual` passe de `mine` à `client` (un AE peut
+    LIRE toutes les équipes du tenant — read seulement,
+    create/update/delete restent `none`).
+  - **Tri par défaut** = `created_at desc` (sélecteur de tri abandonné).
+  - **Zéro filtre mort** (contrainte dure PO).
 
 #### Commits RESTANTS
 - **Commit 4** — multi-select refait sur Territory ET Campaign :
@@ -230,6 +234,16 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Inclut le modal de création Territory** : filtres avancés (Tech Stack,
   Buying Process, Signals, Owner) — actuellement bridé avec un placeholder
   "coming soon". Les signaux sont mûrs, pas de blocage de dépendance.
+
+---
+
+## Notes d'anticipation (à garder en tête, pas à coder maintenant)
+- **Gestion des fuseaux horaires selon la localisation du user** — sujet
+  transverse. Déjà effleuré au S6 avec le bug UTC/local de la date callback
+  (D3a). L'app va servir des users dans différentes timezones, il faudra une
+  stratégie cohérente (stockage UTC, affichage local, saisie de dates dans
+  le fuseau du user). À cadrer proprement à un moment, probablement avant ou
+  pendant le Go-Live.
 
 ---
 
