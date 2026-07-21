@@ -6,10 +6,8 @@ import { useRouter } from "next/navigation";
 // material-ui
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
-import CardActions from "@mui/material/CardActions";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
-import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
@@ -27,7 +25,6 @@ import {
 } from "api/campaigns/campaigns";
 
 // icons
-import EditOutlined from "@ant-design/icons/EditOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import AimOutlined from "@ant-design/icons/AimOutlined";
 import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
@@ -47,7 +44,7 @@ import TeamOutlined from "@ant-design/icons/TeamOutlined";
  * - Date range
  * - Action buttons
  */
-export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
+export default function CampaignCard({ campaign, onOpen, onDelete }) {
   const router = useRouter();
   const theme = useTheme();
 
@@ -65,11 +62,6 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
 
   const handleCardClick = () => {
     onOpen?.(campaign);
-  };
-
-  const handleEdit = (e) => {
-    e.stopPropagation();
-    onEdit?.(campaign);
   };
 
   const handleDelete = (e) => {
@@ -122,6 +114,7 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
           borderColor: "primary.main",
           boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
         },
+        "&:hover .gtm-card-delete": { opacity: 1 },
         "&:active": {
           transform: "scale(0.99)",
         },
@@ -337,27 +330,31 @@ export default function CampaignCard({ campaign, onOpen, onEdit, onDelete }) {
         </Stack>
       </CardContent>
 
-      <Divider />
-
-      {/* Actions */}
-      <CardActions sx={{ justifyContent: "flex-end", px: 2, py: 1.5 }}>
-        <Stack direction="row" spacing={0}>
-          <Tooltip title="Edit">
-            <span>
-              <IconButton size="small" onClick={handleEdit}>
-                <EditOutlined style={{ fontSize: 16 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Delete">
-            <span>
-              <IconButton size="small" onClick={handleDelete}>
-                <DeleteOutlined style={{ fontSize: 16 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Stack>
-      </CardActions>
+      {/* Hover-reveal individual delete — top-right. Commit 4 will share this
+          corner with the status icon and the multi-select checkbox
+          (priority: normal -> status, hover -> delete, selection -> checkbox). */}
+      <Box
+        className="gtm-card-delete"
+        sx={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          zIndex: 1,
+          opacity: 0,
+          transition: "opacity 0.2s ease-in-out",
+        }}
+      >
+        <Tooltip title="Delete">
+          <IconButton
+            size="small"
+            color="error"
+            onClick={handleDelete}
+            sx={{ bgcolor: "error.lighter", "&:hover": { bgcolor: "error.light" } }}
+          >
+            <DeleteOutlined style={{ fontSize: 16 }} />
+          </IconButton>
+        </Tooltip>
+      </Box>
     </Card>
   );
 }
@@ -383,6 +380,5 @@ CampaignCard.propTypes = {
     members: PropTypes.array,
   }).isRequired,
   onOpen: PropTypes.func,
-  onEdit: PropTypes.func,
   onDelete: PropTypes.func,
 };

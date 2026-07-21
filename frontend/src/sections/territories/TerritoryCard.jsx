@@ -7,11 +7,9 @@ import { useRouter } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
-import CardActions from '@mui/material/CardActions';
 import CardContent from '@mui/material/CardContent';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
-import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
@@ -20,7 +18,6 @@ import Typography from '@mui/material/Typography';
 // icons
 import BankOutlined from '@ant-design/icons/BankOutlined';
 import ContactsOutlined from '@ant-design/icons/ContactsOutlined';
-import EditOutlined from '@ant-design/icons/EditOutlined';
 import CopyOutlined from '@ant-design/icons/CopyOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import ArrowRightOutlined from '@ant-design/icons/ArrowRightOutlined';
@@ -40,11 +37,10 @@ import { TERRITORY_TYPES, useGetTerritoryWorkspace } from 'api/territories/terri
  * - Filter summary
  * - Action buttons
  */
-export default function TerritoryCard({ 
-  territory, 
+export default function TerritoryCard({
+  territory,
   accountsCount = 0,
   loading = false,
-  onEdit,
   onDelete,
   // Selection props
   selected = false,
@@ -107,13 +103,8 @@ export default function TerritoryCard({
   };
 
 
-  const handleEdit = () => {
-    if (onEdit) {
-      onEdit(territory);
-    }
-  };
-
-   const handleDelete = () => {
+   const handleDelete = (e) => {
+    e.stopPropagation();
     if (onDelete) {
       onDelete(territory);
     }
@@ -207,6 +198,7 @@ export default function TerritoryCard({
           borderColor: selectionMode ? 'divider' : 'primary.main',
           boxShadow: selectionMode ? 'none' : '0 4px 12px rgba(0,0,0,0.08)'
         },
+        '&:hover .gtm-card-delete': { opacity: 1 },
         '&:active': {
           transform: selectionMode ? 'none' : 'scale(0.99)'
         }
@@ -302,35 +294,34 @@ export default function TerritoryCard({
         </Typography>
       </CardContent>
 
-      <Divider />
-
-      {/* Actions */}
-      <CardActions sx={{ justifyContent: 'flex-end', px: 2, py: 1.5 }}>
-      {/* Action icons */}
-      <Stack direction="row" spacing={0}>
-        <Tooltip title={territory.is_system ? "Edit (limited)" : "Edit"}>
-          <span>
-            <IconButton 
-              size="small" 
-              onClick={handleEdit}
-            >
-              <EditOutlined style={{ fontSize: 16 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={territory.is_system ? "Cannot delete system territory" : "Delete"}>
-          <span>
-            <IconButton 
-              size="small" 
+      {/* Hover-reveal individual delete — top-right. Hidden in selection mode
+          and for system territories (which cannot be deleted). Commit 4 will
+          share this corner with the status icon and the multi-select checkbox
+          (priority: normal -> status, hover -> delete, selection -> checkbox). */}
+      {!selectionMode && !territory.is_system && (
+        <Box
+          className="gtm-card-delete"
+          sx={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            zIndex: 1,
+            opacity: 0,
+            transition: 'opacity 0.2s ease-in-out'
+          }}
+        >
+          <Tooltip title="Delete">
+            <IconButton
+              size="small"
+              color="error"
               onClick={handleDelete}
-              disabled={territory.is_system}
+              sx={{ bgcolor: 'error.lighter', '&:hover': { bgcolor: 'error.light' } }}
             >
               <DeleteOutlined style={{ fontSize: 16 }} />
             </IconButton>
-          </span>
-        </Tooltip>
-      </Stack>
-    </CardActions>
+          </Tooltip>
+        </Box>
+      )}
     </Card>
   );
 }
@@ -348,7 +339,6 @@ TerritoryCard.propTypes = {
   }).isRequired,
   accountsCount: PropTypes.number,
   loading: PropTypes.bool,
-  onEdit: PropTypes.func,
   onDelete: PropTypes.func,
   // Selection props
   selected: PropTypes.bool,
