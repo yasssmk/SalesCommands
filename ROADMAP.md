@@ -106,20 +106,22 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
     create/update/delete restent `none`).
   - **Tri par défaut** = `created_at desc` (sélecteur de tri abandonné).
   - **Zéro filtre mort** (contrainte dure PO).
+- **Commit 4 ✅** — DELIVERED, mergé sur main (PR #69, merge commit
+  `bd063540`) — multi-select refait sur Territory ET Campaign.
+  - **Machine à états du coin haut-droite des cartes**, unifiée sur les deux
+    vues : repos → icône statut · hover → delete individuel · sélection →
+    case à cocher (`is_system` / TARGETED restent inertes).
+  - **Cluster Select icône-seule** calqué sur l'entonnoir (mirroring).
+  - Sélection en palette error ; bande pleine largeur "N selected" retirée.
+  - **Backend bulk-delete Campaign** : nouveau `CampaignBulkViewSet`
+    (`/campaigns/bulk-delete/`) calqué sur `TerritoryBulkViewSet` (sync,
+    partial/strict, max 500, `BulkOperationThrottle`, client-scoped,
+    `ScopedPermission`), divergeant uniquement par la suppression explicite
+    des activités liées AVANT les campagnes (`Activity.campaign` en
+    `SET_NULL` les orphelinerait), invalidation cache sur campagnes +
+    activités.
 
 #### Commits RESTANTS
-- **Commit 4** — multi-select refait sur Territory ET Campaign :
-  - Bouton Select = icône seule, à côté de l'entonnoir.
-  - Cases à cocher en HAUT À DROITE des cartes (pas à gauche).
-  - Sélection active → highlight error (pas success).
-  - Dès ≥1 sélectionné : bouton Select devient X (annuler) + icône delete,
-    fond error light, aligné avec l'entonnoir.
-  - Plus de bande verte "N selected" : compteur près des icônes (façon
-    ReusableTable).
-  - Légende au hover sur les icônes.
-  - Unification du coin haut-droite des cartes, priorité : normal → icône
-    statut · hover → icône delete · multi-select → case.
-  - Multi-select sur les DEUX (Campaign l'aura aussi, pour bulk delete).
 - **Commit 5** — enrichissement des cartes (FAIT AVEC LE PO) :
   - **Territory** : icône + nom, chip contact/account (les deux en
     secondary, tonalités light/dark différentes), nb contacts/comptes,
@@ -234,6 +236,14 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Inclut le modal de création Territory** : filtres avancés (Tech Stack,
   Buying Process, Signals, Owner) — actuellement bridé avec un placeholder
   "coming soon". Les signaux sont mûrs, pas de blocage de dépendance.
+- **Audit des opérations bulk (cohérence transverse)** : auditer TOUTES les
+  opérations bulk existantes à travers les modules et garantir un
+  comportement homogène, en particulier la gestion d'erreur (abort 403 au
+  niveau requête via `get_objects_for_bulk` vs skip-and-report partiel 207 ;
+  sémantique strict/partial). L'alignement bulk-delete Territory/Campaign a
+  confirmé un même comportement 403 au niveau requête ; les autres bulk ops
+  (ex. campaign account bulk-add / bulk-remove) N'ONT PAS été vérifiées pour
+  la même cohérence.
 
 ---
 
@@ -337,12 +347,11 @@ _(à coller en nouvelle conversation)_
 >   citer le fichier de référence avant de coder), audit-first, repro rouge
 >   d'abord pour les bugs, Q6 (pas d'écriture en GET).
 > - État S7b : commits 1 (recherche), 2 (retrait edit + delete hover), 3
->   (filtre drawer) FAITS et validés. Reste commit 4 (multi-select refait)
->   et commit 5 (enrichissement cartes, à faire avec moi).
-> - Décision en cours d'intégration au commit 3 : `teams.read` pour
->   `individual` passe de `mine` à `client` (AE peut lire toutes les
->   équipes, read seulement) pour débloquer le filtre team.
-> - Détail complet des commits 4 et 5 : dans ROADMAP.md (section S7b).
+>   (filtre drawer, permission team `mine`→`client` intégrée) FAITS et
+>   validés ; commit 4 (multi-select refait + bulk-delete Campaign) LIVRÉ
+>   et mergé (PR #69). Reste commit 5 (enrichissement cartes, à faire avec
+>   moi). S7b reste EN COURS tant que le commit 5 n'a pas atterri.
+> - Détail complet du commit 5 : dans ROADMAP.md (section S7b).
 >
-> Reprends là où on en est : [dis-moi ce que tu veux faire — finaliser le
-> commit 3 avec la permission team, ou attaquer le commit 4].
+> Reprends là où on en est : attaquer le commit 5 (enrichissement des
+> cartes Territory + Campaign, à cadrer avec moi).
