@@ -314,9 +314,80 @@ class TerritoryBulkViewSet(TerritoryViewSet):
         )
     
     # =========================================================================
+    # BATCHED COUNTS
+    # =========================================================================
+
+    # Upper bound on ids per request. Matches the territory list's pageSize
+    # fetch: one COUNT query runs per territory (territories have no stored
+    # membership, so no GROUP BY is possible), and this caps that fan-in.
+    MAX_COUNTS_IDS = 100
+
+    @action(detail=False, methods=['post'], url_path='counts')
+    def counts(self, request):
+        """
+        Return per-territory record counts for a batch of territory ids.
+
+        Kills the per-card N+1: instead of one workspace request per contact
+        card, the client asks for every visible territory's count in a single
+        round-trip. Each territory is counted with the same filter evaluators
+        the workspace uses (ACCOUNT -> AccountFilterService, CONTACT ->
+        ContactFilterService), so batched counts match detail-view counts.
+
+        Request Body:
+            ids: List[UUID] - territory ids (1..MAX_COUNTS_IDS)
+
+        Returns:
+            200 OK - {"success": True, "data": {"<id>": {"type", "count"}}}
+            400 Bad Request - ids missing, empty, wrong type, or over the cap
+            403 Forbidden - any id exists but is outside permission scope
+
+        Notes:
+            - Ids that do not exist in the tenant (not_found) are silently
+              omitted from the response map; the client only ever asks about
+              ids of cards it is already displaying.
+            - Counts are inherently one COUNT query per territory; the loop is
+              bounded by MAX_COUNTS_IDS so a request can never fan out further.
+        """
+        from ..models import TerritoryType
+
+        if not isinstance(request.data, dict):
+            raise StandardizedValidationError(
+                CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="territory IDs")
+            )
+
+        ids = request.data.get('ids', [])
+        if not isinstance(ids, list):
+            raise StandardizedValidationError(
+                CoreErrorMessages.BULK_INVALID_FORMAT.format(entity="territory IDs")
+            )
+        if not ids:
+            raise StandardizedValidationError("At least one territory id is required.")
+        if len(ids) > self.MAX_COUNTS_IDS:
+            raise StandardizedValidationError(
+                CoreErrorMessages.BULK_SIZE_EXCEEDED.format(
+                    max_size=self.MAX_COUNTS_IDS, entity="territories"
+                )
+            )
+
+        # Scope + permission: raises 403 if any id is out of scope; returns the
+        # in-scope objects and the ids that simply do not exist in the tenant.
+        result = self.get_objects_for_bulk(ids)
+        territories_dict = result['objects']
+
+        data = {}
+        for territory_id, territory in territories_dict.items():
+            if territory.type == TerritoryType.CONTACT:
+                count = self._count_contacts_for_territory(territory, request)
+            else:
+                count = self._count_accounts_for_territory(territory, request)
+            data[str(territory_id)] = {'type': territory.type, 'count': count}
+
+        return Response({'success': True, 'data': data})
+
+    # =========================================================================
     # HELPER METHODS (copied from accounts/views_bulk.py)
     # =========================================================================
-    
+
     def _format_bulk_error_message(self, error):
         """
         Format exception into user-friendly error message for bulk operations.
