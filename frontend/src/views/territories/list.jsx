@@ -189,7 +189,11 @@ useEffect(() => {
   const handleRemoveFilter = (key) => {
     removeFilter(
       key,
-      key === 'owner_scope' ? 'all' : key === 'owner' ? null : ''
+      key === 'owner_scope'
+        ? 'all'
+        : key === 'owner' || key === 'team'
+          ? null
+          : ''
     );
     setPage(1);
   };
@@ -370,6 +374,13 @@ useEffect(() => {
               size="small"
               label={`Owner: ${`${filters.owner.first_name || ''} ${filters.owner.last_name || ''}`.trim() || filters.owner.email || 'Selected'}`}
               onDelete={() => handleRemoveFilter('owner')}
+            />
+          )}
+          {filters.team?.id && (
+            <Chip
+              size="small"
+              label={`Team: ${filters.team.name || 'Selected'}`}
+              onDelete={() => handleRemoveFilter('team')}
             />
           )}
           {filters.type && (

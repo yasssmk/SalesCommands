@@ -11,6 +11,7 @@ import { useState, useCallback, useMemo } from "react";
 const DEFAULT_FILTERS = {
   owner_scope: "all", // 'mine' | 'team' | 'all'
   owner: null, // user object (specific owner)
+  team: null, // team object (owner's team)
   type: "", // '' | 'ACCOUNT' | 'CONTACT'
 };
 
@@ -22,6 +23,7 @@ export default function useTerritoryListFilters() {
     let count = 0;
     if (filters.owner_scope && filters.owner_scope !== "all") count++;
     if (filters.owner?.id) count++;
+    if (filters.team?.id) count++;
     if (filters.type) count++;
     return count;
   }, [filters]);
@@ -30,6 +32,7 @@ export default function useTerritoryListFilters() {
     const normalize = (f) => ({
       owner_scope: f.owner_scope,
       owner: f.owner?.id || null,
+      team: f.team?.id || null,
       type: f.type,
     });
     return (
@@ -45,6 +48,9 @@ export default function useTerritoryListFilters() {
     }
     if (filters.owner?.id) {
       result.owner = filters.owner.id;
+    }
+    if (filters.team?.id) {
+      result.team = filters.team.id;
     }
     if (filters.type) {
       result.type = filters.type;

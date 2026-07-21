@@ -9,6 +9,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.db.models import Count
@@ -34,6 +35,32 @@ from ..serializers import (
 )
 
 logger = get_logger(__name__)
+
+
+class TerritoryFilterSet(django_filters.FilterSet):
+    """
+    Filterset for the territory list.
+
+    Standard exact filters plus a custom `team` filter matching territories
+    whose OWNER belongs to the given team. Territory has no executor, so this
+    is owner__team only (unlike CampaignFilterSet's owner-OR-executor).
+    """
+
+    team = django_filters.CharFilter(method='filter_team')
+
+    class Meta:
+        model = Territory
+        fields = {
+            'type': ['exact'],
+            'is_system': ['exact'],
+            'is_default': ['exact'],
+            'owner': ['exact'],
+        }
+
+    def filter_team(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(owner__team_id=value)
 
 
 class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
@@ -65,12 +92,7 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
     
     # Filtering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = {
-        'type': ['exact'],
-        'is_system': ['exact'],
-        'is_default': ['exact'],
-        'owner': ['exact'],
-    }
+    filterset_class = TerritoryFilterSet
     # Search is limited to the territory name and its owner's name. Territory
     # has no separate executor, so owner is the only person field.
     search_fields = ['name', 'owner__first_name', 'owner__last_name']

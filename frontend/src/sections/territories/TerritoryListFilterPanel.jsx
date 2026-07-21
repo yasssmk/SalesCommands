@@ -22,6 +22,7 @@ import Typography from "@mui/material/Typography";
 
 // project imports
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
+import AsyncTeamSelect from "components/AsyncSelection/AsyncTeamSelect";
 
 // icons
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
@@ -136,6 +137,14 @@ export default function TerritoryListFilterPanel({
               onChange={(event, user) => onFilterChange("owner", user || null)}
               label="Owner"
               placeholder="All owners"
+              size="small"
+            />
+
+            <AsyncTeamSelect
+              value={pendingFilters?.team || null}
+              onChange={(event, team) => onFilterChange("team", team || null)}
+              label="Team"
+              placeholder="All teams"
               size="small"
             />
 
