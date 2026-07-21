@@ -71,7 +71,9 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         'is_default': ['exact'],
         'owner': ['exact'],
     }
-    search_fields = ['name', 'description']
+    # Search is limited to the territory name and its owner's name. Territory
+    # has no separate executor, so owner is the only person field.
+    search_fields = ['name', 'owner__first_name', 'owner__last_name']
     ordering_fields = [
         'name',
         'type',
