@@ -186,10 +186,17 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
   if (ordering) queryParams.append("ordering", ordering);
   if (filters.owner_scope)
     queryParams.append("owner_scope", filters.owner_scope);
+  if (filters.owner) queryParams.append("owner", filters.owner);
   if (filters.status) queryParams.append("status", filters.status);
   if (filters.campaign_type)
     queryParams.append("campaign_type", filters.campaign_type);
-  if (filters.territory) queryParams.append("territory", filters.territory);
+  // Backend filter key is `territories` (the M2M), not `territory`.
+  if (filters.territories)
+    queryParams.append("territories", filters.territories);
+  if (filters.executor) queryParams.append("executor", filters.executor);
+  if (filters.channel_override)
+    queryParams.append("channel_override", filters.channel_override);
+  if (filters.team) queryParams.append("team", filters.team);
 
   const queryString = queryParams.toString();
   return queryString ? `${baseUrl}?${queryString}` : baseUrl;

@@ -8,6 +8,9 @@ import { useState, useMemo } from "react";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import Badge from "@mui/material/Badge";
+import IconButton from "@mui/material/IconButton";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -24,20 +27,32 @@ import MainCard from "components/MainCard";
 import { DebouncedInput } from "components/third-party/react-table";
 import CampaignCard from "sections/campaigns/CampaignCard";
 import CampaignCreateModal from "sections/campaigns/create/CampaignCreateModal";
-import OwnerScopeTabs from "components/filters/OwnerScopeTabs";
+import CampaignFilterPanel from "sections/campaigns/CampaignFilterPanel";
 import AlertCampaignDelete from "sections/campaigns/AlertCampaignDelete";
 
 // hooks
-import useOwnerScope from "hooks/useOwnerScope";
+import useCampaignListFilters from "hooks/useCampaignListFilters";
 
 // api
 import { useGetCampaigns, deleteCampaign } from "api/campaigns/campaigns";
+import { useGetTerritories } from "api/territories/territories";
 
 // next
 import { useRouter } from "next/navigation";
 
 // assets
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
+import FilterOutlined from "@ant-design/icons/FilterOutlined";
+
+// filter chip label maps
+const STATUS_LABELS = {
+  DRAFT: "Draft",
+  ACTIVE: "Active",
+  PAUSED: "Paused",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+};
+const CHANNEL_LABELS = { AUTO: "Auto", EMAIL_ONLY: "Email only" };
 
 // ==============================|| CAMPAIGNS LIST PAGE ||============================== //
 
@@ -61,13 +76,23 @@ export default function CampaignsListPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Owner scope filter
+  // Filter drawer
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
   const {
-    scope: ownerScope,
-    setScope: setOwnerScope,
-    visibleOptions: ownerScopeOptions,
-    apiParams: ownerScopeParams,
-  } = useOwnerScope({ storageKey: "campaigns" });
+    filters,
+    pendingFilters,
+    activeFiltersCount,
+    hasPendingChanges,
+    apiFilters,
+    updatePendingFilter,
+    applyFilters,
+    clearFilters,
+    resetPendingFilters,
+    removeFilter,
+  } = useCampaignListFilters();
+
+  // Territory list for the territory chip label (SWR-deduped with the drawer).
+  const { territories = [] } = useGetTerritories({ page: 1, pageSize: 100 });
 
   // ==============================|| PAGINATION CONFIG ||============================== //
 
@@ -86,7 +111,7 @@ export default function CampaignsListPage() {
     page: 1,
     pageSize: 100,
     search: globalFilter,
-    filters: ownerScopeParams,
+    filters: apiFilters,
   });
 
   // ==============================|| PAGINATION ||============================== //
@@ -120,6 +145,31 @@ export default function CampaignsListPage() {
     setPage(1);
   };
 
+  // ==============================|| FILTER HANDLERS ||============================== //
+
+  const handleOpenFilterPanel = () => setFilterPanelOpen(true);
+  const handleCloseFilterPanel = () => {
+    resetPendingFilters();
+    setFilterPanelOpen(false);
+  };
+  const handleApplyFilters = () => {
+    applyFilters();
+    setPage(1);
+    setFilterPanelOpen(false);
+  };
+  const handleClearFilters = () => {
+    clearFilters();
+    setPage(1);
+  };
+  const handleRemoveFilter = (key) => {
+    const OBJECT_KEYS = ["owner", "executor", "team"];
+    removeFilter(
+      key,
+      key === "owner_scope" ? "all" : OBJECT_KEYS.includes(key) ? null : "",
+    );
+    setPage(1);
+  };
+
   const handleNewCampaign = () => {
     setCreateModalOpen(true);
   };
@@ -145,13 +195,6 @@ export default function CampaignsListPage() {
 
   return (
     <>
-      {/* ==================== OWNER SCOPE TABS ==================== */}
-      <OwnerScopeTabs
-        value={ownerScope}
-        onChange={setOwnerScope}
-        visibleOptions={ownerScopeOptions}
-      />
-
       {/* ==================== HEADER ==================== */}
       <Box sx={{ position: "relative", marginBottom: 3 }}>
         <Stack direction="row" alignItems="center">
@@ -169,12 +212,21 @@ export default function CampaignsListPage() {
               placeholder={`Search ${campaignsCount} campaigns...`}
             />
 
-            {/* Actions */}
+            {/* Actions — funnel (filter) | [Select: commit 4] | New */}
             <Stack
               direction={matchDownSM ? "column" : "row"}
               alignItems="center"
               spacing={1}
             >
+              <Badge
+                badgeContent={activeFiltersCount}
+                color="primary"
+                invisible={activeFiltersCount === 0}
+              >
+                <IconButton color="secondary" onClick={handleOpenFilterPanel}>
+                  <FilterOutlined />
+                </IconButton>
+              </Badge>
               <Button
                 variant="contained"
                 startIcon={<PlusOutlined />}
@@ -186,6 +238,73 @@ export default function CampaignsListPage() {
           </Stack>
         </Stack>
       </Box>
+
+      {/* ==================== ACTIVE FILTER CHIPS ==================== */}
+      {activeFiltersCount > 0 && (
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ mb: 2, flexWrap: "wrap" }}
+          useFlexGap
+        >
+          {filters.owner_scope !== "all" && (
+            <Chip
+              size="small"
+              label={`Scope: ${filters.owner_scope === "mine" ? "Mine" : "My Team"}`}
+              onDelete={() => handleRemoveFilter("owner_scope")}
+            />
+          )}
+          {filters.owner?.id && (
+            <Chip
+              size="small"
+              label={`Owner: ${`${filters.owner.first_name || ""} ${filters.owner.last_name || ""}`.trim() || filters.owner.email || "Selected"}`}
+              onDelete={() => handleRemoveFilter("owner")}
+            />
+          )}
+          {filters.status && (
+            <Chip
+              size="small"
+              label={`Status: ${STATUS_LABELS[filters.status] || filters.status}`}
+              onDelete={() => handleRemoveFilter("status")}
+            />
+          )}
+          {filters.campaign_type && (
+            <Chip
+              size="small"
+              label={`Type: ${filters.campaign_type === "OUTBOUND" ? "Outbound" : "Targeted"}`}
+              onDelete={() => handleRemoveFilter("campaign_type")}
+            />
+          )}
+          {filters.territories && (
+            <Chip
+              size="small"
+              label={`Territory: ${territories.find((t) => t.id === filters.territories)?.name || "Selected"}`}
+              onDelete={() => handleRemoveFilter("territories")}
+            />
+          )}
+          {filters.executor?.id && (
+            <Chip
+              size="small"
+              label={`Executor: ${`${filters.executor.first_name || ""} ${filters.executor.last_name || ""}`.trim() || filters.executor.email || "Selected"}`}
+              onDelete={() => handleRemoveFilter("executor")}
+            />
+          )}
+          {filters.channel_override && (
+            <Chip
+              size="small"
+              label={`Channel: ${CHANNEL_LABELS[filters.channel_override] || filters.channel_override}`}
+              onDelete={() => handleRemoveFilter("channel_override")}
+            />
+          )}
+          {filters.team?.id && (
+            <Chip
+              size="small"
+              label={`Team: ${filters.team.name || "Selected"}`}
+              onDelete={() => handleRemoveFilter("team")}
+            />
+          )}
+        </Stack>
+      )}
 
       {/* ==================== CAMPAIGNS GRID ==================== */}
       <Grid container spacing={3}>
@@ -259,6 +378,19 @@ export default function CampaignsListPage() {
         onClose={() => setDeleteTarget(null)}
         campaign={deleteTarget}
         onSuccess={handleDeleteSuccess}
+      />
+
+      {/* Filter Drawer */}
+      <CampaignFilterPanel
+        open={filterPanelOpen}
+        onClose={handleCloseFilterPanel}
+        pendingFilters={pendingFilters}
+        onFilterChange={updatePendingFilter}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        hasPendingChanges={hasPendingChanges}
+        matchingCount={campaignsCount}
+        loading={campaignsLoading}
       />
     </>
   );

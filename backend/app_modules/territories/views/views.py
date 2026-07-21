@@ -82,7 +82,7 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         'created_at',
         'updated_at',
     ]
-    ordering = ['-is_system', 'name']
+    ordering = ['-created_at']
     
     # Security
     authentication_classes = [CustomJWTAuthentication]

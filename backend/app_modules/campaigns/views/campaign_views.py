@@ -9,6 +9,8 @@ Follows ActivityViewSet / TerritoryViewSet patterns:
     - Structured logging + SOC 2 audit trail
 """
 
+import django_filters
+
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -58,6 +60,37 @@ from ..config.settings import CONFIG
 logger = get_logger(__name__)
 
 
+class CampaignFilterSet(django_filters.FilterSet):
+    """
+    Filterset for the campaign list.
+
+    Standard exact filters plus a custom `team` filter that matches a
+    campaign whose OWNER or EXECUTOR belongs to the given team (OR). A team
+    view thus surfaces campaigns a colleague executes, not only those the
+    team owns.
+    """
+
+    team = django_filters.CharFilter(method='filter_team')
+
+    class Meta:
+        model = Campaign
+        fields = {
+            'status': ['exact', 'in'],
+            'campaign_type': ['exact'],
+            'territories': ['exact'],
+            'owner': ['exact'],
+            'executor': ['exact'],
+            'channel_override': ['exact'],
+        }
+
+    def filter_team(self, queryset, name, value):
+        if not value:
+            return queryset
+        return queryset.filter(
+            Q(owner__team_id=value) | Q(executor__team_id=value)
+        ).distinct()
+
+
 class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing Campaigns.
@@ -88,11 +121,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
 
     # Filtering
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = {
-        'status': ['exact', 'in'],
-        'campaign_type': ['exact'],
-        'territories': ['exact'],
-    }
+    filterset_class = CampaignFilterSet
     search_fields = CONFIG.filters.campaign_search
     ordering_fields = ['name', 'status', 'campaign_type', 'start_date', 'end_date', 'created_at']
     ordering = CONFIG.filters.default_campaign_ordering
