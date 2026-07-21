@@ -187,13 +187,13 @@ export default function TerritoryCard({
       sx={{ 
         position: 'relative',
         border: '1px solid',
-        borderColor: selected ? 'primary.main' : 'divider',
+        borderColor: selected ? 'error.main' : 'divider',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         transition: 'all 0.2s ease-in-out',
         cursor: selectionMode ? 'default' : 'pointer',
-        bgcolor: selected ? 'primary.lighter' : 'background.paper',
+        bgcolor: selected ? 'error.lighter' : 'background.paper',
         '&:hover': {
           borderColor: selectionMode ? 'divider' : 'primary.main',
           boxShadow: selectionMode ? 'none' : '0 4px 12px rgba(0,0,0,0.08)'
@@ -205,24 +205,6 @@ export default function TerritoryCard({
       }}
     >
       <CardContent sx={{ flexGrow: 1 }}>
-        {/* Selection Checkbox */}
-        {selectionMode && (
-          <Box sx={{ position: 'absolute', top: 8, left: 8, zIndex: 1 }}>
-            <Checkbox
-              checked={selected}
-              onChange={handleSelect}
-              onClick={(e) => e.stopPropagation()}
-              disabled={territory.is_system}
-              size="small"
-              sx={{
-                bgcolor: 'background.paper',
-                borderRadius: 1,
-                '&:hover': { bgcolor: 'background.paper' }
-              }}
-            />
-          </Box>
-        )}
-
         {/* Header */}
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={2}>
           <Stack direction="row" spacing={1.5} alignItems="center">
@@ -294,33 +276,50 @@ export default function TerritoryCard({
         </Typography>
       </CardContent>
 
-      {/* Hover-reveal individual delete — top-right. Hidden in selection mode
-          and for system territories (which cannot be deleted). Commit 4 will
-          share this corner with the status icon and the multi-select checkbox
-          (priority: normal -> status, hover -> delete, selection -> checkbox). */}
-      {!selectionMode && !territory.is_system && (
-        <Box
-          className="gtm-card-delete"
-          sx={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            zIndex: 1,
-            opacity: 0,
-            transition: 'opacity 0.2s ease-in-out'
-          }}
-        >
-          <Tooltip title="Delete">
-            <IconButton
+      {/* Top-right corner — exclusive state machine (non-protected cards only):
+          exactly one element at a time. Selection mode shows the checkbox;
+          otherwise the individual delete reveals on hover. System territories
+          are protected: they never show a checkbox or delete here, and their
+          status ("System" chip) stays in the header in every state. */}
+      {!territory.is_system && (
+        selectionMode ? (
+          <Box sx={{ position: 'absolute', top: 8, right: 8, zIndex: 1 }}>
+            <Checkbox
+              checked={selected}
+              onChange={handleSelect}
+              onClick={(e) => e.stopPropagation()}
               size="small"
-              color="error"
-              onClick={handleDelete}
-              sx={{ bgcolor: 'error.lighter', '&:hover': { bgcolor: 'error.light' } }}
-            >
-              <DeleteOutlined style={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-        </Box>
+              sx={{
+                bgcolor: 'background.paper',
+                borderRadius: 1,
+                '&:hover': { bgcolor: 'background.paper' }
+              }}
+            />
+          </Box>
+        ) : (
+          <Box
+            className="gtm-card-delete"
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              zIndex: 1,
+              opacity: 0,
+              transition: 'opacity 0.2s ease-in-out'
+            }}
+          >
+            <Tooltip title="Delete">
+              <IconButton
+                size="small"
+                color="error"
+                onClick={handleDelete}
+                sx={{ bgcolor: 'error.lighter', '&:hover': { bgcolor: 'error.light' } }}
+              >
+                <DeleteOutlined style={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )
       )}
     </Card>
   );
