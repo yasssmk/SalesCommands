@@ -144,6 +144,7 @@ class UserLoginView(BaseAPIView):
                 "name": user.get_full_name(),
                 "email": user.email,
                 "role": getattr(user, 'role_name', None),
+                "role_tier": user.role.get_tier() if user.role else None,
                 "client_id": str(client_id_val) if client_id_val else None,
                 "client_name": getattr(getattr(user, "client_account", None), "name", None),
             }
@@ -185,7 +186,8 @@ class UserCurrentView(BaseAPIView):
                     "name": user.get_full_name(),
                     "email": user.email,
                     "role": user.role_name if hasattr(user, 'role_name') else None,
-                    "avatar": None, 
+                    "role_tier": user.role.get_tier() if user.role else None,
+                    "avatar": None,
                     "client_id": str(user.client_account_id) if user.client_account_id else None,
                     "client_name": user.client_account.name if getattr(user, "client_account", None) else None,
                 }

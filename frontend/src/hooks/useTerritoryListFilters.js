@@ -1,23 +1,40 @@
 // frontend/src/hooks/useTerritoryListFilters.js
 
 import { useState, useCallback, useMemo } from "react";
+import { useAuth } from "hooks/useAuth";
+import { resolveDefaultOwnerScope } from "utils/ownerScope";
 
 /**
  * Filter state for the Territories list view. Mirrors useDecisionCycleFilters
- * (pending/applied + apiFilters + chips). owner_scope defaults to the neutral
- * 'all'. `owner` is a specific user object (from AsyncUserSelect) that
- * coexists with owner_scope.
+ * (pending/applied + apiFilters + chips). owner_scope is seeded from the user's
+ * tier (individual → 'mine', manager → 'team', admin → 'all') and re-applies on
+ * every mount (no persistence). `owner` is a specific user object (from
+ * AsyncUserSelect) that coexists with owner_scope.
  */
 const DEFAULT_FILTERS = {
-  owner_scope: "all", // 'mine' | 'team' | 'all'
+  owner_scope: "all", // neutral base; overridden per-tier at seed
   owner: null, // user object (specific owner)
   team: null, // team object (owner's team)
   type: "", // '' | 'ACCOUNT' | 'CONTACT'
 };
 
 export default function useTerritoryListFilters() {
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
-  const [pendingFilters, setPendingFilters] = useState(DEFAULT_FILTERS);
+  const { user } = useAuth();
+  // Stable across renders within a mount: `user` is the memoised auth-context
+  // value (only changes on login/refresh), so this pure derivation keeps the
+  // same value and clearFilters below is not recreated each render. The user is
+  // already loaded when this hook mounts (AuthGuard gates protected pages), so
+  // the lazy seed reads the real tier at init — no flash, no useEffect.
+  const defaultScope = resolveDefaultOwnerScope(user);
+
+  const [filters, setFilters] = useState(() => ({
+    ...DEFAULT_FILTERS,
+    owner_scope: defaultScope,
+  }));
+  const [pendingFilters, setPendingFilters] = useState(() => ({
+    ...DEFAULT_FILTERS,
+    owner_scope: defaultScope,
+  }));
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -66,10 +83,13 @@ export default function useTerritoryListFilters() {
     setFilters({ ...pendingFilters });
   }, [pendingFilters]);
 
+  // Clear resets to the TIER DEFAULT (not the neutral 'all'), same as a fresh
+  // visit. defaultScope is stable (memoised user), so this callback identity
+  // holds across renders.
   const clearFilters = useCallback(() => {
-    setFilters({ ...DEFAULT_FILTERS });
-    setPendingFilters({ ...DEFAULT_FILTERS });
-  }, []);
+    setFilters({ ...DEFAULT_FILTERS, owner_scope: defaultScope });
+    setPendingFilters({ ...DEFAULT_FILTERS, owner_scope: defaultScope });
+  }, [defaultScope]);
 
   const resetPendingFilters = useCallback(() => {
     setPendingFilters({ ...filters });

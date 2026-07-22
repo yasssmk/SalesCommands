@@ -345,6 +345,7 @@ class AuthService:
                 "name": user.get_full_name(),
                 "email": user.email,
                 "role": user.role_name if hasattr(user, 'role_name') else None,
+                "role_tier": user.role.get_tier() if user.role else None,
                 "avatar": None,
                 "client_id": str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else None,
                 "client_name": user.client_account.name if getattr(user, "client_account", None) else None,

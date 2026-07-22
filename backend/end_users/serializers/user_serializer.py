@@ -83,29 +83,11 @@ class UserListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     def get_role_tier(self, obj):
         """
         Retourner le tier du rôle pour la logique de couleur frontend.
-        
+
         Returns:
             str: 'admin', 'manager', 'individual', ou None si pas de rôle
         """
-        if not obj.role:
-            return None
-        
-        # Vérifier les flags de tier du rôle
-        if hasattr(obj.role, 'is_admin') and obj.role.is_admin:
-            return 'admin'
-        elif hasattr(obj.role, 'is_manager') and obj.role.is_manager:
-            return 'manager'
-        elif hasattr(obj.role, 'is_individual') and obj.role.is_individual:
-            return 'individual'
-        
-        # Fallback : détecter via le nom du rôle (pour compatibilité)
-        role_name_lower = obj.role.name.lower()
-        if 'admin' in role_name_lower:
-            return 'admin'
-        elif any(word in role_name_lower for word in ['manager', 'supervisor', 'lead', 'direction']):
-            return 'manager'
-        else:
-            return 'individual'
+        return obj.role.get_tier() if obj.role else None
 
 
 class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
@@ -126,6 +108,7 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     
     # Status et métriques
     is_manager = serializers.SerializerMethodField(read_only=True)
+    role_tier = serializers.SerializerMethodField(read_only=True)
     managed_users_count = serializers.SerializerMethodField(read_only=True)
     
     # === CHAMPS ÉCRITURE AVEC VALIDATION ===
@@ -186,15 +169,15 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
             'team', 'team_name',
             
             # Status et métriques
-            'is_manager', 'managed_users_count',
-            
+            'is_manager', 'role_tier', 'managed_users_count',
+
             # Timestamps
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'created_at', 'updated_at', 'role_name',
             'full_name', 'display_name', 'short_name',
-            'is_manager', 'managed_users_count', 'client_account', 'last_login'
+            'is_manager', 'role_tier', 'managed_users_count', 'client_account', 'last_login'
         ]
         extra_kwargs = {
             'email': {'required': True},
@@ -262,6 +245,11 @@ class UserSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerial
     def get_is_manager(self, obj):
         """Vérifier si l'utilisateur est manager"""
         return obj.is_manager()
+
+    def get_role_tier(self, obj):
+        """Tier du rôle ('admin' | 'manager' | 'individual' | None) — réutilise
+        UserRole.get_tier(), source unique du tier (parité liste / detail)."""
+        return obj.role.get_tier() if obj.role else None
     
     def get_managed_users_count(self, obj):
         """
