@@ -211,7 +211,9 @@ export default function CampaignCard({
         },
       }}
     >
-      <CardContent sx={{ flexGrow: 1 }}>
+      <CardContent
+        sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}
+      >
         {/* Header: Icon + Name + Status */}
         <Stack
           direction="row"
@@ -335,8 +337,11 @@ export default function CampaignCard({
           </>
         )}
 
-        {/* Meta: schedule + attribution (owner + team, executor + team) */}
-        <Stack spacing={0.5} mt={1.5}>
+        {/* Meta: schedule + attribution (owner + team, executor + team).
+            Pinned to the bottom (mt:auto in the flex-column CardContent) so the
+            footer aligns across cards whatever the middle height — OUTBOUND
+            (two bars) and TARGETED (no bars) land on the same line. */}
+        <Stack spacing={0.5} sx={{ mt: "auto", pt: 1.5 }}>
           {/* Schedule — status→date line; warning tone once the end has passed */}
           <Stack direction="row" spacing={1} alignItems="center">
             <CalendarOutlined
