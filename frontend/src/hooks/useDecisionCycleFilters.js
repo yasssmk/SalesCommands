@@ -1,17 +1,20 @@
 // frontend/src/hooks/useDecisionCycleFilters.js
 
 import { useState, useCallback, useMemo } from "react";
+import { useAuth } from "hooks/useAuth";
+import { resolveDefaultOwnerScope } from "utils/ownerScope";
 
 /**
  * Default decision-cycle filters.
  *
- * owner_scope defaults to 'mine' (the caller sees their own cycles first);
- * the user can widen it to 'team' or 'all' from the filter drawer. 'all'
- * sends no owner_scope param (the backend then returns the tenant-wide,
- * client-scoped list).
+ * owner_scope is seeded from the user's tier (individual → 'mine',
+ * manager → 'team', admin → 'all') and re-applies on every mount (no
+ * persistence), same as the Territory/Campaign list drawers. The user can
+ * widen or narrow it from the filter drawer; 'all' sends no owner_scope param
+ * (the backend then returns the tenant-wide, client-scoped list).
  */
 const DEFAULT_FILTERS = {
-  owner_scope: "all", // 'mine' | 'team' | 'all' — neutral default (opens on all cycles)
+  owner_scope: "all", // neutral base; overridden per-tier at seed
   account: null, // account object (from AsyncAccountSelect)
   status: "", // '' | 'OPEN' | 'WON' | 'LOST' | 'ON_HOLD' | 'NOT_QUALIFIED'
 };
@@ -23,17 +26,26 @@ const DEFAULT_FILTERS = {
  * to the backend query params) but with decision-cycle facets.
  */
 export default function useDecisionCycleFilters(initialFilters = {}) {
+  const { user } = useAuth();
+  // Stable primitive derived from the memoised user (AuthGuard guarantees the
+  // user is loaded at mount), so the lazy seed reads the real tier at init —
+  // no flash, no useEffect — and clearFilters keeps a stable identity. An
+  // explicit initialFilters.owner_scope still wins (spread last).
+  const defaultScope = resolveDefaultOwnerScope(user);
+
   // ==============================|| STATE ||============================== //
 
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
+    owner_scope: defaultScope,
     ...initialFilters,
-  });
+  }));
 
-  const [pendingFilters, setPendingFilters] = useState({
+  const [pendingFilters, setPendingFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
+    owner_scope: defaultScope,
     ...initialFilters,
-  });
+  }));
 
   // ==============================|| COMPUTED ||============================== //
 
@@ -102,10 +114,12 @@ export default function useDecisionCycleFilters(initialFilters = {}) {
     setFilters({ ...pendingFilters });
   }, [pendingFilters]);
 
+  // Clear resets to the TIER DEFAULT (not the neutral 'all'), same as a fresh
+  // visit. defaultScope is a stable primitive, so this callback identity holds.
   const clearFilters = useCallback(() => {
-    setFilters({ ...DEFAULT_FILTERS });
-    setPendingFilters({ ...DEFAULT_FILTERS });
-  }, []);
+    setFilters({ ...DEFAULT_FILTERS, owner_scope: defaultScope });
+    setPendingFilters({ ...DEFAULT_FILTERS, owner_scope: defaultScope });
+  }, [defaultScope]);
 
   const resetPendingFilters = useCallback(() => {
     setPendingFilters({ ...filters });
