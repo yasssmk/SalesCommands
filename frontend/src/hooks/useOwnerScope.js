@@ -2,15 +2,12 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useAuth } from 'hooks/useAuth';
+import { OWNER_SCOPES } from 'utils/ownerScope';
 
-/**
- * Owner scope options
- */
-export const OWNER_SCOPES = {
-  MINE: 'mine',
-  TEAM: 'team',
-  ALL: 'all'
-};
+// OWNER_SCOPES now lives in utils/ownerScope (util owns the constant, hooks
+// consume it). Re-exported here so existing importers — e.g.
+// components/filters/OwnerScopeTabs — keep resolving it from this module.
+export { OWNER_SCOPES };
 
 /**
  * Scope labels for display
@@ -40,18 +37,19 @@ export default function useOwnerScope({ storageKey = 'default' } = {}) {
   
   const userRole = useMemo(() => {
     if (!user) return 'individual';
-    
-    // Check role object (from JWT)
-    const role = user.role;
-    if (role) {
-      if (role.is_admin === true) return 'admin';
-      if (role.is_manager === true) return 'manager';
-      if (role.is_individual === true) return 'individual';
+
+    // Canonical tier string from the backend (/me → UserSerializer.role_tier).
+    // The old path user.role.is_* never matched here because `role` serializes
+    // to a bare UUID string, so managers/admins wrongly fell through to
+    // 'individual' → 'mine'. Read role_tier, same as resolveDefaultOwnerScope.
+    if (['admin', 'manager', 'individual'].includes(user.role_tier)) {
+      return user.role_tier;
     }
-    
-    // Fallback: check is_superuser
+
+    // Fallback for payloads predating role_tier: the flat booleans on /me.
     if (user.is_superuser === true) return 'admin';
-    
+    if (user.is_manager === true) return 'manager';
+
     return 'individual';
   }, [user]);
 
@@ -78,7 +76,15 @@ export default function useOwnerScope({ storageKey = 'default' } = {}) {
 
   // ==============================|| STATE WITH LOCALSTORAGE ||============================== //
   
-  const localStorageKey = `ownerScope_${storageKey}`;
+  // v2 — retires pre-fix entries. Before the role_tier fix the tier was
+  // misdetected, so managers/admins could have a stale 'mine' persisted under
+  // the old `ownerScope_<key>`. Bumping the key name means that old entry is
+  // simply never read again, so the corrected tier default applies on the first
+  // post-fix visit. Persistence is NOT disabled: choices made after the fix are
+  // written to and read from this v2 key normally. The version discriminator is
+  // the key name itself — old data lives under ownerScope_<key>, new data under
+  // ownerScope_v2_<key>, and the two never collide.
+  const localStorageKey = `ownerScope_v2_${storageKey}`;
   
   // Initialize state
   const getInitialScope = useCallback(() => {
