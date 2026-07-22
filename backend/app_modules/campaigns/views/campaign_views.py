@@ -202,6 +202,30 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             # owner__team / executor__team join the attribution the list
             # serializer exposes (owner + team, executor + team) — without it
             # each card would trigger an N+1 into the team table.
+            #
+            # Target progress (targets_total / targets_worked) is counted with
+            # SEPARATE correlated subqueries, NOT a Count over
+            # campaign_accounts__campaign_contacts in this .annotate(). A deeper
+            # Count would LEFT JOIN campaign_accounts × campaign_contacts and
+            # multiply rows (A accounts × C contacts) per campaign, inflating the
+            # intermediate result and forcing distinct= gymnastics on
+            # _accounts_count. Isolated subqueries never join the outer FROM, so
+            # every count stays exact — the same Subquery shape the retrieve
+            # branch already uses (_expected_end_date). worked counts targets in
+            # a final state (COMPLETED/STOPPED) via a filtered Count on the real
+            # CampaignContact.status column. Coalesce → 0 because a GROUP BY
+            # subquery returns no row (NULL) for a campaign with no contacts.
+            from ..models import CampaignContact, FINAL_CONTACT_STATES
+            from django.db.models.functions import Coalesce
+
+            _contacts = CampaignContact.objects.filter(
+                campaign_account__campaign=OuterRef('pk'),
+            ).order_by().values('campaign_account__campaign')
+            _total_sq = _contacts.annotate(c=Count('pk')).values('c')[:1]
+            _worked_sq = _contacts.annotate(
+                c=Count('pk', filter=Q(status__in=FINAL_CONTACT_STATES)),
+            ).values('c')[:1]
+
             queryset = queryset.select_related(
                 'owner__team', 'executor__team',
             ).prefetch_related(
@@ -209,6 +233,8 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'objectives',
             ).annotate(
                 _accounts_count=Count('campaign_accounts', distinct=True),
+                _targets_total=Coalesce(Subquery(_total_sq), 0),
+                _targets_worked=Coalesce(Subquery(_worked_sq), 0),
             )
         elif self.action == 'retrieve':
             from app_modules.activities.models import Activity as _Activity
