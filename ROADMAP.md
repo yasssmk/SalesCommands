@@ -230,6 +230,22 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Objectif** : filtres & recherche transverses sur l'ensemble des vues.
 - **Note** : le modal de création Territory est en réalité un sujet UI
   (filtres avancés), traité dans le sprint UI ci-dessous — pas ici.
+- **Input produit — critères candidats du modal de définition Territory**
+  (à AJOUTER quand le backend les évalue — jamais de filtre mort, c.-à-d.
+  un critère posé côté company que le backend ignore) :
+  - **company profile** (`company_size`, multi-select) — NOTE :
+    `company_size` est DÉJÀ évalué par `AccountFilterService` aujourd'hui,
+    donc peut atterrir plus tôt si souhaité.
+  - **techstack** (`has_tech_stack`, multi-select) — déjà évalué (sous-
+    requête `Exists`).
+  - **signal** (dimension + what, multi-select) — BLOQUÉ : `has_qualification`
+    / `signals_since_days` sont des stubs/no-ops dans `AccountFilterService`
+    aujourd'hui, en attente de ce sprint. L'ajouter au modal avant le
+    support backend = filtre mort.
+  - **filtre DC** : « without active DC » — nécessite un audit backend ;
+    pas clair que le `filter_definition` supporte encore un critère DC.
+  - Cadrage : ces critères sont l'input du sprint Filtres, construits
+    backend + UI ENSEMBLE, zéro filtre mort.
 
 ### Sprint UI — Homogénéisation UI (EN DERNIER de la phase fonctionnelle)
 - **Objectif** : homogénéisation UI + FINIR TOUS LES MODALS.
@@ -287,6 +303,24 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 Durcissement avant exposition client : permissions, isolation multi-tenant
 bout-en-bout, secrets, headers, logs, chiffrement. Pas la certif SOC 2, s'en
 rapprocher au maximum. Prérequis absolu avant tout accès client.
+- **Durcissement permissions & modules** :
+  - **Supprimer les modules FANTÔMES** : plusieurs modules ont été
+    anticipés dans les settings/config alors qu'ils n'existeront pas.
+    Auditer `config.MODULES` et SUPPRIMER uniquement ces entrées
+    inexistantes (sans backend réel derrière).
+  - **GARDER les modules RÉELS-mais-inactifs** — à NE PAS confondre avec
+    les fantômes ci-dessus, ni supprimer par erreur : `sales_quotas`,
+    `sales_plans`, `sales_milestones` back de VRAIS KPI BI et s'activent au
+    sprint Admin & Objectifs. Ils sont réels, juste pas encore activés :
+    les conserver.
+  - **Auditer le fail-open des modules désactivés** : un module absent/
+    désactivé dans `config.MODULES` fail-open aujourd'hui vers le scope
+    `client` (`checks.py`). Évaluer le fail-CLOSED comme défaut sécurisé.
+    Changement de permissions transverse → repro + audit d'impact dédiés,
+    PAS un simple flip de config.
+  - **Général** : garantir que tout le chemin permissions/sécurité est
+    solide, sans bug et propre (pas de branche morte, pas de fail-open
+    silencieux) — readiness SOC-like.
 
 ### G2 — Environnements + CI/CD
 Séparer test/démo et client/prod. Le build-health est un prérequis (pas de
