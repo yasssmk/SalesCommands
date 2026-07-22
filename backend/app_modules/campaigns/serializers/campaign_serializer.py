@@ -82,6 +82,17 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     owner_name = serializers.SerializerMethodField(read_only=True)
     primary_objective = serializers.SerializerMethodField(read_only=True)
 
+    # Attribution — owner + team and executor + team, for the card's
+    # "Name — TEAM" attribution block. Mirrors TerritoryListSerializer's
+    # get_owner / get_team ({id, full_name} for the person, {id, name} for the
+    # team). Executor is nullable (defaults to owner), so both executor fields
+    # return None when unset. The list queryset select_related's owner__team /
+    # executor__team so these never fan out into an N+1.
+    owner = serializers.SerializerMethodField(read_only=True)
+    owner_team = serializers.SerializerMethodField(read_only=True)
+    executor = serializers.SerializerMethodField(read_only=True)
+    executor_team = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Campaign
         fields = [
@@ -104,6 +115,9 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 
             # Aggregates
             'accounts_count', 'owner_name', 'primary_objective',
+
+            # Attribution (owner + team, executor + team)
+            'owner', 'owner_team', 'executor', 'executor_team',
 
             # Timestamps
             'created_at', 'updated_at',
@@ -145,6 +159,34 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         if not obj.owner:
             return None
         return f"{obj.owner.first_name or ''} {obj.owner.last_name or ''}".strip() or obj.owner.email
+
+    @staticmethod
+    def _user_summary(user):
+        """Minimal user object for attribution. Mirrors TerritoryListSerializer.get_owner."""
+        if not user:
+            return None
+        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email
+        return {'id': str(user.id), 'full_name': full_name}
+
+    @staticmethod
+    def _team_summary(user):
+        """The user's team as a minimal object. Mirrors TerritoryListSerializer.get_team."""
+        team = getattr(user, 'team', None) if user else None
+        if not team:
+            return None
+        return {'id': str(team.id), 'name': team.name}
+
+    def get_owner(self, obj):
+        return self._user_summary(obj.owner)
+
+    def get_owner_team(self, obj):
+        return self._team_summary(obj.owner)
+
+    def get_executor(self, obj):
+        return self._user_summary(obj.executor)
+
+    def get_executor_team(self, obj):
+        return self._team_summary(obj.executor)
 
     def get_primary_objective(self, obj):
         """Return primary objective as minimal object."""

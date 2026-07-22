@@ -34,8 +34,7 @@ import TerritoryListFilterPanel from 'sections/territories/TerritoryListFilterPa
 import useTerritoryListFilters from 'hooks/useTerritoryListFilters';
 
 // api
-import { useGetTerritories, TERRITORY_TYPES } from 'api/territories/territories';
-import { useGetAccounts } from 'api/admin/accounts';
+import { useGetTerritories, useGetTerritoryCounts } from 'api/territories/territories';
 
 // assets
 import PlusOutlined from '@ant-design/icons/PlusOutlined';
@@ -121,14 +120,6 @@ useEffect(() => {
 
   const PER_PAGE = 6;
 
-  // ==============================|| API DATA - ACCOUNTS COUNT ||============================== //
-
-  // Fetch total accounts count for "All Accounts" territory
-  const { accountsCount = 0, accountsLoading } = useGetAccounts({ 
-    page: 1, 
-    pageSize: 1 
-  }) || {};
-
   // ==============================|| API DATA - TERRITORIES ||============================== //
 
   const { 
@@ -158,6 +149,16 @@ useEffect(() => {
     const endIndex = startIndex + PER_PAGE;
     return filteredTerritories.slice(startIndex, endIndex);
   }, [filteredTerritories, page]);
+
+  // ==============================|| API DATA - BATCHED COUNTS ||============================== //
+
+  // One POST /territories/counts/ for just the visible page (~6 ids), not all
+  // 100 — replaces the per-card workspace N+1. Keyed on the ids inside the hook.
+  const visibleIds = useMemo(
+    () => paginatedTerritories.map((t) => t.id),
+    [paginatedTerritories]
+  );
+  const { counts, countsLoading } = useGetTerritoryCounts(visibleIds);
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -286,20 +287,6 @@ useEffect(() => {
   const allSelected = selectableCount > 0 && selectedRows.size === selectableCount;
   const someSelected = selectedRows.size > 0 && selectedRows.size < selectableCount;
 
-
-  // ==============================|| GET TERRITORY COUNT ||============================== //
-
-  const getTerritoryCount = (territory) => {
-    // For now, return accountsCount for all account-type territories
-    // Future: API will return counts per territory
-    if (territory.type === TERRITORY_TYPES.ACCOUNT) {
-      return accountsCount;
-    }
-    if (territory.type === TERRITORY_TYPES.CONTACT) {
-      return 0; // Future: contacts count
-    }
-    return 0;
-  };
 
   // ==============================|| RENDER ||============================== //
 
@@ -430,8 +417,8 @@ useEffect(() => {
               <Grid item xs={12} sm={6} lg={4}>
                 <TerritoryCard
                   territory={territory}
-                  accountsCount={getTerritoryCount(territory)}
-                  loading={accountsLoading}
+                  count={counts?.[territory.id]?.count}
+                  loading={countsLoading}
                   onEdit={handleOpenEditModal}
                   onDelete={handleOpenDeleteModal}
                   selected={selectedRows.has(territory.id)}

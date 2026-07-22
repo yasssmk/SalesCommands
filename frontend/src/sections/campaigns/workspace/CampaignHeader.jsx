@@ -46,6 +46,7 @@ import {
   CAMPAIGN_TYPE_LABELS,
   OBJECTIVE_TYPE_LABELS,
   getCampaignProgress,
+  getCampaignScheduleLine,
   startCampaign,
   pauseCampaign,
   resumeCampaign,
@@ -374,6 +375,9 @@ export default function useCampaignHeaderProps({
     FAMILY_CONFIG[campaign.campaign_type] || FAMILY_CONFIG.OUTBOUND;
   const FamilyIcon = familyConfig.Icon;
   const progress = stats?.completion_rate || getCampaignProgress(campaign);
+  // Same status→date rule as the card, off the real planned_*/actual_* fields
+  // (the header previously read start_date/end_date, which no serializer emits).
+  const schedule = getCampaignScheduleLine(campaign);
 
   // ==============================|| AVATAR + TITLE ||============================== //
 
@@ -450,15 +454,17 @@ export default function useCampaignHeaderProps({
         </Typography>
       </Stack>
     ),
-    // Dates
-    campaign.start_date && (
+    // Dates — status→date line off the real planned_*/actual_* fields
+    schedule.text && (
       <Stack key="dates" direction="row" spacing={0.75} alignItems="center">
         <CalendarOutlined
           style={{ fontSize: 14, color: theme.palette.text.secondary }}
         />
-        <Typography variant="body2" color="text.secondary">
-          {campaign.start_date}
-          {campaign.end_date ? ` → ${campaign.end_date}` : ""}
+        <Typography
+          variant="body2"
+          color={schedule.tone === "warning" ? "warning.main" : "text.secondary"}
+        >
+          {schedule.text}
         </Typography>
       </Stack>
     ),

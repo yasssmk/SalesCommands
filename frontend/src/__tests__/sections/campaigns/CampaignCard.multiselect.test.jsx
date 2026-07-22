@@ -2,8 +2,13 @@
 //
 // Corner state machine + protected-card + selection behaviour for CampaignCard.
 // Real renders only (no shared-component mocks). Hover is CSS-driven (opacity),
-// so we assert DOM presence/absence and the gtm-card-status / gtm-card-delete
-// classes — not computed opacity.
+// so we assert DOM presence/absence and the gtm-card-delete class — not computed
+// opacity.
+//
+// Since commit 5b the status badge is NO LONGER a corner occupant (status now
+// reads from the date line in the body), so the corner at rest is empty for
+// normal cards — same as the territory card. The exclusive checkbox⊕delete
+// machine and TARGETED inertness are unchanged and are what these tests pin.
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
@@ -38,14 +43,14 @@ function mk(overrides = {}) {
     status: "DRAFT",
     description: "",
     accounts_count: 3,
-    activities_total: 10,
-    activities_completed: 4,
-    objective_type: null,
-    objective_target: 0,
-    objective_current: 0,
-    start_date: null,
-    end_date: null,
-    members: [],
+    planned_start_date: "2026-08-01",
+    planned_end_date: "2026-09-01",
+    actual_start_date: null,
+    actual_end_date: null,
+    owner: { id: "u1", full_name: "Paul DUPONT" },
+    owner_team: { name: "SALES EMEA" },
+    executor: null,
+    executor_team: null,
     ...overrides,
   };
 }
@@ -53,41 +58,34 @@ function mk(overrides = {}) {
 const root = () => document.querySelector(".MuiCard-root");
 const qCheckbox = () => screen.queryByRole("checkbox");
 const qDelete = () => document.querySelector(".gtm-card-delete");
-const qStatusClass = () => document.querySelector(".gtm-card-status");
 
 describe("CampaignCard — corner state machine (non-protected)", () => {
-  it("at rest: status present (gtm-card-status), delete present, no checkbox", () => {
+  it("at rest: no corner status badge, delete present, no checkbox", () => {
     render(<CampaignCard campaign={mk()} />);
-    // Status is the rest occupant.
-    expect(screen.getByText("Draft")).toBeInTheDocument();
-    expect(qStatusClass()).toBeTruthy();
+    // Status is no longer a corner badge — it reads from the schedule line.
+    expect(document.querySelector(".gtm-card-status")).toBeNull();
+    expect(screen.queryByText("Draft")).toBeNull();
     // Delete is present in the DOM (revealed on hover via CSS).
     expect(qDelete()).toBeTruthy();
     // No checkbox at rest.
     expect(qCheckbox()).toBeNull();
   });
 
-  it("selection mode: checkbox only — status dropped, no delete (never two at once)", () => {
+  it("selection mode: checkbox only — no delete (never two at once)", () => {
     render(<CampaignCard campaign={mk()} selectionMode selected={false} />);
     expect(qCheckbox()).toBeInTheDocument();
     expect(qDelete()).toBeNull();
-    // Status is removed (not merely hidden) so the corner has a single occupant.
-    expect(screen.queryByText("Draft")).toBeNull();
-    expect(qStatusClass()).toBeNull();
   });
 });
 
 describe("CampaignCard — TARGETED is protected (inert in every state)", () => {
-  it("at rest: status present WITHOUT gtm-card-status class, never a delete", () => {
+  it("at rest: never a delete or checkbox", () => {
     render(<CampaignCard campaign={mk({ campaign_type: "TARGETED" })} />);
-    expect(screen.getByText("Draft")).toBeInTheDocument();
-    // Protected status is rendered outside the hover mechanism.
-    expect(qStatusClass()).toBeNull();
     expect(qDelete()).toBeNull();
     expect(qCheckbox()).toBeNull();
   });
 
-  it("selection mode: still no checkbox and no delete; status stays", () => {
+  it("selection mode: still no checkbox and no delete", () => {
     render(
       <CampaignCard
         campaign={mk({ campaign_type: "TARGETED" })}
@@ -97,8 +95,6 @@ describe("CampaignCard — TARGETED is protected (inert in every state)", () => 
     );
     expect(qCheckbox()).toBeNull();
     expect(qDelete()).toBeNull();
-    expect(screen.getByText("Draft")).toBeInTheDocument();
-    expect(qStatusClass()).toBeNull();
   });
 });
 
