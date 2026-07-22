@@ -81,21 +81,43 @@ def user_a2(db, client_account_a, role_individual_a):
 
 
 @pytest.fixture
-def restricted_kpi():
-    """A throwaway KPI on scope_module='teams' — the only ENABLED module whose
-    read scope is tier-restricted (individual='mine', manager='client'). Lets us
-    exercise the role-based scope bound honestly: every module the shipping KPIs
-    use is read='client' for all tiers (or disabled), so the bound never yields
-    403 for them by design — it only bites where the module's read policy
-    actually restricts the tier. Registered then unregistered per test."""
+def restricted_kpi(monkeypatch):
+    """A throwaway KPI on scope_module='sales_quotas' — a module whose registry
+    read scope is still tier-restricted (individual='mine', manager='team').
+    Every ENABLED module is read='client' for all tiers, so none of them can
+    exercise the role-based scope bound anymore (teams became client/client/
+    client in 30bc820). sales_quotas keeps a restricted read policy but is not
+    listed in config.MODULES, so check_permission would fail-open to 'client'
+    and the bound would never fire.
+
+    So we monkeypatch the enable gate — the `is_module_enabled` reference
+    check_permission actually imported (permissions.checks) — to report
+    sales_quotas enabled, and only sales_quotas; every other module delegates to
+    the real gate. The patch is monkeypatch-scoped, so it is torn down after the
+    test and NO enabled-state leaks to other tests (the config cache is never
+    mutated). With sales_quotas honoured, resolve_max_scope returns the real
+    registry scope and the endpoint's role-based bound is exercised end-to-end.
+    Registered then unregistered per test."""
+    import permissions.checks as checks
+    _real_is_module_enabled = checks.is_module_enabled
+
+    def _is_module_enabled_with_quotas(module):
+        if module == 'sales_quotas':
+            return True
+        return _real_is_module_enabled(module)
+
+    monkeypatch.setattr(checks, 'is_module_enabled', _is_module_enabled_with_quotas)
+
     from django.db.models import Count
     from end_users.models import Team
     from app_modules.bi import registry
     from app_modules.bi.registry import KPIDefinition
     from app_modules.bi.types import OutputShape
 
+    # Source is a runnable placeholder: these tests assert status/shape, never a
+    # value, and the scope bound runs before compute for the 403 cases.
     kpi = KPIDefinition(
-        key='_test_teams_count', label='Test teams count', scope_module='teams',
+        key='_test_scoped_read', label='Test scoped read', scope_module='sales_quotas',
         source=lambda: Team.objects.all(), aggregation=Count('id'),
         period_field='created_at', output_shape=OutputShape.SCALAR,
     )
@@ -171,19 +193,20 @@ def test_scalar_isolates_across_tenants(
 # =============================================================================
 @pytest.mark.django_db
 def test_individual_cannot_request_scope_beyond_tier(authed_api_a, restricted_kpi):
-    """teams read for an individual is 'mine'; requesting 'team' -> 403.
+    """sales_quotas read for an individual is 'mine'; requesting 'team' -> 403.
 
     The scope bound runs BEFORE compute, so no data is needed."""
-    resp = authed_api_a.get('/bi/kpi/_test_teams_count/?scope=team')
+    resp = authed_api_a.get('/bi/kpi/_test_scoped_read/?scope=team')
     assert resp.status_code == 403
 
 
 @pytest.mark.django_db
 def test_manager_may_request_team_scope(authed_api_manager_a, restricted_kpi):
-    """Same request as the individual case, but a manager's teams read scope is
-    'client', so the bound passes and the KPI computes (200). The 403-vs-200
-    contrast on the identical request proves the bound is role-based."""
-    resp = authed_api_manager_a.get('/bi/kpi/_test_teams_count/?scope=team&period=all')
+    """Same request as the individual case, but a manager's sales_quotas read
+    scope is 'team', so the bound passes and the KPI computes (200). The
+    403-vs-200 contrast on the identical request proves the bound is
+    role-based."""
+    resp = authed_api_manager_a.get('/bi/kpi/_test_scoped_read/?scope=team&period=all')
     assert resp.status_code == 200
     assert resp.data['data']['shape'] == 'scalar'
 
@@ -218,7 +241,7 @@ def test_batch_runs_all_with_per_item_errors(
     body = {'requests': [
         {'key': 'leads_activities_created', 'scope': 'mine', 'period': 'all'},  # ok
         {'key': 'does_not_exist'},                                              # 404 item
-        {'key': '_test_teams_count', 'scope': 'team'},                          # 403 item (individual)
+        {'key': '_test_scoped_read', 'scope': 'team'},                          # 403 item (individual)
     ]}
     resp = authed_api_a.post('/bi/kpi/batch/', body, format='json')
 
