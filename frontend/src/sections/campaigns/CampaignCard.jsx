@@ -50,7 +50,9 @@ const TARGET_PROGRESS_BY_STATUS = {
     label: (m) => `${m.remaining} left to contact`,
   },
   PAUSED: { color: "warning", fill: (m) => m.pct, label: (m) => `${m.pct}% Paused` },
-  COMPLETED: { color: "success", fill: () => 100, label: () => "100% completed" },
+  // COMPLETED shows the REAL progress, not a forced 100%: a campaign can be
+  // completed without every target contacted, and the figure must be honest.
+  COMPLETED: { color: "success", fill: (m) => m.pct, label: (m) => `${m.pct}% completed` },
   CANCELLED: { color: "error", fill: (m) => m.pct, label: () => "Cancelled" },
 };
 
@@ -144,6 +146,9 @@ export default function CampaignCard({
 
     const value = empty ? 0 : cfg.fill(model);
     const label = empty ? "No targets yet" : cfg.label(model);
+    // The %/label text carries the status colour too (not just the bar) —
+    // COMPLETED→success, PAUSED→warning, etc. The empty state stays neutral.
+    const labelColor = empty ? "text.secondary" : `${cfg.color}.main`;
 
     return (
       <Box sx={{ mb: 1.5 }}>
@@ -154,9 +159,9 @@ export default function CampaignCard({
           mb={0.5}
         >
           <Typography variant="caption" color="text.secondary">
-            Targets
+            Progress
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color={labelColor} fontWeight={500}>
             {label}
           </Typography>
         </Stack>
@@ -293,35 +298,41 @@ export default function CampaignCard({
           </Stack>
         </Box>
 
-        {/* Target-progress zone. OUTBOUND shows the per-status bar (5c
-            targets_total / targets_worked). TARGETED keeps the neutral reserved
-            placeholder untouched — no progress bar, per spec. */}
-        {isTargeted ? (
-          <Box sx={{ mb: 1.5 }}>
-            <Stack
-              direction="row"
-              justifyContent="space-between"
-              alignItems="center"
-              mb={0.5}
-            >
-              <Typography variant="caption" color="text.secondary">
-                Objective
-              </Typography>
-              <Typography variant="caption" color="text.disabled">
-                —
-              </Typography>
-            </Stack>
-            <Box
-              sx={{
-                height: 6,
-                borderRadius: 3,
-                bgcolor: "divider",
-                opacity: 0.5,
-              }}
-            />
-          </Box>
-        ) : (
-          renderTargetProgress()
+        {/* Two stacked bars — OUTBOUND only; TARGETED shows neither (no bar at
+            all, per the final decision).
+            Top: the per-status Progress bar (5c targets_total / targets_worked).
+            Bottom: the Objective bar — an EMPTY neutral placeholder that
+            reserves the row for real objective data in S8. It carries NO data
+            and must NOT reuse the progress figures (that would duplicate the
+            Progress bar). */}
+        {!isTargeted && (
+          <>
+            {renderTargetProgress()}
+
+            <Box sx={{ mb: 1.5 }}>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                mb={0.5}
+              >
+                <Typography variant="caption" color="text.secondary">
+                  Objective
+                </Typography>
+                <Typography variant="caption" color="text.disabled">
+                  —
+                </Typography>
+              </Stack>
+              <Box
+                sx={{
+                  height: 6,
+                  borderRadius: 3,
+                  bgcolor: "divider",
+                  opacity: 0.5,
+                }}
+              />
+            </Box>
+          </>
         )}
 
         {/* Meta: schedule + attribution (owner + team, executor + team) */}
