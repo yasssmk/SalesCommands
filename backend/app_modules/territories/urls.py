@@ -28,7 +28,11 @@ def get_urlpatterns():
         path('bulk-delete/', TerritoryBulkViewSet.as_view({
             'delete': 'bulk_delete'
         }), name='bulk-delete'),
-        
+
+        path('counts/', TerritoryBulkViewSet.as_view({
+            'post': 'counts'
+        }), name='counts'),
+
         # =========================================================================
         # CRUD OPERATIONS
         # =========================================================================

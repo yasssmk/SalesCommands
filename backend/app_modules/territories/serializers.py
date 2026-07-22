@@ -141,27 +141,36 @@ class TerritoryListSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
     """
     
     owner = serializers.SerializerMethodField(read_only=True)
+    team = serializers.SerializerMethodField(read_only=True)
     type_display = serializers.SerializerMethodField(read_only=True)
     filter_count = serializers.SerializerMethodField(read_only=True)
-    
+    is_in_active_campaign = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Territory
         fields = [
             # Identity
             'id', 'name', 'description',
-            
+
             # Type
             'type', 'type_display',
-            
+
             # Flags
             'is_system', 'is_default',
-            
+
             # Filters
             'filter_definition', 'filter_count',
-            
-            # Owner
-            'owner',
-            
+
+            # Owner / team
+            'owner', 'team',
+
+            # Campaign linkage
+            'is_in_active_campaign',
+
+            # Coverage snapshot (materialised on the row; not live — see model)
+            'coverage_numerator', 'coverage_denominator',
+            'coverage_period_key', 'coverage_computed_at',
+
             # Timestamps
             'created_at', 'updated_at'
         ]
@@ -179,10 +188,31 @@ class TerritoryListSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'full_name': f"{obj.owner.first_name or ''} {obj.owner.last_name or ''}".strip() or obj.owner.email
         }
     
+    def get_team(self, obj):
+        """Return the owner's team as a minimal object, or None."""
+        team = getattr(obj.owner, 'team', None) if obj.owner else None
+        if not team:
+            return None
+        return {'id': str(team.id), 'name': team.name}
+
+    def get_is_in_active_campaign(self, obj):
+        """
+        Whether the territory is targeted by an ACTIVE campaign.
+
+        Reads the ``_is_in_active_campaign`` annotation set by the list
+        queryset (a single Exists subquery for the whole page). Falls back to a
+        per-object Exists only when the annotation is absent, so a caller that
+        forgets the annotation stays correct at the cost of one extra query.
+        """
+        annotated = getattr(obj, '_is_in_active_campaign', None)
+        if annotated is not None:
+            return bool(annotated)
+        return obj.campaigns.filter(status='ACTIVE').exists()
+
     def get_type_display(self, obj):
         """Return human-readable type."""
         return obj.get_type_display() if obj.type else None
-    
+
     def get_filter_count(self, obj):
         """Return count of active filters."""
         if not obj.filter_definition:

@@ -12,7 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Exists, OuterRef
 
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
@@ -144,7 +144,19 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         
         # Optimize based on action
         if self.action == 'list':
-            queryset = queryset.select_related('owner')
+            # Campaign is imported locally to avoid a circular import at module
+            # load. is_in_active_campaign is a single Exists subquery for the
+            # whole page (no per-territory query); owner__team backs the cheap
+            # team field on the list serializer.
+            from app_modules.campaigns.models import Campaign, CampaignStatus
+
+            active_campaign = Campaign.objects.filter(
+                territories=OuterRef('pk'),
+                status=CampaignStatus.ACTIVE,
+            )
+            queryset = queryset.select_related('owner', 'owner__team').annotate(
+                _is_in_active_campaign=Exists(active_campaign),
+            )
         elif self.action == 'retrieve':
             queryset = queryset.select_related(
                 'owner',
@@ -488,104 +500,43 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         })
 
     def _count_accounts_for_territory(self, territory, request):
-        """Count accounts matching territory filters."""
+        """
+        Count accounts matching the territory's filter_definition.
+
+        Delegates to AccountFilterService — the same canonical evaluator used by
+        territory coverage — so card, coverage, and workspace counts share one
+        source. Scope keys (account_scope mine/team) resolve against the
+        territory owner, matching the coverage core rather than the requester,
+        so the count is deterministic per territory regardless of who views it.
+        """
         from app_modules.accounts.models import CompanyAccount
-        
-        queryset = CompanyAccount.objects.filter(client_id=self.get_client_id())
-        
-        if not territory.filter_definition:
-            return queryset.count()
-        
-        filters = territory.filter_definition
-        
-        # Type filter
-        if filters.get('type'):
-            type_val = filters['type']
-            if isinstance(type_val, list):
-                queryset = queryset.filter(type__in=type_val)
-            else:
-                queryset = queryset.filter(type=type_val)
-        
-        # Classification filter
-        if filters.get('classification'):
-            class_val = filters['classification']
-            if isinstance(class_val, list):
-                queryset = queryset.filter(classification__in=class_val)
-            else:
-                queryset = queryset.filter(classification=class_val)
-        
-        # Industry filter
-        if filters.get('industry'):
-            industry_val = filters['industry']
-            if isinstance(industry_val, list):
-                queryset = queryset.filter(industry__in=industry_val)
-            else:
-                queryset = queryset.filter(industry=industry_val)
-        
-        # Country filter
-        if filters.get('country'):
-            country_val = filters['country']
-            if isinstance(country_val, list):
-                queryset = queryset.filter(country__in=country_val)
-            else:
-                queryset = queryset.filter(country=country_val)
-        
-        # Account owner filter
-        if filters.get('account_owner'):
-            queryset = queryset.filter(account_owner_id=filters['account_owner'])
-        
-        # Account scope filter (mine/team)
-        if filters.get('account_scope'):
-            scope = filters['account_scope']
-            if scope == 'mine':
-                queryset = queryset.filter(account_owner=request.user)
-            elif scope == 'team':
-                if request.user.team_id:
-                    queryset = queryset.filter(account_owner__team_id=request.user.team_id)
-        
-        return queryset.count()
+        from app_modules.accounts.services.filter_service import AccountFilterService
+
+        client_id = self.get_client_id()
+        base = CompanyAccount.objects.filter(client_id=client_id)
+        accounts = AccountFilterService.apply_filters(
+            base, territory.filter_definition or {},
+            client_id=client_id, user=territory.owner,
+        )
+        return accounts.count()
 
     def _count_contacts_for_territory(self, territory, request):
-        """Count contacts matching territory filters."""
+        """
+        Count contacts matching the territory's filter_definition.
+
+        Delegates to ContactFilterService so workspace and the batched counts
+        endpoint share one evaluator. Scope keys resolve against the territory
+        owner (see _count_accounts_for_territory).
+        """
         from app_modules.contacts.models import Contact
-        
-        queryset = Contact.objects.filter(client_id=self.get_client_id())
-        
-        if not territory.filter_definition:
-            return queryset.count()
-        
-        filters = territory.filter_definition
-        
-        # Influence level filter
-        if filters.get('influence_level'):
-            level_val = filters['influence_level']
-            if isinstance(level_val, list):
-                queryset = queryset.filter(influence_level__in=level_val)
-            else:
-                queryset = queryset.filter(influence_level=level_val)
-        
-        # Standard department filter
-        if filters.get('standard_department'):
-            dept_val = filters['standard_department']
-            if isinstance(dept_val, list):
-                queryset = queryset.filter(standard_department_id__in=dept_val)
-            else:
-                queryset = queryset.filter(standard_department_id=dept_val)
-        
-        # Has buying authority filter
-        if filters.get('has_buying_authority') is not None:
-            queryset = queryset.filter(has_buying_authority=filters['has_buying_authority'])
-        
-        # Contact scope filter (mine/team) - filter by account owner
-        if filters.get('contact_scope'):
-            scope = filters['contact_scope']
-            if scope == 'mine':
-                queryset = queryset.filter(account__account_owner=request.user)
-            elif scope == 'team':
-                if request.user.team_id:
-                    queryset = queryset.filter(account__account_owner__team_id=request.user.team_id)
-        
-        return queryset.count()
+        from app_modules.contacts.services.filter_service import ContactFilterService
+
+        base = Contact.objects.filter(client_id=self.get_client_id())
+        contacts = ContactFilterService.apply_filters(
+            base, territory.filter_definition or {},
+            user=territory.owner,
+        )
+        return contacts.count()
     
     @action(detail=False, methods=['get'], url_path='choices')
     def choices(self, request):
