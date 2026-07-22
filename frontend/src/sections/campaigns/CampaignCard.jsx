@@ -10,19 +10,15 @@ import CardContent from "@mui/material/CardContent";
 import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
-import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
 // project imports
-import CampaignStatusBadge from "sections/campaigns/CampaignStatusBadge";
 import {
   CAMPAIGN_TYPE_LABELS,
-  OBJECTIVE_TYPE_LABELS,
-  getCampaignProgress,
-  getObjectiveProgress,
+  getCampaignScheduleLine,
 } from "api/campaigns/campaigns";
 
 // icons
@@ -30,6 +26,7 @@ import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import AimOutlined from "@ant-design/icons/AimOutlined";
 import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
 import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
+import UserOutlined from "@ant-design/icons/UserOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
 
 // ==============================|| CAMPAIGN CARD ||============================== //
@@ -61,12 +58,20 @@ export default function CampaignCard({
 
   const isOutbound = campaign.campaign_type === "OUTBOUND";
   const isTargeted = campaign.campaign_type === "TARGETED";
-  const activityProgress = getCampaignProgress(campaign);
-  const objectiveProgress = getObjectiveProgress(campaign);
-  const isOverdue =
-    ["ACTIVE", "PAUSED"].includes(campaign.status) &&
-    campaign.end_date &&
-    new Date(campaign.end_date) < new Date();
+
+  // Status now reads from the real date fields (planned_*/actual_*) via a
+  // status→date rule, replacing the corner status badge and the old
+  // start_date/end_date alias that no serializer emits.
+  const schedule = getCampaignScheduleLine(campaign);
+
+  // Attribution — owner + team, and executor + team only when the executor is a
+  // distinct person (executor is null when it defaults to the owner, so that
+  // line would be redundant).
+  const owner = campaign.owner;
+  const executor =
+    campaign.executor && campaign.executor.id !== campaign.owner?.id
+      ? campaign.executor
+      : null;
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -84,32 +89,6 @@ export default function CampaignCard({
   const handleSelect = (event) => {
     event.stopPropagation();
     onSelect?.(campaign.id);
-  };
-
-  // ==============================|| HELPERS ||============================== //
-
-  /**
-   * Format date range for display
-   */
-  const formatDateRange = () => {
-    if (!campaign.start_date && !campaign.end_date) return "No dates set";
-
-    const formatDate = (dateStr) => {
-      if (!dateStr) return null;
-      const date = new Date(dateStr);
-      return date.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
-    };
-
-    const start = formatDate(campaign.start_date);
-    const end = formatDate(campaign.end_date);
-
-    if (start && end) return `${start} → ${end}`;
-    if (start) return `From ${start}`;
-    return "";
   };
 
   // ==============================|| RENDER ||============================== //
@@ -132,10 +111,9 @@ export default function CampaignCard({
           borderColor: selectionMode ? "divider" : "primary.main",
           boxShadow: selectionMode ? "none" : "0 4px 12px rgba(0,0,0,0.08)",
         },
-        // Single shared mechanism: the same Card :hover state hides the status
-        // AND reveals the delete, so the two can never desynchronise. Protected
-        // (TARGETED) cards carry neither class, so their status stays visible.
-        "&:hover .gtm-card-status": { opacity: 0 },
+        // The delete reveals on hover for non-protected cards. Status is no
+        // longer a corner occupant (it now reads from the date line in the
+        // body), so the corner at rest is empty — same as the territory card.
         "&:hover .gtm-card-delete": { opacity: 1 },
         "&:active": {
           transform: selectionMode ? "none" : "scale(0.99)",
@@ -198,30 +176,6 @@ export default function CampaignCard({
             </Box>
           </Stack>
 
-          {/* Status Badge + Overdue — the top-right corner "at rest" occupant.
-              Always shown for TARGETED. For normal cards it is dropped in
-              selection mode (the checkbox takes the corner) and faded out on
-              hover via the shared .gtm-card-status rule, paired with the delete
-              reveal so the corner never shows two elements at once. */}
-          {(isTargeted || !selectionMode) && (
-            <Stack
-              className={isTargeted ? undefined : "gtm-card-status"}
-              direction="row"
-              spacing={0.5}
-              alignItems="center"
-              sx={{ transition: "opacity 0.2s ease-in-out" }}
-            >
-              <CampaignStatusBadge status={campaign.status} />
-              {isOverdue && (
-                <Chip
-                  label="Overdue"
-                  size="small"
-                  color="error"
-                  sx={{ height: 20, fontSize: "0.7rem", fontWeight: 600 }}
-                />
-              )}
-            </Stack>
-          )}
         </Stack>
 
         {/* Description */}
@@ -253,8 +207,14 @@ export default function CampaignCard({
           </Stack>
         </Box>
 
-        {/* Activity Progress */}
-        <Box sx={{ mb: 2 }}>
+        {/* Objective / progress zone — reserved neutral placeholder. The real
+            "X leads left to contact" figure needs backend data (targets_total /
+            contacted) that the payload does not carry yet, so it lands in S8
+            (S7b commit 5c). Kept present and sized for that row so the card
+            does not reflow when the data arrives — not blank, not "no objective
+            set". Mirrors the neutral empty-state caption used by
+            TeamAggregateBlock. */}
+        <Box sx={{ mb: 1.5 }}>
           <Stack
             direction="row"
             justifyContent="space-between"
@@ -262,69 +222,25 @@ export default function CampaignCard({
             mb={0.5}
           >
             <Typography variant="caption" color="text.secondary">
-              Activities
+              Objective
             </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {campaign.activities_completed}/{campaign.activities_total} (
-              {activityProgress}%)
+            <Typography variant="caption" color="text.disabled">
+              —
             </Typography>
           </Stack>
-          <LinearProgress
-            variant="determinate"
-            value={activityProgress}
+          <Box
             sx={{
               height: 6,
               borderRadius: 3,
-              bgcolor: theme.palette.grey[200],
-              "& .MuiLinearProgress-bar": {
-                borderRadius: 3,
-              },
+              bgcolor: "divider",
+              opacity: 0.5,
             }}
           />
         </Box>
 
-        {/* Objective Progress */}
-        {campaign.objective_type && (
-          <Box sx={{ mb: 1.5 }}>
-            <Stack
-              direction="row"
-              justifyContent="space-between"
-              alignItems="center"
-              mb={0.5}
-            >
-              <Typography variant="caption" color="text.secondary">
-                {OBJECTIVE_TYPE_LABELS[campaign.objective_type] ||
-                  campaign.objective_type}
-              </Typography>
-              <Typography
-                variant="caption"
-                fontWeight={600}
-                color={
-                  objectiveProgress >= 100 ? "success.main" : "text.primary"
-                }
-              >
-                {campaign.objective_current}/{campaign.objective_target}
-              </Typography>
-            </Stack>
-            <LinearProgress
-              variant="determinate"
-              value={objectiveProgress}
-              color={objectiveProgress >= 100 ? "success" : "primary"}
-              sx={{
-                height: 4,
-                borderRadius: 2,
-                bgcolor: theme.palette.grey[200],
-                "& .MuiLinearProgress-bar": {
-                  borderRadius: 2,
-                },
-              }}
-            />
-          </Box>
-        )}
-
-        {/* Meta: Dates + Sequence + Members */}
+        {/* Meta: schedule + attribution (owner + team, executor + team) */}
         <Stack spacing={0.5} mt={1.5}>
-          {/* Dates */}
+          {/* Schedule — status→date line; warning tone once the end has passed */}
           <Stack direction="row" spacing={1} alignItems="center">
             <CalendarOutlined
               style={{ fontSize: 12, color: theme.palette.text.secondary }}
@@ -332,32 +248,39 @@ export default function CampaignCard({
             <Typography
               variant="caption"
               sx={{
-                color: isOverdue ? "error.main" : "text.secondary",
-                fontWeight: isOverdue ? 500 : 400,
+                color:
+                  schedule.tone === "warning" ? "warning.main" : "text.secondary",
+                fontWeight: schedule.tone === "warning" ? 500 : 400,
               }}
             >
-              {formatDateRange()}
+              {schedule.text}
             </Typography>
           </Stack>
 
-          {/* Sequence type (prospection only) */}
-          {campaign.sequence_type && (
-            <Typography variant="caption" color="text.secondary">
-              Sequence:{" "}
-              {CAMPAIGN_TYPE_LABELS[campaign.sequence_type] ||
-                campaign.sequence_type}
-            </Typography>
+          {/* Owner attribution — "Owner: Name — TEAM" */}
+          {owner?.full_name && (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <UserOutlined
+                style={{ fontSize: 12, color: theme.palette.text.secondary }}
+              />
+              <Typography variant="caption" color="text.secondary" noWrap>
+                Owner: {owner.full_name}
+                {campaign.owner_team?.name ? ` — ${campaign.owner_team.name}` : ""}
+              </Typography>
+            </Stack>
           )}
 
-          {/* Members count */}
-          {campaign.members && campaign.members.length > 0 && (
+          {/* Executor attribution — only when a distinct executor is set */}
+          {executor?.full_name && (
             <Stack direction="row" spacing={1} alignItems="center">
               <TeamOutlined
                 style={{ fontSize: 12, color: theme.palette.text.secondary }}
               />
-              <Typography variant="caption" color="text.secondary">
-                {campaign.members.length} member
-                {campaign.members.length > 1 ? "s" : ""}
+              <Typography variant="caption" color="text.secondary" noWrap>
+                Executor: {executor.full_name}
+                {campaign.executor_team?.name
+                  ? ` — ${campaign.executor_team.name}`
+                  : ""}
               </Typography>
             </Stack>
           )}
@@ -422,16 +345,17 @@ CampaignCard.propTypes = {
     campaign_type: PropTypes.oneOf(["OUTBOUND", "TARGETED"]).isRequired,
     status: PropTypes.string.isRequired,
     description: PropTypes.string,
-    sequence_type: PropTypes.string,
-    start_date: PropTypes.string,
-    end_date: PropTypes.string,
     accounts_count: PropTypes.number,
-    activities_total: PropTypes.number,
-    activities_completed: PropTypes.number,
-    objective_type: PropTypes.string,
-    objective_target: PropTypes.number,
-    objective_current: PropTypes.number,
-    members: PropTypes.array,
+    // Real date fields (no start_date/end_date alias).
+    planned_start_date: PropTypes.string,
+    planned_end_date: PropTypes.string,
+    actual_start_date: PropTypes.string,
+    actual_end_date: PropTypes.string,
+    // Attribution.
+    owner: PropTypes.shape({ id: PropTypes.string, full_name: PropTypes.string }),
+    owner_team: PropTypes.shape({ name: PropTypes.string }),
+    executor: PropTypes.shape({ id: PropTypes.string, full_name: PropTypes.string }),
+    executor_team: PropTypes.shape({ name: PropTypes.string }),
   }).isRequired,
   onOpen: PropTypes.func,
   onDelete: PropTypes.func,

@@ -12,6 +12,7 @@ import { useAuth } from "hooks/useAuth";
 import { api } from "utils/axiosClient";
 import { tenantKey, revalidateMultiple } from "api/_swr";
 import { isValidUUID, sanitizeObject } from "utils/validators";
+import { formatDateOnly } from "config/formatters";
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -100,6 +101,56 @@ export function getObjectiveProgress(campaign) {
     100,
     Math.round((campaign.objective_current / campaign.objective_target) * 100),
   );
+}
+
+/**
+ * Build the campaign's schedule line from its REAL date fields, keyed off
+ * status. The API emits planned_start_date / planned_end_date / actual_start_date
+ * / actual_end_date (never start_date / end_date), so a status→date rule reads
+ * the right field per lifecycle stage instead of a single alias:
+ *
+ *   DRAFT           → "Starts {planned_start_date}"
+ *   ACTIVE / PAUSED → "{actual_start_date} → {planned_end_date}"
+ *                     (tone 'warning' once the planned end has passed)
+ *   COMPLETED       → "Completed the {actual_end_date}"
+ *   CANCELLED       → "Cancelled" (no date — no cancelled_at field yet)
+ *
+ * Shared by the campaign card and the workspace header so the two never drift.
+ * Mirrors the pure-helper style of getCampaignProgress above; dates are rendered
+ * through the shared formatDateOnly (config/formatters) — no bespoke formatter.
+ *
+ * @param {Object} campaign
+ * @returns {{ text: string, tone: 'default'|'warning' }}
+ */
+export function getCampaignScheduleLine(campaign) {
+  if (!campaign) return { text: "", tone: "default" };
+
+  const fmt = (d) => formatDateOnly(d, "—");
+
+  switch (campaign.status) {
+    case "DRAFT":
+      return { text: `Starts ${fmt(campaign.planned_start_date)}`, tone: "default" };
+    case "ACTIVE":
+    case "PAUSED": {
+      const start = campaign.actual_start_date || campaign.planned_start_date;
+      const end = campaign.planned_end_date;
+      // Same "end passed" convention as the card's former isOverdue check.
+      const endPassed = end && new Date(end) < new Date();
+      return {
+        text: `${fmt(start)} → ${fmt(end)}`,
+        tone: endPassed ? "warning" : "default",
+      };
+    }
+    case "COMPLETED":
+      return { text: `Completed the ${fmt(campaign.actual_end_date)}`, tone: "default" };
+    case "CANCELLED":
+      return { text: "Cancelled", tone: "default" };
+    default:
+      return {
+        text: `${fmt(campaign.planned_start_date)} → ${fmt(campaign.planned_end_date)}`,
+        tone: "default",
+      };
+  }
 }
 
 // ==============================|| ENDPOINTS ||============================== //

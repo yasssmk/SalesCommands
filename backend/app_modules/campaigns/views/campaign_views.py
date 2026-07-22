@@ -199,8 +199,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         queryset = super().get_queryset()
 
         if self.action == 'list':
+            # owner__team / executor__team join the attribution the list
+            # serializer exposes (owner + team, executor + team) — without it
+            # each card would trigger an N+1 into the team table.
             queryset = queryset.select_related(
-                'owner', 'executor',
+                'owner__team', 'executor__team',
             ).prefetch_related(
                 'territories',
                 'objectives',
@@ -239,8 +242,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 ),
             )
         else:
+            # my-campaigns and other list-style actions serialize with
+            # CampaignListSerializer too — carry the same owner/executor team
+            # joins so the attribution block never N+1s.
             queryset = queryset.select_related(
-                'owner', 'executor',
+                'owner__team', 'executor__team',
             ).prefetch_related('territories')
 
         # Apply owner scope filter (mine/team/all)

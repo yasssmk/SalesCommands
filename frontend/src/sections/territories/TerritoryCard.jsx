@@ -11,19 +11,24 @@ import CardContent from '@mui/material/CardContent';
 import Checkbox from '@mui/material/Checkbox';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
+import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import { useTheme } from '@mui/material/styles';
 
 // icons
 import BankOutlined from '@ant-design/icons/BankOutlined';
 import ContactsOutlined from '@ant-design/icons/ContactsOutlined';
-import CopyOutlined from '@ant-design/icons/CopyOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
-import ArrowRightOutlined from '@ant-design/icons/ArrowRightOutlined';
+import UserOutlined from '@ant-design/icons/UserOutlined';
+import TeamOutlined from '@ant-design/icons/TeamOutlined';
+import ClockCircleOutlined from '@ant-design/icons/ClockCircleOutlined';
 
-// api
-import { TERRITORY_TYPES, useGetTerritoryWorkspace } from 'api/territories/territories';
+// api / utils
+import { TERRITORY_TYPES } from 'api/territories/territories';
+import { goalGradient } from 'sections/home/utils/goalGradient';
+import { formatDateOnly } from 'config/formatters';
 
 // ==============================|| TERRITORY CARD ||============================== //
 
@@ -39,7 +44,7 @@ import { TERRITORY_TYPES, useGetTerritoryWorkspace } from 'api/territories/terri
  */
 export default function TerritoryCard({
   territory,
-  accountsCount = 0,
+  count = null,
   loading = false,
   onDelete,
   // Selection props
@@ -48,20 +53,32 @@ export default function TerritoryCard({
   selectionMode = false
 }) {
   const router = useRouter();
+  const theme = useTheme();
 
   const isAccountType = territory.type === TERRITORY_TYPES.ACCOUNT;
-  const isContactType = territory.type === TERRITORY_TYPES.CONTACT;
 
-  // Contact territories derive their count from the scope-aware workspace
-  // stats endpoint. Account territories keep the count passed by the list.
-  // The hook is keyed null (no fetch) for account territories.
-  const { stats: contactStats, loading: contactCountLoading } =
-    useGetTerritoryWorkspace(isContactType ? territory.id : null);
+  // Count now arrives pre-computed from the list's batched POST /territories/counts/
+  // (one round-trip for the whole visible page), so the per-card workspace N+1
+  // is gone. The backend already returns accounts vs contacts by territory type.
+  const displayCount = count ?? 0;
+  const displayLoading = loading;
 
-  const displayCount = isContactType
-    ? contactStats?.contacts_count ?? 0
-    : accountsCount;
-  const displayLoading = isContactType ? contactCountLoading : loading;
+  // Coverage snapshot (materialised on the row; may be absent until first
+  // computed). Framed as a work queue — "N to go", never "0% done" — via the
+  // shared goalGradient (framing:'queue'), the same vocab the Home block uses.
+  const hasCoverage =
+    territory.coverage_computed_at != null &&
+    territory.coverage_denominator != null;
+  const coverage = hasCoverage
+    ? goalGradient(
+        territory.coverage_numerator,
+        territory.coverage_denominator,
+        { framing: 'queue', noun: isAccountType ? 'accounts' : 'contacts' }
+      )
+    : null;
+
+  const ownerName = territory.owner?.full_name;
+  const teamName = territory.team?.name;
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -232,13 +249,30 @@ export default function TerritoryCard({
               <Typography variant="h5" fontWeight={600}>
                 {territory.name}
               </Typography>
-              <Chip 
-                label={isAccountType ? 'Accounts' : 'Contacts'} 
-                size="small" 
-                color={isAccountType ? 'primary' : 'secondary'}
-                variant="outlined"
-                sx={{ mt: 0.5, height: 20, fontSize: '0.7rem' }}
-              />
+              <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.5 }}>
+                {/* Type chip: both secondary, Account = dark (filled), Contact =
+                    light (variant="light", the template's soft variant used by
+                    the System chip below). */}
+                <Chip
+                  label={isAccountType ? 'Accounts' : 'Contacts'}
+                  size="small"
+                  color="secondary"
+                  variant={isAccountType ? 'filled' : 'light'}
+                  sx={{ height: 20, fontSize: '0.7rem' }}
+                />
+                {/* Distinct 'info' chip, only when the territory is targeted by
+                    an ACTIVE campaign. info (not primary) so it never competes
+                    with the primary.main hover-border affordance. No chip is
+                    shown for the "not in a campaign" case. */}
+                {territory.is_in_active_campaign && (
+                  <Chip
+                    label="In campaign"
+                    size="small"
+                    color="info"
+                    sx={{ height: 20, fontSize: '0.7rem' }}
+                  />
+                )}
+              </Stack>
             </Box>
           </Stack>
 
@@ -270,10 +304,64 @@ export default function TerritoryCard({
           </Typography>
         </Box>
 
+        {/* Coverage — queue-framed ("N to go"), never "0% done". Same thin bar
+            visual as the campaign card. Hidden entirely until a snapshot exists. */}
+        {coverage && (
+          <Box sx={{ mb: 2 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={0.5}>
+              <Typography variant="caption" color="text.secondary">
+                Coverage
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {coverage.headline}
+              </Typography>
+            </Stack>
+            <LinearProgress
+              variant="determinate"
+              value={coverage.pct}
+              sx={{
+                height: 6,
+                borderRadius: 3,
+                bgcolor: theme.palette.grey[200],
+                '& .MuiLinearProgress-bar': { borderRadius: 3 }
+              }}
+            />
+          </Box>
+        )}
+
         {/* Filter summary */}
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="text.secondary" component="div">
           {filterSummary()}
         </Typography>
+
+        {/* Attribution — owner + team (mirrors the campaign card). */}
+        {ownerName && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5 }}>
+            <UserOutlined style={{ fontSize: 12, color: theme.palette.text.secondary }} />
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {ownerName}
+              {teamName ? ` — ${teamName}` : ''}
+            </Typography>
+          </Stack>
+        )}
+        {!ownerName && teamName && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5 }}>
+            <TeamOutlined style={{ fontSize: 12, color: theme.palette.text.secondary }} />
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {teamName}
+            </Typography>
+          </Stack>
+        )}
+
+        {/* Created — low-key at the bottom (present for the sort, not a CTA). */}
+        {territory.created_at && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+            <ClockCircleOutlined style={{ fontSize: 12, color: theme.palette.text.disabled }} />
+            <Typography variant="caption" color="text.disabled">
+              Created {formatDateOnly(territory.created_at)}
+            </Typography>
+          </Stack>
+        )}
       </CardContent>
 
       {/* Top-right corner — exclusive state machine (non-protected cards only):
@@ -334,9 +422,16 @@ TerritoryCard.propTypes = {
     type: PropTypes.oneOf(['ACCOUNT', 'CONTACT']).isRequired,
     description: PropTypes.string,
     is_system: PropTypes.bool,
-    filter_definition: PropTypes.object
+    filter_definition: PropTypes.object,
+    is_in_active_campaign: PropTypes.bool,
+    coverage_numerator: PropTypes.number,
+    coverage_denominator: PropTypes.number,
+    coverage_computed_at: PropTypes.string,
+    owner: PropTypes.shape({ full_name: PropTypes.string }),
+    team: PropTypes.shape({ name: PropTypes.string }),
+    created_at: PropTypes.string
   }).isRequired,
-  accountsCount: PropTypes.number,
+  count: PropTypes.number,
   loading: PropTypes.bool,
   onDelete: PropTypes.func,
   // Selection props

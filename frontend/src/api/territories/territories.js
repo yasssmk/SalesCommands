@@ -37,7 +37,8 @@ const endpoints = {
   territoryWorkspace: (id) => `/territories/${id}/workspace/`,
   choices: '/territories/choices/',
   accountsCount: (id) => `/territories/${id}/accounts-count/`,
-  bulkDelete: '/territories/bulk-delete/'
+  bulkDelete: '/territories/bulk-delete/',
+  counts: '/territories/counts/'
 };
 
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
@@ -209,8 +210,56 @@ export function useGetTerritoryWorkspace(territoryId) {
 }
 
 /**
+ * GET TERRITORY COUNTS - Batched record counts for the visible page of cards.
+ *
+ * One POST /territories/counts/ returns { "<id>": {type, count} } for every
+ * id passed, killing the per-card workspace N+1 (one request per contact card).
+ * Mirrors useKpiBatch (api/bi/kpi.js): a POST batch keyed on the tenant + a
+ * JSON.stringify of the id list, with an inline fetcher. The key is stable per
+ * page because `ids` comes from the memoised paginatedTerritories slice, so it
+ * does not refetch on every render.
+ *
+ * @param {string[]} ids - Territory ids for the visible page (1..100).
+ * @returns {Object} {counts, countsLoading, countsError}
+ *   counts shape: { "<territoryId>": { type: 'ACCOUNT'|'CONTACT', count: number } }
+ */
+export function useGetTerritoryCounts(ids) {
+  const { tenantId } = useAuth();
+  const list = Array.isArray(ids) ? ids : [];
+  const sig = JSON.stringify(list);
+
+  const swrKey = useMemo(
+    () => (tenantId && list.length ? [endpoints.counts, tenantId, sig] : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tenantId, sig]
+  );
+
+  const { data, isLoading, error } = useSWR(
+    swrKey,
+    async () => {
+      const res = await api.post(endpoints.counts, { ids: list });
+      if (!res || res.success === false) {
+        throw new Error(res?.error || 'Territory counts request failed');
+      }
+      // api.post → {success, data}; body → {success, data: {<id>:{type,count}}}
+      return res.data?.data || {};
+    },
+    { revalidateOnFocus: false, revalidateOnReconnect: false, dedupingInterval: 5000 }
+  );
+
+  return useMemo(
+    () => ({
+      counts: data || {},
+      countsLoading: isLoading,
+      countsError: error
+    }),
+    [data, isLoading, error]
+  );
+}
+
+/**
  * GET TERRITORY CHOICES - Types for dropdowns
- * 
+ *
  * @returns {Object} {choices, types, choicesLoading, choicesError}
  */
 export function useGetTerritoryChoices() {
