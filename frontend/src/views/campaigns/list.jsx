@@ -37,7 +37,7 @@ import AlertCampaignBulkDelete from "sections/campaigns/AlertCampaignBulkDelete"
 import useCampaignListFilters from "hooks/useCampaignListFilters";
 
 // api
-import { useGetCampaigns, deleteCampaign } from "api/campaigns/campaigns";
+import { useGetCampaigns, deleteCampaign, CHANNEL_LABELS } from "api/campaigns/campaigns";
 import { useGetTerritories } from "api/territories/territories";
 
 // next
@@ -58,7 +58,6 @@ const STATUS_LABELS = {
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
-const CHANNEL_LABELS = { AUTO: "Auto", EMAIL_ONLY: "Email only" };
 
 // ==============================|| CAMPAIGNS LIST PAGE ||============================== //
 
