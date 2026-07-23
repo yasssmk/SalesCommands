@@ -17,7 +17,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.db.models import Count, Q, OuterRef, Subquery, Exists
+from django.db.models import (
+    Count, Q, OuterRef, Subquery, Exists,
+    Case, When, Value, IntegerField,
+)
 from django.utils import timezone
 from datetime import timedelta
 
@@ -41,6 +44,7 @@ from permissions.owner_scope import OwnerScopeMixin
 from ..models import (
     Campaign,
     CampaignType,
+    CampaignStatus,
 )
 from ..serializers import (
     CampaignListSerializer,
@@ -235,6 +239,18 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 _accounts_count=Count('campaign_accounts', distinct=True),
                 _targets_total=Coalesce(Subquery(_total_sq), 0),
                 _targets_worked=Coalesce(Subquery(_worked_sq), 0),
+                # Default list order groups by status priority (see the ordering
+                # default in config.settings). Values per CampaignStatus
+                # (constants.py:40-44); an unknown/new status sorts last (5).
+                _status_priority=Case(
+                    When(status=CampaignStatus.ACTIVE, then=Value(0)),
+                    When(status=CampaignStatus.PAUSED, then=Value(1)),
+                    When(status=CampaignStatus.DRAFT, then=Value(2)),
+                    When(status=CampaignStatus.COMPLETED, then=Value(3)),
+                    When(status=CampaignStatus.CANCELLED, then=Value(4)),
+                    default=Value(5),
+                    output_field=IntegerField(),
+                ),
             )
         elif self.action == 'retrieve':
             from app_modules.activities.models import Activity as _Activity
