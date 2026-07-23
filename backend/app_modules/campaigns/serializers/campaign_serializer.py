@@ -109,6 +109,7 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             # Type
             'campaign_type', 'campaign_type_display',
             'sequence_type', 'sequence_type_display', 'has_sequence',
+            'channel_override',
 
             # Territory
             'territory_name',
