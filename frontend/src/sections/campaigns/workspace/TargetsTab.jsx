@@ -26,6 +26,7 @@ import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import StopOutlined from "@ant-design/icons/StopOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
+import WarningFilled from "@ant-design/icons/WarningFilled";
 
 // Project
 import ReusableTable from "components/table/Table";
@@ -93,6 +94,10 @@ export default function TargetsTab({ campaignId, campaign }) {
   const [actionInProgress, setActionInProgress] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null);
   // confirmRemove: null | { ids: string[], label: string }
+  const [confirmStop, setConfirmStop] = useState(null);
+  // confirmStop: null | campaignContact — the contact awaiting Stop confirmation.
+  // Stop is irreversible from this view (Reactivate is gone; re-chasing means
+  // re-enrolling via Add Target), so it is gated behind a confirmation.
 
   const [addTargetOpen, setAddTargetOpen] = useState(false);
 
@@ -222,6 +227,12 @@ export default function TargetsTab({ campaignId, campaign }) {
     });
   }, []);
 
+  // Open the Stop confirmation for a row. The actual stop runs only from
+  // handleConfirmStop → handleStopRow (the single stopTarget caller).
+  const requestStop = useCallback((cc) => {
+    setConfirmStop(cc);
+  }, []);
+
   const handleStopRow = useCallback(
     async (cc) => {
       setActionInProgress({ type: "stop", id: cc.id });
@@ -241,6 +252,13 @@ export default function TargetsTab({ campaignId, campaign }) {
     },
     [campaignId, mutateCampaignContacts],
   );
+
+  const handleConfirmStop = useCallback(() => {
+    if (!confirmStop) return;
+    const cc = confirmStop;
+    setConfirmStop(null);
+    handleStopRow(cc);
+  }, [confirmStop, handleStopRow]);
 
   // ==============================|| BULK ACTIONS ||============================== //
 
@@ -454,7 +472,7 @@ export default function TargetsTab({ campaignId, campaign }) {
                       color="error"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleStopRow(cc);
+                        requestStop(cc);
                       }}
                       disabled={!!actionInProgress}
                     >
@@ -499,7 +517,7 @@ export default function TargetsTab({ campaignId, campaign }) {
                     color="error"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleStopRow(cc);
+                      requestStop(cc);
                     }}
                     disabled={!!actionInProgress}
                   >
@@ -657,6 +675,44 @@ export default function TargetsTab({ campaignId, campaign }) {
         onClose={() => setAddTargetOpen(false)}
         onSuccess={mutateCampaignContacts}
       />
+
+      {/* ── Confirm Stop Dialog ──
+          Stop is irreversible from this view, so it is confirmed before firing.
+          Follows the AlertCampaignDelete confirmation pattern (warning title,
+          Cancel + destructive contained action). */}
+      <Dialog
+        open={Boolean(confirmStop)}
+        onClose={() => setConfirmStop(null)}
+        maxWidth="xs"
+        fullWidth
+        aria-labelledby="confirm-stop-title"
+        aria-describedby="confirm-stop-description"
+      >
+        <DialogTitle id="confirm-stop-title">
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+            <WarningFilled style={{ fontSize: 24, color: "#faad14" }} />
+            <Typography variant="h5">Stop contact</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="confirm-stop-description">
+            Are you sure you want to remove{" "}
+            <Typography component="span" fontWeight={600} color="text.primary">
+              {confirmStop?.contact_name || "this contact"}
+              {confirmStop?.account_name ? ` — ${confirmStop.account_name}` : ""}
+            </Typography>{" "}
+            from the campaign?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button color="secondary" onClick={() => setConfirmStop(null)}>
+            Cancel
+          </Button>
+          <Button variant="contained" color="error" onClick={handleConfirmStop}>
+            Stop
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── Confirm Remove Dialog ──
       <Dialog
