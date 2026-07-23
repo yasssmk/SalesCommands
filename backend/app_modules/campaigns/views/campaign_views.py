@@ -202,7 +202,16 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
 
         queryset = super().get_queryset()
 
-        if self.action == 'list':
+        # my_campaigns serializes with CampaignListSerializer and calls
+        # filter_queryset too, so it must carry the SAME annotations as list —
+        # notably _status_priority, which the default ordering
+        # (['_status_priority', '-created_at']) orders by. Without it the
+        # OrderingFilter raised FieldError -> 400. Folding it in here also
+        # restores _accounts_count / _targets_total for its cards (the else
+        # branch had neither). The else branch keeps its own owner__team join
+        # for other list-style actions — now redundant for my_campaigns, left
+        # as-is to avoid touching those actions.
+        if self.action in ('list', 'my_campaigns'):
             # owner__team / executor__team join the attribution the list
             # serializer exposes (owner + team, executor + team) — without it
             # each card would trigger an N+1 into the team table.
