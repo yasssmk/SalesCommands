@@ -49,6 +49,17 @@ export const CAMPAIGN_TYPE_LABELS = {
   TARGETED: "Targeted Campaign",
 };
 
+// Channel strategy labels (campaign_override). Shared by the list filter chip
+// and the campaign card. NOTE: the creation wizard's review step
+// (create/StepReviewCreate.jsx) deliberately keeps its own richer AUTO copy
+// ("Auto (per contact data)") because that screen must explain the choice;
+// a list chip only needs "Auto". Do not "unify" that divergence onto this map
+// — it would degrade the creation review screen.
+export const CHANNEL_LABELS = {
+  AUTO: "Auto",
+  EMAIL_ONLY: "Email only",
+};
+
 export const MEMBER_ROLES = {
   OWNER: "OWNER",
   EXECUTOR: "EXECUTOR",
