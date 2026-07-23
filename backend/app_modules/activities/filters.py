@@ -57,6 +57,7 @@ class ActivityFilter(django_filters.FilterSet):
     # Boolean filters
     is_overdue = django_filters.BooleanFilter(method='filter_is_overdue')
     has_decision_step = django_filters.BooleanFilter(method='filter_has_decision_step')
+    active_sequence = django_filters.BooleanFilter(method='filter_active_sequence')
     
     class Meta:
         model = Activity
@@ -66,7 +67,7 @@ class ActivityFilter(django_filters.FilterSet):
             'scheduled_date', 'scheduled_date_from', 'scheduled_date_to',
             'due_date', 'due_date_from', 'due_date_to',
             'completed_at_from', 'completed_at_to',
-            'is_overdue', 'has_decision_step'
+            'is_overdue', 'has_decision_step', 'active_sequence'
         ]
     
     def filter_is_overdue(self, queryset, name, value):
@@ -103,3 +104,38 @@ class ActivityFilter(django_filters.FilterSet):
             return queryset.filter(decision_step__isnull=False)
         else:
             return queryset.filter(decision_step__isnull=True)
+
+    def filter_active_sequence(self, queryset, name, value):
+        """
+        Restrict to activities whose campaign sequence is still active.
+
+        ?active_sequence=true  → drop activities whose CampaignContact is in a
+                                 final state (COMPLETED/STOPPED); keep the
+                                 non-final ones AND activities that have no
+                                 CampaignContact at all (non-campaign activities).
+        ?active_sequence=false → no restriction (opt-in filter).
+
+        Expressed with the positive (non-final) set plus an explicit isnull
+        branch: exclude() across the nullable campaign_contact FK would silently
+        drop the NULL rows (a non-campaign activity has campaign_contact=None),
+        so that case is kept deliberately. NON_FINAL is derived from the status
+        enum minus FINAL_CONTACT_STATES — no duplicated literals.
+        """
+        if not value:
+            return queryset
+
+        from django.db.models import Q
+        from app_modules.campaigns.constants import (
+            CampaignContactStatus,
+            FINAL_CONTACT_STATES,
+        )
+
+        non_final = [
+            status
+            for status in CampaignContactStatus.values
+            if status not in FINAL_CONTACT_STATES
+        ]
+        return queryset.filter(
+            Q(campaign_contact__isnull=True)
+            | Q(campaign_contact__status__in=non_final)
+        )

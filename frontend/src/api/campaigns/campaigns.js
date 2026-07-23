@@ -235,6 +235,32 @@ const endpoints = {
     `/campaigns/contacts/${id}/resume-callback/`,
 };
 
+// ==============================|| HELPER - PLAYLIST REVALIDATION ||============================== //
+
+/**
+ * Revalidate every SWR cache the campaign playlist depends on after a target's
+ * status changes (stop, pause, resume, remove, enroll, complete an activity).
+ *
+ * revalidateMultiple treats each entry as a PREFIX, so the SHORT
+ * /module-activities/?campaign={id} prefix matches every completed-accordion key
+ * regardless of page_size / page / ordering. A specific key (e.g. one pinned to
+ * page_size=200) would NOT startsWith the hook's page_size=25 keys, which is why
+ * the completed accordion went stale after a stop. This helper is the single
+ * revalidation path; it covers the union of what those functions revalidated
+ * plus the accordion prefix, so no caller loses a key it had before.
+ */
+function revalidateCampaignPlaylist(campaignId) {
+  revalidateMultiple([
+    endpoints.campaignPlaylist(campaignId),
+    endpoints.campaignDashboard(campaignId),
+    endpoints.campaignDetail(campaignId),
+    endpoints.campaignTargeted,
+    `${endpoints.contactsByCampaign}?campaign=${campaignId}`,
+    `${endpoints.accountsByCampaign}?campaign_id=${campaignId}`,
+    `/module-activities/?campaign=${campaignId}`,
+  ]);
+}
+
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
 
 const buildUrlWithParams = (baseUrl, params = {}) => {
@@ -278,7 +304,7 @@ export function useGetCompletedActivities(campaignId, page = 1) {
 
   const url =
     campaignId && isValidUUID(campaignId)
-      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&ordering=-completed_at&page_size=25&page=${page}`
+      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&active_sequence=true&ordering=-completed_at&page_size=25&page=${page}`
       : null;
 
   const { data, isLoading, mutate } = useSWR(
@@ -1271,13 +1297,7 @@ export async function completePlaylistActivity(
   );
 
   if (result.success) {
-    revalidateMultiple([
-      endpoints.campaignPlaylist(campaignId),
-      endpoints.campaignDashboard(campaignId),
-      endpoints.campaignDetail(campaignId),
-      `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
-      `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`,
-    ]);
+    revalidateCampaignPlaylist(campaignId);
     return { success: true, data: result.data };
   }
 
@@ -1440,14 +1460,7 @@ export async function enrollTarget(campaignId, payload) {
     return { success: false, error: result.error, status: result.status || 0 };
   }
 
-  revalidateMultiple([
-    endpoints.campaignTargeted,
-    endpoints.campaignPlaylist(campaignId),
-    endpoints.campaignDashboard(campaignId),
-    endpoints.campaignDetail(campaignId),
-    `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
-    `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
-  ]);
+  revalidateCampaignPlaylist(campaignId);
 
   return { success: true, data: result.data };
 }
@@ -1472,12 +1485,7 @@ export async function removeTargets(campaignId, campaignContactIds) {
     (r) => r.status === "rejected" || !r.value?.success,
   );
 
-  revalidateMultiple([
-    endpoints.campaignPlaylist(campaignId),
-    endpoints.campaignDashboard(campaignId),
-    `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
-    `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
-  ]);
+  revalidateCampaignPlaylist(campaignId);
 
   if (failed.length > 0) {
     return {
@@ -1507,10 +1515,7 @@ export async function pauseTarget(campaignContactId, campaignId) {
   );
 
   if (result.success) {
-    revalidateMultiple([
-      endpoints.campaignPlaylist(campaignId),
-      `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
-    ]);
+    revalidateCampaignPlaylist(campaignId);
     return { success: true, data: result.data };
   }
 
@@ -1533,10 +1538,7 @@ export async function resumeTarget(campaignContactId, campaignId) {
   );
 
   if (result.success) {
-    revalidateMultiple([
-      endpoints.campaignPlaylist(campaignId),
-      `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
-    ]);
+    revalidateCampaignPlaylist(campaignId);
     return { success: true, data: result.data };
   }
 
@@ -1559,10 +1561,7 @@ export async function stopTarget(campaignContactId, campaignId) {
   );
 
   if (result.success) {
-    revalidateMultiple([
-      endpoints.campaignPlaylist(campaignId),
-      `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
-    ]);
+    revalidateCampaignPlaylist(campaignId);
     return { success: true, data: result.data };
   }
 

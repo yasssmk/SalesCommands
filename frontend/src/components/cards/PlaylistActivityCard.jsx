@@ -156,6 +156,18 @@ export default function PlaylistActivityCard({
     ? Math.max(0, MAX_CALL_ATTEMPTS - noAnswerCount)
     : null;
 
+  // Second line = ACCOUNT — CONTACT. The name comes from contacts[0]; there is
+  // no flat contact_name field. A campaign activity has exactly one contact
+  // (single campaign_contact FK), but Activity.contacts is an M2M and this card
+  // lives in components/cards/ and may be reused, so a defensive "+N" is shown
+  // rather than silently hiding extras.
+  const contactList = activity.contacts || [];
+  const firstContact = contactList[0];
+  const contactName = firstContact
+    ? `${firstContact.first_name || ""} ${firstContact.last_name || ""}`.trim()
+    : "";
+  const extraContacts = contactList.length > 1 ? contactList.length - 1 : 0;
+
   // ==============================|| STYLE HELPERS ||============================== //
 
   const getBorderColor = () => {
@@ -426,7 +438,7 @@ export default function PlaylistActivityCard({
             </Stack>
           </Stack>
 
-          {/* Row 2: Account + Contacts count */}
+          {/* Row 2: Account — Contact (name from contacts[0]; +N if several) */}
           <Stack
             direction="row"
             alignItems="center"
@@ -438,10 +450,11 @@ export default function PlaylistActivityCard({
                 {activity.account.company_name}
               </Typography>
             )}
-            {activity.contacts_count > 0 && (
-              <Typography variant="caption" color="text.disabled">
-                · {activity.contacts_count} contact
-                {activity.contacts_count > 1 ? "s" : ""}
+            {contactName && (
+              <Typography variant="body2" color="text.secondary">
+                {activity.account ? "— " : ""}
+                {contactName}
+                {extraContacts > 0 ? ` +${extraContacts}` : ""}
               </Typography>
             )}
           </Stack>
