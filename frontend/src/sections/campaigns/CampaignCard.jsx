@@ -19,6 +19,7 @@ import { useTheme } from "@mui/material/styles";
 // project imports
 import {
   CAMPAIGN_TYPE_LABELS,
+  CHANNEL_LABELS,
   getCampaignScheduleLine,
 } from "api/campaigns/campaigns";
 // Reuse the shared queue-gradient mechanic for the "X left to contact" framing —
@@ -256,16 +257,34 @@ export default function CampaignCard({
               <Typography variant="h5" fontWeight={600} noWrap>
                 {campaign.name}
               </Typography>
-              <Chip
-                label={
-                  CAMPAIGN_TYPE_LABELS[campaign.campaign_type] ||
-                  campaign.campaign_type
-                }
-                size="small"
-                color={isOutbound ? "primary" : "warning"}
-                variant="outlined"
-                sx={{ mt: 0.5, height: 20, fontSize: "0.7rem" }}
-              />
+              <Stack
+                direction="row"
+                spacing={0.5}
+                alignItems="center"
+                sx={{ mt: 0.5 }}
+              >
+                <Chip
+                  label={
+                    CAMPAIGN_TYPE_LABELS[campaign.campaign_type] ||
+                    campaign.campaign_type
+                  }
+                  size="small"
+                  color={isOutbound ? "primary" : "warning"}
+                  variant="outlined"
+                  sx={{ height: 20, fontSize: "0.7rem" }}
+                />
+                {/* Email Only channel strategy — OUTBOUND only (a TARGETED in
+                    EMAIL_ONLY shows nothing; the gate is explicit). */}
+                {isOutbound && campaign.channel_override === "EMAIL_ONLY" && (
+                  <Chip
+                    label={CHANNEL_LABELS.EMAIL_ONLY}
+                    size="small"
+                    color="info"
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: "0.7rem" }}
+                  />
+                )}
+              </Stack>
             </Box>
           </Stack>
 
@@ -446,6 +465,7 @@ CampaignCard.propTypes = {
     name: PropTypes.string.isRequired,
     campaign_type: PropTypes.oneOf(["OUTBOUND", "TARGETED"]).isRequired,
     status: PropTypes.string.isRequired,
+    channel_override: PropTypes.string,
     description: PropTypes.string,
     accounts_count: PropTypes.number,
     // Target progress (5c). Raw counts; null on non-annotated views.
