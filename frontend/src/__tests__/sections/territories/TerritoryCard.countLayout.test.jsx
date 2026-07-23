@@ -64,3 +64,31 @@ describe("TerritoryCard — big count layout", () => {
     expect(placeholder.parentElement.className).toMatch(/MuiStack-root/);
   });
 });
+
+describe("TerritoryCard — count label pluralization (n === 1)", () => {
+  it("ACCOUNT: singular at 1, plural at 0 and 2+", () => {
+    const { rerender } = render(
+      <TerritoryCard territory={mk({ type: "ACCOUNT" })} count={1} />,
+    );
+    expect(screen.getByText("account")).toBeInTheDocument();
+    expect(screen.queryByText("accounts")).toBeNull();
+
+    cleanup();
+    render(<TerritoryCard territory={mk({ type: "ACCOUNT" })} count={0} />);
+    expect(screen.getByText("accounts")).toBeInTheDocument(); // 0 stays plural
+
+    cleanup();
+    render(<TerritoryCard territory={mk({ type: "ACCOUNT" })} count={5} />);
+    expect(screen.getByText("accounts")).toBeInTheDocument();
+  });
+
+  it("CONTACT: singular at 1, plural otherwise", () => {
+    render(<TerritoryCard territory={mk({ type: "CONTACT" })} count={1} />);
+    expect(screen.getByText("contact")).toBeInTheDocument();
+    expect(screen.queryByText("contacts")).toBeNull();
+
+    cleanup();
+    render(<TerritoryCard territory={mk({ type: "CONTACT" })} count={2} />);
+    expect(screen.getByText("contacts")).toBeInTheDocument();
+  });
+});

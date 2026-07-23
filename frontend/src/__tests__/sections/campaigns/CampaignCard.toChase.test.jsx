@@ -67,7 +67,7 @@ describe("CampaignCard — big count", () => {
     expect(screen.queryByText("contacts to chase")).toBeNull();
   });
 
-  it("TARGETED with no targets reads '0 contacts to chase'", () => {
+  it("TARGETED with no targets reads '0 contacts to chase' (plural at 0)", () => {
     render(
       <CampaignCard
         campaign={mk({
@@ -80,5 +80,30 @@ describe("CampaignCard — big count", () => {
     );
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByText("contacts to chase")).toBeInTheDocument();
+  });
+
+  it("TARGETED with exactly one to chase reads '1 contact to chase' (singular)", () => {
+    render(
+      <CampaignCard
+        campaign={mk({
+          campaign_type: "TARGETED",
+          name: "One Chase",
+          targets_total: 1,
+          targets_worked: 0,
+        })}
+      />,
+    );
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("contact to chase")).toBeInTheDocument();
+    expect(screen.queryByText("contacts to chase")).toBeNull();
+  });
+
+  it("OUTBOUND with one account reads '1 account' (singular)", () => {
+    render(
+      <CampaignCard campaign={mk({ campaign_type: "OUTBOUND", accounts_count: 1 })} />,
+    );
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("account")).toBeInTheDocument();
+    expect(screen.queryByText("accounts")).toBeNull();
   });
 });

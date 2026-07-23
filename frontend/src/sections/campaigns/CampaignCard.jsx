@@ -87,6 +87,11 @@ export default function CampaignCard({
   const isOutbound = campaign.campaign_type === "OUTBOUND";
   const isTargeted = campaign.campaign_type === "TARGETED";
 
+  // Contacts still to chase (non-final) for a TARGETED card. Integers on the
+  // list payload (0 when empty); ?? 0 only defends a non-annotated detail payload.
+  const contactsToChase =
+    (campaign.targets_total ?? 0) - (campaign.targets_worked ?? 0);
+
   // Status now reads from the real date fields (planned_*/actual_*) via a
   // status→date rule, replacing the corner status badge and the old
   // start_date/end_date alias that no serializer emits.
@@ -307,20 +312,20 @@ export default function CampaignCard({
           </Typography>
         )}
 
-        {/* Big count — TARGETED shows the contacts still to chase
-            (targets_total − targets_worked, i.e. the non-final ones); OUTBOUND
-            keeps its enrolled-account count. Both target fields are integers on
-            the list payload (0 when the campaign has no targets), so no null
-            guard is needed; ?? 0 only defends a non-annotated (detail) payload. */}
+        {/* Big count — TARGETED shows the contacts still to chase; OUTBOUND
+            keeps its enrolled-account count. Labels pluralise on n === 1 (so 0
+            stays plural: "0 contacts to chase"). */}
         <Box sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} alignItems="baseline">
             <Typography variant="h2" component="div" fontWeight={600}>
-              {isTargeted
-                ? (campaign.targets_total ?? 0) - (campaign.targets_worked ?? 0)
-                : campaign.accounts_count}
+              {isTargeted ? contactsToChase : campaign.accounts_count}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {isTargeted ? "contacts to chase" : "accounts"}
+              {isTargeted
+                ? `${contactsToChase === 1 ? "contact" : "contacts"} to chase`
+                : campaign.accounts_count === 1
+                  ? "account"
+                  : "accounts"}
             </Typography>
           </Stack>
         </Box>

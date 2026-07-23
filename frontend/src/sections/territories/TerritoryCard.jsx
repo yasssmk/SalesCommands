@@ -303,7 +303,9 @@ export default function TerritoryCard({
               {displayLoading ? '...' : displayCount}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {isAccountType ? 'accounts' : 'contacts'}
+              {isAccountType
+                ? (displayCount === 1 ? 'account' : 'accounts')
+                : (displayCount === 1 ? 'contact' : 'contacts')}
             </Typography>
           </Stack>
         </Box>
