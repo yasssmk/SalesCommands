@@ -342,7 +342,11 @@ class FilterConfig:
     ])
 
     # Default orderings
-    default_campaign_ordering: List[str] = field(default_factory=lambda: ['-created_at'])
+    # Default list order: status-priority groups (ACTIVE→PAUSED→DRAFT→
+    # COMPLETED→CANCELLED via the _status_priority annotation on the list
+    # queryset), then newest-first within each group. Applied by DRF
+    # OrderingFilter (the viewset reads this — single source of truth).
+    default_campaign_ordering: List[str] = field(default_factory=lambda: ['_status_priority', '-created_at'])
     default_campaign_account_ordering: List[str] = field(default_factory=lambda: ['campaign', 'created_at'])
     default_member_ordering: List[str] = field(default_factory=lambda: ['campaign', 'role', 'added_at'])
     default_objective_ordering: List[str] = field(default_factory=lambda: ['campaign', '-is_primary', 'created_at'])
