@@ -307,14 +307,20 @@ export default function CampaignCard({
           </Typography>
         )}
 
-        {/* Accounts count */}
+        {/* Big count — TARGETED shows the contacts still to chase
+            (targets_total − targets_worked, i.e. the non-final ones); OUTBOUND
+            keeps its enrolled-account count. Both target fields are integers on
+            the list payload (0 when the campaign has no targets), so no null
+            guard is needed; ?? 0 only defends a non-annotated (detail) payload. */}
         <Box sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} alignItems="baseline">
             <Typography variant="h2" component="div" fontWeight={600}>
-              {campaign.accounts_count}
+              {isTargeted
+                ? (campaign.targets_total ?? 0) - (campaign.targets_worked ?? 0)
+                : campaign.accounts_count}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              accounts
+              {isTargeted ? "contacts to chase" : "accounts"}
             </Typography>
           </Stack>
         </Box>
