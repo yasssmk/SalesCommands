@@ -26,7 +26,6 @@ import Typography from "@mui/material/Typography";
 import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
 import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
 import StopOutlined from "@ant-design/icons/StopOutlined";
-import ReloadOutlined from "@ant-design/icons/ReloadOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 
 // Project
@@ -38,7 +37,6 @@ import {
   removeTargets,
   resumeTarget,
   stopTarget,
-  reactivateTarget,
 } from "api/campaigns/campaigns";
 
 import {
@@ -101,8 +99,9 @@ export default function TargetsTab({ campaignId, campaign }) {
 
   const isTargeted = campaign?.campaign_type === "TARGETED";
 
-  // For TARGETED: exclude only contacts with open activities (IN_PROGRESS/PENDING).
-  // COMPLETED/STOPPED contacts are re-enrollable via Reactivate.
+  // For TARGETED: exclude only contacts still being chased (non-final states).
+  // COMPLETED/STOPPED contacts stay selectable in the Add Target modal so they
+  // can be re-enrolled — enrolling a finished contact re-chases it.
   // For non-TARGETED: exclude all currently enrolled contacts.
   const enrolledContactIds = useMemo(() => {
     if (isTargeted) {
@@ -227,26 +226,6 @@ export default function TargetsTab({ campaignId, campaign }) {
         const result = await stopTarget(cc.id, campaignId);
         if (result.success) {
           displaySuccessSnackbar("Contact sequence stopped");
-          mutateCampaignContacts();
-        } else {
-          displayErrorSnackbar(result);
-        }
-      } catch (err) {
-        displayErrorSnackbar(err);
-      } finally {
-        setActionInProgress(null);
-      }
-    },
-    [campaignId, mutateCampaignContacts],
-  );
-
-  const handleReactivateRow = useCallback(
-    async (cc) => {
-      setActionInProgress({ type: "reactivate", id: cc.id });
-      try {
-        const result = await reactivateTarget(cc.id, campaignId);
-        if (result.success) {
-          displaySuccessSnackbar("Contact reactivated — new sequence started");
           mutateCampaignContacts();
         } else {
           displayErrorSnackbar(result);
@@ -437,32 +416,10 @@ export default function TargetsTab({ campaignId, campaign }) {
           // Non-TARGETED completed campaign → no actions
           if (isFinal && !isTargeted) return null;
 
-          // TARGETED: COMPLETED or STOPPED → Reactivate only
-          if (isTargeted && isFinalContact) {
-            return (
-              <Stack direction="row" spacing={0.5} justifyContent="center">
-                <Tooltip title="Reactivate — start a new sequence">
-                  <span>
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleReactivateRow(cc);
-                      }}
-                      disabled={!!actionInProgress}
-                    >
-                      {isActing && actionInProgress?.type === "reactivate" ? (
-                        <CircularProgress size={14} />
-                      ) : (
-                        <ReloadOutlined />
-                      )}
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </Stack>
-            );
-          }
+          // TARGETED finished contact (COMPLETED or STOPPED) → no actions: the
+          // chase is over. Re-chasing happens by re-enrolling the contact from
+          // the Add Target modal, not from a per-row action here.
+          if (isTargeted && isFinalContact) return null;
 
           // ON_HOLD (paused) → Resume + Stop
           if (isPaused) {
