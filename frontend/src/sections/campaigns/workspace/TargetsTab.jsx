@@ -58,6 +58,26 @@ const CONTACT_STATUS_CONFIG = {
 // NOT final: it is still being chased and stays under "In progress".
 const FINAL_CONTACT_STATUSES = ["COMPLETED", "STOPPED"];
 
+// Default row order (product decision): running sequences first, then targets
+// enrolled-but-never-started (a potential oversight — kept visible high), then
+// the deliberate waiting states, then the two terminals at the bottom (succeeded
+// before abandoned). Used only as the DEFAULT order — a user column sort wins.
+const STATUS_ORDER = [
+  "IN_PROGRESS",
+  "PENDING",
+  "CALLBACK_PENDING",
+  "ON_HOLD",
+  "COMPLETED",
+  "STOPPED",
+];
+
+// Rank of a status in STATUS_ORDER; an unknown status (enum drift) sorts last
+// rather than throwing.
+const statusRank = (status) => {
+  const i = STATUS_ORDER.indexOf(status);
+  return i === -1 ? STATUS_ORDER.length : i;
+};
+
 // Binary chasing-status filter for the Target tab. "Active" shows the contacts
 // still being chased (the 4 non-final states); "All" shows everyone — a finished
 // contact is recognised by its existing status chip, no dedicated view needed.
@@ -129,11 +149,11 @@ export default function TargetsTab({ campaignId, campaign }) {
     );
   }, []);
 
-  // ==============================|| STATUS + SEARCH FILTER ||============================== //
+  // ==============================|| STATUS + SEARCH FILTER + SORT ||============================== //
 
   const filteredContacts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return campaignContacts.filter((cc) => {
+    const rows = campaignContacts.filter((cc) => {
       // Chasing-status filter (client-side). "Active" excludes only the two
       // final states; "All" excludes nothing.
       if (
@@ -150,7 +170,43 @@ export default function TargetsTab({ campaignId, campaign }) {
       const dept = (cc.contact?.department_name || "").toLowerCase();
       return name.includes(q) || account.includes(q) || dept.includes(q);
     });
-  }, [campaignContacts, search, statusFilter]);
+
+    // The table uses manualSorting, so it renders rows in this array's order.
+    // Default: status priority (STATUS_ORDER), then contact name for a stable,
+    // predictable tiebreak. An active column-header sort takes over instead.
+    const byName = (a, b) =>
+      (a.contact_name || "").localeCompare(b.contact_name || "");
+
+    const active = sorting?.[0];
+    if (active) {
+      const valueOf = (cc) => {
+        switch (active.id) {
+          case "status":
+            return statusRank(cc.status);
+          case "contact_name":
+            return (cc.contact_name || "").toLowerCase();
+          case "department":
+            return (cc.department_name || "").toLowerCase();
+          case "account_name":
+            return (cc.account_name || "").toLowerCase();
+          default:
+            return "";
+        }
+      };
+      rows.sort((a, b) => {
+        const av = valueOf(a);
+        const bv = valueOf(b);
+        const cmp = av < bv ? -1 : av > bv ? 1 : byName(a, b);
+        return active.desc ? -cmp : cmp;
+      });
+    } else {
+      rows.sort(
+        (a, b) => statusRank(a.status) - statusRank(b.status) || byName(a, b),
+      );
+    }
+
+    return rows;
+  }, [campaignContacts, search, statusFilter, sorting]);
 
   // ==============================|| SELECTION ||============================== //
 

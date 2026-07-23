@@ -62,18 +62,20 @@ const h = vi.hoisted(() => {
     };
   }
 
-  const NON_FINAL = [
-    mk({ contact_name: "Alice InProgress", status: "IN_PROGRESS" }),
+  // Deliberately mixed input order (NOT the priority order) so the default
+  // sort has real work to do. Two PENDING contacts (Amy, Zoe) exercise the
+  // contact-name tiebreak within a status.
+  const contacts = [
     mk({ contact_name: "Bob OnHold", status: "ON_HOLD" }),
-    mk({ contact_name: "Carol Callback", status: "CALLBACK_PENDING" }),
-    mk({ contact_name: "Dave Pending", status: "PENDING" }),
-  ];
-  const FINAL = [
-    mk({ contact_name: "Eve Completed", status: "COMPLETED" }),
     mk({ contact_name: "Frank Stopped", status: "STOPPED" }),
+    mk({ contact_name: "Alice InProgress", status: "IN_PROGRESS" }),
+    mk({ contact_name: "Zoe Pending", status: "PENDING" }),
+    mk({ contact_name: "Carol Callback", status: "CALLBACK_PENDING" }),
+    mk({ contact_name: "Eve Completed", status: "COMPLETED" }),
+    mk({ contact_name: "Amy Pending", status: "PENDING" }),
   ];
 
-  return { contacts: [...NON_FINAL, ...FINAL] };
+  return { contacts };
 });
 
 vi.mock("api/campaigns/campaigns", () => ({
@@ -115,9 +117,23 @@ const NON_FINAL_NAMES = [
   "Alice InProgress",
   "Bob OnHold",
   "Carol Callback",
-  "Dave Pending",
+  "Zoe Pending",
+  "Amy Pending",
 ];
 const FINAL_NAMES = ["Eve Completed", "Frank Stopped"];
+
+// Expected default order in "All": status priority
+// (IN_PROGRESS → PENDING → CALLBACK_PENDING → ON_HOLD → COMPLETED → STOPPED),
+// then contact name within a status (Amy before Zoe among the two PENDING).
+const EXPECTED_ALL_ORDER = [
+  "Alice InProgress",
+  "Amy Pending",
+  "Zoe Pending",
+  "Carol Callback",
+  "Bob OnHold",
+  "Eve Completed",
+  "Frank Stopped",
+];
 
 const base = Palette("light", "default");
 const theme = createTheme({
@@ -144,6 +160,14 @@ function toggleTo(label) {
 
 function rowFor(name) {
   return screen.getByText(name).closest("tr");
+}
+
+// The contact name is the second cell of each body row (after the checkbox).
+function renderedContactOrder() {
+  return screen
+    .getAllByRole("row")
+    .slice(1) // drop the header row
+    .map((r) => within(r).getAllByRole("cell")[1].textContent.trim());
 }
 
 // ==============================|| TESTS ||============================== //
@@ -221,5 +245,19 @@ describe("TargetsTab — chasing-status toggle", () => {
     toggleTo("All");
     expect(within(rowFor("Eve Completed")).queryByRole("button")).toBeNull();
     expect(within(rowFor("Frank Stopped")).queryByRole("button")).toBeNull();
+  });
+
+  it("All mode: rows are ordered by status priority, then contact name", () => {
+    renderTab("TARGETED");
+    toggleTo("All");
+
+    // Input order is scrambled; output follows STATUS_ORDER with a name tiebreak.
+    expect(renderedContactOrder()).toEqual(EXPECTED_ALL_ORDER);
+
+    // The name tiebreak within a status: both PENDING, Amy before Zoe.
+    const order = renderedContactOrder();
+    expect(order.indexOf("Amy Pending")).toBeLessThan(
+      order.indexOf("Zoe Pending"),
+    );
   });
 });
