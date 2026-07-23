@@ -13,7 +13,11 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
+import FormControl from "@mui/material/FormControl";
 import IconButton from "@mui/material/IconButton";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
@@ -52,6 +56,22 @@ const CONTACT_STATUS_CONFIG = {
   STOPPED: { label: "Stopped", color: "error" },
 };
 
+// Final contact states — mirrors the backend FINAL_CONTACT_STATES frozenset
+// (campaigns/constants.py). A paused (ON_HOLD) or callback-pending contact is
+// NOT final: it is still being chased and stays under "In progress".
+const FINAL_CONTACT_STATUSES = ["COMPLETED", "STOPPED"];
+
+// Chasing-status filter for the Target tab. "In progress" (the default) shows
+// contacts still being chased; "Finished" shows completed/stopped ones; "All"
+// shows both. Applied CLIENT-SIDE: the contacts endpoint is unpaginated and the
+// full set is already in the SWR cache, so a server round-trip per toggle would
+// only add a spinner for no benefit.
+const STATUS_FILTER_OPTIONS = [
+  { value: "in_progress", label: "In progress" },
+  { value: "finished", label: "Finished" },
+  { value: "all", label: "All" },
+];
+
 // ==============================|| TARGETS TAB ||============================== //
 
 export default function TargetsTab({ campaignId, campaign }) {
@@ -70,6 +90,7 @@ export default function TargetsTab({ campaignId, campaign }) {
   // ==============================|| LOCAL STATE ||============================== //
 
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("in_progress");
   const [sorting, setSorting] = useState([]);
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [actionInProgress, setActionInProgress] = useState(null);
@@ -106,18 +127,24 @@ export default function TargetsTab({ campaignId, campaign }) {
     );
   }, []);
 
-  // ==============================|| SEARCH FILTER ||============================== //
+  // ==============================|| STATUS + SEARCH FILTER ||============================== //
 
   const filteredContacts = useMemo(() => {
-    if (!search.trim()) return campaignContacts;
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
     return campaignContacts.filter((cc) => {
+      // Chasing-status filter (client-side, see STATUS_FILTER_OPTIONS).
+      const isFinished = FINAL_CONTACT_STATUSES.includes(cc.status);
+      if (statusFilter === "in_progress" && isFinished) return false;
+      if (statusFilter === "finished" && !isFinished) return false;
+
+      // Free-text search.
+      if (!q) return true;
       const name = (cc.contact_name || "").toLowerCase();
       const account = (cc.account_name || "").toLowerCase();
       const dept = (cc.contact?.department_name || "").toLowerCase();
       return name.includes(q) || account.includes(q) || dept.includes(q);
     });
-  }, [campaignContacts, search]);
+  }, [campaignContacts, search, statusFilter]);
 
   // ==============================|| SELECTION ||============================== //
 
@@ -600,6 +627,24 @@ export default function TargetsTab({ campaignId, campaign }) {
   return (
     <Box>
       {bulkActionBar}
+
+      <Stack direction="row" sx={{ mb: 1.5 }}>
+        <FormControl size="small" sx={{ minWidth: 180 }}>
+          <InputLabel id="target-status-filter-label">Chasing status</InputLabel>
+          <Select
+            labelId="target-status-filter-label"
+            label="Chasing status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            {STATUS_FILTER_OPTIONS.map((o) => (
+              <MenuItem key={o.value} value={o.value}>
+                {o.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Stack>
 
       <ReusableTable
         data={filteredContacts}
