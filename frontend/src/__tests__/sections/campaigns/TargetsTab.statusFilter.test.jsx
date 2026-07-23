@@ -6,14 +6,17 @@
 // components); the nested Add-Target modal is stubbed because it is closed and
 // never exercised here.
 //
+// The filter is a BINARY toggle: "Active" (the 4 non-final states) / "All".
+//
 // What is pinned:
-//  1. Default "In progress" hides the two FINAL states (COMPLETED, STOPPED) and
-//     shows every non-final one — including ON_HOLD and CALLBACK_PENDING, which
-//     are chases in progress. This proves the filter excludes exactly the two
-//     final states, not "everything that isn't IN_PROGRESS".
-//  2. "Finished" shows the finals and hides the non-finals.
-//  3. "All" shows everything.
-//  4. The Reactivate icon (ant "reload") is never rendered, in any filter state.
+//  1. A TARGETED campaign defaults to "Active": the two FINAL states (COMPLETED,
+//     STOPPED) are hidden and every non-final one is shown — including ON_HOLD
+//     and CALLBACK_PENDING, which are chases in progress. This proves the filter
+//     excludes exactly the two final states, not "everything != IN_PROGRESS".
+//  2. An OUTBOUND campaign defaults to "All": the filter has no meaning in
+//     prospecting, so everyone shows (finals included) without any interaction.
+//  3. Toggling to "All" reveals everyone; back to "Active" hides the finals.
+//  4. The Reactivate icon (ant "reload") is never rendered, in either state.
 //  5. A finished row renders NO action at all (no Pause, no Stop) — the
 //     isTargeted && isFinalContact early return, proving we do not fall through
 //     to the default Pause+Stop branch.
@@ -107,8 +110,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const CAMPAIGN = { status: "ACTIVE", campaign_type: "TARGETED" };
-
 const NON_FINAL_NAMES = [
   "Alice InProgress",
   "Bob OnHold",
@@ -124,20 +125,20 @@ const theme = createTheme({
 });
 theme.components = componentsOverride(theme);
 
-function renderTab() {
+function renderTab(campaignType = "TARGETED") {
   return render(
     <ThemeProvider theme={theme}>
-      <TargetsTab campaignId="camp-1" campaign={CAMPAIGN} />
+      <TargetsTab
+        campaignId="camp-1"
+        campaign={{ status: "ACTIVE", campaign_type: campaignType }}
+      />
     </ThemeProvider>,
   );
 }
 
-// Open the MUI Select and pick an option by its visible label.
-function selectFilter(label) {
-  fireEvent.mouseDown(
-    screen.getByRole("combobox", { name: /chasing status/i }),
-  );
-  fireEvent.click(screen.getByRole("option", { name: label }));
+// Flip the binary toggle by clicking one of its two buttons.
+function toggleTo(label) {
+  fireEvent.click(screen.getByRole("button", { name: label }));
 }
 
 function rowFor(name) {
@@ -146,9 +147,15 @@ function rowFor(name) {
 
 // ==============================|| TESTS ||============================== //
 
-describe("TargetsTab — chasing-status filter", () => {
-  it("defaults to In progress: shows all non-final states, hides the two finals", () => {
-    renderTab();
+describe("TargetsTab — chasing-status toggle", () => {
+  it("TARGETED defaults to Active: shows all non-final states, hides the two finals", () => {
+    renderTab("TARGETED");
+
+    // "Active" is the selected toggle by default.
+    expect(screen.getByRole("button", { name: "Active" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     // Non-final are all visible — crucially ON_HOLD and CALLBACK_PENDING, which
     // proves only COMPLETED/STOPPED are excluded (not everything != IN_PROGRESS).
@@ -160,41 +167,48 @@ describe("TargetsTab — chasing-status filter", () => {
     );
   });
 
-  it("Finished: shows the final states, hides the non-final ones", () => {
-    renderTab();
-    selectFilter("Finished");
+  it("OUTBOUND defaults to All: shows every contact without any interaction", () => {
+    renderTab("OUTBOUND");
 
-    FINAL_NAMES.forEach((name) =>
-      expect(screen.getByText(name)).toBeInTheDocument(),
+    // "All" is the selected toggle by default for OUTBOUND.
+    expect(screen.getByRole("button", { name: "All" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
-    NON_FINAL_NAMES.forEach((name) =>
-      expect(screen.queryByText(name)).toBeNull(),
-    );
-  });
-
-  it("All: shows every contact regardless of state", () => {
-    renderTab();
-    selectFilter("All");
 
     [...NON_FINAL_NAMES, ...FINAL_NAMES].forEach((name) =>
       expect(screen.getByText(name)).toBeInTheDocument(),
     );
   });
 
-  it("never renders the Reactivate action (ant reload icon) in any filter state", () => {
-    renderTab();
-    // Default (In progress).
+  it("toggling to All reveals the finals; back to Active hides them again", () => {
+    renderTab("TARGETED");
+
+    toggleTo("All");
+    [...NON_FINAL_NAMES, ...FINAL_NAMES].forEach((name) =>
+      expect(screen.getByText(name)).toBeInTheDocument(),
+    );
+
+    toggleTo("Active");
+    FINAL_NAMES.forEach((name) =>
+      expect(screen.queryByText(name)).toBeNull(),
+    );
+    NON_FINAL_NAMES.forEach((name) =>
+      expect(screen.getByText(name)).toBeInTheDocument(),
+    );
+  });
+
+  it("never renders the Reactivate action (ant reload icon) in either state", () => {
+    renderTab("TARGETED");
+    // Default (Active).
     expect(screen.queryByRole("img", { name: "reload" })).toBeNull();
-    // Finished — the state that used to show Reactivate.
-    selectFilter("Finished");
-    expect(screen.queryByRole("img", { name: "reload" })).toBeNull();
-    // All.
-    selectFilter("All");
+    // All — the view that surfaces finished contacts, which used to show Reactivate.
+    toggleTo("All");
     expect(screen.queryByRole("img", { name: "reload" })).toBeNull();
   });
 
   it("a finished row renders NO action, while an in-progress row does", () => {
-    renderTab();
+    renderTab("TARGETED");
 
     // Non-vacuity: an in-progress row has action buttons (Pause + Stop).
     expect(
@@ -203,7 +217,7 @@ describe("TargetsTab — chasing-status filter", () => {
 
     // A finished row has zero action buttons — the isTargeted && isFinalContact
     // early return, NOT a fall-through to the default Pause+Stop branch.
-    selectFilter("All");
+    toggleTo("All");
     expect(within(rowFor("Eve Completed")).queryByRole("button")).toBeNull();
     expect(within(rowFor("Frank Stopped")).queryByRole("button")).toBeNull();
   });

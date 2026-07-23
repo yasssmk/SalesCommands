@@ -13,18 +13,17 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
-import FormControl from "@mui/material/FormControl";
 import IconButton from "@mui/material/IconButton";
-import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
 import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
 import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import StopOutlined from "@ant-design/icons/StopOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 
@@ -59,16 +58,12 @@ const CONTACT_STATUS_CONFIG = {
 // NOT final: it is still being chased and stays under "In progress".
 const FINAL_CONTACT_STATUSES = ["COMPLETED", "STOPPED"];
 
-// Chasing-status filter for the Target tab. "In progress" (the default) shows
-// contacts still being chased; "Finished" shows completed/stopped ones; "All"
-// shows both. Applied CLIENT-SIDE: the contacts endpoint is unpaginated and the
-// full set is already in the SWR cache, so a server round-trip per toggle would
-// only add a spinner for no benefit.
-const STATUS_FILTER_OPTIONS = [
-  { value: "in_progress", label: "In progress" },
-  { value: "finished", label: "Finished" },
-  { value: "all", label: "All" },
-];
+// Binary chasing-status filter for the Target tab. "Active" shows the contacts
+// still being chased (the 4 non-final states); "All" shows everyone — a finished
+// contact is recognised by its existing status chip, no dedicated view needed.
+// Applied CLIENT-SIDE: the contacts endpoint is unpaginated and the full set is
+// already in the SWR cache, so a server round-trip per toggle would only add a
+// spinner for no benefit.
 
 // ==============================|| TARGETS TAB ||============================== //
 
@@ -88,7 +83,11 @@ export default function TargetsTab({ campaignId, campaign }) {
   // ==============================|| LOCAL STATE ||============================== //
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("in_progress");
+  // Default gated on campaign type: TARGETED starts on "Active" (the chase in
+  // progress); OUTBOUND starts on "All" (the filter has no meaning in prospecting).
+  const [statusFilter, setStatusFilter] = useState(() =>
+    campaign?.campaign_type === "TARGETED" ? "active" : "all",
+  );
   const [sorting, setSorting] = useState([]);
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [actionInProgress, setActionInProgress] = useState(null);
@@ -131,10 +130,14 @@ export default function TargetsTab({ campaignId, campaign }) {
   const filteredContacts = useMemo(() => {
     const q = search.trim().toLowerCase();
     return campaignContacts.filter((cc) => {
-      // Chasing-status filter (client-side, see STATUS_FILTER_OPTIONS).
-      const isFinished = FINAL_CONTACT_STATUSES.includes(cc.status);
-      if (statusFilter === "in_progress" && isFinished) return false;
-      if (statusFilter === "finished" && !isFinished) return false;
+      // Chasing-status filter (client-side). "Active" excludes only the two
+      // final states; "All" excludes nothing.
+      if (
+        statusFilter === "active" &&
+        FINAL_CONTACT_STATUSES.includes(cc.status)
+      ) {
+        return false;
+      }
 
       // Free-text search.
       if (!q) return true;
@@ -585,22 +588,46 @@ export default function TargetsTab({ campaignId, campaign }) {
     <Box>
       {bulkActionBar}
 
-      <Stack direction="row" sx={{ mb: 1.5 }}>
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel id="target-status-filter-label">Chasing status</InputLabel>
-          <Select
-            labelId="target-status-filter-label"
-            label="Chasing status"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+      {/* Action bar — status toggle + Add Target on one aligned row. Mirrors
+          the list-view action cluster (views/campaigns/list.jsx): a
+          right-aligned Stack row holding the filter control and the primary
+          contained action. The binary toggle follows SignalsViewToggle
+          (ToggleButtonGroup, exclusive, size="small", no-empty guard). Add
+          Target is lifted out of the table here (showAddButton={false} below)
+          so it shares this row instead of the table toolbar. */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="flex-end"
+        spacing={1}
+        sx={{ mb: 1.5 }}
+      >
+        <ToggleButtonGroup
+          value={statusFilter}
+          exclusive
+          size="small"
+          onChange={(_, value) => {
+            if (value) setStatusFilter(value);
+          }}
+          aria-label="Chasing status filter"
+        >
+          <ToggleButton value="active" aria-label="Active">
+            Active
+          </ToggleButton>
+          <ToggleButton value="all" aria-label="All">
+            All
+          </ToggleButton>
+        </ToggleButtonGroup>
+
+        {!isFinal && (
+          <Button
+            variant="contained"
+            startIcon={<PlusOutlined />}
+            onClick={() => setAddTargetOpen(true)}
           >
-            {STATUS_FILTER_OPTIONS.map((o) => (
-              <MenuItem key={o.value} value={o.value}>
-                {o.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            Add Target
+          </Button>
+        )}
       </Stack>
 
       <ReusableTable
@@ -619,10 +646,8 @@ export default function TargetsTab({ campaignId, campaign }) {
             ? "This campaign has ended."
             : "Add contacts to this campaign."
         }
-        modalToggler={() => setAddTargetOpen(true)}
-        addButtonLabel="Add Target"
         enableImport={false}
-        showAddButton={!isFinal}
+        showAddButton={false}
       />
 
       <AddTargetToCampaignModal
