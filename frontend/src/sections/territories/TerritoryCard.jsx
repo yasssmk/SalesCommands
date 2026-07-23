@@ -294,14 +294,18 @@ export default function TerritoryCard({
           </Typography>
         )}
 
-        {/* Count */}
+        {/* Count — horizontal row, mirroring the campaign card's big count
+            (Stack direction="row" spacing={1} alignItems="baseline") for visual
+            homogeneity across card families. */}
         <Box sx={{ mb: 2 }}>
-          <Typography variant="h2" component="div" fontWeight={600}>
-            {displayLoading ? '...' : displayCount}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {isAccountType ? 'accounts' : 'contacts'}
-          </Typography>
+          <Stack direction="row" spacing={1} alignItems="baseline">
+            <Typography variant="h2" component="div" fontWeight={600}>
+              {displayLoading ? '...' : displayCount}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {isAccountType ? 'accounts' : 'contacts'}
+            </Typography>
+          </Stack>
         </Box>
 
         {/* Coverage — queue-framed ("N to go"), never "0% done". Same thin bar
