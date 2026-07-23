@@ -278,7 +278,7 @@ export function useGetCompletedActivities(campaignId, page = 1) {
 
   const url =
     campaignId && isValidUUID(campaignId)
-      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&ordering=-completed_at&page_size=25&page=${page}`
+      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&active_sequence=true&ordering=-completed_at&page_size=25&page=${page}`
       : null;
 
   const { data, isLoading, mutate } = useSWR(
@@ -1276,7 +1276,7 @@ export async function completePlaylistActivity(
       endpoints.campaignDashboard(campaignId),
       endpoints.campaignDetail(campaignId),
       `${endpoints.accountsByCampaign}?campaign_id=${campaignId}&page=1&page_size=50`,
-      `/module-activities/?campaign=${campaignId}&status=COMPLETED&page_size=200`,
+      `/module-activities/?campaign=${campaignId}&status=COMPLETED&active_sequence=true&page_size=200`,
     ]);
     return { success: true, data: result.data };
   }
