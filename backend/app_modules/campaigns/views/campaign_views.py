@@ -230,6 +230,8 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             # subquery returns no row (NULL) for a campaign with no contacts.
             from ..models import CampaignContact, FINAL_CONTACT_STATES
             from django.db.models.functions import Coalesce
+            from app_modules.activities.models import Activity as _Activity
+            from app_modules.activities.constants import ActivityStatus as _AS
 
             _contacts = CampaignContact.objects.filter(
                 campaign_account__campaign=OuterRef('pk'),
@@ -238,6 +240,51 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             _worked_sq = _contacts.annotate(
                 c=Count('pk', filter=Q(status__in=FINAL_CONTACT_STATES)),
             ).values('c')[:1]
+
+            # "N activities to do today" — the SAME number the rep sees on the
+            # playlist's "To do today" chip (CampaignPlaylistTab.todayActivities)
+            # and get_playlist's today bucket. Card and chip must never disagree,
+            # so the rule below reuses the chip's criterion verbatim. An Activity
+            # counts iff:
+            #   - status = PLANNED (ON_HOLD is bucketed separately, never counts),
+            #   - date-eligible: scheduled_date IS NULL OR <= today (overdue ARE
+            #     included — the max(scheduled_date, today) clamp is display-only),
+            #   - first-planned for its contact: campaign_contact IS NULL, OR a
+            #     callback, OR sequence_position IS NULL, OR no earlier PLANNED
+            #     non-callback step of the same contact exists. That last clause
+            #     is the complement of "superseded", expressed as ~Exists —
+            #     mirroring only_next_pending_campaign_steps (todo_rules.py).
+            # Campaign-wide (executor=None), matching the playlist's default view.
+            # Isolated correlated subquery (same shape as _targets_total): it
+            # filters Activity by campaign=OuterRef('pk') and never joins
+            # campaign_accounts, so it neither multiplies rows nor skews
+            # _accounts_count.
+            _today = timezone.now().date()
+            _earlier_pending_step = _Activity.objects.filter(
+                campaign_contact_id=OuterRef('campaign_contact_id'),
+                status=_AS.PLANNED,
+                is_callback_followup=False,
+                sequence_position__lt=OuterRef('sequence_position'),
+            )
+            _today_acts_sq = (
+                _Activity.objects.filter(
+                    campaign=OuterRef('pk'),
+                    status=_AS.PLANNED,
+                )
+                .filter(
+                    Q(scheduled_date__isnull=True) | Q(scheduled_date__lte=_today)
+                )
+                .filter(
+                    Q(campaign_contact__isnull=True)
+                    | Q(is_callback_followup=True)
+                    | Q(sequence_position__isnull=True)
+                    | ~Exists(_earlier_pending_step)
+                )
+                .order_by()
+                .values('campaign')
+                .annotate(c=Count('pk'))
+                .values('c')[:1]
+            )
 
             queryset = queryset.select_related(
                 'owner__team', 'executor__team',
@@ -248,6 +295,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 _accounts_count=Count('campaign_accounts', distinct=True),
                 _targets_total=Coalesce(Subquery(_total_sq), 0),
                 _targets_worked=Coalesce(Subquery(_worked_sq), 0),
+                _activities_today=Coalesce(Subquery(_today_acts_sq), 0),
                 # Default list order groups by status priority (see the ordering
                 # default in config.settings). Values per CampaignStatus
                 # (constants.py:40-44); an unknown/new status sorts last (5).
