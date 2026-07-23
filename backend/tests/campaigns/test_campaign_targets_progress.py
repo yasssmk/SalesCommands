@@ -16,7 +16,10 @@ accounts×contacts LEFT JOIN would multiply rows and the counts would be wrong.
 Mirrors test_campaign_list_attribution.py (same URL + row-unwrap helpers).
 """
 
+from datetime import timedelta
+
 import pytest
+from django.utils import timezone
 
 from tests.signals.conftest import (  # noqa: F401 — tenant-B fixtures for isolation
     tenant_b_id,
@@ -72,8 +75,18 @@ def _mk_account(client_account, user, name):
 
 
 def _mk_campaign(client_account, user, name):
+    # Mirror the conftest `campaign` fixture (tests/campaigns/conftest.py:49-70):
+    # planned_start_date / planned_end_date are NOT NULL on Campaign, so they
+    # must be supplied here too (the fixture-built tenant-A campaign has them).
     from app_modules.campaigns.models import Campaign
-    c = Campaign(name=name, campaign_type=CampaignType.OUTBOUND, owner=user)
+    today = timezone.now().date()
+    c = Campaign(
+        name=name,
+        campaign_type=CampaignType.OUTBOUND,
+        owner=user,
+        planned_start_date=today,
+        planned_end_date=today + timedelta(days=30),
+    )
     c.save(user=user, client_id=client_account.id)
     return c
 
