@@ -10,6 +10,7 @@ import CardContent from "@mui/material/CardContent";
 import Checkbox from "@mui/material/Checkbox";
 import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
+import LinearProgress from "@mui/material/LinearProgress";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
@@ -20,6 +21,11 @@ import {
   CAMPAIGN_TYPE_LABELS,
   getCampaignScheduleLine,
 } from "api/campaigns/campaigns";
+// Reuse the shared queue-gradient mechanic for the "X left to contact" framing —
+// the same pure helper queueGradient wraps. Imported directly (not via
+// ProgressBlock) so the card does not pull Home's React module graph into its
+// bundle; no reinvented remaining calc.
+import { goalGradient } from "sections/home/utils/goalGradient";
 
 // icons
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
@@ -28,6 +34,27 @@ import ThunderboltOutlined from "@ant-design/icons/ThunderboltOutlined";
 import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import UserOutlined from "@ant-design/icons/UserOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
+
+// ==============================|| TARGET PROGRESS — PER STATUS ||============================== //
+
+// Per-status presentation of the OUTBOUND target-progress bar. A config map,
+// not scattered conditionals: each entry gives the bar `color` and how `fill`
+// (0-100) and `label` derive from the computed model { pct, remaining }.
+// The total===0 ("No targets yet") and null (no bar) cases are handled BEFORE
+// this map, so entries here only run when there are targets to show.
+const TARGET_PROGRESS_BY_STATUS = {
+  DRAFT: { color: "secondary", fill: () => 0, label: () => "Drafted" },
+  ACTIVE: {
+    color: "primary",
+    fill: (m) => m.pct,
+    label: (m) => `${m.remaining} left to contact`,
+  },
+  PAUSED: { color: "warning", fill: (m) => m.pct, label: (m) => `${m.pct}% Paused` },
+  // COMPLETED shows the REAL progress, not a forced 100%: a campaign can be
+  // completed without every target contacted, and the figure must be honest.
+  COMPLETED: { color: "success", fill: (m) => m.pct, label: (m) => `${m.pct}% completed` },
+  CANCELLED: { color: "error", fill: (m) => m.pct, label: () => "Cancelled" },
+};
 
 // ==============================|| CAMPAIGN CARD ||============================== //
 
@@ -91,6 +118,70 @@ export default function CampaignCard({
     onSelect?.(campaign.id);
   };
 
+  // ==============================|| TARGET PROGRESS BAR (OUTBOUND) ||============================== //
+
+  // Raw counts from the 5c payload (targets_total / targets_worked). Called only
+  // for non-TARGETED cards (the JSX gates on isTargeted). Order matters:
+  //   - total == null/undefined → not annotated (e.g. detail view) → no bar.
+  //   - total === 0 → "No targets yet", no fill — checked BEFORE the status map.
+  //   - otherwise → per-status color/fill/label from TARGET_PROGRESS_BY_STATUS,
+  //     with pct/remaining from the queue gradient (noun 'contacts').
+  const renderTargetProgress = () => {
+    const total = campaign.targets_total;
+    if (total == null) return null; // null ≠ 0: render nothing
+
+    const cfg = TARGET_PROGRESS_BY_STATUS[campaign.status];
+    if (!cfg) return null;
+
+    const empty = total === 0;
+    const g = empty
+      ? null
+      : goalGradient(campaign.targets_worked ?? 0, total, {
+          framing: "queue",
+          noun: "contacts",
+        });
+    const model = g
+      ? { pct: g.pct, remaining: g.remaining }
+      : { pct: 0, remaining: 0 };
+
+    const value = empty ? 0 : cfg.fill(model);
+    const label = empty ? "No targets yet" : cfg.label(model);
+    // The %/label text carries the status colour too (not just the bar) —
+    // COMPLETED→success, PAUSED→warning, etc. The empty state stays neutral.
+    const labelColor = empty ? "text.secondary" : `${cfg.color}.main`;
+
+    return (
+      <Box sx={{ mb: 1.5 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          mb={0.5}
+        >
+          <Typography variant="caption" color="text.secondary">
+            Progress
+          </Typography>
+          <Typography variant="caption" color={labelColor} fontWeight={500}>
+            {label}
+          </Typography>
+        </Stack>
+        {/* Mirrors TerritoryCard's coverage bar geometry (height 6 / radius 3 /
+            grey track); color is the per-status palette key. */}
+        <LinearProgress
+          variant="determinate"
+          value={value}
+          color={cfg.color}
+          sx={{
+            height: 6,
+            borderRadius: 3,
+            bgcolor: theme.palette.grey[200],
+            "& .MuiLinearProgress-bar": { borderRadius: 3 },
+          }}
+        />
+      </Box>
+    );
+  };
+
   // ==============================|| RENDER ||============================== //
 
   return (
@@ -120,7 +211,9 @@ export default function CampaignCard({
         },
       }}
     >
-      <CardContent sx={{ flexGrow: 1 }}>
+      <CardContent
+        sx={{ flexGrow: 1, display: "flex", flexDirection: "column" }}
+      >
         {/* Header: Icon + Name + Status */}
         <Stack
           direction="row"
@@ -207,39 +300,48 @@ export default function CampaignCard({
           </Stack>
         </Box>
 
-        {/* Objective / progress zone — reserved neutral placeholder. The real
-            "X leads left to contact" figure needs backend data (targets_total /
-            contacted) that the payload does not carry yet, so it lands in S8
-            (S7b commit 5c). Kept present and sized for that row so the card
-            does not reflow when the data arrives — not blank, not "no objective
-            set". Mirrors the neutral empty-state caption used by
-            TeamAggregateBlock. */}
-        <Box sx={{ mb: 1.5 }}>
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-            mb={0.5}
-          >
-            <Typography variant="caption" color="text.secondary">
-              Objective
-            </Typography>
-            <Typography variant="caption" color="text.disabled">
-              —
-            </Typography>
-          </Stack>
-          <Box
-            sx={{
-              height: 6,
-              borderRadius: 3,
-              bgcolor: "divider",
-              opacity: 0.5,
-            }}
-          />
-        </Box>
+        {/* Two stacked bars — OUTBOUND only; TARGETED shows neither (no bar at
+            all, per the final decision).
+            Top: the per-status Progress bar (5c targets_total / targets_worked).
+            Bottom: the Objective bar — an EMPTY neutral placeholder that
+            reserves the row for real objective data in S8. It carries NO data
+            and must NOT reuse the progress figures (that would duplicate the
+            Progress bar). */}
+        {!isTargeted && (
+          <>
+            {renderTargetProgress()}
 
-        {/* Meta: schedule + attribution (owner + team, executor + team) */}
-        <Stack spacing={0.5} mt={1.5}>
+            <Box sx={{ mb: 1.5 }}>
+              <Stack
+                direction="row"
+                justifyContent="space-between"
+                alignItems="center"
+                mb={0.5}
+              >
+                <Typography variant="caption" color="text.secondary">
+                  Objective
+                </Typography>
+                <Typography variant="caption" color="text.disabled">
+                  —
+                </Typography>
+              </Stack>
+              <Box
+                sx={{
+                  height: 6,
+                  borderRadius: 3,
+                  bgcolor: "divider",
+                  opacity: 0.5,
+                }}
+              />
+            </Box>
+          </>
+        )}
+
+        {/* Meta: schedule + attribution (owner + team, executor + team).
+            Pinned to the bottom (mt:auto in the flex-column CardContent) so the
+            footer aligns across cards whatever the middle height — OUTBOUND
+            (two bars) and TARGETED (no bars) land on the same line. */}
+        <Stack spacing={0.5} sx={{ mt: "auto", pt: 1.5 }}>
           {/* Schedule — status→date line; warning tone once the end has passed */}
           <Stack direction="row" spacing={1} alignItems="center">
             <CalendarOutlined
@@ -346,6 +448,9 @@ CampaignCard.propTypes = {
     status: PropTypes.string.isRequired,
     description: PropTypes.string,
     accounts_count: PropTypes.number,
+    // Target progress (5c). Raw counts; null on non-annotated views.
+    targets_total: PropTypes.number,
+    targets_worked: PropTypes.number,
     // Real date fields (no start_date/end_date alias).
     planned_start_date: PropTypes.string,
     planned_end_date: PropTypes.string,

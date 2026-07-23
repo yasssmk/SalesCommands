@@ -82,6 +82,13 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     owner_name = serializers.SerializerMethodField(read_only=True)
     primary_objective = serializers.SerializerMethodField(read_only=True)
 
+    # Target progress — RAW counts (not a %), annotated on the list queryset via
+    # separate subqueries. The card derives both modes from these: ACTIVE shows
+    # "total - worked left to contact", the other statuses show worked/total as
+    # a %. worked = targets in a final state (COMPLETED/STOPPED).
+    targets_total = serializers.SerializerMethodField(read_only=True)
+    targets_worked = serializers.SerializerMethodField(read_only=True)
+
     # Attribution — owner + team and executor + team, for the card's
     # "Name — TEAM" attribution block. Mirrors TerritoryListSerializer's
     # get_owner / get_team ({id, full_name} for the person, {id, name} for the
@@ -115,6 +122,7 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 
             # Aggregates
             'accounts_count', 'owner_name', 'primary_objective',
+            'targets_total', 'targets_worked',
 
             # Attribution (owner + team, executor + team)
             'owner', 'owner_team', 'executor', 'executor_team',
@@ -154,6 +162,23 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         if hasattr(obj, '_accounts_count'):
             return obj._accounts_count
         return obj.campaign_accounts.count()
+
+    def get_targets_total(self, obj):
+        """Total enrolled targets (CampaignContact rows).
+
+        Reads the _targets_total annotation set on the list queryset. Falls back
+        to None — NEVER a property or a per-row count — so a view that does not
+        annotate it (e.g. detail) can never reintroduce an N+1 across the page.
+        Mirrors the annotation guard of get_accounts_count (annotation only).
+        """
+        return obj._targets_total if hasattr(obj, '_targets_total') else None
+
+    def get_targets_worked(self, obj):
+        """Targets in a final state (COMPLETED / STOPPED) = worked.
+
+        Reads the _targets_worked annotation; None when unannotated (no N+1).
+        """
+        return obj._targets_worked if hasattr(obj, '_targets_worked') else None
 
     def get_owner_name(self, obj):
         if not obj.owner:
