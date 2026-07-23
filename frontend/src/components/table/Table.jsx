@@ -135,6 +135,11 @@ function ReusableTable({
   showAddButton = true,
   filterConfig = null,
 
+  // Optional extra toolbar control(s), rendered at the start of the action
+  // cluster (left of the Add button). Omitted -> nothing rendered, so existing
+  // callers are unaffected. Same opt-in pattern as advancedFilterPanel.
+  toolbarActions = null,
+
   // Advanced Filter Panel props
   advancedFilterPanel = null,
   advancedFilters = [],
@@ -463,6 +468,7 @@ function ReusableTable({
               dropped accessorFn columns), was single-column + ascending-only,
               and was a strict subset of the headers — an inferior duplicate. */}
           <Stack direction="row" spacing={2} alignItems="center">
+            {toolbarActions}
             {showAddButton &&
               (matchDownSM ? (
                 <Tooltip title={addButtonTooltip}>
@@ -719,6 +725,7 @@ ReusableTable.propTypes = {
   enableImport: PropTypes.bool,
   showAddButton: PropTypes.bool,
   filterConfig: PropTypes.object,
+  toolbarActions: PropTypes.node,
   // Advanced Filter Panel
   advancedFilterPanel: PropTypes.node,
   advancedFilters: PropTypes.arrayOf(

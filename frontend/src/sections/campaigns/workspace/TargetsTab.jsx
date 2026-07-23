@@ -23,7 +23,6 @@ import Typography from "@mui/material/Typography";
 // Icons
 import PauseCircleOutlined from "@ant-design/icons/PauseCircleOutlined";
 import PlayCircleOutlined from "@ant-design/icons/PlayCircleOutlined";
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import StopOutlined from "@ant-design/icons/StopOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import WarningFilled from "@ant-design/icons/WarningFilled";
@@ -606,48 +605,6 @@ export default function TargetsTab({ campaignId, campaign }) {
     <Box>
       {bulkActionBar}
 
-      {/* Action bar — status toggle + Add Target on one aligned row. Mirrors
-          the list-view action cluster (views/campaigns/list.jsx): a
-          right-aligned Stack row holding the filter control and the primary
-          contained action. The binary toggle follows SignalsViewToggle
-          (ToggleButtonGroup, exclusive, size="small", no-empty guard). Add
-          Target is lifted out of the table here (showAddButton={false} below)
-          so it shares this row instead of the table toolbar. */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="flex-end"
-        spacing={1}
-        sx={{ mb: 1.5 }}
-      >
-        <ToggleButtonGroup
-          value={statusFilter}
-          exclusive
-          size="small"
-          onChange={(_, value) => {
-            if (value) setStatusFilter(value);
-          }}
-          aria-label="Chasing status filter"
-        >
-          <ToggleButton value="active" aria-label="Active">
-            Active
-          </ToggleButton>
-          <ToggleButton value="all" aria-label="All">
-            All
-          </ToggleButton>
-        </ToggleButtonGroup>
-
-        {!isFinal && (
-          <Button
-            variant="contained"
-            startIcon={<PlusOutlined />}
-            onClick={() => setAddTargetOpen(true)}
-          >
-            Add Target
-          </Button>
-        )}
-      </Stack>
-
       <ReusableTable
         data={filteredContacts}
         columns={columns}
@@ -664,8 +621,31 @@ export default function TargetsTab({ campaignId, campaign }) {
             ? "This campaign has ended."
             : "Add contacts to this campaign."
         }
+        modalToggler={() => setAddTargetOpen(true)}
+        addButtonLabel="Add Target"
         enableImport={false}
-        showAddButton={false}
+        showAddButton={!isFinal}
+        // Chasing-status toggle rendered in the table toolbar, left of Add
+        // Target. Binary toggle follows SignalsViewToggle (ToggleButtonGroup,
+        // exclusive, size="small", no-empty guard).
+        toolbarActions={
+          <ToggleButtonGroup
+            value={statusFilter}
+            exclusive
+            size="small"
+            onChange={(_, value) => {
+              if (value) setStatusFilter(value);
+            }}
+            aria-label="Chasing status filter"
+          >
+            <ToggleButton value="active" aria-label="Active">
+              Active
+            </ToggleButton>
+            <ToggleButton value="all" aria-label="All">
+              All
+            </ToggleButton>
+          </ToggleButtonGroup>
+        }
       />
 
       <AddTargetToCampaignModal

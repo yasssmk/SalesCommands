@@ -4,7 +4,8 @@
 // action. Real render of TargetsTab through the real ReusableTable — only the
 // data hook and the snackbar util are mocked (data sources, not shared
 // components); the nested Add-Target modal is stubbed because it is closed and
-// never exercised here.
+// never exercised here. The toggle lives in the table toolbar (passed via the
+// ReusableTable toolbarActions slot); Add Target is the table's own button.
 //
 // The filter is a BINARY toggle: "Active" (the 4 non-final states) / "All".
 //
