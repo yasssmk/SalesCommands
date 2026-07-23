@@ -76,7 +76,6 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         'mark_stopped':     {'crud': 'update', 'scope': 'mine'},
         'pause':            {'crud': 'update', 'scope': 'mine'},
         'resume':           {'crud': 'update', 'scope': 'mine'},
-        'reactivate':       {'crud': 'update', 'scope': 'mine'},
     }
 
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
@@ -476,86 +475,6 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             },
         })
     
-    @action(detail=True, methods=['post'], url_path='reactivate')
-    @transaction.atomic
-    def reactivate(self, request, pk=None):
-        """
-        Reactivate a COMPLETED or STOPPED contact for a new sequence cycle.
-        Only valid for TARGETED campaigns.
-
-        POST /campaigns/contacts/{id}/reactivate/
-
-        Resets activities_generated=False so a new sequence can be generated.
-        The caller (frontend) should follow up with enroll-target to generate
-        new activities — or this endpoint can trigger generation directly.
-        """
-        from django.utils import timezone
-        from app_modules.activities.models import Activity
-        from app_modules.activities.constants import ActivityStatus
-        from ..constants import FINAL_CONTACT_STATES, CampaignType
-
-        instance = self.get_object()
-        client_id = self.get_client_id()
-
-        # Guard: only TARGETED campaigns support re-enrollment
-        campaign = instance.campaign_account.campaign
-        if campaign.campaign_type != CampaignType.TARGETED:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(
-                    field='reactivate (only allowed on TARGETED campaigns)'
-                )
-            )
-
-        # Guard: contact must be in a final state
-        if instance.status not in FINAL_CONTACT_STATES:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(
-                    field=f'reactivate (contact status is {instance.status}, expected COMPLETED or STOPPED)'
-                )
-            )
-
-        # Reactivate the contact (resets status + activities_generated)
-        instance.reactivate(user=request.user)
-
-        # Generate new sequence immediately
-        from ..services.campaign_execution_service import CampaignExecutionService
-        exec_service = CampaignExecutionService(
-            user=request.user,
-            client_id=client_id,
-        )
-        activities_created = exec_service.generate_activities_for_contact(
-            campaign,
-            instance.campaign_account,
-            instance.contact,
-        )
-
-        audit_log(
-            event='campaign_contact_reactivated',
-            action='update',
-            actor_id=str(request.user.id),
-            client_id=str(client_id),
-            target_type='campaign_contact',
-            target_id=str(instance.id),
-            outcome='success',
-            extra={'activities_created': activities_created},
-        )
-
-        logger.info("campaign_contact_reactivated", extra={
-            'campaign_contact_id': str(instance.id),
-            'activities_created': activities_created,
-        })
-
-        self._invalidate_caches(client_id)
-        output = CampaignContactDetailSerializer(instance, context={'request': request})
-
-        return Response({
-            'success': True,
-            'data': {
-                'campaign_contact': output.data,
-                'activities_created': activities_created,
-            },
-        })
-
     # ==========================================================================
     # PRIVATE HELPERS
     # ==========================================================================

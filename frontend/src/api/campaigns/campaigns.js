@@ -221,7 +221,6 @@ const endpoints = {
   campaignContactPause: (id) => `/campaigns/contacts/${id}/pause/`,
   campaignContactResume: (id) => `/campaigns/contacts/${id}/resume/`,
   campaignContactStop: (id) => `/campaigns/contacts/${id}/mark-stopped/`,
-  campaignContactReactivate: (id) => `/campaigns/contacts/${id}/reactivate/`,
 
   // Campaign contacts — list by campaign
   contactsByCampaign: "/campaigns/contacts/",
@@ -1562,34 +1561,6 @@ export async function stopTarget(campaignContactId, campaignId) {
   if (result.success) {
     revalidateMultiple([
       endpoints.campaignPlaylist(campaignId),
-      `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
-    ]);
-    return { success: true, data: result.data };
-  }
-
-  return { success: false, error: result.error, status: result.status || 0 };
-}
-
-/**
- * REACTIVATE TARGET — reset a COMPLETED/STOPPED contact for a new sequence.
- * Only valid for TARGETED campaigns.
- *
- * @param {string} campaignContactId - UUID of CampaignContact
- * @param {string} campaignId - For cache revalidation
- */
-export async function reactivateTarget(campaignContactId, campaignId) {
-  if (!campaignContactId || !isValidUUID(campaignContactId)) {
-    return { success: false, error: "Invalid contact ID format", status: 400 };
-  }
-
-  const result = await api.post(
-    endpoints.campaignContactReactivate(campaignContactId),
-  );
-
-  if (result.success) {
-    revalidateMultiple([
-      endpoints.campaignPlaylist(campaignId),
-      endpoints.campaignDashboard(campaignId),
       `${endpoints.contactsByCampaign}?campaign=${campaignId}&page_size=200`,
     ]);
     return { success: true, data: result.data };
