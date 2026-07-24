@@ -26,6 +26,8 @@ export default function TeamCampaignsBlock({ result = null, loading = false }) {
       loading={loading}
       emptyText="No active campaigns."
       globalNote={GLOBAL_NOTE}
+      seeAllHref="/campaigns?status=ACTIVE"
+      testid="team-progress-zone-campaigns"
     />
   );
 }

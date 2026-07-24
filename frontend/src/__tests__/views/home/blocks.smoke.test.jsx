@@ -142,10 +142,17 @@ describe('TeamCampaignsBlock — the manager campaign aggregate', () => {
     expect(screen.getByText('Shared campaigns count once')).toBeInTheDocument();
   });
 
-  it('has no "See detail" affordance (the dedicated view does not exist yet)', () => {
+  it('has a permanent "See all" footer but NO per-team drill-down (rows are not links)', () => {
     render(<TeamCampaignsBlock result={result} loading={false} />);
+    // "See all" now leads to the ACTIVE-filtered campaigns list (owner_scope=team
+    // resolved by the manager's tier default).
+    expect(screen.getByRole('link', { name: /see all/i })).toHaveAttribute('href', '/campaigns?status=ACTIVE');
+    // Still no per-entity "See detail", and the rows themselves never navigate —
+    // a row is an aggregated team, not an object with a workspace.
     expect(screen.queryByText(/see detail/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText('All teams').closest('a')).toBeNull();
+    expect(screen.getByText('Alpha').closest('a')).toBeNull();
+    expect(screen.getByText('Gamma').closest('a')).toBeNull();
   });
 
   it('renders the card with an empty state (NOT nothing) when there are no team campaign rows', () => {
@@ -202,10 +209,13 @@ describe('TeamTerritoriesBlock — the manager territory aggregate', () => {
     expect(screen.queryByText(/shared/i)).not.toBeInTheDocument();
   });
 
-  it('has no "See detail" affordance either', () => {
+  it('has a permanent "See all" footer but NO per-team drill-down (rows are not links)', () => {
     render(<TeamTerritoriesBlock result={result} loading={false} />);
+    expect(screen.getByRole('link', { name: /see all/i })).toHaveAttribute('href', '/territories');
     expect(screen.queryByText(/see detail/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText('All teams').closest('a')).toBeNull();
+    expect(screen.getByText('AMER').closest('a')).toBeNull();
+    expect(screen.getByText('EMEA').closest('a')).toBeNull();
   });
 
   it('renders the card with an empty state (NOT nothing) when there are no team territory rows', () => {
