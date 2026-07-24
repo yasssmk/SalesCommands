@@ -89,6 +89,11 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     targets_total = serializers.SerializerMethodField(read_only=True)
     targets_worked = serializers.SerializerMethodField(read_only=True)
 
+    # "N activities to do today" — the count the TARGETED card renders, kept in
+    # lock-step with the playlist's "To do today" chip. Reads the
+    # _activities_today annotation set on the list queryset (campaign_views.py).
+    activities_today = serializers.SerializerMethodField(read_only=True)
+
     # Attribution — owner + team and executor + team, for the card's
     # "Name — TEAM" attribution block. Mirrors TerritoryListSerializer's
     # get_owner / get_team ({id, full_name} for the person, {id, name} for the
@@ -123,7 +128,7 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 
             # Aggregates
             'accounts_count', 'owner_name', 'primary_objective',
-            'targets_total', 'targets_worked',
+            'targets_total', 'targets_worked', 'activities_today',
 
             # Attribution (owner + team, executor + team)
             'owner', 'owner_team', 'executor', 'executor_team',
@@ -180,6 +185,16 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         Reads the _targets_worked annotation; None when unannotated (no N+1).
         """
         return obj._targets_worked if hasattr(obj, '_targets_worked') else None
+
+    def get_activities_today(self, obj):
+        """Activities the rep still has to do today for this campaign.
+
+        Reads the _activities_today annotation set on the list queryset; None
+        when unannotated (e.g. detail) — NEVER a property or a per-row count, so
+        an un-annotated view can never reintroduce an N+1. Mirrors the annotation
+        guard of get_targets_total.
+        """
+        return obj._activities_today if hasattr(obj, '_activities_today') else None
 
     def get_owner_name(self, obj):
         if not obj.owner:

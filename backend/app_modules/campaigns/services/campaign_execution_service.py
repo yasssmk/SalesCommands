@@ -383,6 +383,13 @@ class CampaignExecutionService:
         return {
             'activities': ordered,
             'total_count': total_count,
+            # Size of the TODAY bucket — the "To do today" chip count. Additive:
+            # 'activities' and 'total_count' are unchanged, existing consumers
+            # (the playlist view / frontend) ignore the new key. It exists so the
+            # campaign list's _activities_today annotation can be parity-checked
+            # against this Python bucketing in a single test, guarding the two
+            # implementations against silent drift.
+            'today_count': len(today_activities),
         }
 
     def get_playlist_for_executor(self, campaign, executor):
