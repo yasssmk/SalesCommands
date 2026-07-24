@@ -39,8 +39,8 @@ export default function RepHome() {
   const { windows, windowsLoading, windowsError } = useGetTodoWindows({ scope: 'mine' });
 
   // Entity resolution (mine paths).
-  const { campaigns } = useGetMyCampaigns({ filters: { status: 'ACTIVE' } });
-  const { territories, territoriesCount } = useGetTerritories({ filters: { owner_scope: 'mine' } });
+  const { campaigns, campaignsLoading } = useGetMyCampaigns({ filters: { status: 'ACTIVE' } });
+  const { territories, territoriesCount, territoriesLoading } = useGetTerritories({ filters: { owner_scope: 'mine' } });
   const { quotas } = useGetMyActiveQuotas();
   // My OPEN decision cycles — possession (owner_scope=mine), open == outcome
   // IS NULL. The bare list is tenant-wide (read=client); these two params are
@@ -82,6 +82,14 @@ export default function RepHome() {
     [enriched],
   );
   const hasOpenCycles = (openCycles || []).length > 0;
+
+  // The progress cards must show their skeleton for the WHOLE load — the entity
+  // lists (campaigns/territories) AND the KPI batch. The batch key is null while
+  // the entity lists resolve, so resultsLoading is briefly false; without the
+  // entity-loading flags the empty state ("No active campaigns.") flashes before
+  // the entities arrive. Gate on both so the empty state only shows once loading
+  // has settled and there is genuinely nothing.
+  const progressLoading = campaignsLoading || territoriesLoading || resultsLoading;
 
   // Surface fetch errors via the shared snackbar (never a silent blank block).
   useEffect(() => {
@@ -130,7 +138,7 @@ export default function RepHome() {
           campaigns={campaignResults}
           territories={territoryResults}
           territoriesTotal={territoriesCount}
-          loading={resultsLoading}
+          loading={progressLoading}
         />
       </Stack>
 

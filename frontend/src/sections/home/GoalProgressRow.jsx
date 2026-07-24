@@ -2,6 +2,7 @@
 
 import PropTypes from 'prop-types';
 
+import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 
@@ -38,8 +39,14 @@ export default function GoalProgressRow({ label, gradient }) {
           {g.headline}
         </Typography>
       </Stack>
-      {/* No bar for the empty state — "0% of nothing" would re-introduce the cold ratio. */}
-      {empty ? null : <LinearWithLabel value={g.pct} color={g.pct >= 100 ? 'success' : 'primary'} />}
+      {/* The bar's height is ALWAYS reserved so every row is the same height
+          regardless of mode. In the 'empty' state the bar stays in the layout but
+          is hidden — no visible "0% of nothing", which would re-introduce the cold
+          ratio — so the reserved height is the real component's own height, never a
+          magic number. */}
+      <Box style={{ visibility: empty ? 'hidden' : 'visible' }}>
+        <LinearWithLabel value={g.pct} color={g.pct >= 100 ? 'success' : 'primary'} />
+      </Box>
     </Stack>
   );
 }
