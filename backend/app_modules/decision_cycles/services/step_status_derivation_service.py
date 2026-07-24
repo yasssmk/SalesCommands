@@ -80,18 +80,25 @@ class StepStatusDerivationService:
         from ..constants import DecisionStepStatus
         from app_modules.activities.constants import ActivityStatus
 
-        # Get non-cancelled activities for this step
-        activities = list(
-            step.activities.exclude(status=ActivityStatus.CANCELLED)
-        )
+        # Prefer the SQL annotation when the queryset carried it (single source
+        # of truth — see services/derivation_sql.py). Falls back to the Python
+        # computation, which stays the parity oracle.
+        annotated = getattr(step, '_derived_status', None)
+        if annotated is not None:
+            status = annotated
+        else:
+            # Get non-cancelled activities for this step
+            activities = list(
+                step.activities.exclude(status=ActivityStatus.CANCELLED)
+            )
 
-        today = timezone.now().date()
-        has_planned_in_cycle = self._has_planned_in_cycle_db(step)
-        is_last_completed_step = self._is_last_completed_step_db(step)
+            today = timezone.now().date()
+            has_planned_in_cycle = self._has_planned_in_cycle_db(step)
+            is_last_completed_step = self._is_last_completed_step_db(step)
 
-        status = self._compute_status(
-            step, activities, today, has_planned_in_cycle, is_last_completed_step
-        )
+            status = self._compute_status(
+                step, activities, today, has_planned_in_cycle, is_last_completed_step
+            )
 
         return {
             'status': status,
@@ -134,17 +141,24 @@ class StepStatusDerivationService:
         results = {}
 
         for step in steps:
-            activities = self._get_non_cancelled_activities(step)
-            has_planned_in_cycle = self._has_planned_in_cycle_bulk(
-                step, cycle_steps_map
-            )
-            is_last_completed_step = self._is_last_completed_step_bulk(
-                step, cycle_steps_map
-            )
+            # Prefer the SQL annotation when the queryset carried it (single
+            # source of truth — see services/derivation_sql.py). Falls back to
+            # the prefetch-based Python computation, the parity oracle.
+            annotated = getattr(step, '_derived_status', None)
+            if annotated is not None:
+                status = annotated
+            else:
+                activities = self._get_non_cancelled_activities(step)
+                has_planned_in_cycle = self._has_planned_in_cycle_bulk(
+                    step, cycle_steps_map
+                )
+                is_last_completed_step = self._is_last_completed_step_bulk(
+                    step, cycle_steps_map
+                )
 
-            status = self._compute_status(
-                step, activities, today, has_planned_in_cycle, is_last_completed_step
-            )
+                status = self._compute_status(
+                    step, activities, today, has_planned_in_cycle, is_last_completed_step
+                )
 
             results[step.id] = {
                 'status': status,
