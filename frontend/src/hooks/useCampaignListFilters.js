@@ -11,6 +11,14 @@ import { resolveDefaultOwnerScope } from "utils/ownerScope";
  * every mount (no persistence). owner / executor (users) and team are stored as
  * objects (from the async search selects); territory is an id string (from its
  * static Select).
+ *
+ * `initialFilters` seeds the lazy initializer once, at mount — the caller uses it
+ * to AMEND the seed from the URL (e.g. ?status=ACTIVE from the Home card link).
+ * It is spread LAST, so an explicit seed wins over the base default for the keys
+ * it carries; owner_scope keeps its per-tier default unless the seed overrides it
+ * (the two axes are orthogonal — the URL only seeds status here). The URL amorces
+ * only: local state wins afterwards (clearFilters resets to the tier default, not
+ * the seed), and the URL is neither rewritten on change nor cleaned after read.
  */
 const DEFAULT_FILTERS = {
   owner_scope: "all", // neutral base; overridden per-tier at seed
@@ -23,7 +31,7 @@ const DEFAULT_FILTERS = {
   team: null, // team object
 };
 
-export default function useCampaignListFilters() {
+export default function useCampaignListFilters(initialFilters = {}) {
   const { user } = useAuth();
   // Stable across renders within a mount: `user` is the memoised auth-context
   // value (only changes on login/refresh), so this pure derivation keeps the
@@ -35,10 +43,12 @@ export default function useCampaignListFilters() {
   const [filters, setFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
     owner_scope: defaultScope,
+    ...initialFilters,
   }));
   const [pendingFilters, setPendingFilters] = useState(() => ({
     ...DEFAULT_FILTERS,
     owner_scope: defaultScope,
+    ...initialFilters,
   }));
 
   const activeFiltersCount = useMemo(() => {
