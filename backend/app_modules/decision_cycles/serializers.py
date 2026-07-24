@@ -13,6 +13,11 @@ from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
 from .models import DecisionCycle, DecisionStep, DecisionStepContact, DecisionStepDepartment, DealHealthSnapshot, DealProduct, ManagerNote
 from .constants import PipelineStep, DecisionStepStatus, PIPELINE_STEPS_CONFIG
+from .services.derivation_sql import (
+    CYCLE_STATUS_ALIAS,
+    CURRENT_STEP_NAME_ALIAS,
+    CURRENT_STEP_STAGE_ALIAS,
+)
 
 
 # ============================================================================
@@ -1111,8 +1116,26 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
     # The owner's team (the manager DC block's Team line). null when the owner
     # has no team. Resolved from the owner__team select_related — no per-row query.
     team = serializers.SerializerMethodField(read_only=True)
-    steps_count = serializers.IntegerField(read_only=True)
-    validated_steps_count = serializers.IntegerField(read_only=True)
+    # Counts served by the 1b cycle-state annotations (annotate_cycle_state on
+    # the list queryset) instead of the model properties — kills the TD-90 N+1
+    # (steps.count() + a derive_bulk PER cycle). The properties stay on the model
+    # for other consumers; this list serializer no longer touches them.
+    steps_count = serializers.IntegerField(source='_total_steps_count', read_only=True)
+    validated_steps_count = serializers.IntegerField(
+        source='_validated_steps_count', read_only=True
+    )
+    # Effective status + current step, from the 1a/1b annotations, so the
+    # frontend list can drop the per-row dc_cycle_state KPI call. Names mirror
+    # the KPI meta keys (cycle_status / current_stage / current_step_name).
+    cycle_status = serializers.CharField(
+        source=CYCLE_STATUS_ALIAS, read_only=True, allow_null=True
+    )
+    current_stage = serializers.CharField(
+        source=CURRENT_STEP_STAGE_ALIAS, read_only=True, allow_null=True
+    )
+    current_step_name = serializers.CharField(
+        source=CURRENT_STEP_NAME_ALIAS, read_only=True, allow_null=True
+    )
 
     class Meta:
         model = DecisionCycle
@@ -1124,6 +1147,8 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
             'estimated_value',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
+            # Effective status + current step (derived, from annotations)
+            'cycle_status', 'current_stage', 'current_step_name',
             'steps_count', 'validated_steps_count',
             'created_at', 'updated_at'
         ]
