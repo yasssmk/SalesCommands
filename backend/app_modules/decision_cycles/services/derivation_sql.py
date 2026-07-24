@@ -43,8 +43,10 @@ expected_end is in the past.
 from django.db.models import (
     Case,
     CharField,
+    Count,
     Exists,
     F,
+    IntegerField,
     Max,
     OuterRef,
     Q,
@@ -52,11 +54,12 @@ from django.db.models import (
     Value,
     When,
 )
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from app_modules.activities.constants import ActivityStatus
 
-from ..constants import DecisionStepStatus
+from ..constants import CycleOutcome, DecisionStepStatus
 
 # Alias names used for the internal boolean/scalar annotations. Underscored so
 # they never clash with a model field or a serializer output key.
@@ -174,4 +177,154 @@ def annotate_step_derived_status(queryset, today=None, alias=DERIVED_STATUS_ALIA
 
     return queryset.annotate(**_support_annotations(today)).annotate(
         **{alias: _status_case(today)}
+    )
+
+
+# =============================================================================
+# CYCLE-LEVEL ANNOTATIONS
+# =============================================================================
+# SQL translation of CycleAggregationService._derive_status_bulk (effective
+# cycle status) and _compute_progress (current step + validated/total counts).
+# Every cycle-level predicate is an ISOLATED correlated subquery over the
+# cycle's DecisionSteps; each step subquery reuses the 1a step-status Case
+# (annotate_step_derived_status), so the cycle status is the exact aggregate of
+# the 1a step statuses — no re-derivation, no divergence. Nested correlated
+# subqueries keep the outer query one-row-per-cycle: a Count over a deep
+# cycle->step->activity join would multiply rows and skew every count together.
+# Join choice is unchanged from 1a (decision_step FK) — see the module docstring.
+# =============================================================================
+
+# Public alias names for the cycle annotations (also the attributes the service
+# reads when consuming the annotation).
+CYCLE_STATUS_ALIAS = '_cycle_effective_status'
+CURRENT_STEP_NAME_ALIAS = '_current_step_name'
+CURRENT_STEP_ORDER_ALIAS = '_current_step_order'
+CURRENT_STEP_STAGE_ALIAS = '_current_step_stage'
+VALIDATED_STEPS_COUNT_ALIAS = '_validated_steps_count'
+TOTAL_STEPS_COUNT_ALIAS = '_total_steps_count'
+STALLED_STEPS_COUNT_ALIAS = '_stalled_steps_count'
+
+# Cycle statuses as CycleAggregationService names them (kept in sync here).
+_CYCLE_WON = 'WON'
+_CYCLE_LOST = 'LOST'
+_CYCLE_ON_HOLD = 'ON_HOLD'
+_CYCLE_NOT_STARTED = 'NOT_STARTED'
+_CYCLE_OVERDUE = 'OVERDUE'
+_CYCLE_STALLED = 'STALLED'
+_CYCLE_IN_PROGRESS = 'IN_PROGRESS'
+
+
+def _cycle_step_subquery(today):
+    """A DecisionStep queryset correlated to the OUTER DecisionCycle, carrying
+    the 1a `_derived_status`. Each per-step OuterRef('pk')/OuterRef('cycle_id')
+    resolves to this step row (the immediate parent), while cycle_id=OuterRef
+    ('pk') binds the set to the outer cycle."""
+    from ..models import DecisionStep
+
+    return annotate_step_derived_status(
+        DecisionStep.objects.filter(cycle_id=OuterRef('pk')), today
+    )
+
+
+def _isolated_step_count(step_qs):
+    """Coalesced count of a correlated step subquery, grouped so it returns a
+    single scalar (0 when empty). Never a Count over a deep join."""
+    return Coalesce(
+        Subquery(
+            step_qs.order_by().values('cycle_id').annotate(c=Count('pk')).values('c')[:1],
+            output_field=IntegerField(),
+        ),
+        Value(0),
+        output_field=IntegerField(),
+    )
+
+
+def _cycle_effective_status_case(today):
+    """
+    Case for the effective cycle status. Outcome first (stored), then the state
+    derived from the step statuses — mirroring _derive_status_bulk priority
+    exactly: outcome (WON / LOST+NOT_QUALIFIED / ON_HOLD) → no steps NOT_STARTED
+    → any OVERDUE → any STALLED → any IN_PROGRESS/VALIDATED → NOT_STARTED (the
+    remaining case is "all steps NOT_STARTED", the only reachable default).
+    """
+    from ..models import DecisionStep
+
+    steps = _cycle_step_subquery(today)
+    has_steps = Exists(DecisionStep.objects.filter(cycle_id=OuterRef('pk')))
+    any_overdue = Exists(steps.filter(**{DERIVED_STATUS_ALIAS: DecisionStepStatus.OVERDUE}))
+    any_stalled = Exists(steps.filter(**{DERIVED_STATUS_ALIAS: DecisionStepStatus.STALLED}))
+    any_active = Exists(
+        steps.filter(**{
+            f'{DERIVED_STATUS_ALIAS}__in': [
+                DecisionStepStatus.IN_PROGRESS,
+                DecisionStepStatus.VALIDATED,
+            ],
+        })
+    )
+
+    return Case(
+        # 1 — explicit stored outcome overrides everything (NOT_QUALIFIED → LOST).
+        When(Q(outcome=CycleOutcome.WON), then=Value(_CYCLE_WON)),
+        When(Q(outcome__in=[CycleOutcome.LOST, CycleOutcome.NOT_QUALIFIED]),
+             then=Value(_CYCLE_LOST)),
+        When(Q(outcome=CycleOutcome.ON_HOLD), then=Value(_CYCLE_ON_HOLD)),
+        # 2 — no steps → NOT_STARTED.
+        When(~has_steps, then=Value(_CYCLE_NOT_STARTED)),
+        # 3 — any OVERDUE step → OVERDUE.
+        When(any_overdue, then=Value(_CYCLE_OVERDUE)),
+        # 4 — any STALLED step → STALLED (before IN_PROGRESS, as in the Python).
+        When(any_stalled, then=Value(_CYCLE_STALLED)),
+        # 5 — any IN_PROGRESS or VALIDATED step → IN_PROGRESS.
+        When(any_active, then=Value(_CYCLE_IN_PROGRESS)),
+        # 6 — remaining reachable state is "all steps NOT_STARTED".
+        default=Value(_CYCLE_NOT_STARTED),
+        output_field=CharField(),
+    )
+
+
+def annotate_cycle_state(queryset, today=None):
+    """
+    Annotate a DecisionCycle queryset with the effective status, the current
+    step (name / stage / order) and the validated / total / stalled step
+    counts — the SQL translation of CycleAggregationService.get_bulk_summaries.
+
+    The current step is the first non-VALIDATED step by `order` (matching
+    _compute_progress); its name/stage/order come from three isolated
+    correlated subqueries over the same ordered, filtered step set.
+
+    `today` defaults to the current date; pass an explicit date for
+    deterministic tests.
+    """
+    from ..models import DecisionStep
+
+    if today is None:
+        today = timezone.now().date()
+
+    steps = _cycle_step_subquery(today)
+
+    # Current step = first step (by order) whose derived status is not VALIDATED.
+    current = steps.exclude(
+        **{DERIVED_STATUS_ALIAS: DecisionStepStatus.VALIDATED}
+    ).order_by('order')
+
+    validated_steps = steps.filter(**{DERIVED_STATUS_ALIAS: DecisionStepStatus.VALIDATED})
+    stalled_steps = steps.filter(**{DERIVED_STATUS_ALIAS: DecisionStepStatus.STALLED})
+    all_steps = DecisionStep.objects.filter(cycle_id=OuterRef('pk'))
+
+    return queryset.annotate(
+        **{
+            CYCLE_STATUS_ALIAS: _cycle_effective_status_case(today),
+            CURRENT_STEP_NAME_ALIAS: Subquery(
+                current.values('name')[:1], output_field=CharField()
+            ),
+            CURRENT_STEP_ORDER_ALIAS: Subquery(
+                current.values('order')[:1], output_field=IntegerField()
+            ),
+            CURRENT_STEP_STAGE_ALIAS: Subquery(
+                current.values('stage')[:1], output_field=CharField()
+            ),
+            VALIDATED_STEPS_COUNT_ALIAS: _isolated_step_count(validated_steps),
+            TOTAL_STEPS_COUNT_ALIAS: _isolated_step_count(all_steps),
+            STALLED_STEPS_COUNT_ALIAS: _isolated_step_count(stalled_steps),
+        }
     )

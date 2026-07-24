@@ -218,23 +218,40 @@ class CycleAggregationService:
             }
         }
         """
-        # Collect all steps across cycles for bulk computation
-        all_steps = []
+        from .derivation_sql import CYCLE_STATUS_ALIAS
+
+        cycles = list(cycles)
+
+        # Fast path: cycles carrying the SQL cycle-state annotation are read
+        # directly (single source of truth — see services/derivation_sql.py).
+        # The Python fallback below stays the parity oracle and is computed
+        # ONLY for cycles that lack the annotation (by_account, the KPI), so
+        # their behaviour is unchanged.
         cycle_steps_map = {}
+        need_python = [
+            cycle for cycle in cycles
+            if getattr(cycle, CYCLE_STATUS_ALIAS, None) is None
+        ]
 
-        for cycle in cycles:
-            steps = self._get_prefetched_steps(cycle)
-            cycle_steps_map[cycle.id] = steps
-            all_steps.extend(steps)
+        if need_python:
+            all_steps = []
+            for cycle in need_python:
+                steps = self._get_prefetched_steps(cycle)
+                cycle_steps_map[cycle.id] = steps
+                all_steps.extend(steps)
 
-        # Compute derived statuses if not pre-provided
-        if step_derived_statuses is None:
-            from .step_status_derivation_service import StepStatusDerivationService
-            step_derived_statuses = StepStatusDerivationService().derive_bulk(all_steps)
+            # Compute derived statuses if not pre-provided
+            if step_derived_statuses is None:
+                from .step_status_derivation_service import StepStatusDerivationService
+                step_derived_statuses = StepStatusDerivationService().derive_bulk(all_steps)
 
         results = {}
 
         for cycle in cycles:
+            if getattr(cycle, CYCLE_STATUS_ALIAS, None) is not None:
+                results[cycle.id] = self._summary_from_annotations(cycle)
+                continue
+
             steps = cycle_steps_map.get(cycle.id, [])
 
             # Derive cycle status: explicit outcome first, then from steps
@@ -257,6 +274,39 @@ class CycleAggregationService:
             }
 
         return results
+
+    def _summary_from_annotations(self, cycle):
+        """
+        Build the summary dict from the SQL cycle-state annotations
+        (annotate_cycle_state) — the same shape _derive_status_bulk +
+        _compute_progress produce, so consumers cannot tell which path ran.
+        """
+        from .derivation_sql import (
+            CYCLE_STATUS_ALIAS,
+            CURRENT_STEP_NAME_ALIAS,
+            CURRENT_STEP_ORDER_ALIAS,
+            VALIDATED_STEPS_COUNT_ALIAS,
+            TOTAL_STEPS_COUNT_ALIAS,
+            STALLED_STEPS_COUNT_ALIAS,
+        )
+
+        cycle_status = getattr(cycle, CYCLE_STATUS_ALIAS)
+        total = getattr(cycle, TOTAL_STEPS_COUNT_ALIAS) or 0
+        validated = getattr(cycle, VALIDATED_STEPS_COUNT_ALIAS) or 0
+        percentage = round((validated / total) * 100) if total > 0 else 0
+
+        return {
+            'cycle_status': cycle_status,
+            'progress': {
+                'total_steps': total,
+                'validated_steps': validated,
+                'current_step_name': getattr(cycle, CURRENT_STEP_NAME_ALIAS),
+                'current_step_order': getattr(cycle, CURRENT_STEP_ORDER_ALIAS),
+                'percentage': percentage,
+            },
+            'stalled_steps_count': getattr(cycle, STALLED_STEPS_COUNT_ALIAS) or 0,
+            'is_at_risk': cycle_status in (self.STATUS_STALLED, self.STATUS_OVERDUE),
+        }
 
     # ------------------------------------------------------------------
     # PRIVATE HELPERS

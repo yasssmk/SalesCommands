@@ -14,7 +14,7 @@ from .step_status_derivation_service import StepStatusDerivationService
 from .cycle_aggregation_service import CycleAggregationService
 from .readiness_score_service import ReadinessScoreService
 from .people_consolidation_service import PeopleConsolidationService
-from .derivation_sql import annotate_step_derived_status
+from .derivation_sql import annotate_step_derived_status, annotate_cycle_state
 
 __all__ = [
     'CompletenessScoreService',
@@ -24,4 +24,5 @@ __all__ = [
     'ReadinessScoreService',
     'PeopleConsolidationService',
     'annotate_step_derived_status',
+    'annotate_cycle_state',
 ]
