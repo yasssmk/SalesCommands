@@ -20,8 +20,10 @@ import { goalGradient } from 'sections/home/utils/goalGradient';
 // How many rows each card surfaces; the rest stay one click away (never hidden
 // silently — the hidden count is kept per card). Shared by BOTH cards so they
 // have an identical, stable footprint. Ranking still runs over ALL entities —
-// this caps the display only, to protect the todo block above.
-const PROGRESS_TOP_N = 5;
+// this caps the display only, to protect the todo block above. Exported so the
+// manager TeamAggregateBlock caps to the SAME number (its global "All teams" row
+// counts within it — no duplicated constant).
+export const PROGRESS_TOP_N = 5;
 
 // Reserved height of ONE GoalProgressRow, used to hold the rows zone at a fixed
 // height (PROGRESS_TOP_N rows) across loading / empty / populated — so the two
@@ -86,17 +88,22 @@ export function rank(sortedItems, total) {
   return { top, hiddenCount };
 }
 
-function Rows({ items, gradientOf }) {
+function Rows({ items, gradientOf, hrefOf }) {
   return (
     <Stack divider={null}>
       {items.map(({ entity, result }) => (
-        <GoalProgressRow key={entity.id} label={entity.name || 'Untitled'} gradient={gradientOf(result)} />
+        <GoalProgressRow
+          key={entity.id}
+          label={entity.name || 'Untitled'}
+          gradient={gradientOf(result)}
+          href={hrefOf ? hrefOf(entity) : undefined}
+        />
       ))}
     </Stack>
   );
 }
 
-Rows.propTypes = { items: PropTypes.array, gradientOf: PropTypes.func };
+Rows.propTypes = { items: PropTypes.array, gradientOf: PropTypes.func, hrefOf: PropTypes.func };
 
 function CardSkeleton() {
   return (
@@ -121,8 +128,9 @@ Empty.propTypes = { text: PropTypes.string };
 // The rows zone: a fixed-height slot (PROGRESS_TOP_N rows) shared by the
 // populated / empty / loading states so the card never jumps and both cards
 // match. The height is RESERVED on the container — no phantom rows (which would
-// leave dangling dividers and empty a11y rows).
-function RowsZone({ testid, children }) {
+// leave dangling dividers and empty a11y rows). Exported so the manager cards
+// reserve the SAME height (one source of truth for the fixed-height template).
+export function RowsZone({ testid, children }) {
   return (
     <Box data-testid={testid} style={{ minHeight: ROWS_MIN_HEIGHT }}>
       {children}
@@ -132,12 +140,31 @@ function RowsZone({ testid, children }) {
 
 RowsZone.propTypes = { testid: PropTypes.string, children: PropTypes.node };
 
+// Permanent "See all" footer, present on BOTH cards (symmetric) regardless of how
+// many rows are hidden — even at 0 entity. `total` is the real entity count; it
+// is 0 (or omitted) while loading, when there are none, or when the count is not
+// meaningful (the manager aggregates rows by team, not by entity), so the count
+// is dropped ("See all") rather than showing a misleading "(0)". Exported so the
+// manager cards reuse the same footer (same composition + fallback).
+export function SeeAll({ href, total }) {
+  return (
+    <Box sx={{ mt: 1 }}>
+      <Link component={NextLink} href={href} variant="caption" underline="hover">
+        {total > 0 ? `See all (${total})` : 'See all'}
+      </Link>
+    </Box>
+  );
+}
+
+SeeAll.propTypes = { href: PropTypes.string, total: PropTypes.number };
+
 /**
  * "My progress" — the rep's active campaigns and least-covered territories. Both
  * cards rank and cap to PROGRESS_TOP_N and reserve the same fixed-height rows
  * zone: campaigns are ordered by soonest deadline then lowest progress;
- * territories are ordered lowest-coverage first (most action needed). The hidden
- * count is kept per card; the "see all" affordance is territory-only for now.
+ * territories are ordered lowest-coverage first (most action needed). Each row's
+ * name links to its workspace; both cards carry a permanent "See all" footer
+ * (campaigns → the ACTIVE-filtered list, territories → the list).
  */
 export default function ProgressBlock({
   campaigns = [],
@@ -162,9 +189,10 @@ export default function ProgressBlock({
             ) : campaignRank.top.length === 0 ? (
               <Empty text="No active campaigns." />
             ) : (
-              <Rows items={campaignRank.top} gradientOf={campaignGradient} />
+              <Rows items={campaignRank.top} gradientOf={campaignGradient} hrefOf={(e) => `/campaigns/${e.id}`} />
             )}
           </RowsZone>
+          <SeeAll href="/campaigns?status=ACTIVE" total={campaignsTotal} />
         </MainCard>
       </Grid>
       <Grid item xs={12} md={6}>
@@ -175,16 +203,10 @@ export default function ProgressBlock({
             ) : territoryRank.top.length === 0 ? (
               <Empty text="No territories yet." />
             ) : (
-              <Rows items={territoryRank.top} gradientOf={territoryGradient} />
+              <Rows items={territoryRank.top} gradientOf={territoryGradient} hrefOf={(e) => `/territories/${e.id}`} />
             )}
           </RowsZone>
-          {!loading && territoryRank.hiddenCount > 0 ? (
-            <Box sx={{ mt: 1 }}>
-              <Link component={NextLink} href="/territories" variant="caption" underline="hover">
-                See all ({territoriesTotal || territories.length})
-              </Link>
-            </Box>
-          ) : null}
+          <SeeAll href="/territories" total={territoriesTotal} />
         </MainCard>
       </Grid>
     </Grid>
