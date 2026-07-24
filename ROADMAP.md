@@ -146,36 +146,81 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Tri par défaut de la liste Campaign** : priorité de statut (ACTIVE →
   PAUSED → DRAFT → COMPLETED → CANCELLED) puis `created_at` DESC, TARGETED
   épinglé en tête.
-
-#### Reliquat de finition (identifié au smoke — hors périmètre livré, à traiter)
-- **Option « Email Only »** : quand une campagne est créée avec l'option
-  Email Only, la carte doit l'indiquer à côté du chip « Outbound Sequence ».
-  L'option vit sur le modèle Campaign (choix à la création) ; vérifier
-  qu'elle atteint le payload de liste avant de supposer que c'est purement
-  frontend.
+- **Chip « Email only » ✅** : la carte affiche un chip « Email only » à côté
+  du chip de type de séquence quand `channel_override` de la campagne vaut
+  `EMAIL_ONLY`, gaté sur OUTBOUND. `channel_override` exposé sur le serializer
+  de liste ; libellé centralisé en export partagé `CHANNEL_LABELS` — l'étape
+  de revue de création garde délibérément sa copie plus riche « Auto (per
+  contact data) », divergence documentée sur la constante.
 
 - **Validation** : chaque commit validé à l'écran (smoke) + tests avant de
   merger.
 
-### Sprint — Cycle de vie des cibles de campagne (après S7b, avant S7c — prioritaire)
-- **Objectif** : gérer la sortie des cibles atteignant un état final et
-  refondre l'affichage de progression des cartes en conséquence. Trois items
-  liés, à construire ENSEMBLE.
-- **Priorité sur S7c** : ce chantier modifie la barre de progression livrée
-  en S7b 5c — ne pas laisser en place un affichage qu'on sait provisoire.
-1. Une cible (`CampaignContact`) atteignant un état final — toutes les
-   activités terminées, OU arrêt manuel — doit QUITTER la liste des cibles de
-   la campagne (historique préservé ailleurs). VÉRIFIER si c'est déjà le cas ;
-   hypothèse de travail : non.
-2. L'arrêt manuel nécessite un modal de confirmation : « are you sure you want
-   to remove {CONTACT NAME} — {ACCOUNT NAME} from the campaign? ».
-3. Conséquence pour les cartes : si les cibles quittent la liste, le
-   dénominateur bouge → un pourcentage worked/total n'a plus de sens.
-   L'affichage de progression devient « N contacts in chasing » (le compte
-   restant à travailler), et la carte TARGETED — qui n'affiche aucune barre
-   aujourd'hui — reçoit ce même compte. NOTE : ceci CHANGE la barre livrée en
-   S7b 5c (worked/total, correcte sous le modèle actuel où les cibles
-   terminées restent dans la liste).
+### Sprint ✅ — Cycle de vie des cibles de campagne (livré, 3 commits)
+- **Objectif** : rendre les vues de campagne lisibles comme « qui me reste-t-il
+  à relancer », refondre l'affichage de progression des cartes en conséquence.
+- **Résolu autrement qu'anticipé** : les cibles en état final sont FILTRÉES des
+  vues de chasing (pas retirées de la donnée). Conséquence : la barre de
+  progression OUTBOUND (worked/total, S7b 5c) reste INCHANGÉE, et la carte
+  TARGETED porte des COMPTES plutôt qu'une barre. (L'anticipation initiale —
+  cibles retirées de la liste, barre remplacée par « N in chasing » — est donc
+  caduque.)
+
+**Commit 1 — onglet cibles = « qui me reste-t-il à relancer »** :
+- Toggle binaire Active / All dans la toolbar propre de la table (défaut Active
+  sur TARGETED, All sur OUTBOUND — la distinction n'a pas de sens en
+  prospection).
+- Lignes ordonnées par priorité de statut (in progress, pending, callback
+  pending, paused, puis completed et stopped), nom du contact en départage.
+- En-têtes de colonnes triables mais inertes sous tri manuel : réparés ; la
+  priorité de statut est le tri par défaut.
+- Action Reactivate RETIRÉE — elle régénérait toute la séquence depuis l'étape
+  1, exactement ce que fait déjà l'enrôlement. Relancer une chasse terminée
+  passe désormais par Add to campaign (qui re-chase déjà un contact en état
+  final déjà présent) ; la méthode modèle `CampaignContact.reactivate()` reste,
+  un test garde cette dépendance. Une ligne terminée n'affiche aucune action.
+- L'arrêt étant désormais irréversible depuis cette vue, Stop demande
+  confirmation en nommant le contact ET le compte.
+
+**Commit 2 — cartes et playlist** :
+- Carte TARGETED : reporte les contacts encore à relancer au lieu d'un compte
+  de comptes.
+- Cartes Territory : gros compte basculé sur la même disposition en ligne
+  horizontale que les cartes Campaign (homogénéité).
+- Tous les libellés de compte se pluralisent conditionnellement.
+- Cartes d'activité de la playlist : nomment leur contact en 2e ligne
+  (ACCOUNT — CONTACT) avec un +N défensif.
+- L'accordéon « completed » ne montre plus les activités des séquences
+  terminées, via un nouveau filtre opt-in `active_sequence` sur `ActivityFilter`
+  (côté serveur, car cet endpoint est paginé).
+- Revalidation centralisée dans un helper partagé `revalidateCampaignPlaylist`
+  utilisé par stop, pause, resume, remove, enroll et complete — quatre d'entre
+  eux ne revalidaient jamais l'accordéon, et complete portait une clé dont le
+  `page_size` la faisait échouer au préfixe.
+
+**Commit 3 — activités du jour sur la carte TARGETED** :
+- La carte TARGETED reporte aussi les activités dues aujourd'hui, en réutilisant
+  EXACTEMENT le critère du chip de la playlist (voir le suivi ci-dessous).
+
+### Suivi — Playlist « today » : source unique (dette de refactor)
+Le calcul « activités dues aujourd'hui » a désormais TROIS implémentations : la
+dérivation JS dans `CampaignPlaylistTab` (`todayActivities`, qui pilote le chip
+que voit le rep), le bucketing Python de `get_playlist`, et la nouvelle
+sous-requête corrélée `_activities_today` sur le queryset de liste des
+campagnes. **Le chip est la référence.**
+- `get_playlist` LAGGE aujourd'hui la référence dans deux cas, chacun épinglé
+  par son propre test nommé : une activité dont `scheduled_date` est null (son
+  test est `if scheduled and scheduled <= today`, donc les nulls tombent en
+  upcoming), et une activité sans `campaign_contact` (son `is_first_planned`
+  exige un id de contact). Les deux sont comptées par le chip et l'annotation,
+  pas par `get_playlist`. Aligner `get_playlist` sur la référence.
+- Le vrai fix : extraire le bucketing today/upcoming/on_hold dans UN seul helper
+  partagé consommé par `get_playlist`, l'annotation et (idéalement) le frontend
+  — plutôt que trois règles parallèles. Refactor de service, délibérément hors
+  scope quand la carte a été construite.
+- `get_playlist` expose désormais `today_count` de façon additive, ce qui fait
+  du test de parité un vrai garde-fou de drift ET ouvre la porte à supprimer la
+  dérivation chip côté client, pour une source unique du nombre que voit le rep.
 
 ### S7c — Filtres avancés DC + câblage Home "See all"
 - **Objectif** : filtres DC complets + destinations réelles pour les "See
