@@ -71,6 +71,35 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Validation** : les deux vues à l'écran (CRUD Product, filtres/navigation
   DC), non-régression onglet Contacts du workspace compte, vitest vert.
 
+### S7d ✅ — Navigation du bloc progression de la Home
+- **Objectif** : rendre le bloc « My Progress » de la Home lisible et
+  navigable. Séparé de S7c (décision PO) : ici la NAVIGATION du bloc
+  progression, pas les filtres de la liste DC.
+- **Livré** (PR #86, #87, #88) :
+  - Gate de chargement couvrant toute la phase : le squelette ne laisse plus
+    passer un flash d'état vide.
+  - Hauteur de ligne constante sur `GoalProgressRow` (barre en
+    `visibility:hidden` en mode `empty`).
+  - Tri des campagnes : échéance la plus proche d'abord, puis progression
+    croissante à date égale ; tri territoires (moins couvert d'abord)
+    inchangé.
+  - Cap de 5 lignes et hauteur réservée de 5 lignes sur les 4 cartes (rep et
+    manager), la ligne globale « All teams » comptant dans les 5 côté
+    manager.
+  - « See all » permanent et symétrique sur les 4 cartes →
+    `/campaigns?status=ACTIVE` et `/territories` ; libellé « See all (N) » qui
+    retombe sur « See all » nu quand le total est inconnu (chargement, 0
+    entité) plutôt qu'un « (0) » trompeur.
+  - Noms de ligne cliquables côté REP uniquement (campagne →
+    `/campaigns/{id}`, territoire → `/territories/{id}`) ; les lignes manager
+    restent non cliquables, une ligne étant une équipe agrégée et non un
+    objet.
+  - `/campaigns` lit `?status=<VALEUR>` validée contre `CAMPAIGN_STATUSES` ;
+    l'URL amorce, l'état local prime ensuite.
+  - Primitives partagées (`PROGRESS_TOP_N`, `RowsZone`, `SeeAll`) exportées
+    par `ProgressBlock` et consommées par `TeamAggregateBlock` — une seule
+    implémentation de la règle.
+
 ---
 
 ## Sprints planifiés — phase fonctionnelle
@@ -222,20 +251,48 @@ campagnes. **Le chip est la référence.**
   du test de parité un vrai garde-fou de drift ET ouvre la porte à supprimer la
   dérivation chip côté client, pour une source unique du nombre que voit le rep.
 
-### S7c — Filtres avancés DC + câblage Home "See all"
-- **Objectif** : filtres DC complets + destinations réelles pour les "See
-  all" de la Home.
-- **Problématique** : filtres DC user/team/contact/stage non fonctionnels
-  (le hook forwarde stage/status mais le backend les ignore) ; les "See
-  all" de la Home ne mènent nulle part.
-- **Solution** : ajouts backend (filterset), câblage des liens Home vers
-  les vues S7a.
-- **Navigation Home — noms cliquables** : depuis la section "My Progress" de
-  la Home, les NOMS de campagne et de territoire doivent être cliquables →
-  redirection vers la vue / le workspace correspondant. Même chantier de
-  navigation Home que les liens "See all".
-- **Validation** : chaque filtre DC filtre réellement ; chaque "See all"
-  ouvre la vue filtrée correspondante.
+### S7c — Filtres de la liste Decision Cycles (construction)
+- **Objectif** : construire les facettes de filtre manquantes sur la vue
+  liste DC. (La navigation Home « See all » / noms cliquables a été SÉPARÉE
+  dans S7d — décision PO ; elle n'appartient plus à S7c.)
+- **État réel (audit — la prémisse « filtres morts » était FAUSSE)** :
+  - Le drawer de la vue liste DC (`DecisionCycleFilterPanel.jsx`) n'offre que
+    TROIS facettes : Account, Status, Owner scope. user / team nommée /
+    contact / stage n'y sont pas « morts » : ils sont ABSENTS.
+  - `useDecisionCycleFilters` ne forwarde ni stage ni status : il produit
+    `owner_scope`, `account`, et `outcome` / `outcome__isnull`. Le « Status »
+    du drawer est traduit en `outcome`, que le backend évalue bien.
+  - Les 3 facettes existantes sont toutes évaluées côté backend : ZÉRO filtre
+    mort dans ce drawer aujourd'hui.
+  - **Piège** : `buildUrlWithParams`
+    (`api/accounts/decisionCycles.js:277-283`) porte des branches `stage` et
+    `status` INERTES que rien n'alimente et que le backend n'évalue pas.
+    Ajouter naïvement une facette Stage au drawer produirait un filtre mort
+    SILENCIEUX.
+  - → C'est donc une CONSTRUCTION de filtres, PAS une réparation.
+- **Décisions produit (déjà prises)** :
+  - **Filtre de statut à DEUX vocabulaires** : `outcome` (stocké : WON / LOST
+    / ON_HOLD / NOT_QUALIFIED / vide = ouvert) ET l'état dérivé (NOT_STARTED /
+    IN_PROGRESS / OVERDUE / STALLED). Objectif produit : pouvoir filtrer un
+    cycle LOST ou STALLED.
+  - **Voie A — la dérivation d'état passe en SQL** (annotations /
+    sous-requêtes) et devient la SOURCE UNIQUE ; le service Python la
+    consomme. Pas de colonne stockée, pas de TTL. Motif du rejet du
+    stockage : l'état change avec le temps SANS aucune écriture (une date qui
+    passe) → une colonne serait périmée, et Q6 interdit de la rafraîchir dans
+    un GET.
+  - **Supprimer `DecisionStep.status`** : colonne stockée jamais mise à jour,
+    toujours `NOT_STARTED` (le code le documente lui-même). Suppression avec
+    migration, après vérification qu'aucun serializer ni écran ne la lit.
+  - **Conséquence attendue** : la moitié de TD-90 tombe d'elle-même
+    (`validated_steps_count` fait ~2 requêtes par cycle parce qu'il appelle
+    `derive_bulk` en Python).
+  - **Incohérence de vocabulaire à fermer au passage** : la colonne Status de
+    la liste affiche `outcome` si clôturé, sinon l'état dérivé — alors que le
+    filtre ne connaît qu'`outcome`. L'utilisateur filtre « Open » et lit
+    « STALLED ».
+- **Validation** : chaque facette filtre réellement ; zéro filtre mort ;
+  vocabulaire de statut cohérent entre la colonne et le filtre.
 
 ### Sprint B — Pages Overview
 - **Objectif** : chaque élément (compte, DC, campagne, territoire, product)
@@ -403,11 +460,20 @@ rapprocher au maximum. Prérequis absolu avant tout accès client.
     `sales_plans`, `sales_milestones` back de VRAIS KPI BI et s'activent au
     sprint Admin & Objectifs. Ils sont réels, juste pas encore activés :
     les conserver.
-  - **Auditer le fail-open des modules désactivés** : un module absent/
-    désactivé dans `config.MODULES` fail-open aujourd'hui vers le scope
-    `client` (`checks.py`). Évaluer le fail-CLOSED comme défaut sécurisé.
-    Changement de permissions transverse → repro + audit d'impact dédiés,
-    PAS un simple flip de config.
+  - **Auditer le fail-open des modules NON LISTÉS (inventaire élargi)** : un
+    module absent de `config.MODULES` fail-open aujourd'hui vers le scope
+    `client` (`checks.py:52-55`). L'audit établit que le sujet dépasse les
+    « fantômes vs réels-inactifs » : `config.MODULES`
+    (`permissions/config.py:32-48`) ne liste PAS `signals`, `ai_pipelines`,
+    `tech_catalog`, `product_catalog`, `notifications`, `organizations`,
+    `sales_quotas`, `sales_plans`, `sales_milestones`. Pour ces modules, la
+    matrice du registry ET leurs `action_policies` sont donc CONTOURNÉES au
+    portail ; l'enforcement se réduit à l'isolation tenant. Évaluer le
+    fail-CLOSED comme défaut sécurisé → changement de permissions transverse,
+    repro + audit d'impact dédiés, PAS un simple flip de config. Précision de
+    chiffrage : enregistrer `signals` serait quasi neutre (registry = `client`
+    partout), mais `ai_pipelines` a update/delete = `none` pour tous les tiers
+    → l'enregistrer CHANGERAIT le comportement.
   - **Général** : garantir que tout le chemin permissions/sécurité est
     solide, sans bug et propre (pas de branche morte, pas de fail-open
     silencieux) — readiness SOC-like.
@@ -444,6 +510,13 @@ rapprocher au maximum. Prérequis absolu avant tout accès client.
      régression que le fix doit éviter.) À élargir au fix : auditer si
      D'AUTRES modules ont aussi des `action_policies` plates masquant leur
      registry — le problème n'est peut-être pas limité aux campagnes.
+     **Réponse (audit)** : OUI, le défaut n'est PAS propre aux campagnes. 21
+     déclarations d'`action_policies` recensées, dont au moins DEUX
+     ÉLARGISSENT au-delà du registry — `activities.create_with_entities` =
+     create/`client` alors que le registry dit individual=mine
+     (`activities/views/views.py:98`), et `decision_step.update_status` =
+     update/`client` alors que le registry dit manager=team / individual=mine
+     (`decision_cycles/views/views.py:940`).
 
   2. **Doctrine admin vs superuser (à trancher ; le code fait aujourd'hui
      l'INVERSE).** Intention : séparer le DROIT (ai-je le droit de faire
