@@ -37,11 +37,11 @@ import AlertCampaignBulkDelete from "sections/campaigns/AlertCampaignBulkDelete"
 import useCampaignListFilters from "hooks/useCampaignListFilters";
 
 // api
-import { useGetCampaigns, deleteCampaign, CHANNEL_LABELS } from "api/campaigns/campaigns";
+import { useGetCampaigns, deleteCampaign, CHANNEL_LABELS, CAMPAIGN_STATUSES } from "api/campaigns/campaigns";
 import { useGetTerritories } from "api/territories/territories";
 
 // next
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 // assets
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
@@ -73,6 +73,24 @@ export default function CampaignsListPage() {
   // ==============================|| STATE ||============================== //
 
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // URL → initial filter state. The Home "Active campaigns" card links here with
+  // ?status=ACTIVE, so its destination lands pre-filtered instead of showing all
+  // statuses. Only a REAL status seeds (validated against the canonical list); an
+  // unknown value is ignored and the default applies — never forwarded to the
+  // backend. The URL only AMORCES: this seeds the hook's lazy initializer once, so
+  // local drawer state wins afterwards, the URL is not rewritten on change and not
+  // cleaned after read (a refresh re-seeds, intended). owner_scope is untouched.
+  const statusParam = searchParams.get("status");
+  const initialFilters = useMemo(
+    () =>
+      statusParam && Object.values(CAMPAIGN_STATUSES).includes(statusParam)
+        ? { status: statusParam }
+        : {},
+    [statusParam],
+  );
+
   const [globalFilter, setGlobalFilter] = useState("");
   const [page, setPage] = useState(1);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -99,7 +117,7 @@ export default function CampaignsListPage() {
     clearFilters,
     resetPendingFilters,
     removeFilter,
-  } = useCampaignListFilters();
+  } = useCampaignListFilters(initialFilters);
 
   // Territory list for the territory chip label (SWR-deduped with the drawer).
   const { territories = [] } = useGetTerritories({ page: 1, pageSize: 100 });
