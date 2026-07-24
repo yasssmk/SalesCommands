@@ -39,7 +39,7 @@ export default function RepHome() {
   const { windows, windowsLoading, windowsError } = useGetTodoWindows({ scope: 'mine' });
 
   // Entity resolution (mine paths).
-  const { campaigns, campaignsLoading } = useGetMyCampaigns({ filters: { status: 'ACTIVE' } });
+  const { campaigns, campaignsCount, campaignsLoading } = useGetMyCampaigns({ filters: { status: 'ACTIVE' } });
   const { territories, territoriesCount, territoriesLoading } = useGetTerritories({ filters: { owner_scope: 'mine' } });
   const { quotas } = useGetMyActiveQuotas();
   // My OPEN decision cycles — possession (owner_scope=mine), open == outcome
@@ -137,6 +137,7 @@ export default function RepHome() {
         <ProgressBlock
           campaigns={campaignResults}
           territories={territoryResults}
+          campaignsTotal={campaignsCount}
           territoriesTotal={territoriesCount}
           loading={progressLoading}
         />
