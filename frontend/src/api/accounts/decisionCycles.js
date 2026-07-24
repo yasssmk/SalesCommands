@@ -274,12 +274,34 @@ export const buildUrlWithParams = (baseUrl, params = {}) => {
     queryParams.append('cycle', filters.cycle_id);
   }
 
-  if (filters.stage) {
-    queryParams.append('stage', filters.stage);
-  }
-
+  // Unified status facet — one of the backend DecisionCycleFilterSet literals
+  // (OPEN / WON / LOST / ON_HOLD / NOT_QUALIFIED / NOT_STARTED / IN_PROGRESS /
+  // OVERDUE / STALLED). The backend resolves it against outcome or the derived
+  // annotation; the frontend just forwards the literal.
   if (filters.status) {
     queryParams.append('status', filters.status);
+  }
+
+  // Named-entity facets — each forwarded as its id (DecisionCycleFilterSet
+  // params: owner, team, contact, source_campaign, product).
+  if (filters.owner) {
+    queryParams.append('owner', filters.owner);
+  }
+
+  if (filters.team) {
+    queryParams.append('team', filters.team);
+  }
+
+  if (filters.contact) {
+    queryParams.append('contact', filters.contact);
+  }
+
+  if (filters.source_campaign) {
+    queryParams.append('source_campaign', filters.source_campaign);
+  }
+
+  if (filters.product) {
+    queryParams.append('product', filters.product);
   }
 
   // Owner scope (mine/team/all) — narrows the tenant-wide read=client list to
@@ -288,15 +310,15 @@ export const buildUrlWithParams = (baseUrl, params = {}) => {
     queryParams.append('owner_scope', filters.owner_scope);
   }
 
-  // "Open" filter: outcome IS NULL. Boolean-ish; append the backend's
-  // true/false string only when the key is explicitly set (never on absent).
+  // "Open" filter: outcome IS NULL. Kept for direct callers (e.g. the rep Home
+  // block's ?owner_scope=mine&outcome__isnull=true); the list drawer now uses
+  // the unified `status` facet above instead.
   if (filters.outcome__isnull !== undefined && filters.outcome__isnull !== null) {
     queryParams.append('outcome__isnull', filters.outcome__isnull);
   }
 
-  // Closed-cycle outcome filter (exact). Backend DecisionCycleViewSet declares
-  // outcome: ['exact', 'isnull'], so this narrows to a single terminal outcome
-  // (WON / LOST / ON_HOLD / NOT_QUALIFIED).
+  // Closed-cycle outcome filter (exact). Kept for direct callers; the drawer
+  // uses `status` now.
   if (filters.outcome) {
     queryParams.append('outcome', filters.outcome);
   }
