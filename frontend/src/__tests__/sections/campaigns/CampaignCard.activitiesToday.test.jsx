@@ -62,6 +62,22 @@ describe("CampaignCard — activities to do today", () => {
     expect(screen.getByText("activities to do today")).toBeInTheDocument();
   });
 
+  it("lays the count and label on a left-aligned row, like the big count", () => {
+    // STRUCTURAL, not text presence: number and label must share a MuiStack row
+    // wrapper (same layout as the big count above). The earlier centred column
+    // clashed with the big count and the left-aligned OUTBOUND/Territory cards —
+    // a return to it (flexDirection "column") reds this test.
+    render(<CampaignCard campaign={mk({ campaign_type: "TARGETED", activities_today: 5 })} />);
+
+    const number = screen.getByText("5");
+    const label = screen.getByText("activities to do today");
+
+    expect(number.parentElement).toBe(label.parentElement);
+    const wrapper = number.parentElement;
+    expect(wrapper.className).toMatch(/MuiStack-root/);
+    expect(getComputedStyle(wrapper).flexDirection).toBe("row");
+  });
+
   it("OUTBOUND does NOT render the block — its two bars show instead", () => {
     render(<CampaignCard campaign={mk({ campaign_type: "OUTBOUND", activities_today: 5 })} />);
 

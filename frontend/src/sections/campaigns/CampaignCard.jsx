@@ -371,36 +371,34 @@ export default function CampaignCard({
             today" — the SAME number the rep sees on the playlist's "To do today"
             chip (activities_today, annotated server-side). It fills the vertical
             gap the absent bars would leave. That gap is 84px: two blocks, each a
-            caption line + mb:0.5 + a 6px bar + mb:1.5 (≈ 42px). This zone mirrors
-            it — 72px of centred content + its own mb:1.5 (12px) = 84px — so the
-            footer (mt:auto) lands on the same line as an OUTBOUND card.
+            caption line + mb:0.5 + a 6px bar + mb:1.5 (≈ 42px). This zone reserves
+            it — 72px + its own mb:1.5 (12px) = 84px — so the footer (mt:auto) and
+            the title/dates/owner stay aligned with the OUTBOUND cards.
+            The content is a LEFT-ALIGNED row at the top of the zone, the same
+            layout as the big count above (Stack row, spacing 1, baseline) so the
+            two read as one family of indicators — not the earlier centred block,
+            which clashed with the big count and the left-aligned OUTBOUND /
+            Territory cards.
             null (an un-annotated view, e.g. detail) → render nothing; 0 → the
             real "0 activities to do today". Same null ≠ 0 distinction the target
             progress bar uses. */}
         {isTargeted && campaign.activities_today != null && (
-          <Box
-            sx={{
-              height: 72,
-              mb: 1.5,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* Same typographic variant as the big count, in the warning tone. */}
-            <Typography
-              variant="h2"
-              component="div"
-              fontWeight={600}
-              color="warning.main"
-            >
-              {campaign.activities_today}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {campaign.activities_today === 1 ? "activity" : "activities"} to do
-              today
-            </Typography>
+          <Box sx={{ height: 72, mb: 1.5 }}>
+            <Stack direction="row" spacing={1} alignItems="baseline">
+              {/* Same typographic variant as the big count, in the warning tone. */}
+              <Typography
+                variant="h2"
+                component="div"
+                fontWeight={600}
+                color="warning.main"
+              >
+                {campaign.activities_today}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {campaign.activities_today === 1 ? "activity" : "activities"} to
+                do today
+              </Typography>
+            </Stack>
           </Box>
         )}
 
