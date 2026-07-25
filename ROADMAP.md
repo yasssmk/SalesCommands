@@ -436,6 +436,31 @@ campagnes. **Le chip est la référence.**
   se désalignent. Restaurer la gestion élégante des tailles utilisée ailleurs
   dans l'app.
 
+### Sprint Gestion d'erreur — revue BE + FR de bout en bout (APRÈS l'UI, DERNIER avant Go-Live)
+- **Position** : après le sprint UI et TOUTES les fonctionnalités ; dernier
+  sprint avant le durcissement Go-Live. PAS un volet de S9. Décision PO :
+  refaire les messages d'erreur avant que les endpoints et les écrans soient
+  stables reviendrait à les refaire DEUX fois.
+- **Objectif** : revue COMPLÈTE de la gestion d'erreur, backend ET frontend,
+  de bout en bout — pas un patch ponctuel.
+- **Backend** :
+  - Les 500 ne doivent JAMAIS exposer de détail technique au client.
+    Aujourd'hui `handle_exception` renvoie `str(exc)` brut — un utilisateur a
+    vu « column decision_steps.status does not exist » avec le SQL Postgres
+    complet (bug réel, filtre produit de la liste DC, corrigé en PR #92).
+    Rattache **TD-118** (fuite `str(exc)` sur les 500) ici.
+  - Cohérence des messages via `core/error_messages.py` : centralisation, plus
+    de classes de messages au niveau module. Rattache **TD-99**
+    (`CampaignModuleErrorMessages` dévie de la convention) ici.
+- **Frontend** :
+  - Revue des handlers d'erreur — `displayError`, `errorHandler`,
+    `formErrorHandler`, le mapping des statuts — pour que l'utilisateur
+    reçoive un message intelligible, JAMAIS un dump technique.
+- **Validation** : aucun 500 n'expose de détail technique au client ; messages
+  cohérents via `core/error_messages.py` (plus de classes de messages au
+  niveau module) ; un message intelligible côté frontend pour chaque classe
+  d'erreur.
+
 ---
 
 ## Notes d'anticipation (à garder en tête, pas à coder maintenant)
