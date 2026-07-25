@@ -211,8 +211,8 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     @property
     def validated_steps_count(self):
-        """Number of VALIDATED steps, from the DERIVED status (never the stale
-        stored `DecisionStep.status` column, which is only ever NOT_STARTED).
+        """Number of VALIDATED steps, from the DERIVED status (step status is
+        computed from activity data, never stored).
 
         Costs ~2 queries per cycle (steps + activities prefetch) so derive_bulk
         reads activities from cache; bounded per paginated page.
@@ -301,13 +301,10 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Order in pipeline (1-7), auto-set from PipelineStep config')
     )
     
-    status = models.CharField(
-        max_length=20,
-        choices=DecisionStepStatus.choices,
-        default=DecisionStepStatus.NOT_STARTED,
-        verbose_name=_('Status')
-    )
-    
+    # Step status is DERIVED on read from activity data (see
+    # services/step_status_derivation_service.py and services/derivation_sql.py);
+    # there is no stored status column.
+
     # ==========================================================================
     # LINKED-LIST FOR ORDERING
     # ==========================================================================
@@ -453,7 +450,6 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         indexes = [
             models.Index(fields=['cycle'], name='ds_cycle_idx'),
             models.Index(fields=['stage'], name='ds_stage_idx'),
-            models.Index(fields=['status'], name='ds_status_idx'),
             models.Index(fields=['previous_step'], name='ds_prev_step_idx'),
             models.Index(fields=['expected_end'], name='ds_expected_end_idx'),
         ]

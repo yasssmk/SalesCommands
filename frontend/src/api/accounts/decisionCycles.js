@@ -227,8 +227,7 @@ const endpoints = {
 
   // Decision Steps
   steps: '/decision_cycles/steps/',
-  stepDetail: (id) => `/decision_cycles/steps/${id}/`,
-  stepStatus: (id) => `/decision_cycles/steps/${id}/status/`
+  stepDetail: (id) => `/decision_cycles/steps/${id}/`
 };
 
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
@@ -980,52 +979,6 @@ export async function updateDecisionStep(stepId, payload, cycleId = null) {
   const sanitized = sanitizeObject(payload, ['name', 'description', 'goal', 'stakeholder']);
   
   const result = await api.patch(endpoints.stepDetail(stepId), sanitized);
-  
-  if (result.success) {
-    const revalidatePaths = [
-      endpoints.steps,
-      endpoints.stepDetail(stepId),
-      '/decision_cycles/by-account/'
-    ];
-    
-    if (cycleId) {
-      revalidatePaths.push(endpoints.cycleDetail(cycleId));
-    }
-    
-    revalidateMultiple(revalidatePaths);
-    // Extract nested data from backend response { success, data }
-    const stepData = result.data?.data || result.data;
-    return { success: true, data: stepData };
-  }
-  
-  return { 
-    success: false, 
-    error: result.error,
-    status: result.status || 0,
-    response: result.response || null
-  };
-}
-
-/**
- * UPDATE DECISION STEP STATUS
- * 
- * Quick status update endpoint
- * 
- * @param {string} stepId - UUID of the step
- * @param {string} status - New status value
- * @param {string} cycleId - UUID of the parent cycle (for revalidation)
- * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
- */
-export async function updateDecisionStepStatus(stepId, status, cycleId = null) {
-  if (!stepId || !isValidUUID(stepId)) {
-    return {
-      success: false,
-      error: 'Invalid step ID format',
-      status: 400
-    };
-  }
-  
-  const result = await api.patch(endpoints.stepStatus(stepId), { status });
   
   if (result.success) {
     const revalidatePaths = [

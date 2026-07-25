@@ -322,8 +322,9 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     
     Required annotations on queryset:
     - _annotated_steps_count: Count('steps')
-    - _annotated_validated_steps_count: Count('steps', filter=Q(steps__status='VALIDATED'))
-    
+    (validated_steps_count is DERIVED from step activities via the bulk context,
+    not a stored-column annotation)
+
     Required context (injected by view):
     - cycle_summaries: dict from CycleAggregationService.get_bulk_summaries()
     - step_aggregations: dict from StepAggregationService.get_bulk_aggregation()

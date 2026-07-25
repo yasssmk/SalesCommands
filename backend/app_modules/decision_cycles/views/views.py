@@ -501,7 +501,6 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 name=config['step'].label,  # Use the label from PipelineStep
                 stage=config['step'].value,
                 order=config['order'],
-                status=DecisionStepStatus.NOT_STARTED,
                 previous_step=previous_step,
                 # expected_end will be set by user later
                 expected_end=None,
@@ -1058,10 +1057,9 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
     filterset_fields = {
         'cycle': ['exact'],
         'stage': ['exact'],
-        'status': ['exact'],
     }
     search_fields = ['name', 'description', 'stakeholder']
-    ordering_fields = ['name', 'stage', 'status', 'order', 'created_at', 'updated_at']
+    ordering_fields = ['name', 'stage', 'order', 'created_at', 'updated_at']
     ordering = ['order', 'created_at']
     
     # Security
@@ -1071,10 +1069,6 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
     
     # Action policies
     action_policies = {
-        'update_status': {
-            'crud': 'update',
-            'scope': 'client'
-        },
         'by_cycle': {
             'crud': 'read',
             'scope': 'client'
@@ -1275,91 +1269,6 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
         )
     
     
-    # ==========================================================================
-    # CUSTOM ACTIONS
-    # ==========================================================================
-    
-    @action(detail=True, methods=['patch'], url_path='status')
-    def update_status(self, request, pk=None):
-        """
-        Update step status only.
-
-        PATCH /decision-steps/{id}/status/
-        Body: { "status": "VALIDATED" }
-
-        Auto-sets:
-            - start_date when status changes to IN_PROGRESS
-            - completed_at when status changes to VALIDATED
-        """
-        from django.utils import timezone
-        
-        ctx = ctx_from_request(request)
-        instance = self.get_object()
-        
-        new_status = request.data.get('status')
-        if not new_status:
-            raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field='Status')
-            )
-        
-        valid_statuses = [choice[0] for choice in DecisionStepStatus.choices]
-        if new_status not in valid_statuses:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='Status')
-            )
-        
-        old_status = instance.status
-        instance.status = new_status
-        
-        # Track which fields changed
-        update_fields = ['status', 'updated_at', 'updated_by']
-        fields_changed = ['status']
-        
-        # Auto-set start_date when moving to IN_PROGRESS
-        if new_status == DecisionStepStatus.IN_PROGRESS and not instance.start_date:
-            instance.start_date = timezone.now()
-            update_fields.append('start_date')
-            fields_changed.append('start_date')
-        
-        # Auto-set completed_at when VALIDATED
-        if new_status == DecisionStepStatus.VALIDATED:
-            if not instance.completed_at:
-                instance.completed_at = timezone.now()
-                update_fields.append('completed_at')
-                fields_changed.append('completed_at')
-        elif old_status == DecisionStepStatus.VALIDATED:
-            # If reverting from terminal status, clear completed_at
-            instance.completed_at = None
-            update_fields.append('completed_at')
-            fields_changed.append('completed_at')
-        
-        instance.save(user=request.user, update_fields=update_fields)
-        
-        # Audit log
-        audit_log(
-            event='decision_step_status_update_success',
-            action='update',
-            actor_id=str(request.user.id),
-            client_id=str(self.get_client_id()),
-            target_type='decision_step',
-            target_id=str(instance.id),
-            fields_changed=fields_changed,
-            outcome='success'
-        )
-        
-        logger.info("decision_step_status_updated", extra={
-            **ctx,
-            'step_id': str(instance.id),
-            'old_status': old_status,
-            'new_status': new_status
-        })
-        
-        serializer = DecisionStepSerializer(instance)
-        return Response({
-            'success': True,
-            'data': serializer.data
-        })
-
 # ============================================================================
 # CHOICES VIEW
 # ============================================================================

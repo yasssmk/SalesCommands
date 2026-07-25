@@ -84,7 +84,6 @@ def _make_cycle_with_steps(account, user_a, name):
             name=config['step'].label,
             stage=config['step'].value,
             order=config['order'],
-            status=DecisionStepStatus.NOT_STARTED,
             previous_step=previous,
             expected_end=None,
         )

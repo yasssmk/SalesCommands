@@ -103,7 +103,7 @@ def _steps(cycle, owner, client_account):
     for cfg in PIPELINE_STEPS_CONFIG:
         s = DecisionStep(
             cycle=cycle, name=cfg['step'].label, stage=cfg['step'].value,
-            order=cfg['order'], status=DecisionStepStatus.NOT_STARTED,
+            order=cfg['order'],
             previous_step=previous, expected_end=None,
         )
         s.save(user=owner, client_id=client_account.id)

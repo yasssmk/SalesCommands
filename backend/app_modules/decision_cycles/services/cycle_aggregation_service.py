@@ -91,8 +91,11 @@ class CycleAggregationService:
             'percentage': int (0-100),
         }
         """
-        steps = list(cycle.steps.all())
-        return self._compute_progress(steps)
+        from .step_status_derivation_service import StepStatusDerivationService
+
+        steps = list(cycle.steps.prefetch_related('activities'))
+        derived = StepStatusDerivationService().derive_bulk(steps)
+        return self._compute_progress(steps, derived)
 
     def get_stalled_steps(self, cycle):
         """
@@ -389,14 +392,14 @@ class CycleAggregationService:
         if not steps:
             return self.STATUS_NOT_STARTED
 
-        # Use derived statuses if available, fallback to DB field
-        if step_derived_statuses:
-            statuses = [
-                step_derived_statuses.get(s.id, {}).get('status', s.status)
-                for s in steps
-            ]
-        else:
-            statuses = [s.status for s in steps]
+        # Step statuses are DERIVED on read (there is no stored step status).
+        if step_derived_statuses is None:
+            from .step_status_derivation_service import StepStatusDerivationService
+            step_derived_statuses = StepStatusDerivationService().derive_bulk(steps)
+        statuses = [
+            step_derived_statuses.get(s.id, {}).get('status')
+            for s in steps
+        ]
 
         # 2. All NOT_STARTED → cycle not started
         if all(s == 'NOT_STARTED' for s in statuses):
@@ -423,9 +426,10 @@ class CycleAggregationService:
     def _compute_progress(steps, step_derived_statuses=None):
         """
         Compute progress dict from step list.
-        
-        Uses step_derived_statuses when available because s.status (DB field)
-        is never updated — all step statuses are derived on read.
+
+        Step statuses are DERIVED on read (there is no stored step status);
+        callers pass step_derived_statuses. When absent, a step reads as
+        NOT_STARTED rather than touching any stored column.
         """
         if not steps:
             return {
@@ -438,8 +442,8 @@ class CycleAggregationService:
 
         def _get_status(s):
             if step_derived_statuses:
-                return step_derived_statuses.get(s.id, {}).get('status', s.status)
-            return s.status
+                return step_derived_statuses.get(s.id, {}).get('status', 'NOT_STARTED')
+            return 'NOT_STARTED'
 
         total = len(steps)
 
