@@ -251,48 +251,48 @@ campagnes. **Le chip est la référence.**
   du test de parité un vrai garde-fou de drift ET ouvre la porte à supprimer la
   dérivation chip côté client, pour une source unique du nombre que voit le rep.
 
-### S7c — Filtres de la liste Decision Cycles (construction)
+### S7c ✅ — Filtres de la liste Decision Cycles (construction)
+- **Livré** : PR #90 (merge `1d61f56d`).
 - **Objectif** : construire les facettes de filtre manquantes sur la vue
   liste DC. (La navigation Home « See all » / noms cliquables a été SÉPARÉE
   dans S7d — décision PO ; elle n'appartient plus à S7c.)
-- **État réel (audit — la prémisse « filtres morts » était FAUSSE)** :
-  - Le drawer de la vue liste DC (`DecisionCycleFilterPanel.jsx`) n'offre que
-    TROIS facettes : Account, Status, Owner scope. user / team nommée /
-    contact / stage n'y sont pas « morts » : ils sont ABSENTS.
-  - `useDecisionCycleFilters` ne forwarde ni stage ni status : il produit
-    `owner_scope`, `account`, et `outcome` / `outcome__isnull`. Le « Status »
-    du drawer est traduit en `outcome`, que le backend évalue bien.
-  - Les 3 facettes existantes sont toutes évaluées côté backend : ZÉRO filtre
-    mort dans ce drawer aujourd'hui.
-  - **Piège** : `buildUrlWithParams`
-    (`api/accounts/decisionCycles.js:277-283`) porte des branches `stage` et
-    `status` INERTES que rien n'alimente et que le backend n'évalue pas.
-    Ajouter naïvement une facette Stage au drawer produirait un filtre mort
-    SILENCIEUX.
-  - → C'est donc une CONSTRUCTION de filtres, PAS une réparation.
-- **Décisions produit (déjà prises)** :
-  - **Filtre de statut à DEUX vocabulaires** : `outcome` (stocké : WON / LOST
-    / ON_HOLD / NOT_QUALIFIED / vide = ouvert) ET l'état dérivé (NOT_STARTED /
-    IN_PROGRESS / OVERDUE / STALLED). Objectif produit : pouvoir filtrer un
-    cycle LOST ou STALLED.
-  - **Voie A — la dérivation d'état passe en SQL** (annotations /
-    sous-requêtes) et devient la SOURCE UNIQUE ; le service Python la
-    consomme. Pas de colonne stockée, pas de TTL. Motif du rejet du
-    stockage : l'état change avec le temps SANS aucune écriture (une date qui
-    passe) → une colonne serait périmée, et Q6 interdit de la rafraîchir dans
-    un GET.
-  - **Supprimer `DecisionStep.status`** : colonne stockée jamais mise à jour,
-    toujours `NOT_STARTED` (le code le documente lui-même). Suppression avec
-    migration, après vérification qu'aucun serializer ni écran ne la lit.
-  - **Conséquence attendue** : la moitié de TD-90 tombe d'elle-même
-    (`validated_steps_count` fait ~2 requêtes par cycle parce qu'il appelle
-    `derive_bulk` en Python).
-  - **Incohérence de vocabulaire à fermer au passage** : la colonne Status de
-    la liste affiche `outcome` si clôturé, sinon l'état dérivé — alors que le
-    filtre ne connaît qu'`outcome`. L'utilisateur filtre « Open » et lit
-    « STALLED ».
-- **Validation** : chaque facette filtre réellement ; zéro filtre mort ;
-  vocabulaire de statut cohérent entre la colonne et le filtre.
+- **Rappel de l'audit** : la prémisse « filtres DC morts, le hook forwarde
+  stage/status » était FAUSSE — les filtres n'étaient pas morts, ils
+  n'EXISTAIENT pas (le drawer n'avait que Account, Status, Owner scope ;
+  `buildUrlWithParams` portait des branches `stage`/`status` inertes). C'était
+  donc une CONSTRUCTION de filtres, PAS une réparation.
+- **Réalisé (6 sous-étapes)** :
+  - **1a — dérivation du statut d'ÉTAPE en annotations SQL**, source unique ;
+    le service Python la consomme et reste l'oracle de parité.
+  - **1b — statut EFFECTIF du cycle** (outcome sinon état dérivé) + étape
+    courante en SQL ; contrat du KPI `dc_cycle_state` préservé (la Home
+    continue de l'appeler).
+  - **2 — backend** : `DecisionCycleFilterSet` (status unifié, owner, team
+    nommée, contact en union step+activité, `source_campaign`, produit),
+    ordering des 8 colonnes, recherche (nom / account / owner / team,
+    description retirée), module config `decision_cycles` source unique,
+    serializer servant les annotations. N+1 TD-90 supprimé (compte de requêtes
+    constant, prouvé).
+  - **3 — frontend** : suppression de l'appel KPI par ligne de la liste,
+    colonnes réordonnées et toutes triables, drawer 3 → 8 facettes avec chips
+    supprimables, nettoyage des branches d'URL `stage`/`status` inertes.
+  - **4a — DÉFAUT corrigé (repro rouge d'abord)** : `DecisionStep.is_current`
+    lisait une colonne toujours à `NOT_STARTED`, donc désignait toujours le
+    PREMIER step ; il alimentait la MAUVAISE étape courante aux pipelines deal
+    health et prep call. Réaligné sur l'étape courante DÉRIVÉE (même définition
+    que l'annotation).
+  - **4b — suppression de la colonne morte `DecisionStep.status`**, de son
+    index, de l'endpoint `update_status` (backend + helper front inutilisé) ;
+    migration `0019`.
+- **Décisions produit du sprint (VOIE A)** :
+  - La dérivation d'état passe en SQL et devient la SOURCE UNIQUE : le DC n'a
+    pas de colonne statut et son état change avec le temps SANS écriture (Q6
+    interdit de le rafraîchir dans un GET).
+  - Le filtre de statut couvre DEUX vocabulaires (`outcome` + état dérivé).
+  - Stage filtrable comme ÉTAPE COURANTE dérivée, JAMAIS comme `steps__stage`.
+  - Recherche SANS description.
+- **Reporté** : le filtre PAR MONTANT de la liste DC (dépend d'un montant
+  fiable) — repoussé au Sprint C (voir ci-dessous ; TD-124).
 
 ### Sprint B — Pages Overview
 - **Objectif** : chaque élément (compte, DC, campagne, territoire, product)
@@ -322,8 +322,32 @@ campagnes. **Le chip est la référence.**
 - **Note** : candidat à remonter avant Sprint B (ferme une incohérence
   visible) — arbitrage PO en attente.
 
-### S9 — UI Produit (+ TD-74/75)
-- **Objectif** : ligne de produits + onglet Product Financial.
+### Sprint C — Produit & Finance de bout en bout (backend d'abord)
+- **Objectif** : le produit et la finance qui FONCTIONNENT de bout en bout,
+  backend d'abord (avant tout peaufinage UI).
+- **Périmètre** :
+  - Créer un produit avec plusieurs TYPES DE PRICING.
+  - Refléter le produit et son pricing sur le Decision Cycle.
+  - En sortir du reporting : le montant doit être fiable et exploitable.
+  - Réconcilier `DecisionCycle.estimated_value` (saisi à la main) et le
+    roll-up produit (`Σ deal_products`) — décider lequel fait foi (roll-up
+    dérivé recommandé). Renvoi explicite à **TD-74** (pas de contrainte 0-100
+    sur `discount_percent`) et **TD-75** (réconciliation `estimated_value` vs
+    roll-up).
+  - Gérer la DEVISE et les unités du montant total : stockage, affichage,
+    saisie — aujourd'hui non gérées.
+- **Conséquence pour la liste DC** : une fois le montant fiable, la colonne
+  Amount (qui lit `estimated_value` aujourd'hui) bascule sur la SOURCE DE
+  VÉRITÉ, et le FILTRE PAR MONTANT reporté de S7c (TD-124) devient
+  constructible sans mentir.
+
+### S9 — UI Produit (peaufinage / homogénéisation / UX — APRÈS Sprint C)
+- **Objectif** : peaufinage UI, homogénéisation et UX de la ligne de produits
+  + onglet Product Financial, une fois le backend produit-finance solide
+  (Sprint C).
+- **Paradigme** : backend d'abord (Sprint C), UI en dernier — S9 ne construit
+  plus le backend produit-finance, il l'HABILLE. (Renvoi TD-74/75 traité au
+  Sprint C.)
 - **Problématique / Solution / Validation** : à cadrer. Frontière avec
   Sprint B (overview produit) à clarifier.
 
@@ -332,6 +356,10 @@ campagnes. **Le chip est la référence.**
 
 ### S11 — Signals UX (+ TD-29)
 - **Objectif** : améliorer l'UX des signaux, réponse aux notes de signal.
+- **À tester ici (groupé avec les vérifications IA)** : smoke sur VRAIE sortie
+  LLM du fix `is_current` (S7c 4a) — prep call / deal health affichant la
+  bonne étape courante. Le fix est prouvé par repro rouge/verte + 66 tests IA,
+  mais le smoke sur sortie LLM réelle a été REPORTÉ à ce sprint (TD-123).
 - À cadrer.
 
 ### S12 — Prompts (+ intégration HubSpot)
