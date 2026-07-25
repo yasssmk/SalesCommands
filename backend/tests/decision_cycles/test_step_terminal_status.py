@@ -26,13 +26,19 @@ from app_modules.decision_cycles.constants import DecisionStepStatus
 class TestIsCurrentAfterRejectRemoval:
 
     @pytest.mark.django_db
-    def test_validated_step_is_not_current(self, five_steps, user_a):
-        """A VALIDATED step must return is_current=False (no AttributeError)."""
-        step = five_steps[0]
-        step.status = DecisionStepStatus.VALIDATED
-        step.save(user=user_a, update_fields=['status'])
+    def test_validated_step_is_not_current(
+        self, five_steps, planned_activity_on_step, completed_activity_on_step
+    ):
+        """A DERIVED-validated step returns is_current=False (no crash).
 
-        assert step.is_current is False
+        is_current now reads the DERIVED status, not the stored column, so the
+        step is made validated via activities (completed here + a planned
+        activity keeping the cycle moving), not by writing `status`.
+        """
+        completed_activity_on_step(five_steps[0])
+        planned_activity_on_step(five_steps[1])   # step0 → VALIDATED
+
+        assert five_steps[0].is_current is False
 
     @pytest.mark.django_db
     def test_not_started_first_step_is_current(self, five_steps):
@@ -40,11 +46,12 @@ class TestIsCurrentAfterRejectRemoval:
         assert five_steps[0].is_current is True
 
     @pytest.mark.django_db
-    def test_step_after_validated_previous_is_current(self, five_steps, user_a):
-        """Step whose previous_step is VALIDATED should be current."""
-        first = five_steps[0]
-        first.status = DecisionStepStatus.VALIDATED
-        first.save(user=user_a, update_fields=['status'])
+    def test_step_after_validated_previous_is_current(
+        self, five_steps, planned_activity_on_step, completed_activity_on_step
+    ):
+        """The step after a DERIVED-validated one is the current step."""
+        completed_activity_on_step(five_steps[0])   # step0 → VALIDATED
+        planned_activity_on_step(five_steps[1])      # step1 → IN_PROGRESS (current)
 
         assert five_steps[1].is_current is True
 
