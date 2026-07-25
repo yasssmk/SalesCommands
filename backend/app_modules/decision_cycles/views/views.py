@@ -5,6 +5,8 @@ ViewSets for Decision Cycle module.
 Follows CompanyAccountViewSet patterns for consistency.
 """
 
+import django_filters
+
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.db.models import Prefetch, Count, Q
+from django.db.models import Prefetch, Count, Q, Exists, OuterRef
 
 from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
@@ -37,7 +39,7 @@ from permissions.compat import get_auth_ctx
 from app_modules.notifications.models import NotificationCategory
 from app_modules.notifications.services import NotificationService
 
-from ..models import DecisionCycle, DecisionStep
+from ..models import DecisionCycle, DecisionStep, DecisionStepContact, DealProduct
 from ..serializers import (
     DecisionCycleSerializer,
     DecisionCycleListSerializer,
@@ -50,8 +52,141 @@ from ..serializers import (
     DecisionStepUpdateSerializer,
 )
 from ..constants import PipelineStep, DecisionStepStatus, CycleOutcome, TERMINAL_OUTCOMES, PIPELINE_STEPS_CONFIG
+from ..config import CONFIG
+from ..services import annotate_cycle_state
+from ..services.derivation_sql import CYCLE_STATUS_ALIAS
 
 logger = get_logger(__name__)
+
+
+# ============================================================================
+# DECISION CYCLE FILTERSET
+# ============================================================================
+
+# Unified status facet — one value covering BOTH vocabularies:
+#   stored outcome (WON / LOST / ON_HOLD / NOT_QUALIFIED),
+#   derived effective state (NOT_STARTED / IN_PROGRESS / OVERDUE / STALLED),
+#   plus OPEN (outcome IS NULL).
+_STATUS_OPEN = 'OPEN'
+_OUTCOME_STATUS_VALUES = {
+    CycleOutcome.WON, CycleOutcome.LOST, CycleOutcome.ON_HOLD, CycleOutcome.NOT_QUALIFIED,
+}
+_DERIVED_STATUS_VALUES = {
+    DecisionStepStatus.NOT_STARTED, DecisionStepStatus.IN_PROGRESS,
+    DecisionStepStatus.OVERDUE, DecisionStepStatus.STALLED,
+}
+_UNIFIED_STATUS_CHOICES = (
+    [(_STATUS_OPEN, 'Open')]
+    + [(v, v) for v in (
+        CycleOutcome.WON, CycleOutcome.LOST, CycleOutcome.ON_HOLD, CycleOutcome.NOT_QUALIFIED,
+    )]
+    + [(v, v) for v in (
+        DecisionStepStatus.NOT_STARTED, DecisionStepStatus.IN_PROGRESS,
+        DecisionStepStatus.OVERDUE, DecisionStepStatus.STALLED,
+    )]
+)
+
+
+class DecisionCycleFilterSet(django_filters.FilterSet):
+    """
+    Filterset for the decision-cycle list.
+
+    Narrows WITHIN the already tenant- and role-scoped queryset (get_queryset);
+    it never widens scope. To-many facets (contact, product) use isolated
+    correlated Exists subqueries, never a join + distinct that fan-out would
+    skew. `team` matches the EXACT team (owner__team_id), no hierarchy descent —
+    the descent is owner_scope=team's job, a separate mechanism (mirror of
+    CampaignFilterSet.filter_team).
+    """
+
+    # Exact FK facets (nullable FKs: a positive value only narrows; absence
+    # leaves owner-less / campaign-less cycles in place — no orphan drop).
+    account = django_filters.UUIDFilter(field_name='account_id')
+    owner = django_filters.UUIDFilter(field_name='owner_id')
+    source_campaign = django_filters.UUIDFilter(field_name='source_campaign_id')
+    is_active = django_filters.BooleanFilter(field_name='is_active')
+
+    # Backward-compat raw outcome facets (kept until the frontend switches to
+    # the unified `status` in the next sub-step; additive, independent params).
+    outcome = django_filters.CharFilter(field_name='outcome')
+    outcome__isnull = django_filters.BooleanFilter(
+        field_name='outcome', lookup_expr='isnull'
+    )
+
+    # Unified effective-status facet.
+    status = django_filters.ChoiceFilter(
+        method='filter_status', choices=_UNIFIED_STATUS_CHOICES
+    )
+
+    # Exact team (no descent), mirror of CampaignFilterSet.filter_team.
+    team = django_filters.CharFilter(method='filter_team')
+
+    # To-many facets via isolated Exists.
+    contact = django_filters.UUIDFilter(method='filter_contact')
+    product = django_filters.UUIDFilter(method='filter_product')
+
+    class Meta:
+        model = DecisionCycle
+        fields = []  # every facet declared explicitly above
+
+    def filter_status(self, queryset, name, value):
+        """
+        Filter on the EFFECTIVE status.
+
+        - OPEN                              → outcome IS NULL
+        - WON / LOST / ON_HOLD / NOT_QUALIFIED → outcome = value (exact, so
+          NOT_QUALIFIED stays distinct from LOST — the 1b annotation collapses
+          NOT_QUALIFIED into LOST for display, but the filter keeps them apart)
+        - NOT_STARTED / IN_PROGRESS / OVERDUE / STALLED → the derived state,
+          which only exists on open cycles, read from the 1b cycle-state
+          annotation (present on the list queryset)
+        """
+        if not value:
+            return queryset
+        if value == _STATUS_OPEN:
+            return queryset.filter(outcome__isnull=True)
+        if value in _OUTCOME_STATUS_VALUES:
+            return queryset.filter(outcome=value)
+        if value in _DERIVED_STATUS_VALUES:
+            return queryset.filter(
+                outcome__isnull=True, **{CYCLE_STATUS_ALIAS: value}
+            )
+        return queryset
+
+    def filter_team(self, queryset, name, value):
+        """Cycles whose owner belongs to the given team — exact team, no descent."""
+        if not value:
+            return queryset
+        return queryset.filter(owner__team_id=value)
+
+    def filter_contact(self, queryset, name, value):
+        """
+        Cycles where the contact is involved — UNION of the two provenances:
+        attached to a step (steps__contacts) OR present on one of the cycle's
+        step activities (steps__activities__contacts). Same semantics as the
+        all_contacts model property. Isolated Exists per provenance, so the
+        to-many joins never multiply the outer cycle rows.
+        """
+        if not value:
+            return queryset
+        from app_modules.activities.models import Activity
+
+        on_step = DecisionStepContact.objects.filter(
+            step__cycle_id=OuterRef('pk'), contact_id=value,
+        )
+        on_activity = Activity.objects.filter(
+            decision_step__cycle_id=OuterRef('pk'), contacts__id=value,
+        )
+        return queryset.filter(Exists(on_step) | Exists(on_activity))
+
+    def filter_product(self, queryset, name, value):
+        """Cycles carrying the given catalog product on a deal line (isolated Exists)."""
+        if not value:
+            return queryset
+        lines = DealProduct.objects.filter(
+            decision_cycle_id=OuterRef('pk'), product_catalog_entry_id=value,
+        )
+        return queryset.filter(Exists(lines))
 
 
 # ============================================================================
@@ -81,22 +216,14 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     serializer_class = DecisionCycleSerializer
     entity_name = 'decision_cycle'
     
-    # Filtering
+    # Filtering — filterset + ordering + search read from the module CONFIG
+    # (single source of truth, config/settings.py). The base queryset is
+    # tenant/owner-scoped upstream, so every facet narrows WITHIN scope.
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = {
-        'account': ['exact'],
-        'is_active': ['exact'],
-        # outcome is the ONLY way to express "open": a cycle is open when
-        # outcome IS NULL (same definition as dc_pipeline_value). is_active is
-        # NOT a proxy — it flags the single displayed cycle per account, so a
-        # closed cycle can still be is_active and an open one is_active=False.
-        # Additive; the base queryset is still owner/client-scoped upstream, so
-        # ?outcome__isnull=true narrows within scope and never bypasses it.
-        'outcome': ['exact', 'isnull'],
-    }
-    search_fields = ['name', 'description']
-    ordering_fields = ['name', 'is_active', 'created_at', 'updated_at']
-    ordering = ['-is_active', '-updated_at']
+    filterset_class = DecisionCycleFilterSet
+    search_fields = CONFIG.filters.dc_search_fields
+    ordering_fields = CONFIG.filters.dc_ordering_fields
+    ordering = CONFIG.filters.default_dc_ordering
     
     # Security
     authentication_classes = [CustomJWTAuthentication]
@@ -168,13 +295,19 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             # owner__team so DecisionCycleListSerializer.get_team resolves the
             # owner's team without a per-row lookup (the manager DC block's Team
             # line). owner__team implies the owner join too.
-            queryset = queryset.select_related('account', 'owner', 'owner__team').prefetch_related(
-                Prefetch(
-                    'steps',
-                    queryset=DecisionStep.objects.only(
-                        'id', 'cycle_id', 'name', 'stage', 'status', 'order'
-                    ).order_by('order')
-                )
+            #
+            # annotate_cycle_state adds the 1b cycle-state annotations (effective
+            # status, current step name/stage/order, validated/total/stalled
+            # counts). They serve the list serializer (killing the TD-90 N+1: the
+            # two count properties are now single isolated subqueries, not one/two
+            # queries PER cycle) AND back the unified `status` filter and the
+            # stage/status ordering. This annotation lives ONLY on the list branch
+            # — the only branch that reaches filter_queryset (OrderingFilter would
+            # otherwise raise FieldError for a missing annotation). The steps
+            # prefetch is gone: the serializer reads the counts from annotations,
+            # nothing consumes the prefetched steps anymore.
+            queryset = annotate_cycle_state(
+                queryset.select_related('account', 'owner', 'owner__team')
             )
         elif self.action == 'retrieve':
             # Retrieve: full step data with limited activities for detail view
@@ -368,7 +501,6 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 name=config['step'].label,  # Use the label from PipelineStep
                 stage=config['step'].value,
                 order=config['order'],
-                status=DecisionStepStatus.NOT_STARTED,
                 previous_step=previous_step,
                 # expected_end will be set by user later
                 expected_end=None,
@@ -925,10 +1057,9 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
     filterset_fields = {
         'cycle': ['exact'],
         'stage': ['exact'],
-        'status': ['exact'],
     }
     search_fields = ['name', 'description', 'stakeholder']
-    ordering_fields = ['name', 'stage', 'status', 'order', 'created_at', 'updated_at']
+    ordering_fields = ['name', 'stage', 'order', 'created_at', 'updated_at']
     ordering = ['order', 'created_at']
     
     # Security
@@ -938,10 +1069,6 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
     
     # Action policies
     action_policies = {
-        'update_status': {
-            'crud': 'update',
-            'scope': 'client'
-        },
         'by_cycle': {
             'crud': 'read',
             'scope': 'client'
@@ -1142,91 +1269,6 @@ class DecisionStepViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vie
         )
     
     
-    # ==========================================================================
-    # CUSTOM ACTIONS
-    # ==========================================================================
-    
-    @action(detail=True, methods=['patch'], url_path='status')
-    def update_status(self, request, pk=None):
-        """
-        Update step status only.
-
-        PATCH /decision-steps/{id}/status/
-        Body: { "status": "VALIDATED" }
-
-        Auto-sets:
-            - start_date when status changes to IN_PROGRESS
-            - completed_at when status changes to VALIDATED
-        """
-        from django.utils import timezone
-        
-        ctx = ctx_from_request(request)
-        instance = self.get_object()
-        
-        new_status = request.data.get('status')
-        if not new_status:
-            raise StandardizedValidationError(
-                CoreErrorMessages.REQUIRED_FIELD.format(field='Status')
-            )
-        
-        valid_statuses = [choice[0] for choice in DecisionStepStatus.choices]
-        if new_status not in valid_statuses:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='Status')
-            )
-        
-        old_status = instance.status
-        instance.status = new_status
-        
-        # Track which fields changed
-        update_fields = ['status', 'updated_at', 'updated_by']
-        fields_changed = ['status']
-        
-        # Auto-set start_date when moving to IN_PROGRESS
-        if new_status == DecisionStepStatus.IN_PROGRESS and not instance.start_date:
-            instance.start_date = timezone.now()
-            update_fields.append('start_date')
-            fields_changed.append('start_date')
-        
-        # Auto-set completed_at when VALIDATED
-        if new_status == DecisionStepStatus.VALIDATED:
-            if not instance.completed_at:
-                instance.completed_at = timezone.now()
-                update_fields.append('completed_at')
-                fields_changed.append('completed_at')
-        elif old_status == DecisionStepStatus.VALIDATED:
-            # If reverting from terminal status, clear completed_at
-            instance.completed_at = None
-            update_fields.append('completed_at')
-            fields_changed.append('completed_at')
-        
-        instance.save(user=request.user, update_fields=update_fields)
-        
-        # Audit log
-        audit_log(
-            event='decision_step_status_update_success',
-            action='update',
-            actor_id=str(request.user.id),
-            client_id=str(self.get_client_id()),
-            target_type='decision_step',
-            target_id=str(instance.id),
-            fields_changed=fields_changed,
-            outcome='success'
-        )
-        
-        logger.info("decision_step_status_updated", extra={
-            **ctx,
-            'step_id': str(instance.id),
-            'old_status': old_status,
-            'new_status': new_status
-        })
-        
-        serializer = DecisionStepSerializer(instance)
-        return Response({
-            'success': True,
-            'data': serializer.data
-        })
-
 # ============================================================================
 # CHOICES VIEW
 # ============================================================================

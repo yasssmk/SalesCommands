@@ -16,8 +16,20 @@ import { resolveDefaultOwnerScope } from "utils/ownerScope";
 const DEFAULT_FILTERS = {
   owner_scope: "all", // neutral base; overridden per-tier at seed
   account: null, // account object (from AsyncAccountSelect)
-  status: "", // '' | 'OPEN' | 'WON' | 'LOST' | 'ON_HOLD' | 'NOT_QUALIFIED'
+  // Unified status — one of the backend DecisionCycleFilterSet literals:
+  // '' | OPEN | WON | LOST | ON_HOLD | NOT_QUALIFIED
+  //    | NOT_STARTED | IN_PROGRESS | OVERDUE | STALLED
+  status: "",
+  owner: null, // user object (AsyncUserSelect)
+  team: null, // team object (AsyncTeamSelect)
+  contact: null, // contact object (AsyncContactSelect)
+  source_campaign: null, // campaign object {id, name} (static select)
+  product: null, // product object {id, name} (static select)
 };
+
+// Object-valued facets (async / lookup selectors). Their neutral value is null
+// and they contribute to apiFilters as `<key>=<obj>.id`.
+const OBJECT_FACETS = ["account", "owner", "team", "contact", "source_campaign", "product"];
 
 /**
  * Filter-state hook for the Decision Cycles table.
@@ -56,8 +68,10 @@ export default function useDecisionCycleFilters(initialFilters = {}) {
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (filters.owner_scope && filters.owner_scope !== "all") count++;
-    if (filters.account?.id) count++;
     if (filters.status) count++;
+    for (const key of OBJECT_FACETS) {
+      if (filters[key]?.id) count++;
+    }
     return count;
   }, [filters]);
 
@@ -67,11 +81,11 @@ export default function useDecisionCycleFilters(initialFilters = {}) {
   );
 
   const hasPendingChanges = useMemo(() => {
-    const normalize = (obj) => ({
-      owner_scope: obj.owner_scope,
-      account: obj.account?.id || null,
-      status: obj.status,
-    });
+    const normalize = (obj) => {
+      const norm = { owner_scope: obj.owner_scope, status: obj.status };
+      for (const key of OBJECT_FACETS) norm[key] = obj[key]?.id || null;
+      return norm;
+    };
     return (
       JSON.stringify(normalize(filters)) !==
       JSON.stringify(normalize(pendingFilters))
@@ -79,23 +93,24 @@ export default function useDecisionCycleFilters(initialFilters = {}) {
   }, [filters, pendingFilters]);
 
   /**
-   * Filters formatted for the API (from the APPLIED filters).
+   * Filters formatted for the API (from the APPLIED filters). Every param name
+   * matches the backend DecisionCycleFilterSet exactly.
    *   - owner_scope: 'mine'/'team' forwarded; 'all' omitted (tenant-wide).
-   *   - account object → account=<id> (exact).
-   *   - status 'OPEN' → outcome__isnull=true; a terminal outcome → outcome=<value>.
+   *   - status: the unified literal, forwarded as-is (backend maps OPEN →
+   *     outcome IS NULL, WON/LOST/… → outcome exact, derived states → annotation).
+   *   - object facets → `<key>=<obj>.id` (account, owner, team, contact,
+   *     source_campaign, product).
    */
   const apiFilters = useMemo(() => {
     const result = {};
     if (filters.owner_scope && filters.owner_scope !== "all") {
       result.owner_scope = filters.owner_scope;
     }
-    if (filters.account?.id) {
-      result.account = filters.account.id;
+    if (filters.status) {
+      result.status = filters.status;
     }
-    if (filters.status === "OPEN") {
-      result.outcome__isnull = true;
-    } else if (filters.status) {
-      result.outcome = filters.status;
+    for (const key of OBJECT_FACETS) {
+      if (filters[key]?.id) result[key] = filters[key].id;
     }
     return result;
   }, [filters]);
@@ -142,4 +157,4 @@ export default function useDecisionCycleFilters(initialFilters = {}) {
   };
 }
 
-export { DEFAULT_FILTERS };
+export { DEFAULT_FILTERS, OBJECT_FACETS };

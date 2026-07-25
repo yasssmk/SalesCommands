@@ -227,8 +227,7 @@ const endpoints = {
 
   // Decision Steps
   steps: '/decision_cycles/steps/',
-  stepDetail: (id) => `/decision_cycles/steps/${id}/`,
-  stepStatus: (id) => `/decision_cycles/steps/${id}/status/`
+  stepDetail: (id) => `/decision_cycles/steps/${id}/`
 };
 
 // ==============================|| HELPER - BUILD URL WITH PARAMS ||============================== //
@@ -274,12 +273,34 @@ export const buildUrlWithParams = (baseUrl, params = {}) => {
     queryParams.append('cycle', filters.cycle_id);
   }
 
-  if (filters.stage) {
-    queryParams.append('stage', filters.stage);
-  }
-
+  // Unified status facet — one of the backend DecisionCycleFilterSet literals
+  // (OPEN / WON / LOST / ON_HOLD / NOT_QUALIFIED / NOT_STARTED / IN_PROGRESS /
+  // OVERDUE / STALLED). The backend resolves it against outcome or the derived
+  // annotation; the frontend just forwards the literal.
   if (filters.status) {
     queryParams.append('status', filters.status);
+  }
+
+  // Named-entity facets — each forwarded as its id (DecisionCycleFilterSet
+  // params: owner, team, contact, source_campaign, product).
+  if (filters.owner) {
+    queryParams.append('owner', filters.owner);
+  }
+
+  if (filters.team) {
+    queryParams.append('team', filters.team);
+  }
+
+  if (filters.contact) {
+    queryParams.append('contact', filters.contact);
+  }
+
+  if (filters.source_campaign) {
+    queryParams.append('source_campaign', filters.source_campaign);
+  }
+
+  if (filters.product) {
+    queryParams.append('product', filters.product);
   }
 
   // Owner scope (mine/team/all) — narrows the tenant-wide read=client list to
@@ -288,15 +309,15 @@ export const buildUrlWithParams = (baseUrl, params = {}) => {
     queryParams.append('owner_scope', filters.owner_scope);
   }
 
-  // "Open" filter: outcome IS NULL. Boolean-ish; append the backend's
-  // true/false string only when the key is explicitly set (never on absent).
+  // "Open" filter: outcome IS NULL. Kept for direct callers (e.g. the rep Home
+  // block's ?owner_scope=mine&outcome__isnull=true); the list drawer now uses
+  // the unified `status` facet above instead.
   if (filters.outcome__isnull !== undefined && filters.outcome__isnull !== null) {
     queryParams.append('outcome__isnull', filters.outcome__isnull);
   }
 
-  // Closed-cycle outcome filter (exact). Backend DecisionCycleViewSet declares
-  // outcome: ['exact', 'isnull'], so this narrows to a single terminal outcome
-  // (WON / LOST / ON_HOLD / NOT_QUALIFIED).
+  // Closed-cycle outcome filter (exact). Kept for direct callers; the drawer
+  // uses `status` now.
   if (filters.outcome) {
     queryParams.append('outcome', filters.outcome);
   }
@@ -958,52 +979,6 @@ export async function updateDecisionStep(stepId, payload, cycleId = null) {
   const sanitized = sanitizeObject(payload, ['name', 'description', 'goal', 'stakeholder']);
   
   const result = await api.patch(endpoints.stepDetail(stepId), sanitized);
-  
-  if (result.success) {
-    const revalidatePaths = [
-      endpoints.steps,
-      endpoints.stepDetail(stepId),
-      '/decision_cycles/by-account/'
-    ];
-    
-    if (cycleId) {
-      revalidatePaths.push(endpoints.cycleDetail(cycleId));
-    }
-    
-    revalidateMultiple(revalidatePaths);
-    // Extract nested data from backend response { success, data }
-    const stepData = result.data?.data || result.data;
-    return { success: true, data: stepData };
-  }
-  
-  return { 
-    success: false, 
-    error: result.error,
-    status: result.status || 0,
-    response: result.response || null
-  };
-}
-
-/**
- * UPDATE DECISION STEP STATUS
- * 
- * Quick status update endpoint
- * 
- * @param {string} stepId - UUID of the step
- * @param {string} status - New status value
- * @param {string} cycleId - UUID of the parent cycle (for revalidation)
- * @returns {Promise<Object>} {success: boolean, data?: Object, error?: string}
- */
-export async function updateDecisionStepStatus(stepId, status, cycleId = null) {
-  if (!stepId || !isValidUUID(stepId)) {
-    return {
-      success: false,
-      error: 'Invalid step ID format',
-      status: 400
-    };
-  }
-  
-  const result = await api.patch(endpoints.stepStatus(stepId), { status });
   
   if (result.success) {
     const revalidatePaths = [

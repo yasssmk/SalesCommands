@@ -122,13 +122,6 @@ def get_urlpatterns():
             'patch': 'partial_update',
             'delete': 'destroy'
         }), name='step-detail'),
-
-        # =====================================================================
-        # DECISION STEPS - CUSTOM ACTIONS
-        # =====================================================================
-        path('steps/<uuid:pk>/status/', DecisionStepViewSet.as_view({
-            'patch': 'update_status'
-        }), name='step-status'),
     ]
 
 

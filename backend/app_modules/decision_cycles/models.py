@@ -211,8 +211,8 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     @property
     def validated_steps_count(self):
-        """Number of VALIDATED steps, from the DERIVED status (never the stale
-        stored `DecisionStep.status` column, which is only ever NOT_STARTED).
+        """Number of VALIDATED steps, from the DERIVED status (step status is
+        computed from activity data, never stored).
 
         Costs ~2 queries per cycle (steps + activities prefetch) so derive_bulk
         reads activities from cache; bounded per paginated page.
@@ -301,13 +301,10 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Order in pipeline (1-7), auto-set from PipelineStep config')
     )
     
-    status = models.CharField(
-        max_length=20,
-        choices=DecisionStepStatus.choices,
-        default=DecisionStepStatus.NOT_STARTED,
-        verbose_name=_('Status')
-    )
-    
+    # Step status is DERIVED on read from activity data (see
+    # services/step_status_derivation_service.py and services/derivation_sql.py);
+    # there is no stored status column.
+
     # ==========================================================================
     # LINKED-LIST FOR ORDERING
     # ==========================================================================
@@ -453,7 +450,6 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
         indexes = [
             models.Index(fields=['cycle'], name='ds_cycle_idx'),
             models.Index(fields=['stage'], name='ds_stage_idx'),
-            models.Index(fields=['status'], name='ds_status_idx'),
             models.Index(fields=['previous_step'], name='ds_prev_step_idx'),
             models.Index(fields=['expected_end'], name='ds_expected_end_idx'),
         ]
@@ -473,16 +469,35 @@ class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
     @property
     def is_current(self):
         """
-        Check if this is the current step.
-        Current = not VALIDATED and previous_step is VALIDATED (if any).
+        Whether this step is the cycle's CURRENT step: the first step (by order)
+        whose DERIVED status is not VALIDATED.
+
+        This is the single definition shared with annotate_cycle_state
+        (services/derivation_sql.py) and CycleAggregationService._compute_progress
+        — is_current CONSUMES that service instead of re-deriving the rule, so
+        there is one source of truth (Voie A). The stored `status` column is
+        never updated and must not be read here.
+
+        Derived on read from activity data; triggers queries (acceptable for the
+        detail view) and never writes (Q6). Returns False when the cycle has no
+        steps or every step is VALIDATED (no current step).
         """
-        if self.status == DecisionStepStatus.VALIDATED:
+        if not self.cycle_id:
             return False
-        
-        if self.previous_step is None:
-            return True
-        
-        return self.previous_step.status == DecisionStepStatus.VALIDATED
+
+        from .services import CycleAggregationService, StepStatusDerivationService
+
+        steps = list(
+            DecisionStep.objects.filter(cycle_id=self.cycle_id).prefetch_related('activities')
+        )
+        if not steps:
+            return False
+
+        derived = StepStatusDerivationService().derive_bulk(steps)
+        current_order = CycleAggregationService._compute_progress(
+            steps, derived
+        ).get('current_step_order')
+        return current_order is not None and current_order == self.order
     
     @property
     def has_parallel_steps(self):

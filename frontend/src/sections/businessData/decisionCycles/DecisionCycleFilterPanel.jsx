@@ -26,15 +26,22 @@ import DownOutlined from "@ant-design/icons/DownOutlined";
 import FilterOutlined from "@ant-design/icons/FilterOutlined";
 import ClearOutlined from "@ant-design/icons/ClearOutlined";
 
-// project imports
+// project imports — async selectors (MUI Autocomplete contract: onChange(event, value))
 import AsyncAccountSelect from "components/AsyncSelection/AsyncAccountSelect";
+import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
+import AsyncTeamSelect from "components/AsyncSelection/AsyncTeamSelect";
+import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
+
+// data hooks for the static (non-async) lookups — campaign + product
+import { useGetCampaigns } from "api/campaigns/campaigns";
+import { useGetProductCatalogEntries } from "api/businessData/productCatalog";
 
 // ==============================|| STATUS OPTIONS ||============================== //
 
 /**
- * Status options. "Open" maps to outcome__isnull=true; each terminal value maps
- * to outcome=<value> (exact). Both params are honoured by the backend
- * DecisionCycleViewSet filterset (outcome: ['exact', 'isnull']).
+ * Unified status facet. Values are the EXACT backend DecisionCycleFilterSet
+ * literals — OPEN (outcome IS NULL), the stored outcomes, and the 1b-derived
+ * states. A mismatch here would be a silent dead filter.
  */
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
@@ -43,6 +50,10 @@ const STATUS_OPTIONS = [
   { value: "LOST", label: "Lost" },
   { value: "ON_HOLD", label: "On Hold" },
   { value: "NOT_QUALIFIED", label: "Not Qualified" },
+  { value: "NOT_STARTED", label: "Not Started" },
+  { value: "IN_PROGRESS", label: "In Progress" },
+  { value: "OVERDUE", label: "Overdue" },
+  { value: "STALLED", label: "Stalled" },
 ];
 
 // ==============================|| FILTER SECTION ||============================== //
@@ -79,9 +90,14 @@ FilterSection.propTypes = {
 // ==============================|| DECISION CYCLE FILTER PANEL ||============================== //
 
 /**
- * Slide-in drawer for decision-cycle filters. Same shape as the account
- * TerritoryFilterPanel: header, filter section, footer with matching count +
- * Clear/Apply. Facets: Account, Status, and Owner scope (Mine / My Team / All).
+ * Slide-in drawer for decision-cycle filters. Same shape as CampaignFilterPanel:
+ * header, one filter section, footer with matching count + Clear/Apply. Eight
+ * facets: Account, Status (unified), Owner (user), Team, Contact, Source
+ * campaign, Product, and Owner scope (Mine / My Team / All).
+ *
+ * Object facets (account, owner, team, contact, source_campaign, product) store
+ * the selected object ({id, name, …}); the hook forwards `<key>=<obj>.id`. The
+ * async selectors follow the MUI Autocomplete contract onChange(event, value).
  */
 export default function DecisionCycleFilterPanel({
   open,
@@ -94,18 +110,29 @@ export default function DecisionCycleFilterPanel({
   matchingCount = 0,
   loading = false,
 }) {
+  // Static lookups — bounded lists for the campaign + product Selects.
+  const { campaigns = [] } = useGetCampaigns({ page: 1, pageSize: 100 });
+  const { entries: products = [] } = useGetProductCatalogEntries({
+    page: 1,
+    pageSize: 100,
+  });
+
   // ==============================|| HANDLERS ||============================== //
 
-  const handleAccountChange = (account) => {
-    onFilterChange("account", account || null);
-  };
+  // Async selectors → store the object (or null).
+  const setObject = (key) => (_event, value) => onFilterChange(key, value || null);
 
-  const handleStatusChange = (event) => {
-    onFilterChange("status", event.target.value);
-  };
+  const handleStatusChange = (event) => onFilterChange("status", event.target.value);
 
-  const handleOwnerScopeChange = (event) => {
+  const handleOwnerScopeChange = (event) =>
     onFilterChange("owner_scope", event.target.value);
+
+  // Static Selects hold an id in the MenuItem; resolve back to the object so the
+  // chip can show a name and the hook can read `.id`.
+  const setFromList = (key, list) => (event) => {
+    const id = event.target.value;
+    const obj = list.find((o) => String(o.id) === String(id)) || null;
+    onFilterChange(key, obj);
   };
 
   const handleApply = () => {
@@ -150,16 +177,16 @@ export default function DecisionCycleFilterPanel({
           defaultExpanded={true}
         >
           <Stack spacing={2.5}>
-            {/* Account filter */}
+            {/* Account */}
             <AsyncAccountSelect
               value={pendingFilters?.account || null}
-              onChange={handleAccountChange}
+              onChange={setObject("account")}
               label="Account"
               placeholder="All accounts"
               size="small"
             />
 
-            {/* Status filter */}
+            {/* Status (unified) */}
             <FormControl fullWidth size="small">
               <InputLabel id="dc-status-filter-label">Status</InputLabel>
               <Select
@@ -176,14 +203,77 @@ export default function DecisionCycleFilterPanel({
               </Select>
             </FormControl>
 
-            {/* Owner scope filter */}
+            {/* Owner (named user) */}
+            <AsyncUserSelect
+              value={pendingFilters?.owner || null}
+              onChange={setObject("owner")}
+              label="Owner"
+              placeholder="Any owner"
+              size="small"
+            />
+
+            {/* Team (named team) */}
+            <AsyncTeamSelect
+              value={pendingFilters?.team || null}
+              onChange={setObject("team")}
+              label="Team"
+              placeholder="Any team"
+              size="small"
+            />
+
+            {/* Contact */}
+            <AsyncContactSelect
+              value={pendingFilters?.contact || null}
+              onChange={setObject("contact")}
+              label="Contact"
+              placeholder="Any contact"
+              size="small"
+            />
+
+            {/* Source campaign (static list) */}
+            <FormControl fullWidth size="small">
+              <InputLabel id="dc-campaign-filter-label">Source campaign</InputLabel>
+              <Select
+                labelId="dc-campaign-filter-label"
+                label="Source campaign"
+                value={pendingFilters?.source_campaign?.id || ""}
+                onChange={setFromList("source_campaign", campaigns)}
+              >
+                <MenuItem value="">Any campaign</MenuItem>
+                {campaigns.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>
+                    {c.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* Product (static list) */}
+            <FormControl fullWidth size="small">
+              <InputLabel id="dc-product-filter-label">Product</InputLabel>
+              <Select
+                labelId="dc-product-filter-label"
+                label="Product"
+                value={pendingFilters?.product?.id || ""}
+                onChange={setFromList("product", products)}
+              >
+                <MenuItem value="">Any product</MenuItem>
+                {products.map((p) => (
+                  <MenuItem key={p.id} value={p.id}>
+                    {p.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* Owner scope */}
             <Box>
               <Typography
                 variant="caption"
                 color="text.secondary"
                 sx={{ mb: 1, display: "block" }}
               >
-                Owner
+                Owner scope
               </Typography>
               <FormControl component="fieldset" fullWidth>
                 <RadioGroup
@@ -195,25 +285,19 @@ export default function DecisionCycleFilterPanel({
                     value="mine"
                     control={<Radio size="small" />}
                     label="Mine"
-                    sx={{
-                      "& .MuiFormControlLabel-label": { fontSize: "0.875rem" },
-                    }}
+                    sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.875rem" } }}
                   />
                   <FormControlLabel
                     value="team"
                     control={<Radio size="small" />}
                     label="My Team"
-                    sx={{
-                      "& .MuiFormControlLabel-label": { fontSize: "0.875rem" },
-                    }}
+                    sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.875rem" } }}
                   />
                   <FormControlLabel
                     value="all"
                     control={<Radio size="small" />}
                     label="All"
-                    sx={{
-                      "& .MuiFormControlLabel-label": { fontSize: "0.875rem" },
-                    }}
+                    sx={{ "& .MuiFormControlLabel-label": { fontSize: "0.875rem" } }}
                   />
                 </RadioGroup>
               </FormControl>
@@ -269,8 +353,13 @@ DecisionCycleFilterPanel.propTypes = {
   onClose: PropTypes.func.isRequired,
   pendingFilters: PropTypes.shape({
     owner_scope: PropTypes.string,
-    account: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
     status: PropTypes.string,
+    account: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
+    owner: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
+    team: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
+    contact: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
+    source_campaign: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
+    product: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
   }),
   onFilterChange: PropTypes.func.isRequired,
   onApply: PropTypes.func.isRequired,

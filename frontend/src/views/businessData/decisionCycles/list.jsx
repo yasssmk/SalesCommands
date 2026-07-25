@@ -15,7 +15,9 @@ import DecisionCycleFilterPanel from "sections/businessData/decisionCycles/Decis
 // hooks
 import useLocalStorage from "hooks/useLocalStorage";
 import { useAuth } from "hooks/useAuth";
-import useDecisionCycleFilters from "hooks/useDecisionCycleFilters";
+import useDecisionCycleFilters, {
+  OBJECT_FACETS,
+} from "hooks/useDecisionCycleFilters";
 
 // api
 import {
@@ -24,7 +26,6 @@ import {
   CYCLE_DERIVED_STATUS_LABELS,
   CYCLE_STATUS_COLORS,
 } from "api/accounts/decisionCycles";
-import { useKpiBatch } from "api/bi/kpi";
 import { tenantKey } from "api/_swr";
 
 // utils
@@ -35,13 +36,18 @@ import { formatDateTime } from "config/formatters";
 const ENDPOINT = "/decision_cycles/";
 
 /**
- * Map frontend column ids to backend ordering field names. Only columns the
- * backend can order on are listed (DecisionCycleViewSet.ordering_fields =
- * name, is_active, created_at, updated_at). KPI-derived and to-one display
- * columns are not server-sortable.
+ * Map each column's TanStack id to the backend ordering field. All eight
+ * columns are server-sortable (DecisionCycleViewSet.ordering_fields): flat
+ * fields, FK traversals, and the 1b annotations for stage / effective status.
  */
 const COLUMN_TO_BACKEND_FIELD = {
-  name: "name",
+  cycle_name: "name",
+  account_name: "account__company_name",
+  current_step_name: "_current_step_stage", // Stage column: sort by the stage annotation
+  status: "_cycle_effective_status",
+  estimated_value: "estimated_value",
+  owner_name: "owner__first_name",
+  team: "owner__team__name",
   updated_at: "updated_at",
 };
 
@@ -51,9 +57,34 @@ const STATUS_LABELS = {
   LOST: "Lost",
   ON_HOLD: "On Hold",
   NOT_QUALIFIED: "Not Qualified",
+  NOT_STARTED: "Not Started",
+  IN_PROGRESS: "In Progress",
+  OVERDUE: "Overdue",
+  STALLED: "Stalled",
 };
 
 const OWNER_SCOPE_LABELS = { mine: "Mine", team: "My Team" };
+
+// Readable chip value for an object-valued facet.
+const facetChipValue = {
+  account: (o) => o.company_name || o.name || "Selected",
+  owner: (o) =>
+    `${o.first_name || ""} ${o.last_name || ""}`.trim() || o.email || "Selected",
+  team: (o) => o.name || "Selected",
+  contact: (o) =>
+    `${o.first_name || ""} ${o.last_name || ""}`.trim() || o.name || "Selected",
+  source_campaign: (o) => o.name || "Selected",
+  product: (o) => o.name || "Selected",
+};
+
+const FACET_CHIP_LABEL = {
+  account: "Account",
+  owner: "Owner",
+  team: "Team",
+  contact: "Contact",
+  source_campaign: "Campaign",
+  product: "Product",
+};
 
 // STALLED reads as a caution in the shared palette ('warning'); the Home block
 // forces it red as the "act now" lever. Mirror that override so both surfaces
@@ -85,11 +116,10 @@ function formatAmount(value) {
  * ReusableTable + the funnel-icon advanced filter drawer + filter chips. Only
  * the columns, data and facets differ. No tabs.
  *
- * Data model (same mechanic as the Home DC block):
- *   - name / account / owner / team / outcome / estimated_value / updated_at
- *     come from the list serializer (useGetDecisionCycles).
- *   - stage / derived status come from the dc_cycle_state KPI, one request per
- *     visible cycle, batched via useKpiBatch and zipped by index.
+ * Data model: every column — including the effective status (cycle_status) and
+ * the current step (current_step_name) — is served by the list serializer
+ * (useGetDecisionCycles). The view no longer makes a per-row dc_cycle_state KPI
+ * call; that KPI still backs the Home blocks, just not this table.
  *
  * Read-only: no create, no bulk, no multi-select, no import. Clicking the
  * cycle name opens /accounts/{account}/dc/{id} (the shared table has no
@@ -176,41 +206,10 @@ export default function DecisionCyclesListPage() {
     [page, validPageSize, search, ordering, apiFilters, tenantId],
   );
 
-  // ==============================|| KPI ENRICHMENT (dc_cycle_state) ||============================== //
-
-  // dc_cycle_state allowed_scopes are ('mine','team','client'); the list's
-  // 'all' maps to the KPI's 'client'.
-  const kpiScope = filters.owner_scope === "all" ? "client" : filters.owner_scope;
-
-  const kpiRequests = useMemo(
-    () =>
-      cycles.map((c) => ({
-        key: "dc_cycle_state",
-        scope: kpiScope,
-        params: { cycle_id: c.id },
-      })),
-    [cycles, kpiScope],
-  );
-
-  const { results: kpiResults = [] } = useKpiBatch(kpiRequests, {
-    enabled: cycles.length > 0,
-  });
-
-  // Enrich each cycle row with its KPI meta, zipped by index (as the Home does).
-  const rows = useMemo(
-    () =>
-      cycles.map((c, i) => {
-        const res = kpiResults[i];
-        const meta = res?.meta || {};
-        const derivedStatus = res?.value || meta.cycle_status || null;
-        return {
-          ...c,
-          stage_name: meta.current_step_name || null,
-          derived_status: derivedStatus,
-        };
-      }),
-    [cycles, kpiResults],
-  );
+  // Stage and effective status now come straight from the list serializer
+  // (cycle_status / current_stage / current_step_name), so the per-row
+  // dc_cycle_state KPI call this view used to make is gone. The rows are the
+  // serializer records as-is.
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -282,11 +281,15 @@ export default function DecisionCyclesListPage() {
 
   const handleRemoveFilter = useCallback(
     (filterKey) => {
-      // owner_scope is removed by widening to 'all' (its non-narrowing value).
-      updatePendingFilter(
-        filterKey,
-        filterKey === "owner_scope" ? "all" : filterKey === "account" ? null : "",
-      );
+      // Neutral value per facet type: owner_scope widens to 'all', object facets
+      // reset to null, the status string resets to ''.
+      const neutral =
+        filterKey === "owner_scope"
+          ? "all"
+          : OBJECT_FACETS.includes(filterKey)
+            ? null
+            : "";
+      updatePendingFilter(filterKey, neutral);
       setTimeout(() => {
         applyFilters();
         setPage(1);
@@ -302,15 +305,8 @@ export default function DecisionCyclesListPage() {
     if (filters.owner_scope && filters.owner_scope !== "all") {
       chips.push({
         key: "owner_scope",
-        label: "Owner",
+        label: "Owner scope",
         value: OWNER_SCOPE_LABELS[filters.owner_scope] || filters.owner_scope,
-      });
-    }
-    if (filters.account?.id) {
-      chips.push({
-        key: "account",
-        label: "Account",
-        value: filters.account.company_name || "Selected",
       });
     }
     if (filters.status) {
@@ -320,11 +316,26 @@ export default function DecisionCyclesListPage() {
         value: STATUS_LABELS[filters.status] || filters.status,
       });
     }
+    // Object-valued facets — one removable chip each, with a readable value.
+    for (const key of OBJECT_FACETS) {
+      const obj = filters[key];
+      if (obj?.id) {
+        chips.push({
+          key,
+          label: FACET_CHIP_LABEL[key],
+          value: facetChipValue[key](obj),
+        });
+      }
+    }
     return chips;
   }, [filters]);
 
   // ==============================|| COLUMNS ||============================== //
 
+  // Column order: name · account · stage · status · amount · owner · team ·
+  // last updated. All eight are server-sortable (COLUMN_TO_BACKEND_FIELD maps
+  // each id to its ordering field). Stage and status come from the serializer
+  // (current_step_name / cycle_status), no longer from the KPI.
   const columns = useMemo(
     () => [
       // Decision cycle name — primary, clickable → cycle workspace
@@ -355,7 +366,6 @@ export default function DecisionCyclesListPage() {
       {
         header: "Account",
         accessorKey: "account_name",
-        enableSorting: false,
         cell: ({ row, getValue }) => (
           <Typography
             variant="body2"
@@ -376,35 +386,11 @@ export default function DecisionCyclesListPage() {
         ),
       },
 
-      // Owner (name, email fallback — names are nullable on User)
-      {
-        header: "Owner",
-        accessorKey: "owner_name",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <Typography variant="body2">
-            {row.original.owner_name || row.original.owner_email || "—"}
-          </Typography>
-        ),
-      },
-
-      // Team
-      {
-        header: "Team",
-        accessorKey: "team",
-        enableSorting: false,
-        cell: ({ getValue }) => (
-          <Typography variant="body2" color="text.secondary">
-            {getValue()?.name || "—"}
-          </Typography>
-        ),
-      },
-
-      // Stage (KPI: current step name)
+      // Stage — current step name (serializer: current_step_name), sorted by the
+      // current-step stage annotation.
       {
         header: "Stage",
-        accessorKey: "stage_name",
-        enableSorting: false,
+        accessorKey: "current_step_name",
         cell: ({ getValue }) => (
           <Typography variant="body2" color="text.secondary">
             {getValue() || "—"}
@@ -412,24 +398,17 @@ export default function DecisionCyclesListPage() {
         ),
       },
 
-      // Amount (estimated_value)
-      {
-        header: "Amount",
-        accessorKey: "estimated_value",
-        meta: { className: "cell-right" },
-        enableSorting: false,
-        cell: ({ getValue }) => (
-          <Typography variant="body2">{formatAmount(getValue())}</Typography>
-        ),
-      },
-
-      // Status — outcome when closed, KPI-derived status when open
+      // Status — outcome when closed, derived effective status (serializer:
+      // cycle_status) when open. Sorted by the effective-status annotation.
       {
         header: "Status",
         id: "status",
-        enableSorting: false,
+        // accessorFn (not just a cell) so the column is sortable — a display
+        // column with no accessor reports getCanSort() === false. Sorting maps
+        // `status` → _cycle_effective_status (COLUMN_TO_BACKEND_FIELD).
+        accessorFn: (row) => row.cycle_status,
         cell: ({ row }) => {
-          const { outcome, derived_status: derived } = row.original;
+          const { outcome, cycle_status: derived } = row.original;
           const statusKey = outcome || derived; // closed → outcome, open → derived
           if (!statusKey) {
             return (
@@ -444,6 +423,38 @@ export default function DecisionCyclesListPage() {
             <Chip size="small" label={label} color={color} variant="light" />
           );
         },
+      },
+
+      // Amount (estimated_value)
+      {
+        header: "Amount",
+        accessorKey: "estimated_value",
+        meta: { className: "cell-right" },
+        cell: ({ getValue }) => (
+          <Typography variant="body2">{formatAmount(getValue())}</Typography>
+        ),
+      },
+
+      // Owner (name, email fallback — names are nullable on User)
+      {
+        header: "Owner",
+        accessorKey: "owner_name",
+        cell: ({ row }) => (
+          <Typography variant="body2">
+            {row.original.owner_name || row.original.owner_email || "—"}
+          </Typography>
+        ),
+      },
+
+      // Team
+      {
+        header: "Team",
+        accessorKey: "team",
+        cell: ({ getValue }) => (
+          <Typography variant="body2" color="text.secondary">
+            {getValue()?.name || "—"}
+          </Typography>
+        ),
       },
 
       // Last update
@@ -468,7 +479,7 @@ export default function DecisionCyclesListPage() {
   return (
     <>
       <ReusableTable
-        data={rows}
+        data={cycles}
         columns={columns}
         loading={cyclesLoading}
         error={cyclesError}
