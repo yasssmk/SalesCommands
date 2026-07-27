@@ -1,3 +1,5 @@
+'use client';
+
 // frontend/src/views/objectives/list.jsx
 //
 // "My Objectives" — the current user's personal objectives (scoped by tier on
