@@ -9,9 +9,11 @@ bi) because quotas depends on bi/metrics — the reverse would be circular.
 Perimeter rule (PO decision) — the base data a quota is measured over depends on
 the TIER OF ITS OWNER, not on who is looking:
 - individual owner -> the owner's own data (metric ``user=owner``);
-- manager owner    -> the DIRECT members of the owner's team (``<owner>__team``),
-  NO hierarchy descent — the objective is the manager's, but its value is the
-  team's production;
+- manager owner    -> the whole SUBTREE rooted at the owner's team node: the
+  node's members plus every descendant team's members, recursively to the leaves
+  (``Team`` is a self-FK hierarchy). The objective is the manager's, but its
+  value is the team's real production — a manager on a high node measures
+  everything under them, not just their direct members;
 - admin owner      -> the whole tenant.
 Tenant isolation is always applied first and never bypassed.
 
@@ -81,6 +83,61 @@ def _perimeter_key(owner):
     return ('individual', owner.id)
 
 
+def team_subtree_ids(team_id, client_id):
+    """All team ids in the subtree ROOTED at ``team_id`` — the node itself plus
+    every descendant, at any depth.
+
+    Team carries a plain self-FK hierarchy (``Team.parent_team``) with no tree
+    library and no DB constraint forbidding a cycle, so the descent is done here:
+    - ONE query loads the client's (id, parent_team_id) adjacency, then the
+      traversal is in-memory — the query count is CONSTANT regardless of the
+      tree's depth or size (a WITH RECURSIVE CTE would also be one query; this
+      form keeps it portable and needs no raw SQL);
+    - the traversal is iterative with a ``seen`` guard, so a cycle
+      (A -> B -> A) terminates instead of recursing forever.
+
+    Returns a set of team ids (the node included). Empty when ``team_id`` is None.
+    """
+    if team_id is None:
+        return set()
+
+    from end_users.models import Team
+
+    children = defaultdict(list)
+    for row in Team.objects.filter(client_account_id=client_id).values('id', 'parent_team_id'):
+        if row['parent_team_id'] is not None:
+            children[row['parent_team_id']].append(row['id'])
+
+    seen = set()
+    stack = [team_id]
+    while stack:
+        tid = stack.pop()
+        if tid in seen:                 # cycle / already-visited guard
+            continue
+        seen.add(tid)
+        stack.extend(children.get(tid, ()))
+    return seen
+
+
+def compute_metric_for_team_node(metric, team_id, client_id, *, period=None,
+                                 source_campaign=None) -> float:
+    """Current value of ``metric`` aggregated over the team subtree rooted at
+    ``team_id`` (the node AND all its descendants), for an ARBITRARY node — not
+    only the current manager's. Sub-step 5 reuses this to decompose a manager's
+    aggregate by direct child node.
+
+    The perimeter is expressed by bounding the base queryset to the subtree's
+    owners (``<owner>__team_id__in``); the canonical function then runs its own
+    isolated aggregate — no fan-out join. One query for the subtree ids + one for
+    the metric, independent of the tree depth."""
+    fn, model, team_field = _SPEC[metric]
+    ids = team_subtree_ids(team_id, client_id)
+    if not ids:
+        return fn(model.objects.none(), period=period, source_campaign=source_campaign)
+    base = model.objects.filter(client_id=client_id, **{f'{team_field}__in': ids})
+    return fn(base, period=period, source_campaign=source_campaign)
+
+
 def _compute_value(metric, owner, period, source_campaign) -> float:
     """Run the canonical metric for one (metric, owner-perimeter, window,
     campaign). One isolated metric call — the perimeter is expressed by bounding
@@ -95,13 +152,14 @@ def _compute_value(metric, owner, period, source_campaign) -> float:
         return fn(base, user=owner, period=period, source_campaign=source_campaign)
 
     if tier == 'manager':
-        # DIRECT team members only (no hierarchy descent). A manager with no team
-        # measures an empty aggregate.
-        if owner.team_id is None:
-            base = model.objects.none()
-        else:
-            base = model.objects.filter(client_id=client_id, **{team_field: owner.team_id})
-        return fn(base, period=period, source_campaign=source_campaign)
+        # The manager's aggregate is the REAL production of the WHOLE subtree
+        # rooted at their team node — the node plus every descendant (regions,
+        # countries, ...), recursively to the leaves. A manager on a high node
+        # with no direct members still measures everything under them. A manager
+        # with no team measures an empty aggregate.
+        return compute_metric_for_team_node(
+            metric, owner.team_id, client_id, period=period, source_campaign=source_campaign
+        )
 
     # admin -> whole tenant.
     base = model.objects.filter(client_id=client_id)

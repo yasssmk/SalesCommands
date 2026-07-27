@@ -264,9 +264,11 @@ class TestAntiNPlusOne:
             Quota.objects.filter(id__in=[q.id for q in quotas]).select_related('source_campaign')
         )
 
-        # 1 query to load owners + 1 metric query for the single group = 2,
-        # independent of the 8 quotas.
-        with django_assert_num_queries(2):
+        # Owners (1) + the manager subtree's team ids (1) + one metric query for
+        # the single group (1) = 3, independent of the 8 quotas. (Sub-step 4bis:
+        # the manager perimeter now descends the team subtree, adding the one
+        # constant team-adjacency query — was 2 before the recursive fix.)
+        with django_assert_num_queries(3):
             results = P.compute_progress_batch(quota_list)
 
         assert len(results) == 8
