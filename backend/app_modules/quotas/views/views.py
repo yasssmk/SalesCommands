@@ -11,6 +11,7 @@ no bespoke filtering; it only wires owner/client_id on write.
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, viewsets
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
@@ -19,6 +20,7 @@ from permissions.owner_scope import OwnerScopeMixin
 
 from ..models import Quota
 from ..serializers import QuotaSerializer
+from ..services.progress import compute_progress_batch
 
 
 class QuotaViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
@@ -41,4 +43,28 @@ class QuotaViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.M
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context['client_id'] = self.get_client_id()
+        # When list() precomputed the page's attainment in one batch pass, hand
+        # it to the serializer so each row reads its progress from the map
+        # instead of computing per-row (anti-N+1).
+        progress_map = getattr(self, '_progress_map', None)
+        if progress_map is not None:
+            context['progress_map'] = progress_map
         return context
+
+    def list(self, request, *args, **kwargs):
+        """List with attainment precomputed in ONE batch pass over the page.
+
+        compute_progress_batch groups the page's quotas by (metric, perimeter,
+        window, campaign) so the metric runs once per group, not once per quota —
+        the query count does not grow with the number of quotas on the page.
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        objects = page if page is not None else list(queryset)
+
+        self._progress_map = compute_progress_batch(objects)
+
+        serializer = self.get_serializer(objects, many=True)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
