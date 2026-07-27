@@ -26,6 +26,7 @@ import TeamTodoFilterPanel from 'sections/home/TeamTodoFilterPanel';
 import TeamCampaignsBlock from 'sections/home/TeamCampaignsBlock';
 import TeamTerritoriesBlock from 'sections/home/TeamTerritoriesBlock';
 import DecisionCyclesBlock from 'sections/home/DecisionCyclesBlock';
+import ObjectivesBlock from 'sections/home/ObjectivesBlock';
 import TeamQuotaGroup from 'sections/home/TeamQuotaGroup';
 
 // The full roster of owners with open tasks (a no-window todo_team_by_owner):
@@ -263,6 +264,18 @@ export default function ManagerHome() {
             <TeamTerritoriesBlock result={teamTerritories} loading={territoriesLoading} />
           </Grid>
         </Grid>
+      </Stack>
+
+      <Stack spacing={1.5} useFlexGap>
+        <Box>
+          <Typography variant="h5">My objectives</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Your OWN active objectives — not the team&apos;s. Attainment spans your subtree.
+          </Typography>
+        </Box>
+        {/* Same self-fetching block as the rep Home: owner-scoped, so a manager
+            sees only their personal objectives here (the team quota lives below). */}
+        <ObjectivesBlock />
       </Stack>
 
       {/* Data-driven: the section appears only when the team OWNS >=1 open cycle
