@@ -27,10 +27,21 @@ import ObjectiveCard from 'sections/objectives/ObjectiveCard';
 import ObjectiveModal from 'sections/objectives/ObjectiveModal';
 import ObjectiveDeleteDialog from 'sections/objectives/ObjectiveDeleteDialog';
 
-// "Focus now" ordering: soonest END date first, then lowest attainment first
-// (both from the payload — period_end and progress_ratio, never recomputed).
+// Top-level grouping for the All view: CURRENT objectives first, then FUTURE,
+// then PAST. Read straight from the payload's `state` (never recomputed client
+// side); an unknown/absent state sorts last. In the Active view only CURRENTs
+// are shown, so this key is a no-op there and the internal order is unchanged.
+const STATE_ORDER = { CURRENT: 0, FUTURE: 1, PAST: 2 };
+const stateRank = (o) => (o.state in STATE_ORDER ? STATE_ORDER[o.state] : 3);
+
+// "Focus now" ordering: state group (current → future → past) first, then within
+// each group soonest END date first, then lowest attainment first (all from the
+// payload — state, period_end and progress_ratio, never recomputed).
 // Same shape as ProgressBlock.rank / TargetsTab: a pure comparator in a useMemo.
 function focusOrder(a, b) {
+  const sA = stateRank(a);
+  const sB = stateRank(b);
+  if (sA !== sB) return sA - sB; // PRIMARY key: current, then future, then past
   const endA = a.period_end || '';
   const endB = b.period_end || '';
   if (endA !== endB) return endA < endB ? -1 : 1; // ISO dates compare lexically

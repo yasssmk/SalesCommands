@@ -86,4 +86,35 @@ describe('ObjectivesListPage — payload, toggle, order', () => {
     // same end date -> lower ratio (New logos 0.2) before higher (Decision cycles 0.8)
     expect(precedes(title('New logos'), title('Decision cycles'))).toBe(true);
   });
+
+  it('All view groups top-to-bottom by state: current, then future, then past', () => {
+    // Dates are crafted so a date-ONLY sort would REVERSE this order (past ends
+    // first, current ends last) — the assertion therefore only passes when the
+    // payload `state` is the PRIMARY key, never recomputed client side.
+    const cur = q('10', 'REVENUE_WON', 'CURRENT', '2026-12-31', 0.5); // latest end
+    const fut = q('11', 'PIPELINE_VALUE', 'FUTURE', '2026-09-01', 0.0); // middle end
+    const pas = q('12', 'LEADS', 'PAST', '2020-12-31', 0.9); // earliest end
+    mockUseGetObjectives.mockReturnValue({
+      objectives: [pas, fut, cur],
+      objectivesLoading: false,
+    });
+    render(<ObjectivesListPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    // current (Revenue won) -> future (Pipeline value) -> past (Leads)
+    expect(precedes(title('Revenue won'), title('Pipeline value'))).toBe(true);
+    expect(precedes(title('Pipeline value'), title('Leads'))).toBe(true);
+  });
+
+  it('within a state group the internal end-date order is preserved', () => {
+    // Two CURRENTs + one PAST: the two currents keep soonest-end-first (c2 before
+    // c1), and both precede the past one regardless of the past one's date.
+    mockUseGetObjectives.mockReturnValue({
+      objectives: [c1, p1, c2],
+      objectivesLoading: false,
+    });
+    render(<ObjectivesListPage />);
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(precedes(title('Meetings'), title('Revenue won'))).toBe(true); // c2 before c1
+    expect(precedes(title('Revenue won'), title('Leads'))).toBe(true); // currents before past
+  });
 });

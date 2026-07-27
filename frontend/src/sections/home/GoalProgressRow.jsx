@@ -93,10 +93,19 @@ export default function GoalProgressRow({ label, gradient, href, overAchievement
           magic number. */}
       <Box style={{ visibility: empty ? 'hidden' : 'visible' }} data-over-achieved={over || undefined}>
         {over ? (
-          // Over-achievement: the FULL bar keeps the SAME token as a normal 100%
-          // bar (color="success"); only the star (above) and the % label carry
-          // the theme's gold (warning.dark) to signal the overrun.
-          <LinearWithLabel value={overPct} color="success" labelColor="warning.dark" />
+          // Over-achievement: the bar's VISUAL value is capped to 100 so it is a
+          // FULL bar keeping the SAME fill token as a normal 100% bar
+          // (color="success") at ANY percentage — MUI's determinate bar shifts
+          // off-screen (renders empty) for value > 100, so an uncapped 300 would
+          // look like the empty state. The LABEL still shows the REAL, uncapped
+          // percentage (via labelValue). Only the star (above) and the % label
+          // carry the theme's gold (warning.dark) to signal the overrun.
+          <LinearWithLabel
+            value={Math.min(overPct, 100)}
+            labelValue={overPct}
+            color="success"
+            labelColor="warning.dark"
+          />
         ) : (
           <LinearWithLabel value={g.pct} color={g.pct >= 100 ? 'success' : 'primary'} />
         )}

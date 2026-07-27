@@ -21,6 +21,14 @@ function pctLabelClass(container) {
   return el ? el.className : '';
 }
 
+// The determinate bar's FILL element. Its inline transform encodes the fill:
+// MUI renders `translateX(0%)` for a full (value 100) bar and shifts it left for
+// less. For value > 100 MUI shifts it RIGHT (off-screen) — the bug this fix
+// closes — so a FULL, capped bar reads translateX(0%) at any percentage.
+function barFill(container) {
+  return container.querySelector('.MuiLinearProgress-bar1Determinate');
+}
+
 describe('GoalProgressRow — over-achievement colour', () => {
   it('ratio > 1: FULL bar uses the success token (same as normal 100%), NOT gold', () => {
     const { container } = render(
@@ -36,6 +44,35 @@ describe('GoalProgressRow — over-achievement colour', () => {
     expect(screen.getByText('130%')).toBeTruthy();
     // star present (gold marker)
     expect(screen.getByLabelText('over-achieved')).toBeTruthy();
+  });
+
+  it('the FULL over bar keeps the SAME fill token at any percentage (130% and 300%)', () => {
+    // 130%: capped bar is full (translateX 0%), success token, real label.
+    const { container: c130 } = render(
+      <GoalProgressRow label="A" gradient={gradient} overAchievementRatio={1.3} />
+    );
+    const bar130 = c130.querySelector('.MuiLinearProgress-root');
+    const fill130 = barFill(c130);
+    expect(bar130.className).toContain('MuiLinearProgress-colorSuccess');
+    expect(fill130.style.transform).toBe('translateX(0%)'); // FULL, not off-screen
+    cleanup();
+
+    // 300%: the bar looks IDENTICAL (full, same success token) — a single fill
+    // colour regardless of magnitude — while the LABEL shows the real 300%.
+    const { container: c300 } = render(
+      <GoalProgressRow label="A" gradient={gradient} overAchievementRatio={3.0} />
+    );
+    const bar300 = c300.querySelector('.MuiLinearProgress-root');
+    const fill300 = barFill(c300);
+    expect(bar300.className).toContain('MuiLinearProgress-colorSuccess');
+    expect(bar300.className).not.toContain('MuiLinearProgress-colorPrimary');
+    expect(fill300.style.transform).toBe('translateX(0%)'); // FULL at 300%, not empty
+    // the fill token/transform is the SAME as at 130% — one colour, always.
+    expect(bar300.className).toBe(bar130.className);
+    expect(fill300.style.transform).toBe(fill130.style.transform);
+    // the label is NOT capped — it shows the real, uncapped percentage.
+    expect(screen.getByText('300%')).toBeTruthy();
+    expect(screen.queryByText('100%')).toBeNull();
   });
 
   it('the over % label uses a DIFFERENT (gold) colour token than a normal label', () => {
