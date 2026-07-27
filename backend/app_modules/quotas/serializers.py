@@ -7,6 +7,8 @@ owner); the derived state is exposed read-only. There is NO overlap validation
 — concurrent overlapping objectives are allowed by design.
 """
 
+from datetime import date
+
 from rest_framework import serializers
 
 from core.exceptions import StandardizedValidationError
@@ -67,13 +69,17 @@ class QuotaSerializer(serializers.ModelSerializer):
         return self._progress(obj).ratio
 
     def validate(self, attrs):
-        """period_end must not precede period_start (both are NOT NULL)."""
+        """period_end must not precede period_start (both are NOT NULL). On
+        CREATE, period_start must not be in the past — you cannot set an objective
+        starting before today. Edits are exempt so an already-running objective
+        (its start already past) stays editable."""
         start = attrs.get('period_start', getattr(self.instance, 'period_start', None))
         end = attrs.get('period_end', getattr(self.instance, 'period_end', None))
         if start and end and end < start:
-            raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_DATE_RANGE, field='period_end'
-            )
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_DATE_RANGE)
+        is_create = self.instance is None
+        if is_create and start and start < date.today():
+            raise StandardizedValidationError(CoreErrorMessages.INVALID_DATE_RANGE)
         return attrs
 
     def create(self, validated_data):

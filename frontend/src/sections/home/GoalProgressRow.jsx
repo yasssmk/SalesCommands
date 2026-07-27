@@ -93,10 +93,10 @@ export default function GoalProgressRow({ label, gradient, href, overAchievement
           magic number. */}
       <Box style={{ visibility: empty ? 'hidden' : 'visible' }} data-over-achieved={over || undefined}>
         {over ? (
-          <LinearWithLabel
-            value={overPct}
-            sx={{ '& .MuiLinearProgress-bar': { bgcolor: 'warning.dark' } }}
-          />
+          // Over-achievement: the FULL bar keeps the SAME token as a normal 100%
+          // bar (color="success"); only the star (above) and the % label carry
+          // the theme's gold (warning.dark) to signal the overrun.
+          <LinearWithLabel value={overPct} color="success" labelColor="warning.dark" />
         ) : (
           <LinearWithLabel value={g.pct} color={g.pct >= 100 ? 'success' : 'primary'} />
         )}

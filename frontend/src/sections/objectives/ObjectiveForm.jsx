@@ -3,6 +3,9 @@
 // Create / edit form for a personal objective. Formik + Yup, mounted in a modal
 // by ObjectiveModal — mirrors the territories FormTerritoryAdd pattern
 // (FormikProvider + Form, onSubmit -> api helper -> snackbar -> closeModal).
+//
+// Objectives created here are GLOBAL (no campaign): a campaign objective is
+// created from its campaign, not from this page — so there is no campaign field.
 
 import PropTypes from 'prop-types';
 import { useState } from 'react';
@@ -27,7 +30,6 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { useFormik, Form, FormikProvider } from 'formik';
 import * as Yup from 'yup';
 
-import { useGetCampaigns } from 'api/campaigns/campaigns';
 import { createObjective, updateObjective } from 'api/objectives/objectives';
 import { METRICS } from './metricLabels';
 import { displaySuccessSnackbar } from 'utils/displayError';
@@ -35,19 +37,27 @@ import { handleFormikError } from 'utils/formErrorHandler';
 
 const NONE = '';
 
-const Schema = Yup.object().shape({
-  metric: Yup.string().oneOf(METRICS.map((m) => m.value), 'Invalid metric').required('Metric is required'),
-  target_value: Yup.number().typeError('Target must be a number').positive('Target must be positive').required('Target is required'),
-  period_start: Yup.string().required('Start date is required'),
-  period_end: Yup.string()
-    .required('End date is required')
-    .test('after-start', 'End date must be on or after start date', function (end) {
-      const { period_start } = this.parent;
-      if (!end || !period_start) return true;
-      return !dayjs(end).isBefore(dayjs(period_start), 'day');
-    }),
-  source_campaign: Yup.string().nullable(),
-});
+// Schema depends on isEdit: "start not in the past" is a CREATE rule only, so an
+// already-running objective (its start already past) can still be edited.
+const makeSchema = (isEdit) =>
+  Yup.object().shape({
+    metric: Yup.string().oneOf(METRICS.map((m) => m.value), 'Invalid metric').required('Metric is required'),
+    target_value: Yup.number().typeError('Target must be a number').positive('Target must be positive').required('Target is required'),
+    period_start: Yup.string()
+      .required('Start date is required')
+      .test('not-past', 'Start date cannot be in the past', function (start) {
+        if (isEdit) return true; // edits are exempt (may touch a past-dated objective)
+        if (!start) return true;
+        return !dayjs(start).isBefore(dayjs(), 'day');
+      }),
+    period_end: Yup.string()
+      .required('End date is required')
+      .test('after-start', 'End date must be on or after start date', function (end) {
+        const { period_start } = this.parent;
+        if (!end || !period_start) return true;
+        return !dayjs(end).isBefore(dayjs(period_start), 'day');
+      }),
+  });
 
 function buildInitialValues(objective) {
   return {
@@ -55,31 +65,26 @@ function buildInitialValues(objective) {
     target_value: objective?.target_value ?? '',
     period_start: objective?.period_start || NONE,
     period_end: objective?.period_end || NONE,
-    // source_campaign in the payload is the campaign id (or null); the form holds
-    // '' for "global".
-    source_campaign: objective?.source_campaign || NONE,
   };
 }
 
 export default function ObjectiveForm({ objective, closeModal }) {
   const isEdit = Boolean(objective?.id);
   const [submitting, setSubmitting] = useState(false);
-  const { campaigns = [] } = useGetCampaigns({ page: 1, pageSize: 100 });
 
   const formik = useFormik({
     initialValues: buildInitialValues(objective),
-    validationSchema: Schema,
+    validationSchema: makeSchema(isEdit),
     enableReinitialize: false,
     onSubmit: async (values) => {
       setSubmitting(true);
       try {
+        // No campaign field here — objectives created from this page are global.
         const payload = {
           metric: values.metric,
           target_value: Number(values.target_value),
           period_start: values.period_start,
           period_end: values.period_end,
-          // empty select -> null = global objective; set = declined on a campaign.
-          source_campaign: values.source_campaign || null,
         };
         const result = isEdit
           ? await updateObjective(objective.id, payload)
@@ -175,27 +180,6 @@ export default function ObjectiveForm({ objective, closeModal }) {
                   }}
                 />
               </LocalizationProvider>
-            </Grid>
-
-            <Grid item xs={12}>
-              <FormControl fullWidth>
-                <InputLabel id="objective-campaign-label">Campaign (optional)</InputLabel>
-                <Select
-                  labelId="objective-campaign-label"
-                  label="Campaign (optional)"
-                  inputProps={{ 'aria-label': 'Campaign' }}
-                  {...getFieldProps('source_campaign')}
-                >
-                  <MenuItem value={NONE}>
-                    <em>Global (no campaign)</em>
-                  </MenuItem>
-                  {campaigns.map((c) => (
-                    <MenuItem key={c.id} value={c.id}>
-                      {c.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
             </Grid>
           </Grid>
         </DialogContent>

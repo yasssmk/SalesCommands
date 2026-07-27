@@ -7,17 +7,19 @@ import Box from '@mui/material/Box';
 
 // ==============================|| PROGRESS - LINEAR WITH LABEL ||============================== //
 
-export default function LinearWithLabel({ value, ...others }) {
+export default function LinearWithLabel({ value, labelColor = 'text.secondary', ...others }) {
   return (
     <Stack alignItems="center" direction="row">
       <Box sx={{ width: '100%', mr: 1 }}>
         <LinearProgress variant="determinate" value={value} {...others} />
       </Box>
       <Box sx={{ minWidth: 35 }}>
-        <Typography variant="body2" color="text.secondary">{`${Math.round(value)}%`}</Typography>
+        <Typography variant="body2" color={labelColor}>{`${Math.round(value)}%`}</Typography>
       </Box>
     </Stack>
   );
 }
 
-LinearWithLabel.propTypes = { value: PropTypes.any, others: PropTypes.any };
+// labelColor is optional (default 'text.secondary'), so existing callers are
+// unchanged; the over-achievement row uses it to paint the % in the theme's gold.
+LinearWithLabel.propTypes = { value: PropTypes.any, labelColor: PropTypes.any, others: PropTypes.any };
