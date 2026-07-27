@@ -226,6 +226,7 @@ INSTALLED_APPS = [
     'app_modules.ai_pipelines',  # LLM orchestration (transcript extraction, future game-plan, ...)
     'app_modules.notifications',  # In-app notification system (tenant-scoped)
     'app_modules.bi',  # BI aggregation foundation (KPI registry + compute/cache)
+    'app_modules.quotas',  # Personal Sales objectives (quotas)
     'apps.signals',
     'apps.campaign',
     'apps.opportunities',

@@ -161,6 +161,15 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
         'account_fk': 'account_id',                 # Related account
         'account_owner_user': 'account__account_owner_id',  # Parent-account owner reaches cycles created by others on their account (C6)
     },
+
+    'quotas': {
+        'client_account_fk': 'client_id',           # Quota.client_id
+        'owner_user': 'owner',                      # Quota.owner (direct FK; bare name, mirrors decision_cycles)
+        'owner_team': 'owner__team_id',             # Via owner → team (manager reads team members' objectives)
+        'created_by': 'created_by',                 # ModuleBaseModel.created_by
+        'assigned_to_user': '-',                    # No assigner — creator is owner
+        'account_fk': '-',                          # Not applicable
+    },
     
     'campaigns': {
         'client_account_fk': 'client_id',

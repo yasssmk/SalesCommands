@@ -78,6 +78,7 @@ urlpatterns = [
     path('product-catalog/', include('app_modules.product_catalog.urls')),
     path('notifications/', include('app_modules.notifications.urls')),
     path('bi/', include('app_modules.bi.urls')),
+    path('quotas/', include('app_modules.quotas.urls')),
 
     # Path to validate
     path(app_key+'accounts/', include('apps.accounts.urls')),
