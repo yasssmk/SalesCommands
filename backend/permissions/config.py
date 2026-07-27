@@ -39,6 +39,7 @@ DEFAULT_CONFIG = {
         'opportunities': False,
         'campaigns': True,
         'campaign_contacts': True,
+        'quotas': True,
         'pipelines': False,
         'templates': False,
         'users': True,

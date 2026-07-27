@@ -1,4 +1,3 @@
-import PropTypes from 'prop-types';
 import { useRef, useState } from 'react';
 
 // next
@@ -14,44 +13,22 @@ import Grid from '@mui/material/Unstable_Grid2';
 import Paper from '@mui/material/Paper';
 import Popper from '@mui/material/Popper';
 import Stack from '@mui/material/Stack';
-import Tab from '@mui/material/Tab';
-import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
 // project import
 import ProfileTab from './ProfileTab';
-import SettingTab from './SettingTab';
 import Avatar from 'components/@extended/Avatar';
 import MainCard from 'components/MainCard';
 import Transitions from 'components/@extended/Transitions';
 import IconButton from 'components/@extended/IconButton';
 
-import { ThemeDirection, ThemeMode } from 'config';
-import useConfig from 'hooks/useConfig';
+import { ThemeMode } from 'config';
 import { useAuth } from 'hooks/useAuth';
 import { useCurrentUser } from 'hooks/useCurrentUser';
 
 // assets
 import LogoutOutlined from '@ant-design/icons/LogoutOutlined';
-import SettingOutlined from '@ant-design/icons/SettingOutlined';
-import UserOutlined from '@ant-design/icons/UserOutlined';
-
-// tab panel wrapper
-function TabPanel({ children, value, index, ...other }) {
-  return (
-    <div role="tabpanel" hidden={value !== index} id={`profile-tabpanel-${index}`} aria-labelledby={`profile-tab-${index}`} {...other}>
-      {value === index && children}
-    </div>
-  );
-}
-
-function a11yProps(index) {
-  return {
-    id: `profile-tab-${index}`,
-    'aria-controls': `profile-tabpanel-${index}`
-  };
-}
 
 // ==============================|| HEADER CONTENT - PROFILE ||============================== //
 
@@ -60,7 +37,6 @@ export default function Profile() {
   const { currentUser } = useCurrentUser(); 
   const { logout } = useAuth();  
   const router = useRouter();
-  const { themeDirection } = useConfig();
 
   const handleLogout = async () => {
     try {
@@ -83,12 +59,6 @@ export default function Profile() {
       return;
     }
     setOpen(false);
-  };
-
-  const [value, setValue] = useState(0);
-
-  const handleChange = (event, newValue) => {
-    setValue(newValue);
   };
 
   const iconBackColorOpen = theme.palette.mode === ThemeMode.DARK ? 'background.default' : 'grey.100';
@@ -175,58 +145,7 @@ export default function Profile() {
                       </Grid>
                     </Grid>
                   </CardContent>
-                  {open && (
-                    <>
-                      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                        <Tabs variant="fullWidth" value={value} onChange={handleChange} aria-label="profile tabs">
-                          <Tab
-                            sx={{
-                              display: 'flex',
-                              flexDirection: 'row',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              textTransform: 'capitalize'
-                            }}
-                            icon={
-                              <UserOutlined
-                                style={{
-                                  marginBottom: 0,
-                                  ...(themeDirection === ThemeDirection.RTL ? { marginLeft: '10px' } : { marginRight: '10px' })
-                                }}
-                              />
-                            }
-                            label="Profile"
-                            {...a11yProps(0)}
-                          />
-                          <Tab
-                            sx={{
-                              display: 'flex',
-                              flexDirection: 'row',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              textTransform: 'capitalize'
-                            }}
-                            icon={
-                              <SettingOutlined
-                                style={{
-                                  marginBottom: 0,
-                                  ...(themeDirection === ThemeDirection.RTL ? { marginLeft: '10px' } : { marginRight: '10px' })
-                                }}
-                              />
-                            }
-                            label="Setting"
-                            {...a11yProps(1)}
-                          />
-                        </Tabs>
-                      </Box>
-                      <TabPanel value={value} index={0} dir={theme.direction}>
-                        <ProfileTab handleLogout={handleLogout} />
-                      </TabPanel>
-                      <TabPanel value={value} index={1} dir={theme.direction}>
-                        <SettingTab />
-                      </TabPanel>
-                    </>
-                  )}
+                  {open && <ProfileTab handleLogout={handleLogout} />}
                 </MainCard>
               </ClickAwayListener>
             </Paper>
@@ -236,5 +155,3 @@ export default function Profile() {
     </Box>
   );
 }
-
-TabPanel.propTypes = { children: PropTypes.node, value: PropTypes.number, index: PropTypes.number, other: PropTypes.any };

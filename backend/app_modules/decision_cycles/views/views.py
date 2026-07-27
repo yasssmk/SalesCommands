@@ -752,6 +752,24 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 updated_by=request.user,
             )
 
+        # --- WON: a PROSPECT account becomes a CLIENT (new logo) on first win. ---
+        # A server-side EFFECT of the win, not a user edit. Only a PROSPECT is
+        # converted: an account already CLIENT (e.g. imported from the client's
+        # existing base) is never recounted as a new logo. Idempotent — the
+        # timestamp is set once and never overwritten, so a second won cycle on
+        # the same account changes nothing.
+        became_client = False
+        if outcome == CycleOutcome.WON:
+            from app_modules.accounts.models import AccountType
+
+            account = instance.account
+            if account.type == AccountType.PROSPECT:
+                account.type = AccountType.CLIENT
+                if account.became_client_at is None:
+                    account.became_client_at = tz.now()
+                account.save(user=request.user)
+                became_client = True
+
         # Audit log
         audit_log(
             event='decision_cycle_close_success',
@@ -764,6 +782,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
              extra={
                 'cycle_outcome': outcome,
                 'cancelled_activities': cancelled_count,
+                'account_became_client': became_client,
             },
         )
 

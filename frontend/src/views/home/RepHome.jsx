@@ -20,6 +20,7 @@ import useLocalStorage from 'hooks/useLocalStorage';
 import TodoBlock from 'sections/home/TodoBlock';
 import RepActivityTable from 'sections/home/RepActivityTable';
 import ProgressBlock from 'sections/home/ProgressBlock';
+import ObjectivesBlock from 'sections/home/ObjectivesBlock';
 import DecisionCyclesBlock from 'sections/home/DecisionCyclesBlock';
 import QuotaBlock from 'sections/home/QuotaBlock';
 
@@ -141,6 +142,18 @@ export default function RepHome() {
           territoriesTotal={territoriesCount}
           loading={progressLoading}
         />
+      </Stack>
+
+      <Stack spacing={1.5} useFlexGap>
+        <Box>
+          <Typography variant="h5">My objectives</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Your active objectives — where each stands against target.
+          </Typography>
+        </Box>
+        {/* Self-fetching: the connected user's OWN current objectives (scoped by
+            owner on the backend), same on rep and manager Home. */}
+        <ObjectivesBlock />
       </Stack>
 
       {/* Data-driven: the section appears only when the rep OWNS ≥1 open cycle
