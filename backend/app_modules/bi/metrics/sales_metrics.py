@@ -173,20 +173,20 @@ def meetings(base_queryset, *, user=None, period=None, source_campaign=None):
 def new_logos(base_queryset, *, user=None, period=None, source_campaign=None):
     """NEW_LOGOS — count of accounts that became a client.
 
-    Anchor: ``became_client_at`` on the account.
+    Anchor: ``became_client_at`` on the account. Having a non-null
+    ``became_client_at`` IS the definition of "became a client": an account
+    imported as CLIENT (null timestamp) is never a new logo, so it is excluded
+    regardless of the period.
     Owner: the account owner (``account_owner``).
     Campaign attribution: the account was worked in the campaign (isolated
     EXISTS on the CampaignAccount pivot).
 
-    DEPENDS ON SUB-STEP 3 — the ``became_client_at`` field does NOT yet exist on
-    CompanyAccount (it is introduced in sub-step 3). This function is written
-    against that field on purpose; it will raise FieldError until the field
-    lands, and its parity test is skipped until then (see the test module). This
-    function does NOT create the field.
+    ``became_client_at`` is set by the system on the first won decision cycle
+    (see the close hook). This function only READS it.
 
     ``base_queryset`` is a (tenant+scope bounded) CompanyAccount queryset.
     """
-    qs = base_queryset
+    qs = base_queryset.filter(became_client_at__isnull=False)
     if user is not None:
         qs = qs.filter(account_owner=user)
     if source_campaign is not None:

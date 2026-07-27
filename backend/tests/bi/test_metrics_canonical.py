@@ -23,7 +23,7 @@ from app_modules.activities.constants import (
     ActivityOutcome, ActivityStatus, ActivityType,
 )
 from app_modules.activities.models import Activity
-from app_modules.campaigns.constants import ObjectiveType
+from app_modules.campaigns.constants import CampaignAccountStatus, ObjectiveType
 from app_modules.campaigns.models.campaign import Campaign
 from app_modules.campaigns.services.campaign_analytics_service import (
     CampaignAnalyticsService,
@@ -203,10 +203,69 @@ class TestParityWithCampaignObjectives:
         assert canonical == 1                      # the MEETING_SCHEDULED one
         # Same campaign, same fixtures, DIFFERENT sets — divergence is real.
 
-    @pytest.mark.skip(reason="NEW_LOGOS depends on Account.became_client_at, "
-                             "introduced in sub-step 3; no parity until the field exists.")
-    def test_new_logos_parity(self):
-        pass
+
+# ===========================================================================
+# NEW_LOGOS — became_client_at field exists (sub-step 3); skip removed.
+# ===========================================================================
+
+class TestNewLogosFilters:
+    """NEW_LOGOS counts accounts converted (became_client_at set) in the window,
+    filterable by owner and source_campaign. An account imported as CLIENT
+    (became_client_at NULL) is NOT a new logo."""
+
+    def _acc(self, owner, ca, *, became_client_at=None, name='Acc'):
+        acc = CompanyAccount(company_name=name, has_buying_decision=True,
+                             account_owner=owner)
+        acc.save(user=owner, client_id=ca.id)
+        if became_client_at is not None:
+            # became_client_at is editable=False (system-set); assign in code.
+            acc.became_client_at = became_client_at
+            acc.save(user=owner)
+        return acc
+
+    def _acc_base(self, ca):
+        return CompanyAccount.objects.filter(client_id=ca.id)
+
+    def test_imported_client_not_counted(self, owner_a, client_account_a):
+        # a converted account (in period) IS counted...
+        self._acc(owner_a, client_account_a,
+                  became_client_at=timezone.now(), name='converted')
+        # ...an imported CLIENT with NULL became_client_at is NOT.
+        self._acc(owner_a, client_account_a, became_client_at=None, name='imported')
+        assert metrics.new_logos(self._acc_base(client_account_a)) == 1
+
+    def test_period_on_became_client_at(self, owner_a, client_account_a):
+        now = timezone.now()
+        self._acc(owner_a, client_account_a,
+                  became_client_at=now - timedelta(days=3), name='in')
+        self._acc(owner_a, client_account_a,
+                  became_client_at=now - timedelta(days=40), name='out')
+        window = (TODAY - timedelta(days=10), TODAY)
+        assert metrics.new_logos(self._acc_base(client_account_a), period=window) == 1
+        assert metrics.new_logos(self._acc_base(client_account_a)) == 2
+
+    def test_user_filters_by_account_owner(self, owner_a, owner_a2, client_account_a):
+        self._acc(owner_a, client_account_a,
+                  became_client_at=timezone.now(), name='mine')
+        self._acc(owner_a2, client_account_a,
+                  became_client_at=timezone.now(), name='other')
+        assert metrics.new_logos(self._acc_base(client_account_a), user=owner_a) == 1
+        assert metrics.new_logos(self._acc_base(client_account_a)) == 2
+
+    def test_source_campaign_filters_via_pivot(self, owner_a, client_account_a):
+        from app_modules.campaigns.models.campaign_account import CampaignAccount
+        camp = _mk_campaign(owner_a, client_account_a)
+        in_camp = self._acc(owner_a, client_account_a,
+                            became_client_at=timezone.now(), name='in_camp')
+        CampaignAccount(campaign=camp, account=in_camp,
+                        status=CampaignAccountStatus.COMPLETED).save(
+                            user=owner_a, client_id=client_account_a.id)
+        # a converted account NOT worked in the campaign
+        self._acc(owner_a, client_account_a,
+                  became_client_at=timezone.now(), name='no_camp')
+        assert metrics.new_logos(self._acc_base(client_account_a),
+                                 source_campaign=camp) == 1
+        assert metrics.new_logos(self._acc_base(client_account_a)) == 2
 
 
 # ===========================================================================

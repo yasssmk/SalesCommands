@@ -75,7 +75,19 @@ class CompanyAccount(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDeta
         null=True,
         verbose_name=_('Account Type')
     )
-    
+
+    became_client_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name=_('Became Client At'),
+        help_text=_(
+            'Timestamp of the PROSPECT -> CLIENT conversion, set by the system '
+            'on the first won decision cycle. Never set for accounts imported '
+            'as CLIENT (they are not new logos). System-managed: not editable.'
+        ),
+    )
+
     classification = models.CharField(
         max_length=50,
         choices=AccountClassification.choices,
