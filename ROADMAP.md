@@ -100,6 +100,37 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
     par `ProgressBlock` et consommées par `TeamAggregateBlock` — une seule
     implémentation de la règle.
 
+### S8a ✅ — Branchement du suivi des objectifs de campagne (partiel)
+- **Objectif** : brancher l'AVANCEMENT réel des objectifs de campagne. Partie
+  du sprint S8 ; le reste (UI de DÉFINITION des quotas/objectifs +
+  over-achievement) reste planifié en S8.
+- **Livré** (PR #96) :
+  - **Avancement sur la carte** : `current_value` + `progress_percentage`
+    exposés sur le serializer de LISTE (carte campagne), plus seulement sur le
+    détail — la barre de la carte reflète l'avancement RÉEL.
+  - **Attribution unifiée par ORIGINE campagne** :
+    - `DECISION_CYCLES` / `PIPELINE_VALUE` / `REVENUE_WON` attribués via
+      `DecisionCycle.source_campaign` (au lieu de `Activity.campaign`, jamais
+      posé par la modale).
+    - `MEETINGS` attribué par UNION de trois origines :
+      `cycle.source_campaign` OU `Activity.campaign` OU
+      `source_activity.campaign` (ce dernier capte les meetings créés sur un DC
+      PRÉEXISTANT depuis une séquence de campagne).
+  - **Règle produit actée** : les métriques d'ACTIVITÉ (`MEETINGS`) comptent
+    une activité issue de la campagne peu importe que son DC soit nouveau ou
+    existant ; les métriques de CYCLE (`DECISION_CYCLES`) ne comptent un DC que
+    s'il est NOUVEAU et attribué par son propre `source_campaign`. Un DC
+    préexistant ne compte JAMAIS comme nouveau.
+  - **Définition `MEETINGS`** : « tenu » (status `COMPLETED`), pas « booké ».
+    Vaut aussi pour le quota personnel `MEETINGS` — une seule définition
+    partout.
+  - **`CONTACTS_REACHED`** : retiré des objectifs de campagne (décision
+    produit) ; son calcul reste utilisé pour l'avancement PROPRE de la
+    campagne, pas comme objectif assignable.
+- **Reporté à Sprint C** : `PIPELINE_VALUE` et `REVENUE_WON` (objectifs de
+  campagne ET quotas personnels) restent à 0 tant que le montant n'est pas
+  réconcilié — voir Sprint C et TD-75.
+
 ---
 
 ## Sprints planifiés — phase fonctionnelle
@@ -310,8 +341,12 @@ campagnes. **Le chip est la référence.**
 - **Problématique** : la Home affiche déjà des quotas et objectifs NON
   configurables → la BI n'est pas vérifiable de bout en bout.
 - **Solution** : UI de définition des quotas + des objectifs de campagne.
+- **Déjà livré (S8a)** : le BRANCHEMENT du suivi des objectifs de campagne
+  (avancement sur la carte + attribution par origine) — voir Sprints livrés.
+  Reste ici : l'UI de DÉFINITION des quotas/objectifs et l'over-achievement.
 - **Connexion cartes GTM** : l'avancement des objectifs sur les cartes GTM
-  (zone préparée en S7b commit 5) sera CONNECTÉ ici.
+  (zone préparée en S7b commit 5) — le suivi est branché (S8a) ; reste à
+  connecter la DÉFINITION des objectifs ici.
 - **Over-achievement (>100%)** : afficher le dépassement (ex "102%"),
   couleur warning dark (doré, palette standard) + icône étoile. À construire
   À LA FOIS sur les cartes ET sur la Home (cohérence).
@@ -321,6 +356,21 @@ campagnes. **Le chip est la référence.**
 - **Validation** : poser un quota/objectif → la Home le reflète.
 - **Note** : candidat à remonter avant Sprint B (ferme une incohérence
   visible) — arbitrage PO en attente.
+
+### Mini-sprint — Corrections workspace campagne (near-term)
+Deux corrections distinctes du workspace campagne (issues de l'audit tracking
+objectifs).
+- **3.1 — Le masquage des « completed » déborde sur OUTBOUND** : la décision
+  produit d'origine vaut pour les campagnes TARGETED — un contact target
+  « completed » sort de la liste et ses activités completed sortent de la
+  section completed. Ce comportement s'applique AUSSI, à tort, aux campagnes
+  OUTBOUND, où TOUS les completed doivent rester visibles. À corriger : la
+  règle de masquage des completed doit être CONDITIONNÉE au type de campagne
+  (TARGETED uniquement), pas appliquée globalement. Audit ciblé nécessaire à
+  l'ouverture du mini-sprint pour localiser où la règle est appliquée et
+  pourquoi elle ne distingue pas TARGETED d'OUTBOUND (voir TD-126).
+- **3.2 — Bouton principal du header** : dans le header du workspace campagne,
+  le bouton PRINCIPAL doit être « Log response », pas « Pause ».
 
 ### Sprint C — Produit & Finance de bout en bout (backend d'abord)
 - **Objectif** : le produit et la finance qui FONCTIONNENT de bout en bout,
@@ -336,6 +386,16 @@ campagnes. **Le chip est la référence.**
     roll-up).
   - Gérer la DEVISE et les unités du montant total : stockage, affichage,
     saisie — aujourd'hui non gérées.
+  - **Débloque `PIPELINE_VALUE` / `REVENUE_WON`** (objectifs de campagne ET
+    quotas personnels), aujourd'hui bloqués à 0 : leur calcul somme
+    `DecisionCycle.estimated_value`, qu'AUCUN chemin runtime ne peuple — le
+    montant saisi va dans `DealProduct.line_total` sans roll-up vers
+    `estimated_value`. Ces deux métriques dépendent donc de la réconciliation
+    montant de ce sprint (voir **TD-75**).
+  - **Renommer le LIBELLÉ d'affichage « Revenue Won » → « Deals Won »** (ou
+    « Won Value ») : le terme actuel est trompeur. C'est le LIBELLÉ, PAS le nom
+    technique de la métrique (`REVENUE_WON` inchangé). Peut aussi se faire au
+    sprint UI (voir TD-127).
 - **Conséquence pour la liste DC** : une fois le montant fiable, la colonne
   Amount (qui lit `estimated_value` aujourd'hui) bascule sur la SOURCE DE
   VÉRITÉ, et le FILTRE PAR MONTANT reporté de S7c (TD-124) devient
