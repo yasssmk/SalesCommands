@@ -399,12 +399,35 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
 
         return Response(cached_data)
 
+    def _primary_progress_map(self, campaigns):
+        """Batch-compute each campaign's primary-objective advancement.
+
+        One bounded pass (grouped by objective_type) so the card's list never
+        does one calculation query per campaign. Mirrors the quotas list, which
+        precomputes attainment in a single batch and hands it to the serializer
+        via context.
+        """
+        from ..services.campaign_objective_progress import (
+            compute_primary_objective_progress_batch,
+        )
+        return compute_primary_objective_progress_batch(
+            campaigns, self.get_client_id()
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        progress_map = getattr(self, '_primary_objective_progress', None)
+        if progress_map is not None:
+            context['primary_objective_progress'] = progress_map
+        return context
+
     def _list_uncached_data(self, request):
         """Produce list data dict (cache-friendly)."""
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
 
         if page is not None:
+            self._primary_objective_progress = self._primary_progress_map(page)
             serializer = self.get_serializer(page, many=True)
             return {
                 'success': True,
@@ -416,7 +439,9 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 }
             }
 
-        serializer = self.get_serializer(queryset, many=True)
+        objects = list(queryset)
+        self._primary_objective_progress = self._primary_progress_map(objects)
+        serializer = self.get_serializer(objects, many=True)
         return {
             'success': True,
             'data': {
@@ -1271,7 +1296,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
 
         page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = CampaignListSerializer(page, many=True, context={'request': request})
+            context = {
+                'request': request,
+                'primary_objective_progress': self._primary_progress_map(page),
+            }
+            serializer = CampaignListSerializer(page, many=True, context=context)
             return Response({
                 'success': True,
                 'data': {
@@ -1282,7 +1311,12 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 },
             })
 
-        serializer = CampaignListSerializer(queryset, many=True, context={'request': request})
+        objects = list(queryset)
+        context = {
+            'request': request,
+            'primary_objective_progress': self._primary_progress_map(objects),
+        }
+        serializer = CampaignListSerializer(objects, many=True, context=context)
         return Response({
             'success': True,
             'data': {

@@ -81,7 +81,12 @@ def _mk_meeting(campaign, account, owner, ca):
 
 
 def _mk_dc_activity(campaign, account, owner, ca):
-    dc = DecisionCycle(account=account, owner=owner, name='dc')
+    # DECISION_CYCLES is attributed by the cycle's own source_campaign (the
+    # canonical definition), so the cycle carries source_campaign=campaign. The
+    # campaign activity is kept to mirror the real parcours, but it is no longer
+    # what drives objective attribution.
+    dc = DecisionCycle(account=account, owner=owner, name='dc',
+                       source_campaign=campaign)
     dc.save(user=owner, client_id=ca.id)
     a = Activity(title='c', activity_type=ActivityType.CALL, status=ActivityStatus.PLANNED,
                  account=account, owner=owner, campaign=campaign, decision_cycle=dc,

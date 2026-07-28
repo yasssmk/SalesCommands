@@ -230,20 +230,57 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         return self._team_summary(obj.executor)
 
     def get_primary_objective(self, obj):
-        """Return primary objective as minimal object."""
+        """Return the primary objective WITH its live advancement.
+
+        current_value / progress_percentage come from the SAME calculation the
+        detail serializer exposes. On the list/my-campaigns pages they are read
+        from the batch map the view precomputes in one bounded pass
+        (context['primary_objective_progress']); an unbatched caller falls back
+        to the per-campaign service calculation.
+        """
         if hasattr(obj, '_primary_objective_cache'):
             primary = obj._primary_objective_cache
         else:
-            primary = obj.objectives.filter(is_primary=True).first()
+            # Resolve from the prefetched ``objectives`` in Python (a ``.filter()``
+            # would bypass the prefetch cache and re-query per row — an N+1).
+            primary = next(
+                (o for o in obj.objectives.all() if o.is_primary), None
+            )
 
         if not primary:
             return None
+
+        current_value, progress_pct = self._primary_progress(obj, primary)
         return {
             'id': str(primary.id),
             'name': primary.name,
             'objective_type': primary.objective_type,
             'target_value': float(primary.target_value),
+            'current_value': current_value,
+            'progress_percentage': progress_pct,
         }
+
+    def _primary_progress(self, obj, primary):
+        """(current_value, progress_percentage) for the campaign's primary objective.
+
+        Prefers the batch map the list view precomputes (no per-row query); falls
+        back to CampaignAnalyticsService — the detail serializer's calculation —
+        so the field is always correct even for an unbatched caller.
+        """
+        progress_map = self.context.get('primary_objective_progress')
+        if progress_map is not None and obj.id in progress_map:
+            entry = progress_map[obj.id]
+            return entry['current_value'], entry['progress_percentage']
+
+        from app_modules.campaigns.services.campaign_analytics_service import (
+            CampaignAnalyticsService,
+        )
+        from app_modules.campaigns.services.campaign_objective_progress import (
+            progress_percentage,
+        )
+        service = CampaignAnalyticsService(client_id=obj.client_id)
+        current = float(service._calculate_objective_value(obj, primary) or 0)
+        return current, progress_percentage(current, primary.target_value)
 
 
 # ============================================================================
