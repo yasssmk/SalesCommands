@@ -13,13 +13,15 @@ Follows legacy campaign_analytics_service.py patterns,
 simplified for new CampaignAccount pivot architecture.
 """
 
-from django.db.models import Count, Sum
+from django.db.models import Count
 from django.utils import timezone
 
 from core.logging import get_logger
 
 from app_modules.activities.models import Activity
 from app_modules.activities.constants import ActivityType, ActivityStatus
+from app_modules.bi import metrics
+from app_modules.decision_cycles.models import DecisionCycle
 
 from ..models import (
     Campaign,
@@ -448,34 +450,40 @@ class CampaignAnalyticsService:
             status=ActivityStatus.COMPLETED,
         ).values('contacts').distinct().count()
 
+    def _dc_base_queryset(self):
+        """Tenant-bounded DecisionCycle queryset for the canonical metric formulas.
+
+        The pure ``bi/metrics`` functions expect a base queryset the caller has
+        already bounded to the tenant; they only narrow it further (here by
+        ``source_campaign``). Bounding on ``client_id`` keeps that contract.
+        """
+        return DecisionCycle.objects.filter(client_id=self.client_id)
+
     def _count_decision_cycles(self, campaign):
-        """DECISION_CYCLES: distinct decision cycles linked to campaign activities."""
-        return Activity.objects.filter(
-            campaign=campaign,
-            decision_cycle__isnull=False,
-        ).values('decision_cycle').distinct().count()
+        """DECISION_CYCLES: decision cycles whose ``source_campaign`` is this campaign.
+
+        Attribution is the DC's OWN ``source_campaign`` (the campaign that
+        generated the cycle), not whether a campaign activity happens to point at
+        it — same definition as the personal objective, via the canonical
+        formula. ``period=None`` keeps the campaign's all-time count.
+        """
+        return metrics.decision_cycles(
+            self._dc_base_queryset(), source_campaign=campaign, period=None
+        )
 
     def _sum_pipeline_value(self, campaign):
-        """PIPELINE_VALUE: sum of estimated_value from open decision cycles."""
-        result = Activity.objects.filter(
-            campaign=campaign,
-            decision_cycle__isnull=False,
-            decision_cycle__outcome__isnull=True,  # open cycles only
-        ).values('decision_cycle').distinct().aggregate(
-            total=Sum('decision_cycle__estimated_value')
+        """PIPELINE_VALUE: Σ estimated_value of OPEN cycles attributed to the
+        campaign via ``DecisionCycle.source_campaign`` (canonical formula)."""
+        return metrics.pipeline_value(
+            self._dc_base_queryset(), source_campaign=campaign, period=None
         )
-        return float(result['total'] or 0)
 
     def _sum_revenue_won(self, campaign):
-        """REVENUE_WON: sum of estimated_value from WON decision cycles."""
-        result = Activity.objects.filter(
-            campaign=campaign,
-            decision_cycle__isnull=False,
-            decision_cycle__outcome='WON',
-        ).values('decision_cycle').distinct().aggregate(
-            total=Sum('decision_cycle__estimated_value')
+        """REVENUE_WON: Σ estimated_value of WON cycles attributed to the campaign
+        via ``DecisionCycle.source_campaign`` (canonical formula)."""
+        return metrics.revenue_won(
+            self._dc_base_queryset(), source_campaign=campaign, period=None
         )
-        return float(result['total'] or 0)
 
     def _count_new_logos(self, campaign):
         """
