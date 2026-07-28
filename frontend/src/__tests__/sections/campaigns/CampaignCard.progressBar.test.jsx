@@ -163,6 +163,30 @@ describe("CampaignCard objective bar", () => {
     // The completed % appears once (the Progress label), never echoed below.
     expect(screen.getAllByText("70% completed")).toHaveLength(1);
   });
+
+  it("renders the objective advancement when primary_objective carries progress", () => {
+    render(
+      <CampaignCard
+        campaign={mk({
+          status: "ACTIVE",
+          primary_objective: {
+            objective_type: "DECISION_CYCLES",
+            target_value: 4,
+            current_value: 2,
+            progress_percentage: 50,
+          },
+        })}
+      />,
+    );
+    // The objective label (mapped) + "current / target" text are shown...
+    expect(screen.getByText("Decision Cycles Created")).toBeInTheDocument();
+    expect(screen.getByText("2 / 4")).toBeInTheDocument();
+    // ...and now there are TWO bars: the target Progress bar + the objective bar.
+    const bars = screen.getAllByRole("progressbar");
+    expect(bars).toHaveLength(2);
+    // The objective bar is filled to progress_percentage (50).
+    expect(bars.some((b) => b.getAttribute("aria-valuenow") === "50")).toBe(true);
+  });
 });
 
 // ==========================================================================

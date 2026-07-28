@@ -20,6 +20,7 @@ import { useTheme } from "@mui/material/styles";
 import {
   CAMPAIGN_TYPE_LABELS,
   CHANNEL_LABELS,
+  OBJECTIVE_TYPE_LABELS,
   getCampaignScheduleLine,
 } from "api/campaigns/campaigns";
 // Reuse the shared queue-gradient mechanic for the "X left to contact" framing —
@@ -188,6 +189,71 @@ export default function CampaignCard({
     );
   };
 
+  // Objective advancement — the primary objective's current_value / target_value,
+  // now exposed by the list serializer (primary_objective). progress_percentage
+  // is already capped at 100 server-side. Falls back to the neutral placeholder
+  // row when the campaign has no primary objective (primary_objective === null).
+  const renderObjectiveProgress = () => {
+    const po = campaign.primary_objective;
+    const hasProgress =
+      po && po.current_value != null && po.progress_percentage != null;
+
+    if (!hasProgress) {
+      return (
+        <Box sx={{ mb: 1.5 }}>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+            mb={0.5}
+          >
+            <Typography variant="caption" color="text.secondary">
+              Objective
+            </Typography>
+            <Typography variant="caption" color="text.disabled">
+              —
+            </Typography>
+          </Stack>
+          <Box
+            sx={{ height: 6, borderRadius: 3, bgcolor: "divider", opacity: 0.5 }}
+          />
+        </Box>
+      );
+    }
+
+    const fmt = (n) => Number(n).toLocaleString();
+    const label = OBJECTIVE_TYPE_LABELS[po.objective_type] || po.objective_type;
+
+    return (
+      <Box sx={{ mb: 1.5 }}>
+        <Stack
+          direction="row"
+          justifyContent="space-between"
+          alignItems="center"
+          mb={0.5}
+        >
+          <Typography variant="caption" color="text.secondary">
+            {label}
+          </Typography>
+          <Typography variant="caption" color="text.primary" fontWeight={500}>
+            {`${fmt(po.current_value)} / ${fmt(po.target_value)}`}
+          </Typography>
+        </Stack>
+        <LinearProgress
+          variant="determinate"
+          value={po.progress_percentage}
+          color="info"
+          sx={{
+            height: 6,
+            borderRadius: 3,
+            bgcolor: theme.palette.grey[200],
+            "& .MuiLinearProgress-bar": { borderRadius: 3 },
+          }}
+        />
+      </Box>
+    );
+  };
+
   // ==============================|| RENDER ||============================== //
 
   return (
@@ -333,37 +399,14 @@ export default function CampaignCard({
         {/* Two stacked bars — OUTBOUND only; TARGETED shows neither (no bar at
             all, per the final decision).
             Top: the per-status Progress bar (5c targets_total / targets_worked).
-            Bottom: the Objective bar — an EMPTY neutral placeholder that
-            reserves the row for real objective data in S8. It carries NO data
-            and must NOT reuse the progress figures (that would duplicate the
-            Progress bar). */}
+            Bottom: the Objective bar — the primary objective's advancement
+            (current_value / target_value), served by the list serializer's
+            primary_objective. When no primary objective is set it falls back to
+            the neutral placeholder row. */}
         {!isTargeted && (
           <>
             {renderTargetProgress()}
-
-            <Box sx={{ mb: 1.5 }}>
-              <Stack
-                direction="row"
-                justifyContent="space-between"
-                alignItems="center"
-                mb={0.5}
-              >
-                <Typography variant="caption" color="text.secondary">
-                  Objective
-                </Typography>
-                <Typography variant="caption" color="text.disabled">
-                  —
-                </Typography>
-              </Stack>
-              <Box
-                sx={{
-                  height: 6,
-                  borderRadius: 3,
-                  bgcolor: "divider",
-                  opacity: 0.5,
-                }}
-              />
-            </Box>
+            {renderObjectiveProgress()}
           </>
         )}
 
@@ -517,6 +560,13 @@ CampaignCard.propTypes = {
     // Target progress (5c). Raw counts; null on non-annotated views.
     targets_total: PropTypes.number,
     targets_worked: PropTypes.number,
+    // Primary objective + its advancement (list serializer). null when unset.
+    primary_objective: PropTypes.shape({
+      objective_type: PropTypes.string,
+      target_value: PropTypes.number,
+      current_value: PropTypes.number,
+      progress_percentage: PropTypes.number,
+    }),
     // Real date fields (no start_date/end_date alias).
     planned_start_date: PropTypes.string,
     planned_end_date: PropTypes.string,
