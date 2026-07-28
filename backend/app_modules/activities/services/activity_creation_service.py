@@ -21,7 +21,6 @@ from core.error_messages import CoreErrorMessages, ActivityErrorMessages, Accoun
 
 from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
-from app_modules.decision_cycles.constants import DecisionStepStatus
 
 from ..models import Activity
 from ..constants import ActivityStatus
@@ -366,7 +365,6 @@ class ActivityCreationService:
                 name=config['step'].label,
                 stage=config['step'].value,
                 order=config['order'],
-                status=DecisionStepStatus.NOT_STARTED,
                 previous_step=previous_step,
                 expected_end=None,
                 created_by=self.user,

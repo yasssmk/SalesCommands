@@ -94,7 +94,9 @@ class ActivityDecisionStepSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = DecisionStep
-        fields = ['id', 'name', 'stage', 'stage_display', 'status']
+        # Step status is DERIVED on read (no stored column since migration 0019) —
+        # never a field here, mirroring decision_cycles' StepMinimalSerializer.
+        fields = ['id', 'name', 'stage', 'stage_display']
         read_only_fields = fields
 
 
