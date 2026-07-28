@@ -13,7 +13,7 @@ Follows legacy campaign_analytics_service.py patterns,
 simplified for new CampaignAccount pivot architecture.
 """
 
-from django.db.models import Count
+from django.db.models import Count, Exists, OuterRef, Q
 from django.utils import timezone
 
 from core.logging import get_logger
@@ -436,12 +436,34 @@ class CampaignAnalyticsService:
         return 0
 
     def _count_meetings(self, campaign):
-        """MEETINGS: count completed MEETING activities."""
-        return Activity.objects.filter(
-            campaign=campaign,
-            activity_type=ActivityType.MEETING,
-            status=ActivityStatus.COMPLETED,
-        ).count()
+        """MEETINGS: completed MEETING activities attributed to the campaign.
+
+        A meeting reaches a campaign two ways, and ``Activity.decision_cycle`` is
+        nullable (a meeting need not have a cycle), so neither field alone is
+        enough:
+        - via its decision cycle of origin (``decision_cycle.source_campaign`` —
+          the modal sets the cycle but leaves ``Activity.campaign`` None), OR
+        - directly via ``Activity.campaign`` (a campaign meeting with no cycle).
+
+        The cycle side is an ISOLATED correlated EXISTS on DecisionCycle
+        (correlated by ``decision_cycle_id``); Activity -> decision_cycle is
+        to-one, so counting activities never fans out. A meeting matching BOTH
+        origins is a single Activity row, counted once.
+        """
+        cycle_in_campaign = DecisionCycle.objects.filter(
+            pk=OuterRef('decision_cycle_id'),
+            source_campaign=campaign,
+        )
+        return (
+            Activity.objects
+            .filter(
+                activity_type=ActivityType.MEETING,
+                status=ActivityStatus.COMPLETED,
+            )
+            .annotate(_cycle_in_campaign=Exists(cycle_in_campaign))
+            .filter(Q(campaign=campaign) | Q(_cycle_in_campaign=True))
+            .count()
+        )
 
     def _count_contacts_reached(self, campaign):
         """CONTACTS_REACHED: distinct contacts with at least one completed activity."""

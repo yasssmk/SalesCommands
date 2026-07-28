@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 
 from app_modules.activities.constants import ActivityStatus, ActivityType
 from app_modules.activities.models import Activity
@@ -55,6 +55,42 @@ def _grouped(queryset, group_field, aggregate):
     }
 
 
+def _meetings_by_campaign(campaign_ids):
+    """{campaign_id: meeting_count} under the SAME union as
+    CampaignAnalyticsService._count_meetings: a completed MEETING counts for a
+    campaign when its cycle's ``source_campaign`` is that campaign OR its
+    ``Activity.campaign`` is that campaign.
+
+    ONE query fetches the page's completed meetings with both attribution keys;
+    the union tally is done in Python (a meeting attributing to two campaigns —
+    campaign X and cycle-of-Y — counts once for each, never twice for the same
+    campaign). Query count stays bounded (one query for the whole page).
+    """
+    ids = set(campaign_ids)
+    rows = (
+        Activity.objects
+        .filter(
+            activity_type=ActivityType.MEETING,
+            status=ActivityStatus.COMPLETED,
+        )
+        .filter(
+            Q(campaign_id__in=ids)
+            | Q(decision_cycle__source_campaign_id__in=ids)
+        )
+        .values_list('campaign_id', 'decision_cycle__source_campaign_id')
+    )
+    counts = defaultdict(int)
+    for campaign_id, cycle_campaign_id in rows:
+        keys = set()
+        if campaign_id in ids:
+            keys.add(campaign_id)
+        if cycle_campaign_id in ids:
+            keys.add(cycle_campaign_id)
+        for key in keys:
+            counts[key] += 1
+    return dict(counts)
+
+
 def _values_for_type(objective_type, campaign_ids, client_id):
     """{campaign_id: current_value} for one objective_type in ONE grouped query.
 
@@ -77,12 +113,7 @@ def _values_for_type(objective_type, campaign_ids, client_id):
         return _grouped(qs, 'source_campaign', Sum('estimated_value'))
 
     if objective_type == ObjectiveType.MEETINGS:
-        qs = Activity.objects.filter(
-            campaign_id__in=campaign_ids,
-            activity_type=ActivityType.MEETING,
-            status=ActivityStatus.COMPLETED,
-        )
-        return _grouped(qs, 'campaign', Count('id'))
+        return _meetings_by_campaign(campaign_ids)
 
     if objective_type == ObjectiveType.CONTACTS_REACHED:
         qs = Activity.objects.filter(
