@@ -56,15 +56,18 @@ def _grouped(queryset, group_field, aggregate):
 
 
 def _meetings_by_campaign(campaign_ids):
-    """{campaign_id: meeting_count} under the SAME union as
+    """{campaign_id: meeting_count} under the SAME three-branch union as
     CampaignAnalyticsService._count_meetings: a completed MEETING counts for a
-    campaign when its cycle's ``source_campaign`` is that campaign OR its
-    ``Activity.campaign`` is that campaign.
+    campaign when its cycle's ``source_campaign`` is that campaign, OR its
+    ``Activity.campaign`` is that campaign, OR its ``source_activity.campaign``
+    is that campaign.
 
-    ONE query fetches the page's completed meetings with both attribution keys;
-    the union tally is done in Python (a meeting attributing to two campaigns —
-    campaign X and cycle-of-Y — counts once for each, never twice for the same
-    campaign). Query count stays bounded (one query for the whole page).
+    ONE query fetches the page's completed meetings with the three attribution
+    keys; the union tally is done in Python (a meeting attributing to a campaign
+    through several keys counts once for that campaign; a meeting bridging two
+    different campaigns counts once for each). ``decision_cycle`` and
+    ``source_activity`` are to-one, so the joins never fan out. Query count stays
+    bounded (one query for the whole page).
     """
     ids = set(campaign_ids)
     rows = (
@@ -76,16 +79,23 @@ def _meetings_by_campaign(campaign_ids):
         .filter(
             Q(campaign_id__in=ids)
             | Q(decision_cycle__source_campaign_id__in=ids)
+            | Q(source_activity__campaign_id__in=ids)
         )
-        .values_list('campaign_id', 'decision_cycle__source_campaign_id')
+        .values_list(
+            'campaign_id',
+            'decision_cycle__source_campaign_id',
+            'source_activity__campaign_id',
+        )
     )
     counts = defaultdict(int)
-    for campaign_id, cycle_campaign_id in rows:
+    for campaign_id, cycle_campaign_id, source_campaign_id in rows:
         keys = set()
         if campaign_id in ids:
             keys.add(campaign_id)
         if cycle_campaign_id in ids:
             keys.add(cycle_campaign_id)
+        if source_campaign_id in ids:
+            keys.add(source_campaign_id)
         for key in keys:
             counts[key] += 1
     return dict(counts)

@@ -438,21 +438,35 @@ class CampaignAnalyticsService:
     def _count_meetings(self, campaign):
         """MEETINGS: completed MEETING activities attributed to the campaign.
 
-        A meeting reaches a campaign two ways, and ``Activity.decision_cycle`` is
-        nullable (a meeting need not have a cycle), so neither field alone is
-        enough:
-        - via its decision cycle of origin (``decision_cycle.source_campaign`` —
-          the modal sets the cycle but leaves ``Activity.campaign`` None), OR
-        - directly via ``Activity.campaign`` (a campaign meeting with no cycle).
+        A completed MEETING is "from the campaign" through any of THREE origins
+        (``Activity.decision_cycle`` and ``source_activity`` are both nullable,
+        so no single field is enough):
+        - its decision cycle of origin (``decision_cycle.source_campaign`` — the
+          modal sets the cycle but leaves ``Activity.campaign`` None), OR
+        - directly via ``Activity.campaign`` (a campaign meeting with no cycle),
+          OR
+        - the campaign activity it was born from
+          (``source_activity.campaign`` — a meeting logged on a PRE-EXISTING
+          cycle that never got ``source_campaign``, but whose triggering sequence
+          activity carries the campaign).
 
-        The cycle side is an ISOLATED correlated EXISTS on DecisionCycle
-        (correlated by ``decision_cycle_id``); Activity -> decision_cycle is
-        to-one, so counting activities never fans out. A meeting matching BOTH
-        origins is a single Activity row, counted once.
+        Each side is an ISOLATED correlated EXISTS (correlated by
+        ``decision_cycle_id`` / ``source_activity_id``); both traversals are
+        to-one, so counting activities never fans out. A meeting matching several
+        origins is a single Activity row, counted once. A null cycle / source
+        activity simply makes that EXISTS false — no error.
+
+        NOTE: this widens ACTIVITY attribution only. The cycle metrics
+        (DECISION_CYCLES / PIPELINE_VALUE / REVENUE_WON) still attribute by the
+        cycle's OWN ``source_campaign`` and are unaffected.
         """
         cycle_in_campaign = DecisionCycle.objects.filter(
             pk=OuterRef('decision_cycle_id'),
             source_campaign=campaign,
+        )
+        source_in_campaign = Activity.objects.filter(
+            pk=OuterRef('source_activity_id'),
+            campaign=campaign,
         )
         return (
             Activity.objects
@@ -460,8 +474,15 @@ class CampaignAnalyticsService:
                 activity_type=ActivityType.MEETING,
                 status=ActivityStatus.COMPLETED,
             )
-            .annotate(_cycle_in_campaign=Exists(cycle_in_campaign))
-            .filter(Q(campaign=campaign) | Q(_cycle_in_campaign=True))
+            .annotate(
+                _cycle_in_campaign=Exists(cycle_in_campaign),
+                _source_in_campaign=Exists(source_in_campaign),
+            )
+            .filter(
+                Q(campaign=campaign)
+                | Q(_cycle_in_campaign=True)
+                | Q(_source_in_campaign=True)
+            )
             .count()
         )
 
