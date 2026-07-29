@@ -84,7 +84,7 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     ordering = ['created_at']
 
     def get_queryset(self):
-        from django.db.models import Prefetch
+        from django.db.models import Count, Prefetch
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus
 
@@ -103,6 +103,12 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'activities',
                 queryset=Activity.objects.filter(status=ActivityStatus.ON_HOLD).only('id', 'status', 'campaign_contact_id'),
             )
+        ).annotate(
+            # Total activities for the contact (all statuses / all runs). Annotated
+            # so get_activities_count reads _activities_count instead of falling back
+            # to obj.activities.count(), which would read the ON_HOLD-filtered
+            # prefetch above (has_on_hold) and report the wrong count.
+            _activities_count=Count('activities'),
         )
 
         campaign_id = self.request.query_params.get('campaign')
