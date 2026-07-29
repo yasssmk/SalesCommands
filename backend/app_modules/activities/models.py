@@ -254,6 +254,17 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Position in the campaign sequence (1-based)')
     )
 
+    sequence_run = models.PositiveIntegerField(
+        default=1,
+        verbose_name=_('Sequence Run'),
+        help_text=_(
+            'Chasing-run number this activity belongs to. Stamped at creation '
+            'from the CampaignContact.sequence_run and never changed afterwards. '
+            'Lets the completed view show only the current run while previous '
+            'runs remain in the database.'
+        ),
+    )
+
     min_delay_days = models.PositiveSmallIntegerField(
         blank=True,
         null=True,
@@ -397,6 +408,9 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
             # completed-in-period, quota result).
             models.Index(fields=['outcome'], name='act_outcome_idx'),
             models.Index(fields=['completed_at'], name='act_completed_at_idx'),
+            # Current-run filter on the completed accordion (sequence_run compared
+            # to the contact's counter), scoped per campaign_contact.
+            models.Index(fields=['campaign_contact', 'sequence_run'], name='act_camp_contact_run_idx'),
         ]
     
     def __str__(self):

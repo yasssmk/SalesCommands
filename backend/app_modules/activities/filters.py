@@ -58,7 +58,8 @@ class ActivityFilter(django_filters.FilterSet):
     is_overdue = django_filters.BooleanFilter(method='filter_is_overdue')
     has_decision_step = django_filters.BooleanFilter(method='filter_has_decision_step')
     active_sequence = django_filters.BooleanFilter(method='filter_active_sequence')
-    
+    current_run = django_filters.BooleanFilter(method='filter_current_run')
+
     class Meta:
         model = Activity
         fields = [
@@ -67,7 +68,7 @@ class ActivityFilter(django_filters.FilterSet):
             'scheduled_date', 'scheduled_date_from', 'scheduled_date_to',
             'due_date', 'due_date_from', 'due_date_to',
             'completed_at_from', 'completed_at_to',
-            'is_overdue', 'has_decision_step', 'active_sequence'
+            'is_overdue', 'has_decision_step', 'active_sequence', 'current_run'
         ]
     
     def filter_is_overdue(self, queryset, name, value):
@@ -138,4 +139,31 @@ class ActivityFilter(django_filters.FilterSet):
         return queryset.filter(
             Q(campaign_contact__isnull=True)
             | Q(campaign_contact__status__in=non_final)
+        )
+
+    def filter_current_run(self, queryset, name, value):
+        """
+        Restrict to activities belonging to the CURRENT chasing run of their
+        CampaignContact (BUG 1 — hide previous runs' completed activities).
+
+        ?current_run=true  → keep activities whose sequence_run equals their
+                             CampaignContact's current sequence_run counter (the
+                             single source of truth — read via F(), never MAX),
+                             AND activities with no CampaignContact at all
+                             (orphan-safe: a removed contact SET_NULLs the FK, and
+                             non-campaign activities have no contact — both kept,
+                             mirroring filter_active_sequence).
+        ?current_run=false → no restriction (opt-in filter).
+
+        Universal and harmless outside TARGETED: OUTBOUND never re-chases, so both
+        counters stay at 1 and every row passes.
+        """
+        if not value:
+            return queryset
+
+        from django.db.models import F, Q
+
+        return queryset.filter(
+            Q(campaign_contact__isnull=True)
+            | Q(sequence_run=F('campaign_contact__sequence_run'))
         )

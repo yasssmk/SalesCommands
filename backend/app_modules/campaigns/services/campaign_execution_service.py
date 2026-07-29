@@ -631,6 +631,8 @@ class CampaignExecutionService:
             campaign_account=campaign_account,
             campaign_contact=campaign_contact,
             sequence_position=position,
+            # Stamp the contact's current chasing run (immutable after creation).
+            sequence_run=campaign_contact.sequence_run,
             scheduled_date=scheduled_date or campaign.planned_start_date,
             due_date=campaign.planned_end_date,
             min_delay_days=step_config.get('min_delay') if step_config else None,
@@ -915,6 +917,8 @@ class CampaignExecutionService:
             campaign_account=source_activity.campaign_account,
             campaign_contact=campaign_contact,
             sequence_position=position,
+            # A follow-up belongs to the contact's current chasing run.
+            sequence_run=campaign_contact.sequence_run,
             scheduled_date=scheduled_date,
             scheduled_time=scheduled_time,
             due_date=(

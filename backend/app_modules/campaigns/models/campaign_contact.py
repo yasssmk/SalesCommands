@@ -76,6 +76,17 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Whether sequence activities have been generated for this contact'),
     )
 
+    sequence_run = models.PositiveIntegerField(
+        default=1,
+        verbose_name=_('Sequence Run'),
+        help_text=_(
+            'Current chasing-run number for this contact. Starts at 1 and is '
+            'incremented by reactivate() on every TARGETED re-chase. Activities '
+            'are stamped with this value at creation to distinguish the current '
+            'run from previous ones (which stay in the DB, only hidden from view).'
+        ),
+    )
+
     notes = models.TextField(
         blank=True,
         null=True,
@@ -184,6 +195,10 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
             - activities_generated → False  (triggers new sequence generation)
             - callback_date → None
             - notes → None
+            - sequence_run → +1  (starts a fresh chasing run; activities generated
+              after this reset are stamped with the incremented run, so the
+              completed accordion shows only the current run while previous runs
+              stay in the DB)
 
         Raises:
             StandardizedValidationError: if contact is not in a final state.
@@ -202,6 +217,9 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         self.activities_generated = False
         self.callback_date = None
         self.notes = None
+        # New chasing run. Incremented BEFORE save so generate_activities_for_contact
+        # (called after reactivate() at enroll-target) stamps the incremented run.
+        self.sequence_run += 1
         self.save(user=user)
         return {
             'previous_status': previous_status,

@@ -317,6 +317,10 @@ export function useGetCompletedActivities(
     campaignId && isValidUUID(campaignId)
       ? `/module-activities/?campaign=${campaignId}&status=COMPLETED` +
         (activeSequenceOnly ? `&active_sequence=true` : ``) +
+        // Current-run filter (BUG 1): always applied — hides previous chasing
+        // runs' completed activities. Universal and harmless on OUTBOUND
+        // (run always 1, so every row passes).
+        `&current_run=true` +
         `&ordering=-completed_at&page_size=25&page=${page}`
       : null;
 
