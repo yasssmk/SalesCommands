@@ -88,7 +88,6 @@ vi.mock("api/campaigns/campaigns", () => ({
   pauseTarget: vi.fn(() => Promise.resolve({ success: true })),
   resumeTarget: vi.fn(() => Promise.resolve({ success: true })),
   stopTarget: vi.fn(() => Promise.resolve({ success: true })),
-  removeTargets: vi.fn(() => Promise.resolve({ success: true })),
   // Consumed by the (closed) Add-Target modal.
   enrollTarget: vi.fn(() => Promise.resolve({ success: true })),
 }));
@@ -162,12 +161,13 @@ function rowFor(name) {
   return screen.getByText(name).closest("tr");
 }
 
-// The contact name is the second cell of each body row (after the checkbox).
+// The contact name is the first cell of each body row (the bulk-select checkbox
+// column was removed, so Contact is now column 0).
 function renderedContactOrder() {
   return screen
     .getAllByRole("row")
     .slice(1) // drop the header row
-    .map((r) => within(r).getAllByRole("cell")[1].textContent.trim());
+    .map((r) => within(r).getAllByRole("cell")[0].textContent.trim());
 }
 
 // ==============================|| TESTS ||============================== //

@@ -58,7 +58,6 @@ vi.mock("api/campaigns/campaigns", () => ({
   pauseTarget: vi.fn(() => Promise.resolve({ success: true })),
   resumeTarget: vi.fn(() => Promise.resolve({ success: true })),
   stopTarget: vi.fn(() => Promise.resolve({ success: true })),
-  removeTargets: vi.fn(() => Promise.resolve({ success: true })),
   enrollTarget: vi.fn(() => Promise.resolve({ success: true })),
 }));
 

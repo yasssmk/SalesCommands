@@ -1479,39 +1479,6 @@ export async function enrollTarget(campaignId, payload) {
 }
 
 /**
- * REMOVE TARGETS — bulk remove CampaignContact rows.
- * Cancels PLANNED activities and removes from playlist.
- *
- * @param {string} campaignId - For cache revalidation
- * @param {string[]} campaignContactIds - UUIDs of CampaignContact records
- */
-export async function removeTargets(campaignId, campaignContactIds) {
-  if (!campaignContactIds?.length) {
-    return { success: false, error: "No targets selected", status: 400 };
-  }
-
-  const results = await Promise.allSettled(
-    campaignContactIds.map((id) => api.delete(`/campaigns/contacts/${id}/`)),
-  );
-
-  const failed = results.filter(
-    (r) => r.status === "rejected" || !r.value?.success,
-  );
-
-  revalidateCampaignPlaylist(campaignId);
-
-  if (failed.length > 0) {
-    return {
-      success: false,
-      error: `${failed.length} target(s) could not be removed`,
-      status: 207,
-    };
-  }
-
-  return { success: true };
-}
-
-/**
  * PAUSE TARGET — PUT contact's PLANNED activities ON_HOLD.
  * Activities remain in playlist (Upcoming, end of list, warning style).
  *

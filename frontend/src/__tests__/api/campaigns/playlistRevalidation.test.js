@@ -32,7 +32,6 @@ import {
   stopTarget,
   pauseTarget,
   resumeTarget,
-  removeTargets,
   enrollTarget,
   completePlaylistActivity,
 } from "api/campaigns/campaigns";
@@ -51,7 +50,6 @@ const cases = [
   ["stopTarget", () => stopTarget(CCID, CID)],
   ["pauseTarget", () => pauseTarget(CCID, CID)],
   ["resumeTarget", () => resumeTarget(CCID, CID)],
-  ["removeTargets", () => removeTargets(CID, [CCID])],
   [
     "enrollTarget",
     () => enrollTarget(CID, { account_id: AID, type: "CONTACT", contact_ids: [CCID] }),
