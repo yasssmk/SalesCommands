@@ -263,6 +263,9 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             user=request.user,
             notes=request.data.get('notes'),
         )
+        # 1A fix: a contact returning to an active state must not leave its parent
+        # account stuck final. TARGETED-only, guarded no-op otherwise.
+        instance.campaign_account.revive_if_active(user=request.user)
         self._audit_status_change(request, instance, result)
         self._invalidate_caches(self.get_client_id())
 
@@ -447,6 +450,10 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 user=request.user,
                 notes="Contact sequence resumed manually",
             )
+
+        # 1A fix: resuming a contact must not leave its parent account stuck final.
+        # TARGETED-only, guarded no-op otherwise.
+        instance.campaign_account.revive_if_active(user=request.user)
 
         audit_log(
             event='campaign_contact_resumed',

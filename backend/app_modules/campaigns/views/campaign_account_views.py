@@ -982,6 +982,12 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 },
             }, status=status.HTTP_201_CREATED)
 
+        # 1A fix: re-chasing a contact revives the parent account. If this enroll
+        # left the account with at least one non-final contact, re-derive its
+        # stored status upward (STOPPED/COMPLETED → IN_PROGRESS). TARGETED-only and
+        # guarded inside revive_if_active — a strict no-op on OUTBOUND.
+        campaign_account.revive_if_active(user=request.user)
+
         audit_log(
             event='campaign_target_enrolled',
             action='create',

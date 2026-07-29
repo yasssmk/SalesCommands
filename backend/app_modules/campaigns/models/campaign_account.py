@@ -186,3 +186,47 @@ class CampaignAccount(ModuleBaseModel, ClientScopeManager.ModelMixin):
         return not self.campaign_contacts.exclude(
             status__in=FINAL_CONTACT_STATES
         ).exists()
+
+    def revive_if_active(self, user=None):
+        """
+        TARGETED re-chase support — re-derive the stored status UPWARD when the
+        account has regained an active (non-final) contact.
+
+        1A fix: `_check_account_completion` only ever drives the account DOWN to a
+        final state; nothing brought it back up when a contact was re-chased. This
+        does the missing upward recalc.
+
+        Administrative reset — deliberately BYPASSES CAMPAIGN_ACCOUNT_TRANSITIONS
+        (STOPPED/COMPLETED are terminal there), exactly like
+        CampaignContact.reactivate(). It is TARGETED-only: OUTBOUND accounts are
+        one-shot and must never be revived, so this is a strict no-op for them and
+        the shared transition table is left untouched.
+
+        No-op unless ALL hold: the campaign is TARGETED, the account is not already
+        IN_PROGRESS, and at least one CampaignContact is non-final. A genuinely
+        finished account (every contact final, or zero contacts) is NEVER revived
+        (anti-over-correction). Does not touch all_contacts_done() nor the downward
+        _check_account_completion.
+
+        Returns the transition dict when it revives, else None.
+        """
+        from ..constants import CampaignType, CampaignContactStatus  # noqa: F401
+        from app_modules.campaigns.models.campaign_contact import FINAL_CONTACT_STATES
+
+        if self.campaign.campaign_type != CampaignType.TARGETED:
+            return None
+        if self.status == CampaignAccountStatus.IN_PROGRESS:
+            return None
+        has_active_contact = self.campaign_contacts.exclude(
+            status__in=FINAL_CONTACT_STATES
+        ).exists()
+        if not has_active_contact:
+            return None
+
+        previous_status = self.status
+        self.status = CampaignAccountStatus.IN_PROGRESS
+        self.save(user=user)
+        return {
+            'previous_status': previous_status,
+            'new_status': CampaignAccountStatus.IN_PROGRESS,
+        }
