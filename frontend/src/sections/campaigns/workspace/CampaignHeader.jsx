@@ -171,11 +171,12 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
     setOpen(false);
   };
 
-  // TARGETED — only Log Response button, no lifecycle actions
+  // TARGETED — only Log Response, promoted to the solid primary button (a TARGETED
+  // campaign is perpetual and has no lifecycle actions).
   if (campaign.campaign_type === "TARGETED") {
     return (
       <Button
-        variant="outlined"
+        variant="contained"
         size="small"
         startIcon={<MessageOutlined />}
         onClick={() => onLogResponse?.()}
@@ -211,24 +212,30 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
   if (["COMPLETED", "CANCELLED"].includes(campaign.status) && !completionModal)
     return null;
 
-  // ACTIVE or PAUSED — split button
+  // ACTIVE or PAUSED — split button.
+  //   ACTIVE → primary Log Response, dropdown {Pause, Complete}
+  //   PAUSED → primary Resume,       dropdown {Log Response, Complete}
   const isActive = campaign.status === "ACTIVE";
-  const primaryLabel = isActive ? "Pause" : "Resume";
-  const primaryAction = isActive ? pauseCampaign : resumeCampaign;
-  const primaryMessage = isActive ? "Campaign paused" : "Campaign resumed";
-  const primaryIcon = isActive ? (
-    <PauseCircleOutlined />
-  ) : (
-    <PlayCircleOutlined />
-  );
-  const primaryColor = isActive ? "warning" : "success";
+  const primary = isActive
+    ? {
+        label: "Log Response",
+        icon: <MessageOutlined />,
+        color: "primary",
+        onClick: () => onLogResponse?.(),
+      }
+    : {
+        label: "Resume",
+        icon: <PlayCircleOutlined />,
+        color: "success",
+        onClick: () => handleAction(resumeCampaign, "Campaign resumed"),
+      };
 
   return (
     <>
       <ButtonGroup
         ref={anchorRef}
         variant="contained"
-        color={primaryColor}
+        color={primary.color}
         size="small"
         disabled={loading}
       >
@@ -238,12 +245,12 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
             loading ? (
               <CircularProgress size={14} color="inherit" />
             ) : (
-              primaryIcon
+              primary.icon
             )
           }
-          onClick={() => handleAction(primaryAction, primaryMessage)}
+          onClick={primary.onClick}
         >
-          {primaryLabel}
+          {primary.label}
         </Button>
 
         {/* Dropdown arrow */}
@@ -269,23 +276,39 @@ function CampaignActionButtons({ campaign, onMutate, onLogResponse }) {
             <Paper elevation={3} sx={{ mt: 0.5, minWidth: 160 }}>
               <ClickAwayListener onClickAway={handleClose}>
                 <MenuList dense>
+                  {/* Status-dependent first item: Pause when ACTIVE (Log Response
+                      is the primary), Log Response when PAUSED (Resume is primary). */}
+                  {isActive ? (
+                    <MenuItem
+                      onClick={() => {
+                        setOpen(false);
+                        handleAction(pauseCampaign, "Campaign paused");
+                      }}
+                    >
+                      <ListItemIcon>
+                        <PauseCircleOutlined />
+                      </ListItemIcon>
+                      Pause
+                    </MenuItem>
+                  ) : (
+                    <MenuItem
+                      onClick={() => {
+                        setOpen(false);
+                        onLogResponse?.();
+                      }}
+                    >
+                      <ListItemIcon>
+                        <MessageOutlined />
+                      </ListItemIcon>
+                      Log Response
+                    </MenuItem>
+                  )}
+                  <Divider />
                   <MenuItem onClick={handleCompleteClick}>
                     <ListItemIcon>
                       <CheckCircleOutlined />
                     </ListItemIcon>
                     Complete
-                  </MenuItem>
-                  <Divider />
-                  <MenuItem
-                    onClick={() => {
-                      setOpen(false);
-                      onLogResponse?.();
-                    }}
-                  >
-                    <ListItemIcon>
-                      <MessageOutlined />
-                    </ListItemIcon>
-                    Log Response
                   </MenuItem>
                 </MenuList>
               </ClickAwayListener>
