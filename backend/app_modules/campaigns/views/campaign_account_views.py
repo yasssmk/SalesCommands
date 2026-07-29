@@ -831,6 +831,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             campaign_account.save(user=request.user, client_id=client_id)
 
         # Resolve contacts to enroll based on type
+        considered_total = 0  # contacts targeted by this enrollment (per mode)
         if enroll_type == 'CONTACT':
             if not contact_ids:
                 raise StandardizedValidationError(
@@ -860,12 +861,16 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     Q(email='') & Q(phone_number='')
                 )
             )
+            # Contacts considered for this enrollment (the requested ids). Anything
+            # not in `contacts` was excluded for eligibility (opted-out / no reachable
+            # channel), NOT because it was already active — that skip happens later.
+            considered_total = len(contact_ids)
             if not contacts:
                 if strict:
                     raise StandardizedValidationError(
                         CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE
                     )
-            
+
         elif enroll_type == 'DEPARTMENT':
             if not department_id:
                 raise StandardizedValidationError(
@@ -883,6 +888,13 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     Q(email='') & Q(phone_number='')
                 )
             )
+            # Every contact of the department is considered; those not in `contacts`
+            # were excluded for eligibility (opted-out / no reachable channel).
+            considered_total = Contact.objects.filter(
+                account=account,
+                client_id=client_id,
+                standard_department_id=department_id,
+            ).count()
             # Store department filter on the CampaignAccount
             try:
                 from app_modules.core_modules.models import StandardDepartment
@@ -902,6 +914,15 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     Q(email='') & Q(phone_number='')
                 )
             )
+            # Every contact of the account is considered; those not in `contacts`
+            # were excluded for eligibility (opted-out / no reachable channel). This
+            # is what makes unreachable_count meaningful in ACCOUNT mode (where
+            # contact_ids is empty), so the frontend can tell "0 reachable" apart
+            # from "already active".
+            considered_total = Contact.objects.filter(
+                account=account,
+                client_id=client_id,
+            ).count()
 
         # Enroll contacts (always) — generate activities only when ACTIVE
         contacts_created = 0
@@ -976,7 +997,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     'contacts_enrolled': 0,
                     'activities_created': 0,
                     'contacts_skipped': len(contact_ids) if contact_ids else 0,
-                    'unreachable_count': len(contact_ids) if contact_ids else 0,
+                    'unreachable_count': max(0, considered_total - len(contacts)),
                     'skip_reason': 'no_reachable_contacts',
                     'warning': CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE,
                 },
@@ -1018,12 +1039,10 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         output = CampaignAccountDetailSerializer(campaign_account, context={'request': request})
 
         # Contacts filtered out due to no email/phone or opted-out (not the same as
-        # contacts skipped because they already had open activities)
-        unreachable_count = (
-            len(contact_ids) - len(contacts)
-            if enroll_type == 'CONTACT' and contact_ids
-            else 0
-        )
+        # contacts skipped because they already had open activities). Computed from
+        # considered_total for EVERY mode (incl. ACCOUNT, where contact_ids is empty)
+        # so the frontend can distinguish "0 reachable" from "already active".
+        unreachable_count = max(0, considered_total - len(contacts))
 
         return Response({
             'success': True,
