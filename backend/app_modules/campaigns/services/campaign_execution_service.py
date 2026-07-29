@@ -769,7 +769,12 @@ class CampaignExecutionService:
         
         # ------------------------------------------------------------------
         # NO_ANSWER — sequence continues to next step.
-        # If no PLANNED activities remain, the sequence is exhausted → stop contact.
+        # If no PLANNED activities remain, the sequence has run its full course:
+        # the contact reached the natural end of its chasing sequence without a
+        # response. That is a COMPLETED contact (sequence done), not a STOPPED one
+        # (STOPPED stays reserved for genuine stops: a franc terminal outcome, a
+        # manual stop, a campaign close, a bulk cancel). The causal reason is kept
+        # in the notes so the completion reads as "no answer", not a commercial win.
         # ------------------------------------------------------------------
         if outcome == ActivityOutcome.NO_ANSWER:
             has_remaining = Activity.objects.filter(
@@ -777,7 +782,7 @@ class CampaignExecutionService:
                 status=ActivityStatus.PLANNED,
             ).exists()
             if not has_remaining:
-                campaign_contact.mark_stopped(
+                campaign_contact.mark_completed(
                     user=self.user,
                     notes="No answer — sequence exhausted",
                 )
