@@ -32,7 +32,7 @@ vi.mock("api/campaigns/campaigns", () => ({
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(),
   displayErrorSnackbar: vi.fn(),
-  displayInfoSnackbar: vi.fn(),
+  displayWarningSnackbar: vi.fn(),
 }));
 
 // Stub the async contact picker: one click selects a reachable contact.
@@ -50,7 +50,7 @@ vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
 import AddTargetToCampaignModal from "sections/campaigns/workspace/AddTargetToCampaignModal";
 import {
   displaySuccessSnackbar,
-  displayInfoSnackbar,
+  displayWarningSnackbar,
 } from "utils/displayError";
 
 const base = Palette("light", "default");
@@ -79,15 +79,15 @@ function openAndSubmit() {
 }
 
 describe("AddTargetToCampaignModal — enrollment feedback", () => {
-  it("contacts_enrolled=0 → info 'already active', NOT a success snackbar", async () => {
+  it("contacts_enrolled=0 → warning 'already active', NOT a success snackbar", async () => {
     h.enrollTarget.mockResolvedValue({
       success: true,
       data: { data: { contacts_enrolled: 0, skip_reason: null } },
     });
     openAndSubmit();
 
-    await waitFor(() => expect(displayInfoSnackbar).toHaveBeenCalledTimes(1));
-    expect(displayInfoSnackbar).toHaveBeenCalledWith(
+    await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledTimes(1));
+    expect(displayWarningSnackbar).toHaveBeenCalledWith(
       "This contact is already active in the campaign",
     );
     expect(displaySuccessSnackbar).not.toHaveBeenCalled();
@@ -102,6 +102,6 @@ describe("AddTargetToCampaignModal — enrollment feedback", () => {
 
     await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalledTimes(1));
     expect(displaySuccessSnackbar).toHaveBeenCalledWith("Contact added to campaign");
-    expect(displayInfoSnackbar).not.toHaveBeenCalled();
+    expect(displayWarningSnackbar).not.toHaveBeenCalled();
   });
 });
