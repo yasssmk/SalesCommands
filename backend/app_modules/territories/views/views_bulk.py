@@ -38,6 +38,7 @@ from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
 
 from ..models import Territory
+from ..constants import BULK_DELETE_MAX_IDS
 from .views import TerritoryViewSet
 
 logger = get_logger(__name__)
@@ -113,9 +114,11 @@ class TerritoryBulkViewSet(TerritoryViewSet):
             if not ids:
                 raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_NO_IDS)
             
-            if len(ids) > 500:
+            if len(ids) > BULK_DELETE_MAX_IDS:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="territories")
+                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(
+                        max_size=BULK_DELETE_MAX_IDS, entity="territories"
+                    )
                 )
             
             if mode not in ['partial', 'strict']:

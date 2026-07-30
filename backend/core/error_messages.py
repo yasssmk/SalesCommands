@@ -65,6 +65,12 @@ class CoreErrorMessages:
     OBJECT_IN_USE = _("Cannot delete {fields} as it is in use")
     CANNOT_DELETE = _("Cannot delete {fields}")
 
+    # Territory deletion
+    TERRITORY_DELETE_ACTIVE_CAMPAIGN = _(
+        "This territory is used by one or more active campaigns. "
+        "Complete or cancel them before deleting the territory."
+    )
+
     # AI Service Related
     INVALID_CONFIG = _("AI service configuration is invalid")
     SERVICE_UNAVAILABLE = _("AI service is currently unavailable")
@@ -367,6 +373,12 @@ class CampaignModuleErrorMessages:
     "Lifecycle actions (start/pause/resume/complete) are not available "
     "for Targeted campaigns."
 )
+    TARGETED_CAMPAIGN_COMPLETE_FORBIDDEN = _(
+        "A targeted campaign cannot be completed — it is a perpetual chasing campaign."
+    )
+    TARGETED_CAMPAIGN_CANCEL_FORBIDDEN = _(
+        "A targeted campaign cannot be cancelled — it is a perpetual chasing campaign."
+    )
 
     # Analytics
     ANALYTICS_CALCULATION_FAILED = _("Failed to calculate campaign analytics: {reason}")

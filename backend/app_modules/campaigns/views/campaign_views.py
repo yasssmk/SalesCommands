@@ -292,7 +292,15 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'territories',
                 'objectives',
             ).annotate(
-                _accounts_count=Count('campaign_accounts', distinct=True),
+                # Count only accounts that hold at least one CampaignContact.
+                # Orphan accounts (0 contacts — residue that maps to no real
+                # worked account) are excluded. Terminal accounts WITH contacts
+                # still count.
+                _accounts_count=Count(
+                    'campaign_accounts',
+                    filter=Q(campaign_accounts__campaign_contacts__isnull=False),
+                    distinct=True,
+                ),
                 _targets_total=Coalesce(Subquery(_total_sq), 0),
                 _targets_worked=Coalesce(Subquery(_worked_sq), 0),
                 _activities_today=Coalesce(Subquery(_today_acts_sq), 0),
@@ -325,7 +333,15 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'objectives',
                 'campaign_accounts',
             ).annotate(
-                _accounts_count=Count('campaign_accounts', distinct=True),
+                # Count only accounts that hold at least one CampaignContact.
+                # Orphan accounts (0 contacts — residue that maps to no real
+                # worked account) are excluded. Terminal accounts WITH contacts
+                # still count.
+                _accounts_count=Count(
+                    'campaign_accounts',
+                    filter=Q(campaign_accounts__campaign_contacts__isnull=False),
+                    distinct=True,
+                ),
                 _expected_end_date=Subquery(
                     _Activity.objects.filter(
                         campaign=OuterRef('pk'),
@@ -947,10 +963,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                     CoreErrorMessages.OBJECT_NOT_FOUND
                 )
 
-        # Optional result limit — default 200, clamped to [1, 500]. Applied
-        # AFTER the service's priority sort so top-priority activities are
-        # never cut. total_count remains the pre-slice total.
-        limit = 200
+        # Optional result limit — default playlist_default_limit, clamped to
+        # [1, playlist_max_limit]. Applied AFTER the service's priority sort so
+        # top-priority activities are never cut. total_count stays the pre-slice
+        # total.
+        limit = CONFIG.limits.playlist_default_limit
         limit_param = request.query_params.get('limit')
         if limit_param is not None:
             try:
@@ -959,7 +976,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(field='limit')
                 )
-            limit = max(1, min(limit, 500))
+            limit = max(1, min(limit, CONFIG.limits.playlist_max_limit))
 
         service = CampaignExecutionService(
             user=request.user,

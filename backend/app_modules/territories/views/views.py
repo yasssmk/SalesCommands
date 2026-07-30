@@ -12,9 +12,8 @@ from rest_framework.permissions import IsAuthenticated
 import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Exists, OuterRef
 
-from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication
@@ -356,62 +355,127 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
     
     def destroy(self, request, *args, **kwargs):
         """
-        Delete a territory.
+        Delete a territory, conditional on the campaigns that use it.
+
+        Campaign→Territory is a M2M (Campaign.territories, related_name
+        'campaigns'); TARGETED campaigns never carry a territory. Rules:
+          - Linked to >=1 ACTIVE campaign -> blocked (4xx, clear message).
+          - Linked only to NON-active campaigns:
+              * a NON-active OUTBOUND campaign whose SOLE territory is this one
+                -> cascade-deleted (campaign + CampaignAccount/CampaignContact +
+                its NON-DC activities; DC-linked activities are PRESERVED and
+                detached via SET_NULL, never destroyed);
+              * any other linked campaign (multi-territory, or — defensively —
+                non-OUTBOUND) -> the territory is removed from it (M2M detach),
+                the campaign is kept.
+          - Linked to no campaign -> simple delete.
+        TARGETED is never deleted: it never carries a territory, and the cascade
+        branch is guarded on campaign_type == OUTBOUND. The whole operation is
+        atomic — a mid-cascade failure rolls everything back.
         """
+        from app_modules.campaigns.constants import CampaignStatus, CampaignType
+
         ctx = ctx_from_request(request)
         instance = self.get_object()
 
-        # TEST ERROR MESSAGE ERRORDISPLAY IN FRONT
-        raise StandardizedValidationError(
-            'Territory deletion is currently disabled.',)
-        
-        # Prevent deletion of system territories
+        # System territories are never deletable.
         if instance.is_system:
             raise StandardizedValidationError(
-                CoreErrorMessages.CANNOT_DELETE,
-                field='system territories'
+                CoreErrorMessages.CANNOT_DELETE.format(fields='system territories')
             )
-        
+
+        # Reverse M2M — every campaign that lists this territory as a source.
+        linked_campaigns = list(instance.campaigns.all())
+
+        # Rule 1 — any ACTIVE campaign blocks deletion.
+        if any(c.status == CampaignStatus.ACTIVE for c in linked_campaigns):
+            raise StandardizedValidationError(
+                CoreErrorMessages.TERRITORY_DELETE_ACTIVE_CAMPAIGN
+            )
+
         logger.info("territory_delete_requested", extra={
             **ctx,
             'territory_id': str(instance.id),
-            'territory_name': instance.name
+            'territory_name': instance.name,
+            'linked_campaigns': len(linked_campaigns),
         })
-        
+
         territory_id = str(instance.id)
         territory_name = instance.name
         client_id = self.get_client_id()
-        
+
+        cascaded, detached = 0, 0
         with transaction.atomic():
+            for campaign in linked_campaigns:
+                is_sole_territory = campaign.territories.count() == 1
+                if is_sole_territory and campaign.campaign_type == CampaignType.OUTBOUND:
+                    # This territory is the campaign's only source → the campaign
+                    # cannot survive without it → cascade-delete it.
+                    self._cascade_delete_outbound_campaign(campaign, request.user)
+                    cascaded += 1
+                else:
+                    # Multi-territory (or, defensively, TARGETED) → detach only.
+                    campaign.territories.remove(instance)
+                    detached += 1
+
             instance.delete()
 
-            # Audit log 
             audit_log(
                 event='territory_delete_success',
                 action='delete',
                 actor_id=str(request.user.id),
-                client_id=str(self.get_client_id()),
-                target_id=territory_id, 
-                extra={'territory_name': territory_name},  
+                client_id=str(client_id),
+                target_id=territory_id,
+                extra={
+                    'territory_name': territory_name,
+                    'campaigns_cascaded': cascaded,
+                    'campaigns_detached': detached,
+                },
                 outcome='success',
-                )
-            
-            
+            )
+
             # Invalidate cache after commit
             transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
-    
-        
+
         logger.info("territory_delete_success", extra={
             **ctx,
             'territory_id': territory_id,
-            'territory_name': territory_name
+            'territory_name': territory_name,
         })
-        
+
         return Response({
             'success': True,
             'message': f'Territory "{territory_name}" deleted successfully.'
         }, status=status.HTTP_200_OK)
-    
+
+    def _cascade_delete_outbound_campaign(self, campaign, user):
+        """
+        Cascade-delete a NON-active OUTBOUND campaign whose sole territory is
+        being removed.
+
+        DECISION-CYCLE GUARD (red rule): activities tied to a decision cycle are
+        NEVER destroyed. Only NON-DC activities of the campaign are deleted; the
+        DC-linked ones are preserved and get campaign/campaign_account/
+        campaign_contact set to NULL via the existing SET_NULL when the campaign
+        (and its CASCADE-linked CampaignAccount/CampaignContact) is removed.
+
+        Must run inside a transaction (the caller wraps it) so a failure leaves
+        no half-deleted state.
+        """
+        from app_modules.activities.models import Activity
+
+        # Delete NON-DC activities of this campaign; DC ones are left to be
+        # detached (SET_NULL), never deleted.
+        Activity.objects.filter(
+            campaign=campaign,
+            decision_cycle__isnull=True,
+        ).delete()
+
+        # CASCADE removes CampaignAccount + CampaignContact; remaining DC
+        # activities are detached (campaign/campaign_account/campaign_contact
+        # -> NULL) but preserved with their decision_cycle intact.
+        campaign.delete()
+
     # ==========================================================================
     # CUSTOM ACTIONS
     # ==========================================================================

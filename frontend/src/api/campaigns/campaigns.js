@@ -106,14 +106,6 @@ export function getCampaignProgress(campaign) {
   return Math.round((completed / total) * 100);
 }
 
-export function getObjectiveProgress(campaign) {
-  if (!campaign || !campaign.objective_target) return 0;
-  return Math.min(
-    100,
-    Math.round((campaign.objective_current / campaign.objective_target) * 100),
-  );
-}
-
 /**
  * Build the campaign's schedule line from its REAL date fields, keyed off
  * status. The API emits planned_start_date / planned_end_date / actual_start_date

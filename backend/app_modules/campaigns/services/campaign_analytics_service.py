@@ -24,7 +24,6 @@ from app_modules.bi import metrics
 from app_modules.decision_cycles.models import DecisionCycle
 
 from ..models import (
-    Campaign,
     CampaignAccount,
     CampaignAccountStatus,
     CampaignObjective,

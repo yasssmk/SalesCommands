@@ -163,11 +163,18 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
 
 
     def get_accounts_count(self, obj):
-        """Return number of accounts enrolled in campaign."""
-        # Relies on annotation from ViewSet.get_queryset() or fallback
+        """Number of enrolled accounts holding at least one contact.
+
+        Orphan accounts (0 CampaignContact — residue that maps to no real worked
+        account) are excluded; terminal accounts with contacts still count.
+        Relies on the _accounts_count annotation (ViewSet.get_queryset), with a
+        contact-filtered fallback that mirrors it.
+        """
         if hasattr(obj, '_accounts_count'):
             return obj._accounts_count
-        return obj.campaign_accounts.count()
+        return obj.campaign_accounts.filter(
+            campaign_contacts__isnull=False
+        ).distinct().count()
 
     def get_targets_total(self, obj):
         """Total enrolled targets (CampaignContact rows).
@@ -363,9 +370,13 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
         return obj.has_sequence
 
     def get_accounts_count(self, obj):
+        # Accounts holding ≥1 contact (orphans excluded); mirrors the
+        # _accounts_count annotation. See list serializer for rationale.
         if hasattr(obj, '_accounts_count'):
             return obj._accounts_count
-        return obj.campaign_accounts.count()
+        return obj.campaign_accounts.filter(
+            campaign_contacts__isnull=False
+        ).distinct().count()
 
     def get_objectives(self, obj):
         """Return objectives with computed progress (single value calculation per objective)."""

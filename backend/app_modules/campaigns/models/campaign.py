@@ -265,11 +265,28 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         self.transition_to(CampaignStatus.ACTIVE, user=user)
 
     def complete(self, user=None):
-        """Complete the campaign (ACTIVE/PAUSED → COMPLETED)."""
+        """Complete the campaign (ACTIVE/PAUSED → COMPLETED).
+
+        TARGETED campaigns are perpetual and must never reach a terminal state.
+        This model-level guard backs up the view (_assert_not_targeted) and
+        signal frontiers so a direct model call cannot break the invariant.
+        """
+        if self.is_targeted:
+            raise StandardizedValidationError(
+                CampaignModuleErrorMessages.TARGETED_CAMPAIGN_COMPLETE_FORBIDDEN
+            )
         self.transition_to(CampaignStatus.COMPLETED, user=user)
 
     def cancel(self, user=None):
-        """Cancel the campaign (any non-final → CANCELLED)."""
+        """Cancel the campaign (any non-final → CANCELLED).
+
+        TARGETED campaigns are perpetual and must never reach a terminal state
+        (see complete() — same model-level backstop).
+        """
+        if self.is_targeted:
+            raise StandardizedValidationError(
+                CampaignModuleErrorMessages.TARGETED_CAMPAIGN_CANCEL_FORBIDDEN
+            )
         self.transition_to(CampaignStatus.CANCELLED, user=user)
 
     # ==========================================================================

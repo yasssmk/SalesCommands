@@ -6,7 +6,6 @@ Follows the same patterns as CompanyAccount serializers for consistency.
 """
 
 from rest_framework import serializers
-from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError

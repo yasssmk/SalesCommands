@@ -17,7 +17,6 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
 from django.db.models import Count, Q
 
-from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication

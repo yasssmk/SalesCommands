@@ -2,7 +2,7 @@
 /**
  * Campaign Playlist Tab — Main playlist view with real API data.
  *
- * Displays: PlaylistProgressBar + list of PlaylistActivityCard.
+ * Displays: list of PlaylistActivityCard.
  * Accordion pattern: only one card expanded at a time.
  * Executor filter: optional dropdown to filter by a single team member.
  * Optimistic removal: completed activities are hidden immediately from the UI.
@@ -31,7 +31,6 @@ import Typography from "@mui/material/Typography";
 import DownOutlined from "@ant-design/icons/DownOutlined";
 
 // project imports
-import PlaylistProgressBar from "./PlaylistProgressBar";
 import PlaylistActivityCard from "components/cards/PlaylistActivityCard";
 import CampaignOutcomeModal from "../CampaignOutcomeModal";
 
@@ -79,7 +78,6 @@ export default function CampaignPlaylistTab({
   const [completingId, setCompletingId] = useState(null);
   const [dismissedCompletion, setDismissedCompletion] = useState(false);
   const [completing, setCompleting] = useState(false);
-  const [completedToday, setCompletedToday] = useState(0);
   // { open: bool, activity: object|null }
   const [outcomeModal, setOutcomeModal] = useState({
     open: false,
@@ -174,7 +172,6 @@ export default function CampaignPlaylistTab({
         );
         if (result.success) {
           setRemovedIds((prev) => new Set([...prev, activityId]));
-          setCompletedToday((prev) => prev + 1);
           mutatePlaylist();
           if (onCampaignUpdate) onCampaignUpdate();
           displaySuccessSnackbar("Activity completed");
@@ -201,7 +198,6 @@ export default function CampaignPlaylistTab({
   const handleOutcomeComplete = useCallback(
     (activityId) => {
       setRemovedIds((prev) => new Set([...prev, activityId]));
-      setCompletedToday((prev) => prev + 1);
       mutatePlaylist();
       if (onCampaignUpdate) onCampaignUpdate();
     },
@@ -321,9 +317,6 @@ export default function CampaignPlaylistTab({
       };
     }, [activities, todayStr]);
 
-  const completedCount =
-    totalCount > 0 ? Math.max(0, totalCount - rawActivities.length) : 0;
-
   // ==============================|| EMPTY STATE — Campaign not active ||============================== //
 
   // COMPLETED and PAUSED fall through to the main render.
@@ -354,7 +347,6 @@ export default function CampaignPlaylistTab({
   if (playlistLoading) {
     return (
       <Stack spacing={2}>
-        <PlaylistProgressBar loading />
         <PlaylistSkeleton />
       </Stack>
     );
@@ -386,11 +378,6 @@ export default function CampaignPlaylistTab({
   ) {
     return (
       <Stack spacing={2}>
-        <PlaylistProgressBar
-          total={0}
-          completed={0}
-          completedToday={completedToday}
-        />
         <Box sx={{ py: 6, textAlign: "center" }}>
           <Typography variant="h5" color="text.secondary">
             No activities in playlist
@@ -462,13 +449,6 @@ export default function CampaignPlaylistTab({
           mark this campaign as completed?
         </Alert>
       )}
-
-      {/* Progress bar */}
-      <PlaylistProgressBar
-        total={totalCount}
-        completed={completedCount + completedToday}
-        completedToday={completedToday}
-      />
 
       {/* ── Inactivity warning ── */}
       {campaign?.is_inactive && (

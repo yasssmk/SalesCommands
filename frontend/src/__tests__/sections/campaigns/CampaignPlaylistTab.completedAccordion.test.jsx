@@ -18,7 +18,7 @@
 // also proves the flag enters the SWR key (no cross-type cache sharing).
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, screen } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //
 
@@ -60,9 +60,6 @@ vi.mock("utils/displayError", () => ({
 
 // Presentational children — theme-heavy and irrelevant to URL capture; stub out.
 vi.mock("components/cards/PlaylistActivityCard", () => ({ default: () => null }));
-vi.mock("sections/campaigns/workspace/PlaylistProgressBar", () => ({
-  default: () => null,
-}));
 vi.mock("sections/campaigns/CampaignOutcomeModal", () => ({
   default: () => null,
 }));
@@ -118,6 +115,13 @@ describe("CampaignPlaylistTab — completed accordion active_sequence gating", (
     const key = completedKey();
     expect(key).toBeTruthy();
     expect(key).toContain("active_sequence=true");
+  });
+
+  it("no playlist progress bar is rendered (C1: removed from the playlist view)", () => {
+    renderTab("OUTBOUND");
+    // The bar showed "N remaining" and an "X/Y (Z%)" summary — none must render.
+    expect(screen.queryByText(/remaining/i)).toBeNull();
+    expect(screen.queryByText(/completed today/i)).toBeNull();
   });
 
   it("the two types produce different keys — the flag enters the SWR key", () => {

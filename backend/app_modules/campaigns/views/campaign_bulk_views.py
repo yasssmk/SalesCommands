@@ -51,6 +51,7 @@ from core.logging.audit import audit_log
 from app_modules.activities.models import Activity
 
 from ..models import Campaign
+from ..config.settings import CONFIG
 from .campaign_views import CampaignViewSet
 
 logger = get_logger(__name__)
@@ -127,9 +128,11 @@ class CampaignBulkViewSet(CampaignViewSet):
             if not ids:
                 raise StandardizedValidationError(CoreErrorMessages.BULK_DELETE_NO_IDS)
 
-            if len(ids) > 500:
+            if len(ids) > CONFIG.limits.bulk_delete_max_ids:
                 raise StandardizedValidationError(
-                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(max_size=500, entity="campaigns")
+                    CoreErrorMessages.BULK_SIZE_EXCEEDED.format(
+                        max_size=CONFIG.limits.bulk_delete_max_ids, entity="campaigns"
+                    )
                 )
 
             if mode not in ['partial', 'strict']:

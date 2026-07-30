@@ -88,13 +88,20 @@ export default function AlertTerritoryDelete({ territory, open, handleClose }) {
                 is a built-in system territory.
               </Typography>
             ) : (
-              <Typography align="center">
-                By deleting
-                <Typography variant="subtitle1" component="span">
-                  {' '}&quot;{territory?.name}&quot;{' '}
+              <Stack spacing={1} alignItems="center">
+                <Typography align="center">
+                  By deleting
+                  <Typography variant="subtitle1" component="span">
+                    {' '}&quot;{territory?.name}&quot;{' '}
+                  </Typography>
+                  territory, this action cannot be undone.
                 </Typography>
-                territory, this action cannot be undone.
-              </Typography>
+                <Typography align="center" variant="caption" color="warning.main">
+                  Draft or finished campaigns that rely only on this territory
+                  will be deleted too. A territory used by an active campaign
+                  cannot be deleted.
+                </Typography>
+              </Stack>
             )}
           </Stack>
 
