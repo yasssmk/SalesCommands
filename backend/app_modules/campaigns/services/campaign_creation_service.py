@@ -30,6 +30,7 @@ from ..models import (
     CampaignAccountStatus,
     CampaignObjective,
 )
+from ..constants import MAX_ACCOUNTS_PER_CAMPAIGN
 from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
@@ -299,8 +300,19 @@ class CampaignCreationService:
             combined_qs = combined_qs | qs
 
         combined_qs = combined_qs.distinct()
-        max_accounts = CONFIG.limits.max_accounts_per_campaign
-        accounts = list(combined_qs[:max_accounts])
+
+        # Hard cap on the RAW resolved account count. Checked BEFORE any
+        # CampaignAccount is created, so a breach rolls back with zero partial
+        # enrollment — every caller of this method runs atomically
+        # (create_campaign, lifecycle.start, serializer.create).
+        total_accounts = combined_qs.count()
+        if total_accounts > MAX_ACCOUNTS_PER_CAMPAIGN:
+            raise StandardizedValidationError(
+                CampaignModuleErrorMessages.MAX_ACCOUNTS_EXCEEDED.format(
+                    max=MAX_ACCOUNTS_PER_CAMPAIGN
+                )
+            )
+        accounts = list(combined_qs)
 
         enrolled = 0
         for account in accounts:

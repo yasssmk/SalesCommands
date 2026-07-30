@@ -317,6 +317,10 @@ export function useGetCompletedActivities(
     campaignId && isValidUUID(campaignId)
       ? `/module-activities/?campaign=${campaignId}&status=COMPLETED` +
         (activeSequenceOnly ? `&active_sequence=true` : ``) +
+        // Current-run filter (BUG 1): always applied — hides previous chasing
+        // runs' completed activities. Universal and harmless on OUTBOUND
+        // (run always 1, so every row passes).
+        `&current_run=true` +
         `&ordering=-completed_at&page_size=25&page=${page}`
       : null;
 
@@ -1476,39 +1480,6 @@ export async function enrollTarget(campaignId, payload) {
   revalidateCampaignPlaylist(campaignId);
 
   return { success: true, data: result.data };
-}
-
-/**
- * REMOVE TARGETS — bulk remove CampaignContact rows.
- * Cancels PLANNED activities and removes from playlist.
- *
- * @param {string} campaignId - For cache revalidation
- * @param {string[]} campaignContactIds - UUIDs of CampaignContact records
- */
-export async function removeTargets(campaignId, campaignContactIds) {
-  if (!campaignContactIds?.length) {
-    return { success: false, error: "No targets selected", status: 400 };
-  }
-
-  const results = await Promise.allSettled(
-    campaignContactIds.map((id) => api.delete(`/campaigns/contacts/${id}/`)),
-  );
-
-  const failed = results.filter(
-    (r) => r.status === "rejected" || !r.value?.success,
-  );
-
-  revalidateCampaignPlaylist(campaignId);
-
-  if (failed.length > 0) {
-    return {
-      success: false,
-      error: `${failed.length} target(s) could not be removed`,
-      status: 207,
-    };
-  }
-
-  return { success: true };
 }
 
 /**

@@ -84,7 +84,7 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
     ordering = ['created_at']
 
     def get_queryset(self):
-        from django.db.models import Prefetch
+        from django.db.models import Count, Prefetch
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus
 
@@ -103,6 +103,12 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'activities',
                 queryset=Activity.objects.filter(status=ActivityStatus.ON_HOLD).only('id', 'status', 'campaign_contact_id'),
             )
+        ).annotate(
+            # Total activities for the contact (all statuses / all runs). Annotated
+            # so get_activities_count reads _activities_count instead of falling back
+            # to obj.activities.count(), which would read the ON_HOLD-filtered
+            # prefetch above (has_on_hold) and report the wrong count.
+            _activities_count=Count('activities'),
         )
 
         campaign_id = self.request.query_params.get('campaign')
@@ -263,6 +269,9 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             user=request.user,
             notes=request.data.get('notes'),
         )
+        # 1A fix: a contact returning to an active state must not leave its parent
+        # account stuck final. TARGETED-only, guarded no-op otherwise.
+        instance.campaign_account.revive_if_active(user=request.user)
         self._audit_status_change(request, instance, result)
         self._invalidate_caches(self.get_client_id())
 
@@ -447,6 +456,10 @@ class CampaignContactViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 user=request.user,
                 notes="Contact sequence resumed manually",
             )
+
+        # 1A fix: resuming a contact must not leave its parent account stuck final.
+        # TARGETED-only, guarded no-op otherwise.
+        instance.campaign_account.revive_if_active(user=request.user)
 
         audit_log(
             event='campaign_contact_resumed',

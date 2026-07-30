@@ -59,6 +59,7 @@ import { useGetDecisionCyclesByAccount } from "api/accounts/decisionCycles";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
+  displayWarningSnackbar,
 } from "utils/displayError";
 
 // icons
@@ -232,21 +233,27 @@ export default function AddToCampaignModal({
         const data = result.data?.data ?? result.data;
         const unreachable = data?.unreachable_count ?? 0;
         const enrolled = data?.contacts_enrolled ?? 0;
+        const name = accountName || "Account";
 
-        if (unreachable > 0 && enrolled === 0) {
-          // All selected contacts were unreachable — account added but no work will be generated
-          displayErrorSnackbar({
-            message: `${accountName || "Account"} added, but no contacts could be enrolled: they must have a valid email or phone and must not be opted out.`,
-            status: 200,
-          });
-        } else if (unreachable > 0) {
-          // Partial — some contacts skipped
+        // Decide the tone from the reliable signals (contacts_enrolled +
+        // unreachable_count), never skip_reason (which the backend only sets when
+        // not strict). Nothing enrolled is NEVER a success.
+        if (enrolled > 0) {
           displaySuccessSnackbar(
-            `${accountName || "Account"} added to your Targeted Campaign — ${unreachable} contact${unreachable > 1 ? "s" : ""} skipped (no valid email/phone or opted out).`,
+            unreachable > 0
+              ? `${name} added to your Targeted Campaign — ${unreachable} contact${unreachable > 1 ? "s" : ""} skipped (no valid email/phone or opted out).`
+              : `${name} added to your Targeted Campaign`,
+          );
+        } else if (unreachable > 0) {
+          // Account/contacts added but nobody could be enrolled (unreachable /
+          // opted out) — a warning, not a red error.
+          displayWarningSnackbar(
+            `${name} added, but no contacts could be enrolled: they must have a valid email or phone and must not be opted out.`,
           );
         } else {
-          displaySuccessSnackbar(
-            `${accountName || "Account"} added to your Targeted Campaign`,
+          // Reachable contacts, but all already active in the campaign.
+          displayWarningSnackbar(
+            "These contacts are already active in the campaign",
           );
         }
         onSuccess?.();

@@ -23,6 +23,7 @@ import { enrollTarget } from "api/campaigns/campaigns";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
+  displayWarningSnackbar,
 } from "utils/displayError";
 
 // ==============================|| ADD TARGET TO CAMPAIGN MODAL ||============================== //
@@ -91,15 +92,19 @@ export default function AddTargetToCampaignModal({
           result.data?.data?.contacts_enrolled ??
           result.data?.contacts_enrolled ??
           0;
-        const skipReason =
-          result.data?.data?.skip_reason ?? result.data?.skip_reason;
 
-        if (contactsEnrolled === 0 && skipReason === "no_reachable_contacts") {
-          displayErrorSnackbar({
-            message:
-              "This contact has no valid email or phone number and cannot be enrolled.",
-            status: 400,
-          });
+        // Nothing was actually enrolled (the single contact is already active in
+        // the campaign — a genuinely unreachable/opted-out contact raises 4xx
+        // upstream, handled by the error branch below). Never claim success; a
+        // "nothing happened" outcome is a warning. The signal is the real
+        // contacts_enrolled count, not skip_reason (which the backend only sets
+        // when not strict — the modal always sends strict:true).
+        if (contactsEnrolled === 0) {
+          displayWarningSnackbar(
+            "This contact is already active in the campaign",
+          );
+          setSelectedContact(null);
+          onClose();
           return;
         }
 

@@ -631,6 +631,8 @@ class CampaignExecutionService:
             campaign_account=campaign_account,
             campaign_contact=campaign_contact,
             sequence_position=position,
+            # Stamp the contact's current chasing run (immutable after creation).
+            sequence_run=campaign_contact.sequence_run,
             scheduled_date=scheduled_date or campaign.planned_start_date,
             due_date=campaign.planned_end_date,
             min_delay_days=step_config.get('min_delay') if step_config else None,
@@ -769,7 +771,12 @@ class CampaignExecutionService:
         
         # ------------------------------------------------------------------
         # NO_ANSWER — sequence continues to next step.
-        # If no PLANNED activities remain, the sequence is exhausted → stop contact.
+        # If no PLANNED activities remain, the sequence has run its full course:
+        # the contact reached the natural end of its chasing sequence without a
+        # response. That is a COMPLETED contact (sequence done), not a STOPPED one
+        # (STOPPED stays reserved for genuine stops: a franc terminal outcome, a
+        # manual stop, a campaign close, a bulk cancel). The causal reason is kept
+        # in the notes so the completion reads as "no answer", not a commercial win.
         # ------------------------------------------------------------------
         if outcome == ActivityOutcome.NO_ANSWER:
             has_remaining = Activity.objects.filter(
@@ -777,7 +784,7 @@ class CampaignExecutionService:
                 status=ActivityStatus.PLANNED,
             ).exists()
             if not has_remaining:
-                campaign_contact.mark_stopped(
+                campaign_contact.mark_completed(
                     user=self.user,
                     notes="No answer — sequence exhausted",
                 )
@@ -910,6 +917,8 @@ class CampaignExecutionService:
             campaign_account=source_activity.campaign_account,
             campaign_contact=campaign_contact,
             sequence_position=position,
+            # A follow-up belongs to the contact's current chasing run.
+            sequence_run=campaign_contact.sequence_run,
             scheduled_date=scheduled_date,
             scheduled_time=scheduled_time,
             due_date=(
