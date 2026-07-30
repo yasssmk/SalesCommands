@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, cleanup } from '@testing-library/react';
 
-const useSWRMock = vi.fn(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
-vi.mock('swr', () => ({ default: (key, a, b) => useSWRMock(key, a, b) }));
+const swrMock = vi.fn(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
+vi.mock('swr', () => ({ default: (key, a, b) => swrMock(key, a, b) }));
 
 vi.mock('hooks/useAuth', () => ({ useAuth: () => ({ tenantId: 'tenant-123' }) }));
 
@@ -22,7 +22,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useSWRMock.mockImplementation(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
+  swrMock.mockImplementation(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
 });
 afterEach(() => cleanup());
 
@@ -72,12 +72,12 @@ describe('TODO_WINDOWS', () => {
 describe('useGetTodoWindows', () => {
   it('reads the todo_my_windows KPI, keyed by scope + tenant', () => {
     renderHook(() => useGetTodoWindows({ scope: 'mine' }));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toEqual(['/bi/kpi/todo_my_windows/?scope=mine', 'tenant-123']);
   });
 
   it('unwraps the window counts from the KPI value', () => {
-    useSWRMock.mockReturnValue({
+    swrMock.mockReturnValue({
       data: { data: { value: { overdue: 2, today: 1, next_7_days: 3, next_4_weeks: 5 } } },
       isLoading: false,
       error: null,
@@ -91,18 +91,18 @@ describe('useGetTodoWindows', () => {
 describe('useGetTodoActivities', () => {
   it('keys on the /bi/todo/ url (scope + window + page) + tenant', () => {
     renderHook(() => useGetTodoActivities({ scope: 'mine', window: 'overdue', page: 1, pageSize: 10 }));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toEqual(['/bi/todo/?scope=mine&window=overdue&page=1&page_size=10', 'tenant-123']);
   });
 
   it('passes a null key when disabled', () => {
     renderHook(() => useGetTodoActivities({ enabled: false }));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toBeNull();
   });
 
   it('unwraps paginated rows + count', () => {
-    useSWRMock.mockReturnValue({
+    swrMock.mockReturnValue({
       data: { data: { results: [{ id: 'a1' }], count: 1 } },
       isLoading: false,
       error: null,

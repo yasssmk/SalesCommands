@@ -5,8 +5,8 @@ import { renderHook, cleanup } from '@testing-library/react';
 
 // ==============================|| MOCKS ||============================== //
 
-const useSWRMock = vi.fn(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
-vi.mock('swr', () => ({ default: (key, options) => useSWRMock(key, options) }));
+const swrMock = vi.fn(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
+vi.mock('swr', () => ({ default: (key, options) => swrMock(key, options) }));
 
 vi.mock('hooks/useAuth', () => ({
   useAuth: () => ({ tenantId: 'tenant-123' }),
@@ -22,7 +22,7 @@ import { useGetMyActiveQuotas, useGetTeamQuotas, endpoints } from 'api/quotas/qu
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useSWRMock.mockImplementation(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
+  swrMock.mockImplementation(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
 });
 
 afterEach(() => {
@@ -32,19 +32,19 @@ afterEach(() => {
 describe('useGetMyActiveQuotas', () => {
   it('targets the current-period my-quotas endpoint, keyed by tenant', () => {
     renderHook(() => useGetMyActiveQuotas());
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toEqual([endpoints.myActiveQuotas, 'tenant-123']);
     expect(endpoints.myActiveQuotas).toContain('current_period=true');
   });
 
   it('passes a null key when disabled', () => {
     renderHook(() => useGetMyActiveQuotas({ enabled: false }));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toBeNull();
   });
 
   it('unwraps the paginated results and count', () => {
-    useSWRMock.mockReturnValue({
+    swrMock.mockReturnValue({
       data: { data: { results: [{ id: 1, target_type: 'closed_won' }], count: 1 } },
       isLoading: false,
       error: null,
@@ -60,7 +60,7 @@ describe('useGetMyActiveQuotas', () => {
 describe('useGetTeamQuotas', () => {
   it('narrows to a team, current period + active, keyed by tenant', () => {
     renderHook(() => useGetTeamQuotas('team-9'));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toEqual([endpoints.teamQuotas('team-9'), 'tenant-123']);
     expect(endpoints.teamQuotas('team-9')).toContain('user__team=team-9');
     expect(endpoints.teamQuotas('team-9')).toContain('current_period=true');
@@ -69,12 +69,12 @@ describe('useGetTeamQuotas', () => {
 
   it('passes a null key until the teamId is known', () => {
     renderHook(() => useGetTeamQuotas(null));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toBeNull();
   });
 
   it('unwraps the team quota rows', () => {
-    useSWRMock.mockReturnValue({
+    swrMock.mockReturnValue({
       data: { data: { results: [{ id: 5, user_id: 'u1', user_name: 'Alice' }], count: 1 } },
       isLoading: false,
       error: null,

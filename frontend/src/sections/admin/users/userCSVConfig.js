@@ -21,7 +21,7 @@ import {
   validateUserCSVData,
   prepareUserDataForAPI,
   generateSampleCSV
-} from './userCSVValidation';
+} from './UserCSVValidation';
 
 // Resolvers (entity-specific)
 import { buildLookups } from './resolvers';

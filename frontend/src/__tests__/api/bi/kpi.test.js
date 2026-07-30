@@ -7,8 +7,8 @@ import { renderHook, cleanup } from '@testing-library/react';
 
 // Capture (key, fetcher|options, options) so both useKpi (options 2nd) and
 // useKpiBatch (fetcher 2nd, options 3rd) can be asserted.
-const useSWRMock = vi.fn(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
-vi.mock('swr', () => ({ default: (key, a, b) => useSWRMock(key, a, b) }));
+const swrMock = vi.fn(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
+vi.mock('swr', () => ({ default: (key, a, b) => swrMock(key, a, b) }));
 
 vi.mock('hooks/useAuth', () => ({
   useAuth: () => ({ tenantId: 'tenant-123' }),
@@ -37,7 +37,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useSWRMock.mockImplementation(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
+  swrMock.mockImplementation(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
 });
 
 afterEach(() => {
@@ -70,18 +70,18 @@ describe('chunk', () => {
 describe('useKpi', () => {
   it('keys on the built url + tenant', () => {
     renderHook(() => useKpi('todo_my_activities', { scope: 'mine' }));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toEqual(['/bi/kpi/todo_my_activities/?scope=mine', 'tenant-123']);
   });
 
   it('passes a null key when disabled so SWR skips', () => {
     renderHook(() => useKpi('todo_my_activities', { enabled: false }));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toBeNull();
   });
 
   it('unwraps the KPI dict from the wrapped { data } body', () => {
-    useSWRMock.mockReturnValue({
+    swrMock.mockReturnValue({
       data: { data: { key: 'x', value: 5, shape: 'scalar' } },
       isLoading: false,
       error: null,
@@ -96,18 +96,18 @@ describe('useKpiBatch', () => {
   it('keys on the batch endpoint + tenant + serialized requests', () => {
     const reqs = [{ key: 'a', scope: 'mine' }];
     renderHook(() => useKpiBatch(reqs));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toEqual([endpoints.batch, 'tenant-123', JSON.stringify(reqs)]);
   });
 
   it('passes a null key for an empty request list', () => {
     renderHook(() => useKpiBatch([]));
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toBeNull();
   });
 
   it('returns results in order from SWR data', () => {
-    useSWRMock.mockReturnValue({
+    swrMock.mockReturnValue({
       data: [{ key: 'a', value: 1 }, { key: 'b', error: 'x', status: 404 }],
       isLoading: false,
       error: null,

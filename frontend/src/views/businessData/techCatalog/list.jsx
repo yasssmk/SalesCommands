@@ -13,8 +13,8 @@ import Link from "@mui/material/Link";
 // project imports
 import IconButton from "components/@extended/IconButton";
 import ReusableTable from "components/table/Table";
-import TechCatalogModal from "sections/businessdata/techCatalog/TechCatalogModal";
-import AlertTechCatalogDelete from "sections/businessdata/techCatalog/AlertTechCatalogDelete";
+import TechCatalogModal from "sections/businessData/techCatalog/TechCatalogModal";
+import AlertTechCatalogDelete from "sections/businessData/techCatalog/AlertTechCatalogDelete";
 
 // hooks
 import useLocalStorage from "hooks/useLocalStorage";

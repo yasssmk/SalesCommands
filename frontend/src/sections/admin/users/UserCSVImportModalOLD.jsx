@@ -37,7 +37,7 @@ import { handleApiError } from 'utils/errorHandler';
 
 // utils
 import { parseCSVFile } from 'utils/csvParser';
-import { validateUserCSVData, prepareUserDataForAPI, getUserCSVColumns, getUserCSVGuidelines, generateSampleCSV } from './userCSVValidation';
+import { validateUserCSVData, prepareUserDataForAPI, getUserCSVColumns, getUserCSVGuidelines, generateSampleCSV } from './UserCSVValidation';
 import { buildLookups, getAvailableValues } from './resolvers';
 import { isValidUUID } from 'utils/validators';
 
