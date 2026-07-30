@@ -39,6 +39,7 @@ from ..models import (
     CampaignAccountStatus,
     CampaignStatus,
 )
+from ..constants import FINAL_ACCOUNT_STATES, MAX_ACCOUNTS_PER_CAMPAIGN
 from ..serializers import (
     CampaignAccountListSerializer,
     CampaignAccountDetailSerializer,
@@ -567,12 +568,16 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         client_id = self.get_client_id()
         campaign = self._get_campaign_scoped(campaign_id)
 
-        # Check max accounts limit
-        current_count = CampaignAccount.objects.filter(campaign=campaign).count()
-        if current_count + len(account_ids) > CONFIG.limits.max_accounts_per_campaign:
+        # Per-campaign account cap — count only ACTIVE (non-terminal) enrollments,
+        # consistent with enroll-target. Terminal accounts (COMPLETED/STOPPED)
+        # do not count toward the limit.
+        active_count = CampaignAccount.objects.filter(
+            campaign=campaign,
+        ).exclude(status__in=FINAL_ACCOUNT_STATES).count()
+        if active_count + len(account_ids) > MAX_ACCOUNTS_PER_CAMPAIGN:
             raise StandardizedValidationError(
                 CampaignModuleErrorMessages.MAX_ACCOUNTS_EXCEEDED.format(
-                    max=CONFIG.limits.max_accounts_per_campaign
+                    max=MAX_ACCOUNTS_PER_CAMPAIGN
                 )
             )
 
@@ -806,6 +811,24 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             if campaign.status == CampaignStatus.ACTIVE
             else CampaignAccountStatus.PENDING
         )
+
+        # Per-campaign account cap — count only ACTIVE (non-terminal) enrollments.
+        # Terminal accounts (COMPLETED/STOPPED) do not count. Re-adding an account
+        # that is already active leaves the count unchanged and stays allowed;
+        # a brand-new account (or the revival of a terminal one) counts as +1.
+        already_active = CampaignAccount.objects.filter(
+            campaign=campaign, account=account,
+        ).exclude(status__in=FINAL_ACCOUNT_STATES).exists()
+        if not already_active:
+            active_count = CampaignAccount.objects.filter(
+                campaign=campaign,
+            ).exclude(status__in=FINAL_ACCOUNT_STATES).count()
+            if active_count + 1 > MAX_ACCOUNTS_PER_CAMPAIGN:
+                raise StandardizedValidationError(
+                    CampaignModuleErrorMessages.MAX_ACCOUNTS_EXCEEDED.format(
+                        max=MAX_ACCOUNTS_PER_CAMPAIGN
+                    )
+                )
 
         # Get or create the CampaignAccount
         campaign_account, created = CampaignAccount.objects.get_or_create(
