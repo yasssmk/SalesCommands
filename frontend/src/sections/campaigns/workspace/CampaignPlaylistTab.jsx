@@ -233,6 +233,9 @@ export default function CampaignPlaylistTab({
   } = useGetCompletedActivities(
     showCompleted ? campaignId : null,
     completedPage,
+    // Product rule (TD-126): only TARGETED hides completed activities of
+    // finished sequences. OUTBOUND keeps ALL completed activities visible.
+    campaign?.campaign_type === "TARGETED",
   );
 
   // Accumulate pages — append new results when page increments

@@ -297,14 +297,27 @@ const buildUrlWithParams = (baseUrl, params = {}) => {
  * Fetches all COMPLETED activities scoped to a campaign.
  *
  * @param {string|null} campaignId
+ * @param {number} page
+ * @param {boolean} activeSequenceOnly - When true, appends `active_sequence=true`
+ *   so the server drops activities whose CampaignContact reached a final state.
+ *   Defaults to true to preserve every existing caller's behavior. The product
+ *   rule (OUTBOUND shows ALL completed, TARGETED hides finished sequences) lives
+ *   at the call site, not here — this hook stays neutral. The flag varies the URL
+ *   and therefore the SWR key, so two campaign types never share a cache entry.
  * @returns {{ activities, completedActivitiesLoading, mutateCompleted }}
  */
-export function useGetCompletedActivities(campaignId, page = 1) {
+export function useGetCompletedActivities(
+  campaignId,
+  page = 1,
+  activeSequenceOnly = true,
+) {
   const { tenantId } = useAuth();
 
   const url =
     campaignId && isValidUUID(campaignId)
-      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED&active_sequence=true&ordering=-completed_at&page_size=25&page=${page}`
+      ? `/module-activities/?campaign=${campaignId}&status=COMPLETED` +
+        (activeSequenceOnly ? `&active_sequence=true` : ``) +
+        `&ordering=-completed_at&page_size=25&page=${page}`
       : null;
 
   const { data, isLoading, mutate } = useSWR(
