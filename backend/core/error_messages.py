@@ -70,10 +70,6 @@ class CoreErrorMessages:
         "This territory is used by one or more active campaigns. "
         "Complete or cancel them before deleting the territory."
     )
-    TERRITORY_DELETE_SOLE_TERRITORY_UNSUPPORTED = _(
-        "This territory is the only territory of one or more campaigns; "
-        "deleting it would remove those campaigns. This is not yet available."
-    )
 
     # AI Service Related
     INVALID_CONFIG = _("AI service configuration is invalid")

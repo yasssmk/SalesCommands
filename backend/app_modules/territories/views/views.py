@@ -360,16 +360,21 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
 
         Campaign→Territory is a M2M (Campaign.territories, related_name
         'campaigns'); TARGETED campaigns never carry a territory. Rules:
-          - Linked to >=1 ACTIVE campaign        -> blocked (4xx, clear message).
-          - Linked only to NON-active campaigns for which this is their SOLE
-            territory -> would require a destructive cascade (removing those
-            campaigns); NOT available in this step -> blocked (see Commit 2).
-          - Linked only to NON-active MULTI-territory campaigns -> the territory
-            is removed from each (M2M detach), the campaigns are kept.
+          - Linked to >=1 ACTIVE campaign -> blocked (4xx, clear message).
+          - Linked only to NON-active campaigns:
+              * a NON-active OUTBOUND campaign whose SOLE territory is this one
+                -> cascade-deleted (campaign + CampaignAccount/CampaignContact +
+                its NON-DC activities; DC-linked activities are PRESERVED and
+                detached via SET_NULL, never destroyed);
+              * any other linked campaign (multi-territory, or — defensively —
+                non-OUTBOUND) -> the territory is removed from it (M2M detach),
+                the campaign is kept.
           - Linked to no campaign -> simple delete.
-        No campaign is deleted here — this step is strictly non-destructive.
+        TARGETED is never deleted: it never carries a territory, and the cascade
+        branch is guarded on campaign_type == OUTBOUND. The whole operation is
+        atomic — a mid-cascade failure rolls everything back.
         """
-        from app_modules.campaigns.constants import CampaignStatus
+        from app_modules.campaigns.constants import CampaignStatus, CampaignType
 
         ctx = ctx_from_request(request)
         instance = self.get_object()
@@ -389,32 +394,30 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
                 CoreErrorMessages.TERRITORY_DELETE_ACTIVE_CAMPAIGN
             )
 
-        # All linked campaigns are non-active. Any campaign whose ONLY territory
-        # is this one would be orphaned — that is the destructive cascade case,
-        # deferred to the next step. Block it for now.
-        sole_territory_campaigns = [
-            c for c in linked_campaigns if c.territories.count() == 1
-        ]
-        if sole_territory_campaigns:
-            raise StandardizedValidationError(
-                CoreErrorMessages.TERRITORY_DELETE_SOLE_TERRITORY_UNSUPPORTED
-            )
-
         logger.info("territory_delete_requested", extra={
             **ctx,
             'territory_id': str(instance.id),
             'territory_name': instance.name,
-            'detached_campaigns': len(linked_campaigns),
+            'linked_campaigns': len(linked_campaigns),
         })
 
         territory_id = str(instance.id)
         territory_name = instance.name
         client_id = self.get_client_id()
 
+        cascaded, detached = 0, 0
         with transaction.atomic():
-            # Detach from multi-territory non-active campaigns (kept intact).
             for campaign in linked_campaigns:
-                campaign.territories.remove(instance)
+                is_sole_territory = campaign.territories.count() == 1
+                if is_sole_territory and campaign.campaign_type == CampaignType.OUTBOUND:
+                    # This territory is the campaign's only source → the campaign
+                    # cannot survive without it → cascade-delete it.
+                    self._cascade_delete_outbound_campaign(campaign, request.user)
+                    cascaded += 1
+                else:
+                    # Multi-territory (or, defensively, TARGETED) → detach only.
+                    campaign.territories.remove(instance)
+                    detached += 1
 
             instance.delete()
 
@@ -426,7 +429,8 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
                 target_id=territory_id,
                 extra={
                     'territory_name': territory_name,
-                    'detached_campaigns': len(linked_campaigns),
+                    'campaigns_cascaded': cascaded,
+                    'campaigns_detached': detached,
                 },
                 outcome='success',
             )
@@ -444,7 +448,35 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
             'success': True,
             'message': f'Territory "{territory_name}" deleted successfully.'
         }, status=status.HTTP_200_OK)
-    
+
+    def _cascade_delete_outbound_campaign(self, campaign, user):
+        """
+        Cascade-delete a NON-active OUTBOUND campaign whose sole territory is
+        being removed.
+
+        DECISION-CYCLE GUARD (red rule): activities tied to a decision cycle are
+        NEVER destroyed. Only NON-DC activities of the campaign are deleted; the
+        DC-linked ones are preserved and get campaign/campaign_account/
+        campaign_contact set to NULL via the existing SET_NULL when the campaign
+        (and its CASCADE-linked CampaignAccount/CampaignContact) is removed.
+
+        Must run inside a transaction (the caller wraps it) so a failure leaves
+        no half-deleted state.
+        """
+        from app_modules.activities.models import Activity
+
+        # Delete NON-DC activities of this campaign; DC ones are left to be
+        # detached (SET_NULL), never deleted.
+        Activity.objects.filter(
+            campaign=campaign,
+            decision_cycle__isnull=True,
+        ).delete()
+
+        # CASCADE removes CampaignAccount + CampaignContact; remaining DC
+        # activities are detached (campaign/campaign_account/campaign_contact
+        # -> NULL) but preserved with their decision_cycle intact.
+        campaign.delete()
+
     # ==========================================================================
     # CUSTOM ACTIONS
     # ==========================================================================
