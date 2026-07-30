@@ -398,12 +398,12 @@ export const swrDeleteFetcher = async (keyOrTuple) => {
 
 /**
  * Helper to analyze SWR cache (dev only)
- * @param {Function} useSWRConfig - SWR config hook
+ * @param {Function} swrConfig - SWR config hook
  */
-export const analyzeSWRCache = (useSWRConfig) => {
+export const analyzeSWRCache = (swrConfig) => {
   if (process.env.NODE_ENV !== 'development') return;
   
-  const { cache } = useSWRConfig();
+  const { cache } = swrConfig();
   const cacheKeys = Array.from(cache.keys());
   
   console.group('📦 SWR Cache Analysis');

@@ -6,8 +6,8 @@ import { renderHook, cleanup } from '@testing-library/react';
 // ==============================|| MOCKS ||============================== //
 
 // Capture the SWR options each hook passes so we can assert polling config.
-const useSWRMock = vi.fn(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
-vi.mock('swr', () => ({ default: (key, options) => useSWRMock(key, options) }));
+const swrMock = vi.fn(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
+vi.mock('swr', () => ({ default: (key, options) => swrMock(key, options) }));
 
 vi.mock('hooks/useAuth', () => ({
   useAuth: () => ({ tenantId: 'tenant-123' }),
@@ -41,7 +41,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useSWRMock.mockImplementation(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
+  swrMock.mockImplementation(() => ({ data: undefined, isLoading: false, error: null, mutate: vi.fn() }));
 });
 
 afterEach(() => {
@@ -103,13 +103,13 @@ describe('useUnreadCount', () => {
   it('polls every 60s and targets the unread-count endpoint', () => {
     renderHook(() => useUnreadCount());
 
-    const [key, options] = useSWRMock.mock.calls[0];
+    const [key, options] = swrMock.mock.calls[0];
     expect(key).toEqual([endpoints.unreadCount, 'tenant-123']);
     expect(options.refreshInterval).toBe(60000);
   });
 
   it('derives unreadCount from the SWR data', () => {
-    useSWRMock.mockReturnValue({ data: { data: { count: 7 } }, isLoading: false, error: null, mutate: vi.fn() });
+    swrMock.mockReturnValue({ data: { data: { count: 7 } }, isLoading: false, error: null, mutate: vi.fn() });
 
     const { result } = renderHook(() => useUnreadCount());
     expect(result.current.unreadCount).toBe(7);
@@ -120,14 +120,14 @@ describe('useGetNotifications', () => {
   it('does NOT poll (no refreshInterval on the list)', () => {
     renderHook(() => useGetNotifications({ enabled: true }));
 
-    const [, options] = useSWRMock.mock.calls[0];
+    const [, options] = swrMock.mock.calls[0];
     expect(options.refreshInterval).toBeUndefined();
   });
 
   it('passes a null key when disabled so SWR skips the request', () => {
     renderHook(() => useGetNotifications({ enabled: false }));
 
-    const [key] = useSWRMock.mock.calls[0];
+    const [key] = swrMock.mock.calls[0];
     expect(key).toBeNull();
   });
 });
