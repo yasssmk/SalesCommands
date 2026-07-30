@@ -292,7 +292,15 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'territories',
                 'objectives',
             ).annotate(
-                _accounts_count=Count('campaign_accounts', distinct=True),
+                # Count only accounts that hold at least one CampaignContact.
+                # Orphan accounts (0 contacts — residue that maps to no real
+                # worked account) are excluded. Terminal accounts WITH contacts
+                # still count.
+                _accounts_count=Count(
+                    'campaign_accounts',
+                    filter=Q(campaign_accounts__campaign_contacts__isnull=False),
+                    distinct=True,
+                ),
                 _targets_total=Coalesce(Subquery(_total_sq), 0),
                 _targets_worked=Coalesce(Subquery(_worked_sq), 0),
                 _activities_today=Coalesce(Subquery(_today_acts_sq), 0),
@@ -325,7 +333,15 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'objectives',
                 'campaign_accounts',
             ).annotate(
-                _accounts_count=Count('campaign_accounts', distinct=True),
+                # Count only accounts that hold at least one CampaignContact.
+                # Orphan accounts (0 contacts — residue that maps to no real
+                # worked account) are excluded. Terminal accounts WITH contacts
+                # still count.
+                _accounts_count=Count(
+                    'campaign_accounts',
+                    filter=Q(campaign_accounts__campaign_contacts__isnull=False),
+                    distinct=True,
+                ),
                 _expected_end_date=Subquery(
                     _Activity.objects.filter(
                         campaign=OuterRef('pk'),

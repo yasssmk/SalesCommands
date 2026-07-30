@@ -149,20 +149,26 @@ def test_my_campaigns_carries_accounts_and_targets_counts(
 ):
     """Fixed degradation: the else branch lacked the list annotations, so
     accounts_count fell back to a per-row count and targets_total was None.
-    After the fix both are annotated and correct: 2 accounts, 3 enrolled
-    contacts -> accounts_count == 2, targets_total == 3."""
+    After the fix both are annotated and correct: 2 accounts, each holding at
+    least one contact (4 enrolled contacts total) -> accounts_count == 2,
+    targets_total == 4. Both accounts carry contacts so accounts_count counts
+    them under the orphans-excluded definition."""
     camp = _mk_campaign(client_account_a, user_a, 'counts', CampaignStatus.ACTIVE, 1)
     acc1 = _mk_account(client_account_a, user_a, 'A1')
     acc2 = _mk_account(client_account_a, user_a, 'A2')
     ca1 = _mk_campaign_account(camp, acc1, client_account_a, user_a)
-    _mk_campaign_account(camp, acc2, client_account_a, user_a)
+    ca2 = _mk_campaign_account(camp, acc2, client_account_a, user_a)
     _enroll(ca1, acc1, client_account_a, user_a,
             [CampaignContactStatus.COMPLETED, CampaignContactStatus.PENDING,
              CampaignContactStatus.IN_PROGRESS])
+    # acc2 must hold a contact too — otherwise it is an orphan and no longer
+    # counts toward accounts_count (orphans-excluded definition).
+    _enroll(ca2, acc2, client_account_a, user_a,
+            [CampaignContactStatus.PENDING])
 
     resp = authed_api_a.get(URL, {'page_size': 100})
     assert resp.status_code == 200
     row = _row_for(resp, camp.id)
 
     assert row['accounts_count'] == 2
-    assert row['targets_total'] == 3  # not None — annotation present after the fix
+    assert row['targets_total'] == 4  # not None — annotation present after the fix
