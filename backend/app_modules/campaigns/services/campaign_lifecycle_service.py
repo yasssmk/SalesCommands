@@ -23,10 +23,20 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignModuleErrorMessages, CoreErrorMessages
 
 from ..models import (
+    Campaign,
     CampaignAccount,
     CampaignAccountStatus,
+    CampaignStatus,
+    CampaignType,
 )
+from ..constants import ACTIVE_CAMPAIGN_CAPS_BY_TYPE
 from ..utils.scheduling import cumulative_delay_for_position, next_business_day
+
+# Per-type message for the active-campaign cap.
+_ACTIVE_CAP_MESSAGES = {
+    CampaignType.OUTBOUND: CampaignModuleErrorMessages.MAX_ACTIVE_OUTBOUND_CAMPAIGNS_EXCEEDED,
+    CampaignType.TARGETED: CampaignModuleErrorMessages.MAX_ACTIVE_TARGETED_CAMPAIGNS_EXCEEDED,
+}
 
 logger = get_logger(__name__)
 
@@ -51,6 +61,7 @@ class CampaignLifecycleService:
     @transaction.atomic
     def start(self, campaign):
         self._validate_ownership(campaign)
+        self._assert_active_campaign_cap(campaign)
 
         # Record actual start date
         campaign.actual_start_date = timezone.now().date()
@@ -668,6 +679,37 @@ class CampaignLifecycleService:
         if str(campaign.client_id) != self.client_id:
             raise StandardizedValidationError(
                 CoreErrorMessages.OBJECT_NOT_FOUND
+            )
+
+    def _assert_active_campaign_cap(self, campaign):
+        """
+        Block activation when the owner already holds the maximum number of
+        ACTIVE campaigns of this type.
+
+        Caps are per-owner and per-type, independent of each other
+        (10 OUTBOUND / 1 TARGETED). Only ACTIVE campaigns count — DRAFT and
+        final-state campaigns are ignored. The campaign being started is
+        excluded from the tally so re-running start() is not self-blocking.
+
+        Note: TARGETED never reaches this path (start() is OUTBOUND-only; the
+        TARGETED singleton is born ACTIVE and its 1-per-user guarantee is
+        enforced by the unique_targeted_campaign_per_user constraint). The
+        TARGETED branch is kept for completeness / defence in depth.
+        """
+        cap = ACTIVE_CAMPAIGN_CAPS_BY_TYPE.get(campaign.campaign_type)
+        if cap is None:
+            return
+
+        active_count = Campaign.objects.filter(
+            owner=campaign.owner,
+            client_id=self.client_id,
+            campaign_type=campaign.campaign_type,
+            status=CampaignStatus.ACTIVE,
+        ).exclude(id=campaign.id).count()
+
+        if active_count + 1 > cap:
+            raise StandardizedValidationError(
+                _ACTIVE_CAP_MESSAGES[campaign.campaign_type].format(max=cap)
             )
 
 
