@@ -169,3 +169,26 @@ class MemberRole(models.TextChoices):
     EXECUTOR = 'EXECUTOR', _('Executor')
     RECEIVER = 'RECEIVER', _('Receiver')
     OBSERVER = 'OBSERVER', _('Observer')
+
+
+# ==========================================================================
+# CAPACITY LIMITS (product-locked caps)
+# ==========================================================================
+
+# Maximum accounts a single campaign may hold.
+#   - Creation (OUTBOUND territory enrollment): counted RAW (every resolved account).
+#   - Add Target (manual enrollment): counted on ACTIVE (non-terminal) accounts only;
+#     COMPLETED/STOPPED accounts do not count toward the cap.
+MAX_ACCOUNTS_PER_CAMPAIGN = 50
+
+# Maximum simultaneously ACTIVE campaigns a single user (owner) may hold, per type.
+# The two caps are INDEPENDENT — a user may hold 10 active OUTBOUND AND 1 active
+# TARGETED at the same time (not a combined total of 11).
+MAX_ACTIVE_OUTBOUND_CAMPAIGNS_PER_USER = 10
+MAX_ACTIVE_TARGETED_CAMPAIGNS_PER_USER = 1
+
+# Per-type lookup for the active-campaign cap, so the guard stays data-driven.
+ACTIVE_CAMPAIGN_CAPS_BY_TYPE: dict = {
+    CampaignType.OUTBOUND: MAX_ACTIVE_OUTBOUND_CAMPAIGNS_PER_USER,
+    CampaignType.TARGETED: MAX_ACTIVE_TARGETED_CAMPAIGNS_PER_USER,
+}

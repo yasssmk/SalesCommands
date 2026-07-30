@@ -324,7 +324,20 @@ class CampaignModuleErrorMessages:
         "Allowed: {allowed_transitions}"
     )
     ACCOUNT_FINAL_STATE = _("Cannot modify account in final state: {state}")
-    MAX_ACCOUNTS_EXCEEDED = _("Maximum accounts per campaign exceeded: {max}")
+    MAX_ACCOUNTS_EXCEEDED = _(
+        "This campaign has reached its limit of {max} accounts. "
+        "Refine your territory or remove accounts before adding more."
+    )
+
+    # Active-campaign caps (per user, per type)
+    MAX_ACTIVE_OUTBOUND_CAMPAIGNS_EXCEEDED = _(
+        "You have reached the limit of {max} active outbound campaigns. "
+        "Complete or pause one before starting another."
+    )
+    MAX_ACTIVE_TARGETED_CAMPAIGNS_EXCEEDED = _(
+        "You already have an active targeted campaign. "
+        "Only {max} active targeted campaign is allowed per user."
+    )
 
     # CampaignMember
     MEMBER_ALREADY_EXISTS = _("User already has role '{role}' in this campaign")
