@@ -357,20 +357,49 @@ campagnes. **Le chip est la référence.**
 - **Note** : candidat à remonter avant Sprint B (ferme une incohérence
   visible) — arbitrage PO en attente.
 
-### Mini-sprint — Corrections workspace campagne (near-term)
-Deux corrections distinctes du workspace campagne (issues de l'audit tracking
-objectifs).
-- **3.1 — Le masquage des « completed » déborde sur OUTBOUND** : la décision
-  produit d'origine vaut pour les campagnes TARGETED — un contact target
-  « completed » sort de la liste et ses activités completed sortent de la
-  section completed. Ce comportement s'applique AUSSI, à tort, aux campagnes
-  OUTBOUND, où TOUS les completed doivent rester visibles. À corriger : la
-  règle de masquage des completed doit être CONDITIONNÉE au type de campagne
-  (TARGETED uniquement), pas appliquée globalement. Audit ciblé nécessaire à
-  l'ouverture du mini-sprint pour localiser où la règle est appliquée et
-  pourquoi elle ne distingue pas TARGETED d'OUTBOUND (voir TD-126).
-- **3.2 — Bouton principal du header** : dans le header du workspace campagne,
-  le bouton PRINCIPAL doit être « Log response », pas « Pause ».
+### Sprint ✅ — Corrections cycle de vie campagne (PR #98 + #99)
+- **Objectif** : corriger le cycle de vie des campagnes (accordéon completed,
+  statuts de séquence, enrôlement, plafonds). Absorbe et LIVRE l'ancien
+  mini-sprint « Corrections workspace campagne » (3.1 accordéon completed →
+  item A ; 3.2 bouton header → « Log Response »).
+- **Livré** :
+  - **Accordéon completed (item A / TD-126)** : OUTBOUND montre TOUT ; TARGETED
+    masque les séquences finies.
+  - **`NO_ANSWER` en fin de séquence → `COMPLETED`** (au lieu de `STOPPED`).
+  - **Statut de `CampaignAccount` re-dérivé au re-chase** d'un contact TARGETED
+    (garde anti-sur-correction ; OUTBOUND intact).
+  - **Retrait de la barre bulk contacts** (onglet Targets) + nettoyage des
+    `CampaignAccount` orphelins. Endpoints bulk backend conservés DORMANTS
+    (voir TD-129).
+  - **Socle `sequence_run`** : le re-chase incrémente le run, les activités
+    sont estampillées (IMMUABLE) ; l'accordéon completed = run COURANT
+    seulement ; les runs précédents restent conservés en base.
+  - **`activities_count`** : correction du « 0 mensonger » (collision prefetch
+    `ON_HOLD`).
+  - **Feedback d'enrôlement honnête** sur les deux modales (plus de faux succès
+    ni de rouge à tort ; warning pour « déjà actif » et « aucun contact
+    joignable » ; `unreachable_count` fiable dans tous les modes — voir TD-128
+    pour le cas MIXTE).
+  - **Header workspace** : « Log Response » action principale (bouton plein) ;
+    « Pause » au dropdown sur OUTBOUND ACTIVE.
+  - **Plafonds** : 50 comptes/campagne (bruts à la création OUTBOUND / actifs à
+    l'ajout manuel) ; 10 OUTBOUND + 1 TARGETED actives par user. Constantes
+    dans `campaigns/constants.py`.
+
+### Mini-sprint ✅ — Fiabilisation campagne + territoire (PR #100)
+- **Livré** :
+  - **C1** : retrait UI de la barre de progression playlist (le calcul
+    `completion` est conservé pour l'Overview).
+  - **C2** : `accounts_count` exclut les comptes orphelins (0 contact).
+  - **C3** : invariant « TARGETED jamais terminée » durci au niveau MODÈLE
+    (pas de `CheckConstraint` DB — choix assumé, voir TD-130).
+  - **C4** : création de territoire au nom dupliqué → erreur 4xx élégante
+    (scope tenant).
+  - **Suppression de territoire** : bloquée si campagne ACTIVE liée ; cascade
+    DC-safe si uniquement des campagnes non-actives (mono-territoire → campagne
+    supprimée ; multi-territoires → détachement) ; transaction ATOMIQUE.
+  - **Cleanup** : dédup `mark_activities_generated`, magic numbers →
+    `constants.py`, code mort prouvé retiré.
 
 ### Sprint C — Produit & Finance de bout en bout (backend d'abord)
 - **Objectif** : le produit et la finance qui FONCTIONNENT de bout en bout,
