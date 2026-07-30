@@ -356,57 +356,90 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
     
     def destroy(self, request, *args, **kwargs):
         """
-        Delete a territory.
+        Delete a territory, conditional on the campaigns that use it.
+
+        Campaign→Territory is a M2M (Campaign.territories, related_name
+        'campaigns'); TARGETED campaigns never carry a territory. Rules:
+          - Linked to >=1 ACTIVE campaign        -> blocked (4xx, clear message).
+          - Linked only to NON-active campaigns for which this is their SOLE
+            territory -> would require a destructive cascade (removing those
+            campaigns); NOT available in this step -> blocked (see Commit 2).
+          - Linked only to NON-active MULTI-territory campaigns -> the territory
+            is removed from each (M2M detach), the campaigns are kept.
+          - Linked to no campaign -> simple delete.
+        No campaign is deleted here — this step is strictly non-destructive.
         """
+        from app_modules.campaigns.constants import CampaignStatus
+
         ctx = ctx_from_request(request)
         instance = self.get_object()
 
-        # TEST ERROR MESSAGE ERRORDISPLAY IN FRONT
-        raise StandardizedValidationError(
-            'Territory deletion is currently disabled.',)
-        
-        # Prevent deletion of system territories
+        # System territories are never deletable.
         if instance.is_system:
             raise StandardizedValidationError(
-                CoreErrorMessages.CANNOT_DELETE,
-                field='system territories'
+                CoreErrorMessages.CANNOT_DELETE.format(fields='system territories')
             )
-        
+
+        # Reverse M2M — every campaign that lists this territory as a source.
+        linked_campaigns = list(instance.campaigns.all())
+
+        # Rule 1 — any ACTIVE campaign blocks deletion.
+        if any(c.status == CampaignStatus.ACTIVE for c in linked_campaigns):
+            raise StandardizedValidationError(
+                CoreErrorMessages.TERRITORY_DELETE_ACTIVE_CAMPAIGN
+            )
+
+        # All linked campaigns are non-active. Any campaign whose ONLY territory
+        # is this one would be orphaned — that is the destructive cascade case,
+        # deferred to the next step. Block it for now.
+        sole_territory_campaigns = [
+            c for c in linked_campaigns if c.territories.count() == 1
+        ]
+        if sole_territory_campaigns:
+            raise StandardizedValidationError(
+                CoreErrorMessages.TERRITORY_DELETE_SOLE_TERRITORY_UNSUPPORTED
+            )
+
         logger.info("territory_delete_requested", extra={
             **ctx,
             'territory_id': str(instance.id),
-            'territory_name': instance.name
+            'territory_name': instance.name,
+            'detached_campaigns': len(linked_campaigns),
         })
-        
+
         territory_id = str(instance.id)
         territory_name = instance.name
         client_id = self.get_client_id()
-        
+
         with transaction.atomic():
+            # Detach from multi-territory non-active campaigns (kept intact).
+            for campaign in linked_campaigns:
+                campaign.territories.remove(instance)
+
             instance.delete()
 
-            # Audit log 
             audit_log(
                 event='territory_delete_success',
                 action='delete',
                 actor_id=str(request.user.id),
-                client_id=str(self.get_client_id()),
-                target_id=territory_id, 
-                extra={'territory_name': territory_name},  
+                client_id=str(client_id),
+                target_id=territory_id,
+                extra={
+                    'territory_name': territory_name,
+                    'detached_campaigns': len(linked_campaigns),
+                },
                 outcome='success',
-                )
-            
-            
+            )
+
             # Invalidate cache after commit
             transaction.on_commit(lambda: self._invalidate_all_related_caches(client_id))
-    
-        
+
         logger.info("territory_delete_success", extra={
             **ctx,
             'territory_id': territory_id,
-            'territory_name': territory_name
+            'territory_name': territory_name,
         })
-        
+
         return Response({
             'success': True,
             'message': f'Territory "{territory_name}" deleted successfully.'
