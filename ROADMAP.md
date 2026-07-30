@@ -131,6 +131,36 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
   campagne ET quotas personnels) restent à 0 tant que le montant n'est pas
   réconcilié — voir Sprint C et TD-75.
 
+### Sprint build-health frontend ✅ — TD-18 résolu (PR #102)
+- **Objectif** : rétablir `next build` (garde build cassée depuis F1,
+  ré-escaladée BLOQUANT au sprint campagne).
+- **Trouvé** : le build échouait sur LES DEUX environnements, pour deux causes
+  qui se masquaient — Linux (CC) : `react-csv` / `@dnd-kit/core` non résolus,
+  arrêt AVANT ESLint ; macOS (PO) : 5 erreurs `react-hooks/rules-of-hooks`.
+  Cause aggravante : un `node_modules` PARASITE à la racine du repo résolvait
+  des paquets fantômes (dont `@mui/x-tree-view` v8) — le diagnostic initial
+  « divergence d'environnement » était donc FAUX.
+- **Corrigé** (4 commits) : deps déclarées (`react-csv`, `@dnd-kit/core`,
+  `prop-types`), `@mui/x-tree-view` `^6`→`^8` (API `RichTreeView`), 4 casses
+  d'import (`businessData`, `UserCSVValidation`), `useGetTeam` re-source
+  (`api/admin/teams`), 5 faux-hooks renommés — AUCUNE règle ESLint désactivée,
+  aucun fichier renommé, `node_modules` parasite sorti du projet.
+- **Validation** : `next build` exit 0 (23 routes) ; 728 tests vitest
+  (= baseline) ; pytest inchangé ; build + smoke validés en local par le PO.
+- **Part en dette** : neuf constats frontend cartographiés — TD-132 (hook
+  `useGetOrganization` manquant), TD-133 (paquets non déclarés à consommateurs
+  orphelins), TD-134 (imports morts en code non atteignable), TD-135
+  (`DecisionStepDetail` orphelin — à élucider avant Sprint B), TD-136
+  (`UserCSVImportModalOLD` mort), TD-137 (nommage `UserCSVValidation`), TD-138
+  (reproductibilité d'env → G2), TD-139 (garde build faible → CI à G2), TD-140
+  (backlog ESLint).
+- **Enseignement de méthode** : trois audits read-only successifs ont été
+  nécessaires — chaque passe révélait que le diagnostic précédent était
+  incomplet — et c'est le test du PO sur SA machine qui a révélé la moitié
+  manquante du problème (les 5 erreurs ESLint masquées côté Linux). Le build
+  seul est une garde faible : sur 12 défauts cartographiés, `next build` n'en a
+  surfacé que 2 (voir TD-139).
+
 ---
 
 ## Sprints planifiés — phase fonctionnelle
@@ -580,13 +610,20 @@ campagnes. **Le chip est la référence.**
 ## Phase Go-Live (tout à la fin, une fois le fonctionnel terminé)
 
 ### Cleanup (prérequis technique — voir TECH_DEBT.md)
-- **URGENT (bloque le déploiement) — build-health** : `next build` échoue
-  sur FS sensible à la casse (Linux/CI/prod), invisible sur macOS.
-  Cibles connues : casses d'import (techCatalog/list.jsx:16-17
-  businessdata→businessData ; userCSVConfig.js:24 UserCSVValidation) +
-  sweep rg complet ; deps absentes de package.json (react-csv, @dnd-kit/
-  core+sortable+utilities) ; version @mui/x-tree-view ^6→^7. Plus toute la
-  dette S6/S7 (TD-97, 99, 101, 102, 103).
+- **build-health ✅ FERMÉ (PR #102, TD-18 résolu)** : `next build` exit 0, 23
+  routes. Le diagnostic initial (« cassé Linux, OK macOS — divergence
+  d'environnement ») était FAUX : le build cassait sur LES DEUX OS, pour deux
+  causes qui se masquaient (Linux : `react-csv`/`@dnd-kit/core` non résolus ;
+  macOS : 5 erreurs ESLint `rules-of-hooks`), le tout masqué par un
+  `node_modules` parasite à la racine (sorti du projet). Corrections vs les
+  cibles annoncées ici : casses d'import (`businessData`, `UserCSVValidation`)
+  TRAITÉES ; `react-csv` et `@dnd-kit/core` DÉCLARÉS ; **`@dnd-kit/sortable` et
+  `@dnd-kit/utilities` n'étaient importés NULLE PART — cible inexacte, retirée** ;
+  `@mui/x-tree-view` **`^6`→`^8`** (API `RichTreeView`, PAS `^7` comme annoncé).
+- **Reste NON traité** : dette S6 **TD-99 / 101 / 102 / 103** (⚠️ TD-97 est
+  déjà RESOLVED — retiré de la liste) + la dette frontend neuve de ce sprint
+  (**TD-132 → TD-140**, voir TECH_DEBT.md). Le volet build-health du Cleanup
+  est fermé ; le reste du Cleanup ne l'est pas.
 
 ### G1 — Sécurité (rapprochement SOC 2)
 Durcissement avant exposition client : permissions, isolation multi-tenant
@@ -718,11 +755,11 @@ IA (pipelines signaux, prep call). Métering + plafonds par tenant.
 
 ### Rappel dette critique (renvoi TECH_DEBT.md)
 TD critiques non traités :
-- **build-health URGENT** : casses d'import (`businessData`/`businessdata`
-  + `userCSVConfig`) ; deps absentes de `package.json` (`react-csv`,
-  `@dnd-kit/core`+`sortable`+`utilities`) ; version `@mui/x-tree-view`
-  `^6`→`^7`.
-- **TD-97 / 99 / 101 / 102 / 103** (sprint S6).
+- **build-health : ✅ FERMÉ (PR #102, TD-18 résolu)** — deps déclarées, casses
+  d'import traitées, `@mui/x-tree-view` `^6`→`^8` (pas `^7`) ;
+  `@dnd-kit/sortable`/`utilities` étaient une cible inexacte (importés nulle
+  part). Neuf constats frontend résiduels tracés en TD-132 → TD-140.
+- **TD-99 / 101 / 102 / 103** (sprint S6 — TD-97 déjà RESOLVED).
 
 ---
 
