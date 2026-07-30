@@ -367,6 +367,12 @@ class CampaignModuleErrorMessages:
     "Lifecycle actions (start/pause/resume/complete) are not available "
     "for Targeted campaigns."
 )
+    TARGETED_CAMPAIGN_COMPLETE_FORBIDDEN = _(
+        "A targeted campaign cannot be completed — it is a perpetual chasing campaign."
+    )
+    TARGETED_CAMPAIGN_CANCEL_FORBIDDEN = _(
+        "A targeted campaign cannot be cancelled — it is a perpetual chasing campaign."
+    )
 
     # Analytics
     ANALYTICS_CALCULATION_FAILED = _("Failed to calculate campaign analytics: {reason}")
