@@ -8,7 +8,8 @@ import { notFound } from 'next/navigation';
 
 // project imports
 import RequireResourceAccess from 'components/auth/RequireResourceAccess';
-import { useGetUser, useGetTeam, useGetOrganization } from 'api/admin/users';
+import { useGetUser, useGetOrganization } from 'api/admin/users';
+import { useGetTeam } from 'api/admin/teams';
 import Loader from 'components/Loader';
 
 // ==============================|| RESOURCE GUARD LAYOUT ||============================== //
