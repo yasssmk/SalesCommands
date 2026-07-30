@@ -31,7 +31,6 @@ from ..models import (
     CampaignObjective,
 )
 from ..constants import MAX_ACCOUNTS_PER_CAMPAIGN
-from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
 

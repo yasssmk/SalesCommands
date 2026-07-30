@@ -12,9 +12,8 @@ from rest_framework.permissions import IsAuthenticated
 import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Exists, OuterRef
 
-from core.client_scope import ClientScopeManager
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.jwt_helpers import CustomJWTAuthentication

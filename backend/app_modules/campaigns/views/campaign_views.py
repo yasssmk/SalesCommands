@@ -963,10 +963,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                     CoreErrorMessages.OBJECT_NOT_FOUND
                 )
 
-        # Optional result limit — default 200, clamped to [1, 500]. Applied
-        # AFTER the service's priority sort so top-priority activities are
-        # never cut. total_count remains the pre-slice total.
-        limit = 200
+        # Optional result limit — default playlist_default_limit, clamped to
+        # [1, playlist_max_limit]. Applied AFTER the service's priority sort so
+        # top-priority activities are never cut. total_count stays the pre-slice
+        # total.
+        limit = CONFIG.limits.playlist_default_limit
         limit_param = request.query_params.get('limit')
         if limit_param is not None:
             try:
@@ -975,7 +976,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 raise StandardizedValidationError(
                     CoreErrorMessages.INVALID_FIELD.format(field='limit')
                 )
-            limit = max(1, min(limit, 500))
+            limit = max(1, min(limit, CONFIG.limits.playlist_max_limit))
 
         service = CampaignExecutionService(
             user=request.user,

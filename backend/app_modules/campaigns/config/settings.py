@@ -40,6 +40,7 @@ class LimitsConfig:
     bulk_operation_limit: int = 100
     max_bulk_items: int = 50
     bulk_create_batch_size: int = 50
+    bulk_delete_max_ids: int = 500          # hard cap on ids per bulk-delete call
 
     # Objective value bounds
     min_target_value: float = 0.01
@@ -49,6 +50,8 @@ class LimitsConfig:
     playlist_limit: int = 20
     summary_activities: int = 5
     queue_batch_size: int = 50
+    playlist_default_limit: int = 200       # default page size for the playlist endpoint
+    playlist_max_limit: int = 500           # upper clamp on the ?limit= query param
 
     # Inactivity detection
     inactivity_threshold_days: int = 30

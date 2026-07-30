@@ -231,11 +231,6 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         self.activities_generated = True
         self.save(user=user)
 
-    def mark_activities_generated(self, user=None):
-        """Set activities_generated = True."""
-        self.activities_generated = True
-        self.save(user=user)
-
     # ==========================================================================
     # HELPERS
     # ==========================================================================
