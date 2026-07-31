@@ -453,9 +453,10 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         Cascade-delete a NON-active OUTBOUND campaign whose sole territory is
         being removed.
 
-        DECISION-CYCLE GUARD (red rule): activities tied to a decision cycle are
-        NEVER destroyed. Only NON-DC activities of the campaign are deleted; the
-        DC-linked ones are preserved and get campaign/campaign_account/
+        Only PENDING non-deal activities are deleted (they lose all context once
+        the campaign is gone). Activities tied to a decision cycle (deals) are
+        never touched, and already-terminal (COMPLETED/CANCELLED) non-deal
+        activities are kept; all survivors get campaign/campaign_account/
         campaign_contact set to NULL via the existing SET_NULL when the campaign
         (and its CASCADE-linked CampaignAccount/CampaignContact) is removed.
 
@@ -463,11 +464,13 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         no half-deleted state.
         """
         from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
 
-        # Delete NON-DC activities of this campaign; DC ones are left to be
-        # detached (SET_NULL), never deleted.
+        # Delete only PENDING non-deal activities; deal and terminal ones are
+        # left to be detached (SET_NULL), never deleted.
         Activity.objects.filter(
             campaign=campaign,
+            status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
             decision_cycle__isnull=True,
         ).delete()
 
