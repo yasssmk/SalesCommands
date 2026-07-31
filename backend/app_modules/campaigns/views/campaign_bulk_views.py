@@ -48,7 +48,7 @@ from core.cache_utils import disable_signals_with_invalidation
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
 
-from app_modules.activities.models import Activity
+from app_modules.activities.models import Activity, ActivityStatus
 
 from ..models import Campaign
 from ..config.settings import CONFIG
@@ -227,14 +227,16 @@ class CampaignBulkViewSet(CampaignViewSet):
                                 }
 
                             if deletable_ids:
-                                # CASCADE DIVERGENCE vs Territory: Activity.campaign is
-                                # on_delete=SET_NULL, so activities must be deleted
-                                # explicitly (as CampaignViewSet.destroy() does at
-                                # campaign_views.py) — a set-based Campaign delete alone
-                                # would orphan them. CampaignAccount / CampaignContact /
-                                # CampaignMember are CASCADE and drop automatically.
+                                # Delete only the pending non-deal activities: they
+                                # lose all context once the campaign is gone. Deal
+                                # activities and terminal ones are kept and detached
+                                # automatically by the SET_NULL FK when the campaigns
+                                # are removed below. CampaignAccount / CampaignContact
+                                # are CASCADE and drop automatically.
                                 Activity.objects.filter(
                                     campaign_id__in=deletable_ids,
+                                    status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+                                    decision_cycle__isnull=True,
                                     client_id=client_id
                                 ).delete()
 
@@ -284,11 +286,13 @@ class CampaignBulkViewSet(CampaignViewSet):
 
                     try:
                         if deletable_ids:
-                            # CASCADE DIVERGENCE vs Territory (see strict branch above):
-                            # delete Activity rows explicitly before the campaigns
-                            # because Activity.campaign is on_delete=SET_NULL.
+                            # Delete only pending non-deal activities (see strict
+                            # branch above); deal and terminal activities are kept
+                            # and detached via the SET_NULL FK on campaign delete.
                             Activity.objects.filter(
                                 campaign_id__in=deletable_ids,
+                                status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+                                decision_cycle__isnull=True,
                                 client_id=client_id
                             ).delete()
 

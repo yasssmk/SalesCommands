@@ -603,7 +603,9 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         Delete a campaign.
         DELETE /campaigns/{id}/
 
-        Any campaign can be deleted. All linked activities are cascade-deleted.
+        Any campaign can be deleted. Only its pending non-deal activities are
+        deleted with it; deal activities (linked to a decision cycle) and
+        already-terminal ones survive, detached via the SET_NULL FK.
         """
         ctx = ctx_from_request(request)
         instance = self.get_object()
@@ -617,9 +619,14 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'campaign_id': campaign_id,
         })
 
-        # Cascade-delete all activities linked to this campaign
-        # (Activity.campaign FK is SET_NULL, so we must delete explicitly)
-        deleted_activities_count, _ = Activity.objects.filter(campaign=instance).delete()
+        # Delete only the pending non-deal activities (they lose all context
+        # once the campaign is gone). Deal activities and terminal ones are
+        # kept and detached automatically by the SET_NULL FK on campaign delete.
+        deleted_activities_count, _ = Activity.objects.filter(
+            campaign=instance,
+            status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+            decision_cycle__isnull=True,
+        ).delete()
 
         instance.delete()
 
