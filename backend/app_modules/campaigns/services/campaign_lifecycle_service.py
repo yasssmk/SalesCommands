@@ -645,23 +645,32 @@ class CampaignLifecycleService:
 
     def _cancel_planned_activities(self, campaign):
         """
-        Delete all PLANNED and ON_HOLD activities linked to this campaign.
+        Cancel (never delete) the pending activities of this campaign.
 
-        Completed activities are preserved for history.
-        PLANNED/ON_HOLD activities have no value once the campaign ends —
-        deleting them avoids polluting the activity timeline with ghost records.
+        Only PLANNED/ON_HOLD activities NOT linked to a decision cycle are
+        marked CANCELLED and kept — the campaign still exists, so a cancelled
+        activity stays attached and visible in its context. Deal activities
+        (linked to a decision cycle) are left untouched, and already-terminal
+        activities (COMPLETED/CANCELLED) are preserved as-is.
+
+        Shared with complete(): completing a campaign cancels its pending
+        non-deal activities the same way, by design.
 
         Returns:
-            int: number of activities deleted
+            int: number of activities cancelled
         """
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import ActivityStatus
 
-        count, _ = Activity.objects.filter(
+        count = Activity.objects.filter(
             campaign=campaign,
             status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+            decision_cycle__isnull=True,
             client_id=self.client_id,
-        ).delete()
+        ).update(
+            status=ActivityStatus.CANCELLED,
+            updated_at=timezone.now(),
+        )
         return count
 
 
