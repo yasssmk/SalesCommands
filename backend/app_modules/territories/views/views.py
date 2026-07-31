@@ -362,9 +362,9 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
           - Linked to >=1 ACTIVE campaign -> blocked (4xx, clear message).
           - Linked only to NON-active campaigns:
               * a NON-active OUTBOUND campaign whose SOLE territory is this one
-                -> cascade-deleted (campaign + CampaignAccount/CampaignContact +
-                its NON-DC activities; DC-linked activities are PRESERVED and
-                detached via SET_NULL, never destroyed);
+                -> cascade-deleted (campaign + CampaignAccount/CampaignContact);
+                its activities are never deleted — pending non-DC ones are
+                cancelled, everything else is kept, all detached via SET_NULL;
               * any other linked campaign (multi-territory, or — defensively —
                 non-OUTBOUND) -> the territory is removed from it (M2M detach),
                 the campaign is kept.
@@ -453,27 +453,30 @@ class TerritoryViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewse
         Cascade-delete a NON-active OUTBOUND campaign whose sole territory is
         being removed.
 
-        DECISION-CYCLE GUARD (red rule): activities tied to a decision cycle are
-        NEVER destroyed. Only NON-DC activities of the campaign are deleted; the
-        DC-linked ones are preserved and get campaign/campaign_account/
-        campaign_contact set to NULL via the existing SET_NULL when the campaign
-        (and its CASCADE-linked CampaignAccount/CampaignContact) is removed.
+        Activities are NEVER deleted (locked rule). Pending activities not tied
+        to a decision cycle are marked CANCELLED and kept; already-terminal
+        activities and DC-linked activities are left untouched. All of them are
+        then detached (campaign/campaign_account/campaign_contact -> NULL) via
+        the existing SET_NULL when the campaign (and its CASCADE-linked
+        CampaignAccount/CampaignContact) is removed.
 
         Must run inside a transaction (the caller wraps it) so a failure leaves
         no half-deleted state.
         """
-        from app_modules.activities.models import Activity
+        from django.utils import timezone
+        from app_modules.activities.models import Activity, ActivityStatus
 
-        # Delete NON-DC activities of this campaign; DC ones are left to be
-        # detached (SET_NULL), never deleted.
+        # Cancel (never delete) pending non-DC activities; everything else is
+        # left untouched. The campaign delete below detaches the survivors.
         Activity.objects.filter(
             campaign=campaign,
+            status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
             decision_cycle__isnull=True,
-        ).delete()
+        ).update(status=ActivityStatus.CANCELLED, updated_at=timezone.now())
 
-        # CASCADE removes CampaignAccount + CampaignContact; remaining DC
-        # activities are detached (campaign/campaign_account/campaign_contact
-        # -> NULL) but preserved with their decision_cycle intact.
+        # CASCADE removes CampaignAccount + CampaignContact; every activity is
+        # detached (campaign/campaign_account/campaign_contact -> NULL) but
+        # preserved, DC-linked ones with their decision_cycle intact.
         campaign.delete()
 
     # ==========================================================================
