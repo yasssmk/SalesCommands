@@ -18,6 +18,26 @@ class UsersErrorMessages:
         "access immediately and their seat is freed, while their work is transferred "
         "to another user."
     )
+    SUCCESSOR_REQUIRED = _(
+        "A successor is required to deactivate this user: their open deals, "
+        "prospect accounts and pending deal activities are transferred to that "
+        "active user."
+    )
+    SUCCESSOR_CANNOT_BE_SELF = _(
+        "The successor cannot be the user being deactivated. Choose another "
+        "active user."
+    )
+    SUCCESSOR_INVALID = _(
+        "The selected successor is not a valid user of your organization."
+    )
+    SUCCESSOR_MUST_BE_ACTIVE = _(
+        "The selected successor is inactive. The successor must be an active user."
+    )
+    TRANSFER_ACCOUNT_NAME_COLLISION = _(
+        "Transfer aborted: the successor already owns an account whose name "
+        "conflicts with one being transferred. Resolve the duplicate before "
+        "deactivating this user. No changes were made."
+    )
 
 class TeamErrorMessages:
     MANAGER_HAS_TEAM = _("This user already manage team: {fields}")
