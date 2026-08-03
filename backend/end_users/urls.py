@@ -53,7 +53,11 @@ urlpatterns = [
     path('users/<uuid:pk>/soft/', UserViewSet.as_view({
         'delete': 'soft_destroy'
     }), name='user-soft-delete'),
-    
+
+    path('users/<uuid:pk>/deactivation-preview/', UserViewSet.as_view({
+        'get': 'deactivation_preview'
+    }), name='user-deactivation-preview'),
+
     # Client Account Actions
     path('client-accounts/<uuid:pk>/seats/', ClientAccountViewSet.as_view({
         'get': 'seats'

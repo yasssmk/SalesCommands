@@ -512,9 +512,7 @@ function ReusableTable({
               onEdit={() => {
                 if (onEdit) onEdit();
               }}
-              onDelete={() => {
-                if (onDelete) onDelete();
-              }}
+              onDelete={onDelete}
               onImport={onImport}
               exportData={exportData}
               exportHeaders={headers}

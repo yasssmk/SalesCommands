@@ -138,6 +138,11 @@ def _deactivate(api, leaver, successor, ca):
     })
 
 
+def _preview(api, target, ca):
+    url = reverse("client:user-deactivation-preview", args=[target.pk]) + f"?client_id={ca.id}"
+    return api.get(url)
+
+
 # ============================================================================
 # Object builders
 # ============================================================================
@@ -451,6 +456,81 @@ def test_transfer_is_atomic(api, ca, admin, leaver, successor, monkeypatch):
     deal.refresh_from_db()
     assert leaver.is_active is True            # flip rolled back
     assert deal.owner_id == leaver.id          # step-1 transfer rolled back
+
+
+# ============================================================================
+# Deactivation preview (counts + suggested successor)
+# ============================================================================
+
+def test_preview_counts_match_transfer_definitions(api, ca, admin, leaver, successor):
+    """The preview counts EXACTLY what the transfer moves — same querysets."""
+    acc1 = _account(leaver, ca, "P1", atype=AccountType.PROSPECT)
+    acc2 = _account(leaver, ca, "P2", atype=AccountType.PROSPECT)
+    _account(leaver, ca, "C1", atype=AccountType.CLIENT)          # not counted
+    d1 = _deal(leaver, ca, acc1, "open", outcome=None)            # counted
+    _deal(leaver, ca, acc2, "onhold", outcome=CycleOutcome.ON_HOLD)  # counted
+    _deal(leaver, ca, acc1, "won", outcome=CycleOutcome.WON)      # not counted
+    _activity(leaver, ca, acc1, status=ActivityStatus.PLANNED, decision_cycle=d1)  # counted
+    _activity(leaver, ca, acc1, status=ActivityStatus.COMPLETED, decision_cycle=d1)  # not counted
+    _activity(leaver, ca, acc1, status=ActivityStatus.PLANNED)    # free -> not counted
+
+    _authenticate(api, admin, ca.id)
+    resp = _preview(api, leaver, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    counts = resp.data["data"]["counts"]
+    assert counts == {"deals": 2, "accounts": 2, "activities": 1}
+
+
+def test_preview_suggests_active_team_manager(api, ca, admin, leaver, successor):
+    from end_users.models import Team
+    team = Team.objects.create(name="Sales", client_account=ca, manager=successor)
+    leaver.team = team
+    leaver.save(update_fields=["team"])
+
+    _authenticate(api, admin, ca.id)
+    resp = _preview(api, leaver, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    suggested = resp.data["data"]["suggested_successor"]
+    assert suggested is not None and suggested["id"] == str(successor.id)
+
+
+def test_preview_no_suggestion_when_manager_inactive(api, ca, admin, leaver, roles):
+    from end_users.models import Team
+    inactive_mgr = User.objects.create(
+        email="imgr@a.test", client_account=ca, role=roles["individual"], is_active=False
+    )
+    team = Team.objects.create(name="Sales", client_account=ca, manager=inactive_mgr)
+    leaver.team = team
+    leaver.save(update_fields=["team"])
+
+    _authenticate(api, admin, ca.id)
+    resp = _preview(api, leaver, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["data"]["suggested_successor"] is None
+
+
+def test_preview_no_suggestion_when_manager_is_self(api, ca, admin, leaver):
+    from end_users.models import Team
+    team = Team.objects.create(name="Sales", client_account=ca, manager=leaver)
+    leaver.team = team
+    leaver.save(update_fields=["team"])
+
+    _authenticate(api, admin, ca.id)
+    resp = _preview(api, leaver, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["data"]["suggested_successor"] is None
+
+
+def test_preview_no_suggestion_when_no_team(api, ca, admin, leaver):
+    _authenticate(api, admin, ca.id)
+    resp = _preview(api, leaver, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["data"]["suggested_successor"] is None
 
 
 def test_reactivation_restores_nothing(api, ca, admin, leaver, successor):

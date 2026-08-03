@@ -40,6 +40,74 @@ from rest_framework.exceptions import PermissionDenied, APIException
 
 logger = get_logger(__name__)
 
+
+# =====================================================================
+# USER-DEACTIVATION TRANSFER — single source of truth for "what moves"
+# =====================================================================
+# These querysets define EXACTLY what a deactivation touches. Both the real
+# transfer (_transfer_user_work) and the read-only preview endpoint
+# (deactivation_preview) consume them, so the admin's counters can never drift
+# from what is actually reassigned. Change a definition here = change both.
+
+def deactivation_deals_to_transfer(user):
+    """Non-terminal deals owned by the user (WON/LOST/NOT_QUALIFIED excluded)."""
+    from app_modules.decision_cycles.models import DecisionCycle
+    from app_modules.decision_cycles.constants import TERMINAL_OUTCOMES
+    return DecisionCycle.objects.filter(
+        client_id=user.client_account_id, owner=user,
+    ).exclude(outcome__in=TERMINAL_OUTCOMES)
+
+
+def deactivation_accounts_to_transfer(user):
+    """Prospect accounts owned by the user."""
+    from app_modules.accounts.models import CompanyAccount, AccountType
+    return CompanyAccount.objects.filter(
+        client_id=user.client_account_id, account_owner=user,
+        type=AccountType.PROSPECT,
+    )
+
+
+def deactivation_deal_activities_to_transfer(user):
+    """Still-open activities tied to a deal, owned by the user."""
+    from app_modules.activities.models import Activity
+    from app_modules.activities.constants import NON_TERMINAL_STATUSES
+    return Activity.objects.filter(
+        client_id=user.client_account_id, owner=user,
+        decision_cycle__isnull=False, status__in=NON_TERMINAL_STATUSES,
+    )
+
+
+def deactivation_free_activities_to_cancel(user):
+    """Still-open activities that are neither a deal nor a campaign."""
+    from app_modules.activities.models import Activity
+    from app_modules.activities.constants import NON_TERMINAL_STATUSES
+    return Activity.objects.filter(
+        client_id=user.client_account_id, owner=user,
+        decision_cycle__isnull=True, campaign__isnull=True,
+        status__in=NON_TERMINAL_STATUSES,
+    )
+
+
+def deactivation_outbound_campaigns_to_cancel(user):
+    """Non-final OUTBOUND campaigns owned by the user."""
+    from app_modules.campaigns.models import Campaign
+    from app_modules.campaigns.constants import CampaignType, FINAL_CAMPAIGN_STATES
+    return Campaign.objects.filter(
+        client_id=user.client_account_id, owner=user,
+        campaign_type=CampaignType.OUTBOUND,
+    ).exclude(status__in=FINAL_CAMPAIGN_STATES)
+
+
+def deactivation_targeted_campaign(user):
+    """The user's perpetual TARGETED campaign (one per user), or None."""
+    from app_modules.campaigns.models import Campaign
+    from app_modules.campaigns.constants import CampaignType
+    return Campaign.objects.filter(
+        client_id=user.client_account_id, owner=user,
+        campaign_type=CampaignType.TARGETED,
+    ).first()
+
+
 class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     """
     API endpoints for managing users with client scoping and performance integration
@@ -93,6 +161,10 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         'deactivate': {
             'crud': 'update',
             'scope': 'client'     # Admin can deactivate anyone in client
+        },
+        'deactivation_preview': {
+            'crud': 'update',     # Same capability as deactivating the user
+            'scope': 'client'     # Admin can preview for anyone in client
         },
         'performance': {
             'crud': 'read',
@@ -1098,13 +1170,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         """
         from django.db import IntegrityError
         from django.utils import timezone
-        from app_modules.decision_cycles.models import DecisionCycle
-        from app_modules.decision_cycles.constants import TERMINAL_OUTCOMES
-        from app_modules.accounts.models import CompanyAccount, AccountType
-        from app_modules.activities.models import Activity
-        from app_modules.activities.constants import NON_TERMINAL_STATUSES, ActivityStatus
-        from app_modules.campaigns.models import Campaign
-        from app_modules.campaigns.constants import CampaignType, FINAL_CAMPAIGN_STATES
+        from app_modules.activities.constants import ActivityStatus
         from app_modules.campaigns.services.campaign_lifecycle_service import (
             CampaignLifecycleService,
         )
@@ -1113,29 +1179,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
         try:
             # 1. Non-terminal deals -> successor (terminal ones stay put).
-            DecisionCycle.objects.filter(
-                client_id=cid, owner=user,
-            ).exclude(outcome__in=TERMINAL_OUTCOMES).update(owner=successor)
+            deactivation_deals_to_transfer(user).update(owner=successor)
 
             # 2. Prospect accounts -> successor.
-            CompanyAccount.objects.filter(
-                client_id=cid, account_owner=user, type=AccountType.PROSPECT,
-            ).update(account_owner=successor)
+            deactivation_accounts_to_transfer(user).update(account_owner=successor)
 
             # 3. Open activities tied to a DEAL -> successor.
-            Activity.objects.filter(
-                client_id=cid, owner=user,
-                decision_cycle__isnull=False,
-                status__in=NON_TERMINAL_STATUSES,
-            ).update(owner=successor)
+            deactivation_deal_activities_to_transfer(user).update(owner=successor)
 
             # 4. Open FREE activities (neither deal nor campaign) -> CANCELLED,
             #    kept as history (never deleted).
-            Activity.objects.filter(
-                client_id=cid, owner=user,
-                decision_cycle__isnull=True, campaign__isnull=True,
-                status__in=NON_TERMINAL_STATUSES,
-            ).update(
+            deactivation_free_activities_to_cancel(user).update(
                 status=ActivityStatus.CANCELLED,
                 outcome_notes='Cancelled on owner deactivation',
                 updated_at=timezone.now(),
@@ -1145,10 +1199,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             #    CANCELLED, not COMPLETED). The service cancels pending non-deal
             #    activities and spares deal activities (already transferred in 3).
             svc = CampaignLifecycleService(user=actor, client_id=str(cid))
-            outbound = Campaign.objects.filter(
-                client_id=cid, owner=user, campaign_type=CampaignType.OUTBOUND,
-            ).exclude(status__in=FINAL_CAMPAIGN_STATES)
-            for campaign in outbound:
+            for campaign in deactivation_outbound_campaigns_to_cancel(user):
                 svc.cancel(campaign)
 
             # 6. Empty (never cancel) the user's perpetual TARGETED campaign.
@@ -1171,14 +1222,11 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         invariant and must never reach a terminal state.
         """
         from django.utils import timezone
-        from app_modules.campaigns.models import Campaign, CampaignContact, CampaignAccount
-        from app_modules.campaigns.constants import CampaignType
+        from app_modules.campaigns.models import CampaignContact, CampaignAccount
         from app_modules.activities.models import Activity
         from app_modules.activities.constants import NON_TERMINAL_STATUSES, ActivityStatus
 
-        targeted = Campaign.objects.filter(
-            client_id=client_id, owner=user, campaign_type=CampaignType.TARGETED,
-        ).first()
+        targeted = deactivation_targeted_campaign(user)
         if not targeted:
             return
 
@@ -1205,6 +1253,46 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         ):
             account.target_contacts.clear()
         contacts.delete()
+
+    @action(detail=True, methods=['get'], url_path='deactivation-preview')
+    def deactivation_preview(self, request, pk=None):
+        """
+        Read-only preview for the deactivation window.
+
+        GET /client/users/{id}/deactivation-preview/
+
+        Returns the counts of what a deactivation would transfer (deals,
+        prospect accounts, open deal activities) — computed from the SAME
+        querysets the real transfer uses, so the numbers can never lie — plus a
+        suggested successor: the user's DIRECT team manager if that manager is
+        active and is not the user themselves, otherwise null (no hierarchy
+        walk — the admin picks in that case).
+        """
+        user = self.get_object()
+
+        counts = {
+            'deals': deactivation_deals_to_transfer(user).count(),
+            'accounts': deactivation_accounts_to_transfer(user).count(),
+            'activities': deactivation_deal_activities_to_transfer(user).count(),
+        }
+
+        suggested = None
+        team = user.team
+        manager = team.manager if team else None
+        if manager and manager.is_active and manager.id != user.id:
+            suggested = {
+                'id': str(manager.id),
+                'first_name': manager.first_name,
+                'last_name': manager.last_name,
+                'email': manager.email,
+                'name': manager.get_full_name(),
+                'role_name': getattr(manager, 'role_name', None),
+            }
+
+        return Response({
+            'success': True,
+            'data': {'counts': counts, 'suggested_successor': suggested},
+        })
 
     @action(detail=True, methods=['get'])
     def performance(self, request, pk=None):

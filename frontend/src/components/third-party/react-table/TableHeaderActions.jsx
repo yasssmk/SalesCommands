@@ -88,8 +88,9 @@ export default function TableHeaderActions({
         </Tooltip>
       )}
 
-      {/* Delete Button - Visible only when rows are selected */}
-      {selectedRowCount > 0 && (
+      {/* Delete Button - Visible only when rows are selected AND the list wires
+          a delete handler (lists that omit onDelete show no delete command). */}
+      {selectedRowCount > 0 && onDelete && (
         <Tooltip title={`Delete ${selectedRowCount} selected`}>
           <IconButton
             color="secondary"
