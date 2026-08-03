@@ -94,7 +94,7 @@ class ActivityCreationService:
                     AccountErrorMessages.ACCOUNT_NOT_FOUND
                 )
 
-            # Owner resolution: override → account owner → current user
+            # Activity owner resolution: explicit override, else the current user.
             resolved_owner = cycle_owner_override or self.user
             
             # Track IDs to link
@@ -314,12 +314,14 @@ class ActivityCreationService:
                     CoreErrorMessages.REQUIRED_FIELD.format(field='Decision Cycle Name')
                 )
             
-            # Create the cycle
+            # Create the cycle. owner = the creator (same user as created_by);
+            # a DecisionCycle must never be created ownerless.
             cycle = DecisionCycle(
                 client_id=self.client_id,
                 account_id=account_id,
                 name=name,
                 is_active=True,
+                owner=self.user,
                 created_by=self.user,
                 updated_by=self.user,
             )
