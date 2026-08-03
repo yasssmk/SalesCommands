@@ -523,8 +523,14 @@ def test_update_individual_only_self(api, users, tenants):
 # TESTS: DELETE
 # ============================================================================
 
-def test_delete_only_admin_allowed(api, users, tenants):
-    """DELETE: Seul admin peut supprimer des utilisateurs"""
+def test_delete_refused_even_for_admin(api, users, tenants):
+    """DELETE: hard-deleting a user is refused (400) even for an authorized admin;
+    unauthorized roles are still blocked upstream by the permission layer (403).
+
+    New contract: user accounts can no longer be hard-deleted (deactivation only).
+    The permission layer still grants 'delete' to admin, so the request reaches
+    destroy() and is refused there with 400; manager/individual never reach it and
+    are denied with 403 (permission intent preserved)."""
     # Créer des users temporaires à supprimer
     temp_users = []
     for i in range(3):
@@ -534,13 +540,15 @@ def test_delete_only_admin_allowed(api, users, tenants):
             is_active=True
         )
         temp_users.append(temp_user)
-    
-    # Test avec admin - devrait réussir
+
+    # Admin is authorized by the permission layer, but deletion itself is refused: 400.
     admin = users["actors"]["admin"]
     authenticate_user(api, admin, tenants["A"])
     resp = make_request(api, "delete", url_detail(temp_users[0].pk), tenants["A"])
-    assert resp.status_code in (status.HTTP_204_NO_CONTENT, status.HTTP_403_FORBIDDEN)
-    
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    # No deletion happened.
+    assert User.objects.filter(pk=temp_users[0].pk).exists()
+
     # Test avec manager - devrait être bloqué
     manager = users["actors"]["manager"]
     authenticate_user(api, manager, tenants["A"])
@@ -554,20 +562,96 @@ def test_delete_only_admin_allowed(api, users, tenants):
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_delete_superuser_allowed(api, users, tenants):
-    """DELETE: Un superuser peut supprimer des utilisateurs"""
+def test_delete_refused_even_for_superuser(api, users, tenants):
+    """DELETE: hard-deleting a user is refused (400) even for a superuser.
+
+    New contract: user accounts can no longer be hard-deleted (deactivation only).
+    A superuser passes the permission layer, reaches destroy() and is refused there
+    with 400; no deletion occurs."""
     superuser = users["actors"]["superuser"]
-    
+
     # Créer un user temporaire
     temp_user = User.objects.create(
         email="temp-superuser@company-a.test",
         client_account_id=tenants["A"],
         is_active=True
     )
-    
+
     authenticate_user(api, superuser, tenants["A"])
     resp = make_request(api, "delete", url_detail(temp_user.pk), tenants["A"])
-    assert resp.status_code in (status.HTTP_204_NO_CONTENT, status.HTTP_403_FORBIDDEN)
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    # No deletion happened.
+    assert User.objects.filter(pk=temp_user.pk).exists()
+
+
+# ============================================================================
+# TESTS: DELETE contract — hard deletion is forbidden (deactivation only)
+# ============================================================================
+
+def test_delete_refused_when_user_owns_a_deal(api, users, tenants):
+    """DELETE refusal is unconditional: it fires even when the target owns work
+    (here an open deal). The refusal runs before user.delete(), so nothing —
+    neither the user nor the deal — is touched."""
+    from app_modules.accounts.models import CompanyAccount
+    from app_modules.decision_cycles.models import DecisionCycle
+
+    target = users["targets"]["a1"]
+
+    account = CompanyAccount(
+        company_name="Target Portfolio",
+        has_buying_decision=True,
+        account_owner=target,
+    )
+    account.save(user=target, client_id=tenants["A"])
+
+    cycle = DecisionCycle(account=account, owner=target, name="Open deal")
+    cycle.save(user=target, client_id=tenants["A"])
+
+    admin = users["actors"]["admin"]
+    authenticate_user(api, admin, tenants["A"])
+    resp = make_request(api, "delete", url_detail(target.pk), tenants["A"])
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    # Nothing was deleted: the user and their deal both remain.
+    assert User.objects.filter(pk=target.pk).exists()
+    assert DecisionCycle.objects.filter(pk=cycle.pk, owner=target).exists()
+
+
+def test_delete_refused_when_user_owns_nothing(api, users, tenants):
+    """DELETE refusal is unconditional: it fires even for a freshly created user
+    with no explicitly-created work, proving the refusal is not object-count
+    based (contrast with the earlier conditional-guard approach)."""
+    target = User.objects.create(
+        email="owns-nothing@company-a.test",
+        client_account_id=tenants["A"],
+        is_active=True,
+    )
+
+    admin = users["actors"]["admin"]
+    authenticate_user(api, admin, tenants["A"])
+    resp = make_request(api, "delete", url_detail(target.pk), tenants["A"])
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    assert User.objects.filter(pk=target.pk).exists()
+
+
+def test_bulk_delete_refused(api, users, tenants):
+    """BULK DELETE is refused up-front for the whole batch (400); no user in the
+    batch is deleted."""
+    t1 = User.objects.create(email="bulk-a@company-a.test",
+                             client_account_id=tenants["A"], is_active=True)
+    t2 = User.objects.create(email="bulk-b@company-a.test",
+                             client_account_id=tenants["A"], is_active=True)
+
+    admin = users["actors"]["admin"]
+    authenticate_user(api, admin, tenants["A"])
+    resp = make_request(api, "delete", url_bulk_delete(), tenants["A"],
+                        data={"ids": [str(t1.pk), str(t2.pk)]})
+
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    # The whole batch is untouched.
+    assert User.objects.filter(pk=t1.pk).exists()
+    assert User.objects.filter(pk=t2.pk).exists()
 
 
 # ============================================================================

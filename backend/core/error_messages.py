@@ -13,6 +13,11 @@ class AuthErrorMessages:
 
 class UsersErrorMessages:
     USER_NOT_FOUND = _("User does not exist")
+    USER_DELETION_FORBIDDEN = _(
+        "User accounts cannot be deleted. Deactivate the user instead: they lose "
+        "access immediately and their seat is freed, while their work is transferred "
+        "to another user."
+    )
 
 class TeamErrorMessages:
     MANAGER_HAS_TEAM = _("This user already manage team: {fields}")

@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, Exists, OuterRef
+from django.db.models import Q, Exists, OuterRef, ProtectedError
 from datetime import datetime, date
 from django.db import transaction
 from core.client_scope import ClientScopeManager
@@ -787,7 +787,17 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
                 self._validate_user_deletion(user)
 
                 user_name = user.get_full_name()
-                user.delete()
+                # Belt-and-suspenders: _validate_user_deletion already refuses
+                # every deletion above, so this line is currently unreachable.
+                # If a future path ever reaches it, a protected FK (e.g.
+                # Campaign.owner is on_delete=PROTECT) would otherwise surface as
+                # a 500 leak — catch it and return the same deletion-forbidden 400.
+                try:
+                    user.delete()
+                except ProtectedError:
+                    raise StandardizedValidationError(
+                        UsersErrorMessages.USER_DELETION_FORBIDDEN
+                    )
 
                 audit_log(
                     event='user_delete_success',
@@ -967,11 +977,25 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
     
     def _validate_user_deletion(self, user):
         """
-        Valider si l'utilisateur peut être supprimé.
-        Utilise les méthodes modèle TOCTOU-safe pour les invariants :
-        - Ne pas supprimer le dernier superuser
-        - Ne pas supprimer le dernier admin actif (Admin role ou superuser)
+        Reject user deletion unconditionally.
+
+        User accounts can no longer be hard-deleted: the only exit is
+        deactivation (is_active=False), which frees the seat and transfers the
+        user's work to a successor. This guard runs before user.delete() and
+        refuses every deletion with a 400, regardless of what the user owns
+        (even a user owning nothing).
+
+        The three legacy invariants below (self-delete, last superuser, last
+        active admin) are now UNREACHABLE — the unconditional refusal fires
+        first. They are intentionally kept, not removed, as a defense-in-depth
+        backstop in case a future path reaches deletion without this guard.
         """
+        # Deletion is forbidden, always. Deactivate instead.
+        raise StandardizedValidationError(
+            UsersErrorMessages.USER_DELETION_FORBIDDEN
+        )
+
+        # ---- Superseded invariants (kept, now unreachable) --------------------
         # Empêcher la suppression de son propre compte
         if user.id == self.request.user.id:
             raise StandardizedValidationError(
