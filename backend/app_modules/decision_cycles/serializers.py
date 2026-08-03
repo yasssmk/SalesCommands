@@ -1270,7 +1270,16 @@ class DecisionCycleCreateSerializer(ClientScopeManager.SerializerMixin, serializ
                 raise StandardizedValidationError(
                     CoreErrorMessages.CLIENT_MISMATCH
                 )
-            
+
+            # A DecisionCycle is always owned by its creator; the API entry
+            # point must carry an authenticated user so owner is resolvable.
+            request = self.context.get('request')
+            user = getattr(request, 'user', None) if request else None
+            if not user or not getattr(user, 'is_authenticated', False):
+                raise StandardizedValidationError(
+                    CoreErrorMessages.REQUIRED_FIELD.format(field='Owner (creator)')
+                )
+
             return attrs
             
         except StandardizedValidationError:
@@ -1282,19 +1291,19 @@ class DecisionCycleCreateSerializer(ClientScopeManager.SerializerMixin, serializ
     
     def create(self, validated_data):
         """Create decision cycle with proper audit fields."""
-        # Get user from context (standard pattern)
+        # Get user from context (standard pattern). validate() guarantees an
+        # authenticated user, so owner is always the creator here.
         user = self.context.get('request').user if self.context.get('request') else None
-        
-        # Auto-set owner to current user if not provided
-        if 'owner' not in validated_data and user:
-            validated_data['owner'] = user
-        
+
+        # owner = the creator, always.
+        validated_data['owner'] = user
+
         # Create instance without saving
         instance = DecisionCycle(**validated_data)
-        
+
         # Save with user to set created_by and updated_by
         instance.save(user=user)
-        
+
         return instance
 
 

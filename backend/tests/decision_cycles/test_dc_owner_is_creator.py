@@ -107,6 +107,16 @@ def test_path1_serializer_owner_is_creator(ca, creator, account):
     assert cycle.owner_id == creator.id
 
 
+def test_path1_serializer_rejects_without_creator(ca, account):
+    """API input with no authenticated creator is rejected (owner unresolvable)."""
+    from app_modules.decision_cycles.serializers import DecisionCycleCreateSerializer
+    ser = DecisionCycleCreateSerializer(
+        data={'account_id': str(account.id), 'name': 'No creator'},
+        context={'client_id': str(ca.id)},  # no request / no user
+    )
+    assert not ser.is_valid()
+
+
 # ---------------------------------------------------------------------------
 # Guard — model-level safety net: owner backfilled from created_by if left null.
 # ---------------------------------------------------------------------------
