@@ -603,7 +603,10 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         Delete a campaign.
         DELETE /campaigns/{id}/
 
-        Any campaign can be deleted. All linked activities are cascade-deleted.
+        Any campaign can be deleted. Its activities are never deleted: pending
+        ones (not tied to a decision cycle) are cancelled and kept, everything
+        else is preserved. Activity.campaign is SET_NULL, so the database
+        detaches the surviving activities automatically.
         """
         ctx = ctx_from_request(request)
         instance = self.get_object()
@@ -617,9 +620,15 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'campaign_id': campaign_id,
         })
 
-        # Cascade-delete all activities linked to this campaign
-        # (Activity.campaign FK is SET_NULL, so we must delete explicitly)
-        deleted_activities_count, _ = Activity.objects.filter(campaign=instance).delete()
+        # Cancel pending activities (not tied to a decision cycle), keeping every
+        # row for account traceability. The remaining activities are detached
+        # automatically by the SET_NULL FK when the campaign is deleted — no
+        # explicit delete needed.
+        cancelled_activities_count = Activity.objects.filter(
+            campaign=instance,
+            status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+            decision_cycle__isnull=True,
+        ).update(status=ActivityStatus.CANCELLED, updated_at=timezone.now())
 
         instance.delete()
 
@@ -633,7 +642,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             outcome='success',
             extra={
                 'campaign_name': campaign_name,
-                'activities_deleted': deleted_activities_count,
+                'activities_cancelled': cancelled_activities_count,
             },
         )
 
@@ -643,7 +652,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         logger.info("campaign_delete_success", extra={
             **ctx,
             'campaign_id': campaign_id,
-            'activities_deleted': deleted_activities_count,
+            'activities_cancelled': cancelled_activities_count,
         })
 
         return Response({

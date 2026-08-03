@@ -48,7 +48,8 @@ from core.cache_utils import disable_signals_with_invalidation
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
 
-from app_modules.activities.models import Activity
+from django.utils import timezone
+from app_modules.activities.models import Activity, ActivityStatus
 
 from ..models import Campaign
 from ..config.settings import CONFIG
@@ -227,16 +228,17 @@ class CampaignBulkViewSet(CampaignViewSet):
                                 }
 
                             if deletable_ids:
-                                # CASCADE DIVERGENCE vs Territory: Activity.campaign is
-                                # on_delete=SET_NULL, so activities must be deleted
-                                # explicitly (as CampaignViewSet.destroy() does at
-                                # campaign_views.py) — a set-based Campaign delete alone
-                                # would orphan them. CampaignAccount / CampaignContact /
-                                # CampaignMember are CASCADE and drop automatically.
+                                # Activities are never deleted: cancel the pending
+                                # ones not tied to a decision cycle and keep every
+                                # row for account traceability. Activity.campaign is
+                                # on_delete=SET_NULL, so the set-based Campaign delete
+                                # below detaches the survivors automatically.
                                 Activity.objects.filter(
                                     campaign_id__in=deletable_ids,
+                                    status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+                                    decision_cycle__isnull=True,
                                     client_id=client_id
-                                ).delete()
+                                ).update(status=ActivityStatus.CANCELLED, updated_at=timezone.now())
 
                                 # SET-BASED DELETE
                                 deleted_count, deleted_by_model = Campaign.objects.filter(
@@ -284,13 +286,16 @@ class CampaignBulkViewSet(CampaignViewSet):
 
                     try:
                         if deletable_ids:
-                            # CASCADE DIVERGENCE vs Territory (see strict branch above):
-                            # delete Activity rows explicitly before the campaigns
-                            # because Activity.campaign is on_delete=SET_NULL.
+                            # Activities are never deleted (see strict branch above):
+                            # cancel the pending ones not tied to a decision cycle and
+                            # keep every row. Activity.campaign is on_delete=SET_NULL,
+                            # so the set-based Campaign delete detaches the survivors.
                             Activity.objects.filter(
                                 campaign_id__in=deletable_ids,
+                                status__in=[ActivityStatus.PLANNED, ActivityStatus.ON_HOLD],
+                                decision_cycle__isnull=True,
                                 client_id=client_id
-                            ).delete()
+                            ).update(status=ActivityStatus.CANCELLED, updated_at=timezone.now())
 
                             # SET-BASED DELETE
                             deleted_count, deleted_by_model = Campaign.objects.filter(
