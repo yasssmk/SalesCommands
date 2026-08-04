@@ -18,8 +18,7 @@ import IconButton from 'components/@extended/IconButton';
 
 import UserModal from 'sections/admin/users/UserModal';
 import UserBulkEditModal from 'sections/admin/users/UserBulkEditModal';
-import AlertUserDelete from 'sections/admin/users/AlertUserDelete';
-import AlertUserBulkDelete from 'sections/admin/users/AlertUserBulkDelete';
+import DeactivateUserDialog from 'sections/admin/users/DeactivateUserDialog';
 import ReusableTable from 'components/table/Table';
 import SeatsSummary from 'sections/admin/users/SeatsSummary';
 
@@ -39,7 +38,7 @@ import { notifyCSVImportOutcome } from 'utils/csvImportNotifications';
 import { formatDateTime } from 'config/formatters';
 
 // assets
-import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
+import StopOutlined from '@ant-design/icons/StopOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import { useTheme } from '@mui/material/styles';
@@ -226,16 +225,17 @@ const filters = useMemo(() => {
 
 
 
-  const [open, setOpen] = useState(false);
   const [userModal, setUserModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [userDeleteId, setUserDeleteId] = useState('');
-  
+
+  // Deactivation (with successor transfer) — replaces the former delete flow.
+  const [deactivateUser, setDeactivateUser] = useState(null);
+  const [deactivateOpen, setDeactivateOpen] = useState(false);
+
   // ✅ State de sélection
   const [selectedRows, setSelectedRows] = useState(new Set());
 
   const [bulkEditModal, setBulkEditModal] = useState(false);
-  const [bulkDeleteAlert, setBulkDeleteAlert] = useState(false);
 
   
 
@@ -287,23 +287,21 @@ const filters = useMemo(() => {
     }
   }, [search]); 
 
-  const handleClose = useCallback(() => {
-      setOpen((prev) => !prev);
-    }, []);
-
   const handleOpenEditModal = useCallback((user) => {
       setSelectedUser(user);
       setUserModal(true);
     }, []);
 
-  const handleOpenDeleteDialog = useCallback(
-      (user) => {
-        setSelectedUser(user);
-        setUserDeleteId(user.id);
-        handleClose();
-      },
-      [handleClose]
-    );
+  // Deactivation opens the shared successor window (same one the edit modal uses).
+  const handleOpenDeactivate = useCallback((user) => {
+      setDeactivateUser(user);
+      setDeactivateOpen(true);
+    }, []);
+
+  const handleCloseDeactivate = useCallback(() => {
+      setDeactivateOpen(false);
+      setDeactivateUser(null);
+    }, []);
 
   // Handler Import CSV
   const handleImportClick = useCallback(() => {
@@ -377,12 +375,6 @@ const filters = useMemo(() => {
 //     setBulkDeleteAlert(true);
 //   }
 // }, [selectedRows.size]);
-
-// ✅ Ce handler ne fait QUE vider la sélection (appelé par le composant en cas de succès)
-const handleBulkDeleteComplete = useCallback(() => {
-  setSelectedRows(new Set());
-}, []);
-
 
   // ==============================|| COLUMNS ||============================== //
 
@@ -563,15 +555,15 @@ const handleBulkDeleteComplete = useCallback(() => {
                   <EditOutlined />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="Delete">
+              <Tooltip title="Deactivate">
                 <IconButton
                   color="secondary.500"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleOpenDeleteDialog(row.original);
+                    handleOpenDeactivate(row.original);
                   }}
                 >
-                  <DeleteOutlined />
+                  <StopOutlined />
                 </IconButton>
               </Tooltip>
             </Stack>
@@ -579,7 +571,7 @@ const handleBulkDeleteComplete = useCallback(() => {
         }
       }
     ],
-    [theme, handleOpenEditModal, handleOpenDeleteDialog, allSelected, someSelected, handleSelectAll, selectedRows, handleSelectRow]
+    [theme, handleOpenEditModal, handleOpenDeactivate, allSelected, someSelected, handleSelectAll, selectedRows, handleSelectRow]
   );
 
   return (
@@ -620,17 +612,6 @@ const handleBulkDeleteComplete = useCallback(() => {
             setBulkEditModal(true);
           }
         }}
-        onDelete={() => {
-          if (selectedRows.size === 1) {
-            const userId = Array.from(selectedRows)[0];
-            const user = users.find(u => u.id === userId);
-            if (user) {
-              handleOpenDeleteDialog(user);
-            }
-          } else if (selectedRows.size > 1) {
-            setBulkDeleteAlert(true);
-          }
-        }}
         filterConfig={filterConfig}
         // Customization (specific to Users)
         addButtonLabel="Add User"
@@ -643,13 +624,13 @@ const handleBulkDeleteComplete = useCallback(() => {
 
       <UserModal open={userModal} modalToggler={setUserModal} user={selectedUser} />
 
-      <AlertUserDelete
-        id={userDeleteId}
-        title={selectedUser ? `${selectedUser.first_name} ${selectedUser.last_name}` : ''}
-        open={open}
-        handleClose={handleClose}
+      <DeactivateUserDialog
+        user={deactivateUser}
+        open={deactivateOpen}
+        handleClose={handleCloseDeactivate}
+        onDone={() => setSelectedRows(new Set())}
       />
-       <UserCSVImportModal          
+       <UserCSVImportModal
         open={csvImportModal}
         onClose={() => setCsvImportModal(false)}
         onImport={handleImportCSV}
@@ -666,13 +647,6 @@ const handleBulkDeleteComplete = useCallback(() => {
         modalToggler={setBulkEditModal}
         selectedUserIds={Array.from(selectedRows)}
         selectedCount={selectedRows.size}
-      />
-
-      <AlertUserBulkDelete
-        selectedIds={Array.from(selectedRows)}
-        open={bulkDeleteAlert}
-        handleClose={() => setBulkDeleteAlert(false)}  // ← Juste fermer
-        onDeleteComplete={handleBulkDeleteComplete}     // ← Juste vider
       />
 
       {/* <TestMultiSnackbar />  */}

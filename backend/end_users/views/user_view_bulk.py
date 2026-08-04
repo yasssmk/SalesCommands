@@ -31,7 +31,7 @@ from core.idempotency import (
 )
 from core.logging.helpers import safe_user_context, safe_user_data_context
 from core.exceptions import StandardizedValidationError
-from core.error_messages import CoreErrorMessages
+from core.error_messages import CoreErrorMessages, UsersErrorMessages
 from core.cache_utils import disable_signals_with_invalidation
 from core.logging import get_logger, ctx_from_request
 from core.logging.audit import audit_log
@@ -572,14 +572,14 @@ class UserBulkViewSet(UserViewSet):
     def bulk_delete(self, request):
         """
         Physically delete multiple users in bulk (hard delete) - IDEMPOTENT wrapper.
-        
+
         Headers:
             Idempotency-Key (optional): Unique key for idempotent operations
-            
+
         Request Body:
             ids: List[UUID] - User IDs to delete
             mode: str - 'partial' (default) or 'strict'
-            
+
         Returns:
             200: Success with results
             202: Operation in progress
@@ -587,6 +587,13 @@ class UserBulkViewSet(UserViewSet):
             409: Idempotency conflict
             500: Server error
         """
+        # User accounts can no longer be hard-deleted (deactivation only). Refuse
+        # the whole batch up-front, before any idempotency bookkeeping or delete
+        # runs — no partial effect, no idempotency state consumed.
+        raise StandardizedValidationError(
+            UsersErrorMessages.USER_DELETION_FORBIDDEN
+        )
+
         idempotency_key = request.headers.get('Idempotency-Key')
 
         if not idempotency_key:

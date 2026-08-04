@@ -39,6 +39,7 @@ import { useGetTeams } from 'api/admin/teams';
 // project imports
 import Avatar from 'components/@extended/Avatar';
 import CircularWithPath from 'components/@extended/progress/CircularWithPath';
+import SuccessorPicker from './SuccessorPicker';
 import { displaySuccessSnackbar } from 'utils/displayError';
 import { handleFormikError } from 'utils/formErrorHandler';
 
@@ -110,9 +111,10 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState(undefined);
   const [avatar, setAvatar] = useState(undefined);
+  const [successor, setSuccessor] = useState(null);
 
   const { user: fetchedUser, userLoading } = useGetUser(userId);
-  
+
   const userData = initialUser || fetchedUser;
   
   console.log('[USER DATA] :', userData )
@@ -133,6 +135,16 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
     onSubmit: async (values, { setSubmitting }) => {
       try {
         const payload = sanitizePayload(values);
+        // Deactivation (active -> inactive) requires a successor; their work is
+        // transferred server-side in one atomic step.
+        const deactivating = Boolean(userData?.is_active) && values.is_active === false;
+        if (deactivating) {
+          if (!successor?.id) {
+            handleFormikError({ error: 'Select a successor to deactivate this user.' }, formik);
+            return;
+          }
+          payload.successor_id = String(successor.id);
+        }
         const result = await updateUser(userData.id, payload);
 
         if (result.success) {
@@ -148,6 +160,9 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
   });
 
   const { errors, touched, handleSubmit, isSubmitting, getFieldProps, setFieldValue, values } = formik;
+
+  // Active -> inactive on an already-active user triggers the successor flow.
+  const isDeactivating = Boolean(userData?.is_active) && values.is_active === false;
 
   const { roles = [], rolesLoading } = useGetUserRoles();
   const { teams = [], teamsLoading } = useGetTeams();
@@ -364,6 +379,14 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
                           {errors.is_active}
                         </Typography>
                       )}
+                      {isDeactivating && (
+                        <SuccessorPicker
+                          targetUser={userData}
+                          value={successor}
+                          onChange={(event, newValue) => setSuccessor(newValue)}
+                          disabled={isSubmitting}
+                        />
+                      )}
                   </Grid>
                   
                   <Grid item xs={12}>
@@ -416,7 +439,7 @@ function FormUserEdit({ closeModal, userId, user: initialUser, onChangePassword 
                   <Button color="error" onClick={closeModal}>
                     Cancel
                   </Button>
-                  <Button type="submit" variant="contained" disabled={!formik.isValid || isSubmitting} >
+                  <Button type="submit" variant="contained" disabled={!formik.isValid || isSubmitting || (isDeactivating && !successor)} >
                     Save
                   </Button>
                 </Stack>

@@ -256,6 +256,36 @@ export function useGetUser(userId) {
 }
 
 /**
+ * ✅ GET DEACTIVATION PREVIEW
+ * Read-only preview for the deactivation window: how many deals / accounts /
+ * activities would be transferred (same definitions as the real transfer) and
+ * the suggested successor (the user's active direct team manager, or null).
+ *
+ * @param {string} userId - user about to be deactivated
+ * @param {boolean} enabled - only fetch when the window needs it
+ * @returns {{ preview: {counts, suggested_successor}|null, previewLoading, previewError }}
+ */
+export function useDeactivationPreview(userId, enabled = true) {
+  const { tenantId } = useAuth();
+
+  const swrKey =
+    enabled && userId && tenantId
+      ? tenantKey(`${endpoints.users}${userId}/deactivation-preview/`, tenantId)
+      : null;
+
+  const { data, isLoading, error } = useSWR(swrKey);
+
+  return useMemo(
+    () => ({
+      preview: data?.data || null,
+      previewLoading: isLoading,
+      previewError: error,
+    }),
+    [data, isLoading, error]
+  );
+}
+
+/**
  * ✅ GET CLIENT SEATS STATS - Clé tenant standardisée
  * seats = client.max_users
  * seats_used = # active users

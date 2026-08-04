@@ -32,9 +32,17 @@ class ActivityStatus(models.TextChoices):
     """
 
     PLANNED = 'PLANNED', _('Planned')
-    ON_HOLD = 'ON_HOLD', _('On Hold') 
+    ON_HOLD = 'ON_HOLD', _('On Hold')
     COMPLETED = 'COMPLETED', _('Completed')
     CANCELLED = 'CANCELLED', _('Cancelled')
+
+
+# Terminal vs non-terminal (still-open) activity statuses. A terminal activity
+# is history and must never be re-owned or re-cancelled; a non-terminal one is
+# pending work. Single definition, reused by consumers (e.g. user-deactivation
+# transfer) instead of re-listing the members inline.
+TERMINAL_STATUSES = frozenset({ActivityStatus.COMPLETED, ActivityStatus.CANCELLED})
+NON_TERMINAL_STATUSES = frozenset({ActivityStatus.PLANNED, ActivityStatus.ON_HOLD})
 
 
 class ActivityOutcome(models.TextChoices):
