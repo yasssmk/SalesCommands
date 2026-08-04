@@ -352,14 +352,25 @@ class CampaignLifecycleService:
         Cancel a campaign: any non-final → CANCELLED.
 
         Side effects:
+            - All non-final contacts → STOPPED (with reason)
             - All non-final accounts → STOPPED (with reason)
             - Planned activities for this campaign → CANCELLED
 
+        A cancelled campaign must have no still-active contact; terminal
+        contacts (COMPLETED / STOPPED) are left untouched.
+
         Returns:
-            dict: {campaign, accounts_stopped, activities_cancelled}
+            dict: {campaign, contacts_stopped, accounts_stopped,
+                   activities_cancelled}
         """
         self._validate_ownership(campaign)
         campaign.cancel(user=self.user)
+
+        # Stop remaining contacts
+        contacts_stopped = self._stop_remaining_contacts(
+            campaign,
+            reason="Campaign cancelled",
+        )
 
         # Stop remaining accounts
         accounts_stopped = self._stop_remaining_accounts(
@@ -371,18 +382,21 @@ class CampaignLifecycleService:
         activities_cancelled = self._cancel_planned_activities(campaign)
 
         self._audit('campaign_cancelled', campaign, extra={
+            'contacts_stopped': contacts_stopped,
             'accounts_stopped': accounts_stopped,
             'activities_cancelled': activities_cancelled,
         })
 
         logger.info("campaign_cancelled", extra={
             'campaign_id': str(campaign.id),
+            'contacts_stopped': contacts_stopped,
             'accounts_stopped': accounts_stopped,
             'activities_cancelled': activities_cancelled,
         })
 
         return {
             'campaign': campaign,
+            'contacts_stopped': contacts_stopped,
             'accounts_stopped': accounts_stopped,
             'activities_cancelled': activities_cancelled,
         }

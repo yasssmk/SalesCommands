@@ -59,11 +59,15 @@ def deactivation_deals_to_transfer(user):
 
 
 def deactivation_accounts_to_transfer(user):
-    """Prospect accounts owned by the user."""
-    from app_modules.accounts.models import CompanyAccount, AccountType
+    """Every account owned by the user, whatever its type.
+
+    Ownership is carried by ``account_owner`` (not ``owner``); ``team`` is a
+    derived property of the owner, so reassigning the owner moves the team too.
+    Accounts with no owner never match ``account_owner=user`` and are left as-is.
+    """
+    from app_modules.accounts.models import CompanyAccount
     return CompanyAccount.objects.filter(
         client_id=user.client_account_id, account_owner=user,
-        type=AccountType.PROSPECT,
     )
 
 
@@ -1120,7 +1124,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         Resolve and validate the successor for a deactivation.
 
         The successor inherits the deactivated user's non-terminal deals,
-        prospect accounts and open deal activities, so it MUST be an ACTIVE
+        owned accounts and open deal activities, so it MUST be an ACTIVE
         user of the SAME tenant, and can never be the user being deactivated.
 
         Returns the successor User, or raises a 400 (no side effects).
@@ -1158,7 +1162,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
 
         Locked order (product decision):
           1. non-terminal deals            -> owner = successor
-          2. prospect accounts             -> account_owner = successor
+          2. owned accounts (any type)     -> account_owner = successor
           3. open DEAL activities          -> owner = successor
           4. open FREE activities          -> CANCELLED (kept as history)
           5. OUTBOUND campaigns            -> cancelled (CANCEL path, not complete)
@@ -1181,7 +1185,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
             # 1. Non-terminal deals -> successor (terminal ones stay put).
             deactivation_deals_to_transfer(user).update(owner=successor)
 
-            # 2. Prospect accounts -> successor.
+            # 2. Owned accounts (any type) -> successor.
             deactivation_accounts_to_transfer(user).update(account_owner=successor)
 
             # 3. Open activities tied to a DEAL -> successor.
@@ -1262,7 +1266,7 @@ class UserViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
         GET /client/users/{id}/deactivation-preview/
 
         Returns the counts of what a deactivation would transfer (deals,
-        prospect accounts, open deal activities) — computed from the SAME
+        owned accounts, open deal activities) — computed from the SAME
         querysets the real transfer uses, so the numbers can never lie — plus a
         suggested successor: the user's DIRECT team manager if that manager is
         active and is not the user themselves, otherwise null (no hierarchy

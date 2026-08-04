@@ -843,6 +843,7 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             'success': True,
             'data': {
                 'campaign': output.data,
+                'contacts_stopped': result['contacts_stopped'],
                 'accounts_stopped': result['accounts_stopped'],
                 'activities_cancelled': result['activities_cancelled'],
             },
