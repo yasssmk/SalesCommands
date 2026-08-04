@@ -13,9 +13,10 @@ Campaign-specific ones:
   - max-ids (500) guard
   - permission denial for an ANONYMOUS caller AND for an authenticated
     same-tenant user that has no delete right on campaigns
-  - activity cascade: Activity.campaign is on_delete=SET_NULL, so the
-    endpoint must delete linked activities explicitly (like
-    CampaignViewSet.destroy) instead of orphaning them
+  - activity preservation: Activity.campaign is on_delete=SET_NULL; the
+    endpoint never deletes linked activities — pending non-DC ones are
+    cancelled and every row is detached (covered by
+    test_delete_keeps_activities.py)
 
 Permission-resolution note (why the no-delete user is a no-tier role):
     `bulk_delete` has NO custom action_policy, so ScopedPermission resolves
@@ -37,7 +38,6 @@ from django.utils import timezone
 
 from app_modules.campaigns.models import Campaign
 from app_modules.campaigns.constants import CampaignType
-from app_modules.activities.models import Activity
 
 # Tenant-B fixtures are not re-exported by tests/campaigns/conftest.py (which
 # only wires tenant A). Import them here for the cross-tenant isolation test,
@@ -265,30 +265,3 @@ class TestPermissionDenial:
 
         assert resp.status_code == 403, resp.content
         assert Campaign.objects.filter(id=campaign.id).exists()
-
-
-# =============================================================================
-# CASCADE — Activity.campaign is SET_NULL, must be deleted explicitly
-# =============================================================================
-
-class TestActivityCascade:
-    @pytest.mark.django_db
-    def test_linked_activities_are_deleted_not_orphaned(
-        self, authed_api_a, campaign, make_campaign_contact, make_campaign_activity
-    ):
-        today = timezone.now().date()
-        cc = make_campaign_contact()
-        activity = make_campaign_activity(cc, scheduled_date=today, sequence_position=1)
-
-        assert Activity.objects.filter(id=activity.id).exists()
-
-        resp = authed_api_a.delete(
-            BULK_DELETE_URL,
-            data={'ids': [str(campaign.id)], 'mode': 'partial'},
-            format='json',
-        )
-
-        assert resp.status_code == 200, resp.content
-        assert not Campaign.objects.filter(id=campaign.id).exists()
-        # The activity must be gone — NOT left behind with campaign_id=NULL.
-        assert not Activity.objects.filter(id=activity.id).exists()
