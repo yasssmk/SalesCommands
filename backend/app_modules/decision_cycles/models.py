@@ -234,8 +234,23 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     def save(self, *args, **kwargs):
         """
-        Override save to ensure only one active cycle per account.
+        Override save to enforce two invariants:
+          1. a DecisionCycle is never persisted ownerless — if no owner is set,
+             fall back to the creator (the ``save(user=)`` actor, else the
+             already-set ``created_by``). This is a creation-time safety net;
+             ``owner`` stays freely reassignable afterwards. No account-owner
+             default: owner is always the creator, never the account owner.
+          2. only one active cycle per account.
         """
+        # 1. Owner safety net (no DB query: resolve via ids where possible).
+        if self.owner_id is None:
+            actor = kwargs.get('user')
+            if actor is not None and not getattr(actor, 'is_anonymous', False):
+                self.owner = actor
+            elif self.created_by_id is not None:
+                self.owner_id = self.created_by_id
+
+        # 2. Single active cycle per account.
         if self.is_active:
             # Deactivate other cycles for this account
             DecisionCycle.objects.filter(
@@ -243,7 +258,7 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
                 client_id=self.client_id,
                 is_active=True
             ).exclude(pk=self.pk).update(is_active=False)
-        
+
         super().save(*args, **kwargs)
 
 
