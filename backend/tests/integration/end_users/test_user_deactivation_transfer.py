@@ -3,8 +3,8 @@
 Integration tests for the user-deactivation work transfer.
 
 Deactivating a user (PATCH is_active True -> False) must, in ONE atomic block:
-  - transfer non-terminal deals, prospect accounts and open deal-activities to
-    an active successor,
+  - transfer non-terminal deals, owned accounts (any type) and open
+    deal-activities to an active successor,
   - cancel free activities (kept as history),
   - cancel the user's OUTBOUND campaigns (CANCELLED label),
   - empty (never cancel) the user's TARGETED campaign,
@@ -241,9 +241,9 @@ def test_prospect_account_transferred(api, ca, admin, leaver, successor):
     assert acc.account_owner_id == successor.id
 
 
-def test_client_account_not_transferred(api, ca, admin, leaver, successor):
-    # Product decision: only PROSPECT accounts transfer; CLIENT accounts keep
-    # their owner. (Flagged for confirmation.)
+def test_client_account_transferred(api, ca, admin, leaver, successor):
+    # Product decision: every owned account transfers, whatever its type — a
+    # CLIENT account is reassigned to the successor just like a PROSPECT one.
     acc = _account(leaver, ca, "Client Co", atype=AccountType.CLIENT)
 
     _authenticate(api, admin, ca.id)
@@ -251,7 +251,70 @@ def test_client_account_not_transferred(api, ca, admin, leaver, successor):
 
     assert resp.status_code == status.HTTP_200_OK
     acc.refresh_from_db()
-    assert acc.account_owner_id == leaver.id
+    assert acc.account_owner_id == successor.id
+
+
+# --- REPRO (sub-step 1): every owned account transfers, whatever its type ---
+
+def test_all_owned_accounts_transferred_regardless_of_type(api, ca, admin, leaver, successor):
+    accs = [
+        _account(leaver, ca, "P Co", atype=AccountType.PROSPECT),
+        _account(leaver, ca, "C Co", atype=AccountType.CLIENT),
+        _account(leaver, ca, "PA Co", atype=AccountType.PARTNER),
+        _account(leaver, ca, "V Co", atype=AccountType.VENDOR),
+        _account(leaver, ca, "O Co", atype=AccountType.OTHER),
+        _account(leaver, ca, "N Co", atype=None),  # NULL type
+    ]
+
+    _authenticate(api, admin, ca.id)
+    resp = _deactivate(api, leaver, successor, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    for acc in accs:
+        acc.refresh_from_db()
+        assert acc.account_owner_id == successor.id, f"{acc.company_name} not transferred"
+
+
+def test_preview_counts_all_owned_accounts(api, ca, admin, leaver, successor):
+    _account(leaver, ca, "P Co", atype=AccountType.PROSPECT)
+    _account(leaver, ca, "C Co", atype=AccountType.CLIENT)
+    _account(leaver, ca, "N Co", atype=None)
+
+    _authenticate(api, admin, ca.id)
+    resp = _preview(api, leaver, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.data["data"]["counts"]["accounts"] == 3
+
+
+def test_other_users_account_not_transferred(api, ca, admin, leaver, successor):
+    # Only the leaver's OWN accounts move; an account owned by someone else
+    # (here the admin) keeps its owner — proves the account_owner filter.
+    mine = _account(leaver, ca, "Mine Co", atype=AccountType.PROSPECT)
+    other = _account(admin, ca, "Admin Co", atype=AccountType.PROSPECT)
+
+    _authenticate(api, admin, ca.id)
+    resp = _deactivate(api, leaver, successor, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    mine.refresh_from_db()
+    other.refresh_from_db()
+    assert mine.account_owner_id == successor.id
+    assert other.account_owner_id == admin.id  # untouched
+
+
+def test_ownerless_account_untouched(api, ca, admin, leaver, successor):
+    # Accounts with no owner never match account_owner=leaver and stay ownerless
+    # (tracked as debt — a deactivation cannot adopt orphaned accounts).
+    orphan = _account(admin, ca, "Orphan Co", atype=AccountType.PROSPECT)
+    CompanyAccount.objects.filter(pk=orphan.pk).update(account_owner=None)
+
+    _authenticate(api, admin, ca.id)
+    resp = _deactivate(api, leaver, successor, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    orphan.refresh_from_db()
+    assert orphan.account_owner_id is None
 
 
 # ============================================================================
@@ -454,8 +517,10 @@ def test_transfer_is_atomic(api, ca, admin, leaver, successor, monkeypatch):
     assert resp.status_code >= 400  # request failed
     leaver.refresh_from_db()
     deal.refresh_from_db()
+    acc.refresh_from_db()
     assert leaver.is_active is True            # flip rolled back
     assert deal.owner_id == leaver.id          # step-1 transfer rolled back
+    assert acc.account_owner_id == leaver.id   # step-2 account transfer rolled back
 
 
 # ============================================================================
@@ -464,9 +529,9 @@ def test_transfer_is_atomic(api, ca, admin, leaver, successor, monkeypatch):
 
 def test_preview_counts_match_transfer_definitions(api, ca, admin, leaver, successor):
     """The preview counts EXACTLY what the transfer moves — same querysets."""
-    acc1 = _account(leaver, ca, "P1", atype=AccountType.PROSPECT)
-    acc2 = _account(leaver, ca, "P2", atype=AccountType.PROSPECT)
-    _account(leaver, ca, "C1", atype=AccountType.CLIENT)          # not counted
+    acc1 = _account(leaver, ca, "P1", atype=AccountType.PROSPECT)  # counted
+    acc2 = _account(leaver, ca, "P2", atype=AccountType.PROSPECT)  # counted
+    _account(leaver, ca, "C1", atype=AccountType.CLIENT)          # counted (any type)
     d1 = _deal(leaver, ca, acc1, "open", outcome=None)            # counted
     _deal(leaver, ca, acc2, "onhold", outcome=CycleOutcome.ON_HOLD)  # counted
     _deal(leaver, ca, acc1, "won", outcome=CycleOutcome.WON)      # not counted
@@ -479,7 +544,7 @@ def test_preview_counts_match_transfer_definitions(api, ca, admin, leaver, succe
 
     assert resp.status_code == status.HTTP_200_OK
     counts = resp.data["data"]["counts"]
-    assert counts == {"deals": 2, "accounts": 2, "activities": 1}
+    assert counts == {"deals": 2, "accounts": 3, "activities": 1}
 
 
 def test_preview_suggests_active_team_manager(api, ca, admin, leaver, successor):
