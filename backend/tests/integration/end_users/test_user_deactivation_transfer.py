@@ -391,6 +391,37 @@ def test_outbound_campaign_cancelled_activities_split(api, ca, admin, leaver, su
     assert deal_act.status == ActivityStatus.PLANNED
 
 
+def test_outbound_cancel_stops_contacts(api, ca, admin, leaver, successor):
+    # Deactivation cancels the leaver's OUTBOUND campaign; its still-active
+    # contacts must all become STOPPED (a cancelled campaign has no active
+    # contact). A terminal contact is left untouched.
+    acc = _account(leaver, ca, "Camp Co")
+    campaign = _campaign(leaver, ca, ctype=CampaignType.OUTBOUND, cstatus=CampaignStatus.ACTIVE)
+    camp_acc = CampaignAccount(campaign=campaign, account=acc)
+    camp_acc.save(user=leaver, client_id=ca.id)
+
+    def _cc(first, status_):
+        contact = Contact(account=acc, first_name=first, last_name="X")
+        contact.save(user=leaver, client_id=ca.id)
+        cc = CampaignContact(campaign_account=camp_acc, contact=contact, status=status_)
+        cc.save(user=leaver, client_id=ca.id)
+        return cc
+
+    active = _cc("Active", CampaignContactStatus.IN_PROGRESS)
+    done = _cc("Done", CampaignContactStatus.COMPLETED)
+
+    _authenticate(api, admin, ca.id)
+    resp = _deactivate(api, leaver, successor, ca)
+
+    assert resp.status_code == status.HTTP_200_OK
+    campaign.refresh_from_db()
+    assert campaign.status == CampaignStatus.CANCELLED
+    active.refresh_from_db()
+    done.refresh_from_db()
+    assert active.status == CampaignContactStatus.STOPPED   # active -> stopped
+    assert done.status == CampaignContactStatus.COMPLETED   # terminal untouched
+
+
 def test_targeted_emptied_not_cancelled(api, ca, admin, leaver, successor):
     acc = _account(leaver, ca, "Targeted Co")
     # Each user is auto-provisioned one perpetual TARGETED campaign (unique per
