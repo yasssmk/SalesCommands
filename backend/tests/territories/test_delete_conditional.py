@@ -127,12 +127,14 @@ def _activity(client_account, user, campaign, ca, title, decision_cycle=None):
 def test_delete_sole_territory_cascades_campaign(authed_api_a, user_a, client_account_a):
     """
     Territory that is the ONLY territory of a NON-active OUTBOUND campaign →
-    territory deleted, campaign cascade-deleted with its CampaignAccount and
-    NON-DC activities.
+    territory deleted, campaign cascade-deleted with its CampaignAccount. The
+    pending non-DC activity is never deleted: it is cancelled, kept, and
+    detached from the campaign (campaign_id -> NULL).
     """
     from app_modules.territories.models import Territory
     from app_modules.campaigns.models import Campaign, CampaignAccount
     from app_modules.activities.models import Activity
+    from app_modules.activities.constants import ActivityStatus
 
     terr = _territory(client_account_a, user_a, 'SoleTerr')
     camp = _campaign(client_account_a, user_a, 'Draft-solo', CampaignStatus.DRAFT, [terr])
@@ -147,19 +149,25 @@ def test_delete_sole_territory_cascades_campaign(authed_api_a, user_a, client_ac
     assert not Territory.objects.filter(id=terr.id).exists()
     assert not Campaign.objects.filter(id=camp.id).exists()
     assert not CampaignAccount.objects.filter(id=ca.id).exists()
-    assert not Activity.objects.filter(id=non_dc.id).exists()  # non-DC deleted
+    # Activities are never deleted: the pending non-DC activity is cancelled,
+    # kept, and detached from the deleted campaign.
+    assert Activity.objects.filter(id=non_dc.id).exists()  # non-DC preserved
+    non_dc.refresh_from_db()
+    assert non_dc.status == ActivityStatus.CANCELLED
+    assert non_dc.campaign_id is None
 
 
 @pytest.mark.django_db
 def test_cascade_preserves_decision_cycle_activity(authed_api_a, user_a, client_account_a):
     """
-    RED-RULE guard: a DC-linked activity of a cascaded campaign SURVIVES
-    (detached, not deleted), its decision cycle intact; a sibling NON-DC
-    activity is deleted.
+    RED-RULE guard: no activity of a cascaded campaign is ever deleted. A
+    DC-linked activity SURVIVES untouched (detached, decision cycle intact);
+    a sibling pending NON-DC activity is cancelled, kept, and detached.
     """
     from app_modules.territories.models import Territory
     from app_modules.campaigns.models import Campaign, CampaignAccount
     from app_modules.activities.models import Activity
+    from app_modules.activities.constants import ActivityStatus
     from app_modules.decision_cycles.models import DecisionCycle
 
     terr = _territory(client_account_a, user_a, 'SoleTerrDC')
@@ -177,7 +185,11 @@ def test_cascade_preserves_decision_cycle_activity(authed_api_a, user_a, client_
 
     assert resp.status_code == 200, resp.data
     assert not Campaign.objects.filter(id=camp.id).exists()
-    assert not Activity.objects.filter(id=non_dc.id).exists()          # non-DC deleted
+    # Sibling pending non-DC activity: cancelled, kept, detached (never deleted).
+    assert Activity.objects.filter(id=non_dc.id).exists()              # non-DC preserved
+    non_dc.refresh_from_db()
+    assert non_dc.status == ActivityStatus.CANCELLED
+    assert non_dc.campaign_id is None
     # DC activity preserved, detached from the campaign, DC intact.
     dc_act.refresh_from_db()
     assert dc_act.campaign_id is None
