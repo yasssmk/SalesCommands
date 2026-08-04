@@ -161,6 +161,94 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
   seul est une garde faible : sur 12 défauts cartographiés, `next build` n'en a
   surfacé que 2 (voir TD-139).
 
+### Sprint ✅ — Ne plus jamais effacer d'activités (PR #104, 2026-08-03)
+- **Objectif** : une règle UNIQUE sur les trois chemins de fin de vie
+  campagne/territoire — on ne supprime plus jamais une activité, on la préserve.
+- **Livré** : filtre IDENTIQUE partout — `status__in=[PLANNED, ON_HOLD]` +
+  `decision_cycle__isnull=True` → `.update(status=CANCELLED)`, JAMAIS un
+  `.delete()` d'activité. Une activité liée à un DecisionCycle n'est jamais
+  touchée ; les terminées (COMPLETED/CANCELLED) sont gardées ; toutes sont
+  détachées automatiquement (SET_NULL sur `campaign` / `campaign_account` /
+  `campaign_contact`) quand la campagne est supprimée. Trois chemins :
+  annulation de campagne (`campaign_lifecycle_service._cancel_planned_activities`,
+  campagne vivante), suppression de campagne (`campaign_views.destroy` +
+  `campaign_bulk_views.bulk_delete`), cascade territoire
+  (`territories/views.views._cascade_delete_outbound_campaign`). 4 fichiers de
+  prod modifiés.
+- **Précision de règle** : sur les TROIS chemins l'activité prévue non-deal est
+  ANNULÉE (jamais supprimée) ; la seule différence est que la campagne, elle,
+  est détruite (suppression/cascade) ou reste vivante (annulation). La lecture
+  « prévues non-deal supprimées sur suppression/cascade » serait donc inexacte.
+- **Validation** : 3 fichiers de tests neufs — `test_cancel_keeps_activities.py`,
+  `test_delete_keeps_activities.py`, `test_cascade_keeps_activities.py`.
+- **Part en dette** : `delete_activities_for_contact` (retrait manuel d'un
+  contact d'une campagne) N'A PAS été aligné — il supprime encore les activités
+  PLANNED. Nouvelle dette **TD-141**.
+
+### Sprint ✅ — Owner obligatoire sur les deals (PR #106, 2026-08-04)
+- **Objectif** : garantir un `owner` sur tout DecisionCycle, quel que soit le
+  chemin de création.
+- **Livré** : `owner = créateur` posé aux TROIS endroits —
+  fabrication du DC (`activity_creation_service.py`), garde du serializer
+  (`decision_cycles/serializers.py`, refuse l'anonyme + force `owner=user` en
+  `create()`), et filet au `save()` (`decision_cycles/models.py`, fallback
+  actor puis `created_by`). PAS de migration (le champ `owner` est déjà nullable,
+  préexistant).
+- **Rectification de prémisse** : « owner posé sur AUCUN chemin avant » est
+  FAUX — le serializer `create()` posait DÉJÀ owner. Le vrai trou fermé par #106
+  est le chemin de FABRICATION (`activity_creation_service`), qui créait le
+  cycle sans owner. Par ailleurs un backfill EXISTE déjà (migration préexistante
+  `0010_decisioncycle_owner`, `RunPython` `owner = created_by` là où
+  `created_by` est non-null) : le résiduel non couvert est le DC ayant à la fois
+  `owner` ET `created_by` null (données de test) — dette **TD-142**.
+- **Validation** : `tests/decision_cycles/test_dc_owner_is_creator.py`.
+
+### Sprint ✅ — Cycle de vie utilisateur (PR #105 + #107, 2026-08-04)
+- **Objectif** : la suppression d'un utilisateur devient impossible ; la
+  désactivation transfère son travail à un successeur.
+- **Livré (composé, tout vérifié dans le code)** :
+  - **Suppression user INTERDITE inconditionnellement** — refus au `destroy`
+    individuel (`_validate_user_deletion`), filet `ProtectedError` capturé, ET
+    refus sur le `bulk_delete` ; le message oriente vers la désactivation.
+  - **Désactivation → transfert atomique à un SUCCESSEUR** (actif, même tenant,
+    ≠ la personne), dans UNE `transaction.atomic` (`partial_update`) : deals
+    non terminaux, comptes de TOUT type, activités non terminées liées à un deal.
+  - **Campagnes** : OUTBOUND annulées ; TARGETED vidée ; activités libres non
+    terminées annulées.
+  - **Annulation de campagne (manuelle OU via désactivation)** → contacts non
+    terminaux (PENDING, IN_PROGRESS, ON_HOLD, CALLBACK_PENDING) → STOPPED ;
+    terminaux (COMPLETED, STOPPED) épargnés (chemin partagé
+    `CampaignLifecycleService.cancel` → `_stop_remaining_contacts`).
+  - **Team d'un compte dérivée de l'owner** (property, non stockée) → suit
+    automatiquement au transfert.
+  - **Fenêtre de désactivation** front (`DeactivateUserDialog.jsx` +
+    `SuccessorPicker.jsx`) avec sélecteur de successeur + récap des compteurs.
+  - **Manager d'équipe NON modifié** (choix produit : une équipe peut rester
+    sans manager).
+  - **Réactivation ne restaure rien** (simple `partial_update`, la garde ne se
+    déclenche qu'à la bascule actif→inactif).
+- **Attribution** : #105 = la feature (backend + frontend, aucune migration) ;
+  #107 = deux correctifs backend (transfert des comptes de TOUS types au lieu de
+  PROSPECT-only ; l'annulation de campagne stoppe désormais les contacts).
+- **Validation** : `tests/integration/end_users/test_perm.py`
+  (`test_delete_refused_*`, `test_bulk_delete_refused`, transferts).
+- **Ferme une dette** : **TD-35** (suppression user vs `Campaign.owner` PROTECT
+  → 500) — la suppression étant désormais interdite et le `ProtectedError`
+  capturé, le crash 500 disparaît ; les anciens tests `test_delete_only_admin_`
+  `allowed` / `test_delete_superuser_allowed` sont remplacés par les tests
+  « refused » (voir TD-35 / TD-77 mis à jour).
+
+### Sprint ✅ — Alignement des tests d'activité (PR #108, 2026-08-04)
+- **Objectif** : aligner les 3 tests portant l'ancienne règle « on supprime les
+  activités » sur la règle actuelle (préservation).
+- **Livré** : 2 fichiers de tests, 3 méthodes — 1 doublon retiré
+  (`test_campaign_bulk_delete.py::test_linked_activities_are_deleted_not_`
+  `orphaned`), 2 assertions corrigées dans
+  `test_delete_conditional.py`. AUCUN code de prod touché (git `--stat` = 2
+  fichiers sous `backend/tests/`).
+- **Validation** : fichiers ciblés verts ; coexistence avec les tests récents de
+  préservation confirmée.
+
 ---
 
 ## Sprints planifiés — phase fonctionnelle
