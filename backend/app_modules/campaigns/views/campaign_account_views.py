@@ -767,7 +767,8 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         contact_ids  = request.data.get('contact_ids', [])
         notes        = request.data.get('notes', '') or ''
         origin_decision_cycle_id = request.data.get('origin_decision_cycle_id')
-        strict       = request.data.get('strict', False)
+        # `strict` is derived server-side after the mode branch (single targeted
+        # contact) — the request value is ignored on purpose (see below).
 
         if not campaign_id:
             raise StandardizedValidationError(
@@ -861,17 +862,6 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     CoreErrorMessages.REQUIRED_FIELD.format(field='contact_ids')
                 )
 
-            # Check opt-out separately before reachability — dedicated error message.
-            if strict and Contact.objects.filter(
-                id__in=contact_ids,
-                account=account,
-                client_id=client_id,
-                opted_out=True,
-            ).exists():
-                raise StandardizedValidationError(
-                    CampaignModuleErrorMessages.CONTACT_OPTED_OUT
-                )
-
             base_qs = Contact.objects.filter(
                 id__in=contact_ids,
                 account=account,
@@ -885,11 +875,6 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             # not in `contacts` was excluded for eligibility (opted-out / no reachable
             # channel), NOT because it was already active — that skip happens later.
             considered_total = base_qs.count()
-            if not contacts:
-                if strict:
-                    raise StandardizedValidationError(
-                        CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE
-                    )
 
         elif enroll_type == 'DEPARTMENT':
             if not department_id:
@@ -939,6 +924,12 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         account_empty = (
             enroll_type in ('ACCOUNT', 'DEPARTMENT') and considered_total == 0
         )
+
+        # `strict` is derived server-side (the frontend no longer sends it): a
+        # single real targeted contact. It carries NO decision — enrollment is
+        # unchanged and no case returns 400 — it only lets the messaging layer
+        # pick singular ("this contact") vs plural wording.
+        strict = enroll_type == 'CONTACT' and base_qs.count() == 1
 
         # Enroll contacts (always) — generate activities only when ACTIVE
         contacts_created = 0
@@ -1022,6 +1013,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     'opted_out_count': opted_out_count,
                     'already_active_count': already_active_count,
                     'account_empty': account_empty,
+                    'strict': strict,
                     'skip_reason': 'no_reachable_contacts',
                     'warning': CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE,
                 },
@@ -1080,6 +1072,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'opted_out_count': opted_out_count,
                 'already_active_count': already_active_count,
                 'account_empty': account_empty,
+                'strict': strict,
                 'skip_reason': (
                     'no_reachable_contacts'
                     if contacts_created == 0 and contact_ids and not strict
