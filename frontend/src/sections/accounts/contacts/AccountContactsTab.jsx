@@ -326,6 +326,26 @@ export default function AccountContactsTab({ accountId, account }) {
           );
         },
       },
+      // Opt-out Column
+      {
+        header: "Opt-out",
+        id: "opted_out",
+        accessorKey: "opted_out",
+        cell: ({ getValue }) => {
+          return getValue() ? (
+            <Chip
+              label="Opted out"
+              size="small"
+              color="error"
+              variant="light"
+            />
+          ) : (
+            <Typography variant="body2" color="text.disabled">
+              —
+            </Typography>
+          );
+        },
+      },
       // Actions Column
       {
         header: "Actions",
