@@ -56,11 +56,8 @@ import { useGetContacts } from "api/businessData/contacts";
 import { useGetDecisionCyclesByAccount } from "api/accounts/decisionCycles";
 
 // utils
-import {
-  displaySuccessSnackbar,
-  displayErrorSnackbar,
-  displayWarningSnackbar,
-} from "utils/displayError";
+import { displayErrorSnackbar } from "utils/displayError";
+import { notifyEnrollmentOutcome } from "utils/enrollmentFeedback";
 
 // icons
 import AimOutlined from "@ant-design/icons/AimOutlined";
@@ -212,7 +209,6 @@ export default function AddToCampaignModal({
           type: "CONTACT",
           account_id: accountId,
           contact_ids: selectedContactIds,
-          strict: selectedContactIds.length === 1,
         };
       } else {
         displayErrorSnackbar({
@@ -230,32 +226,9 @@ export default function AddToCampaignModal({
       const result = await enrollTarget(targetedCampaign.id, payload);
 
       if (result.success) {
-        const data = result.data?.data ?? result.data;
-        const unreachable = data?.unreachable_count ?? 0;
-        const enrolled = data?.contacts_enrolled ?? 0;
-        const name = accountName || "Account";
-
-        // Decide the tone from the reliable signals (contacts_enrolled +
-        // unreachable_count), never skip_reason (which the backend only sets when
-        // not strict). Nothing enrolled is NEVER a success.
-        if (enrolled > 0) {
-          displaySuccessSnackbar(
-            unreachable > 0
-              ? `${name} added to your Targeted Campaign — ${unreachable} contact${unreachable > 1 ? "s" : ""} skipped (no valid email/phone or opted out).`
-              : `${name} added to your Targeted Campaign`,
-          );
-        } else if (unreachable > 0) {
-          // Account/contacts added but nobody could be enrolled (unreachable /
-          // opted out) — a warning, not a red error.
-          displayWarningSnackbar(
-            `${name} added, but no contacts could be enrolled: they must have a valid email or phone and must not be opted out.`,
-          );
-        } else {
-          // Reachable contacts, but all already active in the campaign.
-          displayWarningSnackbar(
-            "These contacts are already active in the campaign",
-          );
-        }
+        // Tone (green/orange) and text come from the cause counters in the
+        // response — see utils/enrollmentFeedback.
+        notifyEnrollmentOutcome(result.data);
         onSuccess?.();
         onClose();
       } else {
@@ -267,7 +240,6 @@ export default function AddToCampaignModal({
   }, [
     targetedCampaign,
     accountId,
-    accountName,
     mode,
     selectedDepartment,
     selectedContactIds,

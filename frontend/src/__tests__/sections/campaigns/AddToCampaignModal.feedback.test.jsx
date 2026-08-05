@@ -1,11 +1,9 @@
 // frontend/src/__tests__/sections/campaigns/AddToCampaignModal.feedback.test.jsx
 //
-// The account/DC wizard must classify enrollment feedback from the reliable signals
-// (contacts_enrolled + unreachable_count), never skip_reason:
-//   enrolled>0                    → success
-//   enrolled=0 && unreachable>0   → WARNING (added, but nobody enrollable)
-//   enrolled=0 && unreachable=0   → WARNING (already active)   [was a false success]
-//   success:false                 → error
+// The wizard routes the enroll_target response through notifyEnrollmentOutcome
+// (not mocked): green when contacts_enrolled > 0, orange otherwise, with the
+// cause-specific text. Red stays only for result.success === false. Driven in
+// ACCOUNT mode, so strict is false (plural / account wording).
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
@@ -69,33 +67,73 @@ function submitAccountMode() {
   fireEvent.click(screen.getByRole("button", { name: /Add to Campaign/i }));
 }
 
+const body = (over) => ({
+  success: true,
+  data: {
+    data: {
+      contacts_enrolled: 0,
+      no_channel_count: 0,
+      opted_out_count: 0,
+      already_active_count: 0,
+      account_empty: false,
+      strict: false,
+      ...over,
+    },
+  },
+});
+
 describe("AddToCampaignModal — enrollment feedback", () => {
-  it("enrolled>0 → success", async () => {
-    h.enrollTarget.mockResolvedValue({ success: true, data: { data: { contacts_enrolled: 1, unreachable_count: 0 } } });
+  it("enrolled>0, nothing skipped → green 'Contact(s) enrolled'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ contacts_enrolled: 1 }));
     submitAccountMode();
-    await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalledWith("Contact(s) enrolled"));
     expect(displayWarningSnackbar).not.toHaveBeenCalled();
     expect(displayErrorSnackbar).not.toHaveBeenCalled();
   });
 
-  it("enrolled=0 & unreachable>0 → WARNING (not error)", async () => {
-    h.enrollTarget.mockResolvedValue({ success: true, data: { data: { contacts_enrolled: 0, unreachable_count: 2 } } });
+  it("enrolled>0 with some skipped → green 'Enrolled. N contacts skipped'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ contacts_enrolled: 2, no_channel_count: 1, opted_out_count: 1 }));
     submitAccountMode();
-    await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledTimes(1));
-    expect(displayWarningSnackbar.mock.calls[0][0]).toMatch(/no contacts could be enrolled/i);
+    await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalledWith("Enrolled. 2 contacts skipped"));
+  });
+
+  it("enrolled=0, all no-channel → orange 'No reachable contact in this account'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ no_channel_count: 2 }));
+    submitAccountMode();
+    await waitFor(() =>
+      expect(displayWarningSnackbar).toHaveBeenCalledWith("No reachable contact in this account"),
+    );
     expect(displaySuccessSnackbar).not.toHaveBeenCalled();
     expect(displayErrorSnackbar).not.toHaveBeenCalled();
   });
 
-  it("enrolled=0 & unreachable=0 → WARNING (already active), NOT success", async () => {
-    h.enrollTarget.mockResolvedValue({ success: true, data: { data: { contacts_enrolled: 0, unreachable_count: 0 } } });
+  it("enrolled=0, all opted out → orange 'All contacts have opted out'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ opted_out_count: 3 }));
     submitAccountMode();
-    await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledTimes(1));
-    expect(displayWarningSnackbar.mock.calls[0][0]).toMatch(/already active/i);
-    expect(displaySuccessSnackbar).not.toHaveBeenCalled();
+    await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledWith("All contacts have opted out"));
   });
 
-  it("success:false → error", async () => {
+  it("enrolled=0, already active → orange 'Already enrolled'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ already_active_count: 2 }));
+    submitAccountMode();
+    await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledWith("Already enrolled"));
+  });
+
+  it("enrolled=0, account empty → orange 'No contacts'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ account_empty: true }));
+    submitAccountMode();
+    await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledWith("No contacts"));
+  });
+
+  it("enrolled=0, mixed causes → orange generic 'No reachable contact in this account'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ no_channel_count: 1, opted_out_count: 1 }));
+    submitAccountMode();
+    await waitFor(() =>
+      expect(displayWarningSnackbar).toHaveBeenCalledWith("No reachable contact in this account"),
+    );
+  });
+
+  it("success:false → red error", async () => {
     h.enrollTarget.mockResolvedValue({ success: false, error: "boom", status: 400 });
     submitAccountMode();
     await waitFor(() => expect(displayErrorSnackbar).toHaveBeenCalledTimes(1));
