@@ -14,9 +14,10 @@ set of contacts that ends up enrolled. This pins the current behaviour before
 the inline predicates are swapped onto Contact.filter_reachable, so the swap is
 proven iso-behaviour (and any drift turns red).
 
-Reachable (enrolled) = email-only, phone-only, both, and the documented debt
-case email='' + phone=NULL. Excluded = no channel, and opted-out (even with a
-channel). Real endpoints, Postgres 5432.
+Reachable (enrolled) = email-only, phone-only, both. Excluded = no channel,
+opted-out (even with a channel), and the former debt case email='' + phone=NULL
+(no real channel — excluded since the E2 exclude fix). Real endpoints,
+Postgres 5432.
 """
 from datetime import timedelta
 
@@ -70,8 +71,9 @@ def _mk(account, user_a, *, email, phone, opted_out=False, dept=None):
 def _seed_matrix(account, user_a, dept=None):
     """
     Seed the channel matrix. Returns (reachable_ids, all_ids).
-    reachable = email-only, phone-only, both, debt('' + NULL).
-    excluded  = no-channel, opted-out(with channel).
+    reachable = email-only, phone-only, both.
+    excluded  = no-channel, opted-out(with channel), and the former debt case
+                email='' + phone=NULL (no real channel — excluded since E2).
     """
     c_email = _mk(account, user_a, email="e1@x.io", phone=None, dept=dept)
     c_phone = _mk(account, user_a, email=None, phone="+14155550001", dept=dept)
@@ -81,8 +83,8 @@ def _seed_matrix(account, user_a, dept=None):
                   opted_out=True, dept=dept)
     c_debt = _mk(account, user_a, email="", phone=None, dept=dept)
 
-    reachable = {c_email.id, c_phone.id, c_both.id, c_debt.id}
-    all_ids = reachable | {c_none.id, c_opted.id}
+    reachable = {c_email.id, c_phone.id, c_both.id}
+    all_ids = reachable | {c_none.id, c_opted.id, c_debt.id}
     return reachable, all_ids
 
 
