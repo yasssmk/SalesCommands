@@ -767,7 +767,8 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         contact_ids  = request.data.get('contact_ids', [])
         notes        = request.data.get('notes', '') or ''
         origin_decision_cycle_id = request.data.get('origin_decision_cycle_id')
-        strict       = request.data.get('strict', False)
+        # `strict` is derived server-side after the mode branch (single targeted
+        # contact) — the request value is ignored on purpose (see below).
 
         if not campaign_id:
             raise StandardizedValidationError(
@@ -850,67 +851,47 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         if created:
             campaign_account.save(user=request.user, client_id=client_id)
 
-        # Resolve contacts to enroll based on type
+        # Resolve contacts to enroll based on type. `base_qs` is the set of
+        # contacts targeted by this enrollment BEFORE any opt-out/channel filter;
+        # it is the denominator used by the cause counters computed below.
         considered_total = 0  # contacts targeted by this enrollment (per mode)
+        base_qs = Contact.objects.none()
         if enroll_type == 'CONTACT':
             if not contact_ids:
                 raise StandardizedValidationError(
                     CoreErrorMessages.REQUIRED_FIELD.format(field='contact_ids')
                 )
 
-            # Check opt-out separately before reachability — dedicated error message.
-            if strict and Contact.objects.filter(
+            base_qs = Contact.objects.filter(
                 id__in=contact_ids,
                 account=account,
                 client_id=client_id,
-                opted_out=True,
-            ).exists():
-                raise StandardizedValidationError(
-                    CampaignModuleErrorMessages.CONTACT_OPTED_OUT
-                )
-
-            contacts = list(
-                Contact.filter_reachable(
-                    Contact.objects.filter(
-                        id__in=contact_ids,
-                        account=account,
-                        client_id=client_id,
-                        opted_out=False,
-                    )
-                )
             )
-            # Contacts considered for this enrollment (the requested ids). Anything
+            contacts = list(
+                Contact.filter_reachable(base_qs.filter(opted_out=False))
+            )
+            # considered_total counts the REAL targeted contacts (existing rows),
+            # not the raw requested ids — invalid / foreign ids are ignored. Anything
             # not in `contacts` was excluded for eligibility (opted-out / no reachable
             # channel), NOT because it was already active — that skip happens later.
-            considered_total = len(contact_ids)
-            if not contacts:
-                if strict:
-                    raise StandardizedValidationError(
-                        CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE
-                    )
+            considered_total = base_qs.count()
 
         elif enroll_type == 'DEPARTMENT':
             if not department_id:
                 raise StandardizedValidationError(
                     CoreErrorMessages.REQUIRED_FIELD.format(field='department_id')
                 )
-            contacts = list(
-                Contact.filter_reachable(
-                    Contact.objects.filter(
-                        account=account,
-                        client_id=client_id,
-                        opted_out=False,
-                        standard_department_id=department_id,
-                    )
-                )
-            )
-            # Every contact of the department is considered; those not in `contacts`
-            # were excluded for eligibility (opted-out / no reachable channel).
-            considered_total = Contact.objects.filter(
+            base_qs = Contact.objects.filter(
                 account=account,
                 client_id=client_id,
                 standard_department_id=department_id,
-            ).count()
+            )
+            contacts = list(
+                Contact.filter_reachable(base_qs.filter(opted_out=False))
+            )
+            # Every contact of the department is considered; those not in `contacts`
+            # were excluded for eligibility (opted-out / no reachable channel).
+            considered_total = base_qs.count()
             # Store department filter on the CampaignAccount
             try:
                 from app_modules.core_modules.models import StandardDepartment
@@ -919,24 +900,36 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             except Exception:
                 pass
         else:  # ACCOUNT — all non opted-out contacts
+            base_qs = Contact.objects.filter(
+                account=account,
+                client_id=client_id,
+            )
             contacts = list(
-                Contact.filter_reachable(
-                    Contact.objects.filter(
-                        account=account,
-                        client_id=client_id,
-                        opted_out=False,
-                    )
-                )
+                Contact.filter_reachable(base_qs.filter(opted_out=False))
             )
             # Every contact of the account is considered; those not in `contacts`
             # were excluded for eligibility (opted-out / no reachable channel). This
             # is what makes unreachable_count meaningful in ACCOUNT mode (where
             # contact_ids is empty), so the frontend can tell "0 reachable" apart
             # from "already active".
-            considered_total = Contact.objects.filter(
-                account=account,
-                client_id=client_id,
-            ).count()
+            considered_total = base_qs.count()
+
+        # Cause counters (E4) — split the fused unreachable_count into disjoint
+        # buckets so callers can tell WHY a contact was not enrolled. opted_out
+        # takes precedence: an opted-out contact is counted here even if it also
+        # lacks a channel or is already active. already_active_count is derived
+        # after the enrollment loop (eligible contacts minus those enrolled).
+        opted_out_count = base_qs.filter(opted_out=True).count()
+        no_channel_count = base_qs.filter(opted_out=False).count() - len(contacts)
+        account_empty = (
+            enroll_type in ('ACCOUNT', 'DEPARTMENT') and considered_total == 0
+        )
+
+        # `strict` is derived server-side (the frontend no longer sends it): a
+        # single real targeted contact. It carries NO decision — enrollment is
+        # unchanged and no case returns 400 — it only lets the messaging layer
+        # pick singular ("this contact") vs plural wording.
+        strict = enroll_type == 'CONTACT' and base_qs.count() == 1
 
         # Enroll contacts (always) — generate activities only when ACTIVE
         contacts_created = 0
@@ -999,6 +992,10 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 )
                 activities_created += count if isinstance(count, int) else 0
         
+        # Eligible contacts that were skipped because they already had open
+        # planned activities in this campaign (disjoint from opted_out/no_channel).
+        already_active_count = len(contacts) - contacts_created
+
         # If no contacts were enrolled and the CampaignAccount was just created,
         # delete it — an account with no reachable contacts must not block
         # campaign completion or pollute the accounts list.
@@ -1012,6 +1009,11 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     'activities_created': 0,
                     'contacts_skipped': len(contact_ids) if contact_ids else 0,
                     'unreachable_count': max(0, considered_total - len(contacts)),
+                    'no_channel_count': no_channel_count,
+                    'opted_out_count': opted_out_count,
+                    'already_active_count': already_active_count,
+                    'account_empty': account_empty,
+                    'strict': strict,
                     'skip_reason': 'no_reachable_contacts',
                     'warning': CampaignModuleErrorMessages.CONTACT_NOT_REACHABLE,
                 },
@@ -1066,6 +1068,11 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 'activities_created': activities_created,
                 'contacts_skipped': len(contact_ids) - contacts_created if contact_ids else 0,
                 'unreachable_count': unreachable_count,
+                'no_channel_count': no_channel_count,
+                'opted_out_count': opted_out_count,
+                'already_active_count': already_active_count,
+                'account_empty': account_empty,
+                'strict': strict,
                 'skip_reason': (
                     'no_reachable_contacts'
                     if contacts_created == 0 and contact_ids and not strict

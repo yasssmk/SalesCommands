@@ -1,10 +1,10 @@
 // frontend/src/__tests__/sections/campaigns/AddTargetToCampaignModal.feedback.test.jsx
 //
-// BUG A — the Add Target modal must NOT claim success when nothing was enrolled.
-// The decision keys on the real contacts_enrolled count, not skip_reason (which the
-// backend only sets when not strict; the modal always sends strict:true).
-//   - contacts_enrolled === 0 (success:true) → info "already active", NOT success
-//   - contacts_enrolled  >  0                → success "Contact added to campaign"
+// The Add Target modal (single contact) routes the enroll_target response
+// through notifyEnrollmentOutcome. Since it targets one contact, the server
+// derives strict → singular messages. An unreachable contact now returns
+// 201/contacts_enrolled=0 (no 4xx anymore) and must be named by its cause, NOT
+// mislabelled "already active".
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
@@ -18,14 +18,10 @@ vi.mock("next/font/google", () => ({
   Public_Sans: () => ({ className: "mock-public-sans", style: { fontFamily: "mock" } }),
 }));
 
-const h = vi.hoisted(() => ({
-  enrollTarget: vi.fn(),
-}));
+const h = vi.hoisted(() => ({ enrollTarget: vi.fn() }));
 
 vi.mock("api/campaigns/campaigns", () => ({
   enrollTarget: (...a) => h.enrollTarget(...a),
-  // useGetCampaignContacts is used by the sibling AddToCampaignModal, not this one,
-  // but keep the module shape harmless.
   useGetCampaignContacts: () => ({ campaignContacts: [] }),
 }));
 
@@ -35,7 +31,7 @@ vi.mock("utils/displayError", () => ({
   displayWarningSnackbar: vi.fn(),
 }));
 
-// Stub the async contact picker: one click selects a reachable contact.
+// Stub the async contact picker: one click selects a contact.
 vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
   default: ({ onChange }) => (
     <button
@@ -65,12 +61,7 @@ afterEach(() => {
 function openAndSubmit() {
   render(
     <ThemeProvider theme={theme}>
-      <AddTargetToCampaignModal
-        campaignId="camp-1"
-        open
-        onClose={vi.fn()}
-        onSuccess={vi.fn()}
-      />
+      <AddTargetToCampaignModal campaignId="camp-1" open onClose={vi.fn()} onSuccess={vi.fn()} />
     </ThemeProvider>,
   );
   fireEvent.click(screen.getByText("pick-contact")); // select a contact
@@ -78,30 +69,54 @@ function openAndSubmit() {
   fireEvent.click(buttons[buttons.length - 1]); // the submit button (last)
 }
 
-describe("AddTargetToCampaignModal — enrollment feedback", () => {
-  it("contacts_enrolled=0 → warning 'already active', NOT a success snackbar", async () => {
-    h.enrollTarget.mockResolvedValue({
-      success: true,
-      data: { data: { contacts_enrolled: 0, skip_reason: null } },
-    });
-    openAndSubmit();
+// Single-contact modal → server derives strict = true.
+const body = (over) => ({
+  success: true,
+  data: {
+    data: {
+      contacts_enrolled: 0,
+      no_channel_count: 0,
+      opted_out_count: 0,
+      already_active_count: 0,
+      account_empty: false,
+      strict: true,
+      ...over,
+    },
+  },
+});
 
-    await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledTimes(1));
-    expect(displayWarningSnackbar).toHaveBeenCalledWith(
-      "This contact is already active in the campaign",
+describe("AddTargetToCampaignModal — enrollment feedback", () => {
+  it("unreachable contact → orange 'This contact has no email, phone or LinkedIn' (not 'already active')", async () => {
+    h.enrollTarget.mockResolvedValue(body({ no_channel_count: 1 }));
+    openAndSubmit();
+    await waitFor(() =>
+      expect(displayWarningSnackbar).toHaveBeenCalledWith(
+        "This contact has no email, phone or LinkedIn",
+      ),
     );
     expect(displaySuccessSnackbar).not.toHaveBeenCalled();
   });
 
-  it("contacts_enrolled>0 → success 'Contact added to campaign'", async () => {
-    h.enrollTarget.mockResolvedValue({
-      success: true,
-      data: { data: { contacts_enrolled: 1, skip_reason: null } },
-    });
+  it("opted-out contact → orange 'This contact has opted out'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ opted_out_count: 1 }));
     openAndSubmit();
+    await waitFor(() =>
+      expect(displayWarningSnackbar).toHaveBeenCalledWith("This contact has opted out"),
+    );
+    expect(displaySuccessSnackbar).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalledTimes(1));
-    expect(displaySuccessSnackbar).toHaveBeenCalledWith("Contact added to campaign");
+  it("already active → orange 'Already enrolled'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ already_active_count: 1 }));
+    openAndSubmit();
+    await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledWith("Already enrolled"));
+    expect(displaySuccessSnackbar).not.toHaveBeenCalled();
+  });
+
+  it("contacts_enrolled>0 → green 'Contact(s) enrolled'", async () => {
+    h.enrollTarget.mockResolvedValue(body({ contacts_enrolled: 1 }));
+    openAndSubmit();
+    await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalledWith("Contact(s) enrolled"));
     expect(displayWarningSnackbar).not.toHaveBeenCalled();
   });
 });
