@@ -7,6 +7,7 @@ Uses UUID primary key and follows ModuleBaseModel patterns.
 """
 
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from app_modules.core_modules.models.moduleBaseModels import ModuleBaseModel
 from core.models import ContactDetailsMixin
@@ -175,3 +176,44 @@ class Contact(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDetailsMixi
         self.opted_out = True
         self.save(user=user)
         return self
+
+    # ==========================================================================
+    # ENROLLMENT REACHABILITY — single source of the channel predicate
+    # ==========================================================================
+
+    @classmethod
+    def filter_reachable(cls, queryset, *, email_only=False):
+        """
+        Restrict a Contact queryset to contacts that have a reachable channel.
+
+        Single source of the enrollment "reachable channel" predicate, shared by
+        every enrollment path (bulk add, targeted enroll, territory pre-creation,
+        activity generation). Mirrors the form of
+        ``ContactFilterService.apply_filters``: it takes a queryset that is
+        already scoped by ``client_id`` and returns the filtered queryset.
+
+        This is a PURE predicate: it never re-scopes the tenant, and it does NOT
+        handle ``opted_out`` — that exclusion stays at each call site.
+
+        Args:
+            queryset: a Contact queryset already scoped by the caller.
+            email_only: when True, require an email address only (mirrors the
+                ``channel_override == 'EMAIL_ONLY'`` branch of the enrollment
+                sites); otherwise require email OR phone.
+
+        Returns:
+            The filtered queryset (lazy — nothing is evaluated here).
+
+        Known debt (preserved verbatim, revisited in E2): a contact with
+        ``email='' + phone_number=NULL`` (or the mirror ``email=NULL +
+        phone_number=''``) is treated as reachable, because
+        ``.exclude(Q(email='') & Q(phone_number=''))`` never matches when one
+        side is NULL (``NULL = ''`` evaluates to NULL in SQL).
+        """
+        if email_only:
+            return queryset.filter(email__isnull=False).exclude(email='')
+        return queryset.filter(
+            Q(email__isnull=False) | Q(phone_number__isnull=False)
+        ).exclude(
+            Q(email='') & Q(phone_number='')
+        )
