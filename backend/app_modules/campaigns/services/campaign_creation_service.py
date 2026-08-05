@@ -284,7 +284,6 @@ class CampaignCreationService:
         Also pre-creates CampaignContact rows in PENDING so TargetsTab
         shows contacts before Start is clicked. Activities are generated at start().
         """
-        from django.db.models import Q
         from ..models import CampaignContact, CampaignContactStatus
 
         territories = campaign.territories.all()
@@ -335,17 +334,8 @@ class CampaignCreationService:
                 client_id=self.client_id,
                 opted_out=False,
             )
-            if getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY':
-                contact_qs = contact_qs.filter(
-                    email__isnull=False,
-                ).exclude(email='')
-            else:
-                contact_qs = contact_qs.filter(
-                    Q(email__isnull=False) | Q(phone_number__isnull=False)
-                ).exclude(
-                    Q(email='') & Q(phone_number='')
-                )
-            contacts = contact_qs
+            email_only = getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY'
+            contacts = Contact.filter_reachable(contact_qs, email_only=email_only)
 
             for contact in contacts:
                 CampaignContact.objects.get_or_create(
