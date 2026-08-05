@@ -23,10 +23,10 @@ Contact.filter_reachable.
 
 Channel matrix (same for both branches):
     email-only, phone-only, both, no-channel, opted-out(+channel),
-    and the documented debt case email='' + phone=NULL.
+    and the former debt case email='' + phone=NULL (no real channel).
 
 Expected set with an activity:
-    - default    : {email-only, phone-only, both, debt}
+    - default    : {email-only, phone-only, both}   (debt excluded since E2)
     - EMAIL_ONLY : {email-only, both}
 
 Real generation path, Postgres 5432.
@@ -114,7 +114,7 @@ def _contacts_with_activities(campaign):
 class TestGenerationReachableParity:
 
     def test_default_branch_generates_for_email_or_phone(self, account, user_a, client_account_a):
-        """Default: activities generated for reachable = email OR phone (+ debt)."""
+        """Default: activities generated for reachable = email OR phone (debt excluded)."""
         m = _seed_matrix(account, user_a)
         campaign = _campaign(user_a, client_account_a.id, channel_override='AUTO')
         ca = _campaign_account(campaign, account, user_a)
@@ -122,8 +122,9 @@ class TestGenerationReachableParity:
         CampaignExecutionService(user=user_a, client_id=client_account_a.id)\
             ._generate_for_account(campaign, ca, ActivityType.CALL)
 
+        # m['debt'] (email='' + phone=NULL) has no real channel -> excluded (E2 fix).
         assert _contacts_with_activities(campaign) == {
-            m['email'].id, m['phone'].id, m['both'].id, m['debt'].id,
+            m['email'].id, m['phone'].id, m['both'].id,
         }
 
     def test_email_only_branch_generates_for_email_present_only(self, account, user_a, client_account_a):

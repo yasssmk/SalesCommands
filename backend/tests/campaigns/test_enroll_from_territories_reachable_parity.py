@@ -15,10 +15,10 @@ iso-behaviour per branch.
 
 Channel matrix (same for both branches):
     email-only, phone-only, both, no-channel, opted-out(+channel),
-    and the documented debt case email='' + phone=NULL.
+    and the former debt case email='' + phone=NULL (no real channel).
 
 Expected retained set:
-    - default    : {email-only, phone-only, both, debt}
+    - default    : {email-only, phone-only, both}   (debt excluded since E2)
     - EMAIL_ONLY : {email-only, both}   (phone-only w/o email is the core exclusion)
 
 Real method, Postgres 5432.
@@ -99,7 +99,7 @@ def _enrolled_contact_ids(campaign):
 class TestEnrollFromTerritoriesReachableParity:
 
     def test_default_branch_enrolls_email_or_phone(self, account, user_a, client_account_a):
-        """Default channel_override: pre-create reachable = email OR phone (+ debt)."""
+        """Default channel_override: pre-create reachable = email OR phone (debt excluded)."""
         m = _seed_matrix(account, user_a)
         territory = _empty_territory(user_a, client_account_a.id)
         campaign = _outbound_campaign(user_a, client_account_a.id, channel_override='AUTO')
@@ -108,8 +108,9 @@ class TestEnrollFromTerritoriesReachableParity:
         CampaignCreationService(user=user_a, client_id=client_account_a.id)\
             ._enroll_from_territories(campaign)
 
+        # m['debt'] (email='' + phone=NULL) has no real channel -> excluded (E2 fix).
         assert _enrolled_contact_ids(campaign) == {
-            m['email'].id, m['phone'].id, m['both'].id, m['debt'].id,
+            m['email'].id, m['phone'].id, m['both'].id,
         }
 
     def test_email_only_branch_enrolls_email_present_only(self, account, user_a, client_account_a):

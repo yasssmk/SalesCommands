@@ -199,21 +199,23 @@ class Contact(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDetailsMixi
             queryset: a Contact queryset already scoped by the caller.
             email_only: when True, require an email address only (mirrors the
                 ``channel_override == 'EMAIL_ONLY'`` branch of the enrollment
-                sites); otherwise require email OR phone.
+                sites); otherwise require email OR phone OR linkedin.
 
         Returns:
             The filtered queryset (lazy — nothing is evaluated here).
 
-        Known debt (preserved verbatim, revisited in E2): a contact with
-        ``email='' + phone_number=NULL`` (or the mirror ``email=NULL +
-        phone_number=''``) is treated as reachable, because
-        ``.exclude(Q(email='') & Q(phone_number=''))`` never matches when one
-        side is NULL (``NULL = ''`` evaluates to NULL in SQL).
+        A contact is reachable in the default mode when at least one channel —
+        email, phone, or linkedin — is present, counting a channel only when it
+        is both non-NULL and non-empty. Testing presence and non-emptiness per
+        channel fixes an earlier two-channel form whose separate ``.exclude``
+        let mixed NULL/'' rows (e.g. ``email='' + phone_number=NULL``) slip
+        through as reachable. EMAIL_ONLY stays strictly email — LinkedIn does
+        not count there.
         """
         if email_only:
             return queryset.filter(email__isnull=False).exclude(email='')
         return queryset.filter(
-            Q(email__isnull=False) | Q(phone_number__isnull=False)
-        ).exclude(
-            Q(email='') & Q(phone_number='')
+            (Q(email__isnull=False) & ~Q(email=''))
+            | (Q(phone_number__isnull=False) & ~Q(phone_number=''))
+            | (Q(linkedin__isnull=False) & ~Q(linkedin=''))
         )
