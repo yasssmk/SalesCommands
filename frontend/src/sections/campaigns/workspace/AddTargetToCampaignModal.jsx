@@ -20,11 +20,8 @@ import UserAddOutlined from "@ant-design/icons/UserAddOutlined";
 import MainCard from "components/MainCard";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import { enrollTarget } from "api/campaigns/campaigns";
-import {
-  displaySuccessSnackbar,
-  displayErrorSnackbar,
-  displayWarningSnackbar,
-} from "utils/displayError";
+import { displayErrorSnackbar } from "utils/displayError";
+import { notifyEnrollmentOutcome } from "utils/enrollmentFeedback";
 
 // ==============================|| ADD TARGET TO CAMPAIGN MODAL ||============================== //
 
@@ -84,33 +81,16 @@ export default function AddTargetToCampaignModal({
         type: "CONTACT",
         account_id: accountId,
         contact_ids: [selectedContact.id],
-        strict: true,
       });
 
       if (result.success) {
-        const contactsEnrolled =
-          result.data?.data?.contacts_enrolled ??
-          result.data?.contacts_enrolled ??
-          0;
-
-        // Nothing was actually enrolled (the single contact is already active in
-        // the campaign — a genuinely unreachable/opted-out contact raises 4xx
-        // upstream, handled by the error branch below). Never claim success; a
-        // "nothing happened" outcome is a warning. The signal is the real
-        // contacts_enrolled count, not skip_reason (which the backend only sets
-        // when not strict — the modal always sends strict:true).
-        if (contactsEnrolled === 0) {
-          displayWarningSnackbar(
-            "This contact is already active in the campaign",
-          );
-          setSelectedContact(null);
-          onClose();
-          return;
-        }
-
-        displaySuccessSnackbar("Contact added to campaign");
+        // Tone and text come from the response cause counters. This single
+        // contact makes the server derive strict, so the messages are singular
+        // (e.g. "This contact has no email, phone or LinkedIn" for an
+        // unreachable contact — no longer mislabelled "already active").
+        const outcome = notifyEnrollmentOutcome(result.data);
         setSelectedContact(null);
-        onSuccess?.();
+        if (outcome.kind === "success") onSuccess?.();
         onClose();
       } else {
         displayErrorSnackbar(result);
