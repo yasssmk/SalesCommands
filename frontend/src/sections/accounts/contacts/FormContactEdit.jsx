@@ -95,6 +95,7 @@ const buildInitialValues = (contact) => {
     standard_department_id: contact.standard_department?.id || contact.standard_department_id || '',
     influence_level: contact.influence_level || '',
     has_buying_authority: contact.has_buying_authority || false,
+    opted_out: contact.opted_out || false,
     notes: contact.notes || ''
   };
 };
@@ -124,9 +125,10 @@ function sanitizePayload(values) {
   payload.standard_department_id = values.standard_department_id || null;
   payload.influence_level = values.influence_level || '';
   
-  // Boolean field
+  // Boolean fields
   payload.has_buying_authority = values.has_buying_authority || false;
-  
+  payload.opted_out = values.opted_out || false;
+
   return payload;
 }
 
@@ -365,6 +367,20 @@ function FormContactEdit({ contact, contactId, closeModal }) {
                     />
                   }
                   label="Has Buying Authority"
+                />
+              </Stack>
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <Stack spacing={1} justifyContent="flex-end" sx={{ height: '100%', pb: 1 }}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={values.opted_out}
+                      onChange={(e) => setFieldValue('opted_out', e.target.checked)}
+                    />
+                  }
+                  label="Opted out"
                 />
               </Stack>
             </Grid>
