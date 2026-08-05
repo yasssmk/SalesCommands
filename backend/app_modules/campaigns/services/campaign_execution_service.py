@@ -13,7 +13,7 @@ Architecture:
 """
 
 from django.db import transaction
-from django.db.models import Case, Count, DateField, F, Prefetch, Q, When
+from django.db.models import Case, Count, DateField, F, Prefetch, When
 from django.utils import timezone
 from datetime import timedelta
 
@@ -555,14 +555,8 @@ class CampaignExecutionService:
             queryset = queryset.filter(standard_department_id__in=dept_ids)
 
         # EMAIL_ONLY: restrict to contacts with a valid email address only.
-        if campaign and getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY':
-            queryset = queryset.filter(email__isnull=False).exclude(email='')
-        else:
-            queryset = queryset.filter(
-                Q(email__isnull=False) | Q(phone_number__isnull=False)
-            ).exclude(
-                Q(email='') & Q(phone_number='')
-            )
+        email_only = bool(campaign) and getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY'
+        queryset = Contact.filter_reachable(queryset, email_only=email_only)
 
         return list(queryset)
 

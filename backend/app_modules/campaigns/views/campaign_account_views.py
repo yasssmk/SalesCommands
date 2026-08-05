@@ -626,14 +626,12 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             # so the account appears in the playlist immediately (matches enroll_target behavior).
             if exec_service is not None:
                 contacts = list(
-                    Contact.objects.filter(
-                        account=account,
-                        client_id=client_id,
-                        opted_out=False,
-                    ).filter(
-                        Q(email__isnull=False) | Q(phone_number__isnull=False)
-                    ).exclude(
-                        Q(email='') & Q(phone_number='')
+                    Contact.filter_reachable(
+                        Contact.objects.filter(
+                            account=account,
+                            client_id=client_id,
+                            opted_out=False,
+                        )
                     )
                 )
                 for contact in contacts:
@@ -872,15 +870,13 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 )
 
             contacts = list(
-                Contact.objects.filter(
-                    id__in=contact_ids,
-                    account=account,
-                    client_id=client_id,
-                    opted_out=False,
-                ).filter(
-                    Q(email__isnull=False) | Q(phone_number__isnull=False)
-                ).exclude(
-                    Q(email='') & Q(phone_number='')
+                Contact.filter_reachable(
+                    Contact.objects.filter(
+                        id__in=contact_ids,
+                        account=account,
+                        client_id=client_id,
+                        opted_out=False,
+                    )
                 )
             )
             # Contacts considered for this enrollment (the requested ids). Anything
@@ -899,15 +895,13 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                     CoreErrorMessages.REQUIRED_FIELD.format(field='department_id')
                 )
             contacts = list(
-                Contact.objects.filter(
-                    account=account,
-                    client_id=client_id,
-                    opted_out=False,
-                    standard_department_id=department_id,
-                ).filter(
-                    Q(email__isnull=False) | Q(phone_number__isnull=False)
-                ).exclude(
-                    Q(email='') & Q(phone_number='')
+                Contact.filter_reachable(
+                    Contact.objects.filter(
+                        account=account,
+                        client_id=client_id,
+                        opted_out=False,
+                        standard_department_id=department_id,
+                    )
                 )
             )
             # Every contact of the department is considered; those not in `contacts`
@@ -926,14 +920,12 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 pass
         else:  # ACCOUNT — all non opted-out contacts
             contacts = list(
-                Contact.objects.filter(
-                    account=account,
-                    client_id=client_id,
-                    opted_out=False,
-                ).filter(
-                    Q(email__isnull=False) | Q(phone_number__isnull=False)
-                ).exclude(
-                    Q(email='') & Q(phone_number='')
+                Contact.filter_reachable(
+                    Contact.objects.filter(
+                        account=account,
+                        client_id=client_id,
+                        opted_out=False,
+                    )
                 )
             )
             # Every contact of the account is considered; those not in `contacts`
