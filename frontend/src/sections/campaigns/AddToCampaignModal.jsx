@@ -135,6 +135,10 @@ export default function AddToCampaignModal({
   const [submitting, setSubmitting] = useState(false);
   const [notes, setNotes] = useState("");
   const [originDecisionCycleId, setOriginDecisionCycleId] = useState(null);
+  // "No calls" per-enrollment override (Voie B): checked -> channel_override
+  // NO_CALLS is posted for every contact enrolled by this action; unchecked ->
+  // no key sent, the contacts follow the campaign.
+  const [noCalls, setNoCalls] = useState(false);
 
   const { cycles: accountCycles, cyclesLoading } =
     useGetDecisionCyclesByAccount(open ? accountId : null);
@@ -150,6 +154,7 @@ export default function AddToCampaignModal({
       setSelectedContactIds(preselectedContactId ? [preselectedContactId] : []);
       setNotes("");
       setOriginDecisionCycleId(null);
+      setNoCalls(false);
     }
   }, [open, preselectedContactId]);
 
@@ -222,6 +227,7 @@ export default function AddToCampaignModal({
       if (notes.trim()) payload.notes = notes.trim();
       if (originDecisionCycleId)
         payload.origin_decision_cycle_id = originDecisionCycleId;
+      if (noCalls) payload.channel_override = "NO_CALLS";
 
       const result = await enrollTarget(targetedCampaign.id, payload);
 
@@ -246,6 +252,7 @@ export default function AddToCampaignModal({
     departments,
     notes,
     originDecisionCycleId,
+    noCalls,
     onClose,
     onSuccess,
   ]);
@@ -551,6 +558,23 @@ export default function AddToCampaignModal({
                       })}
                     </List>
                   )}
+
+                  {/* No calls — per-enrollment channel override */}
+                  <Box sx={{ mt: 2 }}>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          size="small"
+                          checked={noCalls}
+                          onChange={(e) => setNoCalls(e.target.checked)}
+                        />
+                      }
+                      label="No calls"
+                    />
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      No call steps for the contacts added here; email or LinkedIn only.
+                    </Typography>
+                  </Box>
 
                   {/* Notes */}
                   <Box sx={{ mt: 2 }}>
