@@ -67,10 +67,10 @@ describe("notifyEnrollmentOutcome — orange (enrolled == 0)", () => {
     );
   });
 
-  it("single cause, strict, no_channel -> 'This contact has no email, phone or LinkedIn'", () => {
+  it("single cause, strict, no_channel -> 'This contact is not reachable'", () => {
     notifyEnrollmentOutcome(d({ no_channel_count: 1, strict: true }));
     expect(displayWarningSnackbar).toHaveBeenCalledWith(
-      "This contact has no email, phone or LinkedIn",
+      "This contact is not reachable",
     );
   });
 

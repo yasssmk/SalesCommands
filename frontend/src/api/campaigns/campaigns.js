@@ -1449,6 +1449,7 @@ export async function enrollTarget(campaignId, payload) {
     type,
     origin_decision_cycle_id,
     notes,
+    channel_override,
   } = payload;
 
   if (!account_id) {
@@ -1463,6 +1464,9 @@ export async function enrollTarget(campaignId, payload) {
     department_id: department_id || undefined,
     origin_decision_cycle_id: origin_decision_cycle_id || undefined,
     notes: notes || undefined,
+    // Per-contact override (Voie B) — include the key only when provided so it is
+    // genuinely absent otherwise, never sent as channel_override: undefined.
+    ...(channel_override ? { channel_override } : {}),
   });
 
   if (!result.success) {

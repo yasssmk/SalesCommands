@@ -37,9 +37,10 @@ from django.utils import timezone
 from app_modules.activities.constants import ActivityType
 from app_modules.activities.models import Activity
 from app_modules.campaigns.constants import (
-    CampaignType, CampaignStatus, CampaignAccountStatus, ChannelOverride,
+    CampaignType, CampaignStatus, CampaignAccountStatus, CampaignContactStatus,
+    ChannelOverride,
 )
-from app_modules.campaigns.models import Campaign, CampaignAccount
+from app_modules.campaigns.models import Campaign, CampaignAccount, CampaignContact
 from app_modules.campaigns.services.campaign_execution_service import (
     CampaignExecutionService,
 )
@@ -292,3 +293,83 @@ class TestNoCallsGeneration:
             ._generate_for_account(campaign, ca, ActivityType.CALL)
 
         assert _types_for_contact(campaign, contact) == set()
+
+
+def _campaign_contact(campaign_account, contact, user_a, *, channel_override=None):
+    """Pre-create the CampaignContact so it carries a per-contact override before
+    generation runs (generate_activities_for_contact then get_or_create-fetches it)."""
+    cc = CampaignContact(
+        campaign_account=campaign_account,
+        contact=contact,
+        status=CampaignContactStatus.IN_PROGRESS,
+        channel_override=channel_override,
+    )
+    cc.save(user=user_a, client_id=campaign_account.client_id)
+    return cc
+
+
+@pytest.mark.django_db
+class TestEffectiveChannelOverride:
+    """
+    E9b.2 — generation reads the EFFECTIVE override: the CampaignContact's
+    channel_override wins when set, otherwise the campaign's. Proven both ways
+    with the clearest divergence: a phone+email contact is STANDARD (has CALL)
+    under AUTO but WITHOUT_PHONE (no CALL) under NO_CALLS.
+    """
+
+    def test_contact_override_no_calls_wins_over_auto_campaign(
+        self, account, user_a, client_account_a
+    ):
+        """CORE (RED before fix): phone+email contact, AUTO campaign, but the
+        CampaignContact is NO_CALLS -> must drop the call. Before the fix the
+        generation reads the campaign (AUTO) and keeps the CALL -> RED."""
+        contact = _mk(account, user_a, email="x@x.io", phone="+14155550020", linkedin=None)
+        campaign = _campaign(
+            user_a, client_account_a.id, channel_override=ChannelOverride.AUTO
+        )
+        ca = _campaign_account(campaign, account, user_a)
+        _campaign_contact(ca, contact, user_a, channel_override=ChannelOverride.NO_CALLS)
+
+        CampaignExecutionService(user=user_a, client_id=client_account_a.id)\
+            ._generate_for_account(campaign, ca, ActivityType.CALL)
+
+        types = _types_for_contact(campaign, contact)
+        assert ActivityType.CALL not in types, (
+            "contact override NO_CALLS must drop the call on an AUTO campaign; "
+            f"got {sorted(types)}"
+        )
+        assert types == {ActivityType.EMAIL}
+
+    def test_null_override_follows_auto_campaign(
+        self, account, user_a, client_account_a
+    ):
+        """Guard — NULL override follows the campaign: AUTO + phone+email -> STANDARD (has CALL)."""
+        contact = _mk(account, user_a, email="x@x.io", phone="+14155550021", linkedin=None)
+        campaign = _campaign(
+            user_a, client_account_a.id, channel_override=ChannelOverride.AUTO
+        )
+        ca = _campaign_account(campaign, account, user_a)
+        _campaign_contact(ca, contact, user_a, channel_override=None)
+
+        CampaignExecutionService(user=user_a, client_id=client_account_a.id)\
+            ._generate_for_account(campaign, ca, ActivityType.CALL)
+
+        assert _types_for_contact(campaign, contact) == {
+            ActivityType.CALL, ActivityType.EMAIL,
+        }
+
+    def test_null_override_follows_no_calls_campaign(
+        self, account, user_a, client_account_a
+    ):
+        """Guard — NULL override follows the campaign: NO_CALLS + phone+email -> WITHOUT_PHONE (no CALL)."""
+        contact = _mk(account, user_a, email="x@x.io", phone="+14155550022", linkedin=None)
+        campaign = _campaign(
+            user_a, client_account_a.id, channel_override=ChannelOverride.NO_CALLS
+        )
+        ca = _campaign_account(campaign, account, user_a)
+        _campaign_contact(ca, contact, user_a, channel_override=None)
+
+        CampaignExecutionService(user=user_a, client_id=client_account_a.id)\
+            ._generate_for_account(campaign, ca, ActivityType.CALL)
+
+        assert _types_for_contact(campaign, contact) == {ActivityType.EMAIL}

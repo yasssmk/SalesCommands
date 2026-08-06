@@ -72,7 +72,7 @@ function buildOrangeMessage({ noChannel, optedOut, alreadyActive, accountEmpty, 
   }
   // no channel
   return strict
-    ? "This contact has no email, phone or LinkedIn"
+    ? "This contact is not reachable"
     : "No reachable contact in this account";
 }
 

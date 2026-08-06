@@ -194,10 +194,15 @@ class CampaignExecutionService:
         has_email = bool(getattr(contact, 'email', None))
         has_linkedin = bool(getattr(contact, 'linkedin', None))
 
-        # Apply channel override — NO_CALLS never calls: drop the phone so
-        # routing lands on WITHOUT_PHONE (contact has an email) or
-        # LINKEDIN_ONLY (LinkedIn but no email).
-        if getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS:
+        # Apply the effective channel override — the CampaignContact's override
+        # wins when set (non-NULL), otherwise the campaign's. NO_CALLS never
+        # calls: drop the phone so routing lands on WITHOUT_PHONE (contact has an
+        # email) or LINKEDIN_ONLY (LinkedIn but no email).
+        effective_override = (
+            campaign_contact.channel_override
+            or getattr(campaign, 'channel_override', ChannelOverride.AUTO)
+        )
+        if effective_override == ChannelOverride.NO_CALLS:
             has_phone = False
 
         try:
