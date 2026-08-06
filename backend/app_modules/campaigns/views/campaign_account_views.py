@@ -38,7 +38,7 @@ from ..models import (
     CampaignAccountStatus,
     CampaignStatus,
 )
-from ..constants import FINAL_ACCOUNT_STATES, MAX_ACCOUNTS_PER_CAMPAIGN
+from ..constants import FINAL_ACCOUNT_STATES, MAX_ACCOUNTS_PER_CAMPAIGN, ChannelOverride
 from ..serializers import (
     CampaignAccountListSerializer,
     CampaignAccountDetailSerializer,
@@ -767,6 +767,17 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         contact_ids  = request.data.get('contact_ids', [])
         notes        = request.data.get('notes', '') or ''
         origin_decision_cycle_id = request.data.get('origin_decision_cycle_id')
+        # Per-contact channel override (Voie B) — only NO_CALLS is accepted here;
+        # anything else (absent, null, unknown) means "no override, follow the
+        # campaign". This never touches the campaign's own channel_override.
+        enroll_channel_override = (
+            ChannelOverride.NO_CALLS
+            if request.data.get('channel_override') == ChannelOverride.NO_CALLS
+            else None
+        )
+        # When the enrollment is NO_CALLS, a phone-only contact has no written
+        # channel and must be excluded up front (no empty sequence).
+        enroll_no_calls = enroll_channel_override == ChannelOverride.NO_CALLS
         # `strict` is derived server-side after the mode branch (single targeted
         # contact) — the request value is ignored on purpose (see below).
 
@@ -868,7 +879,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 client_id=client_id,
             )
             contacts = list(
-                Contact.filter_reachable(base_qs.filter(opted_out=False))
+                Contact.filter_reachable(base_qs.filter(opted_out=False), no_calls=enroll_no_calls)
             )
             # considered_total counts the REAL targeted contacts (existing rows),
             # not the raw requested ids — invalid / foreign ids are ignored. Anything
@@ -887,7 +898,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 standard_department_id=department_id,
             )
             contacts = list(
-                Contact.filter_reachable(base_qs.filter(opted_out=False))
+                Contact.filter_reachable(base_qs.filter(opted_out=False), no_calls=enroll_no_calls)
             )
             # Every contact of the department is considered; those not in `contacts`
             # were excluded for eligibility (opted-out / no reachable channel).
@@ -905,7 +916,7 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 client_id=client_id,
             )
             contacts = list(
-                Contact.filter_reachable(base_qs.filter(opted_out=False))
+                Contact.filter_reachable(base_qs.filter(opted_out=False), no_calls=enroll_no_calls)
             )
             # Every contact of the account is considered; those not in `contacts`
             # were excluded for eligibility (opted-out / no reachable channel). This
@@ -968,6 +979,9 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                         if campaign.status == CampaignStatus.ACTIVE
                         else CampaignContactStatus.PENDING
                     ),
+                    # Per-contact override posted only on newly enrolled contacts;
+                    # an already-existing CampaignContact keeps its own override.
+                    'channel_override': enroll_channel_override,
                 },
             )
 
