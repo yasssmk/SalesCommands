@@ -179,6 +179,30 @@ class StandardizedAuthenticationFailed(AuthenticationFailed):
     
 
 
+def integrity_error_response(exc):
+    """
+    Build the project's standard response for a database IntegrityError.
+
+    Single source of truth reused by every error entry point: the global DRF
+    handler (custom_exception_handler) AND any view that overrides
+    handle_exception (e.g. BaseAPIView). Returns a clean 409 Conflict in the
+    standard {"error": ...} envelope with a generic, non-technical message —
+    the SQL constraint is never exposed — while the full technical error is
+    logged server-side for debugging.
+    """
+    logger.error(
+        "integrity_error",
+        extra={'error': str(exc)},
+        exc_info=True,
+    )
+    return Response(
+        StandardizedValidationError._format_detail(
+            CoreErrorMessages.DATA_INTEGRITY_CONFLICT
+        ),
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 def custom_exception_handler(exc, context):
     """
     Custom exception handler that ensures consistent error format
@@ -192,21 +216,10 @@ def custom_exception_handler(exc, context):
     # Database integrity violations (unique / foreign-key / not-null) are not
     # recognised by DRF's exception_handler and would otherwise bubble up as a
     # raw HTTP 500 leaking the offending SQL constraint. Convert them to the
-    # project's standard error envelope with a generic, non-technical message
-    # and a 409 Conflict status. The full technical error is logged server-side
-    # so debugging is unaffected.
+    # standard error envelope via the shared helper (also reused by any view
+    # that overrides handle_exception, e.g. BaseAPIView).
     if isinstance(exc, IntegrityError):
-        logger.error(
-            "integrity_error",
-            extra={'error': str(exc)},
-            exc_info=True,
-        )
-        return Response(
-            StandardizedValidationError._format_detail(
-                CoreErrorMessages.DATA_INTEGRITY_CONFLICT
-            ),
-            status=status.HTTP_409_CONFLICT,
-        )
+        return integrity_error_response(exc)
 
     # Get DRF's standard error response
     response = exception_handler(exc, context)

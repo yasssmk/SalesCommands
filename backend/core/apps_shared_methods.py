@@ -7,10 +7,12 @@ from django.core.exceptions import ValidationError as DjangoValidationError, Fie
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 from core.client_scope import ClientScopeManager
+from django.db import IntegrityError
 from core.exceptions import (
     StandardizedValidationError,
     StandardizedPermissionDenied,
     StandardizedAuthenticationFailed,
+    integrity_error_response,
 )
 from core.error_messages import CoreErrorMessages, AuthErrorMessages
 from rest_framework.exceptions import ParseError
@@ -426,7 +428,15 @@ class BaseAPIView(ClientScopeManager.ViewMixin, views.APIView):
             formatted = StandardizedValidationError._format_detail(message)
 
             return Response(formatted, status=status.HTTP_429_TOO_MANY_REQUESTS, headers=headers)
-        
+
+        # === Cas spécial: DB IntegrityError (unique / FK / not-null) ===
+        # This view overrides DRF's handle_exception, so the global
+        # custom_exception_handler never runs here. Route IntegrityError through
+        # the same shared helper so a constraint violation becomes a clean 409
+        # in the standard envelope instead of a raw 500 leaking the SQL.
+        if isinstance(exc, IntegrityError):
+            return integrity_error_response(exc)
+
         # Log selon le type d'exception
         if isinstance(exc, (DRFValidationError, DjangoValidationError, FieldError, ParseError)):
             logger.warning("validation_error", extra=log_context, exc_info=settings.DEBUG)
