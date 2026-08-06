@@ -146,7 +146,27 @@ class Contact(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDetailsMixi
     
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
-    
+
+    def save(self, *args, **kwargs):
+        """
+        Normalize empty optional fields to NULL before persisting.
+
+        email participates in the client-scoped unique constraint
+        (account, email, client_id); phone_number is given the same treatment.
+        PostgreSQL treats '' as a real value (only one '' allowed per scope) but
+        allows many NULLs, so an empty string MUST be stored as NULL to avoid a
+        duplicate-key collision. Every ORM write path funnels through here —
+        single create/edit and bulk_create go through serializer.save(); the
+        mark_* / opt-out actions call self.save(); email/phone_number cannot be
+        written any other way (mass/bulk update is restricted to non-unique
+        fields) — so this is the single central choke point.
+        """
+        if self.email == '':
+            self.email = None
+        if self.phone_number == '':
+            self.phone_number = None
+        super().save(*args, **kwargs)
+
     @property
     def full_name(self):
         """Get the contact's full name."""

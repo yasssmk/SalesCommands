@@ -86,6 +86,10 @@ class CoreErrorMessages:
     
     # Generic
     UNEXPECTED_ERROR = _("An unexpected error occurred: {detail}")
+    # Raised by the global handler for any database integrity violation
+    # (unique / foreign-key / not-null). Deliberately generic — it must never
+    # echo the SQL constraint back to the client.
+    DATA_INTEGRITY_CONFLICT = _("This record conflicts with an existing one.")
     INVALID_REQUEST = _("Invalid request format: {reason}")
     OBJECT_IN_USE = _("Cannot delete {fields} as it is in use")
     CANNOT_DELETE = _("Cannot delete {fields}")
