@@ -979,11 +979,20 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                         if campaign.status == CampaignStatus.ACTIVE
                         else CampaignContactStatus.PENDING
                     ),
-                    # Per-contact override posted only on newly enrolled contacts;
-                    # an already-existing CampaignContact keeps its own override.
                     'channel_override': enroll_channel_override,
                 },
             )
+
+            # Post the per-contact override for THIS enrollment. get_or_create's
+            # defaults only apply on creation, so a row that already existed
+            # (e.g. pre-created PENDING by territory / account enrollment) would
+            # otherwise keep its old value and ignore the requested No-calls
+            # setting. The contact reached this point, so it is being enrolled by
+            # this action — its override must reflect what was asked.
+            if not cc_created and campaign_contact.channel_override != enroll_channel_override:
+                campaign_contact.channel_override = enroll_channel_override
+                campaign_contact.save(user=request.user)
+
 
             # TARGETED only: reactivate contacts that have already completed
             # or been stopped in a previous sequence cycle.
