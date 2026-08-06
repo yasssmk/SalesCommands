@@ -1,9 +1,16 @@
 # core/exceptions.py
+import logging
+
 from rest_framework.exceptions import ValidationError, PermissionDenied, AuthenticationFailed, ErrorDetail
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError
+from rest_framework import status
+from rest_framework.response import Response
 from core.error_messages import CoreErrorMessages
 from rest_framework.exceptions import ParseError
 from rest_framework.exceptions import Throttled
+
+logger = logging.getLogger(__name__)
 
 
 #TO DO: GESTION DES ERREUR 500
@@ -172,6 +179,30 @@ class StandardizedAuthenticationFailed(AuthenticationFailed):
     
 
 
+def integrity_error_response(exc):
+    """
+    Build the project's standard response for a database IntegrityError.
+
+    Single source of truth reused by every error entry point: the global DRF
+    handler (custom_exception_handler) AND any view that overrides
+    handle_exception (e.g. BaseAPIView). Returns a clean 409 Conflict in the
+    standard {"error": ...} envelope with a generic, non-technical message —
+    the SQL constraint is never exposed — while the full technical error is
+    logged server-side for debugging.
+    """
+    logger.error(
+        "integrity_error",
+        extra={'error': str(exc)},
+        exc_info=True,
+    )
+    return Response(
+        StandardizedValidationError._format_detail(
+            CoreErrorMessages.DATA_INTEGRITY_CONFLICT
+        ),
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 def custom_exception_handler(exc, context):
     """
     Custom exception handler that ensures consistent error format
@@ -181,7 +212,15 @@ def custom_exception_handler(exc, context):
     # Convert Django validation errors
     if isinstance(exc, DjangoValidationError):
         exc = StandardizedValidationError(exc.message_dict)
-        
+
+    # Database integrity violations (unique / foreign-key / not-null) are not
+    # recognised by DRF's exception_handler and would otherwise bubble up as a
+    # raw HTTP 500 leaking the offending SQL constraint. Convert them to the
+    # standard error envelope via the shared helper (also reused by any view
+    # that overrides handle_exception, e.g. BaseAPIView).
+    if isinstance(exc, IntegrityError):
+        return integrity_error_response(exc)
+
     # Get DRF's standard error response
     response = exception_handler(exc, context)
     
