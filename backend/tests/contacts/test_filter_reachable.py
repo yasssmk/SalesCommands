@@ -49,16 +49,16 @@ def _mk(client_account_a, user_a, *, email, phone, linkedin=None):
     return c
 
 
-def _reachable_ids(pks, email_only=False):
+def _reachable_ids(pks, no_calls=False):
     qs = Contact.objects.filter(pk__in=pks)
     return set(
-        Contact.filter_reachable(qs, email_only=email_only).values_list('id', flat=True)
+        Contact.filter_reachable(qs, no_calls=no_calls).values_list('id', flat=True)
     )
 
 
 @pytest.mark.django_db
 class TestFilterReachableDefault:
-    """email_only=False -> reachable when email OR phone OR linkedin is present."""
+    """no_calls=False -> reachable when email OR phone OR linkedin is present."""
 
     def test_email_only_present_passes(self, client_account_a, user_a):
         c = _mk(client_account_a, user_a, email='a@b.io', phone=None)
@@ -122,22 +122,27 @@ class TestFilterReachableDefault:
 
 
 @pytest.mark.django_db
-class TestFilterReachableEmailOnly:
-    """email_only=True -> reachable when email is present. LinkedIn does NOT count."""
+class TestFilterReachableNoCalls:
+    """no_calls=True -> reachable on email OR LinkedIn; phone never counts."""
 
     def test_email_present_passes(self, client_account_a, user_a):
         c = _mk(client_account_a, user_a, email='a@b.io', phone=None)
-        assert _reachable_ids([c.id], email_only=True) == {c.id}
+        assert _reachable_ids([c.id], no_calls=True) == {c.id}
 
     def test_phone_only_excluded(self, client_account_a, user_a):
         c = _mk(client_account_a, user_a, email=None, phone='+14155552671')
-        assert _reachable_ids([c.id], email_only=True) == set()
+        assert _reachable_ids([c.id], no_calls=True) == set()
 
     def test_email_empty_string_excluded(self, client_account_a, user_a):
         c = _mk(client_account_a, user_a, email='', phone=None)
-        assert _reachable_ids([c.id], email_only=True) == set()
+        assert _reachable_ids([c.id], no_calls=True) == set()
 
-    def test_linkedin_only_excluded(self, client_account_a, user_a):
-        """EMAIL_ONLY is strictly email — LinkedIn-only stays excluded (E2 must not leak here)."""
+    def test_linkedin_only_passes(self, client_account_a, user_a):
+        """E9a.2: NO_CALLS counts LinkedIn — a LinkedIn-only contact is reachable."""
         c = _mk(client_account_a, user_a, email=None, phone=None, linkedin=_LINKEDIN)
-        assert _reachable_ids([c.id], email_only=True) == set()
+        assert _reachable_ids([c.id], no_calls=True) == {c.id}
+
+    def test_phone_and_linkedin_passes(self, client_account_a, user_a):
+        """NO_CALLS ignores the phone but LinkedIn keeps the contact reachable."""
+        c = _mk(client_account_a, user_a, email=None, phone='+14155552671', linkedin=_LINKEDIN)
+        assert _reachable_ids([c.id], no_calls=True) == {c.id}

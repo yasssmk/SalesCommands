@@ -329,14 +329,15 @@ class CampaignCreationService:
 
             # Pre-create CampaignContacts in PENDING (reachable contacts only).
             # Apply channel_override so NO_CALLS campaigns never pre-create
-            # contacts without an email — they would get no activities generated.
+            # contacts reachable only by phone — they would get no activities
+            # generated (NO_CALLS is reachable on email OR LinkedIn).
             contact_qs = Contact.objects.filter(
                 account=account,
                 client_id=self.client_id,
                 opted_out=False,
             )
-            email_only = getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS
-            contacts = Contact.filter_reachable(contact_qs, email_only=email_only)
+            no_calls = getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS
+            contacts = Contact.filter_reachable(contact_qs, no_calls=no_calls)
 
             for contact in contacts:
                 CampaignContact.objects.get_or_create(

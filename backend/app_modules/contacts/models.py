@@ -182,7 +182,7 @@ class Contact(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDetailsMixi
     # ==========================================================================
 
     @classmethod
-    def filter_reachable(cls, queryset, *, email_only=False):
+    def filter_reachable(cls, queryset, *, no_calls=False):
         """
         Restrict a Contact queryset to contacts that have a reachable channel.
 
@@ -197,23 +197,26 @@ class Contact(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDetailsMixi
 
         Args:
             queryset: a Contact queryset already scoped by the caller.
-            email_only: when True, require an email address only (mirrors the
-                ``channel_override == 'EMAIL_ONLY'`` branch of the enrollment
-                sites); otherwise require email OR phone OR linkedin.
+            no_calls: when True, drop the phone channel (mirrors the
+                ``channel_override == ChannelOverride.NO_CALLS`` branch of the
+                enrollment sites): a contact is reachable on email OR linkedin.
+                When False, require email OR phone OR linkedin.
 
         Returns:
             The filtered queryset (lazy — nothing is evaluated here).
 
-        A contact is reachable in the default mode when at least one channel —
-        email, phone, or linkedin — is present, counting a channel only when it
-        is both non-NULL and non-empty. Testing presence and non-emptiness per
-        channel fixes an earlier two-channel form whose separate ``.exclude``
-        let mixed NULL/'' rows (e.g. ``email='' + phone_number=NULL``) slip
-        through as reachable. EMAIL_ONLY stays strictly email — LinkedIn does
-        not count there.
+        A contact is reachable when at least one accepted channel is present,
+        counting a channel only when it is both non-NULL and non-empty. Testing
+        presence and non-emptiness per channel fixes an earlier two-channel form
+        whose separate ``.exclude`` let mixed NULL/'' rows (e.g.
+        ``email='' + phone_number=NULL``) slip through as reachable. NO_CALLS
+        never uses the phone but still counts LinkedIn — email OR linkedin.
         """
-        if email_only:
-            return queryset.filter(email__isnull=False).exclude(email='')
+        if no_calls:
+            return queryset.filter(
+                (Q(email__isnull=False) & ~Q(email=''))
+                | (Q(linkedin__isnull=False) & ~Q(linkedin=''))
+            )
         return queryset.filter(
             (Q(email__isnull=False) & ~Q(email=''))
             | (Q(phone_number__isnull=False) & ~Q(phone_number=''))
