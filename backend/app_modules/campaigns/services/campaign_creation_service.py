@@ -26,6 +26,7 @@ from ..models import (
     Campaign,
     CampaignType,
     CampaignStatus,
+    ChannelOverride,
     CampaignAccount,
     CampaignAccountStatus,
     CampaignObjective,
@@ -327,14 +328,14 @@ class CampaignCreationService:
                 enrolled += 1
 
             # Pre-create CampaignContacts in PENDING (reachable contacts only).
-            # Apply channel_override so EMAIL_ONLY campaigns never pre-create
+            # Apply channel_override so NO_CALLS campaigns never pre-create
             # contacts without an email — they would get no activities generated.
             contact_qs = Contact.objects.filter(
                 account=account,
                 client_id=self.client_id,
                 opted_out=False,
             )
-            email_only = getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY'
+            email_only = getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS
             contacts = Contact.filter_reachable(contact_qs, email_only=email_only)
 
             for contact in contacts:

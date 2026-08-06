@@ -7,8 +7,8 @@ activity generation). This is the playlist-facing path.
 
 _extract_contacts has BOTH branches:
 
-    - default (channel_override != EMAIL_ONLY): email OR phone
-    - EMAIL_ONLY (channel_override == EMAIL_ONLY): email present only
+    - default (channel_override != NO_CALLS): email OR phone
+    - NO_CALLS (channel_override == NO_CALLS): email present only
 
 The tests use a CampaignAccount with NO target_contacts and NO
 target_departments, so _extract_contacts takes the account-wide path that runs
@@ -27,7 +27,7 @@ Channel matrix (same for both branches):
 
 Expected set with an activity:
     - default    : {email-only, phone-only, both}   (debt excluded since E2)
-    - EMAIL_ONLY : {email-only, both}
+    - NO_CALLS : {email-only, both}
 
 Real generation path, Postgres 5432.
 """
@@ -46,7 +46,7 @@ from app_modules.campaigns.models import Campaign, CampaignAccount
 from app_modules.campaigns.services.campaign_execution_service import CampaignExecutionService
 from app_modules.contacts.models import Contact
 
-EMAIL_ONLY = 'EMAIL_ONLY'
+NO_CALLS = 'NO_CALLS'
 
 
 def _mk(account, user_a, *, email, phone, opted_out=False):
@@ -128,9 +128,9 @@ class TestGenerationReachableParity:
         }
 
     def test_email_only_branch_generates_for_email_present_only(self, account, user_a, client_account_a):
-        """EMAIL_ONLY: activities generated only for contacts with a non-empty email."""
+        """NO_CALLS: activities generated only for contacts with a non-empty email."""
         m = _seed_matrix(account, user_a)
-        campaign = _campaign(user_a, client_account_a.id, channel_override=EMAIL_ONLY)
+        campaign = _campaign(user_a, client_account_a.id, channel_override=NO_CALLS)
         ca = _campaign_account(campaign, account, user_a)
 
         CampaignExecutionService(user=user_a, client_id=client_account_a.id)\

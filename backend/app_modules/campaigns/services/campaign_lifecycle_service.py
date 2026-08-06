@@ -117,7 +117,7 @@ class CampaignLifecycleService:
         
         # Stop accounts that have no contacts after activity generation.
         # These are ghost accounts from territory enrollment where all contacts
-        # were filtered out (e.g. EMAIL_ONLY with no email contacts).
+        # were filtered out (e.g. NO_CALLS with no email contacts).
         # They would never auto-complete via signal since no CampaignContact exists.
         ghost_accounts = CampaignAccount.objects.filter(
             campaign=campaign,
