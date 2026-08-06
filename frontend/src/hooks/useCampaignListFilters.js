@@ -27,7 +27,7 @@ const DEFAULT_FILTERS = {
   campaign_type: "", // '' | OUTBOUND | TARGETED
   territories: "", // territory id
   executor: null, // user object
-  channel_override: "", // '' | AUTO | EMAIL_ONLY
+  channel_override: "", // '' | AUTO | NO_CALLS
   team: null, // team object
 };
 

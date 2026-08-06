@@ -240,15 +240,15 @@ export default function StepObjectiveMembers({
                     sx={{ mr: 4, alignItems: "flex-start" }}
                   />
                   <FormControlLabel
-                    value="EMAIL_ONLY"
+                    value="NO_CALLS"
                     control={<Radio size="small" />}
                     label={
                       <Stack spacing={0}>
                         <Typography variant="body2" fontWeight={500}>
-                          Email only
+                          No calls
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          Force email sequence for all contacts
+                          No call steps; email or LinkedIn
                         </Typography>
                       </Stack>
                     }

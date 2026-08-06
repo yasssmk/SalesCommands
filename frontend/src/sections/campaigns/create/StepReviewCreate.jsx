@@ -27,7 +27,7 @@ import {
 
 const CHANNEL_OVERRIDE_LABELS = {
   AUTO: "Auto (per contact data)",
-  EMAIL_ONLY: "Email only",
+  NO_CALLS: "No calls",
 };
 
 // icons

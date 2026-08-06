@@ -57,7 +57,7 @@ export const CAMPAIGN_TYPE_LABELS = {
 // — it would degrade the creation review screen.
 export const CHANNEL_LABELS = {
   AUTO: "Auto",
-  EMAIL_ONLY: "Email only",
+  NO_CALLS: "No calls",
 };
 
 export const MEMBER_ROLES = {

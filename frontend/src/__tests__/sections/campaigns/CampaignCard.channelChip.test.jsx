@@ -1,8 +1,8 @@
 // frontend/src/__tests__/sections/campaigns/CampaignCard.channelChip.test.jsx
 //
-// The Email Only channel chip on the campaign card. Gated explicitly on
-// isOutbound && channel_override === 'EMAIL_ONLY' — a TARGETED campaign in
-// EMAIL_ONLY must show nothing (proves the gate is explicit, not incidental).
+// The No calls channel chip on the campaign card. Gated explicitly on
+// isOutbound && channel_override === 'NO_CALLS' — a TARGETED campaign in
+// NO_CALLS must show nothing (proves the gate is explicit, not incidental).
 //
 // Real renders, no shared-component mocks. Mirrors CampaignCard.enrichment /
 // progressBar tests (mk() factory with the ...overrides spread). Expected label
@@ -16,7 +16,7 @@ import { CHANNEL_LABELS } from "api/campaigns/campaigns";
 
 afterEach(cleanup);
 
-const EMAIL_ONLY_LABEL = CHANNEL_LABELS.EMAIL_ONLY;
+const NO_CALLS_LABEL = CHANNEL_LABELS.NO_CALLS;
 
 function mk(overrides = {}) {
   return {
@@ -38,14 +38,14 @@ function mk(overrides = {}) {
   };
 }
 
-describe("CampaignCard — Email Only channel chip", () => {
-  it("renders the chip for an OUTBOUND EMAIL_ONLY campaign", () => {
+describe("CampaignCard — No calls channel chip", () => {
+  it("renders the chip for an OUTBOUND NO_CALLS campaign", () => {
     render(
       <CampaignCard
-        campaign={mk({ campaign_type: "OUTBOUND", channel_override: "EMAIL_ONLY" })}
+        campaign={mk({ campaign_type: "OUTBOUND", channel_override: "NO_CALLS" })}
       />,
     );
-    const chip = screen.getByText(EMAIL_ONLY_LABEL);
+    const chip = screen.getByText(NO_CALLS_LABEL);
     expect(chip).toBeInTheDocument();
     // color="info" from the theme (assert the MUI class, never a hex).
     expect(chip.closest(".MuiChip-root").className).toMatch(/MuiChip-colorInfo/);
@@ -57,21 +57,21 @@ describe("CampaignCard — Email Only channel chip", () => {
         campaign={mk({ campaign_type: "OUTBOUND", channel_override: "AUTO" })}
       />,
     );
-    expect(screen.queryByText(EMAIL_ONLY_LABEL)).toBeNull();
+    expect(screen.queryByText(NO_CALLS_LABEL)).toBeNull();
   });
 
-  it("does NOT render the chip for a TARGETED campaign even when EMAIL_ONLY", () => {
-    // channel_override IS 'EMAIL_ONLY' here — the chip is absent purely because
+  it("does NOT render the chip for a TARGETED campaign even when NO_CALLS", () => {
+    // channel_override IS 'NO_CALLS' here — the chip is absent purely because
     // the gate is isOutbound, not because the data is missing.
     render(
       <CampaignCard
         campaign={mk({
           campaign_type: "TARGETED",
           name: "My Targets",
-          channel_override: "EMAIL_ONLY",
+          channel_override: "NO_CALLS",
         })}
       />,
     );
-    expect(screen.queryByText(EMAIL_ONLY_LABEL)).toBeNull();
+    expect(screen.queryByText(NO_CALLS_LABEL)).toBeNull();
   });
 });

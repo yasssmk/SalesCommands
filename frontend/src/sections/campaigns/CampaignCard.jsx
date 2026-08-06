@@ -344,11 +344,11 @@ export default function CampaignCard({
                   variant="outlined"
                   sx={{ height: 20, fontSize: "0.7rem" }}
                 />
-                {/* Email Only channel strategy — OUTBOUND only (a TARGETED in
-                    EMAIL_ONLY shows nothing; the gate is explicit). */}
-                {isOutbound && campaign.channel_override === "EMAIL_ONLY" && (
+                {/* No calls channel strategy — OUTBOUND only (a TARGETED in
+                    NO_CALLS shows nothing; the gate is explicit). */}
+                {isOutbound && campaign.channel_override === "NO_CALLS" && (
                   <Chip
-                    label={CHANNEL_LABELS.EMAIL_ONLY}
+                    label={CHANNEL_LABELS.NO_CALLS}
                     size="small"
                     color="info"
                     variant="outlined"
