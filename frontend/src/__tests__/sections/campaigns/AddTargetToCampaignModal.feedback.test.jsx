@@ -86,12 +86,12 @@ const body = (over) => ({
 });
 
 describe("AddTargetToCampaignModal — enrollment feedback", () => {
-  it("unreachable contact → orange 'This contact has no email, phone or LinkedIn' (not 'already active')", async () => {
+  it("unreachable contact → orange 'This contact is not reachable' (not 'already active')", async () => {
     h.enrollTarget.mockResolvedValue(body({ no_channel_count: 1 }));
     openAndSubmit();
     await waitFor(() =>
       expect(displayWarningSnackbar).toHaveBeenCalledWith(
-        "This contact has no email, phone or LinkedIn",
+        "This contact is not reachable",
       ),
     );
     expect(displaySuccessSnackbar).not.toHaveBeenCalled();

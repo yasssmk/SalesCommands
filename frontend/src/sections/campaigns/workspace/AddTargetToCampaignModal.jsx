@@ -86,8 +86,8 @@ export default function AddTargetToCampaignModal({
       if (result.success) {
         // Tone and text come from the response cause counters. This single
         // contact makes the server derive strict, so the messages are singular
-        // (e.g. "This contact has no email, phone or LinkedIn" for an
-        // unreachable contact — no longer mislabelled "already active").
+        // (e.g. "This contact is not reachable" for an unreachable contact —
+        // no longer mislabelled "already active").
         const outcome = notifyEnrollmentOutcome(result.data);
         setSelectedContact(null);
         if (outcome.kind === "success") onSuccess?.();
