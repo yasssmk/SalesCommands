@@ -133,6 +133,34 @@ class TestGenerationChannelVariants:
         assert ActivityType.EMAIL not in types, "no email channel -> no EMAIL step"
         assert ActivityType.CALL in types, "WITHOUT_EMAIL keeps the calls"
 
+    def test_linkedin_only_generates_linkedin_only(
+        self, account, user_a, client_account_a
+    ):
+        """
+        E8 CORE (RED before the LINKEDIN_ONLY branch exists): a contact with
+        ONLY LinkedIn (no phone, no email) must get a 100% LinkedIn sequence.
+        Before E8 the routing has no branch for (F, F, True), so the contact
+        falls through to the STANDARD fallback and receives calls + emails
+        (channels it does not even have) -> this fails RED until LINKEDIN_ONLY
+        is added and routed before the fallback.
+        """
+        contact = _mk(
+            account, user_a,
+            email=None, phone=None,
+            linkedin="https://www.linkedin.com/in/gero",
+        )
+        campaign = _campaign(user_a, client_account_a.id)
+        ca = _campaign_account(campaign, account, user_a)
+
+        CampaignExecutionService(user=user_a, client_id=client_account_a.id)\
+            ._generate_for_account(campaign, ca, ActivityType.CALL)
+
+        types = _types_for_contact(campaign, contact)
+        assert types == {ActivityType.LINKEDIN}, (
+            "LinkedIn-only contact must get a 100% LinkedIn sequence "
+            f"(LINKEDIN_ONLY variant); got {sorted(types)}"
+        )
+
     def test_phone_and_email_generates_standard_no_linkedin(
         self, account, user_a, client_account_a
     ):

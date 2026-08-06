@@ -69,6 +69,7 @@ class Sequence(ABC):
         WITHOUT_PHONE = 'WITHOUT_PHONE'
         WITHOUT_EMAIL = 'WITHOUT_EMAIL'
         PHONE_ONLY = 'PHONE_ONLY'
+        LINKEDIN_ONLY = 'LINKEDIN_ONLY'
 
         @classmethod
         def get_choices(cls):
@@ -78,6 +79,7 @@ class Sequence(ABC):
                 (cls.WITHOUT_PHONE, 'Without Phone'),
                 (cls.WITHOUT_EMAIL, 'Without Email'),
                 (cls.PHONE_ONLY, 'Phone Only'),
+                (cls.LINKEDIN_ONLY, 'LinkedIn Only'),
             ]
 
         @classmethod
@@ -88,6 +90,7 @@ class Sequence(ABC):
                 cls.WITHOUT_PHONE: 'Without Phone',
                 cls.WITHOUT_EMAIL: 'Without Email',
                 cls.PHONE_ONLY: 'Phone Only',
+                cls.LINKEDIN_ONLY: 'LinkedIn Only',
             }
             return names.get(variant, variant)
 
@@ -117,6 +120,12 @@ class Sequence(ABC):
     @abstractmethod
     def get_sequence_phone_only(cls) -> Dict:
         """Returns sequence when only phone is available."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_sequence_linkedin_only(cls) -> Dict:
+        """Returns sequence when only LinkedIn is available (no phone/email)."""
         pass
 
     @classmethod
@@ -154,6 +163,9 @@ class Sequence(ABC):
         if has_phone and not has_email and not has_linkedin:
             return cls.get_sequence_phone_only(), cls.SequenceVariant.PHONE_ONLY
 
+        if not has_phone and not has_email and has_linkedin:
+            return cls.get_sequence_linkedin_only(), cls.SequenceVariant.LINKEDIN_ONLY
+
         # Fallback: email available → without_phone; otherwise standard
         if has_email:
             return cls.get_sequence_without_phone(), cls.SequenceVariant.WITHOUT_PHONE
@@ -171,6 +183,7 @@ class Sequence(ABC):
             cls.SequenceVariant.WITHOUT_PHONE: cls.get_sequence_without_phone,
             cls.SequenceVariant.WITHOUT_EMAIL: cls.get_sequence_without_email,
             cls.SequenceVariant.PHONE_ONLY: cls.get_sequence_phone_only,
+            cls.SequenceVariant.LINKEDIN_ONLY: cls.get_sequence_linkedin_only,
         }
         method = variant_map.get(variant, cls.get_standard_sequence)
         return method()

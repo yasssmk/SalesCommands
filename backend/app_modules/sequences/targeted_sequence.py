@@ -103,3 +103,22 @@ class TargetedSequence(Sequence):
             2: {'type': ActivityType.CALL, 'min_delay': 7,  'description': 'Priority Confirmation Call'},
             3: {'type': ActivityType.CALL, 'min_delay': 10, 'description': 'Final Status Call'},
         }
+
+    # =========================================================================
+    # LINKEDIN ONLY — no phone, no email
+    # =========================================================================
+
+    @classmethod
+    def get_sequence_linkedin_only(cls) -> Dict:
+        """
+        5-step LinkedIn-only sequence for contacts reachable only on LinkedIn.
+        Mirrors the WITHOUT_PHONE cadence (same step count and delays), with
+        every step sent on LinkedIn.
+        """
+        return {
+            1: {'type': ActivityType.LINKEDIN, 'min_delay': 0,  'description': 'LinkedIn Message'},
+            2: {'type': ActivityType.LINKEDIN, 'min_delay': 4,  'description': 'LinkedIn Follow-up'},
+            3: {'type': ActivityType.LINKEDIN, 'min_delay': 7,  'description': 'LinkedIn Timeline Clarification'},
+            4: {'type': ActivityType.LINKEDIN, 'min_delay': 10, 'description': 'LinkedIn Priority Message'},
+            5: {'type': ActivityType.LINKEDIN, 'min_delay': 14, 'description': 'LinkedIn Final Message'},
+        }

@@ -88,3 +88,21 @@ class RenewalSequence(Sequence):
         Same as without_email — phone-only contacts get the call sequence.
         """
         return cls.get_sequence_without_email()
+
+    # =========================================================================
+    # LINKEDIN ONLY — no phone, no email
+    # =========================================================================
+
+    @classmethod
+    def get_sequence_linkedin_only(cls) -> Dict:
+        """
+        4-step LinkedIn-only renewal sequence for contacts reachable only on
+        LinkedIn. Mirrors the WITHOUT_PHONE cadence (same step count and
+        delays), with every step sent on LinkedIn.
+        """
+        return {
+            1: {'type': ActivityType.LINKEDIN, 'min_delay': 0, 'description': 'LinkedIn Renewal Notification'},
+            2: {'type': ActivityType.LINKEDIN, 'min_delay': 3, 'description': 'LinkedIn Renewal Follow-up'},
+            3: {'type': ActivityType.LINKEDIN, 'min_delay': 5, 'description': 'LinkedIn Renewal Benefits'},
+            4: {'type': ActivityType.LINKEDIN, 'min_delay': 7, 'description': 'LinkedIn Final Reminder'},
+        }
