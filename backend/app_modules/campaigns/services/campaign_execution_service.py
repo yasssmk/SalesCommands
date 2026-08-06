@@ -191,7 +191,7 @@ class CampaignExecutionService:
 
         has_phone = bool(getattr(contact, 'phone_number', None))
         has_email = bool(getattr(contact, 'email', None))
-        has_linkedin = bool(getattr(contact, 'linkedin_url', None))
+        has_linkedin = bool(getattr(contact, 'linkedin', None))
 
         # Apply channel override — EMAIL_ONLY forces WITHOUT_PHONE variant
         # regardless of actual contact channel availability.
