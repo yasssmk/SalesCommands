@@ -102,8 +102,12 @@ def test_create_with_empty_email_and_phone_stores_null(account_owned_by_a, user_
     )
 
     assert resp.status_code == 201, resp.data
+    # The create response is the serializer output and does not include the id,
+    # so fetch the created row by its account + name instead of resp.data['id'].
     from app_modules.contacts.models import Contact
-    c = Contact.objects.get(id=resp.data['id'])
+    c = Contact.objects.get(
+        account=account_owned_by_a, first_name='E', last_name='Mpty',
+    )
     assert c.email is None
     assert c.phone_number is None
 
