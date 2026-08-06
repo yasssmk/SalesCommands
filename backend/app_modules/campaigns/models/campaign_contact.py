@@ -20,7 +20,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignModuleErrorMessages
 
 
-from ..constants import CampaignContactStatus, CAMPAIGN_CONTACT_TRANSITIONS, FINAL_CONTACT_STATES
+from ..constants import CampaignContactStatus, ChannelOverride, CAMPAIGN_CONTACT_TRANSITIONS, FINAL_CONTACT_STATES
 
 
 class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -91,6 +91,16 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         blank=True,
         null=True,
         verbose_name=_('Notes'),
+    )
+
+    channel_override = models.CharField(
+        max_length=20,
+        choices=ChannelOverride.choices,
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name=_('Channel Override'),
+        help_text=_('Per-contact channel override; NULL = follow the campaign'),
     )
 
     # ==========================================================================
