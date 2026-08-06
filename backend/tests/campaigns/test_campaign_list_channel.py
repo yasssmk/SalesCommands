@@ -1,10 +1,10 @@
 # backend/tests/campaigns/test_campaign_list_channel.py
 """
 CampaignListSerializer exposes channel_override so the card can show the
-Email Only channel strategy.
+No calls channel strategy.
 
 Asserted on the HTTP response of GET /campaigns/ (not the serializer in
-isolation): 'AUTO' on a default campaign, 'EMAIL_ONLY' when created with the
+isolation): 'AUTO' on a default campaign, 'NO_CALLS' when created with the
 option.
 
 Mirrors test_campaign_list_attribution.py (URL + row-unwrap helpers). Postgres.
@@ -15,7 +15,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from app_modules.campaigns.constants import CampaignType
+from app_modules.campaigns.constants import CampaignType, ChannelOverride
 
 URL = '/campaigns/'
 
@@ -37,7 +37,7 @@ def _row_for(resp, campaign_id):
 
 
 def _mk_email_only(client_account, user):
-    """OUTBOUND campaign created with channel_override='EMAIL_ONLY'.
+    """OUTBOUND campaign created with channel_override=NO_CALLS.
 
     Planned dates supplied like the conftest `campaign` fixture (NOT NULL).
     """
@@ -45,10 +45,10 @@ def _mk_email_only(client_account, user):
 
     today = timezone.now().date()
     c = Campaign(
-        name='Email Only Campaign',
+        name='No Calls Campaign',
         campaign_type=CampaignType.OUTBOUND,
         owner=user,
-        channel_override='EMAIL_ONLY',
+        channel_override=ChannelOverride.NO_CALLS,
         planned_start_date=today,
         planned_end_date=today + timedelta(days=30),
     )
@@ -62,17 +62,17 @@ def test_default_campaign_reports_auto(authed_api_a, campaign):
     resp = authed_api_a.get(URL)
     assert resp.status_code == 200
     row = _row_for(resp, campaign.id)
-    assert row['channel_override'] == 'AUTO'
+    assert row['channel_override'] == ChannelOverride.AUTO
 
 
 @pytest.mark.django_db
 def test_email_only_campaign_reports_email_only(
     authed_api_a, user_a, client_account_a
 ):
-    """A campaign created with the option reports channel_override 'EMAIL_ONLY'."""
+    """A campaign created with the option reports channel_override 'NO_CALLS'."""
     camp = _mk_email_only(client_account_a, user_a)
 
     resp = authed_api_a.get(URL)
     assert resp.status_code == 200
     row = _row_for(resp, camp.id)
-    assert row['channel_override'] == 'EMAIL_ONLY'
+    assert row['channel_override'] == ChannelOverride.NO_CALLS

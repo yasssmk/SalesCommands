@@ -37,7 +37,7 @@ from django.utils import timezone
 from app_modules.activities.constants import ActivityType
 from app_modules.activities.models import Activity
 from app_modules.campaigns.constants import (
-    CampaignType, CampaignStatus, CampaignAccountStatus,
+    CampaignType, CampaignStatus, CampaignAccountStatus, ChannelOverride,
 )
 from app_modules.campaigns.models import Campaign, CampaignAccount
 from app_modules.campaigns.services.campaign_execution_service import (
@@ -64,7 +64,8 @@ def _mk(account, user_a, *, email, phone, linkedin):
     return c
 
 
-def _campaign(user_a, client_id, *, sequence_type='OUTBOUND'):
+def _campaign(user_a, client_id, *, sequence_type='OUTBOUND',
+              channel_override=ChannelOverride.AUTO):
     """
     ACTIVE OUTBOUND campaign WITH a sequence_type, so generation runs the
     per-channel variant path (not the single-CALL no-sequence path).
@@ -79,7 +80,7 @@ def _campaign(user_a, client_id, *, sequence_type='OUTBOUND'):
         planned_end_date=today + timedelta(days=30),
         actual_start_date=today,
         sequence_type=sequence_type,
-        channel_override='AUTO',
+        channel_override=channel_override,
     )
     c.save(user=user_a, client_id=client_id)
     return c
@@ -210,3 +211,84 @@ class TestGenerationChannelVariants:
             ._generate_for_account(campaign, ca, ActivityType.CALL)
 
         assert _types_for_contact(campaign, contact) == {ActivityType.CALL}
+
+
+@pytest.mark.django_db
+class TestNoCallsGeneration:
+    """
+    E9a.2 — NO_CALLS = never call; reachable on email OR LinkedIn.
+
+    Exercised through the real _generate_for_account path on an OUTBOUND
+    campaign with channel_override=NO_CALLS. NO_CALLS forces has_phone=False,
+    so routing lands on WITHOUT_PHONE (contact has an email) or LINKEDIN_ONLY
+    (contact has LinkedIn but no email). A contact with neither email nor
+    LinkedIn is not reachable and gets nothing.
+    """
+
+    def test_linkedin_only_contact_enrolls_as_linkedin_only(
+        self, account, user_a, client_account_a
+    ):
+        """
+        E9a.2 CORE (RED before the filter change): a LinkedIn-only contact
+        (no phone, no email) in a NO_CALLS campaign must be enrolled and get a
+        100% LinkedIn sequence. Under the legacy strict-email filter the contact
+        is excluded (no activity at all) -> this fails RED until NO_CALLS accepts
+        email OR LinkedIn.
+        """
+        contact = _mk(
+            account, user_a,
+            email=None, phone=None,
+            linkedin="https://www.linkedin.com/in/gero",
+        )
+        campaign = _campaign(
+            user_a, client_account_a.id, channel_override=ChannelOverride.NO_CALLS
+        )
+        ca = _campaign_account(campaign, account, user_a)
+
+        CampaignExecutionService(user=user_a, client_id=client_account_a.id)\
+            ._generate_for_account(campaign, ca, ActivityType.CALL)
+
+        types = _types_for_contact(campaign, contact)
+        assert types == {ActivityType.LINKEDIN}, (
+            "LinkedIn-only contact must be enrolled in NO_CALLS and get a 100% "
+            f"LinkedIn sequence (LINKEDIN_ONLY); got {sorted(types)}"
+        )
+
+    def test_email_contact_gets_without_phone_no_calls(
+        self, account, user_a, client_account_a
+    ):
+        """Guard — a contact with an email in NO_CALLS gets WITHOUT_PHONE: emails only, never a call."""
+        contact = _mk(
+            account, user_a,
+            email="mail@x.io", phone="+14155550009", linkedin=None,
+        )
+        campaign = _campaign(
+            user_a, client_account_a.id, channel_override=ChannelOverride.NO_CALLS
+        )
+        ca = _campaign_account(campaign, account, user_a)
+
+        CampaignExecutionService(user=user_a, client_id=client_account_a.id)\
+            ._generate_for_account(campaign, ca, ActivityType.CALL)
+
+        types = _types_for_contact(campaign, contact)
+        assert types == {ActivityType.EMAIL}, (
+            f"NO_CALLS with an email -> WITHOUT_PHONE (no CALL); got {sorted(types)}"
+        )
+
+    def test_phone_only_contact_not_enrolled_in_no_calls(
+        self, account, user_a, client_account_a
+    ):
+        """Guard — a phone-only contact (no email, no LinkedIn) is unreachable in NO_CALLS: no activity."""
+        contact = _mk(
+            account, user_a,
+            email=None, phone="+14155550010", linkedin=None,
+        )
+        campaign = _campaign(
+            user_a, client_account_a.id, channel_override=ChannelOverride.NO_CALLS
+        )
+        ca = _campaign_account(campaign, account, user_a)
+
+        CampaignExecutionService(user=user_a, client_id=client_account_a.id)\
+            ._generate_for_account(campaign, ca, ActivityType.CALL)
+
+        assert _types_for_contact(campaign, contact) == set()

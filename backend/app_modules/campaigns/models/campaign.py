@@ -18,7 +18,7 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignModuleErrorMessages
 
 
-from ..constants import CampaignType, CampaignStatus, CAMPAIGN_STATUS_TRANSITIONS
+from ..constants import CampaignType, CampaignStatus, ChannelOverride, CAMPAIGN_STATUS_TRANSITIONS
 
 
 class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -69,11 +69,12 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
     channel_override = models.CharField(
         max_length=20,
-        default='AUTO',
+        choices=ChannelOverride.choices,
+        default=ChannelOverride.AUTO,
         verbose_name=_('Channel Override'),
         help_text=_(
             'AUTO = backend selects variant per contact channels. '
-            'EMAIL_ONLY = force WITHOUT_PHONE variant for all contacts.'
+            'NO_CALLS = never call; email or LinkedIn only.'
         )
     )
 

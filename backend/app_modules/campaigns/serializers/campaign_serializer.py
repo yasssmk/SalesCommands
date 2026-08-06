@@ -21,6 +21,7 @@ from app_modules.territories.models import Territory
 from ..models import (
     Campaign,
     CampaignType,
+    ChannelOverride,
     CampaignObjective,
     ObjectiveType,
 )
@@ -477,9 +478,9 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     )
 
     channel_override = serializers.ChoiceField(
-        choices=['AUTO', 'EMAIL_ONLY'],
+        choices=ChannelOverride.choices,
         required=False,
-        default='AUTO',
+        default=ChannelOverride.AUTO,
     )
 
     class Meta:
@@ -751,9 +752,9 @@ class CampaignUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     )
 
     channel_override = serializers.ChoiceField(
-        choices=['AUTO', 'EMAIL_ONLY'],
+        choices=ChannelOverride.choices,
         required=False,
-        default='AUTO',
+        default=ChannelOverride.AUTO,
     )
 
     # Map frontend keys start_date/end_date → model fields planned_start_date/planned_end_date

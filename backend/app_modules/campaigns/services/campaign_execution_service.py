@@ -30,6 +30,7 @@ from app_modules.sequences.sequence_dispatcher import SequenceDispatcher
 
 from ..models import (
     CampaignStatus,
+    ChannelOverride,
     CampaignAccount,
     CampaignAccountStatus,
     CampaignContact,
@@ -193,9 +194,10 @@ class CampaignExecutionService:
         has_email = bool(getattr(contact, 'email', None))
         has_linkedin = bool(getattr(contact, 'linkedin', None))
 
-        # Apply channel override — EMAIL_ONLY forces WITHOUT_PHONE variant
-        # regardless of actual contact channel availability.
-        if getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY':
+        # Apply channel override — NO_CALLS never calls: drop the phone so
+        # routing lands on WITHOUT_PHONE (contact has an email) or
+        # LINKEDIN_ONLY (LinkedIn but no email).
+        if getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS:
             has_phone = False
 
         try:
@@ -554,9 +556,9 @@ class CampaignExecutionService:
             dept_ids = campaign_account.target_departments.values_list('id', flat=True)
             queryset = queryset.filter(standard_department_id__in=dept_ids)
 
-        # EMAIL_ONLY: restrict to contacts with a valid email address only.
-        email_only = bool(campaign) and getattr(campaign, 'channel_override', 'AUTO') == 'EMAIL_ONLY'
-        queryset = Contact.filter_reachable(queryset, email_only=email_only)
+        # NO_CALLS: never call — reachable on email OR LinkedIn (no phone).
+        no_calls = bool(campaign) and getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS
+        queryset = Contact.filter_reachable(queryset, no_calls=no_calls)
 
         return list(queryset)
 

@@ -4,8 +4,8 @@ Characterization / parity tests for the reachable-channel filter at site #5,
 CampaignCreationService._enroll_from_territories (territory-based OUTBOUND
 enrollment), which has BOTH branches:
 
-    - default (channel_override != EMAIL_ONLY): email OR phone
-    - EMAIL_ONLY (channel_override == EMAIL_ONLY): email present only
+    - default (channel_override != NO_CALLS): email OR phone
+    - NO_CALLS (channel_override == NO_CALLS): email present only
 
 They exercise the REAL method (no simulation) on a campaign whose territories
 resolve the seeded account, and assert the EXACT set of contacts pre-created as
@@ -19,7 +19,7 @@ Channel matrix (same for both branches):
 
 Expected retained set:
     - default    : {email-only, phone-only, both}   (debt excluded since E2)
-    - EMAIL_ONLY : {email-only, both}   (phone-only w/o email is the core exclusion)
+    - NO_CALLS : {email-only, both}   (phone-only w/o email is the core exclusion)
 
 Real method, Postgres 5432.
 """
@@ -35,7 +35,7 @@ from app_modules.campaigns.services.campaign_creation_service import CampaignCre
 from app_modules.contacts.models import Contact
 from app_modules.territories.models import Territory
 
-EMAIL_ONLY = 'EMAIL_ONLY'
+NO_CALLS = 'NO_CALLS'
 
 
 def _mk(account, user_a, *, email, phone, opted_out=False):
@@ -114,10 +114,10 @@ class TestEnrollFromTerritoriesReachableParity:
         }
 
     def test_email_only_branch_enrolls_email_present_only(self, account, user_a, client_account_a):
-        """EMAIL_ONLY: pre-create only contacts with a non-empty email; phone-only excluded."""
+        """NO_CALLS: pre-create only contacts with a non-empty email; phone-only excluded."""
         m = _seed_matrix(account, user_a)
         territory = _empty_territory(user_a, client_account_a.id)
-        campaign = _outbound_campaign(user_a, client_account_a.id, channel_override=EMAIL_ONLY)
+        campaign = _outbound_campaign(user_a, client_account_a.id, channel_override=NO_CALLS)
         campaign.territories.add(territory)
 
         CampaignCreationService(user=user_a, client_id=client_account_a.id)\

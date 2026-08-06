@@ -23,6 +23,24 @@ class CampaignType(models.TextChoices):
 
 
 # ==========================================================================
+# CHANNEL OVERRIDE
+# ==========================================================================
+
+class ChannelOverride(models.TextChoices):
+    """
+    Per-campaign channel strategy applied at activity generation.
+
+    AUTO     — the backend selects the sequence variant from each contact's
+               available channels (phone/email/LinkedIn).
+    NO_CALLS — never place a call: after dropping the phone, routing picks
+               WITHOUT_PHONE when the contact has an email, otherwise
+               LINKEDIN_ONLY. Enrollment stays reachable on email OR LinkedIn.
+    """
+    AUTO     = 'AUTO',     _('Auto')
+    NO_CALLS = 'NO_CALLS', _('No calls')
+
+
+# ==========================================================================
 # CAMPAIGN STATUS
 # ==========================================================================
 

@@ -51,7 +51,7 @@ const TYPE_OPTIONS = [
 const CHANNEL_OPTIONS = [
   { value: "", label: "All channels" },
   { value: "AUTO", label: "Auto" },
-  { value: "EMAIL_ONLY", label: "Email only" },
+  { value: "NO_CALLS", label: "No calls" },
 ];
 
 function FilterSection({ title, icon, defaultExpanded = true, children }) {
