@@ -249,6 +249,54 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Validation** : fichiers ciblés verts ; coexistence avec les tests récents de
   préservation confirmée.
 
+### Sprint ✅ — Socle d'enrôlement : joignabilité source unique (PR #110, #112, #113)
+- **Objectif** : une SEULE source de vérité pour la joignabilité d'un contact
+  (email / téléphone / LinkedIn) à l'enrôlement, avec un feedback honnête.
+- **Livré** : joignabilité calculée en un point unique (#110) ; opt-out VISIBLE
+  (#112) ; compteurs de CAUSE (injoignable, déjà actif, opt-out) + messages
+  d'enrôlement précis (#113) ; feedback ORANGE (warning) pour une règle métier —
+  jamais du rouge d'erreur. Skip-and-enroll-rest : les injoignables sont comptés
+  et remontés, les joignables enrôlés (cf. TD-144, qui écarte le mythe d'un
+  « échec en bloc »).
+- **Validation** : smoke PO sur les deux modales.
+
+### Sprint ✅ — Séquences LinkedIn (PR #111, #114)
+- **Objectif** : débloquer les contacts LinkedIn-only et offrir une séquence
+  100 % LinkedIn.
+- **Livré** : canal LinkedIn à l'enrôlement (#111) ; fix `has_linkedin` — les
+  contacts `WITHOUT_EMAIL` mais avec LinkedIn ne sont plus écartés — et variante
+  de séquence `LINKEDIN_ONLY` (#114).
+- **Validation** : enrôlement d'un contact LinkedIn-only → séquence LinkedIn.
+
+### Sprint ✅ — Mode « No calls » (campagne + par contact) (PR #115, #117)
+- **Objectif** : mener une campagne sans appels (email OU LinkedIn).
+- **Livré** : au niveau CAMPAGNE, renommage `EMAIL_ONLY` → `NO_CALLS` (le canal
+  couvre désormais email OU LinkedIn, plus seulement email) — le chip carte
+  « Email only » (S8a) devient « No calls » (#115) ; au niveau CONTACT, override
+  `CampaignContact.channel_override` avec toggle « Add to Target » (#117).
+- **Validation** : campagne NO_CALLS + override par contact vérifiés à l'écran.
+
+### Sprint ✅ — Fix collisions d'unicité email/téléphone vides (PR #116)
+- **Objectif** : empêcher les collisions d'unicité sur email/téléphone VIDES.
+- **Livré** : normalisation `'' → NULL` dans `Contact.save()` (+ migration) →
+  plusieurs contacts sans email ne se heurtent plus sur la chaîne vide ; les
+  `IntegrityError` restantes sont gérées proprement par le handler d'erreur
+  standard. LinkedIn n'a PAS de contrainte d'unicité → non concerné (voir
+  TD-149).
+- **Validation** : création de contacts sans email/téléphone sans collision.
+
+### Sprint ✅ — Campagne inactive (PR #118)
+- **Objectif** : signaler visuellement une campagne devenue inactive.
+- **Livré** : `Campaign.is_inactive` calculé au READ-TIME (annotation queryset,
+  anti-N+1), seuil `N_INACTIVE_DAYS` dans `campaigns/constants.py`, chip
+  « Inactive » + surbrillance sur la carte de liste, bannière sur l'onglet
+  playlist. S'applique à TOUS les types, y compris Targeted. NB : l'annotation
+  sur l'endpoint de DÉTAIL a nécessité un override `get_object` (voir TD-146).
+- **Validation** : test page-level (#118) + smoke PO.
+
+> **Module Campagne : CLOS** — enrôlement, canaux (email/téléphone/LinkedIn),
+> mode No calls, intégrité contacts et signal d'inactivité livrés et mergés.
+
 ---
 
 ## Sprints planifiés — phase fonctionnelle
@@ -519,6 +567,23 @@ campagnes. **Le chip est la référence.**
   - **Cleanup** : dédup `mark_activities_generated`, magic numbers →
     `constants.py`, code mort prouvé retiré.
 
+### Sprint — Enrichissement carte activity (front) — PROCHAIN
+- **Objectif** : rendre la carte d'activité (playlist) actionnable et lisible.
+- **Périmètre** :
+  - Coordonnées CLIQUABLES selon le canal de l'activité : `tel:` sur un Call,
+    `mailto:` sur un Email, lien LinkedIn sur une activité LinkedIn.
+  - Micro-libellé « LinkedIn Message » → « LinkedIn ».
+  - Correction du CTA PARASITE « Account stopped — All contacts stopped — no
+    successful outcome » affiché à tort sur des activités ACTIVES (voir TD-145).
+
+### Sprint Timeout — Régression d'emballement de requêtes (URGENT, avant Sprint C)
+- **Objectif** : corriger une RÉGRESSION de dégradation progressive en
+  navigation (NOUVEAU — n'existait pas avant, ce n'est pas une lenteur de fond).
+- **Symptôme** : les endpoints playlist + `notifications/unread-count` sont
+  re-fetchés en boucle, la latence croît → `408`. Piste : boucle de
+  revalidation SWR.
+- **Priorité** : URGENT, à traiter AVANT Sprint C. Dette liée : TD-147.
+
 ### Sprint C — Produit & Finance de bout en bout (backend d'abord)
 - **Objectif** : le produit et la finance qui FONCTIONNENT de bout en bout,
   backend d'abord (avant tout peaufinage UI).
@@ -642,6 +707,9 @@ campagnes. **Le chip est la référence.**
   Filtre des toolbars de liste Territory/Campaign s'empilent verticalement /
   se désalignent. Restaurer la gestion élégante des tailles utilisée ailleurs
   dans l'app.
+- **Cartes Targeted en `secondary`** : harmoniser la couleur des cartes de
+  campagne Targeted vers `secondary` (rattaché ICI à l'homogénéisation UI, PAS
+  un sprint neuf).
 
 ### Sprint Gestion d'erreur — revue BE + FR de bout en bout (APRÈS l'UI, DERNIER avant Go-Live)
 - **Position** : après le sprint UI et TOUTES les fonctionnalités ; dernier
