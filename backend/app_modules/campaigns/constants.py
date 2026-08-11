@@ -210,3 +210,14 @@ ACTIVE_CAMPAIGN_CAPS_BY_TYPE: dict = {
     CampaignType.OUTBOUND: MAX_ACTIVE_OUTBOUND_CAMPAIGNS_PER_USER,
     CampaignType.TARGETED: MAX_ACTIVE_TARGETED_CAMPAIGNS_PER_USER,
 }
+
+
+# ==========================================================================
+# INACTIVITY DETECTION
+# ==========================================================================
+
+# An OPEN campaign (status not terminal) whose last DONE activity — or, when
+# nothing has been done yet, its creation — is older than this many days is
+# flagged inactive at read-time (Campaign.is_inactive). No stored field.
+# Set to 0 to flag any campaign idle for at least a full day (used for testing).
+N_INACTIVE_DAYS = 30
