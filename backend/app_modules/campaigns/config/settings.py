@@ -53,8 +53,9 @@ class LimitsConfig:
     playlist_default_limit: int = 200       # default page size for the playlist endpoint
     playlist_max_limit: int = 500           # upper clamp on the ?limit= query param
 
-    # Inactivity detection
-    inactivity_threshold_days: int = 30
+    # Inactivity detection: the day threshold now lives in campaigns/constants.py
+    # (N_INACTIVE_DAYS) — single source, consumed by Campaign queryset
+    # with_inactivity().
 
     # Performance
     cache_timeout_seconds: int = 300

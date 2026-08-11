@@ -28,6 +28,60 @@ from ..constants import (
 )
 
 
+class CampaignQuerySet(models.QuerySet):
+    """Campaign queryset with reusable, set-based annotations."""
+
+    def with_inactivity(self):
+        """
+        Annotate ``is_inactive`` in a SINGLE query — the one source of truth
+        for the inactivity signal, on lists and detail alike (no per-instance
+        computation, so marking N campaigns never becomes N+1 queries).
+
+        A campaign is inactive when it is still OPEN (status not terminal —
+        neither COMPLETED nor CANCELLED; Campaign has no STOPPED status) AND
+        its reference date is older than N_INACTIVE_DAYS days. The reference
+        date is MAX(completed_at) over the campaign's COMPLETED activities,
+        falling back to created_at when nothing has been completed yet. Only
+        COMPLETED activities move the clock — PLANNED / ON_HOLD never count.
+
+        It is a visual prompt-to-act signal, not an exact metric: sub-day and
+        boundary cases are intentionally not refined.
+        """
+        from datetime import timedelta
+
+        from django.db.models import (
+            Subquery, OuterRef, Case, When, Value, BooleanField, F,
+        )
+        from django.db.models.functions import Coalesce
+        from django.utils import timezone
+
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+
+        threshold = timezone.now() - timedelta(days=N_INACTIVE_DAYS)
+
+        last_completed_at = Subquery(
+            Activity.objects.filter(
+                campaign=OuterRef('pk'),
+                status=ActivityStatus.COMPLETED,
+                completed_at__isnull=False,
+            )
+            .order_by('-completed_at')
+            .values('completed_at')[:1]
+        )
+
+        return self.annotate(
+            _inactivity_reference=Coalesce(last_completed_at, F('created_at')),
+        ).annotate(
+            is_inactive=Case(
+                When(status__in=tuple(FINAL_CAMPAIGN_STATES), then=Value(False)),
+                When(_inactivity_reference__lt=threshold, then=Value(True)),
+                default=Value(False),
+                output_field=BooleanField(),
+            ),
+        )
+
+
 class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     """
     Campaign model — execution engine for sales activities.
@@ -158,6 +212,8 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Status')
     )
 
+    objects = CampaignQuerySet.as_manager()
+
     # ==========================================================================
     # META
     # ==========================================================================
@@ -213,43 +269,6 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     def active_executor(self):
         """Return executor if set, otherwise owner."""
         return self.executor or self.owner
-
-    @property
-    def is_inactive(self):
-        """
-        Read-time inactivity flag — no stored field.
-
-        A campaign is inactive when it is still OPEN (status not terminal —
-        neither COMPLETED nor CANCELLED; Campaign has no STOPPED status) AND
-        it has seen no completed work for longer than N_INACTIVE_DAYS days.
-
-        Reference date:
-            - MAX(completed_at) across the campaign's DONE (COMPLETED)
-              activities, computed with a single aggregate (never loads rows);
-            - falls back to created_at when nothing has been completed yet,
-              so a freshly created campaign that never does anything still
-              ages into the inactive state.
-
-        Only COMPLETED activities move the clock — PLANNED / ON_HOLD / future
-        activities are ignored. Applies to every campaign type, Targeted
-        included. Multi-tenant safe: activities are reached through the
-        campaign FK, already bound to this campaign's client.
-        """
-        from django.utils import timezone
-
-        if self.status in FINAL_CAMPAIGN_STATES:
-            return False
-
-        from app_modules.activities.models import Activity
-        from app_modules.activities.constants import ActivityStatus
-
-        last_completed_at = Activity.objects.filter(
-            campaign=self,
-            status=ActivityStatus.COMPLETED,
-        ).aggregate(latest=models.Max('completed_at'))['latest']
-
-        reference_date = last_completed_at or self.created_at
-        return (timezone.now() - reference_date).days > N_INACTIVE_DAYS
 
     # ==========================================================================
     # DISPLAY HELPERS

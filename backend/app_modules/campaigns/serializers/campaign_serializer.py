@@ -403,26 +403,11 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
         return last.isoformat() if last else None
 
     def get_is_inactive(self, obj):
-        from django.utils import timezone
-        if obj.status != 'ACTIVE':
-            return False
-        # Not inactive if the campaign started less than inactivity_threshold_days ago
-        start = obj.actual_start_date or obj.planned_start_date
-        if start and (timezone.now().date() - start).days < CONFIG.limits.inactivity_threshold_days:
-            return False
-        if hasattr(obj, '_is_inactive'):
-            return obj._is_inactive
-        from app_modules.activities.models import Activity
-        from app_modules.activities.constants import ActivityStatus
-        threshold = timezone.now().date() - timezone.timedelta(
-            days=CONFIG.limits.inactivity_threshold_days
-        )
-        has_recent = Activity.objects.filter(
-            campaign=obj,
-            status=ActivityStatus.COMPLETED,
-            completed_at__date__gte=threshold,
-        ).exists()
-        return not has_recent
+        """Read the single-source annotation set by Campaign queryset
+        with_inactivity(). Never computed per instance here (that would N+1 a
+        list); serialization paths without the annotation (create/lifecycle
+        responses) report False."""
+        return bool(getattr(obj, 'is_inactive', False))
 
 # ============================================================================
 # CREATE SERIALIZER

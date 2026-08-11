@@ -1,18 +1,21 @@
 # backend/tests/campaigns/test_campaign_is_inactive.py
 """
-Campaign.is_inactive — read-time inactivity flag.
+Campaign inactivity — is_inactive annotated on the queryset (single source).
 
-Product rule (locked):
-    reference_date = MAX(completed_at) of DONE (COMPLETED) activities of the
-                     campaign, OR campaign.created_at when none is done yet.
-    is_inactive    = campaign is OPEN (status not terminal: not COMPLETED /
-                     not CANCELLED) AND (now - reference_date).days
-                     > N_INACTIVE_DAYS.
+is_inactive is a VISUAL SIGNAL (prompt the rep to resume or drop a sleeping
+campaign), not an exact metric. It is computed set-based via
+Campaign.objects.with_inactivity() so a whole list is marked in ONE query —
+never a per-instance property (which would N+1 a list of campaigns).
 
-Only COMPLETED activities move the reference date — PLANNED / ON_HOLD / future
-activities must never count. Applies to ALL campaign types (Targeted included).
+Rule (edge cases deliberately NOT refined — PO):
+    reference_date = MAX(completed_at) over the campaign's COMPLETED activities,
+                     OR created_at when nothing is completed yet.
+    is_inactive    = campaign OPEN (status not terminal: not COMPLETED /
+                     not CANCELLED) AND reference_date older than
+                     N_INACTIVE_DAYS days.
 
-No stored field: the property aggregates at read-time. Postgres 5432, --reuse-db.
+Only COMPLETED activities count — PLANNED / ON_HOLD never move the clock.
+Applies to every campaign type. Postgres 5432, --reuse-db.
 """
 from datetime import timedelta
 
@@ -26,22 +29,20 @@ from app_modules.campaigns.constants import (
 )
 from app_modules.activities.constants import ActivityStatus, ActivityType
 
-
 pytestmark = pytest.mark.django_db
 
 
 # ---------------------------------------------------------------------------
-# Helpers — build campaigns / activities with full control over the dates
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _make_campaign(account, user_a, *, status, created_days_ago=None,
-                   campaign_type=CampaignType.OUTBOUND):
-    """Create a campaign in a given status, optionally backdating created_at."""
+                   campaign_type=CampaignType.OUTBOUND, name="Inactivity probe"):
     from app_modules.campaigns.models import Campaign
 
     today = timezone.now().date()
     c = Campaign(
-        name="Inactivity probe",
+        name=name,
         campaign_type=campaign_type,
         status=status,
         owner=user_a,
@@ -52,7 +53,6 @@ def _make_campaign(account, user_a, *, status, created_days_ago=None,
 
     if created_days_ago is not None:
         old = timezone.now() - timedelta(days=created_days_ago)
-        # created_at is auto_now_add — bypass it with a raw UPDATE.
         Campaign.objects.filter(pk=c.pk).update(created_at=old)
         c.refresh_from_db()
     return c
@@ -60,7 +60,6 @@ def _make_campaign(account, user_a, *, status, created_days_ago=None,
 
 def _add_activity(account, user_a, campaign, *, status, completed_days_ago=None,
                   scheduled_days_ahead=None):
-    """Attach one activity to the campaign, controlling completed_at."""
     from app_modules.activities.models import Activity
 
     today = timezone.now().date()
@@ -80,26 +79,29 @@ def _add_activity(account, user_a, campaign, *, status, completed_days_ago=None,
     return a
 
 
+def _flag(campaign):
+    """Read the annotated is_inactive for a single campaign (fresh query)."""
+    from app_modules.campaigns.models import Campaign
+    return Campaign.objects.with_inactivity().get(pk=campaign.pk).is_inactive
+
+
 # ---------------------------------------------------------------------------
 # OPEN campaign — last DONE activity drives the reference date
 # ---------------------------------------------------------------------------
 
 def test_open_campaign_last_done_older_than_threshold_is_inactive(account, user_a):
-    c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE,
-                       created_days_ago=200)
+    c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE, created_days_ago=200)
     _add_activity(account, user_a, c, status=ActivityStatus.COMPLETED,
                   completed_days_ago=N_INACTIVE_DAYS + 5)
 
-    assert c.is_inactive is True
+    assert _flag(c) is True
 
 
 def test_open_campaign_recent_done_is_not_inactive(account, user_a):
-    c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE,
-                       created_days_ago=200)
-    _add_activity(account, user_a, c, status=ActivityStatus.COMPLETED,
-                  completed_days_ago=1)
+    c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE, created_days_ago=200)
+    _add_activity(account, user_a, c, status=ActivityStatus.COMPLETED, completed_days_ago=1)
 
-    assert c.is_inactive is False
+    assert _flag(c) is False
 
 
 # ---------------------------------------------------------------------------
@@ -110,14 +112,13 @@ def test_open_campaign_no_done_activity_old_creation_is_inactive(account, user_a
     c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE,
                        created_days_ago=N_INACTIVE_DAYS + 5)
 
-    assert c.is_inactive is True
+    assert _flag(c) is True
 
 
 def test_open_campaign_no_done_activity_recent_creation_is_not_inactive(account, user_a):
-    c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE,
-                       created_days_ago=1)
+    c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE, created_days_ago=1)
 
-    assert c.is_inactive is False
+    assert _flag(c) is False
 
 
 # ---------------------------------------------------------------------------
@@ -127,13 +128,10 @@ def test_open_campaign_no_done_activity_recent_creation_is_not_inactive(account,
 def test_recent_planned_activities_do_not_prevent_inactive(account, user_a):
     c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE,
                        created_days_ago=N_INACTIVE_DAYS + 5)
-    # Fresh work scheduled ahead, but nothing has actually been DONE.
-    _add_activity(account, user_a, c, status=ActivityStatus.PLANNED,
-                  scheduled_days_ahead=2)
-    _add_activity(account, user_a, c, status=ActivityStatus.ON_HOLD,
-                  scheduled_days_ahead=1)
+    _add_activity(account, user_a, c, status=ActivityStatus.PLANNED, scheduled_days_ahead=2)
+    _add_activity(account, user_a, c, status=ActivityStatus.ON_HOLD, scheduled_days_ahead=1)
 
-    assert c.is_inactive is True
+    assert _flag(c) is True
 
 
 # ---------------------------------------------------------------------------
@@ -141,18 +139,16 @@ def test_recent_planned_activities_do_not_prevent_inactive(account, user_a):
 # ---------------------------------------------------------------------------
 
 def test_completed_campaign_is_never_inactive(account, user_a):
-    c = _make_campaign(account, user_a, status=CampaignStatus.COMPLETED,
-                       created_days_ago=500)
+    c = _make_campaign(account, user_a, status=CampaignStatus.COMPLETED, created_days_ago=500)
 
-    assert c.is_inactive is False
+    assert _flag(c) is False
 
 
 def test_cancelled_campaign_is_never_inactive(account, user_a):
     # Campaign has no STOPPED status — CANCELLED is the terminal "stopped" state.
-    c = _make_campaign(account, user_a, status=CampaignStatus.CANCELLED,
-                       created_days_ago=500)
+    c = _make_campaign(account, user_a, status=CampaignStatus.CANCELLED, created_days_ago=500)
 
-    assert c.is_inactive is False
+    assert _flag(c) is False
 
 
 # ---------------------------------------------------------------------------
@@ -164,4 +160,30 @@ def test_targeted_campaign_is_covered(account, user_a):
                        created_days_ago=N_INACTIVE_DAYS + 5,
                        campaign_type=CampaignType.TARGETED)
 
-    assert c.is_inactive is True
+    assert _flag(c) is True
+
+
+# ---------------------------------------------------------------------------
+# ANTI-N+1 — a whole list is marked in a single query
+# ---------------------------------------------------------------------------
+
+def test_with_inactivity_is_a_single_query_for_a_list(account, user_a,
+                                                       django_assert_num_queries):
+    from app_modules.campaigns.models import Campaign
+
+    pks = []
+    for i in range(4):
+        c = _make_campaign(account, user_a, status=CampaignStatus.ACTIVE,
+                           created_days_ago=N_INACTIVE_DAYS + 5, name=f"C{i}")
+        _add_activity(account, user_a, c, status=ActivityStatus.COMPLETED,
+                      completed_days_ago=N_INACTIVE_DAYS + 5)
+        pks.append(c.pk)
+
+    qs = Campaign.objects.with_inactivity().filter(pk__in=pks)
+
+    # One SELECT for the whole list; reading .is_inactive per row hits no DB.
+    with django_assert_num_queries(1):
+        flags = {c.pk: c.is_inactive for c in qs}
+
+    assert all(flags.values()) is True
+    assert len(flags) == 4

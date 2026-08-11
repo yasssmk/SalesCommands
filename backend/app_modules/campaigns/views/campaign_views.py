@@ -22,7 +22,6 @@ from django.db.models import (
     Case, When, Value, IntegerField,
 )
 from django.utils import timezone
-from datetime import timedelta
 
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
@@ -321,10 +320,6 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             from app_modules.activities.models import Activity as _Activity
             from app_modules.activities.constants import ActivityStatus as _AS
 
-            _threshold = timezone.now().date() - timedelta(
-                days=CONFIG.limits.inactivity_threshold_days
-            )
-
             queryset = queryset.select_related(
                 'owner', 'executor',
                 'created_by', 'updated_by',
@@ -348,14 +343,8 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                         status=_AS.PLANNED,
                     ).order_by('-scheduled_date').values('scheduled_date')[:1]
                 ),
-                _is_inactive=~Exists(
-                    _Activity.objects.filter(
-                        campaign=OuterRef('pk'),
-                        status=_AS.COMPLETED,
-                        completed_at__date__gte=_threshold,
-                    )
-                ),
-            )
+            # is_inactive: single-source annotation, shared with the list view.
+            ).with_inactivity()
         else:
             # my-campaigns and other list-style actions serialize with
             # CampaignListSerializer too — carry the same owner/executor team
