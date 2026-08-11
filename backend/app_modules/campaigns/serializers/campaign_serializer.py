@@ -95,6 +95,11 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
     # _activities_today annotation set on the list queryset (campaign_views.py).
     activities_today = serializers.SerializerMethodField(read_only=True)
 
+    # Inactivity warning flag for the card. Reads the is_inactive annotation set
+    # by the list queryset's with_inactivity() — single-source, set-based (never
+    # a per-row query, so a list is marked without N+1).
+    is_inactive = serializers.SerializerMethodField(read_only=True)
+
     # Attribution — owner + team and executor + team, for the card's
     # "Name — TEAM" attribution block. Mirrors TerritoryListSerializer's
     # get_owner / get_team ({id, full_name} for the person, {id, name} for the
@@ -130,6 +135,7 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
             # Aggregates
             'accounts_count', 'owner_name', 'primary_objective',
             'targets_total', 'targets_worked', 'activities_today',
+            'is_inactive',
 
             # Attribution (owner + team, executor + team)
             'owner', 'owner_team', 'executor', 'executor_team',
@@ -203,6 +209,12 @@ class CampaignListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         guard of get_targets_total.
         """
         return obj._activities_today if hasattr(obj, '_activities_today') else None
+
+    def get_is_inactive(self, obj):
+        """Read the is_inactive annotation set by the list queryset's
+        with_inactivity(). Never computed per row here (that would N+1 the
+        list); False when unannotated."""
+        return bool(getattr(obj, 'is_inactive', False))
 
     def get_owner_name(self, obj):
         if not obj.owner:
