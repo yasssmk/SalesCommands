@@ -260,16 +260,29 @@ export default function CampaignCard({
     <Card
       elevation={0}
       onClick={handleCardClick}
+      data-inactive={campaign.is_inactive ? "true" : undefined}
       sx={{
         position: "relative",
         border: "1px solid",
-        borderColor: selected ? "error.main" : "divider",
+        // Selection (error tone) wins; otherwise an inactive campaign gets a
+        // subtle warning highlight so a sleeping card catches the eye at a
+        // glance. Reuses the same two sx keys the selection state already
+        // drives — no new emphasis mechanism.
+        borderColor: selected
+          ? "error.main"
+          : campaign.is_inactive
+            ? "warning.main"
+            : "divider",
         height: "100%",
         display: "flex",
         flexDirection: "column",
         transition: "all 0.2s ease-in-out",
         cursor: selectionMode ? "default" : "pointer",
-        bgcolor: selected ? "error.lighter" : "background.paper",
+        bgcolor: selected
+          ? "error.lighter"
+          : campaign.is_inactive
+            ? "warning.lighter"
+            : "background.paper",
         "&:hover": {
           borderColor: selectionMode ? "divider" : "primary.main",
           boxShadow: selectionMode ? "none" : "0 4px 12px rgba(0,0,0,0.08)",
@@ -352,6 +365,18 @@ export default function CampaignCard({
                     size="small"
                     color="info"
                     variant="outlined"
+                    sx={{ height: 20, fontSize: "0.7rem" }}
+                  />
+                )}
+                {/* Inactivity signal — backend read-time flag (all types).
+                    Filled warning so a sleeping campaign reads as "act on me",
+                    mirroring the On Hold state chip idiom. */}
+                {campaign.is_inactive && (
+                  <Chip
+                    label="Inactive"
+                    size="small"
+                    color="warning"
+                    variant="filled"
                     sx={{ height: 20, fontSize: "0.7rem" }}
                   />
                 )}

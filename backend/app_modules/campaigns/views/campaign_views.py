@@ -22,7 +22,6 @@ from django.db.models import (
     Case, When, Value, IntegerField,
 )
 from django.utils import timezone
-from datetime import timedelta
 
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, CampaignModuleErrorMessages
@@ -316,14 +315,12 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                     default=Value(5),
                     output_field=IntegerField(),
                 ),
-            )
+            # is_inactive: single-source annotation marking the whole list in
+            # one query (correlated subquery, no N+1) — the card's warning flag.
+            ).with_inactivity()
         elif self.action == 'retrieve':
             from app_modules.activities.models import Activity as _Activity
             from app_modules.activities.constants import ActivityStatus as _AS
-
-            _threshold = timezone.now().date() - timedelta(
-                days=CONFIG.limits.inactivity_threshold_days
-            )
 
             queryset = queryset.select_related(
                 'owner', 'executor',
@@ -348,14 +345,10 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                         status=_AS.PLANNED,
                     ).order_by('-scheduled_date').values('scheduled_date')[:1]
                 ),
-                _is_inactive=~Exists(
-                    _Activity.objects.filter(
-                        campaign=OuterRef('pk'),
-                        status=_AS.COMPLETED,
-                        completed_at__date__gte=_threshold,
-                    )
-                ),
             )
+            # is_inactive is attached in get_object() below: the permissions
+            # mixin's get_object returns an un-annotated instance, so a queryset
+            # annotation here would never reach the detail serializer.
         else:
             # my-campaigns and other list-style actions serialize with
             # CampaignListSerializer too — carry the same owner/executor team
@@ -375,6 +368,25 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         )
 
         return queryset
+
+    def get_object(self):
+        """Attach the single-source is_inactive flag to a single campaign.
+
+        The permissions mixin's get_object() returns a plain instance fetched
+        via the default manager, so the with_inactivity() annotation applied in
+        get_queryset() never reaches it. Re-derive the flag from the same
+        annotation for this one row — never a list, so this is not an N+1.
+        """
+        obj = super().get_object()
+        if not hasattr(obj, 'is_inactive'):
+            obj.is_inactive = (
+                Campaign.objects
+                .filter(pk=obj.pk)
+                .with_inactivity()
+                .values_list('is_inactive', flat=True)
+                .first()
+            )
+        return obj
 
     # ==========================================================================
     # LIST

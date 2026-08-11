@@ -18,7 +18,68 @@ from core.exceptions import StandardizedValidationError
 from core.error_messages import CampaignModuleErrorMessages
 
 
-from ..constants import CampaignType, CampaignStatus, ChannelOverride, CAMPAIGN_STATUS_TRANSITIONS
+from ..constants import (
+    CampaignType,
+    CampaignStatus,
+    ChannelOverride,
+    CAMPAIGN_STATUS_TRANSITIONS,
+    FINAL_CAMPAIGN_STATES,
+    N_INACTIVE_DAYS,
+)
+
+
+class CampaignQuerySet(models.QuerySet):
+    """Campaign queryset with reusable, set-based annotations."""
+
+    def with_inactivity(self):
+        """
+        Annotate ``is_inactive`` in a SINGLE query — the one source of truth
+        for the inactivity signal, on lists and detail alike (no per-instance
+        computation, so marking N campaigns never becomes N+1 queries).
+
+        A campaign is inactive when it is still OPEN (status not terminal —
+        neither COMPLETED nor CANCELLED; Campaign has no STOPPED status) AND
+        its reference date is older than N_INACTIVE_DAYS days. The reference
+        date is MAX(completed_at) over the campaign's COMPLETED activities,
+        falling back to created_at when nothing has been completed yet. Only
+        COMPLETED activities move the clock — PLANNED / ON_HOLD never count.
+
+        It is a visual prompt-to-act signal, not an exact metric: sub-day and
+        boundary cases are intentionally not refined.
+        """
+        from datetime import timedelta
+
+        from django.db.models import (
+            Subquery, OuterRef, Case, When, Value, BooleanField, F,
+        )
+        from django.db.models.functions import Coalesce
+        from django.utils import timezone
+
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityStatus
+
+        threshold = timezone.now() - timedelta(days=N_INACTIVE_DAYS)
+
+        last_completed_at = Subquery(
+            Activity.objects.filter(
+                campaign=OuterRef('pk'),
+                status=ActivityStatus.COMPLETED,
+                completed_at__isnull=False,
+            )
+            .order_by('-completed_at')
+            .values('completed_at')[:1]
+        )
+
+        return self.annotate(
+            _inactivity_reference=Coalesce(last_completed_at, F('created_at')),
+        ).annotate(
+            is_inactive=Case(
+                When(status__in=tuple(FINAL_CAMPAIGN_STATES), then=Value(False)),
+                When(_inactivity_reference__lt=threshold, then=Value(True)),
+                default=Value(False),
+                output_field=BooleanField(),
+            ),
+        )
 
 
 class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
@@ -150,6 +211,8 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         default=CampaignStatus.DRAFT,
         verbose_name=_('Status')
     )
+
+    objects = CampaignQuerySet.as_manager()
 
     # ==========================================================================
     # META

@@ -451,10 +451,12 @@ export default function CampaignPlaylistTab({
       )}
 
       {/* ── Inactivity warning ── */}
+      {/* The day threshold lives in the backend (N_INACTIVE_DAYS) and drives
+          the is_inactive flag; the copy stays threshold-agnostic so it can
+          never drift from the backed value. */}
       {campaign?.is_inactive && (
         <Alert severity="warning" variant="outlined">
-          No activity completed in the last {30} days — this campaign may need
-          attention.
+          No recent activity — this campaign may need attention.
         </Alert>
       )}
 
