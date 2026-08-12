@@ -147,3 +147,72 @@ describe("PlaylistActivityCard — channel coordinate link", () => {
     expect(push).not.toHaveBeenCalled();
   });
 });
+
+describe("PlaylistActivityCard — absent coordinate renders nothing, no fallback", () => {
+  // The payload sends '' for an absent coordinate (A-1); '' must be treated as
+  // absent, identically on the three channels. The empty is intentional — it
+  // tells the rep the data no longer exists — and never falls back to another
+  // coordinate. The card renders exactly one <a> (the channel link) when a
+  // coordinate is present, so its absence means no <a> at all.
+
+  it("EMAIL with no email renders NO mailto: link", () => {
+    const { container } = render(
+      <PlaylistActivityCard
+        activity={mk({
+          activity_type: "EMAIL",
+          contacts: [contact({ email: "" })],
+        })}
+      />,
+    );
+    expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("LINKEDIN with no linkedin renders NO external link", () => {
+    const { container } = render(
+      <PlaylistActivityCard
+        activity={mk({
+          activity_type: "LINKEDIN",
+          contacts: [contact({ linkedin: "" })],
+        })}
+      />,
+    );
+    expect(container.querySelector('a[target="_blank"]')).toBeNull();
+    expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("CALL with no phone_number renders NO tel: link (A-2 regression guard)", () => {
+    const { container } = render(
+      <PlaylistActivityCard
+        activity={mk({
+          activity_type: "CALL",
+          contacts: [contact({ phone_number: "" })],
+        })}
+      />,
+    );
+    expect(container.querySelector('a[href^="tel:"]')).toBeNull();
+  });
+
+  it("NO FALLBACK: CALL without phone but WITH email and linkedin renders no link at all", () => {
+    const { container } = render(
+      <PlaylistActivityCard
+        activity={mk({
+          activity_type: "CALL",
+          contacts: [
+            contact({
+              phone_number: "",
+              email: "jane@example.com",
+              linkedin: "https://linkedin.com/in/jane-doe",
+            }),
+          ],
+        })}
+      />,
+    );
+    // The channel is CALL and its coordinate is empty -> nothing clickable.
+    // The present email/linkedin must NOT be borrowed as a fallback.
+    expect(container.querySelector('a[href^="tel:"]')).toBeNull();
+    expect(container.querySelector('a[href^="mailto:"]')).toBeNull();
+    expect(container.querySelector('a[target="_blank"]')).toBeNull();
+    expect(container.querySelector("a")).toBeNull();
+  });
+});
