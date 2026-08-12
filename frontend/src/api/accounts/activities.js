@@ -34,7 +34,7 @@ export const ACTIVITY_TYPE_LABELS = {
   EMAIL: "Email",
   MEETING: "Meeting",
   TASK: "Task",
-  LINKEDIN: "LinkedIn Message",
+  LINKEDIN: "LinkedIn",
   OTHER: "Other",
 };
 
