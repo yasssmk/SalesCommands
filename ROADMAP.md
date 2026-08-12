@@ -567,7 +567,7 @@ campagnes. **Le chip est la référence.**
   - **Cleanup** : dédup `mark_activities_generated`, magic numbers →
     `constants.py`, code mort prouvé retiré.
 
-### Sprint — Enrichissement carte activity (front) — PROCHAIN
+### Sprint ✅ — Enrichissement carte activity (front) (PR #120, 2026-08-12)
 - **Objectif** : rendre la carte d'activité (playlist) actionnable et lisible.
 - **Périmètre** :
   - Coordonnées CLIQUABLES selon le canal de l'activité : `tel:` sur un Call,
@@ -575,6 +575,22 @@ campagnes. **Le chip est la référence.**
   - Micro-libellé « LinkedIn Message » → « LinkedIn ».
   - Correction du CTA PARASITE « Account stopped — All contacts stopped — no
     successful outcome » affiché à tort sur des activités ACTIVES (voir TD-145).
+- **Livré (FIL A)** :
+  - Backend : `phone_number` + `linkedin` ajoutés au payload playlist
+    (`ActivityListSerializer.get_contacts`), à côté de l'`email` déjà présent.
+  - Front : coordonnée du canal rendue CLIQUABLE sur la carte playlist
+    (Call→`tel:`, Email→`mailto:`, LinkedIn→lien externe nouvel onglet) ;
+    `stopPropagation` pour ne pas déclencher la navigation de la carte ;
+    coordonnée absente → rien, AUCUN fallback (verrouillé par tests sur les 3
+    canaux).
+  - Backend : relabel du type LinkedIn « LinkedIn Message » → « LinkedIn » à la
+    source (enum `ActivityType`) + 2 migrations d'état no-op SQL (activities,
+    signals).
+  - Front : copie vivante `ACTIVITY_TYPE_LABELS` alignée sur « LinkedIn » ; clé
+    de locale morte `activity-type-linkedin` supprimée.
+- **FIL B (CTA parasite « Account stopped… »)** : SORTI de ce sprint, renvoyé à
+  **S13 — Intention & Prep Call** (cause racine = modèle d'intention, pas un
+  correctif d'affichage local ; voir TD-145).
 
 ### Sprint Timeout — Régression d'emballement de requêtes (URGENT, avant Sprint C)
 - **Objectif** : corriger une RÉGRESSION de dégradation progressive en
