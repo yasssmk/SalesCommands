@@ -20,7 +20,7 @@ class ActivityType(models.TextChoices):
     MEETING = 'MEETING', _('Meeting')
     DEMO = 'DEMO', _('Demo')
     TASK = 'TASK', _('Task')
-    LINKEDIN = 'LINKEDIN', _('LinkedIn Message')
+    LINKEDIN = 'LINKEDIN', _('LinkedIn')
     OTHER = 'OTHER', _('Other')
 
 

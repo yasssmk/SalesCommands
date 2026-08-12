@@ -17,6 +17,7 @@ import { useTheme, alpha } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
+import Link from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -167,6 +168,30 @@ export default function PlaylistActivityCard({
     ? `${firstContact.first_name || ""} ${firstContact.last_name || ""}`.trim()
     : "";
   const extraContacts = contactList.length > 1 ? contactList.length - 1 : 0;
+
+  // Channel coordinate — the single reachable coordinate matching the activity's
+  // channel, exposed as a click-to-act link so the rep can act without opening
+  // the contact sheet. Only the channel's own coordinate is shown; an empty
+  // field renders nothing (the gap is intentional — it tells the rep the data
+  // no longer exists). Link idiom mirrors
+  // sections/accounts/contacts/ExpandingContactDetail.jsx.
+  const channelLink = (() => {
+    if (!firstContact) return null;
+    if (activity.activity_type === "CALL" && firstContact.phone_number) {
+      return { href: `tel:${firstContact.phone_number}`, label: firstContact.phone_number };
+    }
+    if (activity.activity_type === "EMAIL" && firstContact.email) {
+      return { href: `mailto:${firstContact.email}`, label: firstContact.email };
+    }
+    if (activity.activity_type === "LINKEDIN" && firstContact.linkedin) {
+      // Normalize to an absolute URL (prefix https:// when missing).
+      const url = firstContact.linkedin.startsWith("http")
+        ? firstContact.linkedin
+        : `https://${firstContact.linkedin}`;
+      return { href: url, label: "LinkedIn", external: true };
+    }
+    return null;
+  })();
 
   // ==============================|| STYLE HELPERS ||============================== //
 
@@ -456,6 +481,22 @@ export default function PlaylistActivityCard({
                 {contactName}
                 {extraContacts > 0 ? ` +${extraContacts}` : ""}
               </Typography>
+            )}
+            {channelLink && (
+              <Link
+                href={channelLink.href}
+                color="primary"
+                variant="body2"
+                underline="hover"
+                // The whole card routes to the activity detail on click; keep the
+                // coordinate click local so it dials/mails/opens instead.
+                onClick={(e) => e.stopPropagation()}
+                {...(channelLink.external
+                  ? { target: "_blank", rel: "noopener noreferrer" }
+                  : {})}
+              >
+                {channelLink.label}
+              </Link>
             )}
           </Stack>
 

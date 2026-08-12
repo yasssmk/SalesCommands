@@ -327,7 +327,7 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
         return obj.contacts.count()
     
     def get_contacts(self, obj):
-        """Return minimal contact list (id, name, job_title, department) for playlist/modal use."""
+        """Return minimal contact list (id, name, job_title, coordinates, department) for playlist/modal use."""
         return [
             {
                 'id': str(c.id),
@@ -335,6 +335,10 @@ class ActivityListSerializer(ClientScopeManager.SerializerMixin, serializers.Mod
                 'last_name': c.last_name or '',
                 'job_title': c.job_title or '',
                 'email': c.email or '',
+                # phone_number is a PhoneNumberField — coerce to str like the rest
+                # of the codebase (core.serializers, activities.views) before output.
+                'phone_number': str(c.phone_number) if c.phone_number else '',
+                'linkedin': c.linkedin or '',
                 'department': c.standard_department.get_name_display() if c.standard_department else '',
                 'standard_department_id': c.standard_department_id,
                 'standard_department_name': c.standard_department.get_name_display() if c.standard_department else None,
