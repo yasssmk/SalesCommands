@@ -12,8 +12,9 @@ campaign_id) that returns, for one campaign:
   = the non-final accounts. This makes progress the exact complement of
   campaign_coverage (progress% = 100% - coverage% at the account level);
 - meta.objectives = per objective_type: {target, current, progress_pct}, where
-  current reuses CampaignObjective.get_current_value() (the existing service
-  metric logic — MODULE objectives, not legacy).
+  current reuses CampaignAnalyticsService.calculate_objective_values (the same
+  service metric logic as get_current_value, grouped by data source — MODULE
+  objectives, not legacy).
 
 It is one KPI, not two: same subject (a campaign), same scope, same
 cache/invalidation, computed in one bounded pass.
@@ -22,7 +23,8 @@ Custom compute (ratio + parameterized), so it uses the compute_fn escape hatch
 and obeys the two rules: it scopes the CAMPAIGN via apply_role_scope (owner +
 executor via OWNERSHIP_MAP assigned_to_user='executor', so another user's
 campaign is not visible), and it is query-bounded: campaign fetch + accounts
-aggregate + objectives load + one query per objective (K <= 6 per campaign).
+aggregate + objectives load + one query per distinct objective data source
+present (<= 4), independent of the number of objectives.
 """
 
 from django.db.models import Count, Q
@@ -105,14 +107,24 @@ def _campaign_progress(definition, auth_ctx, scope, period, params):
     done = agg['done'] or 0  # == completed_only + stopped, from the shared predicate
     completion_rate = round((done / total) * 100, 1) if total else 0.0
 
-    # Objective advancement — current/target per objective_type. campaign is
-    # prefetched so get_current_value() is one query per objective.
+    # Objective advancement — current/target per objective_type. Values are
+    # computed in one grouped pass (one query per distinct data source present,
+    # not one per objective), identical to CampaignObjective.get_current_value().
+    # Deferred import: the service imports the bi metrics package, so importing
+    # it at module load would risk a cycle through bi.
+    from app_modules.campaigns.services.campaign_analytics_service import (
+        CampaignAnalyticsService,
+    )
+
     objectives = list(
-        CampaignObjective.objects.filter(campaign=campaign).select_related('campaign')
+        CampaignObjective.objects.filter(campaign=campaign)
     )                                                              # query 3
+    objective_values = CampaignAnalyticsService(
+        client_id=client_id
+    ).calculate_objective_values(campaign, objectives)             # bounded: 1 query / source
     objective_rows = []
     for obj in objectives:
-        current = float(obj.get_current_value() or 0)              # 1 query / objective
+        current = float(objective_values.get(obj.id, 0) or 0)
         target = float(obj.target_value or 0)
         pct = round((current / target) * 100, 1) if target else 0.0
         objective_rows.append({

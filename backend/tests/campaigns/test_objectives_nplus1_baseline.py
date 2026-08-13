@@ -24,17 +24,22 @@ progression des objectifs :
          -> ``campaign_objective.py:110-112`` -> le MEME
          ``_calculate_objective_value:409``
 
-Chaque branche de ``_calculate_objective_value`` (``:417-435``) se termine par
-UN seul ``.count()`` / ``.aggregate()`` (``_count_meetings:485``,
-``_count_contacts_reached:493``, ``_count_new_logos:541``, et les formules
-canoniques ``metrics.decision_cycles`` / ``pipeline_value`` / ``revenue_won``,
-``bi/metrics/sales_metrics.py`` — 1 requete chacune). Donc chaque objectif
-ajoute exactement 1 requete SQL : c'est la pente 1+N.
+GARDE-FOU POST-FIX. Le calcul des objectifs est desormais GROUPE PAR SOURCE au
+point partage ``CampaignAnalyticsService.calculate_objective_values`` : une seule
+requete par SOURCE de donnees presente (famille DecisionCycle collapsee en 1
+agregat conditionnel ; MEETINGS / CONTACTS_REACHED / NEW_LOGOS, 1 chacune),
+plafonnee a 4 quelle que soit la quantite d'objectifs. Ce module VERROUILLE les
+nombres verts et la pente reduite.
 
-Ce module GRAVE les nombres de depart (requetes SQL par chemin, a FROID) et
-PROUVE la pente : passer de 2 a 6 objectifs ajoute exactement +4 requetes sur
-chaque chemin. AUCUN code de prod n'est touche ; le fix futur sera valide par la
-BAISSE de ces memes nombres.
+ROUGE (avant fix, commit f1827e9) -> VERT (apres regroupement) :
+  (a) GET dashboard : 30 / 34  -> 30 / 32
+  (b) GET detail    : 11 / 15  -> 11 / 13
+  (c) KPI           :  5 /  9  ->  5 /  7
+Pente : +1 requete/objectif  -> +0,5/objectif (2 sources irreductibles ajoutees
+entre 2 et 6 objectifs : CONTACTS_REACHED et NEW_LOGOS ; la famille DecisionCycle
+DECISION_CYCLES/PIPELINE_VALUE/REVENUE_WON ne coute qu'UNE requete). Casser le
+regroupement (ex. 3 requetes DecisionCycle separees) fait REMONTER ces nombres et
+echouer ce test — c'est sa non-vacuite.
 
 CACHE NEUTRALISE : on force le backend ``DummyCache`` pendant la mesure, donc
 chaque appel est FROID (jamais un hit Redis). On mesure le cout reel du calcul.
@@ -237,9 +242,9 @@ class TestObjectivesNPlusOneRedBaseline:
             ).value
         )
 
-        # ---- THE RED (printed; run with `pytest -s` to see it) ----
+        # ---- THE NUMBERS (printed; run with `pytest -s` to see it) ----
         print("\n" + "=" * 66)
-        print("RED BASELINE — SQL queries per path (cold cache, DummyCache)")
+        print("OBJECTIVES SQL COST — grouped guard (cold cache, DummyCache)")
         print("=" * 66)
         print(f"{'path':<28}{'2 obj':>8}{'6 obj':>8}{'slope/obj':>12}")
         print("-" * 66)
@@ -252,17 +257,21 @@ class TestObjectivesNPlusOneRedBaseline:
             f"per open: {dash6} + {det6} = {dash6 + det6} queries at 6 objectives.\n"
         )
 
-        # ---- Slope proof: +4 objectives -> +4 queries on EVERY path (1+N). ----
-        assert dash6 - dash2 == 4, f"dashboard slope not 1/obj: {dash2} -> {dash6}"
-        assert det6 - det2 == 4, f"detail slope not 1/obj: {det2} -> {det6}"
-        assert kpi6 - kpi2 == 4, f"kpi slope not 1/obj: {kpi2} -> {kpi6}"
+        # ---- Grouped slope: +4 objectives (types) -> +2 queries on EVERY path.
+        # Between 2 and 6 objectives the test adds CONTACTS_REACHED and NEW_LOGOS
+        # (two irreducible sources) plus PIPELINE_VALUE/REVENUE_WON, which fold
+        # into the already-present DecisionCycle aggregate for free. So +2, not
+        # +4. Break the DecisionCycle collapse and this jumps back to +4. ----
+        assert dash6 - dash2 == 2, f"dashboard slope regressed: {dash2} -> {dash6}"
+        assert det6 - det2 == 2, f"detail slope regressed: {det2} -> {det6}"
+        assert kpi6 - kpi2 == 2, f"kpi slope regressed: {kpi2} -> {kpi6}"
 
-        # ---- KPI absolute is the documented 3 + N (campaign + accounts agg +
-        # objectives load + 1 per objective): 5 at N=2, 9 at N=6. ----
+        # ---- KPI absolute: campaign + accounts agg + objectives load + one
+        # query per SOURCE present. 2 obj (MEETINGS + DECISION_CYCLES) = 3 + 2 = 5;
+        # 6 obj (all types, DC family folded) = 3 + 4 sources = 7 (was 9). ----
         assert kpi2 == 5, f"KPI at 2 objectives expected 5, got {kpi2}"
-        assert kpi6 == 9, f"KPI at 6 objectives expected 9, got {kpi6}"
+        assert kpi6 == 7, f"KPI at 6 objectives expected 7, got {kpi6}"
 
-        # ---- Endpoints carry a large constant baseline ON TOP of the loop;
-        # graved here as a floor so a future fix can only lower it. ----
+        # ---- Endpoints carry a large constant baseline ON TOP of the loop. ----
         assert dash2 >= 10, f"dashboard baseline unexpectedly low: {dash2}"
         assert det2 >= 5, f"detail baseline unexpectedly low: {det2}"

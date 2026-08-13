@@ -172,6 +172,18 @@ class ObjectiveType(models.TextChoices):
     NEW_LOGOS        = 'NEW_LOGOS',        _('New Logos')
 
 
+# Objective types whose current value is read from DecisionCycle.source_campaign.
+# Because a campaign's objectives are always computed with period=None, these
+# three collapse into ONE conditional aggregate (count + two filtered sums) over
+# the campaign's decision cycles — the grouped objective-value calculation only
+# needs a single query for the whole family.
+DECISION_CYCLE_OBJECTIVE_TYPES = frozenset({
+    ObjectiveType.DECISION_CYCLES,
+    ObjectiveType.PIPELINE_VALUE,
+    ObjectiveType.REVENUE_WON,
+})
+
+
 # ==========================================================================
 # MEMBER ROLE
 # ==========================================================================
