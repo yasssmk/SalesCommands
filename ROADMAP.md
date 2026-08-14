@@ -592,13 +592,95 @@ campagnes. **Le chip est la référence.**
   **S13 — Intention & Prep Call** (cause racine = modèle d'intention, pas un
   correctif d'affichage local ; voir TD-145).
 
-### Sprint Timeout — Régression d'emballement de requêtes (URGENT, avant Sprint C)
+### Sprint Timeout ✅ — Régression d'emballement de requêtes (perf backend, LIVRÉ)
 - **Objectif** : corriger une RÉGRESSION de dégradation progressive en
-  navigation (NOUVEAU — n'existait pas avant, ce n'est pas une lenteur de fond).
-- **Symptôme** : les endpoints playlist + `notifications/unread-count` sont
-  re-fetchés en boucle, la latence croît → `408`. Piste : boucle de
-  revalidation SWR.
-- **Priorité** : URGENT, à traiter AVANT Sprint C. Dette liée : TD-147.
+  navigation (latence croissante → `408`).
+- **Cause (hypothèse initiale INVALIDÉE)** : ce n'était PAS une boucle de
+  revalidation SWR côté front (piste de départ), mais le **coût unitaire
+  backend (N+1)** de plusieurs endpoints, dont la latence croît avec le volume.
+  Audit → 5 causes racines, corrigées chacune avec repro rouge/verte CHIFFRÉE en
+  requêtes SQL. Dette liée : **TD-147** (RESOLVED partiel).
+- **Livré (5 fils, tous mergés main)** :
+  - **Fil 1 — Batch KPI `dc_cycle_state`** : groupage (`bulk_compute_fn` +
+    `get_bulk_summaries`) + `default_period='all'` + mémoïsation fiscale.
+    **44 req (11 cycles) → 3, pente 0.**
+  - **Fil 2 — Objectifs de campagne** : calcul groupé au point PARTAGÉ
+    (`calculate_objective_values`), 3 chemins (dashboard / detail / KPI).
+    Pente +1/objectif → +0,5, plafond 4. **dashboard 34→32, detail 15→13,
+    KPI 9→7.**
+  - **Fil 3 — Dashboard campagne** : groupage exécuteurs (agrégation + `in_bulk`)
+    + dédup COUNT (GROUP BY réutilisés). **31→14 (2 exécuteurs), pente 6→~0.**
+  - **Fil 4 — Liste client-accounts** : annotation `Count`
+    (`users_count`/`organizations_count`) au lieu du N+1 sérialiseur.
+    **Pente 1/ligne → 0.**
+  - **Fil 5 — Sérialiseur d'activité** (`/module-activities/` + `/by-account/`) :
+    prefetch/select_related + Prefetch filtré (`get_contacts`) + annotations.
+    **~185 req (page 20) → ~15, pente ~9/activité → 0.** LE plus gros N+1 du
+    sprint (sérialiseur partagé par 6 actions).
+- **Vérification smoke PO (réel)** : tous les endpoints corrigés répondent < 1s en
+  navigation réelle (batch 347ms, dashboard 278ms, module-activities 301ms,
+  playlist 272ms) ; **0 timeout `408`** post-fix. `company-accounts` mesuré rapide
+  (104-254ms) → AUCUN fil nécessaire (faux problème). Prod-ready perf atteint hors
+  reports ci-dessous.
+- **Reports (sortis du scope, renvoyés à des sprints dédiés)** :
+  - `territory_progress_by_team` (7,4s froid + double-comptage multi-territoires)
+    → **Sprint « Finalisation Home + performance »** (refonte métrique par
+    personne). Dette : **TD-153**.
+  - `/decision_cycles/steps/` (3,3s, possiblement MORT) → **Sprint dédié
+    decision_cycles/steps** (vérifier consommateurs avant tout). Dette : **TD-154**.
+  - Autres dettes ouvertes du sprint : playlist non bornée (**TD-155**),
+    asymétries re-chase (**TD-156**), doublon param front `territory_id`
+    (**TD-157**), doublons de requêtes + cache trop large (**TD-158**).
+
+### Sprint « Finalisation Home + performance » (APRÈS les sprints Signaux)
+- **Objectif** : finaliser la Home par TYPE d'utilisateur et refondre la métrique
+  de couverture (perf + justesse).
+- **Périmètre** :
+  - **Cadrer le contenu Home par persona** : utilisateur individuel = INCITER À
+    AGIR (ce qu'il doit faire) ; manager = AVANCEMENT de l'équipe.
+  - **Découpage en ONGLETS** (À faire / Avancement / Objectifs) pour un chargement
+    progressif (ne pas tout charger d'un coup).
+  - **REFONTE de la métrique de couverture** : passer de « par territoire » (lente
+    7,4s + double-comptage des comptes présents dans plusieurs territoires) à
+    « par personne » (comptes du user touchés cette période / total). Le
+    **territoire redevient un regroupement STRATÉGIQUE, pas une base de calcul
+    BI**. Attention perf des requêtes BI. Relié à **TD-153** (branche
+    `perf/territory-coverage-snapshot` gardée, porte la repro rouge).
+
+### Mini-sprint — Cap 3 contacts/compte/campagne (backend d'abord, APRÈS perf)
+- **Objectif** : plafonner à **3 contacts ENRÔLÉS par compte par campagne**.
+- **Périmètre** :
+  - S'applique **OUTBOUND ET TARGETED**. Targeted → plus de « tout le compte » :
+    on CHOISIT jusqu'à 3 contacts.
+  - **Existants NON touchés** (pas de rétroactif).
+  - **Message ORANGE (règle métier)** : « Max 3 contacts par compte par
+    campagne ». Le blocage UI des modales est renvoyé au **Sprint UI**.
+  - **Constante CENTRALISÉE** (miroir des caps campagne, pas de magic number).
+- **Prérequis** : **audit de structure OBLIGATOIRE avant code** — le cap doit
+  s'appliquer sur TOUS les chemins d'enrôlement (bulk, unitaire, targeted,
+  outbound). Note : borne davantage le volume playlist (**TD-155**).
+
+### Sprint — decision_cycles/steps (mort ou vivant AVANT d'optimiser)
+- **Objectif** : trancher le sort de `/decision_cycles/steps/` (lent 3,3s et
+  possiblement MORT), puis agir.
+- **Périmètre** :
+  - **D'ABORD vérifier les consommateurs** (front + back). La forme cycle-scopée
+    a des consommateurs vivants ; la forme LISTE-TOUT n'en a aucun connu.
+  - Si **mort** → suppression. Si **vivant** → optimisation (`derive_bulk` au lieu
+    de `derive()` par step, prefetch des activités, éviter `.count()`/`.exists()`
+    par step).
+  - **Ne PAS optimiser avant d'avoir tranché mort/vivant.** Dette : **TD-154**.
+
+### Sprint — Doublons de requêtes + efficacité cache (front/back)
+- **Objectif** : supprimer les requêtes dupliquées en navigation et resserrer
+  l'invalidation de cache.
+- **Périmètre (décisions produit DÉJÀ prises)** :
+  - **Requêtes dupliquées** en navigation (visibles dans l'onglet Network) → dédup.
+  - **Invalidation de cache trop large** : aujourd'hui chaque écriture invalide
+    les KPIs de TOUT le tenant → cache souvent froid. Cible : **invalidation
+    CIBLÉE par objet** (pas par tenant) + **dédup des KPIs partagés**.
+  - **Rafraîchissement AUTO conservé** (pas de refresh manuel).
+  - **Commence par un audit.** Dette : **TD-158**.
 
 ### Sprint C — Produit & Finance de bout en bout (backend d'abord)
 - **Objectif** : le produit et la finance qui FONCTIONNENT de bout en bout,
