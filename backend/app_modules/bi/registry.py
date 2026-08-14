@@ -88,6 +88,18 @@ class KPIDefinition:
     # MUST still scope via permissions.scope_filter.apply_role_scope and MUST
     # be query-bounded (no N+1).
     compute_fn: Optional[Callable[..., Any]] = None
+    # Optional BULK compute hook for the batch endpoint. When several specs of
+    # this KPI appear in one POST /bi/kpi/batch/, the view groups them (by
+    # scope + period) and calls this ONCE instead of compute_fn per spec, so a
+    # per-entity KPI (e.g. dc_cycle_state, one cycle_id per spec) shares a single
+    # bounded query set instead of an N+1. Signature:
+    #   bulk_compute_fn(definition, auth_ctx, scope, period, params_list)
+    #       -> list aligned to params_list, each item a KPIResult OR a DRF
+    #          APIException (rendered as that spec's per-item error — strict
+    #          parity with the per-spec path). It MUST scope via
+    #          apply_role_scope and stay query-bounded. None = no bulk path
+    #          (the batch falls back to the per-spec compute_fn).
+    bulk_compute_fn: Optional[Callable[..., Any]] = None
     # Optional resolver mapping the raw breakdown keys (FK ids, ALREADY
     # scope-filtered by apply_role_scope) of a BREAKDOWN result to
     # human-readable labels, in ONE query. Used by owner-dimensioned KPIs so
@@ -104,6 +116,11 @@ class KPIDefinition:
             raise ValueError(f"KPIDefinition '{self.key}': label must be non-empty")
         if not self.scope_module:
             raise ValueError(f"KPIDefinition '{self.key}': scope_module must be non-empty")
+
+        if self.bulk_compute_fn is not None and not callable(self.bulk_compute_fn):
+            raise TypeError(
+                f"KPIDefinition '{self.key}': bulk_compute_fn must be callable or None"
+            )
 
         if self.compute_fn is not None:
             if not callable(self.compute_fn):

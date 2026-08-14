@@ -18,6 +18,8 @@ shape): it runs N independent definitions, per-item errors, bounded count.
 
 from __future__ import annotations
 
+from collections import defaultdict
+
 from rest_framework.exceptions import (
     APIException,
     NotFound,
@@ -70,12 +72,18 @@ def _error_detail(exc: APIException) -> str:
     return str(detail)
 
 
-def compute_kpi(request, *, key, scope, period_name, period_start, period_end, params):
-    """Authorize + compute a single KPI, returning its serialized dict.
+def authorize_and_resolve(
+    request, *, key, scope, period_name, period_start, period_end, fiscal_cache=None
+):
+    """Authorize a KPI request and resolve its scope + period, WITHOUT computing.
 
-    Raises DRF exceptions (NotFound / ValidationError / PermissionDenied) which
-    the detail view lets propagate to handle_exception, and the batch view
-    catches per item.
+    Returns (definition, scope, period, auth_ctx). Raises DRF exceptions
+    (NotFound / ValidationError / PermissionDenied) which the detail view lets
+    propagate to handle_exception, and the batch view catches per item.
+
+    ``fiscal_cache`` is an optional per-request memo passed through to
+    resolve_period so a batch fetches the tenant's fiscal config once, not once
+    per spec.
     """
     if not key or not registry.is_registered(key):
         raise NotFound(f"Unknown KPI '{key}'")
@@ -102,11 +110,25 @@ def compute_kpi(request, *, key, scope, period_name, period_start, period_end, p
 
     # 3) Period parsing (bad name / malformed custom dates -> 400).
     try:
-        period = resolve_period(period_name, period_start, period_end, definition, auth_ctx.client_id)
+        period = resolve_period(
+            period_name, period_start, period_end, definition, auth_ctx.client_id,
+            fiscal_cache=fiscal_cache,
+        )
     except (ValueError, TypeError) as exc:
         raise ValidationError(str(exc))
 
-    # 4) Compute (missing compute_fn param / disallowed scope -> ValueError -> 400).
+    return definition, scope, period, auth_ctx
+
+
+def compute_kpi(request, *, key, scope, period_name, period_start, period_end, params,
+                fiscal_cache=None):
+    """Authorize + compute a single KPI, returning its serialized dict."""
+    definition, scope, period, auth_ctx = authorize_and_resolve(
+        request, key=key, scope=scope, period_name=period_name,
+        period_start=period_start, period_end=period_end, fiscal_cache=fiscal_cache,
+    )
+
+    # Compute (missing compute_fn param / disallowed scope -> ValueError -> 400).
     try:
         result = cached_run(definition, auth_ctx, scope, period, params=params or {})
     except ValueError as exc:
@@ -169,26 +191,66 @@ class KPIBatchView(BaseAPIView):
         if len(specs) > MAX_BATCH:
             raise ValidationError(f"Batch too large: {len(specs)} requests (max {MAX_BATCH})")
 
-        results = []
-        for spec in specs:
+        # Per-request memo: N specs of the same tenant fetch the fiscal config once.
+        fiscal_cache = {}
+        # results is pre-sized and written by ORIGINAL index, so results[i] always
+        # matches requests[i] whether the spec is an error, a per-spec compute, or
+        # part of a bulk group (reassembled by index below).
+        results = [None] * len(specs)
+        # (key, scope, period) -> [(index, params)] for KPIs exposing a bulk hook.
+        bulk_groups = defaultdict(list)
+        bulk_defs = {}
+        auth_ctx = None
+
+        for i, spec in enumerate(specs):
             spec = spec or {}
             key = spec.get('key')
             try:
-                results.append(compute_kpi(
+                definition, scope, period, auth_ctx = authorize_and_resolve(
                     request,
                     key=key,
                     scope=spec.get('scope'),
                     period_name=spec.get('period'),
                     period_start=spec.get('period_start'),
                     period_end=spec.get('period_end'),
-                    params=spec.get('params'),
-                ))
+                    fiscal_cache=fiscal_cache,
+                )
             except APIException as exc:
-                results.append({
-                    'key': key,
-                    'error': _error_detail(exc),
-                    'status': exc.status_code,
-                })
+                results[i] = {'key': key, 'error': _error_detail(exc), 'status': exc.status_code}
+                continue
+
+            params = spec.get('params') or {}
+            if definition.bulk_compute_fn is not None:
+                group_key = (definition.key, scope, period)
+                bulk_groups[group_key].append((i, params))
+                bulk_defs[group_key] = definition
+            else:
+                # Per-spec path — behaviour unchanged for every non-bulk KPI.
+                try:
+                    result = cached_run(definition, auth_ctx, scope, period, params=params)
+                    results[i] = serialize_result(result, definition)
+                except ValueError as exc:
+                    results[i] = {'key': key, 'error': str(exc), 'status': 400}
+
+        # Bulk path — one grouped compute per (key, scope, period), then scatter
+        # the aligned results back to their original indices.
+        for group_key, items in bulk_groups.items():
+            definition = bulk_defs[group_key]
+            _, scope, period = group_key
+            params_list = [p for (_, p) in items]
+            bulk_results = definition.bulk_compute_fn(
+                definition, auth_ctx, scope, period, params_list
+            )
+            for (i, _), res in zip(items, bulk_results):
+                if isinstance(res, APIException):
+                    results[i] = {'key': definition.key,
+                                  'error': _error_detail(res), 'status': res.status_code}
+                elif isinstance(res, Exception):
+                    # e.g. a ValueError for a missing required param — mapped to a
+                    # 400 exactly like the per-spec ValueError -> ValidationError.
+                    results[i] = {'key': definition.key, 'error': str(res), 'status': 400}
+                else:
+                    results[i] = serialize_result(res, definition)
 
         return Response({'success': True, 'data': {'results': results}})
 
