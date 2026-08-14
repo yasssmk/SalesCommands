@@ -72,34 +72,74 @@ class CampaignAnalyticsService:
             'campaign_id': str(campaign.id),
         })
 
+        # Compute the per-status buckets ONCE and share them across the sub-metrics
+        # that each used to recount the same populations (total accounts was counted
+        # 3x, total activities 2x). Deriving the totals and the per-status figures
+        # from these buckets is value-identical: a GROUP BY partitions every row, so
+        # sum(buckets) == count(), and status is a non-null field.
+        account_status_counts = self._account_status_counts(campaign)
+        activity_status_counts = self._activity_status_counts(campaign)
+
         return {
-            'summary': self.get_summary(campaign),
+            'summary': self.get_summary(campaign, account_status_counts, activity_status_counts),
             'objectives': self.get_objectives_progress(campaign),
-            'activities': self.get_activities_breakdown(campaign),
-            'accounts': self.get_accounts_breakdown(campaign),
-            'timeline': self.get_timeline_progress(campaign),
+            'activities': self.get_activities_breakdown(campaign, activity_status_counts),
+            'accounts': self.get_accounts_breakdown(campaign, account_status_counts),
+            'timeline': self.get_timeline_progress(campaign, account_status_counts),
             'executors': self.get_executor_performance(campaign),
         }
+
+    # ======================================================================
+    # PRIVATE — SHARED PER-STATUS BUCKETS (computed once, reused by the dashboard)
+    # ======================================================================
+
+    def _account_status_counts(self, campaign):
+        """{status: count} for a campaign's CampaignAccounts in ONE GROUP BY.
+
+        sum(values) == total accounts (status is non-null), so callers derive the
+        total and the completed/stopped/... figures from this dict instead of
+        recounting the same population.
+        """
+        return dict(
+            CampaignAccount.objects.filter(campaign=campaign)
+            .values_list('status')
+            .annotate(count=Count('id'))
+            .values_list('status', 'count')
+        )
+
+    def _activity_status_counts(self, campaign):
+        """{status: count} for a campaign's Activities in ONE GROUP BY (same
+        contract as _account_status_counts)."""
+        return dict(
+            Activity.objects.filter(campaign=campaign)
+            .values_list('status')
+            .annotate(count=Count('id'))
+            .values_list('status', 'count')
+        )
 
     # ======================================================================
     # PUBLIC — SUMMARY
     # ======================================================================
 
-    def get_summary(self, campaign):
-        """Get high-level campaign summary."""
-        total_accounts = CampaignAccount.objects.filter(campaign=campaign).count()
-        total_activities = Activity.objects.filter(campaign=campaign).count()
+    def get_summary(self, campaign, account_status_counts=None, activity_status_counts=None):
+        """Get high-level campaign summary.
 
-        completed_accounts = CampaignAccount.objects.filter(
-            campaign=campaign,
-            status=CampaignAccountStatus.COMPLETED,
-        ).count()
-        # Fetch stopped alongside completed — reuse both to derive non_terminal
-        # without an extra .exclude().exists() query.
-        stopped_accounts = CampaignAccount.objects.filter(
-            campaign=campaign,
-            status=CampaignAccountStatus.STOPPED,
-        ).count()
+        account_status_counts / activity_status_counts are the shared per-status
+        buckets (_account_status_counts / _activity_status_counts). Standalone
+        callers omit them and they are computed here; the dashboard passes them so
+        the same populations are not recounted. Deriving the totals/statuses from
+        the buckets is value-identical to the former separate counts.
+        """
+        if account_status_counts is None:
+            account_status_counts = self._account_status_counts(campaign)
+        if activity_status_counts is None:
+            activity_status_counts = self._activity_status_counts(campaign)
+
+        total_accounts = sum(account_status_counts.values())
+        total_activities = sum(activity_status_counts.values())
+        completed_accounts = account_status_counts.get(CampaignAccountStatus.COMPLETED, 0)
+        # stopped reused to derive non_terminal without an extra query.
+        stopped_accounts = account_status_counts.get(CampaignAccountStatus.STOPPED, 0)
         completion_rate = 0.0
         if total_accounts > 0:
             completion_rate = round((completed_accounts / total_accounts) * 100, 1)
@@ -276,7 +316,7 @@ class CampaignAnalyticsService:
     # PUBLIC — ACTIVITIES BREAKDOWN
     # ======================================================================
 
-    def get_activities_breakdown(self, campaign):
+    def get_activities_breakdown(self, campaign, activity_status_counts=None):
         """
         Activity stats grouped by status, type, and outcome.
 
@@ -290,11 +330,14 @@ class CampaignAnalyticsService:
         """
         base_qs = Activity.objects.filter(campaign=campaign)
 
-        # By status
-        status_agg = dict(
-            base_qs.values_list('status')
-            .annotate(count=Count('id'))
-            .values_list('status', 'count')
+        # By status — reuse the shared buckets when the dashboard provides them.
+        status_agg = (
+            activity_status_counts if activity_status_counts is not None
+            else dict(
+                base_qs.values_list('status')
+                .annotate(count=Count('id'))
+                .values_list('status', 'count')
+            )
         )
 
         # By type
@@ -313,7 +356,7 @@ class CampaignAnalyticsService:
             .values_list('outcome', 'count')
         )
 
-        total = base_qs.count()
+        total = sum(status_agg.values())
         completed = status_agg.get(ActivityStatus.COMPLETED, 0)
         planned = status_agg.get(ActivityStatus.PLANNED, 0)
         on_hold = status_agg.get(ActivityStatus.ON_HOLD, 0)
@@ -338,7 +381,7 @@ class CampaignAnalyticsService:
     # PUBLIC — ACCOUNTS BREAKDOWN
     # ======================================================================
 
-    def get_accounts_breakdown(self, campaign):
+    def get_accounts_breakdown(self, campaign, account_status_counts=None):
         """
         Account stats grouped by status.
 
@@ -349,15 +392,13 @@ class CampaignAnalyticsService:
                 'conversion_rate': float,
             }
         """
-        base_qs = CampaignAccount.objects.filter(campaign=campaign)
-
-        status_agg = dict(
-            base_qs.values_list('status')
-            .annotate(count=Count('id'))
-            .values_list('status', 'count')
+        # Reuse the shared buckets when the dashboard provides them.
+        status_agg = (
+            account_status_counts if account_status_counts is not None
+            else self._account_status_counts(campaign)
         )
 
-        total = base_qs.count()
+        total = sum(status_agg.values())
         completed = status_agg.get(CampaignAccountStatus.COMPLETED, 0)
         stopped = status_agg.get(CampaignAccountStatus.STOPPED, 0)
         in_progress = status_agg.get(CampaignAccountStatus.IN_PROGRESS, 0)
@@ -383,7 +424,7 @@ class CampaignAnalyticsService:
     # PUBLIC — TIMELINE PROGRESS
     # ======================================================================
 
-    def get_timeline_progress(self, campaign):
+    def get_timeline_progress(self, campaign, account_status_counts=None):
         """
         Timeline progress: time elapsed vs work completed.
 
@@ -406,12 +447,15 @@ class CampaignAnalyticsService:
 
         time_progress = round((days_elapsed / total_days) * 100, 1)
 
-        # Work progress: completed accounts / total accounts
-        total_accounts = CampaignAccount.objects.filter(campaign=campaign).count()
-        completed_accounts = CampaignAccount.objects.filter(
-            campaign=campaign,
-            status__in=[CampaignAccountStatus.COMPLETED, CampaignAccountStatus.STOPPED],
-        ).count()
+        # Work progress: (completed + stopped) accounts / total accounts, derived
+        # from the shared per-status buckets (value-identical to the former counts).
+        if account_status_counts is None:
+            account_status_counts = self._account_status_counts(campaign)
+        total_accounts = sum(account_status_counts.values())
+        completed_accounts = (
+            account_status_counts.get(CampaignAccountStatus.COMPLETED, 0)
+            + account_status_counts.get(CampaignAccountStatus.STOPPED, 0)
+        )
         work_progress = round((completed_accounts / total_accounts) * 100, 1) if total_accounts > 0 else 0.0
 
         # On track: work progress >= time progress (with 10% tolerance)
@@ -435,22 +479,46 @@ class CampaignAnalyticsService:
     # ======================================================================
 
     def get_executor_performance(self, campaign):
-        """Per-executor activity stats — owner and executor only."""
-        results = []
-        users = [
-            (campaign.owner, 'OWNER'),
-            (campaign.executor, 'EXECUTOR'),
-        ]
-        for user, role in users:
-            if not user:
-                continue
-            user_activities = Activity.objects.filter(campaign=campaign, owner=user)
-            total = user_activities.count()
-            completed = user_activities.filter(status=ActivityStatus.COMPLETED).count()
-            planned = user_activities.filter(status=ActivityStatus.PLANNED).count()
-            on_hold = user_activities.filter(status=ActivityStatus.ON_HOLD).count()
-            accounts_count = user_activities.values('account').distinct().count()
+        """Per-executor activity stats — owner and executor only.
 
+        Was a 5-.count()-per-user loop (an N+1 in the number of executors). Now
+        ONE conditional aggregate grouped by owner yields the same five figures for
+        both users at once; the two User rows (names/emails) load in one in_bulk
+        query. Account is a non-null FK, so Count('account', distinct=True) equals
+        the former values('account').distinct().count(). Values are unchanged; the
+        [owner, executor] order and the "always a row per non-null user (zeros when
+        no activity)" behaviour are preserved.
+        """
+        # owner_id / executor_id are FK columns — read without loading the users.
+        pairs = [(campaign.owner_id, 'OWNER'), (campaign.executor_id, 'EXECUTOR')]
+        user_ids = [uid for uid, _ in pairs if uid]
+        if not user_ids:
+            return []
+
+        rows = (
+            Activity.objects.filter(campaign=campaign, owner_id__in=user_ids)
+            .values('owner')
+            .annotate(
+                total=Count('id'),
+                completed=Count('id', filter=Q(status=ActivityStatus.COMPLETED)),
+                planned=Count('id', filter=Q(status=ActivityStatus.PLANNED)),
+                on_hold=Count('id', filter=Q(status=ActivityStatus.ON_HOLD)),
+                accounts_count=Count('account', distinct=True),
+            )
+        )
+        by_owner = {r['owner']: r for r in rows}
+
+        from end_users.models import User
+        users = User.objects.in_bulk(user_ids)
+
+        results = []
+        for uid, role in pairs:
+            user = users.get(uid) if uid else None
+            if user is None:
+                continue
+            stats = by_owner.get(uid, {})
+            total = stats.get('total', 0)
+            completed = stats.get('completed', 0)
             results.append({
                 'user_id': str(user.id),
                 'user_name': f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email,
@@ -458,10 +526,10 @@ class CampaignAnalyticsService:
                 'role': role,
                 'total_activities': total,
                 'completed': completed,
-                'planned': planned,
-                'on_hold': on_hold,
+                'planned': stats.get('planned', 0),
+                'on_hold': stats.get('on_hold', 0),
                 'completion_rate': round((completed / total) * 100, 1) if total > 0 else 0.0,
-                'accounts_count': accounts_count,
+                'accounts_count': stats.get('accounts_count', 0),
             })
 
         return results
