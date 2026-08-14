@@ -2,25 +2,24 @@
 """
 RED BASELINE — Sprint Timeout / Fil dashboard campagne (MESURE, aucun fix).
 
-Measured on main AFTER the objectives-grouping fix is merged (so the objectives
-loop is already bounded and NOT recounted here). What remains in
-GET /campaigns/{id}/dashboard/ (CampaignAnalyticsService.get_dashboard,
-campaign_analytics_service.py:57-82) is:
+GARDE-FOU POST-FIX. Le dashboard groupe désormais les stats exécuteurs en UNE
+agrégation conditionnelle (get_executor_performance) et déduplique les COUNT en
+partageant un GROUP BY par statut (comptes + activités) calculé une seule fois
+dans get_dashboard. Valeurs métier inchangées (voir test_dashboard_equivalence).
 
-- N+1 EXECUTORS: get_executor_performance (:437-467) loops over
-  [(owner,'OWNER'),(executor,'EXECUTOR')] (:440-443) and runs 5 .count() per
-  non-null user (:448-452 total/completed/planned/on_hold/accounts_count). Each
-  extra executor costs 6 queries: its 5 counts PLUS one lazy load of the
-  campaign.executor User row (the retrieve does not select_related it).
-- DUPLICATED COUNTs: total-accounts counted 3x (get_summary :90,
-  get_accounts_breakdown :360, get_timeline_progress :410); total-activities
-  counted 2x (get_summary :91, get_activities_breakdown :316).
-- _count_meetings (:501-549) = one COUNT with two correlated Exists (an expensive
-  single query, not an N+1), only when a MEETINGS objective is present.
+ROUGE (avant fix, commit 8d5d5c55) -> VERT :
+- 1 exécuteur  : 25 -> 14
+- 2 exécuteurs : 31 -> 15
+- pente exécuteur : 6 -> 1
 
-This module GRAVES the cold dashboard query count and PROVES the executor slope
-(+5 queries per executor). Cache neutralised (DummyCache) so we measure cold.
-DB: Postgres.
+La pente résiduelle de 1 n'est PLUS le N+1 exécuteurs (le bloc perf est O(1) via
+l'agrégat + in_bulk des noms) : c'est le chargement paresseux de campaign.executor
+que get_summary fait pour SA sortie (bloc 'executor'), un load unique constant.
+Les COUNT(*) « nus » sur module_campaign_accounts passent de 6 à 0 (tous les
+totaux/statuts dérivent du GROUP BY partagé). Casser un regroupement fait remonter
+ces nombres et échouer ce test.
+
+Cache neutralisé (DummyCache) = cold. DB: Postgres.
 """
 
 from datetime import timedelta
@@ -155,7 +154,7 @@ class TestDashboardNPlusOneRedBaseline:
         act_counts = _count_table_counts(q2, "module_activities")
 
         print("\n" + "=" * 66)
-        print("RED BASELINE — GET /campaigns/{id}/dashboard/ SQL queries (cold)")
+        print("DASHBOARD SQL queries — grouped guard (cold)")
         print("=" * 66)
         print(f"  1 executor  (owner only)      : {n1} queries")
         print(f"  2 executors (owner + executor): {n2} queries")
@@ -164,12 +163,12 @@ class TestDashboardNPlusOneRedBaseline:
         print(f"  COUNT(*) over module_activities (dup total-activities 2x): {act_counts}")
         print("=" * 66 + "\n")
 
-        # ---- Executor N+1 proof: each executor adds 6 queries (its 5 .count()
-        # calls + one lazy load of the executor User row, un-select_related'd).
-        assert executor_slope == 6, f"executor slope expected 6, got {executor_slope}"
-        # ---- Duplicated totals are present in the trace (>= the code-confirmed
-        # 3x campaign-accounts and 2x activities bare counts, among other counts).
-        assert ca_counts >= 3, f"expected >=3 campaign_accounts COUNTs, got {ca_counts}"
-        assert act_counts >= 2, f"expected >=2 activities COUNTs, got {act_counts}"
-        # ---- The cold dashboard is heavy (graved floor).
-        assert n2 >= 20, f"dashboard cold baseline unexpectedly low: {n2}"
+        # ---- Executor block is now O(1): the slope collapsed from 6 to 1, and the
+        # residual 1 is get_summary's own campaign.executor load (not the N+1).
+        assert executor_slope == 1, f"executor slope expected 1, got {executor_slope}"
+        assert n1 == 14, f"1-executor dashboard expected 14 queries, got {n1}"
+        assert n2 == 15, f"2-executor dashboard expected 15 queries, got {n2}"
+        # ---- Dedup complete: no bare COUNT(*) over campaign_accounts remains (all
+        # totals/statuses derive from the shared GROUP BY). Breaking the reuse makes
+        # these climb back.
+        assert ca_counts == 0, f"expected 0 bare campaign_accounts COUNT(*), got {ca_counts}"
