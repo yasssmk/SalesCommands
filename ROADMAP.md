@@ -745,6 +745,41 @@ campagnes. **Le chip est la référence.**
 - **Solution** : à cadrer, groupés. Après S12 (la génération multi-canal
   en dépend).
 - **Validation** : à définir.
+- **Ciblage & sélection des contacts** (le cap contacts n'est PAS un
+  sprint autonome — décision PO ; il est absorbé ici comme conséquence
+  d'un vrai sujet ciblage/sélection) :
+  - Constat : pour une campagne OUTBOUND sur territoire, on ne choisit à
+    aucun moment QUELS contacts du compte cibler → sélection aujourd'hui
+    implicite/arbitraire.
+  - À construire, avec une vraie logique UX (à cadrer) :
+    * un FILTRE de ciblage à la création de campagne (ex. département —
+      critères à définir) pour cibler les bons profils dans chaque compte ;
+    * une SÉLECTION STRATÉGIQUE des contacts (selon la campagne / le
+      meilleur contact à joindre), PAS un choix arbitraire des 3 ;
+    * un CAP max de contacts enrôlés par compte par campagne, comme
+      CONSÉQUENCE de la sélection (pas un sujet isolé). Note : ATTENTION
+      PERFORMANCE — un nombre non borné de contacts par compte fait grossir
+      la playlist et les enrôlements.
+  - Décisions PO DÉJÀ FIGÉES (input pour le cadrage, à ne pas reperdre) :
+    * cap = 3 contacts ENRÔLÉS par compte par campagne ;
+    * s'applique OUTBOUND + TARGETED ;
+    * TARGETED : plus de « ajouter tout le compte », on choisit jusqu'à 3
+      contacts ;
+    * enrôlements existants au-delà de 3 non touchés (pas de rétroactif) ;
+    * comportement SKIP-AND-ENROLL-REST (enrôler jusqu'à 3, ignorer le
+      surplus) ;
+    * message ORANGE (règle métier, pas rouge) « max contacts reached per
+      campaign » ;
+    * comptage sur les enrôlements ACTIFS (un retrait libère un slot) ;
+    * constante N centralisée dans `campaigns/constants.py` (pattern des
+      caps existants) ;
+    * blocage UI (retrait « tout le compte » + sélection bloquée au-delà
+      de 3) → volet UI.
+  - Point technique établi par audit (à réutiliser le moment venu) : le
+    POINT CENTRAL pour poser le cap est la création de `CampaignContact`
+    (tous les chemins d'enrôlement le traversent — bulk, unitaire,
+    targeted, « tout le compte »). L'audit de structure enrôlement a déjà
+    été fait ; le resservir au cadrage S13.
 
 ### Sprint — Sales Cycle Snapshot / Deal History (APRÈS S13)
 - **Objectif** : à la clôture d'un cycle (win/loss), figer un snapshot
