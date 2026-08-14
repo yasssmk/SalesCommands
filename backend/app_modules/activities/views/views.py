@@ -12,7 +12,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import transaction
+from django.db.models import Prefetch, Count
 from django.utils import timezone
+
+from app_modules.contacts.models import Contact
 
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, ActivityErrorMessages, CampaignModuleErrorMessages
@@ -171,14 +174,34 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         })
         
         queryset = super().get_queryset()
-        
+
+        # Relations that ActivityListSerializer reads per row. Preparing them on
+        # the queryset turns the serializer's per-row fallbacks into cache reads:
+        #   - Prefetch('contacts', ...) feeds get_contacts / get_contacts_count.
+        #     It mirrors obj.contacts.all() EXACTLY — same set, same default
+        #     ordering (Contact.Meta.ordering) since no order_by/filter is added —
+        #     with standard_department joined so the per-contact department lookup
+        #     is free. The payload is therefore identical to before.
+        #   - annotate(_contacts_count) makes get_contacts_count read the
+        #     annotation instead of counting (single Count -> no cartesian risk).
+        #   - select_related('campaign_contact') feeds get_campaign_contact_status.
+        list_serializer_prefetch = Prefetch(
+            'contacts',
+            queryset=Contact.objects.select_related('standard_department'),
+        )
+
         # Optimize based on action
         if self.action == 'list':
-            # List: minimal relations for table display
+            # List: relations the list serializer reads for every row.
             queryset = queryset.select_related(
                 'account',
                 'owner',
-                'decision_step'
+                'decision_step',
+                'campaign_contact',
+            ).prefetch_related(
+                list_serializer_prefetch,
+            ).annotate(
+                _contacts_count=Count('contacts'),
             )
         elif self.action == 'retrieve':
             # Retrieve: full relations for detail view
@@ -197,14 +220,22 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 'invited_users'
             )
         else:
-            # Default: moderate optimization
+            # Default: the custom list actions (by_account, my_activities,
+            # by_step, overdue, upcoming, unlinked_for_account) all serialize
+            # with ActivityListSerializer, so they get the same list-serializer
+            # relations as `list`.
             queryset = queryset.select_related(
                 'account',
                 'owner',
                 'decision_cycle',
-                'decision_step'
+                'decision_step',
+                'campaign_contact',
+            ).prefetch_related(
+                list_serializer_prefetch,
+            ).annotate(
+                _contacts_count=Count('contacts'),
             )
-        
+
         # Apply owner scope filter (mine/team/all)
         queryset = self.apply_owner_scope_filter(queryset)
         
