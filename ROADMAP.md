@@ -671,16 +671,27 @@ campagnes. **Le chip est la référence.**
     par step).
   - **Ne PAS optimiser avant d'avoir tranché mort/vivant.** Dette : **TD-154**.
 
-### Sprint — Doublons de requêtes + efficacité cache (front/back)
+### Sprint — Doublons de requêtes + efficacité cache (front/back) — ⏸️ REPORTÉ (pré-launch)
+- **Statut (décision PO)** : **REPORTÉ / à faire AVANT déploiement** (pré-launch,
+  pas supprimé de la roadmap). La perf actuelle est prod-ready (tout < 1s), mais
+  l'audit a PROUVÉ un vrai défaut d'archi cache à corriger avant la montée en
+  charge multi-tenant. **Audit LIVRÉ** (annoncé en **TD-158**) ; résultats tracés
+  en **TD-159** (principal — ⚠️ invalidation BI TENANT-WIDE, à faire avant
+  déploiement) + **TD-160/161/162** (doublons front, priorité faible/cosmétique).
+  **Le prochain jalon actif reste le Sprint C** (ci-dessous).
 - **Objectif** : supprimer les requêtes dupliquées en navigation et resserrer
   l'invalidation de cache.
 - **Périmètre (décisions produit DÉJÀ prises)** :
   - **Requêtes dupliquées** en navigation (visibles dans l'onglet Network) → dédup.
+    L'audit a montré que les vrais doublons simultanés sont déjà dédupliqués par
+    SWR ; le gisement réel est la revalidation au remontage (**TD-160**).
   - **Invalidation de cache trop large** : aujourd'hui chaque écriture invalide
     les KPIs de TOUT le tenant → cache souvent froid. Cible : **invalidation
-    CIBLÉE par objet** (pas par tenant) + **dédup des KPIs partagés**.
+    CIBLÉE par objet** (pas par tenant) + **dédup des KPIs partagés**. Défaut
+    d'archi prouvé et détaillé en **TD-159** (à faire avant déploiement).
   - **Rafraîchissement AUTO conservé** (pas de refresh manuel).
-  - **Commence par un audit.** Dette : **TD-158**.
+  - **Audit LIVRÉ.** Dettes : **TD-158** (umbrella), **TD-159** (principal),
+    **TD-160/161/162** (secondaires front).
 
 ### Sprint C — Produit & Finance de bout en bout (backend d'abord)
 - **Objectif** : le produit et la finance qui FONCTIONNENT de bout en bout,
