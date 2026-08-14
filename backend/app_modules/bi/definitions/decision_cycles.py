@@ -119,30 +119,27 @@ dc_won_value = KPIDefinition(
 # Reuses the REPAIRED derived logic (CycleAggregationService.get_bulk_summaries
 # over prefetched steps+activities → StepStatusDerivationService.derive_bulk);
 # no new progression logic, no percentage.
-def _cycle_state(definition, auth_ctx, scope, period, params):
-    cycle_id = params.get('cycle_id')
-    if not cycle_id:
-        raise ValueError(f"KPI '{definition.key}' requires params['cycle_id']")
-    client_id = auth_ctx.client_id
-
-    from app_modules.decision_cycles.services.cycle_aggregation_service import (
-        CycleAggregationService,
-    )
-
-    # RULE 1 — scope the cycle via the shared primitive (owner + C6).
-    cycles = DecisionCycle.objects.filter(client_id=client_id)
+def _scoped_cycles(auth_ctx, scope):
+    """The role-scoped DecisionCycle queryset (owner + C6), with steps+activities
+    prefetched so the derived state runs from cache. Shared by the single and the
+    bulk cycle-state paths so their scoping can never drift."""
+    cycles = DecisionCycle.objects.filter(client_id=auth_ctx.client_id)
     cycles = apply_role_scope(
         cycles, module='decision_cycles', scope=scope, auth_ctx=auth_ctx
     )
-    # Prefetch steps + activities so the derived logic runs from cache.
-    cycle = cycles.prefetch_related('steps__activities').filter(id=cycle_id).first()
+    return cycles.prefetch_related('steps__activities')
+
+
+def _build_cycle_state_result(definition, scope, cycle_id, cycle, summary):
+    """Turn one cycle + its get_bulk_summaries entry into the KPIResult. Shared by
+    _cycle_state (single) and _cycle_state_bulk so both return byte-identical
+    results. ``cycle`` is None when the id is out of scope / not found."""
     if cycle is None:
         return KPIResult(
             key=definition.key, shape=OutputShape.SCALAR, value=None, scope=scope,
             meta={'cycle_id': str(cycle_id), 'reason': 'out_of_scope_or_missing'},
         )
 
-    summary = CycleAggregationService().get_bulk_summaries([cycle]).get(cycle.id, {})
     cycle_status = summary.get('cycle_status', 'NOT_STARTED')
     progress = summary.get('progress', {})
     validated = progress.get('validated_steps', 0)
@@ -182,6 +179,52 @@ def _cycle_state(definition, auth_ctx, scope, period, params):
     )
 
 
+def _cycle_state(definition, auth_ctx, scope, period, params):
+    cycle_id = params.get('cycle_id')
+    if not cycle_id:
+        raise ValueError(f"KPI '{definition.key}' requires params['cycle_id']")
+
+    from app_modules.decision_cycles.services.cycle_aggregation_service import (
+        CycleAggregationService,
+    )
+
+    cycle = _scoped_cycles(auth_ctx, scope).filter(id=cycle_id).first()
+    summary = (
+        CycleAggregationService().get_bulk_summaries([cycle]).get(cycle.id, {})
+        if cycle is not None else {}
+    )
+    return _build_cycle_state_result(definition, scope, cycle_id, cycle, summary)
+
+
+def _cycle_state_bulk(definition, auth_ctx, scope, period, params_list):
+    """Batch path: compute the state of every requested cycle in ONE shared
+    query set (filter id__in + steps/activities prefetch = 3 queries total,
+    instead of 3 per cycle), then get_bulk_summaries over the whole set (0
+    queries). Returns a list aligned to params_list, each item a KPIResult — or,
+    for a spec missing cycle_id, a ValueError so the view renders that spec's
+    own 400 (strict parity with the per-spec path)."""
+    from app_modules.decision_cycles.services.cycle_aggregation_service import (
+        CycleAggregationService,
+    )
+
+    valid_ids = [str(p['cycle_id']) for p in params_list if p.get('cycle_id')]
+    cycles = list(_scoped_cycles(auth_ctx, scope).filter(id__in=valid_ids))
+    by_id = {str(c.id): c for c in cycles}
+    summaries = CycleAggregationService().get_bulk_summaries(cycles)
+
+    results = []
+    for p in params_list:
+        cycle_id = p.get('cycle_id')
+        if not cycle_id:
+            # Same message + error class as the per-spec path -> identical 400.
+            results.append(ValueError(f"KPI '{definition.key}' requires params['cycle_id']"))
+            continue
+        cycle = by_id.get(str(cycle_id))
+        summary = summaries.get(cycle.id, {}) if cycle is not None else {}
+        results.append(_build_cycle_state_result(definition, scope, cycle_id, cycle, summary))
+    return results
+
+
 # KPI 9 — decision cycle state (custom compute; param cycle_id). No percentage.
 dc_cycle_state = KPIDefinition(
     key='dc_cycle_state',
@@ -189,6 +232,11 @@ dc_cycle_state = KPIDefinition(
     scope_module='decision_cycles',
     output_shape=OutputShape.SCALAR,
     allowed_scopes=('mine', 'team', 'client'),
+    # STATE metric: the derived status ignores any period window, so the API
+    # default must NOT resolve to the fiscal year (which would fetch the tenant's
+    # ClientAccount per spec for nothing). 'all' -> no period, same as the STOCK
+    # KPIs above (dc_pipeline_value).
+    default_period='all',
     cache_tags=('decision_cycles', 'activities'),
     invalidation_sources=(
         'decision_cycles.DecisionCycle',
@@ -196,6 +244,7 @@ dc_cycle_state = KPIDefinition(
         'module_activities.Activity',
     ),
     compute_fn=_cycle_state,
+    bulk_compute_fn=_cycle_state_bulk,
 )
 
 

@@ -66,6 +66,7 @@ def resolve_period(
     period_end: Optional[str],
     definition,
     client_id,
+    fiscal_cache=None,
 ) -> Optional[Period]:
     """Translate the ``period`` request parameter into a ``Period`` or None.
 
@@ -92,7 +93,7 @@ def resolve_period(
         return Period(start=start, end=end)
 
     if name == 'fiscal_year' or (name == 'default' and definition.default_period == 'fiscal_year'):
-        return current_fiscal_year_period(client_id)
+        return current_fiscal_year_period(client_id, cache=fiscal_cache)
 
     if name == 'default':
         # KPI default_period is not a fiscal window -> no period filter; the

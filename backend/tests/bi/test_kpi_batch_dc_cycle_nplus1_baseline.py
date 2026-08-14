@@ -11,20 +11,20 @@ one ``dc_cycle_state`` spec per visible decision cycle, each spec re-runs
 (``:138``) = 3 queries per cycle (cycle row + steps prefetch + activities
 prefetch); ``get_bulk_summaries([cycle])`` (``:145``) adds 0 (prefetched data).
 
-So N cycles in one batch cost an N+1 at the ORCHESTRATION level. Measured cold on
-the real endpoint: 3 cycles = 12 queries, 11 cycles = 44 — exactly 4 per cycle
-(the 3 prefetch queries of _cycle_state plus 1 per-spec scope resolution), with
-no fixed overhead. The grouping primitive already exists:
-``CycleAggregationService.get_bulk_summaries(cycles, ...)``
-(``cycle_aggregation_service.py:202``) accepts an ITERABLE of cycles and runs on
-prefetched data with zero extra queries, so all N could share ONE
+GARDE-FOU POST-FIX. Le batch groupe desormais les specs dc_cycle_state par
+(scope, periode) et les calcule en UN passage : ``_cycle_state_bulk`` fait un seul
 ``DecisionCycle.objects.filter(id__in=[...]).prefetch_related('steps__activities')``
-(3 queries total) instead of 3 per cycle.
+(3 requetes) + ``CycleAggregationService.get_bulk_summaries`` (0), et
+``dc_cycle_state`` passe a ``default_period='all'`` (plus de requete ClientAccount
+fiscale par spec). Le cout des dc_cycle_state est donc CONSTANT (~3), independant
+du nombre de cycles.
 
-This module GRAVES the starting numbers (SQL queries for the real batch endpoint,
-cache neutralised = cold) at 11 cycles (the PO's observed case) and at 3 cycles,
-and PROVES the slope (queries grow with the number of cycles). AUCUN code de prod
-n'est touche ; le fix (grouper les cycles) sera valide par la baisse de ce nombre.
+ROUGE (avant fix, commit c8775ff) -> VERT (apres regroupement) :
+  3  dc_cycle_state : 12 -> 3
+  11 dc_cycle_state : 44 -> 3
+  pente : 4/cycle -> 0/cycle
+Casser le groupage (retomber sur la boucle par spec) fait REMONTER ces nombres et
+echouer ce test — c'est sa non-vacuite.
 
 CACHE NEUTRALISE : DummyCache pendant la mesure -> chaque spec est FROID (jamais
 un hit Redis). On mesure le cout reel du batch.
@@ -150,22 +150,20 @@ class TestBatchDcCycleStateRedBaseline:
         q_low = self._measure_batch(authed_api_a, cycles_low)
         per_cycle = (q_high - q_low) / (CYCLES_HIGH - CYCLES_LOW)
 
-        # ---- THE RED (printed; run with `pytest -s` to see it) ----
+        # ---- THE NUMBERS (printed; run with `pytest -s` to see it) ----
         print("\n" + "=" * 60)
-        print("RED BASELINE — POST /bi/kpi/batch/ SQL queries (cold cache)")
+        print("BATCH dc_cycle_state SQL queries — grouped guard (cold cache)")
         print("=" * 60)
         print(f"  {CYCLES_LOW:>3} dc_cycle_state specs : {q_low} queries")
         print(f"  {CYCLES_HIGH:>3} dc_cycle_state specs : {q_high} queries")
         print(f"  slope                    : {per_cycle:.2f} queries / cycle")
         print("=" * 60 + "\n")
 
-        # ---- THE RED, locked. The batch is an orchestration N+1: every extra
-        # dc_cycle_state spec adds a CONSTANT 4 queries — the 3 of _cycle_state
-        # (cycle row + steps prefetch + activities prefetch, decision_cycles.py:138)
-        # plus 1 per-spec scope resolution. No fixed overhead: 3 cycles = 12,
-        # 11 cycles = 44, exactly 4 * N. Grouping the cycles (get_bulk_summaries
-        # over one filter(id__in=[...]).prefetch_related('steps__activities'))
-        # will collapse the per-cycle 3 into 3 shared, dropping this slope. ----
-        assert q_low == 12, f"3-cycle batch expected 12 queries, got {q_low}"
-        assert q_high == 44, f"11-cycle batch expected 44 queries, got {q_high}"
-        assert per_cycle == 4.0, f"slope expected 4.0 q/cycle, got {per_cycle}"
+        # ---- THE GREEN, locked. dc_cycle_state specs are grouped into ONE shared
+        # query set (filter id__in + steps/activities prefetch = 3), so the cost is
+        # CONSTANT regardless of the cycle count: 3 cycles = 3, 11 cycles = 3, slope
+        # 0. Breaking the grouping (per-spec loop) makes these climb back to 12/44
+        # and fails the test. ----
+        assert q_low == 3, f"3-cycle batch expected 3 queries, got {q_low}"
+        assert q_high == 3, f"11-cycle batch expected 3 queries, got {q_high}"
+        assert per_cycle == 0.0, f"slope expected 0.0 q/cycle, got {per_cycle}"
