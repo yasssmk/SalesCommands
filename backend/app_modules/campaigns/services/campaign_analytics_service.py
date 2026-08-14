@@ -13,7 +13,7 @@ Follows legacy campaign_analytics_service.py patterns,
 simplified for new CampaignAccount pivot architecture.
 """
 
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Count, Exists, OuterRef, Q, Sum
 from django.utils import timezone
 
 from core.logging import get_logger
@@ -21,8 +21,10 @@ from core.logging import get_logger
 from app_modules.activities.models import Activity
 from app_modules.activities.constants import ActivityType, ActivityStatus
 from app_modules.bi import metrics
+from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
 
+from ..constants import DECISION_CYCLE_OBJECTIVE_TYPES
 from ..models import (
     CampaignAccount,
     CampaignAccountStatus,
@@ -186,11 +188,14 @@ class CampaignAnalyticsService:
                 'current_value', 'progress_percentage', 'is_primary',
             }]
         """
-        objectives = CampaignObjective.objects.filter(campaign=campaign)
+        objectives = list(CampaignObjective.objects.filter(campaign=campaign))
+        # Grouped by data source: one query per distinct source present, never
+        # one per objective (was a 1+N loop over _calculate_objective_value).
+        values = self.calculate_objective_values(campaign, objectives)
         results = []
 
         for obj in objectives:
-            current_value = self._calculate_objective_value(campaign, obj)
+            current_value = values.get(obj.id, 0)
             progress = 0.0
             if obj.target_value and obj.target_value > 0:
                 progress = round((current_value / float(obj.target_value)) * 100, 1)
@@ -207,6 +212,65 @@ class CampaignAnalyticsService:
             })
 
         return results
+
+    def calculate_objective_values(self, campaign, objectives):
+        """Current value for EACH objective of a campaign, grouped by data source.
+
+        Returns the SAME numbers as calling ``_calculate_objective_value(campaign,
+        obj)`` per objective, but bounded to ONE query per distinct data SOURCE
+        present — never one query per objective:
+
+        - The DecisionCycle family (DECISION_CYCLES / PIPELINE_VALUE /
+          REVENUE_WON) collapses into a single conditional aggregate. Campaign
+          objectives are computed with ``period=None``, so pipeline_value's date
+          anchor is inert; the three metrics reduce to a count plus two filtered
+          sums over the campaign's cycles, identical to the per-metric formulas
+          (``metrics.decision_cycles`` / ``pipeline_value`` / ``revenue_won``).
+        - MEETINGS / CONTACTS_REACHED / NEW_LOGOS each keep their own single
+          query (distinct populations that cannot be merged), reusing the same
+          per-campaign helpers ``_calculate_objective_value`` dispatches to.
+
+        Only the sources actually present among ``objectives`` are queried, so
+        the query count is bounded by the number of distinct sources (<= 4),
+        independent of the number of objectives. Unmapped types resolve to 0,
+        mirroring ``_calculate_objective_value``'s default.
+
+        Args:
+            campaign: the campaign whose objectives are valued.
+            objectives: an iterable of its CampaignObjective rows (already loaded).
+
+        Returns:
+            dict: {objective_id: current_value}.
+        """
+        present_types = {obj.objective_type for obj in objectives}
+        value_by_type = {}
+
+        # DecisionCycle family — one conditional aggregate for the up-to-three
+        # cycle-based metrics present (count + two filtered sums).
+        if present_types & DECISION_CYCLE_OBJECTIVE_TYPES:
+            agg = (
+                DecisionCycle.objects
+                .filter(client_id=self.client_id, source_campaign=campaign)
+                .aggregate(
+                    dc_count=Count('id'),
+                    pipeline=Sum('estimated_value', filter=Q(outcome__isnull=True)),
+                    revenue=Sum('estimated_value', filter=Q(outcome=CycleOutcome.WON)),
+                )
+            )
+            value_by_type[ObjectiveType.DECISION_CYCLES] = agg['dc_count'] or 0
+            value_by_type[ObjectiveType.PIPELINE_VALUE] = float(agg['pipeline'] or 0)
+            value_by_type[ObjectiveType.REVENUE_WON] = float(agg['revenue'] or 0)
+
+        # Activity / CampaignAccount sources — distinct populations, one query
+        # each, reusing the existing per-campaign helpers.
+        if ObjectiveType.MEETINGS in present_types:
+            value_by_type[ObjectiveType.MEETINGS] = self._count_meetings(campaign)
+        if ObjectiveType.CONTACTS_REACHED in present_types:
+            value_by_type[ObjectiveType.CONTACTS_REACHED] = self._count_contacts_reached(campaign)
+        if ObjectiveType.NEW_LOGOS in present_types:
+            value_by_type[ObjectiveType.NEW_LOGOS] = self._count_new_logos(campaign)
+
+        return {obj.id: value_by_type.get(obj.objective_type, 0) for obj in objectives}
 
     # ======================================================================
     # PUBLIC — ACTIVITIES BREAKDOWN
