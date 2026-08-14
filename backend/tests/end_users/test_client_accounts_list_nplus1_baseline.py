@@ -1,39 +1,29 @@
 # backend/tests/end_users/test_client_accounts_list_nplus1_baseline.py
 """
-RED BASELINE — Sprint Timeout / Fil accounts (MESURE, aucun fix).
+RE-MEASURE (GREEN) — Sprint Timeout / Fil accounts.
 
-GET /client/client-accounts/ (ClientAccountViewSet.list) is N+1 on the
-serializer. The measured cost — NOT the assumed one — is exactly ONE extra
-COUNT query per row, emitted by:
+GET /client/client-accounts/ (ClientAccountViewSet.list) used to be N+1 on
+the serializer: get_users_count did obj.users.filter(is_active=True).count(),
+reopening a fresh queryset per row (1 COUNT / row) and wasting the users
+prefetch. The graved RED baseline (commit b8267608):
 
-  - ClientAccountSerializer.get_users_count (serializers/client_account_serializers.py:24-26)
-        obj.users.filter(is_active=True).count()
+    page_size=10 -> 14 queries
+    page_size=20 -> 24 queries
+    slope        -> 1 query / row  (users_count)
 
-The `.filter(is_active=True)` clones a FRESH queryset whose result cache is
-empty, so `.count()` issues its own aggregate SQL for every row AND bypasses
-the users prefetch the viewset declared (views/client_account_viewset.py:39-40):
+The fix moves both counts into the main query as annotations on the
+list/retrieve queryset (views/client_account_viewset.py):
 
-        Prefetch('users', queryset=User.objects.filter(is_active=True))
+    users_count_annotated         = Count('users', filter=Q(users__is_active=True), distinct=True)
+    organizations_count_annotated = Count('organizations', distinct=True)
 
-=> that prefetch is loaded once then WASTED.
+and the serializer reads those annotations (with a direct-count fallback for
+un-annotated callers). The per-row COUNTs and both prefetch queries are gone.
 
-By contrast, the sibling count does NOT N+1:
-
-  - ClientAccountSerializer.get_organizations_count (:28-30)
-        obj.organizations.count()
-
-`.count()` on the un-refiltered related manager reuses the prefetched
-`organizations` cache (Django returns len(cache), 0 queries). Verified
-directly: users_count -> 1 query, organizations_count -> 0 queries.
-
-So the honest red is: slope = 1 COUNT / row (users_count), a wasted users
-prefetch, and a correctly-consumed organizations prefetch. The list action
-is NOT cached, so it pays this on every call.
-
-This module GRAVES those starting numbers: it measures the real endpoint at
-two page sizes (10 and 20), proves the +1 query/row slope, and isolates in
-the SQL trace the per-row users COUNT, the absent organizations COUNT, and
-the two prefetch queries (one wasted, one consumed).
+This module now GUARDS the fixed behaviour: the query count is FLAT across
+page sizes (slope 0), with zero per-row users/organizations COUNT queries and
+zero prefetch queries. If the annotation is reverted to a per-row .count(),
+the slope climbs back to 1 and these tests fail (non-vacuity).
 
 DB: Postgres.
 """
@@ -108,8 +98,8 @@ def _list(authed_api_a, page_size):
 
 
 def _classify(captured):
-    """Split a captured SQL trace into the per-row COUNT queries and the
-    prefetch queries, by table + shape."""
+    """Split a captured SQL trace into per-row COUNT queries and prefetch
+    queries, by table + shape."""
     users_count, orgs_count, users_prefetch, orgs_prefetch = [], [], [], []
     for q in captured:
         sql = q["sql"].lower()
@@ -128,12 +118,11 @@ def _classify(captured):
 
 
 @pytest.mark.django_db
-class TestClientAccountsListNPlus1RedBaseline:
+class TestClientAccountsListBounded:
 
-    def test_query_count_grows_one_per_row(self, many_accounts, authed_api_a):
-        """The list query count grows by exactly 1 per additional row — the
-        signature of the single per-row COUNT (users_count) in the
-        serializer. (organizations_count reuses its prefetch: no per-row SQL.)"""
+    def test_query_count_is_flat_across_page_sizes(self, many_accounts, authed_api_a):
+        """The list query count no longer grows with the page: slope 0.
+        (RED baseline b8267608 was +1 query/row.)"""
         with CaptureQueriesContext(connection) as cap_small:
             resp_small = _list(authed_api_a, PAGE_SMALL)
         q_small = len(cap_small.captured_queries)
@@ -147,35 +136,26 @@ class TestClientAccountsListNPlus1RedBaseline:
         slope = (q_large - q_small) / (rows_large - rows_small)
 
         print("\n" + "=" * 66)
-        print("RED BASELINE — GET /client/client-accounts/ (serializer N+1)")
+        print("GREEN RE-MEASURE — GET /client/client-accounts/ (annotated)")
         print("=" * 66)
+        print(f"  RED baseline (b8267608): page10=14  page20=24  slope=1/row")
         print(f"  page_size={PAGE_SMALL:>2}  rows={rows_small:>2}  queries={q_small}")
         print(f"  page_size={PAGE_LARGE:>2}  rows={rows_large:>2}  queries={q_large}")
         print(f"  slope (extra queries per extra row) : {slope}")
-        print(f"  => {slope:.0f} SQL / row = users_count "
-              f"(organizations_count reuses its prefetch: 0/row)")
         print("=" * 66 + "\n")
 
         # Full pages both times (volume is realistic).
         assert rows_small == PAGE_SMALL
         assert rows_large == PAGE_LARGE
-        # THE RED: exactly 1 extra query per extra row (the users_count COUNT).
-        assert (q_large - q_small) == 1 * (rows_large - rows_small), (
-            f"expected +1 query/row, got +{q_large - q_small} over "
-            f"{rows_large - rows_small} rows"
+        # THE GREEN: query count is independent of the number of rows.
+        assert q_large == q_small, (
+            f"query count still scales with rows: {q_small} vs {q_large}"
         )
-        assert slope == 1.0
-        # Not a bounded-plan endpoint: the count scales with the page.
-        assert q_small > PAGE_SMALL
+        assert slope == 0.0
 
-    def test_users_count_nplus1_and_wasted_prefetch_vs_orgs_prefetch_reused(
-        self, many_accounts, authed_api_a
-    ):
-        """On a page of PAGE_LARGE rows:
-        - exactly PAGE_LARGE users-COUNT queries fire (1 per row) — the N+1;
-        - ZERO organizations-COUNT queries fire — that count reuses its prefetch;
-        - BOTH prefetch queries run: the users one is WASTED (reopened by the
-          per-row filter), the organizations one is CONSUMED (feeds count)."""
+    def test_no_per_row_count_or_prefetch_queries(self, many_accounts, authed_api_a):
+        """No per-row users/organizations COUNT queries survive, and the two
+        prefetch queries are gone (the counts come from annotations)."""
         with CaptureQueriesContext(connection) as cap:
             resp = _list(authed_api_a, PAGE_LARGE)
         rows = len(resp.data["results"])
@@ -184,31 +164,27 @@ class TestClientAccountsListNPlus1RedBaseline:
         )
 
         print("\n" + "=" * 66)
-        print("RED BASELINE — 1 COUNT / row (users) + wasted users prefetch")
+        print("GREEN RE-MEASURE — no per-row COUNT, no prefetch (page of 20)")
         print("=" * 66)
-        print(f"  rows returned                            : {rows}")
-        print(f"  users_count   COUNT queries (N+1, 1/row) : {len(users_count)}")
-        print(f"  organizations COUNT queries (no N+1)     : {len(orgs_count)}")
-        print(f"  users        prefetch (loaded, WASTED)   : {len(users_prefetch)}")
-        print(f"  organizations prefetch (loaded, CONSUMED): {len(orgs_prefetch)}")
+        print(f"  rows returned                       : {rows}")
+        print(f"  users_count   COUNT queries         : {len(users_count)}")
+        print(f"  organizations COUNT queries         : {len(orgs_count)}")
+        print(f"  users        prefetch queries       : {len(users_prefetch)}")
+        print(f"  organizations prefetch queries      : {len(orgs_prefetch)}")
         print("=" * 66 + "\n")
 
-        # One users COUNT per row — the N+1.
-        assert len(users_count) == rows, "expected one users COUNT per row"
-        # organizations_count does NOT N+1 (prefetch cache reused).
-        assert len(orgs_count) == 0, "organizations_count should not emit per-row SQL"
-        # Both prefetch queries the viewset declares DO run...
-        assert len(users_prefetch) >= 1, "users prefetch query not observed"
-        assert len(orgs_prefetch) >= 1, "organizations prefetch query not observed"
-        # ...but the users prefetch is WASTED: the per-row COUNTs still fire.
-        assert len(users_count) == rows
+        assert rows == PAGE_LARGE
+        assert len(users_count) == 0, "a per-row users COUNT survived"
+        assert len(orgs_count) == 0, "a per-row organizations COUNT survived"
+        assert len(users_prefetch) == 0, "users prefetch not removed"
+        assert len(orgs_prefetch) == 0, "organizations prefetch not removed"
 
     def test_counted_values_are_the_expected_realistic_numbers(
         self, many_accounts, authed_api_a
     ):
-        """The counts are non-trivial (so the N+1 is not measuring zeros):
+        """The counts are non-trivial AND not inflated by a cartesian product:
         each seeded account reports ACTIVE_USERS_PER active users (inactive
-        excluded) and ORGS_PER organizations."""
+        excluded) and ORGS_PER organizations — 3 and 2, not 6."""
         resp = _list(authed_api_a, PAGE_LARGE)
         by_id = {row["id"]: row for row in resp.data["results"]}
         seen = 0

@@ -22,9 +22,22 @@ class ClientAccountSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at', 'users_count', 'organizations_count']
     
     def get_users_count(self, obj):
-        """Nombre d'utilisateurs actifs"""
+        """Number of active users.
+
+        Reads the queryset annotation set by the list/retrieve viewset
+        (avoids the per-row COUNT). Falls back to a direct count for callers
+        that serialize an un-annotated instance (e.g. the create path in
+        product_admin, which serializes a freshly saved account).
+        """
+        annotated = getattr(obj, 'users_count_annotated', None)
+        if annotated is not None:
+            return annotated
         return obj.users.filter(is_active=True).count()
-    
+
     def get_organizations_count(self, obj):
-        """Nombre d'organisations"""
+        """Number of organizations. Reads the annotation when present,
+        else counts directly (un-annotated callers)."""
+        annotated = getattr(obj, 'organizations_count_annotated', None)
+        if annotated is not None:
+            return annotated
         return obj.organizations.count()

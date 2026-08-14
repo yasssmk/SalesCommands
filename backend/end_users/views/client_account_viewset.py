@@ -3,14 +3,14 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Count, Q, Exists, OuterRef, Prefetch
+from django.db.models import Count, Q, Exists, OuterRef
 from django.http import Http404
 import time
 import logging
 from core.apps_shared_methods import BaseAPIView
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
-from ..models import ClientAccount, Team, User
+from ..models import ClientAccount, Team
 from ..serializers import ClientAccountSerializer
 
 logger = logging.getLogger(__name__)
@@ -33,14 +33,20 @@ class ClientAccountViewSet(BaseAPIView, viewsets.ModelViewSet):
     def get_queryset(self):
         """Get client accounts with optimized queries"""
         queryset = ClientAccount.objects.all()
-        
-        # Optimiser avec prefetch pour list/retrieve standard
+
+        # Aggregate the two serialized counts in the main query instead of
+        # reopening a queryset per row inside the serializer (the users_count
+        # N+1). distinct=True is REQUIRED: two Count() over different relations
+        # in one query cross-join, so without DISTINCT each count would be
+        # inflated by the cardinality of the other.
         if self.action in ['list', 'retrieve']:
-            queryset = queryset.prefetch_related(
-                Prefetch('users', queryset=User.objects.filter(is_active=True)),
-                'organizations'
+            queryset = queryset.annotate(
+                users_count_annotated=Count(
+                    'users', filter=Q(users__is_active=True), distinct=True
+                ),
+                organizations_count_annotated=Count('organizations', distinct=True),
             )
-        
+
         return queryset
     
     @action(detail=True, methods=['get'])
