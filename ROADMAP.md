@@ -299,6 +299,110 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
+
+> **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
+> venir et la frontière PRÉ/POST-LAUNCH. Cette section RÉORDONNE et AJOUTE
+> (recadrages, nouveaux sprints, jalon LAUNCH) ; elle ne SUPPRIME ni ne
+> REFORMULE aucune fiche existante. Les fiches détaillées restent en place
+> ci-dessous (« ## Sprints planifiés — phase fonctionnelle » et suivantes),
+> contenu CONSERVÉ, avec le cas échéant une note de recadrage ajoutée. En cas
+> de doute sur une fiche : la LAISSER intacte (on clarifiera au cadrage du
+> sprint). Tout le livré (✅) et toutes les sections non citées sont préservés.
+
+### Ordre cible (sprints à venir)
+
+1. **S13 — Intention & Prep Call** — RECADRÉ. Fiche existante conservée
+   ci-dessous + note de recadrage. Absorbe le ciblage/sélection des contacts et
+   le PLAFONNEMENT contacts/compte/campagne (références existantes conservées).
+2. **S10 — Tech Catalogue** — RECADRÉ. Fiche existante conservée + note.
+3. **Bloc « Modèle Decision Cycle »** (regroupe deux fiches conservées) :
+   Sprint C — Produit & Finance + Sprint decision_cycles/steps.
+4. **Bloc « Commandes IA »** (UN SEUL sprint, pensé d'un bloc, sous-étapes
+   possibles) : S12 — Signaux Tech stack (prompt) DÉPLACÉ ici + Prep call
+   (prompt + UI) + Signaux (tester TOUS les signaux + UI) + Deal health
+   (prompt + UI) + Recherche produit / commandes IA MANAGER (à définir).
+5. **Gestion des erreurs** — NOUVEAU, **PRÉ-LAUNCH**.
+6. **Finition & vues** (trois fiches conservées) : Filtres & recherche
+   transverses + Overviews (Sprint B) + Finalisation Home + performance / vues
+   selon le TIER.
+7. **Sprint UI** (fiche conservée) : visuel / modales (blocage UI du cap
+   contacts, cartes Targeted → `secondary`).
+8. **Homogénéisation** — NOUVEAU, distinct du Sprint UI, **POST-LAUNCH**.
+9. **Snapshot / Deal History** (fiche conservée) — **POST-LAUNCH**.
+10. **UI Admin Produit / gestion des tenants** — NOUVEAU, **POST-LAUNCH**.
+
+> Les sprints 1, 2, 3, 4, 6 et 7 ne sont PAS classés pré/post launch (le PO ne
+> l'a pas tranché) — ils gardent leur position dans l'ordre, sans étiquette
+> launch. Ne PAS inventer de classement.
+
+### 🚀 Jalon LAUNCH (frontière pré / post déploiement)
+
+**PRÉ-LAUNCH — bloquant AVANT déploiement :**
+- **Gestion des erreurs** (#5 ci-dessus) — audit complet des vues d'erreur.
+- **Doublons de requêtes + efficacité cache** — TD principal existant, déjà
+  marqué « pré-launch » dans sa fiche (« Sprint — Doublons de requêtes +
+  efficacité cache », ⏸️ REPORTÉ / à faire AVANT déploiement ; TD-159
+  invalidation BI tenant-wide). Référencé ici, non dupliqué.
+- **Checklist infra** (NOUVEAU — absente de la roadmap, ajoutée ici) : pooling
+  DB Supabase, dimensionnement des workers web. À vérifier/durcir avant la
+  montée en charge multi-tenant.
+
+**POST-LAUNCH :**
+- **Homogénéisation** (#8) — audit CODE des patterns.
+- **Snapshot / Deal History** (#9).
+- **UI Admin Produit / gestion des tenants** (#10).
+
+### Détail des blocs regroupés
+
+**Bloc « Modèle Decision Cycle » (#3)** — regroupe, sans les reformuler, deux
+fiches existantes conservées telles quelles ci-dessous :
+- **Sprint C — Produit & Finance de bout en bout** (fiche conservée, absorbée
+  dans ce bloc).
+- **Sprint — decision_cycles/steps (mort ou vivant AVANT d'optimiser)** (TD
+  existant, fiche conservée).
+
+**Bloc « Commandes IA » (#4)** — UN SEUL sprint, pensé d'un bloc (sous-étapes
+possibles) :
+- **S12 — Signaux Tech stack (prompt)** : DÉPLACÉ ici (ne plus le laisser en
+  sprint séparé en amont). Toute mention existante de S12 est conservée dans sa
+  fiche, avec ce cadrage ajouté.
+- **Prep call** : prompt + UI.
+- **Signaux** : tester TOUS les signaux + UI (réplicable dans la vue account).
+- **Deal health** : prompt + UI.
+- **Recherche produit / commandes IA pour MANAGER** : **à définir** — pas de
+  besoin précis pour l'instant ; lié aux « vues selon le tier » ; à réfléchir
+  avec le PO.
+
+### Nouveaux sprints
+
+#### Gestion des erreurs (NOUVEAU — PRÉ-LAUNCH)
+- **Position** : #5 de l'ordre cible ci-dessus. À faire AVANT launch.
+- **Objectif** : audit COMPLET du produit et de TOUTES les vues d'erreur.
+  Vérifier que chaque cas d'erreur est traité proprement.
+- **Honnêteté UX** : **ROUGE = vraie erreur technique** ; **ORANGE = règle
+  métier** ; **aucune exception brute ni fuite SQL** exposée à l'utilisateur.
+- **Nature** : transverse (tout le produit).
+- **NB** : distinct de la fiche existante « Sprint Gestion d'erreur — revue BE +
+  FR de bout en bout » (conservée ci-dessous) ; les deux se rejoignent sur
+  l'objectif « aucune fuite technique » — à réconcilier au cadrage, sans rien
+  supprimer pour l'instant.
+
+#### Homogénéisation (NOUVEAU — POST-LAUNCH)
+- **Position** : #8 de l'ordre cible. DISTINCT du Sprint UI (qui est du visuel /
+  modales) : ici c'est un audit **CODE**.
+- **Objectif** : vérifier que TOUT le produit utilise les MÊMES patterns /
+  méthodes — pas d'implémentations divergentes pour un même besoin.
+- **Nature** : dette de qualité interne.
+
+#### UI Admin Produit / gestion des tenants (NOUVEAU — POST-LAUNCH)
+- **Position** : #10 de l'ordre cible.
+- **Objectif** : interface d'administration de gestion des tenants — suivi de
+  CONSOMMATION, LIMITATIONS, etc.
+- **Lien** : rattaché à **G3 — Provisioning des tenants** (voir phase Go-Live).
+
+---
+
 ## Sprints planifiés — phase fonctionnelle
 
 ### S7b ✅ — Peaufinage vues Go-to-Market (Territory + Campaign)
@@ -647,6 +751,10 @@ campagnes. **Le chip est la référence.**
     BI**. Attention perf des requêtes BI. Relié à **TD-153** (branche
     `perf/territory-coverage-snapshot` gardée, porte la repro rouge).
 
+> **↪ Recadrage (réorg 2026-08-15) — rattaché à « Finition & vues » (#6 de
+> l'ordre cible), volet « vues selon le TIER ».** Note : un manager n'a pas les
+> mêmes commandes IA qu'un commercial. Fiche conservée telle quelle.
+
 ### Mini-sprint — Cap 3 contacts/compte/campagne (backend d'abord, APRÈS perf)
 - **Objectif** : plafonner à **3 contacts ENRÔLÉS par compte par campagne**.
 - **Périmètre** :
@@ -670,6 +778,10 @@ campagnes. **Le chip est la référence.**
     de `derive()` par step, prefetch des activités, éviter `.count()`/`.exists()`
     par step).
   - **Ne PAS optimiser avant d'avoir tranché mort/vivant.** Dette : **TD-154**.
+
+> **↪ Recadrage (réorg 2026-08-15) — regroupé dans le bloc « Modèle Decision
+> Cycle » (#3 de l'ordre cible), avec le Sprint C — Produit & Finance.** Fiche
+> conservée telle quelle ; regroupement seulement.
 
 ### Sprint — Doublons de requêtes + efficacité cache (front/back) — ⏸️ REPORTÉ (pré-launch)
 - **Statut (décision PO)** : **REPORTÉ / à faire AVANT déploiement** (pré-launch,
@@ -722,6 +834,10 @@ campagnes. **Le chip est la référence.**
   VÉRITÉ, et le FILTRE PAR MONTANT reporté de S7c (TD-124) devient
   constructible sans mentir.
 
+> **↪ Recadrage (réorg 2026-08-15) — absorbé dans le bloc « Modèle Decision
+> Cycle » (#3 de l'ordre cible), avec le Sprint decision_cycles/steps.** Fiche
+> conservée telle quelle ; regroupement seulement.
+
 ### S9 — UI Produit (peaufinage / homogénéisation / UX — APRÈS Sprint C)
 - **Objectif** : peaufinage UI, homogénéisation et UX de la ligne de produits
   + onglet Product Financial, une fois le backend produit-finance solide
@@ -735,6 +851,13 @@ campagnes. **Le chip est la référence.**
 ### S10 — Tech Catalogue (conception approfondie)
 À cadrer.
 
+> **↪ Recadrage (réorg 2026-08-15) — S10 = #2 de l'ordre cible.** Le modèle
+> actuel est trop complexe → RETIRER le modèle et accepter TOUS les signaux
+> tech SANS vérification (« Salesforce » écrit tel quel). Enjeux : éviter les
+> doublons AVEC LE SYSTÈME LE PLUS SIMPLE POSSIBLE + FILTRAGE des technologies.
+> Revérifier le bug « HubSpot n'apparaît jamais » (lié à l'anti-doublon
+> actuel). Contenu existant « À cadrer » conservé.
+
 ### S11 — Signals UX (+ TD-29)
 - **Objectif** : améliorer l'UX des signaux, réponse aux notes de signal.
 - **À tester ici (groupé avec les vérifications IA)** : smoke sur VRAIE sortie
@@ -746,6 +869,12 @@ campagnes. **Le chip est la référence.**
 ### S12 — Prompts (+ intégration HubSpot)
 - **Objectif** : couche prompts + connexion HubSpot.
 - À cadrer.
+
+> **↪ Recadrage (réorg 2026-08-15) — S12 DÉPLACÉ dans le bloc « Commandes IA »
+> (#4 de l'ordre cible).** S12 n'est plus un sprint séparé en amont : sa partie
+> « Signaux Tech stack (prompt) » devient une sous-étape du sprint Commandes IA
+> (voir « ## Ordre cible des sprints à venir + jalon LAUNCH »). Toute mention
+> existante de S12 est CONSERVÉE ici ; seul ce cadrage est ajouté.
 
 ### S13 — Intention & Prep Call
 - **Objectif** : objectif d'activité + approche stratégique de campagne +
@@ -791,6 +920,15 @@ campagnes. **Le chip est la référence.**
     (tous les chemins d'enrôlement le traversent — bulk, unitaire,
     targeted, « tout le compte »). L'audit de structure enrôlement a déjà
     été fait ; le resservir au cadrage S13.
+
+> **↪ Recadrage (réorg 2026-08-15) — S13 = #1 de l'ordre cible.** Cadrer
+> l'OBJECTIF dans chaque activité : OUTBOUND → objectif issu de la CRÉATION de
+> la campagne ; TARGETED → objectif ajouté à l'ajout d'un TARGET ; Decision
+> Cycle → objectif qui ÉVOLUE selon l'étape. But : nourrir l'IA. Techno à
+> concevoir, LE PLUS SIMPLE POSSIBLE. Ce sprint ABSORBE le ciblage/sélection
+> des contacts ET le PLAFONNEMENT contacts par compte/campagne — la référence
+> existante ci-dessus (« Ciblage & sélection des contacts », décisions PO
+> figées, cap = 3) est CONSERVÉE telle quelle.
 
 ### Sprint — Sales Cycle Snapshot / Deal History (APRÈS S13)
 - **Objectif** : à la clôture d'un cycle (win/loss), figer un snapshot
