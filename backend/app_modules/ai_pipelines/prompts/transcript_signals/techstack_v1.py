@@ -6,19 +6,20 @@ This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
   * system.py        -- universal output / evidence / taxonomy rules.
   * build_context_layer(activity, 'techstack') -- session grounding +
-    the TECH CATALOG list (tenant-curated tools, with UUIDs) + the
-    UsageScope enum.
+    the UsageScope enum. The TECH CATALOG list is no longer injected
+    (S10 sub-step 2 -- see _build_techcatalog_block in context.py).
 The full assembly is performed by PromptBuilder.assemble() in base.py.
 
-Schema (v1)
------------
+Schema (v1 — S10 revision)
+--------------------------
 The LLM emits one JSON object with a single key `signals` containing an
-array of tech-stack observations. Each observation has exactly 6 fields:
+array of tech-stack observations. Each observation has exactly 8 fields:
 
-    tech_catalog_entry_id  string|null  -- UUID of a matching catalog entry,
-                                            or null when no match exists.
-    tech_name_raw          string|null  -- raw tool name from the transcript,
-                                            set ONLY when no catalog match.
+    tech_name              string       -- tool name verbatim from the
+                                            transcript. REQUIRED.
+    is_competitor          boolean      -- overlaps with what the seller sells.
+    is_integration         boolean      -- the seller's product connects to it.
+    is_to_replace          boolean      -- the prospect intends to move off it.
     usage_scope            string|null  -- "TEAM" | "COMPANY" | "UNKNOWN",
                                             or null when not discussed.
     source_quote           string       -- verbatim excerpt from the transcript.
@@ -26,8 +27,18 @@ array of tech-stack observations. Each observation has exactly 6 fields:
     is_inferred            boolean      -- LLM self-declared, true when not
                                             directly stated.
 
-Exactly ONE of `tech_catalog_entry_id` and `tech_name_raw` is set per
-signal -- never both, never neither.
+The three booleans are INDEPENDENT: any combination is valid, and
+all-false is the common case ("the prospect uses this tool", no angle).
+
+What replaced the catalogue match (S10)
+---------------------------------------
+Until S10 the schema was a XOR: `tech_catalog_entry_id` (a UUID from the
+tenant's TechCatalog, injected into the context layer) OR
+`tech_name_raw` when nothing matched. The catalogue is being removed, so
+identity is now carried by free text: the model reports the name it
+heard, and the backend derives a normalised grouping key from it in
+TechStackSignal.save(). Nothing in this prompt needs to know about
+tenant reference data anymore.
 
 Empty result is represented by {"signals": []}.
 
@@ -87,9 +98,10 @@ mapped to a new TechStackSignal row:
 
     LLM-emitted field             ->  TechStackSignal column
     -------------------------------    --------------------------------
-    tech_catalog_entry_id (UUID)  ->  tech_catalog_entry (FK)
-    tech_name_raw (no match)      ->  tech_catalog_entry = NULL
-                                       + metadata['pending_tech_name'] = raw
+    tech_name                     ->  tech_name (verbatim)
+    is_competitor                 ->  is_competitor
+    is_integration                ->  is_integration
+    is_to_replace                 ->  is_to_replace
     usage_scope                   ->  usage_scope (NULL when null/missing)
     source_quote                  ->  source_quote (declared on BaseSignal)
     confidence                    ->  confidence   (declared on BaseSignal)
@@ -106,6 +118,8 @@ Fields filled by the service from the request context:
 
 Hardcoded defaults at create:
 
+    tech_catalog_entry  =  None    (catalogue no longer consulted; the
+                                    FK is removed in S10 sub-step 5)
     is_discontinued     =  False
     discontinued_date   =  None
     usage_department    =  None    (DEPARTMENT scope excluded in v1)
@@ -114,23 +128,25 @@ Hardcoded defaults at create:
     cost_description    =  ''
     notes               =  ''
 
-TechStackSignal.save() then auto-computes:
+TechStackSignal.save() then derives:
 
-    canonical_key       =  f'techstack:{tech_catalog_entry_id}'
-                            (None when no catalog match -- the signal
-                             stays PENDING with no cluster identity
-                             until the rep attaches a catalog entry,
-                             enforced by SignalManager.validate()).
+    tech_name_normalized =  tech_name lowercased, trimmed, internal
+                            whitespace collapsed. This is the grouping /
+                            filtering / de-duplication key. The extractor
+                            does NOT normalise -- `tech_name` keeps the
+                            raw text for display.
 
-Cross-tenant isolation (defence in depth)
------------------------------------------
-The catalog UUIDs the LLM matches against come ONLY from the tenant's
-own TechCatalog (see _build_techcatalog_block in context.py -- filtered
-by activity.client_id). The persistence service MUST double-check that
-any emitted tech_catalog_entry_id resolves to a TechCatalog row scoped
-to activity.client_id, guarding against LLM hallucination of a UUID
-that does not belong to this tenant. Any failure of this check ->
-demote to tech_name_raw + log security warning.
+    canonical_key        =  untouched (stays None). TechStack is not
+                            clusterable.
+
+Cross-tenant isolation
+----------------------
+No tenant-owned identifier is sent to the model on this stage anymore.
+The previous design injected the tenant's TechCatalog UUIDs into the
+context and had to re-validate every returned UUID against
+activity.client_id (hallucination / cross-tenant exfiltration guard).
+With free-text identity there is no id to leak or forge: the model sees
+the transcript and returns text.
 
 Versioning
 ----------
@@ -176,19 +192,44 @@ DO NOT emit:
 - Tools the seller suggests in passing, unless the prospect confirms
   they currently use them.
 
-TECH CATALOG MATCHING
-Before emitting a signal, attempt to MATCH the mentioned tool against
-the TECH CATALOG provided in the context.
+TOOL NAME
+Emit the tool name as it appears in the transcript, in `tech_name`.
+Do not normalise casing or spacing, do not expand abbreviations, do not
+map it onto a reference list -- the backend handles all of that.
+`tech_name` is REQUIRED on every signal; a signal without it is dropped.
 
-- If a clear match exists in the catalog (same vendor / product name,
-  or unambiguous alias), emit:
-      "tech_catalog_entry_id": "<uuid of the matching entry>"
-      "tech_name_raw":         null
-- If NO match exists in the catalog, emit:
-      "tech_catalog_entry_id": null
-      "tech_name_raw":         "<the tool name as it appears in the transcript>"
-- Exactly ONE of `tech_catalog_entry_id` / `tech_name_raw` must be set
-  on every signal. Never both. Never neither.
+QUALIFICATION
+Each signal carries three INDEPENDENT booleans. Any combination is
+valid, including all three false, which simply means the prospect uses
+the tool with no further commercial angle.
+
+- "is_competitor"  -- the tool overlaps with what the SELLER sells.
+- "is_integration" -- the tool is one the SELLER's product connects to.
+- "is_to_replace"  -- the prospect intends to move off this tool.
+
+Set a flag ONLY when the transcript supports it; default to false.
+
+# TODO(S10 -> AI-sprint): the three definitions above are deliberately
+# one line each. This is the anchor point for the full qualification
+# wording, which is NOT written in S10:
+#   * is_competitor  -- how to decide overlap without knowing the
+#     seller's catalogue in the prompt (today the model only sees the
+#     seller NAME via the SESSION CONTEXT block). Decide whether to
+#     inject the seller's product catalogue (app_modules.product_catalog)
+#     into the context layer, and how to phrase "overlaps with".
+#   * is_integration -- same question: the model cannot know the
+#     seller's integration surface from the transcript alone.
+#   * is_to_replace  -- needs the PAST vs FUTURE distinction that
+#     `is_discontinued` extraction was deferred for (see the
+#     "Why is_discontinued ... NOT extracted" section above):
+#     "we dropped X" (past, not to-replace) vs "we are looking to
+#     replace X" (future intent, to-replace) vs "we are unhappy with X"
+#     (dissatisfaction, not yet intent). Add worked examples.
+#   * Add few-shot examples covering the combinations that matter
+#     (competitor + to_replace, integration only, all-false).
+# Until that sprint lands, expect the model to under-set these flags.
+# Under-setting is the safe failure mode: a rep can tick a box, whereas
+# a wrong competitor tag misleads the deal strategy.
 
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
@@ -196,12 +237,14 @@ Return a single JSON object with this exact shape:
 {{
   "signals": [
     {{
-      "tech_catalog_entry_id": "<UUID of matching catalog entry, or null if no match>",
-      "tech_name_raw":         "<raw tool name as mentioned in the transcript, or null if a catalog match exists>",
-      "usage_scope":           "<TEAM | COMPANY | UNKNOWN, or null when scope was not discussed>",
-      "source_quote":          "<verbatim excerpt from the transcript supporting this tool observation>",
-      "confidence":            <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
-      "is_inferred":           <boolean, true when the signal is inferred rather than directly stated>
+      "tech_name":       "<tool name exactly as mentioned in the transcript>",
+      "is_competitor":   <boolean, see QUALIFICATION>,
+      "is_integration":  <boolean, see QUALIFICATION>,
+      "is_to_replace":   <boolean, see QUALIFICATION>,
+      "usage_scope":     "<TEAM | COMPANY | UNKNOWN, or null when scope was not discussed>",
+      "source_quote":    "<verbatim excerpt from the transcript supporting this tool observation>",
+      "confidence":      <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
+      "is_inferred":     <boolean, true when the signal is inferred rather than directly stated>
     }}
   ]
 }}

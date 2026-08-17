@@ -1,18 +1,33 @@
 # backend/tests/ai_pipelines/test_unknown_tech_notification.py
 """
-Emitter test: a newly-detected unknown technology notifies tenant admins (E4).
+Emitter test: the unknown-technology notification (E4) is DORMANT since S10.
 
-Exercises TranscriptSignalExtractor._maybe_notify_unknown_tech directly with
-persisted TechStackSignals. transaction=True so transaction.on_commit runs
-(with no wrapping atomic block the callback fires immediately on the
-autocommit save).
+Original contract
+-----------------
+`_maybe_notify_unknown_tech` fanned one notification out to every active
+tenant admin whenever the LLM produced a TechStackSignal it could not
+match to the tenant's TechCatalog (PENDING + LLM_EXTRACTED + null FK).
+A catalog-matched tech notified nobody.
 
-Covers:
-  - unknown tech (PENDING, LLM-extracted, null catalog) -> one notification
-    per active admin (fan-out);
-  - a catalog-matched tech -> no notification;
-  - a raising NotificationService.emit never propagates: the extracted
-    signal still exists (the non-raising contract).
+Why it is dormant (S10 sub-step 2)
+----------------------------------
+The extraction path no longer performs any catalogue match, so
+`tech_catalog_entry_id is None` now holds for EVERY extracted tech
+signal. Left as-is, the emitter would notify every admin about every
+tool mentioned on every call. "Unknown" lost its meaning along with the
+catalogue lookup, so the helper returns before emitting anything.
+
+These tests lock that in, so the emitter cannot come back to life by
+accident before sub-step 5 deletes it. If the product later wants a
+"new tool seen on this account" notification, it is a NEW emitter keyed
+on the normalised tech name — and it gets its own tests.
+
+The non-raising contract is still asserted: the persist loop swallows
+per-signal exceptions, so this helper must never propagate one.
+
+TODO(S10 sub-step 5): delete this file together with
+_maybe_notify_unknown_tech, its call site in persist_stage() and
+NotificationCategory.UNKNOWN_TECH_DETECTED.
 """
 
 import pytest
@@ -26,7 +41,7 @@ from app_modules.notifications.models import Notification, NotificationCategory
 
 
 # =============================================================================
-# FIXTURES — two active admins + one non-admin on tenant A
+# FIXTURES — two active admins on tenant A
 # =============================================================================
 
 @pytest.fixture
@@ -55,28 +70,17 @@ def admins_a(db, client_account_a, role_admin_a):
 # HELPERS
 # =============================================================================
 
-def _make_unknown_tech(account, activity, user):
-    """A PENDING, LLM-extracted TechStack with no catalog match."""
+def _make_extracted_tech(account, activity, user, tech_name='FooDB'):
+    """
+    A PENDING, LLM-extracted TechStack on the S10 contract: raw name on
+    the column, no catalogue FK. Under the OLD rule this shape was
+    exactly the "unknown tech" trigger.
+    """
     sig = TechStackSignal(
         account=account,
         source_activity=activity,
         tech_catalog_entry=None,
-        source=SignalSource.LLM_EXTRACTED,
-        metadata={'pending_tech_name': 'FooDB'},
-    )
-    sig.save(user=user, client_id=account.client_id)
-    return sig
-
-
-def _make_matched_tech(account, activity, user):
-    """A TechStack matched to a catalog entry (no notification expected)."""
-    from app_modules.tech_catalog.models import TechCatalog
-    entry = TechCatalog(company_name='Salesforce', product_name='Sales Cloud')
-    entry.save(user=user, client_id=account.client_id)
-    sig = TechStackSignal(
-        account=account,
-        source_activity=activity,
-        tech_catalog_entry=entry,
+        tech_name=tech_name,
         source=SignalSource.LLM_EXTRACTED,
     )
     sig.save(user=user, client_id=account.client_id)
@@ -84,7 +88,9 @@ def _make_matched_tech(account, activity, user):
 
 
 def _unknown_tech_qs():
-    return Notification.objects.filter(category=NotificationCategory.UNKNOWN_TECH_DETECTED)
+    return Notification.objects.filter(
+        category=NotificationCategory.UNKNOWN_TECH_DETECTED
+    )
 
 
 # =============================================================================
@@ -92,45 +98,51 @@ def _unknown_tech_qs():
 # =============================================================================
 
 @pytest.mark.django_db(transaction=True)
-def test_unknown_tech_notifies_all_admins(account, activity, user_a, client_account_a, admins_a):
-    """An unknown tech fans out one notification per active admin."""
-    signal = _make_unknown_tech(account, activity, user_a)
+def test_extracted_tech_notifies_nobody(
+    account, activity, user_a, client_account_a, admins_a,
+):
+    """
+    The emitter is dormant: the shape that used to fan out to every admin
+    now emits nothing. Without this guard, every tool on every call would
+    notify every admin.
+    """
+    signal = _make_extracted_tech(account, activity, user_a)
+    assert signal.status == SignalStatus.PENDING
+    assert signal.tech_catalog_entry_id is None
 
-    TranscriptSignalExtractor()._maybe_notify_unknown_tech(signal, client_account_a.id)
-
-    notifs = _unknown_tech_qs()
-    assert notifs.count() == len(admins_a) == 2
-    recipient_ids = set(notifs.values_list('recipient_id', flat=True))
-    assert recipient_ids == {a.id for a in admins_a}
-    notif = notifs.first()
-    assert notif.related_object_type == 'tech_stack_signal'
-    assert str(notif.related_object_id) == str(signal.id)
-    # Rich title: tech name + account, but NO actor prefix (system detection).
-    assert 'FooDB' in notif.title
-    assert account.company_name in notif.title
-    # Payload carries only the tech name -- E4 is not click-through, so it
-    # must NOT contain routing ids.
-    assert notif.payload == {'tech_name': 'FooDB'}
-    assert 'account_id' not in notif.payload
-    assert 'cycle_id' not in notif.payload
-
-
-@pytest.mark.django_db(transaction=True)
-def test_matched_tech_emits_nothing(account, activity, user_a, client_account_a, admins_a):
-    """A catalog-matched tech does not notify anyone."""
-    signal = _make_matched_tech(account, activity, user_a)
-
-    TranscriptSignalExtractor()._maybe_notify_unknown_tech(signal, client_account_a.id)
+    TranscriptSignalExtractor()._maybe_notify_unknown_tech(
+        signal, client_account_a.id,
+    )
 
     assert _unknown_tech_qs().count() == 0
 
 
 @pytest.mark.django_db(transaction=True)
-def test_emit_failure_is_non_raising_and_signal_survives(
-    account, activity, user_a, client_account_a, admins_a, monkeypatch
+def test_no_notification_for_any_number_of_techs(
+    account, activity, user_a, client_account_a, admins_a,
 ):
-    """A raising emit never propagates; the extracted signal still exists."""
-    signal = _make_unknown_tech(account, activity, user_a)
+    """A whole transcript's worth of tools stays silent."""
+    for name in ('Salesforce', 'HubSpot', 'Slack', 'Notion'):
+        signal = _make_extracted_tech(account, activity, user_a, tech_name=name)
+        TranscriptSignalExtractor()._maybe_notify_unknown_tech(
+            signal, client_account_a.id,
+        )
+
+    assert _unknown_tech_qs().count() == 0
+    assert Notification.objects.count() == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_helper_is_non_raising_and_signal_survives(
+    account, activity, user_a, client_account_a, admins_a, monkeypatch,
+):
+    """
+    The non-raising contract holds. persist_stage() swallows per-signal
+    exceptions, so a notification failure must never make an
+    already-extracted signal disappear — asserted here with emit()
+    rigged to explode, which the dormant guard means we never reach.
+    """
+    signal = _make_extracted_tech(account, activity, user_a)
 
     def _boom(*args, **kwargs):
         raise RuntimeError('emit exploded')
@@ -141,9 +153,10 @@ def test_emit_failure_is_non_raising_and_signal_survives(
         _boom,
     )
 
-    # Must not raise, even though every emit blows up.
-    TranscriptSignalExtractor()._maybe_notify_unknown_tech(signal, client_account_a.id)
+    # Must not raise.
+    TranscriptSignalExtractor()._maybe_notify_unknown_tech(
+        signal, client_account_a.id,
+    )
 
-    # No notifications were created, but the extracted signal survives.
     assert _unknown_tech_qs().count() == 0
     assert TechStackSignal.objects.filter(id=signal.id).exists()

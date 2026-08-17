@@ -5,7 +5,6 @@ Context layer for the transcript_signals prompt family.
 Builds the dynamic, per-run context block that grounds the LLM in:
   * The commercial identity of the session (Seller, Prospect, Activity, Contacts)
   * The canonical taxonomy applicable to the target sub-call
-  * The tenant's curated TechCatalog (techstack sub-call only)
 
 What this layer carries
 -----------------------
@@ -14,7 +13,14 @@ What this layer carries
   - Activity metadata (type, date).
   - Contacts on the activity: first_name + job_title + department only.
   - Canonical enum values per target stage.
-  - TechCatalog entries (target_stage == 'techstack' only).
+
+No longer carried (S10 sub-step 2)
+----------------------------------
+  - TechCatalog entries. The techstack sub-call used to receive the
+    tenant's curated catalogue (uuid + label + flags) so the LLM could
+    match a mention to an entry. Tech identity is free text now, so the
+    list is dead weight. _build_techcatalog_block() survives unreferenced
+    at the bottom of this module until sub-step 5 removes the catalogue.
 
 What this layer deliberately omits (RGPD / data minimization)
 --------------------------------------------------------------
@@ -88,8 +94,7 @@ def build_context_layer(activity, target_stage):
         activity: app_modules.activities.models.Activity. Anchor for all
             session grounding (tenant, account, contacts).
         target_stage: One of 'pain', 'objective', 'impact', 'techstack',
-            'blocker'. Drives which canonical enums are exposed AND
-            whether the TechCatalog list is appended.
+            'blocker'. Drives which canonical enums are exposed.
 
     Returns:
         str: A ready-to-concatenate context block. Will be combined
@@ -98,13 +103,13 @@ def build_context_layer(activity, target_stage):
 
     Stage-specific block composition:
         pain / objective / impact / techstack
-            session + taxonomy (+ techcatalog for techstack)
+            session + taxonomy. The techstack stage used to receive the
+            TechCatalog list on top; it no longer does (S10 sub-step 2).
         blocker
             session only. BlockerSignal carries NO canonical taxonomy
-            (no `what` / `dimension` / signal_category) and does not
-            consume the TechCatalog. Emitting an empty taxonomy header
-            would waste tokens and confuse the LLM with an irrelevant
-            instruction; we skip the block entirely.
+            (no `what` / `dimension` / signal_category). Emitting an
+            empty taxonomy header would waste tokens and confuse the LLM
+            with an irrelevant instruction; we skip the block entirely.
 
     Raises:
         ValueError: target_stage is not one of the supported values.
@@ -117,13 +122,24 @@ def build_context_layer(activity, target_stage):
 
     blocks = [_build_session_block(activity)]
 
-    # Taxonomy + techcatalog only for canonical-axis stages.
-    # Blocker stage is intentionally session-only: no canonical enums,
-    # no catalog dependency. See module docstring of blocker_v1.py.
+    # Taxonomy only for canonical-axis stages.
+    # Blocker stage is intentionally session-only: no canonical enums.
+    # See module docstring of blocker_v1.py.
     if target_stage != 'blocker':
         blocks.append(_build_taxonomy_block(target_stage))
-        if target_stage == 'techstack':
-            blocks.append(_build_techcatalog_block(activity))
+
+        # S10 sub-step 2: the TECH CATALOG block is NO LONGER appended
+        # for the techstack stage. Tech identity is free text now
+        # (techstack_v1 emits `tech_name`), so injecting the tenant's
+        # catalogue would only spend tokens on a reference list the
+        # model is no longer asked to match against.
+        #
+        # _build_techcatalog_block() is kept below, unreferenced, rather
+        # than deleted: sub-step 5 removes the TechCatalog model and
+        # every consumer in one reviewable change.
+        #
+        # if target_stage == 'techstack':
+        #     blocks.append(_build_techcatalog_block(activity))
 
     return '\n\n'.join(b for b in blocks if b)
 
@@ -265,8 +281,17 @@ def _build_taxonomy_block(target_stage):
     (ImpactType enum) that classifies the nature of the consequence
     (financial / time / human / strategic / ...).
 
-    TechStack does NOT use the (what, dimension) pair -- its canonical
-    axis is the TechCatalog entry. Its only enum here is usage_scope.
+    TechStack does NOT use the (what, dimension) pair -- it is identified
+    by its free-text `tech_name` (S10). Its only enum here is usage_scope.
+
+    # TODO(S10 -> AI-sprint): the techstack branch below exposes
+    # usage_scope only. If the AI sprint decides the qualification
+    # booleans (is_competitor / is_integration / is_to_replace) need
+    # grounding data to be set reliably -- e.g. the seller's own product
+    # catalogue, so the model can tell "overlaps with what we sell" from
+    # "just a tool they use" -- this is where that block belongs, next to
+    # the other per-stage context. See the matching TODO in
+    # techstack_v1.py for the wording side.
 
     Field-level extraction details (which fields the LLM must emit,
     when to OMIT a signal) live in the per-stage request layer
@@ -352,16 +377,27 @@ def _enum_json_array(enum_cls):
 
 def _build_techcatalog_block(activity):
     """
-    Render the tenant's TechCatalog as a compact reference list for the
+    UNREFERENCED since S10 sub-step 2 — see build_context_layer() above,
+    where the call site is commented out.
+
+    TODO(S10 sub-step 5): delete this function together with the
+    TechCatalog import at the top of this module, the TechCatalog model
+    itself and its remaining consumers. It is left in place here so that
+    sub-step 2 changes only what the extraction contract requires, and
+    the catalogue removal lands as one reviewable diff.
+
+    Historical behaviour, for the reviewer:
+
+    Rendered the tenant's TechCatalog as a compact reference list for the
     techstack sub-call.
 
-    The LLM uses this list to attempt matching prospect-side tool
+    The LLM used this list to attempt matching prospect-side tool
     mentions to a curated entry. The request layer (techstack_v1)
-    instructs the LLM to emit `tech_catalog_entry_id` when a match
-    is found, or `tech_name_raw` otherwise. The persistence service
-    creates the signal in PENDING with tech_catalog_entry
+    instructed the LLM to emit `tech_catalog_entry_id` when a match
+    was found, or `tech_name_raw` otherwise. The persistence service
+    created the signal in PENDING with tech_catalog_entry
     either set (UUID match) or NULL + metadata.pending_tech_name=<raw>
-    (rep attaches the catalog entry before validating).
+    (rep attached the catalog entry before validating).
 
     Token strategy
     --------------
