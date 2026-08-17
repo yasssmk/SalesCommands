@@ -133,12 +133,15 @@ class TestEnrollChannelOverride:
 
 
 def _enroll_account(api, campaign, account, *, channel_override=None):
-    """ACCOUNT-mode enrollment (all account contacts)."""
+    """Enrol all account contacts. ACCOUNT mode was removed (S13 sub-step 4) —
+    pass the account's contact ids explicitly via CONTACT mode."""
+    from app_modules.contacts.models import Contact
+    ids = [str(i) for i in Contact.objects.filter(account=account).values_list("id", flat=True)]
     payload = {
         "campaign_id": str(campaign.id),
         "account_id": str(account.id),
-        "type": "ACCOUNT",
-        "contact_ids": [],
+        "type": "CONTACT",
+        "contact_ids": ids,
     }
     if channel_override is not None:
         payload["channel_override"] = channel_override
