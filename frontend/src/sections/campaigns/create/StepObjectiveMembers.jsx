@@ -229,7 +229,7 @@ export default function StepObjectiveMembers({
                 <TextField
                   fullWidth
                   id="campaign-activity-objective"
-                  placeholder="e.g., Book a discovery call"
+                  placeholder="Describe the context and goal — this helps tailor the prep call."
                   multiline
                   rows={2}
                   inputProps={{ maxLength: 500 }}

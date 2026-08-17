@@ -1177,7 +1177,7 @@ function DetailsSection({ activity, onSave, onSaveBatch, isLocked = false }) {
                 value={activity?.call_to_action}
                 fieldKey="call_to_action"
                 onSave={onSave}
-                placeholder="Main objective for this activity..."
+                placeholder="Describe the context and goal — this helps tailor the prep call."
                 emptyText="Click to define objective..."
                 disabled={isLocked}
               />

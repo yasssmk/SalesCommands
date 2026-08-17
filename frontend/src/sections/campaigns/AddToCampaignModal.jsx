@@ -602,7 +602,7 @@ export default function AddToCampaignModal({
                       multiline
                       rows={2}
                       inputProps={{ maxLength: 500 }}
-                      placeholder="e.g. Chase the signed quote"
+                      placeholder="Describe the context and goal — this helps tailor the prep call."
                       value={objective}
                       onChange={(e) => setObjective(e.target.value)}
                     />

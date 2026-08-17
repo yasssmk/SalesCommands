@@ -75,7 +75,9 @@ describe("StepObjectiveMembers — Activity Objective + Target Departments (6b)"
 
   it("typing the objective calls onUpdate with {activity_objective}", () => {
     const onUpdate = renderStep();
-    const input = screen.getByPlaceholderText("e.g., Book a discovery call");
+    const input = screen.getByPlaceholderText(
+      "Describe the context and goal — this helps tailor the prep call.",
+    );
     fireEvent.change(input, { target: { value: "Book a discovery call" } });
     expect(onUpdate).toHaveBeenCalledWith({ activity_objective: "Book a discovery call" });
   });

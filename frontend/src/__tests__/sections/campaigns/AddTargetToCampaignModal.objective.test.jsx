@@ -55,9 +55,12 @@ describe("AddTargetToCampaignModal — Activity Objective", () => {
     );
 
     fireEvent.click(screen.getByTestId("pick-contact"));
-    fireEvent.change(screen.getByPlaceholderText("e.g. Chase the signed quote"), {
-      target: { value: "Re-open conversation" },
-    });
+    fireEvent.change(
+      screen.getByPlaceholderText(
+        "Describe the context and goal — this helps tailor the prep call.",
+      ),
+      { target: { value: "Re-open conversation" } },
+    );
     fireEvent.click(screen.getByRole("button", { name: /Add Target/i }));
 
     await waitFor(() => expect(enrollTarget).toHaveBeenCalled());

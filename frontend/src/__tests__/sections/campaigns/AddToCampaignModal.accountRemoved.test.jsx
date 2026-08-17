@@ -5,7 +5,7 @@
 // api SWR hooks mocked (project convention).
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 vi.mock("next/font/google", () => ({
   Public_Sans: () => ({ className: "", style: { fontFamily: "Public Sans" }, variable: "" }),
@@ -46,5 +46,21 @@ describe("AddToCampaignModal — ACCOUNT mode removed", () => {
     expect(screen.queryByText("Entire account")).toBeNull();
     expect(screen.getByText("A specific department")).toBeInTheDocument();
     expect(screen.getByText("Specific contacts")).toBeInTheDocument();
+  });
+
+  it("shows the benefit-oriented Activity Objective placeholder", () => {
+    render(
+      <AddToCampaignModal open accountId="acc1" accountName="Acme" onClose={() => {}} />,
+    );
+    // CONTACT is the default mode — select the contact, then advance to the
+    // step where the Activity Objective input lives.
+    fireEvent.click(screen.getByText("Jane Doe"));
+    fireEvent.click(screen.getByRole("button", { name: /^Next$/ }));
+
+    expect(
+      screen.getByPlaceholderText(
+        "Describe the context and goal — this helps tailor the prep call.",
+      ),
+    ).toBeInTheDocument();
   });
 });
