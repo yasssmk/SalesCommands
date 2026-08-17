@@ -278,18 +278,32 @@ class CampaignCreationService:
         account_ids = data.get('account_ids', [])
         return self._enroll_from_ids(campaign, account_ids)
 
-    def _enroll_from_territories(self, campaign):
+    def _enroll_from_territories(self, campaign, target_department_ids=None):
         """
         Pull accounts from all campaign territories and enroll them.
 
         Also pre-creates CampaignContact rows in PENDING so TargetsTab
         shows contacts before Start is clicked. Activities are generated at start().
+
+        target_department_ids: optional list of StandardDepartment ids. When
+        provided (or, when None, derived from campaign.target_departments), only
+        contacts whose standard_department is in the set are pre-enrolled — the
+        campaign-wide OUTBOUND department filter applied at CREATION so
+        non-target contacts are never enrolled. Empty/None set = unchanged
+        behaviour (all reachable non-opted-out contacts).
         """
         from ..models import CampaignContact, CampaignContactStatus
 
         territories = campaign.territories.all()
         if not territories:
             return 0
+
+        # Resolve the department filter: explicit ids win; otherwise read the
+        # campaign-wide M2M (so the lifecycle.start() re-enroll path filters too).
+        if target_department_ids is None:
+            target_department_ids = list(
+                campaign.target_departments.values_list('id', flat=True)
+            )
 
         combined_qs = CompanyAccount.objects.none()
         for territory in territories:
@@ -336,6 +350,14 @@ class CampaignCreationService:
                 client_id=self.client_id,
                 opted_out=False,
             )
+            # Campaign-wide OUTBOUND department filter (applied at creation, before
+            # PENDING rows are pre-created). Mirrors ContactFilterService's
+            # standard_department filter (filter_service.py:96-98). Empty set =
+            # no narrowing.
+            if target_department_ids:
+                contact_qs = contact_qs.filter(
+                    standard_department_id__in=target_department_ids
+                )
             no_calls = getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS
             contacts = Contact.filter_reachable(contact_qs, no_calls=no_calls)
 

@@ -10,6 +10,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import Modal from "@mui/material/Modal";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 
@@ -49,6 +50,7 @@ export default function AddTargetToCampaignModal({
   // ==============================|| STATE ||============================== //
 
   const [selectedContact, setSelectedContact] = useState(null);
+  const [objective, setObjective] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // ==============================|| HANDLERS ||============================== //
@@ -56,6 +58,7 @@ export default function AddTargetToCampaignModal({
   const handleClose = useCallback(() => {
     if (submitting) return;
     setSelectedContact(null);
+    setObjective("");
     onClose();
   }, [submitting, onClose]);
 
@@ -81,6 +84,7 @@ export default function AddTargetToCampaignModal({
         type: "CONTACT",
         account_id: accountId,
         contact_ids: [selectedContact.id],
+        objective: objective.trim() || undefined,
       });
 
       if (result.success) {
@@ -98,7 +102,7 @@ export default function AddTargetToCampaignModal({
     } finally {
       setSubmitting(false);
     }
-  }, [campaignId, selectedContact, onSuccess, onClose]);
+  }, [campaignId, selectedContact, objective, onSuccess, onClose]);
 
   // ==============================|| CUSTOM RENDER OPTION ||============================== //
 
@@ -236,6 +240,31 @@ export default function AddTargetToCampaignModal({
               )}
             </Box>
           )}
+
+          {/* Activity Objective */}
+          <Box>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Activity Objective{" "}
+              <Typography
+                component="span"
+                variant="caption"
+                color="text.secondary"
+              >
+                (optional)
+              </Typography>
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              multiline
+              rows={2}
+              inputProps={{ maxLength: 500 }}
+              placeholder="Describe the goal — the AI recommendations will be more accurate."
+              value={objective}
+              onChange={(e) => setObjective(e.target.value)}
+              disabled={submitting}
+            />
+          </Box>
 
           <Divider />
 

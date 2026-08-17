@@ -408,6 +408,9 @@ class CampaignModuleErrorMessages:
     TARGETED_CAMPAIGN_CANCEL_FORBIDDEN = _(
         "A targeted campaign cannot be cancelled — it is a perpetual chasing campaign."
     )
+    ENROLL_TYPE_CONTACT_ONLY = _(
+        "Only contact-by-contact enrollment is supported — select specific contacts."
+    )
 
     # Analytics
     ANALYTICS_CALCULATION_FAILED = _("Failed to calculate campaign analytics: {reason}")

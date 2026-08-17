@@ -2,10 +2,11 @@
 /**
  * AddToCampaignModal — Enroll an account into the user's Targeted Campaign.
  *
- * 3 enrollment modes:
- *   - ACCOUNT: all contacts of the account
- *   - DEPARTMENT: all contacts of a specific department
+ * 2 enrollment modes (ACCOUNT/whole-account removed — backend rejects it):
+ *   - DEPARTMENT: all contacts of a specific department (resolved client-side
+ *     to CONTACT ids on submit — a client filter, not a backend mode)
  *   - CONTACT: one or more specific contacts
+ * An optional per-enroll Activity Objective is posted as `objective`.
  *
  * Data flow:
  *   1. useGetTargetedCampaign() — get/create the singleton
@@ -65,7 +66,9 @@ import AimOutlined from "@ant-design/icons/AimOutlined";
 // ==============================|| CONSTANTS ||============================== //
 
 const MODES = {
-  ACCOUNT: "ACCOUNT",
+  // ACCOUNT (whole-account) enroll mode removed — backend rejects it (S13
+  // sub-step 4). Enrollment is contact-by-contact; DEPARTMENT stays a
+  // client-side filter that resolves to CONTACT ids on submit.
   DEPARTMENT: "DEPARTMENT",
   CONTACT: "CONTACT",
 };
@@ -125,7 +128,8 @@ export default function AddToCampaignModal({
 
   // ==============================|| STATE ||============================== //
 
-  const initialMode = preselectedContactId ? MODES.CONTACT : MODES.ACCOUNT;
+  // Default to CONTACT (ACCOUNT mode removed). DEPARTMENT is opt-in via the radio.
+  const initialMode = MODES.CONTACT;
   const [wizardStep, setWizardStep] = useState(STEPS.TARGET);
   const [mode, setMode] = useState(initialMode);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
@@ -134,6 +138,7 @@ export default function AddToCampaignModal({
   );
   const [submitting, setSubmitting] = useState(false);
   const [notes, setNotes] = useState("");
+  const [objective, setObjective] = useState("");
   const [originDecisionCycleId, setOriginDecisionCycleId] = useState(null);
   // "No calls" per-enrollment override (Voie B): checked -> channel_override
   // NO_CALLS is posted for every contact enrolled by this action; unchecked ->
@@ -149,10 +154,11 @@ export default function AddToCampaignModal({
   useEffect(() => {
     if (open) {
       setWizardStep(STEPS.TARGET);
-      setMode(preselectedContactId ? MODES.CONTACT : MODES.ACCOUNT);
+      setMode(MODES.CONTACT);
       setSelectedDepartment(null);
       setSelectedContactIds(preselectedContactId ? [preselectedContactId] : []);
       setNotes("");
+      setObjective("");
       setOriginDecisionCycleId(null);
       setNoCalls(false);
     }
@@ -198,9 +204,7 @@ export default function AddToCampaignModal({
     try {
       let payload;
 
-      if (mode === MODES.ACCOUNT) {
-        payload = { type: "ACCOUNT", account_id: accountId, contact_ids: [] };
-      } else if (mode === MODES.DEPARTMENT && selectedDepartment) {
+      if (mode === MODES.DEPARTMENT && selectedDepartment) {
         const deptContacts =
           departments.find((d) => d.name === selectedDepartment)?.contacts ||
           [];
@@ -225,6 +229,7 @@ export default function AddToCampaignModal({
       }
 
       if (notes.trim()) payload.notes = notes.trim();
+      if (objective.trim()) payload.objective = objective.trim();
       if (originDecisionCycleId)
         payload.origin_decision_cycle_id = originDecisionCycleId;
       if (noCalls) payload.channel_override = "NO_CALLS";
@@ -251,6 +256,7 @@ export default function AddToCampaignModal({
     selectedContactIds,
     departments,
     notes,
+    objective,
     originDecisionCycleId,
     noCalls,
     onClose,
@@ -260,7 +266,6 @@ export default function AddToCampaignModal({
   // ==============================|| VALIDATION ||============================== //
 
   const isValid = useMemo(() => {
-    if (mode === MODES.ACCOUNT) return true;
     if (mode === MODES.DEPARTMENT) return Boolean(selectedDepartment);
     if (mode === MODES.CONTACT) return selectedContactIds.length > 0;
     return false;
@@ -319,26 +324,6 @@ export default function AddToCampaignModal({
                       What do you want to target?
                     </Typography>
                     <RadioGroup value={mode} onChange={handleModeChange}>
-                      <FormControlLabel
-                        value={MODES.ACCOUNT}
-                        control={<Radio size="small" />}
-                        label={
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            alignItems="center"
-                          >
-                            <Typography variant="body2">
-                              Entire account
-                            </Typography>
-                            <Chip
-                              label={`${contacts.length} contacts`}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </Stack>
-                        }
-                      />
                       <FormControlLabel
                         value={MODES.DEPARTMENT}
                         control={<Radio size="small" />}
@@ -596,6 +581,30 @@ export default function AddToCampaignModal({
                       placeholder="e.g. Key account for Q3 push, opening from last call..."
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
+                    />
+                  </Box>
+
+                  {/* Activity Objective */}
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+                      Activity Objective{" "}
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        color="text.secondary"
+                      >
+                        (optional)
+                      </Typography>
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      multiline
+                      rows={2}
+                      inputProps={{ maxLength: 500 }}
+                      placeholder="Describe the goal — the AI recommendations will be more accurate."
+                      value={objective}
+                      onChange={(e) => setObjective(e.target.value)}
                     />
                   </Box>
                 </Box>

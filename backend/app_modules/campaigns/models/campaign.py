@@ -113,6 +113,16 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Description')
     )
 
+    activity_objective = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('Activity Objective'),
+        help_text=_(
+            'Optional free-text objective for the campaign. Propagated onto '
+            'each generated OUTBOUND activity as its call to action.'
+        )
+    )
+
     campaign_type = models.CharField(
         max_length=20,
         choices=CampaignType.choices,
@@ -149,6 +159,22 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         blank=True,
         verbose_name=_('Territories'),
         help_text=_('Source territories for OUTBOUND campaigns')
+    )
+
+    # ==========================================================================
+    # TARGET DEPARTMENTS (campaign-wide OUTBOUND enrollment filter)
+    # ==========================================================================
+    # Distinct from CampaignAccount.target_departments (per-account). When set,
+    # OUTBOUND territory enrollment only enrols contacts whose
+    # standard_department is in this set (still excluding unreachable / opted_out).
+    # Empty = unchanged behaviour (all reachable non-opted-out contacts).
+
+    target_departments = models.ManyToManyField(
+        'core_modules.StandardDepartment',
+        related_name='campaign_targets',
+        blank=True,
+        verbose_name=_('Target Departments'),
+        help_text=_('Optional: OUTBOUND enrols only contacts in these departments')
     )
 
     # ==========================================================================

@@ -93,6 +93,17 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Notes'),
     )
 
+    objective = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('Objective'),
+        help_text=_(
+            'Per-run objective entered at enrollment for a TARGETED contact. '
+            'Populates the generated activity call_to_action. Reset on '
+            'reactivate() — jetable per chasing run.'
+        ),
+    )
+
     channel_override = models.CharField(
         max_length=20,
         choices=ChannelOverride.choices,
@@ -205,6 +216,7 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
             - activities_generated → False  (triggers new sequence generation)
             - callback_date → None
             - notes → None
+            - objective → None  (jetable per run; re-entered at next enrollment)
             - sequence_run → +1  (starts a fresh chasing run; activities generated
               after this reset are stamped with the incremented run, so the
               completed accordion shows only the current run while previous runs
@@ -227,6 +239,9 @@ class CampaignContact(ModuleBaseModel, ClientScopeManager.ModelMixin):
         self.activities_generated = False
         self.callback_date = None
         self.notes = None
+        # Objective is jetable per chasing run — a re-chase starts blank and must
+        # be re-entered at enrollment (see enroll_target). Never carried over.
+        self.objective = None
         # New chasing run. Incremented BEFORE save so generate_activities_for_contact
         # (called after reactivate() at enroll-target) stamps the incremented run.
         self.sequence_run += 1

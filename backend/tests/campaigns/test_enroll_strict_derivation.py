@@ -88,23 +88,9 @@ class TestStrictDerivation:
         assert resp.status_code in (200, 201)
         assert _body(resp)["strict"] is False
 
-    def test_account_mode_is_not_strict_even_with_one_contact(self, authed_api_a, account, user_a):
-        c = _campaign(account, user_a)
-        _mk(account, user_a, email="a@x.io")
-        resp = _post(authed_api_a, c, account, enroll_type="ACCOUNT", contact_ids=[])
-        assert resp.status_code in (200, 201)
-        assert _body(resp)["strict"] is False
-
-    def test_department_mode_is_not_strict(self, authed_api_a, account, user_a):
-        from app_modules.core_modules.models.standar_dept import StandardDepartment
-        dept, _ = StandardDepartment.objects.get_or_create(name="IT")
-        c = _campaign(account, user_a)
-        ct = _mk(account, user_a, email="a@x.io")
-        ct.standard_department = dept
-        ct.save(user=user_a)
-        resp = _post(authed_api_a, c, account, enroll_type="DEPARTMENT", department_id=str(dept.id))
-        assert resp.status_code in (200, 201)
-        assert _body(resp)["strict"] is False
+    # ACCOUNT and DEPARTMENT enroll modes were removed (S13 sub-step 4) —
+    # enrollment is contact-by-contact only, so their strict-derivation tests
+    # no longer apply.
 
     def test_contact_single_nonexistent_id_is_not_strict(self, authed_api_a, account, user_a):
         import uuid

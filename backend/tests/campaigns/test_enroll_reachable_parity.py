@@ -114,38 +114,10 @@ class TestEnrollReachableParity:
 
         assert _enrolled_contact_ids(campaign) == reachable
 
-    def test_enroll_target_department_mode(self, authed_api_a, account, user_a):
-        """#3 — enroll-target type=DEPARTMENT enrolls exactly the reachable dept contacts."""
-        from app_modules.core_modules.models.standar_dept import StandardDepartment
-        dept, _ = StandardDepartment.objects.get_or_create(name="IT")
-
-        campaign = _active_targeted_campaign(account, user_a)
-        reachable, _all_ids = _seed_matrix(account, user_a, dept=dept)
-
-        resp = authed_api_a.post(ENROLL_URL, data={
-            "campaign_id": str(campaign.id),
-            "account_id": str(account.id),
-            "type": "DEPARTMENT",
-            "department_id": str(dept.id),
-        }, format="json")
-        assert resp.status_code in (200, 201), resp.data
-
-        assert _enrolled_contact_ids(campaign) == reachable
-
-    def test_enroll_target_account_mode(self, authed_api_a, account, user_a):
-        """#4 — enroll-target type=ACCOUNT enrolls exactly the reachable account contacts."""
-        campaign = _active_targeted_campaign(account, user_a)
-        reachable, _all_ids = _seed_matrix(account, user_a)
-
-        resp = authed_api_a.post(ENROLL_URL, data={
-            "campaign_id": str(campaign.id),
-            "account_id": str(account.id),
-            "type": "ACCOUNT",
-            "contact_ids": [],
-        }, format="json")
-        assert resp.status_code in (200, 201), resp.data
-
-        assert _enrolled_contact_ids(campaign) == reachable
+    # enroll-target DEPARTMENT and ACCOUNT modes were removed (S13 sub-step 4):
+    # enrollment is contact-by-contact only. The reachable-channel predicate is
+    # still exercised for CONTACT mode (test_enroll_target_contact_mode above) and
+    # for territory pre-creation (test_bulk_add_active_precreates_reachable below).
 
     def test_bulk_add_active_precreates_reachable(self, authed_api_a, account, user_a):
         """#1 — bulk-add on an ACTIVE campaign pre-creates CampaignContacts for reachable contacts only."""

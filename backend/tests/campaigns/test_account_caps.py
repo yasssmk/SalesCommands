@@ -23,6 +23,7 @@ import pytest
 from django.utils import timezone
 
 from core.exceptions import StandardizedValidationError
+from app_modules.contacts.models import Contact
 from app_modules.campaigns.constants import (
     CampaignType,
     CampaignStatus,
@@ -166,12 +167,14 @@ def test_add_target_at_50_active_refused(authed_api_a, user_a, client_account_a)
 
     newcomer = _make_accounts(1, user_a, client_account_a.id, start=900)[0]
 
+    # CONTACT-only enrollment (ACCOUNT mode removed). The per-account cap is
+    # checked before contact resolution, so the 51st account is refused here.
     resp = authed_api_a.post(
         ENROLL_URL,
         data={
             'campaign_id': str(campaign.id),
             'account_id': str(newcomer.id),
-            'type': 'ACCOUNT',
+            'type': 'CONTACT',
         },
         format='json',
     )
@@ -204,13 +207,15 @@ def test_add_target_terminal_accounts_do_not_count(authed_api_a, user_a, client_
     ).count() == 10
 
     newcomer = _account_with_contact(user_a, client_account_a.id, 'terminal')
+    nc_contact = Contact.objects.get(account=newcomer)
 
     resp = authed_api_a.post(
         ENROLL_URL,
         data={
             'campaign_id': str(campaign.id),
             'account_id': str(newcomer.id),
-            'type': 'ACCOUNT',
+            'type': 'CONTACT',
+            'contact_ids': [str(nc_contact.id)],
         },
         format='json',
     )
@@ -232,17 +237,22 @@ def test_add_target_boundary_49_active_accepts_then_50_refuses(
 
     fiftieth = _account_with_contact(user_a, client_account_a.id, 'fiftieth')
     fifty_first = _account_with_contact(user_a, client_account_a.id, 'fiftyfirst')
+    fiftieth_contact = Contact.objects.get(account=fiftieth)
+    fifty_first_contact = Contact.objects.get(account=fifty_first)
 
+    # CONTACT-only enrollment (ACCOUNT mode removed).
     ok = authed_api_a.post(
         ENROLL_URL,
-        data={'campaign_id': str(campaign.id), 'account_id': str(fiftieth.id), 'type': 'ACCOUNT'},
+        data={'campaign_id': str(campaign.id), 'account_id': str(fiftieth.id),
+              'type': 'CONTACT', 'contact_ids': [str(fiftieth_contact.id)]},
         format='json',
     )
     assert ok.status_code == 201, ok.data  # 49 → 50, allowed
 
     refused = authed_api_a.post(
         ENROLL_URL,
-        data={'campaign_id': str(campaign.id), 'account_id': str(fifty_first.id), 'type': 'ACCOUNT'},
+        data={'campaign_id': str(campaign.id), 'account_id': str(fifty_first.id),
+              'type': 'CONTACT', 'contact_ids': [str(fifty_first_contact.id)]},
         format='json',
     )
     assert refused.status_code == 400, refused.data  # 50 → 51, blocked

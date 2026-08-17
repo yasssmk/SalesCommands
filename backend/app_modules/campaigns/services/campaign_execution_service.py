@@ -543,6 +543,10 @@ class CampaignExecutionService:
             3. All account contacts
 
         Excludes opted-out contacts and those with no reachable channel.
+
+        The campaign-wide target_departments filter (OUTBOUND) is applied on the
+        account-wide path too, so that re-deriving contacts at generation does not
+        undo the department filter applied at creation. Empty for TARGETED (no-op).
         """
         if campaign_account.target_contacts.exists():
             return list(
@@ -560,6 +564,13 @@ class CampaignExecutionService:
         if campaign_account.target_departments.exists():
             dept_ids = campaign_account.target_departments.values_list('id', flat=True)
             queryset = queryset.filter(standard_department_id__in=dept_ids)
+
+        # Campaign-wide OUTBOUND target departments (S13). Applied here so the
+        # creation-time enrollment filter is not undone when generation re-derives
+        # contacts from the account. Mirrors the per-account filter just above.
+        if campaign is not None and campaign.target_departments.exists():
+            camp_dept_ids = campaign.target_departments.values_list('id', flat=True)
+            queryset = queryset.filter(standard_department_id__in=camp_dept_ids)
 
         # NO_CALLS: never call — reachable on email OR LinkedIn (no phone).
         no_calls = bool(campaign) and getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS
@@ -615,12 +626,18 @@ class CampaignExecutionService:
 
         # Populate call_to_action:
         # 1. Explicit step config value (sequence-defined objective)
-        # 2. Fallback to campaign_account.notes for targeted campaigns (enrollment reason)
+        # 2. Campaign-level activity_objective (OUTBOUND source of the unified
+        #    "Activity Objective")
+        # 3. Per-contact objective for targeted campaigns (entered at enrollment).
+        #    TD-145: this deliberately does NOT read campaign_account.notes, which
+        #    is the status journal ("Stopped: …") and would poison the CTA.
         call_to_action = None
         if step_config:
             call_to_action = step_config.get('call_to_action') or None
-        if not call_to_action and campaign.is_targeted and campaign_account:
-            call_to_action = campaign_account.notes or None
+        if not call_to_action and getattr(campaign, 'activity_objective', None):
+            call_to_action = campaign.activity_objective
+        if not call_to_action and campaign.is_targeted and campaign_contact:
+            call_to_action = campaign_contact.objective or None
 
         activity = Activity(
             title=title,

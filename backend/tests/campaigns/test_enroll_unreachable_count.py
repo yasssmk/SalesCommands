@@ -37,9 +37,14 @@ def _contact(account, user_a, n, reachable=True):
 
 
 def _enroll_account(api, campaign, account):
+    # ACCOUNT mode was removed (S13 sub-step 4) — enrol every contact of the
+    # account by passing their ids explicitly via CONTACT mode. Unreachable /
+    # opted-out contacts stay in the denominator (same as the old ACCOUNT mode).
+    from app_modules.contacts.models import Contact
+    ids = [str(i) for i in Contact.objects.filter(account=account).values_list("id", flat=True)]
     return api.post(ENROLL_URL, data={
         "campaign_id": str(campaign.id), "account_id": str(account.id),
-        "type": "ACCOUNT", "contact_ids": [],
+        "type": "CONTACT", "contact_ids": ids,
     }, format="json")
 
 

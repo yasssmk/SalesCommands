@@ -58,9 +58,14 @@ def _mk(account, user_a, *, email=None, phone=None, linkedin=None, opted_out=Fal
 
 
 def _enroll_account(api, campaign, account):
+    # ACCOUNT mode was removed (S13 sub-step 4) — enrol every contact of the
+    # account by passing their ids explicitly via CONTACT mode. Unreachable /
+    # opted-out contacts stay in the denominator (same as the old ACCOUNT mode).
+    from app_modules.contacts.models import Contact
+    ids = [str(i) for i in Contact.objects.filter(account=account).values_list("id", flat=True)]
     return api.post(ENROLL_URL, data={
         "campaign_id": str(campaign.id), "account_id": str(account.id),
-        "type": "ACCOUNT", "contact_ids": [],
+        "type": "CONTACT", "contact_ids": ids,
     }, format="json")
 
 
@@ -114,15 +119,10 @@ class TestEnrollCauseCounters:
         assert b["opted_out_count"] == 0
         assert b["account_empty"] is False
 
-    def test_account_empty(self, authed_api_a, account, user_a):
-        c = _campaign(account, user_a)  # account has NO contacts
-
-        b = _body(_enroll_account(authed_api_a, c, account))
-        assert b["contacts_enrolled"] == 0
-        assert b["account_empty"] is True
-        assert b["no_channel_count"] == 0
-        assert b["opted_out_count"] == 0
-        assert b["already_active_count"] == 0
+    # test_account_empty removed: the account_empty=True signal was specific to
+    # the removed whole-account/department enroll modes. CONTACT-only enrollment
+    # with no contacts is a 4xx (contact_ids required), not a 201 with
+    # account_empty — covered by test_enroll_contact_only.py.
 
     def test_overlap_opted_out_and_no_channel_counts_as_opted_out(self, authed_api_a, account, user_a):
         c = _campaign(account, user_a)

@@ -752,20 +752,31 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         Enroll an account into a TARGETED campaign with immediate activity generation.
         POST /campaigns/accounts/enroll-target/
 
+        Contact-by-contact only: `type` must be CONTACT (the ACCOUNT and
+        DEPARTMENT enroll modes were removed). Any other type is rejected 4xx.
+
         Body:
             - campaign_id:    UUID  (required)
             - account_id:     UUID  (required)
-            - type:           str   'ACCOUNT' | 'DEPARTMENT' | 'CONTACT'
-            - department_id:  UUID  (optional, for DEPARTMENT type)
-            - contact_ids:    list  (optional, for CONTACT type)
+            - type:           str   'CONTACT' (default; only accepted value)
+            - contact_ids:    list  (required — the contacts to enrol)
+            - objective:      str   (optional — per-contact objective)
         """
         ctx = ctx_from_request(request)
         campaign_id  = request.data.get('campaign_id')
         account_id   = request.data.get('account_id')
-        enroll_type  = request.data.get('type', 'ACCOUNT')
-        department_id = request.data.get('department_id')
+        # TARGETED enrollment is contact-by-contact only. CONTACT is the sole
+        # accepted type (ACCOUNT / DEPARTMENT enroll modes were removed); default
+        # to CONTACT so an omitted type still enrols the passed contacts.
+        enroll_type  = request.data.get('type', 'CONTACT')
         contact_ids  = request.data.get('contact_ids', [])
         notes        = request.data.get('notes', '') or ''
+        # Per-call objective (S13): one value applied to every contact enrolled in
+        # this call. Normalised to None when blank (mirrors activity_creation_service
+        # call_to_action handling). Populates each CampaignContact.objective, which
+        # _create_activity reads for the activity call_to_action (TD-145: replaces
+        # the poisoned campaign_account.notes read).
+        objective    = (request.data.get('objective') or '').strip() or None
         origin_decision_cycle_id = request.data.get('origin_decision_cycle_id')
         # Per-contact channel override (Voie B) — only NO_CALLS is accepted here;
         # anything else (absent, null, unknown) means "no override, follow the
@@ -789,9 +800,12 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
             raise StandardizedValidationError(
                 CoreErrorMessages.REQUIRED_FIELD.format(field='account_id')
             )
-        if enroll_type not in ('ACCOUNT', 'DEPARTMENT', 'CONTACT'):
+        # Only contact-by-contact enrollment is supported. Reject the removed
+        # ACCOUNT / DEPARTMENT modes (and any other value) BEFORE any row is
+        # created, so a rejection leaves zero enrollment.
+        if enroll_type != 'CONTACT':
             raise StandardizedValidationError(
-                CoreErrorMessages.INVALID_FIELD.format(field='type (ACCOUNT|DEPARTMENT|CONTACT)')
+                CampaignModuleErrorMessages.ENROLL_TYPE_CONTACT_ONLY
             )
 
         client_id = self.get_client_id()
@@ -862,68 +876,27 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         if created:
             campaign_account.save(user=request.user, client_id=client_id)
 
-        # Resolve contacts to enroll based on type. `base_qs` is the set of
-        # contacts targeted by this enrollment BEFORE any opt-out/channel filter;
-        # it is the denominator used by the cause counters computed below.
-        considered_total = 0  # contacts targeted by this enrollment (per mode)
-        base_qs = Contact.objects.none()
-        if enroll_type == 'CONTACT':
-            if not contact_ids:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='contact_ids')
-                )
+        # Contact-by-contact enrollment (the only supported mode). `base_qs` is the
+        # set of contacts targeted by this enrollment BEFORE any opt-out/channel
+        # filter; it is the denominator used by the cause counters computed below.
+        if not contact_ids:
+            raise StandardizedValidationError(
+                CoreErrorMessages.REQUIRED_FIELD.format(field='contact_ids')
+            )
 
-            base_qs = Contact.objects.filter(
-                id__in=contact_ids,
-                account=account,
-                client_id=client_id,
-            )
-            contacts = list(
-                Contact.filter_reachable(base_qs.filter(opted_out=False), no_calls=enroll_no_calls)
-            )
-            # considered_total counts the REAL targeted contacts (existing rows),
-            # not the raw requested ids — invalid / foreign ids are ignored. Anything
-            # not in `contacts` was excluded for eligibility (opted-out / no reachable
-            # channel), NOT because it was already active — that skip happens later.
-            considered_total = base_qs.count()
-
-        elif enroll_type == 'DEPARTMENT':
-            if not department_id:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='department_id')
-                )
-            base_qs = Contact.objects.filter(
-                account=account,
-                client_id=client_id,
-                standard_department_id=department_id,
-            )
-            contacts = list(
-                Contact.filter_reachable(base_qs.filter(opted_out=False), no_calls=enroll_no_calls)
-            )
-            # Every contact of the department is considered; those not in `contacts`
-            # were excluded for eligibility (opted-out / no reachable channel).
-            considered_total = base_qs.count()
-            # Store department filter on the CampaignAccount
-            try:
-                from app_modules.core_modules.models import StandardDepartment
-                dept = StandardDepartment.objects.get(id=department_id)
-                campaign_account.target_departments.add(dept)
-            except Exception:
-                pass
-        else:  # ACCOUNT — all non opted-out contacts
-            base_qs = Contact.objects.filter(
-                account=account,
-                client_id=client_id,
-            )
-            contacts = list(
-                Contact.filter_reachable(base_qs.filter(opted_out=False), no_calls=enroll_no_calls)
-            )
-            # Every contact of the account is considered; those not in `contacts`
-            # were excluded for eligibility (opted-out / no reachable channel). This
-            # is what makes unreachable_count meaningful in ACCOUNT mode (where
-            # contact_ids is empty), so the frontend can tell "0 reachable" apart
-            # from "already active".
-            considered_total = base_qs.count()
+        base_qs = Contact.objects.filter(
+            id__in=contact_ids,
+            account=account,
+            client_id=client_id,
+        )
+        contacts = list(
+            Contact.filter_reachable(base_qs.filter(opted_out=False), no_calls=enroll_no_calls)
+        )
+        # considered_total counts the REAL targeted contacts (existing rows),
+        # not the raw requested ids — invalid / foreign ids are ignored. Anything
+        # not in `contacts` was excluded for eligibility (opted-out / no reachable
+        # channel), NOT because it was already active — that skip happens later.
+        considered_total = base_qs.count()
 
         # Cause counters (E4) — split the fused unreachable_count into disjoint
         # buckets so callers can tell WHY a contact was not enrolled. opted_out
@@ -932,15 +905,14 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         # after the enrollment loop (eligible contacts minus those enrolled).
         opted_out_count = base_qs.filter(opted_out=True).count()
         no_channel_count = base_qs.filter(opted_out=False).count() - len(contacts)
-        account_empty = (
-            enroll_type in ('ACCOUNT', 'DEPARTMENT') and considered_total == 0
-        )
+        # CONTACT-only enrollment has no whole-account/department "empty" concept.
+        account_empty = False
 
         # `strict` is derived server-side (the frontend no longer sends it): a
         # single real targeted contact. It carries NO decision — enrollment is
         # unchanged and no case returns 400 — it only lets the messaging layer
         # pick singular ("this contact") vs plural wording.
-        strict = enroll_type == 'CONTACT' and base_qs.count() == 1
+        strict = base_qs.count() == 1
 
         # Enroll contacts (always) — generate activities only when ACTIVE
         contacts_created = 0
@@ -1004,6 +976,15 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 and campaign_contact.status in FINAL_CONTACT_STATES
             ):
                 campaign_contact.reactivate(user=request.user)
+
+            # Persist the per-call objective on THIS contact's run. Placed AFTER
+            # reactivate() (which nulls objective) so a re-chase adopts the value
+            # entered for this enrollment. Persisted to the DB before generation,
+            # because generate_activities_for_contact re-fetches the row via
+            # get_or_create and _create_activity reads objective from it.
+            if campaign_contact.objective != objective:
+                campaign_contact.objective = objective
+                campaign_contact.save(user=request.user)
 
             contacts_created += 1
 

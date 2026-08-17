@@ -299,6 +299,44 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint S13 ✅ — Intention & Prep Call (branche `feat/s13-activity-objective`)
+- **Objectif** : attacher un OBJECTIF à chaque activité (source d'intention pour
+  les futures fonctions IA) et absorber le ciblage/sélection des contacts.
+- **Livré** :
+  - **Objectif unifié** porté par `Activity.call_to_action`, affiché « Activity
+    Objective ». Sources : **OUTBOUND** ← nouveau champ `Campaign.activity_objective`
+    (optionnel), propagé à la génération des activités ; **TARGETED** ← nouveau
+    champ `CampaignContact.objective` saisi à l'enrôlement, **JETABLE par run**
+    (réinitialisé par `reactivate()`) ; **DC** ← natif (saisie manuelle +
+    `NextStepSignal.suggested_objective` mappé à la matérialisation Signal→Activity,
+    l'objectif explicite du payload primant ; le prompt qui remplira
+    `suggested_objective` reste HORS SCOPE, sprint signaux).
+  - **Ciblage OUTBOUND par départements au niveau CAMPAGNE** (nouveau M2M
+    `Campaign.target_departments` → `StandardDepartment`) ; filtre appliqué à la
+    **CRÉATION** (`_enroll_from_territories`) **ET** à la **GÉNÉRATION**
+    (`_extract_contacts`) — les DEUX points, sinon la génération ré-enrôle les
+    contacts filtrés (no-op pour TARGETED).
+  - **TARGETED = enrôlement contact par contact uniquement** ; mode **ACCOUNT
+    retiré** (front `AddToCampaignModal` + branche backend `enroll_target`, rejet
+    4xx propre) ; mode **DEPARTMENT conservé** comme FILTRE client-side (jamais un
+    mode backend).
+  - **Ferme TD-145** : le CTA ne lit plus `campaign_account.notes` → le texte de
+    journal de statut (« Account stopped… ») ne peut plus fuiter dans une activité
+    active.
+  - **Placeholders** objectif/description orientés « AI recommendations », deux
+    variantes (activité : « …of this activity… » ; campagne : sans « this
+    activity »).
+- **Migrations** (schema-only, nullable, sans backfill) : `Campaign.activity_objective`
+  (0018), `CampaignContact.objective` (0019), `Campaign.target_departments` M2M
+  (0020), `NextStepSignal.suggested_objective` (0022).
+- **Validation** : backend `tests/campaigns` + `tests/activities` + `tests/signals`
+  verts (Postgres) ; frontend vitest 788 tests verts ; smoke PO à venir.
+- **Dette ajoutée** : TD-163 (multi-select départements `FormTerritoryEdit` cassé),
+  TD-164 (label/placeholder hard-codés, pas d'i18n), TD-165 (`MultiSelectFilter`
+  propTypes).
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -315,6 +353,10 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 1. **S13 — Intention & Prep Call** — RECADRÉ. Fiche existante conservée
    ci-dessous + note de recadrage. Absorbe le ciblage/sélection des contacts et
    le PLAFONNEMENT contacts/compte/campagne (références existantes conservées).
+   **✅ LIVRÉ (branche `feat/s13-activity-objective`) — voir la fiche « Sprint S13 ✅ »
+   ci-dessus. NB : le PLAFONNEMENT 3-contacts/compte/campagne n'est PAS livré dans
+   ce sprint (objectif + ciblage départements + retrait mode ACCOUNT seulement).
+   Prochain sprint : #2 S10 — Tech Catalogue.**
 2. **S10 — Tech Catalogue** — RECADRÉ. Fiche existante conservée + note.
 3. **Bloc « Modèle Decision Cycle »** (regroupe deux fiches conservées) :
    Sprint C — Produit & Finance + Sprint decision_cycles/steps.
