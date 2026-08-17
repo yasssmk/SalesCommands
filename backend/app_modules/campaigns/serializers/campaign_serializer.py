@@ -340,7 +340,7 @@ class CampaignDetailSerializer(ClientScopeManager.SerializerMixin, serializers.M
         model = Campaign
         fields = [
             # Identity
-            'id', 'name', 'description',
+            'id', 'name', 'description', 'activity_objective',
 
             # Type
             'campaign_type', 'campaign_type_display',
@@ -483,7 +483,7 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
     class Meta:
         model = Campaign
         fields = [
-            'name', 'description',
+            'name', 'description', 'activity_objective',
             'campaign_type', 'sequence_type',
             'territory_ids',
             'start_date', 'end_date',

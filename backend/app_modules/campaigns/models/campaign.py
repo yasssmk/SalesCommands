@@ -113,6 +113,16 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Description')
     )
 
+    activity_objective = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('Activity Objective'),
+        help_text=_(
+            'Optional free-text objective for the campaign. Propagated onto '
+            'each generated OUTBOUND activity as its call to action.'
+        )
+    )
+
     campaign_type = models.CharField(
         max_length=20,
         choices=CampaignType.choices,

@@ -615,10 +615,14 @@ class CampaignExecutionService:
 
         # Populate call_to_action:
         # 1. Explicit step config value (sequence-defined objective)
-        # 2. Fallback to campaign_account.notes for targeted campaigns (enrollment reason)
+        # 2. Campaign-level activity_objective (OUTBOUND source of the unified
+        #    "Activity Objective")
+        # 3. Fallback to campaign_account.notes for targeted campaigns (enrollment reason)
         call_to_action = None
         if step_config:
             call_to_action = step_config.get('call_to_action') or None
+        if not call_to_action and getattr(campaign, 'activity_objective', None):
+            call_to_action = campaign.activity_objective
         if not call_to_action and campaign.is_targeted and campaign_account:
             call_to_action = campaign_account.notes or None
 
