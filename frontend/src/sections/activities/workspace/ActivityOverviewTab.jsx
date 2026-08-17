@@ -1171,7 +1171,7 @@ function DetailsSection({ activity, onSave, onSaveBatch, isLocked = false }) {
                 gutterBottom
                 display="block"
               >
-                Call to Action
+                Activity Objective
               </Typography>
               <EditableTextField
                 value={activity?.call_to_action}

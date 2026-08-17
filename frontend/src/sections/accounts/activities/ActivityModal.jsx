@@ -89,7 +89,7 @@ const validationSchema = Yup.object(
       .max(2000, "Description must be at most 2000 characters")
       .nullable(),
     call_to_action: Yup.string()
-      .max(500, "Call to action must be at most 500 characters")
+      .max(500, "Activity objective must be at most 500 characters")
       .nullable(),
     scheduled_date: Yup.date()
       .nullable()
@@ -777,7 +777,7 @@ export default function ActivityModal({
                 <Grid item xs={12}>
                   <Stack spacing={1}>
                     <InputLabel htmlFor="call_to_action">
-                      Call to Action
+                      Activity Objective
                     </InputLabel>
                     <TextField
                       id="call_to_action"
