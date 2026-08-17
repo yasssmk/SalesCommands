@@ -162,6 +162,22 @@ class Campaign(ModuleBaseModel, ClientScopeManager.ModelMixin):
     )
 
     # ==========================================================================
+    # TARGET DEPARTMENTS (campaign-wide OUTBOUND enrollment filter)
+    # ==========================================================================
+    # Distinct from CampaignAccount.target_departments (per-account). When set,
+    # OUTBOUND territory enrollment only enrols contacts whose
+    # standard_department is in this set (still excluding unreachable / opted_out).
+    # Empty = unchanged behaviour (all reachable non-opted-out contacts).
+
+    target_departments = models.ManyToManyField(
+        'core_modules.StandardDepartment',
+        related_name='campaign_targets',
+        blank=True,
+        verbose_name=_('Target Departments'),
+        help_text=_('Optional: OUTBOUND enrols only contacts in these departments')
+    )
+
+    # ==========================================================================
     # DATES
     # ==========================================================================
 

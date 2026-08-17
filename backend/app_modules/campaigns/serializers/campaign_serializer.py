@@ -442,6 +442,15 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         write_only=True,
     )
 
+    # Campaign-wide OUTBOUND target departments (StandardDepartment integer ids).
+    # Mirrors territory_ids; consumed in create() and passed to
+    # _enroll_from_territories to filter enrolled contacts by department.
+    target_department_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        write_only=True,
+    )
+
     # Nested objective (optional, created in create())
     objective = serializers.DictField(
         write_only=True,
@@ -485,7 +494,7 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         fields = [
             'name', 'description', 'activity_objective',
             'campaign_type', 'sequence_type',
-            'territory_ids',
+            'territory_ids', 'target_department_ids',
             'start_date', 'end_date',
             'objective',
             'executor_id',
@@ -678,6 +687,7 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         objective_data = validated_data.pop('objective', None)
         executor_id = validated_data.pop('executor_id', None)
         territory_ids = validated_data.pop('territory_ids', [])
+        target_department_ids = validated_data.pop('target_department_ids', [])
 
         # Resolve executor
         executor = None
@@ -698,13 +708,18 @@ class CampaignCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             territories = Territory.objects.filter(id__in=territory_ids)
             instance.territories.set(territories)
 
+        # Set campaign-wide target departments M2M (must be set before enrollment
+        # so _enroll_from_territories can filter contacts by department).
+        if target_department_ids:
+            instance.target_departments.set(target_department_ids)
+
         # Enroll accounts from territories (OUTBOUND)
         if territory_ids and instance.campaign_type == CampaignType.OUTBOUND:
             from ..services.campaign_creation_service import CampaignCreationService
             CampaignCreationService(
                 user=user,
                 client_id=instance.client_id,
-            )._enroll_from_territories(instance)
+            )._enroll_from_territories(instance, target_department_ids=target_department_ids)
 
         # Create objective (if provided)
         if objective_data:

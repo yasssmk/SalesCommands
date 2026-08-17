@@ -543,6 +543,10 @@ class CampaignExecutionService:
             3. All account contacts
 
         Excludes opted-out contacts and those with no reachable channel.
+
+        The campaign-wide target_departments filter (OUTBOUND) is applied on the
+        account-wide path too, so that re-deriving contacts at generation does not
+        undo the department filter applied at creation. Empty for TARGETED (no-op).
         """
         if campaign_account.target_contacts.exists():
             return list(
@@ -560,6 +564,13 @@ class CampaignExecutionService:
         if campaign_account.target_departments.exists():
             dept_ids = campaign_account.target_departments.values_list('id', flat=True)
             queryset = queryset.filter(standard_department_id__in=dept_ids)
+
+        # Campaign-wide OUTBOUND target departments (S13). Applied here so the
+        # creation-time enrollment filter is not undone when generation re-derives
+        # contacts from the account. Mirrors the per-account filter just above.
+        if campaign is not None and campaign.target_departments.exists():
+            camp_dept_ids = campaign.target_departments.values_list('id', flat=True)
+            queryset = queryset.filter(standard_department_id__in=camp_dept_ids)
 
         # NO_CALLS: never call — reachable on email OR LinkedIn (no phone).
         no_calls = bool(campaign) and getattr(campaign, 'channel_override', ChannelOverride.AUTO) == ChannelOverride.NO_CALLS
