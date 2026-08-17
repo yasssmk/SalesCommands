@@ -766,6 +766,12 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
         department_id = request.data.get('department_id')
         contact_ids  = request.data.get('contact_ids', [])
         notes        = request.data.get('notes', '') or ''
+        # Per-call objective (S13): one value applied to every contact enrolled in
+        # this call. Normalised to None when blank (mirrors activity_creation_service
+        # call_to_action handling). Populates each CampaignContact.objective, which
+        # _create_activity reads for the activity call_to_action (TD-145: replaces
+        # the poisoned campaign_account.notes read).
+        objective    = (request.data.get('objective') or '').strip() or None
         origin_decision_cycle_id = request.data.get('origin_decision_cycle_id')
         # Per-contact channel override (Voie B) — only NO_CALLS is accepted here;
         # anything else (absent, null, unknown) means "no override, follow the
@@ -1004,6 +1010,15 @@ class CampaignAccountViewSet(ScopedQuerysetMixin, BaseAPIView, viewsets.ModelVie
                 and campaign_contact.status in FINAL_CONTACT_STATES
             ):
                 campaign_contact.reactivate(user=request.user)
+
+            # Persist the per-call objective on THIS contact's run. Placed AFTER
+            # reactivate() (which nulls objective) so a re-chase adopts the value
+            # entered for this enrollment. Persisted to the DB before generation,
+            # because generate_activities_for_contact re-fetches the row via
+            # get_or_create and _create_activity reads objective from it.
+            if campaign_contact.objective != objective:
+                campaign_contact.objective = objective
+                campaign_contact.save(user=request.user)
 
             contacts_created += 1
 
