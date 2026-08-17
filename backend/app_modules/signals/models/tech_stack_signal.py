@@ -127,6 +127,17 @@ class TechStackSignal(BaseSignal):
     """
     Concrete signal for a tool used by an account.
 
+    Tech identity:
+        tech_name             raw display text, as written ("Salesforce CRM").
+        tech_name_normalized  derived in save() (lower + trim + collapse);
+                              the grouping / filtering / de-dup key.
+        tech_name is the single source of truth — the normalised column
+        is recomputed on every write and can never desync from it.
+
+    Qualification flags (independent, default False):
+        is_competitor, is_integration, is_to_replace. All three False
+        means "a tool the account simply uses".
+
     Catalog anchor:
         tech_catalog_entry (FK TechCatalog) identifies the tool.
         TechStack is not clusterable — no canonical_key is computed.
@@ -163,6 +174,90 @@ class TechStackSignal(BaseSignal):
     # BaseSignal to support the account-level vs deal-level distinction.
     campaign          = None
     signal_category   = None
+
+    # =========================================================================
+    # TECH IDENTITY (raw + derived normalised key)
+    # =========================================================================
+    #
+    # `tech_name` is the single source of truth for the tool's identity.
+    # `tech_name_normalized` is DERIVED from it in save() and must never
+    # be authored by a caller — see the SAVE section below.
+    #
+    # Both are non-nullable free text defaulting to '' — the prevailing
+    # convention for free-text columns on this model (cf.
+    # `cost_description` and `notes` further down, which declare
+    # `blank=True` and rely on Django's implicit '' default). Only
+    # `usage_scope` uses null=True, because "scope not documented" is a
+    # meaningful third state there; "no tech name" is simply the empty
+    # string.
+
+    tech_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_('Tech Name'),
+        help_text=_(
+            'Raw display name of the tool exactly as it was written by '
+            'the LLM or the rep (e.g. "Salesforce CRM"). Never rewritten '
+            '— casing, spacing and wording are preserved for display. '
+            'Grouping, filtering and de-duplication use '
+            '`tech_name_normalized` instead.'
+        ),
+    )
+
+    tech_name_normalized = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_('Tech Name (normalised)'),
+        help_text=_(
+            'Derived from `tech_name` on every save: lowercased, '
+            'trimmed, internal whitespace collapsed to single spaces. '
+            'This is the key used to group, filter and de-duplicate '
+            'observations of the same tool. Read-only by contract — it '
+            'is recomputed at save() time, so any value written by a '
+            'caller is discarded and the two columns cannot desync. '
+            'Empty string when `tech_name` is blank.'
+        ),
+    )
+
+    # =========================================================================
+    # QUALIFICATION FLAGS
+    # =========================================================================
+    #
+    # Three INDEPENDENT booleans — a single tool can be several of these
+    # at once (a competitor we also integrate with and want to replace),
+    # or none. All three False is the default and the common case: a
+    # tool the account simply uses.
+    #
+    # Declared in the style of `is_discontinued` below (BooleanField,
+    # default=False, verbose_name + help_text).
+
+    is_competitor = models.BooleanField(
+        default=False,
+        verbose_name=_('Is Competitor'),
+        help_text=_(
+            'True when this tool overlaps with what we sell — '
+            'displacing it is a winnable angle on the deal.'
+        ),
+    )
+
+    is_integration = models.BooleanField(
+        default=False,
+        verbose_name=_('Is Integration'),
+        help_text=_(
+            'True when this tool is one we connect to — integrating '
+            'with it is a winnable angle on the deal.'
+        ),
+    )
+
+    is_to_replace = models.BooleanField(
+        default=False,
+        verbose_name=_('Is To Replace'),
+        help_text=_(
+            'True when the account intends to replace this tool — an '
+            'open door regardless of whether we compete with it or '
+            'integrate with it.'
+        ),
+    )
 
     # =========================================================================
     # CATALOG ANCHOR (required — drives canonical_key)
@@ -342,7 +437,69 @@ class TechStackSignal(BaseSignal):
                 fields=['renewal_date'],
                 name='tssig_renewal_idx',
             ),
+            # Grouping / filtering surface for "which accounts use tool X"
+            # and for de-duplicating repeated observations of one tool.
+            # Declared here rather than via db_index=True on the field so
+            # every index on this model stays visible in one block, and
+            # so the name is explicit (same stance as the five above).
+            models.Index(
+                fields=['tech_name_normalized'],
+                name='tssig_tech_norm_idx',
+            ),
         ]
+
+    # =========================================================================
+    # SAVE — derive tech_name_normalized from tech_name
+    # =========================================================================
+
+    def save(self, *args, **kwargs):
+        """
+        Recompute `tech_name_normalized` from `tech_name`, then delegate
+        to BaseSignal.save().
+
+        Signature mirrors the other concrete signal overrides —
+        ImpactSignal.save() (models/impact_signal.py) and
+        BlockerSignal.save() (models/blocker_signal.py) both declare
+        `save(self, *args, **kwargs)` and forward untouched. `user` and
+        `client_id` travel as kwargs and are popped further down the
+        chain by ModuleBaseModel.save()
+        (app_modules/core_modules/models/moduleBaseModels.py:71-98), so
+        no override in this hierarchy names them explicitly.
+
+        This is the single normalisation point by design: every write
+        path — the transcript pipeline (SignalManager.create), the REST
+        API (BaseSignalViewSet), a management command or a shell session
+        — goes through Model.save(), so none of them can produce a row
+        whose normalised key disagrees with its raw name.
+
+        Rule: lowercase, strip, and collapse every run of internal
+        whitespace (spaces, tabs, newlines) to a single space. Nothing
+        smarter — no synonym table, no canonical_key. A blank or missing
+        `tech_name` yields '' (not None).
+
+        canonical_key is deliberately NOT touched here. TechStack is not
+        clusterable; unlike BlockerSignal.save(), which force-nulls the
+        column, this override leaves it exactly as the caller left it so
+        that the field's cleanup stays a separate, explicit change.
+        """
+        self.tech_name_normalized = self._normalize_tech_name(self.tech_name)
+
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def _normalize_tech_name(value):
+        """
+        Lowercase + trim + collapse internal whitespace.
+
+        "  Salesforce   CRM " -> "salesforce crm"
+        None / "" / "   "     -> ""
+        """
+        if not value:
+            return ''
+        # str.split() with no argument splits on arbitrary runs of
+        # whitespace AND drops the leading/trailing runs, so the join
+        # covers strip + collapse in one pass.
+        return ' '.join(str(value).lower().split())
 
     # =========================================================================
     # VALIDATION
