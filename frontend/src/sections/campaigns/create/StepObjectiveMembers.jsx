@@ -40,11 +40,13 @@ import dayjs from "dayjs";
 
 // project imports
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
+import MultiSelectFilter from "components/filters/MultiSelectFilter";
 import {
   CAMPAIGN_TYPES,
   OBJECTIVE_TYPES,
   OBJECTIVE_TYPE_LABELS,
 } from "api/campaigns/campaigns";
+import { useGetContactChoices } from "api/businessData/contacts";
 import { useAuth } from "hooks/useAuth";
 
 // ==============================|| SECTION TITLE ||============================== //
@@ -82,6 +84,10 @@ export default function StepObjectiveMembers({
   const { user } = useAuth();
 
   const isOutbound = data.family === CAMPAIGN_TYPES.OUTBOUND;
+
+  // Standard departments for the OUTBOUND target-departments multi-select.
+  // Options are already {value: id, label} from /contacts/choices/.
+  const { standardDepartments, choicesLoading } = useGetContactChoices();
 
   // ==============================|| AUTO-GENERATE NAME ||============================== //
 
@@ -210,6 +216,43 @@ export default function StepObjectiveMembers({
             </LocalizationProvider>
           </Stack>
         </Grid>
+
+        {/* ============ OBJECTIVE & TARGETING (Outbound only) ============ */}
+        {isOutbound && (
+          <>
+            <SectionTitle>Objective &amp; Targeting</SectionTitle>
+            <Grid item xs={12}>
+              <Stack spacing={1}>
+                <InputLabel htmlFor="campaign-activity-objective">
+                  Activity Objective
+                </InputLabel>
+                <TextField
+                  fullWidth
+                  id="campaign-activity-objective"
+                  placeholder="e.g., Book a discovery call"
+                  multiline
+                  rows={2}
+                  inputProps={{ maxLength: 500 }}
+                  value={data.activity_objective || ""}
+                  onChange={handleFieldChange("activity_objective")}
+                />
+              </Stack>
+            </Grid>
+            <Grid item xs={12}>
+              <Stack spacing={1}>
+                <MultiSelectFilter
+                  label="Target Departments"
+                  options={standardDepartments}
+                  value={data.target_department_ids || []}
+                  onChange={(ids) => onUpdate({ target_department_ids: ids })}
+                  placeholder="All departments"
+                  loading={choicesLoading}
+                  size="medium"
+                />
+              </Stack>
+            </Grid>
+          </>
+        )}
 
         {/* ==================== CHANNEL STRATEGY (Outbound only) ==================== */}
         {isOutbound && (

@@ -62,6 +62,10 @@ const INITIAL_STATE = {
   // Step 2: Details
   name: "",
   description: "",
+  // Unified activity objective (OUTBOUND) — carried onto generated activities.
+  activity_objective: "",
+  // Campaign-wide OUTBOUND target departments (StandardDepartment integer ids).
+  target_department_ids: [],
   sequence_type: "",
   start_date: null,
   end_date: null,
@@ -171,6 +175,10 @@ export default function CampaignCreateModal({ open, onClose, onSuccess }) {
       const payload = {
         name: wizardData.name,
         description: wizardData.description,
+        // Unified activity objective (empty string when unset, mirrors description).
+        activity_objective: wizardData.activity_objective,
+        // Campaign-wide OUTBOUND target departments (integer ids; empty = no filter).
+        target_department_ids: wizardData.target_department_ids || [],
         campaign_type: wizardData.family,
         sequence_type: wizardData.family || null,
         territory_ids: wizardData.territory_ids || [],
