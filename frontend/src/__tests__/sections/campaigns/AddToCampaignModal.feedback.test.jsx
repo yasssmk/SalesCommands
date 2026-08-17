@@ -56,13 +56,15 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function submitAccountMode() {
+function submitOneContact() {
   render(
     <ThemeProvider theme={theme}>
       <AddToCampaignModal open accountId="acc-1" accountName="Acme" onClose={vi.fn()} onSuccess={vi.fn()} />
     </ThemeProvider>,
   );
-  // ACCOUNT mode is the default; step 1 → Next, step 2 → Add to Campaign.
+  // ACCOUNT mode was removed; CONTACT is the default. Select the single contact,
+  // then step 1 → Next, step 2 → Add to Campaign.
+  fireEvent.click(screen.getByText("A B"));
   fireEvent.click(screen.getByRole("button", { name: /^Next$/ }));
   fireEvent.click(screen.getByRole("button", { name: /Add to Campaign/i }));
 }
@@ -85,7 +87,7 @@ const body = (over) => ({
 describe("AddToCampaignModal — enrollment feedback", () => {
   it("enrolled>0, nothing skipped → green 'Contact(s) enrolled'", async () => {
     h.enrollTarget.mockResolvedValue(body({ contacts_enrolled: 1 }));
-    submitAccountMode();
+    submitOneContact();
     await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalledWith("Contact(s) enrolled"));
     expect(displayWarningSnackbar).not.toHaveBeenCalled();
     expect(displayErrorSnackbar).not.toHaveBeenCalled();
@@ -93,13 +95,13 @@ describe("AddToCampaignModal — enrollment feedback", () => {
 
   it("enrolled>0 with some skipped → green 'Enrolled. N contacts skipped'", async () => {
     h.enrollTarget.mockResolvedValue(body({ contacts_enrolled: 2, no_channel_count: 1, opted_out_count: 1 }));
-    submitAccountMode();
+    submitOneContact();
     await waitFor(() => expect(displaySuccessSnackbar).toHaveBeenCalledWith("Enrolled. 2 contacts skipped"));
   });
 
   it("enrolled=0, all no-channel → orange 'No reachable contact in this account'", async () => {
     h.enrollTarget.mockResolvedValue(body({ no_channel_count: 2 }));
-    submitAccountMode();
+    submitOneContact();
     await waitFor(() =>
       expect(displayWarningSnackbar).toHaveBeenCalledWith("No reachable contact in this account"),
     );
@@ -109,25 +111,25 @@ describe("AddToCampaignModal — enrollment feedback", () => {
 
   it("enrolled=0, all opted out → orange 'All contacts have opted out'", async () => {
     h.enrollTarget.mockResolvedValue(body({ opted_out_count: 3 }));
-    submitAccountMode();
+    submitOneContact();
     await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledWith("All contacts have opted out"));
   });
 
   it("enrolled=0, already active → orange 'Already enrolled'", async () => {
     h.enrollTarget.mockResolvedValue(body({ already_active_count: 2 }));
-    submitAccountMode();
+    submitOneContact();
     await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledWith("Already enrolled"));
   });
 
   it("enrolled=0, account empty → orange 'No contacts'", async () => {
     h.enrollTarget.mockResolvedValue(body({ account_empty: true }));
-    submitAccountMode();
+    submitOneContact();
     await waitFor(() => expect(displayWarningSnackbar).toHaveBeenCalledWith("No contacts"));
   });
 
   it("enrolled=0, mixed causes → orange generic 'No reachable contact in this account'", async () => {
     h.enrollTarget.mockResolvedValue(body({ no_channel_count: 1, opted_out_count: 1 }));
-    submitAccountMode();
+    submitOneContact();
     await waitFor(() =>
       expect(displayWarningSnackbar).toHaveBeenCalledWith("No reachable contact in this account"),
     );
@@ -135,7 +137,7 @@ describe("AddToCampaignModal — enrollment feedback", () => {
 
   it("success:false → red error", async () => {
     h.enrollTarget.mockResolvedValue({ success: false, error: "boom", status: 400 });
-    submitAccountMode();
+    submitOneContact();
     await waitFor(() => expect(displayErrorSnackbar).toHaveBeenCalledTimes(1));
     expect(displaySuccessSnackbar).not.toHaveBeenCalled();
     expect(displayWarningSnackbar).not.toHaveBeenCalled();

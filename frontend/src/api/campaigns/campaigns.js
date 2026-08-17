@@ -1449,6 +1449,7 @@ export async function enrollTarget(campaignId, payload) {
     type,
     origin_decision_cycle_id,
     notes,
+    objective,
     channel_override,
   } = payload;
 
@@ -1459,11 +1460,15 @@ export async function enrollTarget(campaignId, payload) {
   const result = await api.post(endpoints.accountsEnrollTarget, {
     campaign_id: campaignId,
     account_id,
-    type: type || "ACCOUNT",
+    // CONTACT is the only accepted enroll type (ACCOUNT/DEPARTMENT removed backend-side).
+    type: type || "CONTACT",
     contact_ids,
     department_id: department_id || undefined,
     origin_decision_cycle_id: origin_decision_cycle_id || undefined,
     notes: notes || undefined,
+    // Per-enroll activity objective (S13) — populates the generated activity's
+    // call_to_action. Sent only when provided.
+    objective: objective || undefined,
     // Per-contact override (Voie B) — include the key only when provided so it is
     // genuinely absent otherwise, never sent as channel_override: undefined.
     ...(channel_override ? { channel_override } : {}),

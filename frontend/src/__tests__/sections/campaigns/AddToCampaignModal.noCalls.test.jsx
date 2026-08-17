@@ -63,7 +63,9 @@ function open() {
       <AddToCampaignModal open accountId="acc-1" accountName="Acme" onClose={vi.fn()} onSuccess={vi.fn()} />
     </ThemeProvider>,
   );
-  // ACCOUNT mode is the default; advance to the confirm step where the toggle lives.
+  // ACCOUNT mode was removed; CONTACT is the default. Select the single contact,
+  // then advance to the confirm step where the toggle lives.
+  fireEvent.click(screen.getByText("A B"));
   fireEvent.click(screen.getByRole("button", { name: /^Next$/ }));
 }
 
