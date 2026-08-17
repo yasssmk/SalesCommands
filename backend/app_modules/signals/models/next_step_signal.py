@@ -226,6 +226,19 @@ class NextStepSignal(BaseSignal):
         ),
     )
 
+    suggested_objective = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_('Suggested Objective'),
+        help_text=_(
+            'Optional proposed objective for the materialised Activity. '
+            'Mapped onto Activity.call_to_action at materialisation (the '
+            'unified "Activity Objective") when the create payload does not '
+            'set one explicitly. The prompt that fills this is out of scope '
+            'here — this only lays the field + mapping.'
+        ),
+    )
+
     # =========================================================================
     # META
     # =========================================================================
