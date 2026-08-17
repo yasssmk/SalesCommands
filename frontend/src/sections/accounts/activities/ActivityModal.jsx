@@ -783,7 +783,7 @@ export default function ActivityModal({
                       id="call_to_action"
                       name="call_to_action"
                       fullWidth
-                      placeholder="e.g., Ask about budget timeline"
+                      placeholder="Describe the goal of this activity — the AI recommendations will be more accurate."
                       value={values.call_to_action}
                       onChange={handleChange}
                       onBlur={handleBlur}
@@ -806,7 +806,7 @@ export default function ActivityModal({
                       fullWidth
                       multiline
                       rows={3}
-                      placeholder="Additional details about this activity..."
+                      placeholder="Describe the context of this activity — the AI recommendations will be more accurate."
                       value={values.description}
                       onChange={handleChange}
                       onBlur={handleBlur}

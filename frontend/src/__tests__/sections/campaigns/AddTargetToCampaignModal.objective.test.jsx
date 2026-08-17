@@ -57,7 +57,7 @@ describe("AddTargetToCampaignModal — Activity Objective", () => {
     fireEvent.click(screen.getByTestId("pick-contact"));
     fireEvent.change(
       screen.getByPlaceholderText(
-        "Describe the context and goal — this helps tailor the prep call.",
+        "Describe the goal — the AI recommendations will be more accurate.",
       ),
       { target: { value: "Re-open conversation" } },
     );

@@ -59,7 +59,7 @@ describe("AddToCampaignModal — ACCOUNT mode removed", () => {
 
     expect(
       screen.getByPlaceholderText(
-        "Describe the context and goal — this helps tailor the prep call.",
+        "Describe the goal — the AI recommendations will be more accurate.",
       ),
     ).toBeInTheDocument();
   });

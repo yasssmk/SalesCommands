@@ -6,7 +6,7 @@
 // __tests__/nextSteps/ActivityNextStepsTab.test.jsx).
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 
 // The component reads a custom theme.iconSizes extension (themes/iconSizes.js);
@@ -68,5 +68,26 @@ describe("ActivityOverviewTab — Activity Objective label", () => {
 
     expect(screen.getByText("Activity Objective")).toBeInTheDocument();
     expect(screen.queryByText("Call to Action")).toBeNull();
+  });
+
+  it("shows the activity-variant objective + description placeholders in edit mode (6e)", () => {
+    // Empty values so each editor shows its click-to-edit CTA; entering edit mode
+    // surfaces the placeholder in the input.
+    const empty = { ...activity, call_to_action: "", description: "" };
+    renderWithTheme(<ActivityOverviewTab activity={empty} onUpdate={() => {}} mutate={() => {}} />);
+
+    fireEvent.click(screen.getByText("Click to define objective..."));
+    expect(
+      screen.getByPlaceholderText(
+        "Describe the goal of this activity — the AI recommendations will be more accurate.",
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Click to add description..."));
+    expect(
+      screen.getByPlaceholderText(
+        "Describe the context of this activity — the AI recommendations will be more accurate.",
+      ),
+    ).toBeInTheDocument();
   });
 });

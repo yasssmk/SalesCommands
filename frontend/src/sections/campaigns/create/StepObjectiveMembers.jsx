@@ -229,7 +229,7 @@ export default function StepObjectiveMembers({
                 <TextField
                   fullWidth
                   id="campaign-activity-objective"
-                  placeholder="Describe the context and goal — this helps tailor the prep call."
+                  placeholder="Describe the goal — the AI recommendations will be more accurate."
                   multiline
                   rows={2}
                   inputProps={{ maxLength: 500 }}

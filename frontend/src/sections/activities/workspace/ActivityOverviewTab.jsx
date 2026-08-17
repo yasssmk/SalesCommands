@@ -1177,7 +1177,7 @@ function DetailsSection({ activity, onSave, onSaveBatch, isLocked = false }) {
                 value={activity?.call_to_action}
                 fieldKey="call_to_action"
                 onSave={onSave}
-                placeholder="Describe the context and goal — this helps tailor the prep call."
+                placeholder="Describe the goal of this activity — the AI recommendations will be more accurate."
                 emptyText="Click to define objective..."
                 disabled={isLocked}
               />
@@ -1212,7 +1212,7 @@ function DetailsSection({ activity, onSave, onSaveBatch, isLocked = false }) {
               value={activity?.description}
               fieldKey="description"
               onSave={onSave}
-              placeholder="Add context or details..."
+              placeholder="Describe the context of this activity — the AI recommendations will be more accurate."
               emptyText="Click to add description..."
               minRows={2}
               maxRows={4}

@@ -602,7 +602,7 @@ export default function AddToCampaignModal({
                       multiline
                       rows={2}
                       inputProps={{ maxLength: 500 }}
-                      placeholder="Describe the context and goal — this helps tailor the prep call."
+                      placeholder="Describe the goal — the AI recommendations will be more accurate."
                       value={objective}
                       onChange={(e) => setObjective(e.target.value)}
                     />

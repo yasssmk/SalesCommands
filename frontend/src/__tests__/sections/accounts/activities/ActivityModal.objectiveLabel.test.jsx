@@ -64,4 +64,19 @@ describe("ActivityModal — Activity Objective label", () => {
     // The old label must be gone.
     expect(screen.queryByText("Call to Action")).toBeNull();
   });
+
+  it("shows the activity-variant objective + description placeholders (6e)", () => {
+    render(<ActivityModal open onClose={() => {}} accountId="acc1" />);
+
+    expect(
+      screen.getByPlaceholderText(
+        "Describe the goal of this activity — the AI recommendations will be more accurate.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(
+        "Describe the context of this activity — the AI recommendations will be more accurate.",
+      ),
+    ).toBeInTheDocument();
+  });
 });
