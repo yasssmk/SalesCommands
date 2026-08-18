@@ -939,6 +939,25 @@ class DealProduct(ModuleBaseModel, ClientScopeManager.ModelMixin):
         db_table = 'deal_products'
         verbose_name = _('Deal Product')
         verbose_name_plural = _('Deal Products')
+        constraints = [
+            # TD-74 — the discount DRIVES the derived amount
+            # (quantity x price x (1 - discount/100)), so an out-of-range value
+            # silently corrupts the line, the cycle total and KPI 7 (a >100%
+            # discount turns the deal NEGATIVE). Integrity backstop for every
+            # write path, including the ones that never touch the serializer
+            # (shell, data migration, import). Mirrors
+            # end_users/models/sales_milestone.py:144-148
+            # (milestone_achievement_rate_bounds) — same bounded-percentage
+            # shape and <model>_<field>_bounds naming; declared with
+            # `condition=` (Django 5.1) rather than the deprecated `check=`
+            # those older siblings still use.
+            models.CheckConstraint(
+                condition=models.Q(
+                    discount_percent__gte=0, discount_percent__lte=100,
+                ),
+                name='deal_product_discount_percent_bounds',
+            ),
+        ]
 
     def __str__(self):
         return (

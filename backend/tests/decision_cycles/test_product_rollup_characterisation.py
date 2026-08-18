@@ -313,41 +313,47 @@ class TestDecisionCycleRollUp:
 
 
 # =============================================================================
-# 6. discount_percent is unbounded (TD-74) — documented, NOT fixed here
+# 6. discount_percent is BOUNDED to [0, 100] (TD-74 — closed in sub-step 3)
 # =============================================================================
 
-class TestDiscountIsUnbounded:
-    """No CheckConstraint and no DRF validator bounds discount_percent to 0-100
-    (TD-74). Both implementations of the formula therefore accept out-of-range
-    values and produce nonsense amounts. Pinned here to motivate sub-step 3.
+class TestDiscountIsBounded:
+    """FLIPPED in sub-step 3. This class previously pinned the unbounded
+    behaviour that motivated TD-74: a 150% discount produced a NEGATIVE line
+    (-5000) and a -50% one inflated it (15000), and no constraint or validator
+    stopped either. Those amounts are exactly what the guard now prevents, so
+    the tests assert the rejection instead of the nonsense value.
+
+    The full guard (API 400 + DB backstop, both bounds, both endpoints) lives in
+    test_deal_product_discount_bounds.py; what is kept here is the tie back to
+    the roll-up: an out-of-range discount can no longer reach the amount.
     """
 
-    def test_discount_above_100_makes_the_line_negative(self, cycle, user_a):
+    def test_discount_above_100_can_no_longer_reach_the_amount(self, cycle, user_a):
+        from django.db import IntegrityError, transaction
+
         product = _product(user_a, cycle.client_id, 'Over-discounted', None)
-        line = _line(cycle, product, user_a, quantity=1, unit_price=Decimal('10000'),
-                     discount=Decimal('150'))
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                _line(cycle, product, user_a, quantity=1,
+                      unit_price=Decimal('10000'), discount=Decimal('150'))
 
-        assert line.line_total == Decimal('-5000')
-        assert _sql_rollup(cycle) == Decimal('-5000')
+        assert _sql_rollup(cycle) == Decimal('0')      # was -5000 before TD-74
 
-    def test_negative_discount_inflates_the_line(self, cycle, user_a):
+    def test_negative_discount_can_no_longer_inflate_the_amount(self, cycle, user_a):
+        from django.db import IntegrityError, transaction
+
         product = _product(user_a, cycle.client_id, 'Negative discount', None)
-        line = _line(cycle, product, user_a, quantity=1, unit_price=Decimal('10000'),
-                     discount=Decimal('-50'))
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                _line(cycle, product, user_a, quantity=1,
+                      unit_price=Decimal('10000'), discount=Decimal('-50'))
 
-        assert line.line_total == Decimal('15000')
+        assert _sql_rollup(cycle) == Decimal('0')      # was 15000 before TD-74
 
-    def test_no_database_constraint_guards_the_range(self):
-        from django.core.validators import MaxValueValidator, MinValueValidator
-
-        assert {c.name for c in DealProduct._meta.constraints} == set()
-
-        # The only validator attached is the DecimalValidator that every
-        # DecimalField carries (max_digits / decimal_places) -- no range guard.
-        validators = DealProduct._meta.get_field('discount_percent').validators
-        assert not any(
-            isinstance(v, (MinValueValidator, MaxValueValidator)) for v in validators
-        )
+    def test_the_range_is_guarded_by_a_database_constraint(self):
+        assert 'deal_product_discount_percent_bounds' in {
+            c.name for c in DealProduct._meta.constraints
+        }
 
 
 # =============================================================================
