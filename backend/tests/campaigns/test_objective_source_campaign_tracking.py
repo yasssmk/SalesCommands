@@ -38,6 +38,7 @@ from app_modules.campaigns.services.campaign_analytics_service import (
 )
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
+from tests.deal_value_helpers import give_deal_value
 
 TODAY = timezone.now().date()
 
@@ -57,10 +58,13 @@ def _mk_campaign(owner, ca, name='Camp'):
 def _mk_cycle(owner, account, ca, *, name='dc', source_campaign=None,
               estimated_value=None, outcome=None, outcome_date=None):
     dc = DecisionCycle(account=account, owner=owner, name=name,
-                       source_campaign=source_campaign,
-                       estimated_value=estimated_value, outcome=outcome,
+                       source_campaign=source_campaign, outcome=outcome,
                        outcome_date=outcome_date)
     dc.save(user=owner, client_id=ca.id)
+    # TD-75: the campaign money objectives sum the DERIVED product roll-up, so
+    # the amount is seeded as a real product line (parameter name unchanged so
+    # the call sites read the same); `estimated_value` is never set.
+    give_deal_value(dc, estimated_value, user=owner)
     return dc
 
 

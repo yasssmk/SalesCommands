@@ -34,6 +34,7 @@ from app_modules.campaigns.services.campaign_analytics_service import (
 from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
+from tests.deal_value_helpers import give_deal_value
 
 TODAY = timezone.now().date()
 
@@ -94,19 +95,26 @@ def _seed_all_types(user, ca):
 
     # Decision cycles of origin: 2 open (PIPELINE_VALUE = 1500 + 500 = 2000),
     # 1 won (REVENUE_WON = 900); DECISION_CYCLES = 3 (all cycles of the campaign).
-    DecisionCycle(
-        account=other_acc, owner=user, name="open-a",
-        source_campaign=camp, estimated_value=1500,
-    ).save(user=user, client_id=ca.id)
-    DecisionCycle(
-        account=other_acc, owner=user, name="open-b",
-        source_campaign=camp, estimated_value=500,
-    ).save(user=user, client_id=ca.id)
-    DecisionCycle(
-        account=other_acc, owner=user, name="won",
-        source_campaign=camp, estimated_value=900,
+    # TD-75: amounts are seeded as real product lines — the money objectives sum
+    # the derived roll-up (total_deal_value), not the manual estimated_value.
+    open_a = DecisionCycle(
+        account=other_acc, owner=user, name="open-a", source_campaign=camp,
+    )
+    open_a.save(user=user, client_id=ca.id)
+    give_deal_value(open_a, 1500, user=user)
+
+    open_b = DecisionCycle(
+        account=other_acc, owner=user, name="open-b", source_campaign=camp,
+    )
+    open_b.save(user=user, client_id=ca.id)
+    give_deal_value(open_b, 500, user=user)
+
+    won = DecisionCycle(
+        account=other_acc, owner=user, name="won", source_campaign=camp,
         outcome=CycleOutcome.WON, outcome_date=TODAY,
-    ).save(user=user, client_id=ca.id)
+    )
+    won.save(user=user, client_id=ca.id)
+    give_deal_value(won, 900, user=user)
 
     for idx, otype in enumerate(ObjectiveType.values):
         CampaignObjective(

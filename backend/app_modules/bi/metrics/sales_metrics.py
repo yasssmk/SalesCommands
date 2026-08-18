@@ -48,6 +48,10 @@ from app_modules.activities.constants import ActivityOutcome, ActivityStatus
 from app_modules.activities.models import Activity
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionStep
+from app_modules.decision_cycles.services.deal_value_sql import (
+    DEAL_VALUE_ALIAS,
+    annotate_deal_value,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -202,19 +206,25 @@ def new_logos(base_queryset, *, user=None, period=None, source_campaign=None):
 
 
 def pipeline_value(base_queryset, *, user=None, period=None, source_campaign=None):
-    """PIPELINE_VALUE — Σ estimated_value of OPEN decision cycles (outcome empty).
+    """PIPELINE_VALUE — Σ deal value of OPEN decision cycles (outcome empty).
 
     Anchor: ``Max(steps.expected_end)`` at the cycle level, computed as a
     READ-ONLY correlated Subquery annotation (the field is never modified).
     Campaign attribution: ``source_campaign`` on the DC.
     Owner: the DC ``owner``.
-    Amount: ``estimated_value`` (the product roll-up rebinding is a Sprint C
-    refinement, out of scope here).
+    Amount: the DERIVED product roll-up — ``total_deal_value``, summed through
+    the ``annotate_deal_value`` SQL annotation (TD-75). The manual
+    ``estimated_value`` field is no longer read here: no runtime path ever
+    populated it, which is why this metric was stuck at 0.
 
-    The anchor is a Subquery (not a ``.annotate(Max('steps__expected_end'))``
-    join) precisely so the ``Sum('estimated_value')`` does NOT fan out over a
-    cycle's multiple steps. Open cycles with no dated step have a NULL anchor
-    and therefore fall OUTSIDE any given period window (correct: their expected
+    Pipeline is EXCLUSIVE: only ``outcome IS NULL`` counts, so a WON or LOST
+    cycle has left the pipeline (ON_HOLD too — it carries an outcome).
+
+    Both to-many traversals stay isolated: the anchor is a Subquery (not a
+    ``.annotate(Max('steps__expected_end'))`` join) and the amount is a
+    correlated per-cycle Subquery over ``deal_products``, so neither fans out
+    over the other. Open cycles with no dated step have a NULL anchor and
+    therefore fall OUTSIDE any given period window (correct: their expected
     close is unknown); with ``period=None`` every open cycle is summed.
 
     ``base_queryset`` is a (tenant+scope bounded) DecisionCycle queryset.
@@ -233,16 +243,18 @@ def pipeline_value(base_queryset, *, user=None, period=None, source_campaign=Non
         qs = qs.filter(source_campaign=source_campaign)
     qs = qs.annotate(_anchor=latest_expected_end)
     qs = _between(qs, '_anchor', period)
-    return _amount(qs.aggregate(total=Sum('estimated_value'))['total'])
+    return _amount(
+        annotate_deal_value(qs).aggregate(total=Sum(DEAL_VALUE_ALIAS))['total']
+    )
 
 
 def revenue_won(base_queryset, *, user=None, period=None, source_campaign=None):
-    """REVENUE_WON — Σ estimated_value of WON decision cycles.
+    """REVENUE_WON — Σ deal value of WON decision cycles.
 
     Anchor: ``outcome_date`` (auto-set when the cycle is closed as WON).
     Campaign attribution: ``source_campaign`` on the DC.
     Owner: the DC ``owner``.
-    Amount: ``estimated_value`` (see PIPELINE_VALUE note on the roll-up).
+    Amount: the DERIVED product roll-up (see PIPELINE_VALUE — TD-75).
 
     ``base_queryset`` is a (tenant+scope bounded) DecisionCycle queryset.
     """
@@ -252,4 +264,6 @@ def revenue_won(base_queryset, *, user=None, period=None, source_campaign=None):
     if source_campaign is not None:
         qs = qs.filter(source_campaign=source_campaign)
     qs = _between(qs, 'outcome_date', period)
-    return _amount(qs.aggregate(total=Sum('estimated_value'))['total'])
+    return _amount(
+        annotate_deal_value(qs).aggregate(total=Sum(DEAL_VALUE_ALIAS))['total']
+    )

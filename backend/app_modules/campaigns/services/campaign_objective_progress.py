@@ -27,6 +27,7 @@ from app_modules.activities.constants import ActivityStatus, ActivityType
 from app_modules.activities.models import Activity
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
+from app_modules.decision_cycles.services.deal_value_sql import DEAL_VALUE_SUM
 
 from ..models import (
     CampaignAccount,
@@ -110,17 +111,23 @@ def _values_for_type(objective_type, campaign_ids, client_id):
         qs = DecisionCycle.objects.filter(source_campaign_id__in=campaign_ids)
         return _grouped(qs, 'source_campaign', Count('id'))
 
+    # PIPELINE_VALUE / REVENUE_WON sum the DERIVED product roll-up (TD-75), via
+    # DEAL_VALUE_SUM -- the JOIN form of the canonical expression. The per-row
+    # annotation form is deliberately NOT used here: this is a
+    # `.values(group).annotate(agg)` GROUP BY, and a pre-existing annotation
+    # would join the alias into the GROUP BY and split each campaign's row.
+    # Summing over the deal_products join is exact for a money aggregate.
     if objective_type == ObjectiveType.PIPELINE_VALUE:
         qs = DecisionCycle.objects.filter(
             source_campaign_id__in=campaign_ids, outcome__isnull=True,
         )
-        return _grouped(qs, 'source_campaign', Sum('estimated_value'))
+        return _grouped(qs, 'source_campaign', DEAL_VALUE_SUM)
 
     if objective_type == ObjectiveType.REVENUE_WON:
         qs = DecisionCycle.objects.filter(
             source_campaign_id__in=campaign_ids, outcome=CycleOutcome.WON,
         )
-        return _grouped(qs, 'source_campaign', Sum('estimated_value'))
+        return _grouped(qs, 'source_campaign', DEAL_VALUE_SUM)
 
     if objective_type == ObjectiveType.MEETINGS:
         return _meetings_by_campaign(campaign_ids)

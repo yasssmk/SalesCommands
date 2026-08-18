@@ -42,7 +42,7 @@ class KPIDefinition:
         source:   zero-arg callable returning the BASE queryset (before tenant,
                   scope and period filtering — the compute layer applies those).
         aggregation: a Django DB-level aggregation expression (e.g.
-                  Count('id'), Sum('estimated_value')). Opaque here; evaluated
+                  Count('id'), DEAL_VALUE_SUM). Opaque here; evaluated
                   by the compute layer via .aggregate()/.annotate(). NEVER a
                   Python-side loop.
         scope_module: OWNERSHIP_MAP key passed to

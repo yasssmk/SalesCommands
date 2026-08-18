@@ -22,6 +22,7 @@ from app_modules.activities.constants import ActivityStatus, ActivityType
 from app_modules.activities.models import Activity
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
+from tests.deal_value_helpers import give_deal_value
 from app_modules.bi import registry
 from app_modules.bi.cache import cached_run
 from app_modules.bi.definitions import load_all
@@ -69,8 +70,10 @@ def _mk_meeting(owner, account, ca, when=IN_PERIOD):
 
 def _mk_won_cycle(owner, account, ca, value, name='dc', when=IN_PERIOD):
     c = DecisionCycle(account=account, owner=owner, name=name,
-                      outcome=CycleOutcome.WON, outcome_date=when, estimated_value=value)
+                      outcome=CycleOutcome.WON, outcome_date=when)
     c.save(user=owner, client_id=ca.id)
+    # TD-75: quota values sum the derived product roll-up, not estimated_value.
+    give_deal_value(c, value, user=owner)
     return c
 
 
