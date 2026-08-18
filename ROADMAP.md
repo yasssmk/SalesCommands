@@ -417,6 +417,107 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint C ✅ — Produit & Finance de bout en bout (branche `feat/sprint-c-product-finance`)
+- **Objectif** : rendre le MONTANT d'un deal FIABLE et UNIQUE. Avant ce sprint,
+  les quatre KPI monétaires sommaient `DecisionCycle.estimated_value`, un champ
+  MANUEL qu'aucun chemin runtime ne remplit (TD-75) → pipeline et résultat
+  affichaient **0**, et la colonne « Amount » de la liste DC affichait un tiret
+  sur chaque ligne. Le montant devait devenir **dérivé** des lignes produit,
+  calculé en base, et lu par TOUS les consommateurs sans qu'aucun ne redéclare
+  la formule.
+- **Livré** :
+  - **Source unique du montant dérivé** — `backend/app_modules/decision_cycles/services/deal_value_sql.py`
+    déclare la formule UNE fois (`quantité × prix unitaire × (1 − remise/100)`)
+    et l'expose sous **deux liaisons** de la même expression : `DEAL_VALUE_SUM`
+    (forme jointe, pour `.aggregate()`) et `annotate_deal_value()` / `deal_value_subquery()`
+    (sous-requête corrélée isolée, pour l'annotation par ligne, alias
+    `_deal_value`) — la seconde évite le fan-out qu'une jointure to-many
+    provoquerait sur une liste. `DecisionCycle.total_deal_value` lit l'annotation
+    si elle est là, sinon fait UNE requête (`fb105d1`, `f6cb869d`).
+    `line_total` reste une **property** calculée à la lecture : elle n'a jamais
+    été une colonne stockée dans `app_modules` (aucune migration ne la déclare)
+    — il n'y avait donc pas de dé-normalisation à faire, seulement à ne pas en
+    introduire, ce que les tests de schéma épinglent.
+  - **TD-74 — remise bornée [0, 100] aux DEUX niveaux** : `CheckConstraint`
+    `deal_product_discount_percent_bounds` (intégrité, avec un `RunPython` de
+    clamp ordonné AVANT l'`AddConstraint` pour les lignes existantes) +
+    `validate_discount_percent_range` côté DRF, pour un **400 métier lisible**
+    plutôt qu'une `IntegrityError` brute. Effet de bord découvert au passage :
+    `discount_percent` était en lecture seule dans le serializer — il est
+    désormais **écrivable**, donc la remise est enfin saisissable (`1327fe7`).
+  - **TD-75 — repointage de TOUTES les agrégations montant** sur la valeur
+    dérivée : `bi/metrics/sales_metrics.py` (`pipeline_value`, `revenue_won`),
+    `bi/definitions/decision_cycles.py` (`dc_pipeline_value`, `dc_won_value`),
+    `bi/quota.py`, `campaigns/services/campaign_analytics_service.py`,
+    `campaigns/services/campaign_objective_progress.py`. Balayage de
+    cross-couverture (TD-125) préalable : **zéro** `Sum('estimated_value')`
+    subsiste dans `app_modules/` et `end_users/`. `estimated_value` n'est PAS
+    supprimé — il reste dans le payload comme champ manuel legacy, simplement
+    plus personne ne l'affiche ni ne le somme (`1ca74aa`, `9027342`).
+  - **Convergence de la date de clôture sur `outcome_date`** : `closed_at`
+    avait été ajouté (`6b9d8ad`, migration `0021`) pour fenêtrer les montants
+    gagnés, puis un audit a montré qu'`outcome_date` portait DÉJÀ cette
+    sémantique — le champ a été retiré par `RenameField`/`RemoveField` en avant
+    seulement (`0101dd3`, migration `0022`), sans réécrire la migration déjà
+    appliquée. Un seul champ de date de clôture, épinglé par
+    `tests/decision_cycles/test_outcome_date_invariant.py`. **Anomalie relevée,
+    non corrigée** : `ON_HOLD` pose une date de clôture alors que l'état n'est
+    pas terminal.
+  - **Attainment de quota personnel** (pipeline + gagné), typé, borné par la
+    période et scopé par rôle, couvert de bout en bout — dont la preuve que les
+    chemins PERSONNELS renvoient bien le montant attendu (`a420a26`).
+  - **Devise au niveau du TENANT** : `ClientAccount.default_quota_currency` →
+    `ClientAccount.currency` (la devise appartient au tenant, pas au quota qui
+    l'a lue en premier), résolue en UN endroit (`backend/core/currency.py`) et
+    attachée aux payloads : `unit='currency'` sur les KPI monétaires →
+    `serialize_result` ajoute la devise, et `TenantCurrencySerializerMixin`
+    la sert sur les listes DC / lignes produit en **mémoïsant par passe de
+    sérialisation** (un N+1 introduit puis rattrapé par le garde de nombre de
+    requêtes de la liste). Aucune conversion, aucun taux (`ad58aa6`).
+  - **TD-127 — « Won Value » + colonne Amount vivante** : le libellé du KPI
+    monétaire gagné devient explicitement une VALEUR (et non un compte), et la
+    colonne Amount de la liste DC lit `total_deal_value` + la devise du tenant,
+    triable sur l'alias d'annotation `_deal_value` au lieu du champ mort
+    (`4cca223`). Affichage seulement — aucun filtre montant (c'est TD-124,
+    sprint Filtres).
+- **Migrations** : `decision_cycles/0020` (clamp + `CheckConstraint` remise),
+  `decision_cycles/0021` (ajout `closed_at`) et `0022` (retrait `closed_at`,
+  en avant seulement), `end_users/0013` (`default_quota_currency` → `currency`),
+  `campaigns/0021`, `quotas/0002`.
+- **Validation** : suites backend vertes hors échecs PRÉ-EXISTANTS prouvés tels
+  en re-jouant les tests sur les commits parents dans des worktrees jetables
+  (7 tests BI dépendants de Redis, 5 échecs + 10 erreurs dans
+  `tests/integration/`). Front vitest vert. Chaque sous-étape a été validée par
+  une reproduction ROUGE d'abord puis une sonde de NON-VACUITÉ (mutation du
+  code de production → le test re-échoue → restauration par édition ciblée).
+- **Dette fermée** : **TD-74** (remise bornée), **TD-75** (agrégations montant
+  repointées), **TD-127** (« Won Value » + colonne Amount).
+  **TD-124 reste OPEN mais DÉBLOQUÉ et REDIRIGÉ** vers le **sprint « Filtres &
+  recherche transverses »** : le filtre par montant attendait un montant fiable,
+  il l'a maintenant — il n'est délibérément PAS construit ici, et un test garde
+  vérifie qu'aucune facette montant n'est apparue dans le filterset.
+  **Dette ajoutée** : **TD-168** (défaut de devise EUR à passer en USD + sélecteur
+  de devise à la création du tenant), **TD-169** (branche `pipeline` du quota
+  legacy `SalesQuota` non fenêtrée, épinglée par un test), **TD-170** (plan de
+  vente / milestones toujours sur les tables `opportunities_*`, avec un
+  `FieldError` sur `User.client_id` en amont).
+- **⏸️ REPORTÉ — à NE PAS considérer comme livré** :
+  - **Filtre / recherche par montant** (TD-124) → **Sprint Filtres & recherche
+    transverses**.
+  - **Sélecteur de devise à la création du tenant** + bascule du défaut sur USD
+    (TD-168) → **Sprint Admin Client**. `DCWorkspaceHeader.jsx:60-61` code encore
+    `currency: "USD"` en dur et n'a pas été repointé sur la devise du tenant.
+  - **Stockage de la durée d'abonnement et du volume d'usage** — la formule
+    dérivée ne connaît aujourd'hui que quantité / prix / remise ; toute
+    récurrence ou consommation reste hors modèle.
+  - **Sémantique `ON_HOLD` vs date de clôture** — relevée pendant l'audit de
+    convergence, non tranchée.
+  - **Surfaces legacy** (`SalesQuota`, plan de vente / milestones sur
+    `opportunities_*`) → nettoyage avant déploiement, TD-169 / TD-170.
+- **Prochain jalon** (ordre cible) : **Bloc « Modèle Decision Cycle » (#3)**.
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
