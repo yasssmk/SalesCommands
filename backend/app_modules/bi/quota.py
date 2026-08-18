@@ -7,7 +7,7 @@ attainment: given a quota, compute its current value from app_modules models
 (DecisionCycle, Activity), scoped to the quota's OWNER and period.
 
 target_type mapping:
-- closed_won   -> Σ total_deal_value of WON cycles in the period (by outcome_date)          [flow]
+- closed_won   -> Σ total_deal_value of WON cycles in the period (by closed_at)             [flow]
 - pipeline     -> Σ total_deal_value of OPEN cycles right now (outcome NULL)                [STOCK — no period]
 - meetings     -> count(Activity type=MEETING, COMPLETED) in the period (by scheduled_date) [flow]
 - opportunities-> count(DecisionCycle) created in the period (by created_at)                [flow]
@@ -63,10 +63,14 @@ def compute_quota_current_value(quota) -> Optional[float]:
         qs = DecisionCycle.objects.filter(
             client_id=client_id, owner_id=user_id, outcome=CycleOutcome.WON,
         )
+        # Windowed on closed_at (the WON transition), same anchor as the modern
+        # quota path — see metrics.revenue_won. Date granularity so the end day
+        # counts in full; a cycle won before the field existed has it NULL and
+        # falls outside the window (no backfill).
         if start is not None:
-            qs = qs.filter(outcome_date__gte=start)
+            qs = qs.filter(closed_at__date__gte=start)
         if end is not None:
-            qs = qs.filter(outcome_date__lte=end)
+            qs = qs.filter(closed_at__date__lte=end)
         agg = annotate_deal_value(qs).aggregate(total=Sum(DEAL_VALUE_ALIAS))
         return float(agg['total'] or 0)
 

@@ -18,6 +18,21 @@ import uuid
 from decimal import Decimal
 
 
+def set_closed_at(cycle, when):
+    """Force a cycle's WON-transition stamp to ``when`` (a datetime).
+
+    ``closed_at`` is stamped by DecisionCycle.save() at the moment of the
+    transition and is ``editable=False``, so a test that needs a win dated in
+    the past (or outside a quota window) rewrites it with a queryset update —
+    the one write path that bypasses save() on purpose.
+    """
+    from app_modules.decision_cycles.models import DecisionCycle
+
+    DecisionCycle.objects.filter(pk=cycle.pk).update(closed_at=when)
+    cycle.refresh_from_db()
+    return cycle
+
+
 def give_deal_value(cycle, amount, *, user=None, quantity=1):
     """Attach ONE DealProduct line to ``cycle`` so its total_deal_value == amount.
 

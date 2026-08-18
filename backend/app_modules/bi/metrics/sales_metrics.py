@@ -251,7 +251,15 @@ def pipeline_value(base_queryset, *, user=None, period=None, source_campaign=Non
 def revenue_won(base_queryset, *, user=None, period=None, source_campaign=None):
     """REVENUE_WON — Σ deal value of WON decision cycles.
 
-    Anchor: ``outcome_date`` (auto-set when the cycle is closed as WON).
+    Anchor: ``closed_at`` — the timestamp of the transition to WON, stamped by
+    DecisionCycle.save(). Compared at DATE granularity, so the window's end day
+    counts in full. It replaces ``outcome_date`` as the won anchor: that field
+    records ANY outcome decision (lost / on-hold too) and is cleared on reopen,
+    whereas ``closed_at`` records the won transition specifically and survives a
+    reopen, so a re-won cycle carries the LATER close.
+    Cycles won before ``closed_at`` existed have it NULL and therefore fall
+    outside any window (no backfill, PO decision); with ``period=None`` — how
+    the campaign objectives call this — every won cycle is summed regardless.
     Campaign attribution: ``source_campaign`` on the DC.
     Owner: the DC ``owner``.
     Amount: the DERIVED product roll-up (see PIPELINE_VALUE — TD-75).
@@ -263,7 +271,7 @@ def revenue_won(base_queryset, *, user=None, period=None, source_campaign=None):
         qs = qs.filter(owner=user)
     if source_campaign is not None:
         qs = qs.filter(source_campaign=source_campaign)
-    qs = _between(qs, 'outcome_date', period)
+    qs = _between(qs, 'closed_at', period, is_datetime=True)
     return _amount(
         annotate_deal_value(qs).aggregate(total=Sum(DEAL_VALUE_ALIAS))['total']
     )
