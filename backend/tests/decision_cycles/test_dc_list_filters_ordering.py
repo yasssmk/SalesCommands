@@ -408,15 +408,25 @@ def test_ordering_account(api, authenticate, rep, client_account_a):
 
 
 @pytest.mark.django_db
-def test_ordering_estimated_value(api, authenticate, rep, client_account_a):
+def test_ordering_amount(api, authenticate, rep, client_account_a):
+    """The Amount column sorts on the DERIVED roll-up annotation. It used to sort
+    on estimated_value, a field no runtime path populates — so it sorted nothing
+    (TD-75). The amounts below are real product lines; estimated_value is left
+    unset on purpose, so this can only pass by reading the roll-up."""
+    from app_modules.decision_cycles.services import DEAL_VALUE_ALIAS
+    from tests.deal_value_helpers import give_deal_value
+
     acc = _account(rep, client_account_a, 'Val Corp')
-    lo = _cycle(rep, client_account_a, acc, 'lo', estimated_value=100)
-    hi = _cycle(rep, client_account_a, acc, 'hi', estimated_value=9000)
+    lo = _cycle(rep, client_account_a, acc, 'lo')
+    hi = _cycle(rep, client_account_a, acc, 'hi')
+    give_deal_value(lo, 100, user=rep)
+    give_deal_value(hi, 9000, user=rep)
+
     asc = _rel_order(_get_all(api, authenticate, rep, client_account_a,
-                              {'ordering': 'estimated_value'}), [str(lo.id), str(hi.id)])
+                              {'ordering': DEAL_VALUE_ALIAS}), [str(lo.id), str(hi.id)])
     assert asc[0] < asc[1]
     desc = _rel_order(_get_all(api, authenticate, rep, client_account_a,
-                               {'ordering': '-estimated_value'}), [str(lo.id), str(hi.id)])
+                               {'ordering': f'-{DEAL_VALUE_ALIAS}'}), [str(lo.id), str(hi.id)])
     assert desc[0] > desc[1]
 
 

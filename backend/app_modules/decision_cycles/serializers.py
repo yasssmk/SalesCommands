@@ -10,6 +10,7 @@ from decimal import Decimal
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
+from core.currency import TenantCurrencySerializerMixin
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
@@ -1103,7 +1104,9 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
 # DECISION CYCLE SERIALIZERS
 # ============================================================================
 
-class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class DecisionCycleListSerializer(TenantCurrencySerializerMixin,
+                                  ClientScopeManager.SerializerMixin,
+                                  serializers.ModelSerializer):
     """
     Lightweight serializer for cycle lists.
     """
@@ -1140,6 +1143,16 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
     current_step_name = serializers.CharField(
         source=CURRENT_STEP_NAME_ALIAS, read_only=True, allow_null=True
     )
+    # The Amount column: the DERIVED product roll-up. Reads the _deal_value
+    # annotation the list queryset carries (annotate_deal_value), so it costs no
+    # extra query per row. estimated_value stays in the payload as the legacy
+    # manual field — no runtime path populates it, so nothing displays it.
+    total_deal_value = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True,
+    )
+    # The unit of that amount — the tenant's single currency, resolved at read
+    # time (core.currency). One per tenant, no conversion.
+    currency = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = DecisionCycle
@@ -1148,6 +1161,7 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
             'account', 'account_name',
             'owner', 'owner_name', 'owner_email', 'team',
             'is_active',
+            'total_deal_value', 'currency',
             'estimated_value',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
@@ -1417,7 +1431,9 @@ def validate_discount_percent_range(value):
     return value
 
 
-class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class DealProductListSerializer(TenantCurrencySerializerMixin,
+                                ClientScopeManager.SerializerMixin,
+                                serializers.ModelSerializer):
     """
     Read-only serializer for DealProduct list views.
     """
@@ -1448,11 +1464,6 @@ class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.
             'updated_at',
         ]
         read_only_fields = fields
-
-    def get_currency(self, obj):
-        from core.currency import tenant_currency
-
-        return tenant_currency(obj.client_id)
 
     def get_product_catalog_entry_detail(self, obj):
         entry = obj.product_catalog_entry

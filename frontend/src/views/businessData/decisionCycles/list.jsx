@@ -45,7 +45,7 @@ const COLUMN_TO_BACKEND_FIELD = {
   account_name: "account__company_name",
   current_step_name: "_current_step_stage", // Stage column: sort by the stage annotation
   status: "_cycle_effective_status",
-  estimated_value: "estimated_value",
+  total_deal_value: "_deal_value", // Amount: sort on the roll-up annotation
   owner_name: "owner__first_name",
   team: "owner__team__name",
   updated_at: "updated_at",
@@ -94,17 +94,19 @@ const STATUS_COLOR = { ...CYCLE_STATUS_COLORS, STALLED: "error" };
 // ==============================|| AMOUNT FORMAT ||============================== //
 
 /**
- * Format estimated_value for display. No currency code on the model, so the raw
- * decimal is shown grouped with two fraction digits; null → dash.
+ * Format a deal amount for display: the grouped decimal followed by the tenant's
+ * currency code (e.g. "60,000.00 EUR"). The currency comes from the row — one
+ * per tenant, resolved server-side — so no code here assumes one. null → dash.
  */
-function formatAmount(value) {
+function formatAmount(value, currency) {
   if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
   if (Number.isNaN(n)) return "—";
-  return n.toLocaleString("en-US", {
+  const amount = n.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+  return currency ? `${amount} ${currency}` : amount;
 }
 
 // ==============================|| DECISION CYCLES LIST PAGE ||============================== //
@@ -425,13 +427,17 @@ export default function DecisionCyclesListPage() {
         },
       },
 
-      // Amount (estimated_value)
+      // Amount — the DERIVED product roll-up (total_deal_value), rendered with
+      // the tenant currency. NOT estimated_value: that manual field is never
+      // populated, so this column used to show a dash on every row (TD-75).
       {
         header: "Amount",
-        accessorKey: "estimated_value",
+        accessorKey: "total_deal_value",
         meta: { className: "cell-right" },
-        cell: ({ getValue }) => (
-          <Typography variant="body2">{formatAmount(getValue())}</Typography>
+        cell: ({ getValue, row }) => (
+          <Typography variant="body2">
+            {formatAmount(getValue(), row.original.currency)}
+          </Typography>
         ),
       },
 

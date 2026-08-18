@@ -97,7 +97,9 @@ const CYCLES = [
     cycle_status: "IN_PROGRESS",
     current_stage: "QUALIFICATION",
     current_step_name: "Qualification",
-    estimated_value: "1000.00",
+    estimated_value: null,          // the dead manual field
+    total_deal_value: "1000.00",    // the derived roll-up the column shows
+    currency: "EUR",
     steps_count: 5,
     validated_steps_count: 1,
     updated_at: "2026-07-01T10:00:00Z",
@@ -116,7 +118,9 @@ const CYCLES = [
     cycle_status: "LOST",
     current_stage: null,
     current_step_name: "Closing",
-    estimated_value: "500.00",
+    estimated_value: null,
+    total_deal_value: "500.00",
+    currency: "EUR",
     steps_count: 5,
     validated_steps_count: 3,
     updated_at: "2026-06-01T10:00:00Z",
@@ -173,6 +177,14 @@ describe("Decision Cycles list — no KPI, serializer-served state", () => {
     expect(vi.mocked(useKpiBatch)).not.toHaveBeenCalled();
   });
 
+  it("shows the Amount from the derived roll-up, with the tenant currency", () => {
+    // dc1: total_deal_value 1000.00, currency EUR, estimated_value null.
+    // Reading the dead manual field would render a dash here.
+    renderPage();
+    expect(screen.getByText("1,000.00 EUR")).toBeInTheDocument();
+    expect(screen.getByText("500.00 EUR")).toBeInTheDocument();
+  });
+
   it("shows stage and status from the serializer fields", () => {
     renderPage();
     // Stage column reads current_step_name; Status reads cycle_status/outcome.
@@ -192,7 +204,7 @@ describe("Decision Cycles list — server sorting on all 8 columns", () => {
     ["Account", "account__company_name"],
     ["Stage", "_current_step_stage"],
     ["Status", "_cycle_effective_status"],
-    ["Amount", "estimated_value"],
+    ["Amount", "_deal_value"], // sorts on the roll-up annotation, not the dead field
     ["Owner", "owner__first_name"],
     ["Team", "owner__team__name"],
     ["Last Updated", "updated_at"],

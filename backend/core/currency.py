@@ -47,3 +47,27 @@ def tenant_currency(client_id):
         .first()
     )
     return code or DEFAULT_CURRENCY
+
+
+class TenantCurrencySerializerMixin:
+    """Adds a ``currency`` field resolved from the row's tenant, ONCE per pass.
+
+    A list serializes many rows of the SAME tenant, so resolving per row would
+    be an N+1 (caught by the DC list's query-count guard). The memo is held on
+    the serializer instance — its life is one serialization pass, so a tenant
+    that changes currency is never served a stale one — and keyed by client_id,
+    so it stays correct even if a pass ever mixed tenants.
+
+    Consumers declare ``currency = serializers.SerializerMethodField()`` and add
+    'currency' to Meta.fields.
+    """
+
+    def get_currency(self, obj):
+        memo = getattr(self, '_tenant_currency_memo', None)
+        if memo is None:
+            memo = self._tenant_currency_memo = {}
+
+        key = str(getattr(obj, 'client_id', '') or '')
+        if key not in memo:
+            memo[key] = tenant_currency(obj.client_id)
+        return memo[key]

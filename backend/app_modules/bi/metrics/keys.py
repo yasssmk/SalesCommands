@@ -26,7 +26,7 @@ class MetricKey(models.TextChoices):
     MEETINGS = 'MEETINGS', _('Meetings')
     NEW_LOGOS = 'NEW_LOGOS', _('New logos')
     PIPELINE_VALUE = 'PIPELINE_VALUE', _('Pipeline value')
-    REVENUE_WON = 'REVENUE_WON', _('Revenue won')
+    REVENUE_WON = 'REVENUE_WON', _('Won value')      # TD-127 — display label; key unchanged
 
 
 # key -> the pure formula that computes it (see sales_metrics for signatures).

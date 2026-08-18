@@ -61,7 +61,7 @@ describe('ObjectiveForm', () => {
     // the campaign select is gone
     expect(screen.queryByLabelText('Campaign')).toBeNull();
 
-    await pickMetric('Revenue won');
+    await pickMetric('Won value');
     await user.type(screen.getByLabelText('Target value'), '100');
     fireEvent.change(screen.getByLabelText('Start date'), { target: { value: FUTURE_START } });
     fireEvent.change(screen.getByLabelText('End date'), { target: { value: FUTURE_END } });

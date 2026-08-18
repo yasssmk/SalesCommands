@@ -53,7 +53,7 @@ from ..serializers import (
 )
 from ..constants import PipelineStep, DecisionStepStatus, CycleOutcome, TERMINAL_OUTCOMES, PIPELINE_STEPS_CONFIG
 from ..config import CONFIG
-from ..services import annotate_cycle_state
+from ..services import annotate_cycle_state, annotate_deal_value
 from ..services.derivation_sql import CYCLE_STATUS_ALIAS
 
 logger = get_logger(__name__)
@@ -306,8 +306,14 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             # otherwise raise FieldError for a missing annotation). The steps
             # prefetch is gone: the serializer reads the counts from annotations,
             # nothing consumes the prefetched steps anymore.
-            queryset = annotate_cycle_state(
-                queryset.select_related('account', 'owner', 'owner__team')
+            # annotate_deal_value adds the product roll-up (_deal_value) the
+            # Amount column reads and sorts on — one correlated subquery per
+            # row, so total_deal_value costs the serializer nothing and the
+            # list stays query-bounded.
+            queryset = annotate_deal_value(
+                annotate_cycle_state(
+                    queryset.select_related('account', 'owner', 'owner__team')
+                )
             )
         elif self.action == 'retrieve':
             # Retrieve: full step data with limited activities for detail view

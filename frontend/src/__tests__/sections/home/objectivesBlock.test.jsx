@@ -63,8 +63,8 @@ describe('ObjectivesBlock — current objectives, cap, order, See all', () => {
     expect(screen.queryByText('Leads')).toBeNull();
     // currents present, c2 (ends 2026-08-15) before c1 (ends 2026-08-31)
     expect(label('Meetings')).toBeTruthy();
-    expect(label('Revenue won')).toBeTruthy();
-    expect(precedes(label('Meetings'), label('Revenue won'))).toBe(true);
+    expect(label('Won value')).toBeTruthy();
+    expect(precedes(label('Meetings'), label('Won value'))).toBe(true);
   });
 
   it('caps the list to PROGRESS_TOP_N (5) rows, dropping the latest-ending', () => {
