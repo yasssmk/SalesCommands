@@ -104,13 +104,18 @@ def resolve_period(
 
 
 # Serialization ---------------------------------------------------------------
-def serialize_result(result, definition) -> dict:
+def serialize_result(result, definition, client_id=None) -> dict:
     """KPIResult -> plain dict for the {success, data} envelope.
 
     BREAKDOWN keys are FK ids; JSON object keys must be strings, so they are
     stringified. When the KPI declares a `dimension_labels` resolver, the raw
     (already scope-filtered) ids are resolved to names in ONE query and placed
     under meta['labels'] — value keeps its {id: number} shape.
+
+    A MONETARY KPI (``definition.unit == 'currency'``) also carries `currency`:
+    the tenant's single currency, resolved from `client_id` (core.currency). The
+    amount itself is untouched — no conversion happens anywhere — this only says
+    what unit it is in. Non-monetary KPIs get `currency: None`.
     """
     value = result.value
     meta = dict(result.meta or {})
@@ -130,10 +135,17 @@ def serialize_result(result, definition) -> dict:
                     exc_info=True,
                 )
 
+    currency = None
+    if getattr(definition, 'unit', None) == 'currency':
+        from core.currency import tenant_currency
+
+        currency = tenant_currency(client_id)
+
     return {
         'key': result.key,
         'shape': shape.value if hasattr(shape, 'value') else shape,
         'value': value,
+        'currency': currency,
         'scope': result.scope,
         'period_start': result.period_start,
         'period_end': result.period_end,

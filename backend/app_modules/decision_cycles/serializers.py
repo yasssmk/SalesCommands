@@ -1426,6 +1426,10 @@ class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.
     line_total = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True,
     )
+    # The unit of unit_price / line_total. Resolved from the TENANT at read
+    # time (core.currency), never stored on the line — one currency per tenant,
+    # no conversion.
+    currency = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = DealProduct
@@ -1438,11 +1442,17 @@ class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.
             'unit_price',
             'discount_percent',
             'line_total',
+            'currency',
             'notes',
             'created_at',
             'updated_at',
         ]
         read_only_fields = fields
+
+    def get_currency(self, obj):
+        from core.currency import tenant_currency
+
+        return tenant_currency(obj.client_id)
 
     def get_product_catalog_entry_detail(self, obj):
         entry = obj.product_catalog_entry

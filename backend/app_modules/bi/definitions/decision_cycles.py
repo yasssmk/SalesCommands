@@ -64,6 +64,7 @@ dc_pipeline_value = KPIDefinition(
     scope_module='decision_cycles',
     period_field='created_at',           # STOCK — call with period=None (see module docstring)
     output_shape=OutputShape.SCALAR,
+    unit='currency',                     # money — payload carries the tenant's currency
     allowed_scopes=('mine', 'team', 'client'),
     # STOCK metric: the API default must NOT window it. default_period='all'
     # makes the endpoint's "absent -> default_period" resolve to no period
@@ -87,6 +88,7 @@ dc_won_value = KPIDefinition(
     scope_module='decision_cycles',
     period_field='outcome_date',         # FLUX — call with the period
     output_shape=OutputShape.SCALAR,
+    unit='currency',                     # money — payload carries the tenant's currency
     allowed_scopes=('mine', 'team', 'client'),
     cache_tags=('decision_cycles',),
     invalidation_sources=(

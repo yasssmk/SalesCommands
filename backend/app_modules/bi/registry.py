@@ -80,6 +80,11 @@ class KPIDefinition:
     target: Optional[Callable[..., Any]] = None
     cache_tags: Tuple[str, ...] = ()
     invalidation_sources: Tuple[str, ...] = ()
+    # What the value IS, when that changes how it must be read. 'currency' marks
+    # a MONETARY KPI: the presentation layer then attaches the tenant's currency
+    # to the payload (core.currency), because a bare 60000 has no unit. Left
+    # None for counts, percentages and states — a count in EUR is nonsense.
+    unit: Optional[str] = None
     # Escape hatch for KPIs that are NOT a single aggregate over a scoped
     # queryset (ratios, parameterized/per-entity metrics — e.g. coverage %,
     # quota attainment). When set, compute.run() delegates to it instead of the
