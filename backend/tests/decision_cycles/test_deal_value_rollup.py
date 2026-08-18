@@ -275,7 +275,120 @@ class TestQueryBound:
 
 
 # =============================================================================
-# 4. TENANT ISOLATION on the mass path
+# 4. NOTHING IS STORED — the read-time paradigm, enforced
+# =============================================================================
+
+class TestNoStoredAmount:
+    """The amount is derived on read, everywhere. No denormalised column exists
+    to go stale, and none may be added without this failing.
+
+    Asserted at the SCHEMA level (real table introspection), not just on the
+    model: a stored amount is exactly the kind of hidden reader TD-125 warns
+    about — a column an ORM path can select implicitly.
+    """
+
+    def test_deal_products_table_has_no_amount_column(self):
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            columns = {
+                col.name for col in
+                connection.introspection.get_table_description(
+                    cursor, DealProduct._meta.db_table,
+                )
+            }
+
+        assert 'line_total' not in columns
+        assert not {c for c in columns if 'total' in c or 'amount' in c}
+        # what the table DOES carry: the inputs of the formula, nothing derived.
+        assert {'quantity', 'unit_price', 'discount_percent'} <= columns
+
+    def test_line_total_is_a_property_not_a_field(self):
+        assert isinstance(DealProduct.__dict__['line_total'], property)
+        assert 'line_total' not in {
+            f.name for f in DealProduct._meta.concrete_fields
+        }
+
+    def test_decision_cycles_table_has_no_rolled_up_total(self):
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            columns = {
+                col.name for col in
+                connection.introspection.get_table_description(
+                    cursor, DecisionCycle._meta.db_table,
+                )
+            }
+
+        assert 'total_deal_value' not in columns
+        # estimated_value is a MANUAL field, not a roll-up -- it stays (TD-75).
+        assert 'estimated_value' in columns
+
+
+# =============================================================================
+# 5. READ-TIME FRESHNESS — a mutation is visible with no recompute step
+# =============================================================================
+
+class TestReadTimeFreshness:
+    """Every amount follows its inputs immediately, on every binding. There is
+    no recompute call to forget and no stored value to leave behind."""
+
+    def test_discount_change_is_reflected_immediately(self, cycle, user_a):
+        line = _line(cycle, _product(user_a, cycle.client_id, 'Fresh'), user_a,
+                     quantity=2, unit_price=Decimal('10000'))
+        assert cycle.total_deal_value == Decimal('20000')
+
+        line.discount_percent = Decimal('50')
+        line.save(user=user_a)
+
+        assert line.line_total == Decimal('10000')
+        assert cycle.total_deal_value == Decimal('10000')
+        assert _annotated(cycle) == Decimal('10000')
+        assert _kpi_aggregate(cycle) == Decimal('10000')
+
+    def test_quantity_and_price_changes_are_reflected_immediately(
+        self, cycle, user_a,
+    ):
+        line = _line(cycle, _product(user_a, cycle.client_id, 'Movable'), user_a,
+                     quantity=1, unit_price=Decimal('1000'))
+
+        line.quantity = 3
+        line.unit_price = Decimal('2000')
+        line.save(user=user_a)
+
+        assert line.line_total == Decimal('6000')
+        assert cycle.total_deal_value == Decimal('6000')
+        assert _annotated(cycle) == Decimal('6000')
+
+    def test_catalog_price_change_flows_into_lines_without_an_override(
+        self, cycle, user_a,
+    ):
+        """A line with no override reads the catalog at READ time: repricing the
+        catalogue moves the deal, with nothing to re-save on the lines."""
+        product = _product(user_a, cycle.client_id, 'Repriced', Decimal('100'))
+        _line(cycle, product, user_a, quantity=10)
+        assert cycle.total_deal_value == Decimal('1000')
+
+        product.default_unit_price = Decimal('150')
+        product.save(user=user_a)
+
+        assert cycle.total_deal_value == Decimal('1500')
+        assert _annotated(cycle) == Decimal('1500')
+
+    def test_deleting_a_line_drops_its_amount_from_the_total(self, cycle, user_a):
+        keep = _line(cycle, _product(user_a, cycle.client_id, 'Keep'), user_a,
+                     quantity=1, unit_price=Decimal('1000'))
+        drop = _line(cycle, _product(user_a, cycle.client_id, 'Drop'), user_a,
+                     quantity=1, unit_price=Decimal('4000'))
+        assert cycle.total_deal_value == Decimal('5000')
+
+        drop.delete()
+
+        assert cycle.total_deal_value == keep.line_total == Decimal('1000')
+
+
+# =============================================================================
+# 6. TENANT ISOLATION on the mass path
 # =============================================================================
 
 class TestTenantIsolation:
