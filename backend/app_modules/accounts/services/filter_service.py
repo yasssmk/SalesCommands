@@ -13,6 +13,8 @@ from django.utils import timezone
 from datetime import timedelta
 import logging
 
+from app_modules.signals.constants import SignalStatus
+
 logger = logging.getLogger(__name__)
 
 
@@ -295,24 +297,85 @@ class AccountFilterService:
     
     @classmethod
     def _filter_by_tech_stack(cls, queryset, tech_names, client_id=None):
-        """Filter accounts that have specific tech stacks."""
+        """
+        Filter accounts observed using at least one of the given tools.
+
+        Source of truth (S10)
+        ---------------------
+        `app_modules.signals.TechStackSignal`, matched on
+        `tech_name_normalized`.
+
+        This previously queried the LEGACY `apps.accounts.TechStack`
+        table (TD-61). That model belongs to the pre-modular monolith:
+        nothing in the modular flow writes to it, and its `account_id`
+        column is a bigint FK to the legacy `Account`, while the
+        queryset being filtered is `CompanyAccount` with a UUID pk — so
+        the subquery did not merely return nothing, it raised
+        `ProgrammingError: operator does not exist: bigint = uuid` on
+        every call. The filter was unreachable in practice.
+
+        Matching
+        --------
+        EXACT on the normalised form, not substring. "accounts using
+        Salesforce" must not also return accounts using "Salesforce
+        Marketing Cloud" — those are different products, and a rep
+        filtering for one does not expect the other. Incoming values go
+        through `TechStackSignal._normalize_tech_name`, the same helper
+        the model applies in save(), so a user typing "  Salesforce  "
+        matches a signal stored as "salesforce" without either side
+        knowing about the other's casing or spacing. Re-implementing the
+        lower/trim/collapse rule here would let the two drift apart.
+
+        Multiple values are OR'd (an account matches if it has ANY of
+        the listed tools), preserving the legacy `__in` semantics.
+        Blank entries are dropped so an empty string cannot match
+        signals whose tech_name is itself empty.
+
+        Status rule
+        -----------
+        PENDING and VALIDATED signals count; REJECTED ones do not.
+        A tool mentioned on a call is real intelligence before a rep
+        gets round to validating it, so excluding PENDING would hide
+        most freshly-extracted evidence. REJECTED means a human looked
+        at it and said no — honouring that is the whole point of the
+        status. Listed explicitly rather than as `.exclude(REJECTED)`
+        so that a future status has to opt in deliberately.
+
+        Tenant scoping is preserved on the subquery, mirroring the
+        sibling `_filter_by_buying_process` below.
+        """
         if not tech_names:
             return queryset
-        
-        from apps.accounts.models import TechStack
-        
+
+        from app_modules.signals.models import TechStackSignal
+
         if isinstance(tech_names, str):
             tech_names = [tech_names]
-        
-        tech_stack_exists = TechStack.objects.filter(
+
+        # Same normalisation the model applies in save() — reused, not
+        # re-implemented, so the query key and the stored key cannot
+        # diverge. Blank results are dropped (a blank filter value must
+        # not match signals with an empty tech_name).
+        normalised = [
+            key for key in (
+                TechStackSignal._normalize_tech_name(name)
+                for name in tech_names
+            )
+            if key
+        ]
+        if not normalised:
+            return queryset
+
+        tech_signal_exists = TechStackSignal.objects.filter(
             account_id=OuterRef('pk'),
-            tech_name__in=tech_names
+            tech_name_normalized__in=normalised,
+            status__in=(SignalStatus.PENDING, SignalStatus.VALIDATED),
         )
-        
+
         if client_id:
-            tech_stack_exists = tech_stack_exists.filter(client_id=client_id)
-        
-        return queryset.filter(Exists(tech_stack_exists))
+            tech_signal_exists = tech_signal_exists.filter(client_id=client_id)
+
+        return queryset.filter(Exists(tech_signal_exists))
     
     # ==========================================================================
     # BUYING PROCESS FILTER
@@ -506,6 +569,10 @@ class AccountFilterService:
         if filter_definition.get('country'):
             summary.append(f"Country: {filter_definition['country']}")
         if filter_definition.get('has_tech_stack'):
+            # The values are tool names as the user typed them; the
+            # filter normalises them before matching (see
+            # _filter_by_tech_stack), but the summary echoes the raw
+            # input so it reads back exactly as it was entered.
             techs = filter_definition['has_tech_stack']
             summary.append(f"Tech Stack: {', '.join(techs) if isinstance(techs, list) else techs}")
         if filter_definition.get('buying_process_stage'):
