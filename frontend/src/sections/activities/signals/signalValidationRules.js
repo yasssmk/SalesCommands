@@ -26,7 +26,7 @@ const REQUIRED_FIELDS = {
     { key: "impact_type", label: "Impact type" },
     { key: "summary", label: "Summary" },
   ],
-  "tech-stack": [{ key: "tech_catalog_entry", label: "Tech catalog entry" }],
+  "tech-stack": [{ key: "tech_name", label: "Tool name" }],
   blockers: [{ key: "summary", label: "Summary" }],
   "next-steps": [
     { key: "suggested_title", label: "Suggested title" },
@@ -56,11 +56,11 @@ export function getRequiredFields(signalType) {
 /**
  * Determine which required fields are missing on a signal.
  *
- * TechStack note: a signal whose LLM-extracted tool did not match the
- * catalog is persisted PENDING with metadata.pending_tech_name and no
- * tech_catalog_entry. It is NOT complete — the rep must attach a
- * catalog entry (the picker is enabled while PENDING) before it can be
- * validated. This mirrors the backend SignalManager.validate guard.
+ * TechStack note: the only required field is `tech_name`, the tool's
+ * free-text identity. S10 removed the tech catalogue, so an extracted
+ * signal is complete as it arrives — the rep no longer has to attach a
+ * reference entry before validating. This mirrors the backend, where
+ * the SignalManager.validate catalogue guard was dropped.
  *
  * @param {Object} signal
  * @param {string} signalType
@@ -78,20 +78,4 @@ export function getMissingFields(signal, signalType) {
 
     return false;
   });
-}
-
-/**
- * Whether a TechStack signal's tech_catalog_entry may be edited.
- *
- * The catalog anchor is settable while the signal is PENDING (so an
- * LLM-extracted signal with no catalog match can be linked before
- * validation) and immutable once VALIDATED — mirrors the backend
- * TechStackSignalUpdateSerializer lock. A falsy signal (create mode,
- * no instance yet) is editable.
- *
- * @param {Object|null|undefined} signal - signal-like object with a `status`
- * @returns {boolean}
- */
-export function canEditCatalogEntry(signal) {
-  return !signal || signal.status === "PENDING";
 }

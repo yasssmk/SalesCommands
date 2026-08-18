@@ -21,7 +21,6 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   EditOutlined,
-  WarningOutlined,
 } from "@ant-design/icons";
 
 // Project imports
@@ -203,47 +202,38 @@ function ImpactDetails({ signal }) {
 }
 ImpactDetails.propTypes = { signal: PropTypes.object.isRequired };
 
-function TechStackDetails({ signal, onEdit }) {
+function TechStackDetails({ signal }) {
   const techInfo = getTechSummary(signal);
   const contactName = formatContact(getContact(signal));
-  const catalogEntry = signal.tech_catalog_entry;
+
+  // S10: qualification is three independent booleans on the signal —
+  // any combination, or none (a tool the account simply uses).
+  const qualifications = [
+    signal.is_competitor && { key: "competitor", label: "Competitor", color: "error" },
+    signal.is_integration && { key: "integration", label: "Integration", color: "info" },
+    signal.is_to_replace && { key: "to-replace", label: "To replace", color: "warning" },
+  ].filter(Boolean);
+
   return (
     <>
       <DrawerSection title="IDENTITY">
         <DrawerFieldRow label="Tool">
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography variant="body2">{techInfo.name}</Typography>
-            {techInfo.pending && (
-              <Tooltip
-                title={
-                  onEdit
-                    ? "Attach a catalog entry to validate this tool"
-                    : "Not in your tech catalog"
-                }
-              >
-                <Chip
-                  icon={<WarningOutlined style={{ fontSize: 10 }} />}
-                  label="Not in catalog"
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                  onClick={onEdit ? () => onEdit(signal, "tech-stack") : undefined}
-                  sx={{
-                    height: 20,
-                    fontSize: "0.7rem",
-                    ...(onEdit ? { cursor: "pointer" } : {}),
-                  }}
-                />
-              </Tooltip>
-            )}
-          </Stack>
+          <Typography variant="body2">{techInfo.name}</Typography>
         </DrawerFieldRow>
-        {catalogEntry?.company_name && (
-          <DrawerFieldRow label="Company" value={catalogEntry.company_name} />
-        )}
-        {catalogEntry?.is_competitor && (
-          <DrawerFieldRow label="Competitor">
-            <Chip label="Competitor" size="small" color="error" variant="outlined" sx={{ height: 20, fontSize: "0.7rem" }} />
+        {qualifications.length > 0 && (
+          <DrawerFieldRow label="Qualification">
+            <Stack direction="row" spacing={0.5} flexWrap="wrap">
+              {qualifications.map((q) => (
+                <Chip
+                  key={q.key}
+                  label={q.label}
+                  size="small"
+                  color={q.color}
+                  variant="outlined"
+                  sx={{ height: 20, fontSize: "0.7rem" }}
+                />
+              ))}
+            </Stack>
           </DrawerFieldRow>
         )}
         <DrawerFieldRow label="Mentioned by" value={contactName} />
@@ -279,7 +269,6 @@ function TechStackDetails({ signal, onEdit }) {
 }
 TechStackDetails.propTypes = {
   signal: PropTypes.object.isRequired,
-  onEdit: PropTypes.func,
 };
 
 function BlockerDetails({ signal }) {
@@ -330,7 +319,7 @@ function renderDetails(signal, signalType, onEdit) {
     case "pain": return <PainDetails signal={signal} />;
     case "objective": return <ObjectiveDetails signal={signal} />;
     case "impact": return <ImpactDetails signal={signal} />;
-    case "tech-stack": return <TechStackDetails signal={signal} onEdit={onEdit} />;
+    case "tech-stack": return <TechStackDetails signal={signal} />;
     case "blockers": return <BlockerDetails signal={signal} />;
     case "next-steps": return <NextStepDetails signal={signal} />;
     default: return null;
@@ -488,7 +477,10 @@ SignalQuickDrawer.propTypes = {
     source_context: PropTypes.shape({
       contacts: PropTypes.arrayOf(PropTypes.object),
     }),
-    tech_catalog_entry: PropTypes.object,
+    tech_name: PropTypes.string,
+    is_competitor: PropTypes.bool,
+    is_integration: PropTypes.bool,
+    is_to_replace: PropTypes.bool,
     validated_by: PropTypes.object,
     validated_at: PropTypes.string,
   }),

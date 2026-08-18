@@ -3,14 +3,16 @@
 TechStackSignal — concrete signal for tools used by an account.
 
 Captures structured intelligence about a single tool observed at an
-account, anchored to a tenant-level master catalog entry (TechCatalog).
-The catalog FK identifies which tool the observation is about.
+account. The tool is identified by free text: `tech_name` holds the
+name as it was observed, and `tech_name_normalized` (derived in save())
+is the key used to group, filter and de-duplicate observations.
 
 TechStack is NOT clusterable (product decision). Unlike Pain /
 Objective / Impact, TechStack observations are not aggregated into
 canonical clusters — the signal carries no canonical_key and is not
 served by SignalClusterService. Multiple observations of the same
-tool on an account are read as a flat, catalog-grouped list.
+tool on an account are read as a flat list, grouped on the normalised
+name.
 
 Architectural alignment with Pain / Objective
 ---------------------------------------------
@@ -42,9 +44,9 @@ two inherited fields to `None`. Each override has a precise reason:
 
   * signal_category = None
         Aligned with ObjectiveSignal. The signal_category tag is not
-        meaningful for TechStack observations — categorisation lives
-        on the TechCatalog entry instead via the is_competitor and
-        is_integration_target flags.
+        meaningful for TechStack observations — qualification lives on
+        the signal itself via the is_competitor / is_integration /
+        is_to_replace flags.
 
 History — fields removed from BaseSignal directly:
   source_contact and source_department were previously shadow-overridden
@@ -69,26 +71,14 @@ Validation rules (enforced in clean() AND in Create/Update serializers)
      a clean ValidationError on the API surface rather than an
      IntegrityError.
 
-  2. tech_catalog_entry is required, EXCEPT on PENDING LLM-extracted
-     signals.
-       The catalog FK identifies the tool; validation requires it
-       (enforced by SignalManager.validate). The exception covers the
-       LLM-extraction case where the mentioned tool could not be
-       matched to the tenant catalog: the signal is persisted as
-       PENDING with tech_catalog_entry=NULL and the raw name stored
-       in metadata['pending_tech_name']. The rep must attach a
-       catalog entry (or create one) before validating — enforced
-       downstream by SignalManager.validate(). Any other source/
-       status combination still requires the FK at clean() time.
-
-  3. usage_scope = DEPARTMENT  →  usage_department REQUIRED.
+  2. usage_scope = DEPARTMENT  →  usage_department REQUIRED.
      usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}  →  usage_department
                                                        FORBIDDEN.
 
-  4. is_discontinued = True  →  discontinued_date REQUIRED.
+  3. is_discontinued = True  →  discontinued_date REQUIRED.
      is_discontinued = False (default)  →  discontinued_date FORBIDDEN.
 
-The (3) and (4) pairs use the merged-state validation pattern in their
+The (2) and (3) pairs use the merged-state validation pattern in their
 matching serializers — see TechStackSignalUpdateSerializer.
 
 Status creation rule
@@ -106,10 +96,11 @@ no divergence introduced by this sprint.
 
 Multi-mentions are expected
 ---------------------------
-There is intentionally NO UniqueConstraint on (account, tech_catalog_entry).
-Multiple signals for the same tool on the same account are the corroboration
-mechanism: each call where Salesforce comes up adds one signal. They are
-read as a flat, catalog-grouped list (TechStack is not clustered).
+There is intentionally NO UniqueConstraint on
+(account, tech_name_normalized). Multiple signals for the same tool on the
+same account are the corroboration mechanism: each call where Salesforce
+comes up adds one signal. They are read as a flat list grouped on the
+normalised name (TechStack is not clustered).
 """
 
 from django.core.exceptions import ValidationError
@@ -120,19 +111,28 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import SignalErrorMessages
 
 from .base_model import BaseSignal
-from ..constants import UsageScope, SignalSource, SignalStatus
+from ..constants import UsageScope
 
 
 class TechStackSignal(BaseSignal):
     """
     Concrete signal for a tool used by an account.
 
-    Catalog anchor:
-        tech_catalog_entry (FK TechCatalog) identifies the tool.
-        TechStack is not clusterable — no canonical_key is computed.
+    Tech identity:
+        tech_name             raw display text, as written ("Salesforce CRM").
+        tech_name_normalized  derived in save() (lower + trim + collapse);
+                              the grouping / filtering / de-dup key.
+        tech_name is the single source of truth — the normalised column
+        is recomputed on every write and can never desync from it.
+
+    Qualification flags (independent, default False):
+        is_competitor, is_integration, is_to_replace. All three False
+        means "a tool the account simply uses".
+
+    Not clusterable — no canonical_key is computed.
 
     Required:
-        - tech_catalog_entry (FK TechCatalog)
+        - tech_name (the tool's identity; blank names carry no meaning)
 
     Conditional:
         - usage_department  (required iff usage_scope == DEPARTMENT)
@@ -165,33 +165,88 @@ class TechStackSignal(BaseSignal):
     signal_category   = None
 
     # =========================================================================
-    # CATALOG ANCHOR (required — drives canonical_key)
+    # TECH IDENTITY (raw + derived normalised key)
     # =========================================================================
+    #
+    # `tech_name` is the single source of truth for the tool's identity.
+    # `tech_name_normalized` is DERIVED from it in save() and must never
+    # be authored by a caller — see the SAVE section below.
+    #
+    # Both are non-nullable free text defaulting to '' — the prevailing
+    # convention for free-text columns on this model (cf.
+    # `cost_description` and `notes` further down, which declare
+    # `blank=True` and rely on Django's implicit '' default). Only
+    # `usage_scope` uses null=True, because "scope not documented" is a
+    # meaningful third state there; "no tech name" is simply the empty
+    # string.
 
-    tech_catalog_entry = models.ForeignKey(
-        'tech_catalog.TechCatalog',
-        on_delete=models.PROTECT,
-        related_name='tech_stack_signals',
-        null=True,
+    tech_name = models.CharField(
+        max_length=255,
         blank=True,
-        verbose_name=_('Tech Catalog Entry'),
+        verbose_name=_('Tech Name'),
         help_text=_(
-            'Tenant-level master catalog entry identifying the tool. '
-            'Drives canonical_key and cluster identity. '
-            'Required for MANUAL signals and required to validate any '
-            'signal. May be NULL on PENDING LLM-extracted signals when '
-            'the LLM could not match the mentioned tool to the catalog '
-            '— the rep must attach a catalog entry (or create one) '
-            'before validating. PROTECT semantics apply only when the '
-            'FK is set.'
+            'Raw display name of the tool exactly as it was written by '
+            'the LLM or the rep (e.g. "Salesforce CRM"). Never rewritten '
+            '— casing, spacing and wording are preserved for display. '
+            'Grouping, filtering and de-duplication use '
+            '`tech_name_normalized` instead.'
         ),
     )
-    # Note on on_delete=PROTECT: deleting a catalog entry that has live
-    # signals would silently amputate the corroboration chain. PROTECT
-    # forces the admin to handle migration (re-point or archive) before
-    # removing the entry. Same stance as PainSignal.account (CASCADE is
-    # appropriate when the parent OWNS the children; here the catalog
-    # is a reference, not an owner — PROTECT is the right semantic).
+
+    tech_name_normalized = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_('Tech Name (normalised)'),
+        help_text=_(
+            'Derived from `tech_name` on every save: lowercased, '
+            'trimmed, internal whitespace collapsed to single spaces. '
+            'This is the key used to group, filter and de-duplicate '
+            'observations of the same tool. Read-only by contract — it '
+            'is recomputed at save() time, so any value written by a '
+            'caller is discarded and the two columns cannot desync. '
+            'Empty string when `tech_name` is blank.'
+        ),
+    )
+
+    # =========================================================================
+    # QUALIFICATION FLAGS
+    # =========================================================================
+    #
+    # Three INDEPENDENT booleans — a single tool can be several of these
+    # at once (a competitor we also integrate with and want to replace),
+    # or none. All three False is the default and the common case: a
+    # tool the account simply uses.
+    #
+    # Declared in the style of `is_discontinued` below (BooleanField,
+    # default=False, verbose_name + help_text).
+
+    is_competitor = models.BooleanField(
+        default=False,
+        verbose_name=_('Is Competitor'),
+        help_text=_(
+            'True when this tool overlaps with what we sell — '
+            'displacing it is a winnable angle on the deal.'
+        ),
+    )
+
+    is_integration = models.BooleanField(
+        default=False,
+        verbose_name=_('Is Integration'),
+        help_text=_(
+            'True when this tool is one we connect to — integrating '
+            'with it is a winnable angle on the deal.'
+        ),
+    )
+
+    is_to_replace = models.BooleanField(
+        default=False,
+        verbose_name=_('Is To Replace'),
+        help_text=_(
+            'True when the account intends to replace this tool — an '
+            'open door regardless of whether we compete with it or '
+            'integrate with it.'
+        ),
+    )
 
     # =========================================================================
     # USAGE SCOPE (optional — drives conditional usage_department)
@@ -318,10 +373,6 @@ class TechStackSignal(BaseSignal):
                 name='tssig_account_idx',
             ),
             models.Index(
-                fields=['tech_catalog_entry'],
-                name='tssig_catalog_idx',
-            ),
-            models.Index(
                 fields=['status'],
                 name='tssig_status_idx',
             ),
@@ -329,20 +380,74 @@ class TechStackSignal(BaseSignal):
                 fields=['is_discontinued'],
                 name='tssig_discontinued_idx',
             ),
-            # Retained composite index on (account, canonical_key).
-            # TechStack no longer computes canonical_key (not clusterable);
-            # this index is now inert — its removal is deferred because
-            # dropping it would require a migration (see TECH_DEBT.md).
-            models.Index(
-                fields=['account', 'canonical_key'],
-                name='tssig_account_canon_idx',
-            ),
             # Renewal-date ordering surface for the account tech-stack list.
             models.Index(
                 fields=['renewal_date'],
                 name='tssig_renewal_idx',
             ),
+            # Grouping / filtering surface for "which accounts use tool X"
+            # and for de-duplicating repeated observations of one tool.
+            # Declared here rather than via db_index=True on the field so
+            # every index on this model stays visible in one block, and
+            # so the name is explicit (same stance as the five above).
+            models.Index(
+                fields=['tech_name_normalized'],
+                name='tssig_tech_norm_idx',
+            ),
         ]
+
+    # =========================================================================
+    # SAVE — derive tech_name_normalized from tech_name
+    # =========================================================================
+
+    def save(self, *args, **kwargs):
+        """
+        Recompute `tech_name_normalized` from `tech_name`, then delegate
+        to BaseSignal.save().
+
+        Signature mirrors the other concrete signal overrides —
+        ImpactSignal.save() (models/impact_signal.py) and
+        BlockerSignal.save() (models/blocker_signal.py) both declare
+        `save(self, *args, **kwargs)` and forward untouched. `user` and
+        `client_id` travel as kwargs and are popped further down the
+        chain by ModuleBaseModel.save()
+        (app_modules/core_modules/models/moduleBaseModels.py:71-98), so
+        no override in this hierarchy names them explicitly.
+
+        This is the single normalisation point by design: every write
+        path — the transcript pipeline (SignalManager.create), the REST
+        API (BaseSignalViewSet), a management command or a shell session
+        — goes through Model.save(), so none of them can produce a row
+        whose normalised key disagrees with its raw name.
+
+        Rule: lowercase, strip, and collapse every run of internal
+        whitespace (spaces, tabs, newlines) to a single space. Nothing
+        smarter — no synonym table, no canonical_key. A blank or missing
+        `tech_name` yields '' (not None).
+
+        canonical_key is deliberately NOT touched here. TechStack is not
+        clusterable; unlike BlockerSignal.save(), which force-nulls the
+        column, this override leaves it exactly as the caller left it so
+        that the field's cleanup stays a separate, explicit change.
+        """
+        self.tech_name_normalized = self._normalize_tech_name(self.tech_name)
+
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def _normalize_tech_name(value):
+        """
+        Lowercase + trim + collapse internal whitespace.
+
+        "  Salesforce   CRM " -> "salesforce crm"
+        None / "" / "   "     -> ""
+        """
+        if not value:
+            return ''
+        # str.split() with no argument splits on arbitrary runs of
+        # whitespace AND drops the leading/trailing runs, so the join
+        # covers strip + collapse in one pass.
+        return ' '.join(str(value).lower().split())
 
     # =========================================================================
     # VALIDATION
@@ -359,30 +464,25 @@ class TechStackSignal(BaseSignal):
              NOT NULL. Raising in clean() yields a clean error payload
              on the API surface rather than an IntegrityError on save.
 
-          2. tech_catalog_entry is required — the catalog FK drives
-             canonical_key. The DB-level NOT NULL would catch this at
-             save() time, but raising in clean() yields a clean error
-             payload and matches the Pain/Objective pattern.
-
-             Exception: LLM extraction may produce a signal whose
-             mentioned tool does not match the tenant TechCatalog. In
-             that case the signal is persisted as PENDING with
-             tech_catalog_entry=None and the raw name stored in
-             metadata['pending_tech_name']. The rep must attach a
-             catalog entry before validating — enforced downstream by
-             SignalManager.validate().
-
-          3. usage_scope = DEPARTMENT
+          2. usage_scope = DEPARTMENT
                 → usage_department REQUIRED.
              usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}
                 → usage_department FORBIDDEN.
 
-          4. is_discontinued = True
+          3. is_discontinued = True
                 → discontinued_date REQUIRED.
              is_discontinued = False (default)
                 → discontinued_date FORBIDDEN.
 
-        Note on rule 3 with usage_scope = None:
+        Note on `tech_name`:
+          Identity is NOT enforced here. An LLM-extracted signal is
+          dropped upstream when the model emits no name (see
+          TranscriptSignalExtractor._build_techstack_data), and the
+          Create serializer requires it on the API path. Adding a
+          model-level rule would break the historical rows the S10
+          migration leaves with an empty name.
+
+        Note on rule 2 with usage_scope = None:
           A null usage_scope is interpreted as "scope not yet
           documented". Setting usage_department in that state would
           create an inconsistent record (a department is set but no
@@ -398,26 +498,7 @@ class TechStackSignal(BaseSignal):
                 SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
             )
 
-        # --- Rule 2: catalog FK is required EXCEPT on PENDING LLM-extracted signals ---
-        # LLM extraction may produce a signal whose mentioned tool does
-        # not match the tenant TechCatalog (the prompt feeds the catalog
-        # list and instructs the model to return a raw tech_name when
-        # no match exists). In that case the signal is persisted as
-        # PENDING with tech_catalog_entry=None and the raw name stored
-        # in metadata['pending_tech_name']. The rep must attach a
-        # catalog entry before validating — enforced downstream by
-        # SignalManager.validate().
-        if not self.tech_catalog_entry_id:
-            is_unmatched_llm_pending = (
-                self.source == SignalSource.LLM_EXTRACTED
-                and self.status == SignalStatus.PENDING
-            )
-            if not is_unmatched_llm_pending:
-                errors['tech_catalog_entry'] = (
-                    SignalErrorMessages.TECHSTACK_CATALOG_ENTRY_REQUIRED
-                )
-
-        # --- Rule 3: usage_scope ↔ usage_department coherence ---
+        # --- Rule 2: usage_scope ↔ usage_department coherence ---
         if self.usage_scope == UsageScope.DEPARTMENT:
             if not self.usage_department_id:
                 errors['usage_department'] = (
@@ -430,7 +511,7 @@ class TechStackSignal(BaseSignal):
                     SignalErrorMessages.TECHSTACK_DEPT_OUTSIDE_SCOPE
                 )
 
-        # --- Rule 4: is_discontinued ↔ discontinued_date coherence ---
+        # --- Rule 3: is_discontinued ↔ discontinued_date coherence ---
         if self.is_discontinued:
             if not self.discontinued_date:
                 errors['discontinued_date'] = (
@@ -450,15 +531,7 @@ class TechStackSignal(BaseSignal):
     # =========================================================================
 
     def __str__(self):
-        # Avoid an extra DB hit when the FK isn't loaded — fall back to
-        # the bare ID string instead of forcing a join just for repr.
-        if self.tech_catalog_entry_id:
-            try:
-                tool = str(self.tech_catalog_entry)
-            except Exception:
-                tool = f"catalog:{self.tech_catalog_entry_id}"
-        else:
-            tool = 'no-catalog-entry'
+        tool = self.tech_name or 'unnamed-tool'
         return (
             f"TechStackSignal | "
             f"{tool} | "

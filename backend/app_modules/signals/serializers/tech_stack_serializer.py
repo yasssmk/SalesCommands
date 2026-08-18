@@ -27,17 +27,16 @@ Notes:
     standardisation refactor — there is nothing left to strip for them
     at the serializer level.
 
-  - Cluster identity is driven by tech_catalog_entry FK. canonical_key
-    is recomputed by model.save() from the FK and is never writable
-    via the serializer — same stance as Pain/Objective with their
-    canonical axes (what × dimension).
+  - Tech identity is free text: `tech_name` is required on Create and
+    stays editable. `tech_name_normalized` is derived by model.save()
+    and is read-only everywhere — it is never accepted from the API.
+    TechStack is not clustered, so canonical_key is never set.
+
+  - Qualification: is_competitor / is_integration / is_to_replace are
+    three independent booleans, default False, writable on both Create
+    and Update.
 
   - Conditional rules (mirror of TechStackSignal.clean()):
-      tech_catalog_entry required on Create. On Update the FK is
-        settable ONLY while the signal is still PENDING (so an
-        LLM-extracted signal with no catalog match can be linked before
-        validation); once VALIDATED it is immutable — attempting to
-        change it raises TECHSTACK_CATALOG_ENTRY_LOCKED.
       usage_scope = DEPARTMENT  → usage_department REQUIRED
       usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}
                                 → usage_department FORBIDDEN
@@ -52,7 +51,7 @@ from rest_framework import serializers
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
-from ..constants import SignalStatus, UsageScope
+from ..constants import UsageScope
 from ..models import TechStackSignal
 from .base_serializer import (
     BaseSignalCreateSerializer,
@@ -66,9 +65,10 @@ from .base_serializer import (
 # HELPERS — display methods + conditional validation
 # =============================================================================
 #
-# List and Detail share the read shape for tech_catalog_entry, usage_scope,
-# and usage_department. A small mixin keeps both serializers aligned
-# when the schema evolves.
+# List and Detail share the read shape for usage_scope and
+# usage_department. A small mixin keeps both serializers aligned when
+# the schema evolves. tech_name / tech_name_normalized and the three
+# qualification booleans are plain model fields — no method needed.
 #
 # Conditional validation helpers are shared by Create (strict) and
 # Update (merged-state) — same pattern as ObjectiveSignal / ImpactSignal.
@@ -80,23 +80,6 @@ class _TechStackDisplayMixin:
 
     def get_usage_scope_display(self, obj):
         return obj.get_usage_scope_display() if obj.usage_scope else None
-
-    def get_tech_catalog_entry(self, obj):
-        """
-        Compact catalog payload — keeps the frontend from issuing a
-        separate /tech-catalog/<id>/ fetch just to render the tool name
-        on a signal card.
-        """
-        entry = obj.tech_catalog_entry
-        if not entry:
-            return None
-        return {
-            'id':                    str(entry.id),
-            'company_name':          entry.company_name,
-            'product_name':          entry.product_name,
-            'is_competitor':         entry.is_competitor,
-            'is_integration_target': entry.is_integration_target,
-        }
 
     def get_usage_department(self, obj):
 
@@ -113,7 +96,7 @@ def _validate_scope_consistency(usage_scope, usage_department):
     """
     Enforce usage_scope ↔ usage_department coherence.
 
-    Mirror of TechStackSignal.clean() rule 2. Called by Create (strict)
+    Mirror of TechStackSignal.clean() rule 1. Called by Create (strict)
     and Update (merged-state). Raises StandardizedValidationError on
     the first offending field for a clean API error payload.
 
@@ -140,7 +123,7 @@ def _validate_discontinuation_consistency(is_discontinued, discontinued_date):
     """
     Enforce is_discontinued ↔ discontinued_date coherence.
 
-    Mirror of TechStackSignal.clean() rule 3. Called by Create (strict)
+    Mirror of TechStackSignal.clean() rule 2. Called by Create (strict)
     and Update (merged-state).
 
     Rules:
@@ -217,7 +200,8 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
     Lightweight serializer for TechStackSignal list endpoints.
 
     Exposes:
-      - Catalog anchor (compact tech_catalog_entry payload)
+      - Tech identity (tech_name + the derived normalised key)
+      - Qualification booleans
       - Usage scope + usage_department (when DEPARTMENT)
       - Lifecycle quick view: usage_start_year, renewal_date,
         is_discontinued, discontinued_date
@@ -231,8 +215,7 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
     source_activity.decision_cycle / .campaign.
     """
 
-    # Catalog + scope + dept compact payloads
-    tech_catalog_entry  = serializers.SerializerMethodField()
+    # Scope + dept compact payloads
     usage_scope_display = serializers.SerializerMethodField()
     usage_department    = serializers.SerializerMethodField()
 
@@ -243,8 +226,13 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
         _base_fields = _strip_shadow_fields(BaseSignalListSerializer.Meta.fields)
 
         fields = _base_fields + [
-            # Catalog anchor (drives canonical_key)
-            'tech_catalog_entry',
+            # Tech identity (raw + derived key)
+            'tech_name',
+            'tech_name_normalized',
+            # Qualification (independent booleans)
+            'is_competitor',
+            'is_integration',
+            'is_to_replace',
             # Scope axis (conditional dept)
             'usage_scope', 'usage_scope_display',
             'usage_department',
@@ -290,7 +278,6 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
       fallback now lives in SignalSourceSerializer.
     """
 
-    tech_catalog_entry  = serializers.SerializerMethodField()
     usage_scope_display = serializers.SerializerMethodField()
     usage_department    = serializers.SerializerMethodField()
 
@@ -300,8 +287,13 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
         _base_fields = _strip_shadow_fields(BaseSignalDetailSerializer.Meta.fields)
 
         fields = _base_fields + [
-            # Catalog anchor
-            'tech_catalog_entry',
+            # Tech identity (raw + derived key)
+            'tech_name',
+            'tech_name_normalized',
+            # Qualification (independent booleans)
+            'is_competitor',
+            'is_integration',
+            'is_to_replace',
             # Scope axis
             'usage_scope', 'usage_scope_display',
             'usage_department',
@@ -331,7 +323,7 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
 
     Required:
       - account              (inherited from BaseSignalCreateSerializer)
-      - tech_catalog_entry   (catalog FK — drives canonical_key)
+      - tech_name            (free text; the tool's identity)
 
     Optional:
       - source_activity (left optional — TechStack is not as strictly
@@ -369,8 +361,12 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalCreateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
-            # Catalog anchor (required)
-            'tech_catalog_entry',
+            # Tech identity (raw; the normalised key is derived in save())
+            'tech_name',
+            # Qualification (independent booleans)
+            'is_competitor',
+            'is_integration',
+            'is_to_replace',
             # Scope axis
             'usage_scope',
             'usage_department',
@@ -386,7 +382,10 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
-            'tech_catalog_entry': {'required': True},
+            'tech_name':          {'required': True, 'allow_blank': False},
+            'is_competitor':      {'required': False},
+            'is_integration':     {'required': False},
+            'is_to_replace':      {'required': False},
             'usage_scope':        {'required': False, 'allow_null': True},
             'usage_department':   {'required': False, 'allow_null': True},
             'usage_start_year':   {'required': False, 'allow_null': True},
@@ -402,9 +401,10 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
         Enforce TechStack-specific rules, then delegate to base.
 
         Order matters:
-          1. tech_catalog_entry presence (defense in depth — extra_kwargs
-             marks it required, but the explicit check yields a typed
-             error message via SignalErrorMessages).
+          1. tech_name presence (defense in depth — extra_kwargs marks
+             it required, but the explicit check also rejects a
+             whitespace-only name, which allow_blank=False alone would
+             let through).
           2. Scope ↔ usage_department coherence (strict — Create has
              no instance state to merge against).
           3. Discontinuation ↔ discontinued_date coherence (strict).
@@ -414,10 +414,10 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
              the standardisation refactor).
         """
 
-        # Rule 1: catalog FK presence
-        if not attrs.get('tech_catalog_entry'):
+        # Rule 1: tech_name presence (rejects whitespace-only too)
+        if not (attrs.get('tech_name') or '').strip():
             raise StandardizedValidationError({
-                'tech_catalog_entry': SignalErrorMessages.TECHSTACK_CATALOG_ENTRY_REQUIRED,
+                'tech_name': SignalErrorMessages.TECHSTACK_NAME_REQUIRED,
             })
 
         # Rule 2: scope ↔ department coherence (strict)
@@ -445,24 +445,27 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
     Restricted PATCH serializer for TechStackSignal.
 
     Allowed beyond inherited base fields:
-      - tech_catalog_entry  (PENDING-only — see below)
+      - tech_name  (correcting what the LLM heard is a normal edit)
+      - is_competitor, is_integration, is_to_replace
       - usage_scope, usage_department  (conditional pair)
       - usage_start_year, renewal_date, cost_description
       - is_discontinued, discontinued_date  (conditional pair)
       - notes
 
-    tech_catalog_entry — settable while PENDING, immutable after:
-      An LLM-extracted signal whose mentioned tool did not match the
-      tenant catalog is persisted as PENDING with tech_catalog_entry=None
-      (raw name in metadata['pending_tech_name']). The rep must be able
-      to attach a catalog entry before validating — so the FK is writable
-      while status == PENDING. Once the signal is VALIDATED (or REJECTED),
-      the FK is locked: any attempt to change it raises
-      TECHSTACK_CATALOG_ENTRY_LOCKED. Repointing a validated signal would
-      change the tool it identifies (its identity), which is a
-      delete + recreate flow, not an edit.
+    tech_name is editable at any status. It is free text, not an
+    identifier: a rep fixing "Sales force" to "Salesforce" is correcting
+    a transcription, not repointing the signal at a different tool. The
+    normalised key follows automatically on save(), so the corrected
+    signal regroups with its peers immediately. Blanking it is refused —
+    a nameless tech observation cannot be displayed or grouped.
+
+    S10 note: this serializer previously guarded a `tech_catalog_entry`
+    FK that was settable only while PENDING and locked once VALIDATED
+    (TECHSTACK_CATALOG_ENTRY_LOCKED). The catalogue is gone; there is no
+    identifier left to lock.
 
     NOT writable:
+      - tech_name_normalized (derived in save(); read-only by contract)
       - canonical_key (TechStack is not clustered; never set)
 
     Merged-state validation:
@@ -501,8 +504,12 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalUpdateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
-            # Catalog anchor (writable only while PENDING — see validate())
-            'tech_catalog_entry',
+            # Tech identity (raw; normalised key follows in save())
+            'tech_name',
+            # Qualification (independent booleans)
+            'is_competitor',
+            'is_integration',
+            'is_to_replace',
             # Scope axis (conditional pair)
             'usage_scope',
             'usage_department',
@@ -518,7 +525,10 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
-            'tech_catalog_entry': {'required': False, 'allow_null': True},
+            'tech_name':          {'required': False, 'allow_blank': False},
+            'is_competitor':      {'required': False},
+            'is_integration':     {'required': False},
+            'is_to_replace':      {'required': False},
             'usage_scope':        {'required': False, 'allow_null': True},
             'usage_department':   {'required': False, 'allow_null': True},
             'usage_start_year':   {'required': False, 'allow_null': True},
@@ -531,17 +541,14 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
 
     def validate(self, attrs):
         """
-        Enforce the PENDING-only catalog lock, then run the merged-state
-        coherence checks on partial payloads.
+        Reject a blanked tech_name, then run the merged-state coherence
+        checks on partial payloads.
 
-        Catalog lock:
-          `tech_catalog_entry` may only CHANGE while the signal is
-          PENDING. Re-sending the current entry (as the edit form always
-          does, even on an unrelated notes edit) is a no-op and allowed
-          at any status. Changing the anchor once the signal is VALIDATED
-          (or REJECTED) raises TECHSTACK_CATALOG_ENTRY_LOCKED — the FK
-          identifies the tool and repointing a validated signal is a
-          delete + recreate flow, not an edit.
+        tech_name:
+          Editable at any status (see class docstring), but never
+          blankable — allow_blank=False catches '', and the explicit
+          check below also catches a whitespace-only value, which would
+          otherwise normalise to an empty grouping key.
 
         Two independent conditional pairs:
           A. usage_scope ↔ usage_department
@@ -554,23 +561,11 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
         """
         instance = self.instance
 
-        # --- Catalog lock: tech_catalog_entry may only CHANGE while PENDING ---
-        # A no-op (the payload re-sending the current entry, as the edit
-        # form always does) is allowed at any status. An actual change of
-        # the anchor is allowed only while PENDING; once VALIDATED (or
-        # REJECTED) the FK is immutable — repointing changes the tool the
-        # signal identifies, which is a delete + recreate flow.
-        if 'tech_catalog_entry' in attrs and instance is not None:
-            new_entry = attrs['tech_catalog_entry']
-            new_entry_id = new_entry.id if new_entry is not None else None
-            if (
-                new_entry_id != instance.tech_catalog_entry_id
-                and instance.status != SignalStatus.PENDING
-            ):
-                raise StandardizedValidationError({
-                    'tech_catalog_entry':
-                        SignalErrorMessages.TECHSTACK_CATALOG_ENTRY_LOCKED,
-                })
+        # --- tech_name may be corrected, never blanked ---
+        if 'tech_name' in attrs and not (attrs['tech_name'] or '').strip():
+            raise StandardizedValidationError({
+                'tech_name': SignalErrorMessages.TECHSTACK_NAME_REQUIRED,
+            })
 
         # --- Pair A: scope coherence ---
         touched_scope_fields = any(

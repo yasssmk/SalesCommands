@@ -8,7 +8,7 @@ SignalFilter.Meta.model to the concrete queryset model before
 django-filters runs its assertion check.
 
 Type-specific filters (what, dimension, scope_level, impact_type,
-human_impact, tech_catalog_entry, etc.) that do not exist on a given
+human_impact, usage_scope, etc.) that do not exist on a given
 model are silently harmless — django-filter ignores unknown field
 lookups via the dynamic model binding. This is the established
 pattern in this codebase.
@@ -21,10 +21,10 @@ Shared canonical axes (Pain + Objective + Impact):
 
 Filter inventory by signal type
 -------------------------------
-  Pain:       what, dimension, scope_level, related_techstack
+  Pain:       what, dimension, scope_level
   Objective:  what, dimension, scope_level
   Impact:     what, dimension, scope_level, impact_type, human_impact
-  TechStack:  tech_catalog_entry, usage_scope, usage_department,
+  TechStack:  tech_name_normalized, usage_scope, usage_department,
               is_discontinued, renewal_date_*, is_competitor,
               is_integration_target
 
@@ -152,7 +152,7 @@ class SignalFilter(django_filters.FilterSet):
     #
     # what / dimension form the canonical_key for all three qualification
     # signal types. TechStack signals have no what/dimension axes
-    # (canonical_key built from tech_catalog_entry FK instead) — these
+    # (TechStack is identified by tech_name instead) — these
     # filters are silently no-op on TechStack querysets.
 
     what      = CharInFilter(field_name='what',      lookup_expr='in')

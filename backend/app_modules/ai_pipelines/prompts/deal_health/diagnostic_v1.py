@@ -152,11 +152,26 @@ def _format_signal(signal_type, sig):
 
     # Type-specific fields
     if signal_type == 'techstack':
-        catalog = sig.get('catalog_name')
-        if catalog:
-            lines.append(f"    Tool: {catalog}")
+        # S10: the tool label and its qualification come from the signal
+        # itself (tech_name + the three booleans). The previous keys
+        # (catalog_name / is_integration_target) were derived from the
+        # TechCatalog FK the extractor no longer sets.
+        #
+        # TODO(S10 -> AI-sprint): these are bare "yes" markers. Once the
+        # AI sprint settles how the model is told to SET each flag (see
+        # the matching TODO in prompts/transcript_signals/techstack_v1.py),
+        # revisit how the diagnostic should WEIGH them — e.g. whether an
+        # incumbent competitor the account wants to replace should move
+        # the `willingness_to_act` dimension on its own.
+        tool = sig.get('tech_name')
+        if tool:
+            lines.append(f"    Tool: {tool}")
         if sig.get('is_competitor'):
             lines.append("    Competitor: yes")
+        if sig.get('is_integration'):
+            lines.append("    Integration: yes")
+        if sig.get('is_to_replace'):
+            lines.append("    To replace: yes")
         if sig.get('on_deal'):
             lines.append("    Evaluated on this deal: yes")
 

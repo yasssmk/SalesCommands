@@ -162,12 +162,17 @@ def build_context_layer(input_pack, brief_mode):
     comp = input_pack.get('competitive_context', {})
     incumbents = comp.get('incumbents', [])
     competing = comp.get('competing_on_deal', [])
-    if incumbents or competing:
+    # S10: new bucket, fed by TechStackSignal.is_to_replace. Overlaps
+    # with the two above by design — see _build_competitive_context.
+    to_replace = comp.get('to_replace', [])
+    if incumbents or competing or to_replace:
         comp_lines = ["COMPETITIVE CONTEXT"]
         for inc in incumbents:
             comp_lines.append(f"  Incumbent: {inc.get('tool', 'unknown')}")
         for c in competing:
             comp_lines.append(f"  Competitor on deal: {c.get('tool', 'unknown')}")
+        for r in to_replace:
+            comp_lines.append(f"  To replace: {r.get('tool', 'unknown')}")
         sections.append('\n'.join(comp_lines))
 
     # -- Evidence scope --

@@ -30,17 +30,6 @@ pytestmark = pytest.mark.django_db
 # FIXTURES
 # =============================================================================
 
-@pytest.fixture
-def tech_catalog_entry(db, client_account_a, user_a):
-    from app_modules.tech_catalog.models import TechCatalog
-    entry = TechCatalog(
-        company_name='Salesforce',
-        product_name='Sales Cloud',
-    )
-    entry.save(user=user_a, client_id=client_account_a.id)
-    return entry
-
-
 # =============================================================================
 # GUARD — tech_stack rejected at the service surface
 # =============================================================================
@@ -96,12 +85,12 @@ class TestClusterableTypesStillAccepted:
 class TestTechStackNoCanonicalKey:
 
     def test_save_with_catalog_entry_leaves_canonical_key_none(
-        self, account, activity, tech_catalog_entry, user_a,
+        self, account, activity, user_a,
     ):
         signal = TechStackSignal(
             account=account,
             source_activity=activity,
-            tech_catalog_entry=tech_catalog_entry,
+            tech_name='Salesforce',
             source=SignalSource.MANUAL,
         )
         signal.save(user=user_a, client_id=account.client_id)
@@ -114,7 +103,7 @@ class TestTechStackNoCanonicalKey:
         signal = TechStackSignal(
             account=account,
             source_activity=activity,
-            tech_catalog_entry=None,
+            tech_name='HubSpot',
             source=SignalSource.LLM_EXTRACTED,
         )
         signal.save(user=user_a, client_id=account.client_id)
@@ -126,7 +115,6 @@ class TestTechStackNoCanonicalKey:
 # =============================================================================
 
 _TECHSTACK_COMPAT_KEYS = (
-    'tech_catalog_entry',
     'lifecycle',
     'scope_summary',
     'has_renewal_soon',

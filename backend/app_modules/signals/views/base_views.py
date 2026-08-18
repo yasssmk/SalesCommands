@@ -154,10 +154,10 @@ class BaseSignalViewSet(
         select_related on top via super().get_queryset() chaining:
 
           PainSignalViewSet      → decision_cycle, campaign,
-                                    related_techstack
+                                    related_techstack_mention
           ObjectiveSignalViewSet → decision_cycle, campaign,
                                     target_contact, target_department
-          TechStackSignalViewSet → tech_catalog_entry, usage_department
+          TechStackSignalViewSet → usage_department
                                     (decision_cycle and campaign are
                                      shadow-overridden to None on the
                                      model — derived via source_activity

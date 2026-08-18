@@ -551,7 +551,7 @@ class SignalLLMSerializer(serializers.Serializer):
         return obj.__class__.__name__
 
     def get_summary(self, obj):
-        # Pain/Objective expose `summary`; TechStack uses tech_catalog_entry
+        # Pain/Objective expose `summary`; TechStack uses tech_name
         # display + notes (full implementation in SignalDataService.format_for_llm).
         # Here we keep a simple fallback chain to avoid a per-type branch
         # that duplicates the service logic.

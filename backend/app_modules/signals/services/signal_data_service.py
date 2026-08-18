@@ -75,8 +75,6 @@ _RELATED_BY_TYPE = {
         'validated_by',
         'decision_cycle',
         'campaign',
-        # Cross-reference TechCatalog:
-        'related_techstack',
     ],
     'objective': [
         'source_activity',
@@ -104,7 +102,6 @@ _RELATED_BY_TYPE = {
     'tech_stack': [
         'source_activity',
         'validated_by',
-        'tech_catalog_entry',  # Drives canonical_key + display payload.
         'usage_department',    # Often null but cheap to prefetch.
     ],
 }
@@ -299,7 +296,7 @@ class SignalDataService:
         - summary         : Pain / Objective use signal.summary (or
                             notes fallback). TechStack composes
                             "<company> <product>" from
-                            tech_catalog_entry plus notes when set.
+                            tech_name plus notes when set.
         - contact         : Now uniformly derived from
                             source_activity.contacts.first() across
                             all 3 types. Previous per-type branching
@@ -451,21 +448,21 @@ class SignalDataService:
         Resolve the summary text shown to the LLM.
 
         Pain / Objective : `summary` field.
-        TechStack        : "<company> <product>" from tech_catalog_entry,
+        TechStack        : `tech_name` (the raw tool name as observed),
                            optionally suffixed with notes when set.
-                           Replaces the legacy `tech_name` lookup that
-                           became obsolete with the catalog FK refactor.
+
+                           S10: this used to compose
+                           "<company> <product>" from the catalogue FK.
+                           The extractor no longer populates that FK, so
+                           reading it would return '' on every extracted
+                           signal and blank the tool name out of every
+                           LLM-facing payload built from this service.
         """
         if is_tech_stack:
             parts = []
-            entry = signal.tech_catalog_entry if signal.tech_catalog_entry_id else None
-            if entry:
-                tool_label = (
-                    f"{entry.company_name or ''} "
-                    f"{entry.product_name or ''}"
-                ).strip()
-                if tool_label:
-                    parts.append(tool_label)
+            tool_label = (getattr(signal, 'tech_name', '') or '').strip()
+            if tool_label:
+                parts.append(tool_label)
             notes = (getattr(signal, 'notes', '') or '').strip()
             if notes:
                 parts.append(notes)

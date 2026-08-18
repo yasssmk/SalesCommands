@@ -4,7 +4,6 @@
 import DatabaseOutlined from "@ant-design/icons/DatabaseOutlined";
 import BankOutlined from "@ant-design/icons/BankOutlined";
 import ShoppingOutlined from "@ant-design/icons/ShoppingOutlined";
-import AppstoreOutlined from "@ant-design/icons/AppstoreOutlined";
 import DeploymentUnitOutlined from "@ant-design/icons/DeploymentUnitOutlined";
 
 import { isFeatureEnabled } from "../config/features";
@@ -14,7 +13,6 @@ const icons = {
   DatabaseOutlined,
   BankOutlined,
   ShoppingOutlined,
-  AppstoreOutlined,
   DeploymentUnitOutlined,
 };
 
@@ -67,18 +65,6 @@ const businessData = {
           breadcrumbs: true,
           disabled: !isFeatureEnabled("PRODUCTS_MANAGEMENT"),
           tooltip: !isFeatureEnabled("PRODUCTS_MANAGEMENT") ? "Soon" : null,
-        },
-        {
-          id: "tech-catalog",
-          title: "tech-catalog",
-          type: "item",
-          url: isFeatureEnabled("TECH_CATALOG")
-            ? "/businessData/techCatalog"
-            : "#",
-          icon: icons.AppstoreOutlined,
-          breadcrumbs: true,
-          disabled: !isFeatureEnabled("TECH_CATALOG"),
-          tooltip: !isFeatureEnabled("TECH_CATALOG") ? "Soon" : null,
         },
       ],
     },

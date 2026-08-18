@@ -85,27 +85,6 @@ function resolveLabel(options, value) {
 }
 
 /**
- * Build the canonical display label for a TechCatalog entry.
- * Mirrors TechStackCard.getCatalogLabel — kept local for consistency
- * across the cards. The PainCard only consumes this for the optional
- * cross-reference chip.
- *
- *   { company_name: "Salesforce", product_name: "Sales Cloud" }
- *     → "Salesforce Sales Cloud"
- *   { company_name: "Notion", product_name: "Notion" }
- *     → "Notion"
- */
-function getCatalogLabel(entry) {
-  if (!entry) return "Unknown tool";
-  const company = entry.company_name?.trim() || "";
-  const product = entry.product_name?.trim() || "";
-  if (!company && !product) return "Unknown tool";
-  if (!company) return product;
-  if (!product || product === company) return company;
-  return `${company} ${product}`;
-}
-
-/**
  * Format an impact into a single readable line.
  *
  * BUSINESS   → "120k$/year lost productivity"
@@ -409,26 +388,10 @@ export default function PainCard({
    * Returns null when neither field is set so the section is suppressed
    * entirely rather than rendered with a placeholder.
    */
-  const relatedTech = useMemo(() => {
-    const entry = pain.related_techstack;
-    const mention = pain.related_techstack_mention?.trim() || "";
-
-    if (entry) {
-      return {
-        kind: "fk",
-        label: getCatalogLabel(entry),
-        isCompetitor: Boolean(entry.is_competitor),
-        isIntegrationTarget: Boolean(entry.is_integration_target),
-      };
-    }
-    if (mention) {
-      return {
-        kind: "mention",
-        label: mention,
-      };
-    }
-    return null;
-  }, [pain.related_techstack, pain.related_techstack_mention]);
+  const relatedTech = useMemo(
+    () => pain.related_techstack_mention?.trim() || null,
+    [pain.related_techstack_mention],
+  );
 
   /** Nested impacts — always an array, default empty */
   const impacts = useMemo(
@@ -638,12 +601,10 @@ export default function PainCard({
 
       {/* ==================== RELATED TOOL  ==================== */}
       {/*
-        Optional cross-reference to a TechCatalog entry. Surfaced when:
-          - related_techstack (structured FK)        — preferred
-          - related_techstack_mention (free text)    — fallback
-        The chip variant differentiates the two: solid primary for
-        the structured FK (with strategic flags if applicable),
-        outlined italic for the textual mention.
+        Optional free-text cross-reference (related_techstack_mention).
+        S10 removed the structured `related_techstack` FK along with the
+        tech catalogue, so there is one representation left and one chip
+        style to render it.
 
         Visible regardless of `pain.what` — the model is permissive
         (a non-TECH pain may legitimately reference a tool); the
@@ -661,52 +622,17 @@ export default function PainCard({
           <Typography variant="caption" color="text.disabled">
             Related tool:
           </Typography>
-          {relatedTech.kind === "fk" ? (
-            <>
-              <Chip
-                label={relatedTech.label}
-                size="small"
-                color="primary"
-                variant="outlined"
-                sx={{ fontSize: "0.65rem", height: 20, fontWeight: 500 }}
-              />
-              {relatedTech.isCompetitor && (
-                <Tooltip title="This vendor competes with us">
-                  <Chip
-                    label="Competitor"
-                    color="error"
-                    size="small"
-                    sx={{ fontSize: "0.6rem", height: 18 }}
-                  />
-                </Tooltip>
-              )}
-              {relatedTech.isIntegrationTarget && (
-                <Tooltip title="This vendor is an integration target">
-                  <Chip
-                    label="Integration"
-                    color="info"
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.6rem", height: 18 }}
-                  />
-                </Tooltip>
-              )}
-            </>
-          ) : (
-            <Tooltip title="Tool mention not yet matched against the catalog">
-              <Chip
-                label={relatedTech.label}
-                size="small"
-                variant="outlined"
-                sx={{
-                  fontSize: "0.65rem",
-                  height: 20,
-                  fontStyle: "italic",
-                  color: "text.secondary",
-                }}
-              />
-            </Tooltip>
-          )}
+          <Chip
+            label={relatedTech}
+            size="small"
+            variant="outlined"
+            sx={{
+              fontSize: "0.65rem",
+              height: 20,
+              fontStyle: "italic",
+              color: "text.secondary",
+            }}
+          />
         </Stack>
       )}
 
@@ -833,20 +759,7 @@ PainCard.propTypes = {
         impacted_contact: PropTypes.object,
       }),
     ),
-    /**
-     * Optional cross-reference to a TechCatalog entry.
-     * The backend exposes a compact catalog payload via _PainDisplayMixin
-     * (id + company_name + product_name + is_competitor +
-     * is_integration_target).
-     */
-    related_techstack: PropTypes.shape({
-      id: PropTypes.string,
-      company_name: PropTypes.string,
-      product_name: PropTypes.string,
-      is_competitor: PropTypes.bool,
-      is_integration_target: PropTypes.bool,
-    }),
-    /** Free-text fallback when the catalog doesn't include the tool yet. */
+    /** Optional free-text tool cross-reference. */
     related_techstack_mention: PropTypes.string,
   }).isRequired,
   choices: PropTypes.object,

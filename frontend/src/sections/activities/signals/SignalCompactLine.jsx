@@ -148,10 +148,7 @@ SignalCompactLine.propTypes = {
     id: PropTypes.string.isRequired,
     status: PropTypes.string.isRequired,
     summary: PropTypes.string,
-    tech_catalog_entry: PropTypes.shape({
-      product_name: PropTypes.string,
-      company_name: PropTypes.string,
-    }),
+    tech_name: PropTypes.string,
     metadata: PropTypes.object,
   }).isRequired,
   signalType: PropTypes.oneOf(["pain", "objective", "impact", "tech-stack"])

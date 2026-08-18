@@ -480,11 +480,8 @@ class SignalErrorMessages:
         "Business objectives must not specify a target department."
     )
 
-    TECHSTACK_CATALOG_ENTRY_REQUIRED = _(
-        "A tech stack signal must reference a tech catalog entry."
-    )
-    TECHSTACK_CATALOG_ENTRY_LOCKED = _(
-        "The tech catalog entry cannot be changed once the signal is validated."
+    TECHSTACK_NAME_REQUIRED = _(
+        "A tech stack signal must name the tool it observes."
     )
     TECHSTACK_DEPT_REQUIRES_DEPT = _(
         "Tech stack signals with usage_scope=DEPARTMENT require a usage department."
@@ -603,15 +600,6 @@ class AIPipelineErrorMessages:
         "The AI did not extract any signal from the transcript. You can "
         "retry or add signals manually."
     )
-
-class TechCatalogErrorMessages:
-    """Error messages for the TechCatalog module."""
-
-    # Field-level validation
-    NAME_REQUIRED       = _("Name is required.")
-    ALIASES_NOT_LIST    = _("Aliases must be a list of strings.")
-    ALIAS_NOT_STRING    = _("Each alias must be a string.")
-
 
 class OpportunityErrorMessages:
     """Opportunity and Pipeline specific error messages"""

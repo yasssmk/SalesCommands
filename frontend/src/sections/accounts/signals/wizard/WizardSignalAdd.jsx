@@ -456,8 +456,6 @@ export default function WizardSignalAdd({
         //   target_contact       — Objective (target of the relation)
         //   source_activity      — All types (optional except Pain where
         //                          it is required by the backend serializer)
-        //   tech_catalog_entry   — TechStack catalog anchor (required)
-        //   related_techstack    — Pain cross-reference to a TechCatalog
         //                          entry (optional, only meaningful when
         //                          what === 'TECH'). Field exposed by
         //                          InlinePainForm in sub-step 7.1.
@@ -478,25 +476,6 @@ export default function WizardSignalAdd({
           typeof payload.source_activity === "object"
         ) {
           payload.source_activity = payload.source_activity.id;
-        }
-        // tech_catalog_entry — TechStack required FK. The form stores the
-        // full TechCatalog object (so the picker can rehydrate its label
-        // on edit without a re-fetch); the backend write serializer
-        // accepts a UUID string.
-        if (
-          payload.tech_catalog_entry &&
-          typeof payload.tech_catalog_entry === "object"
-        ) {
-          payload.tech_catalog_entry = payload.tech_catalog_entry.id;
-        }
-        // related_techstack — optional Pain cross-reference. Same pattern
-        // as tech_catalog_entry. Defensive normalisation today; the field
-        // becomes live once InlinePainForm is extended in sub-step 7.1.
-        if (
-          payload.related_techstack &&
-          typeof payload.related_techstack === "object"
-        ) {
-          payload.related_techstack = payload.related_techstack.id;
         }
 
         const result = await createSignal(type, {

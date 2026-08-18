@@ -278,10 +278,14 @@ CANNED_REPLIES_HAPPY = {
         '"is_inferred": false'
         '}]}'
     ),
+    # S10: free-text identity + the three qualification booleans.
+    # Replaces the old tech_catalog_entry_id / tech_name_raw XOR.
     'techstack': (
         '{"signals": [{'
-        '"tech_catalog_entry_id": null, '
-        '"tech_name_raw": "Salesforce", '
+        '"tech_name": "Salesforce", '
+        '"is_competitor": true, '
+        '"is_integration": false, '
+        '"is_to_replace": false, '
         '"usage_scope": "COMPANY", '
         '"source_quote": "We use Salesforce across the company", '
         '"confidence": 0.9, '

@@ -20,7 +20,6 @@ import {
   EditOutlined,
   UserOutlined,
   CalendarOutlined,
-  WarningOutlined,
 } from "@ant-design/icons";
 
 // Project imports
@@ -99,8 +98,6 @@ export default function SignalDetailCard({
       ? formatContact(signal.target_contact)
       : formatContact(contact);
   const validateDisabled = missingFields.length > 0;
-  const techPending =
-    signalType === "tech-stack" && getTechSummary(signal).pending;
 
   return (
     <Box
@@ -129,25 +126,6 @@ export default function SignalDetailCard({
             size="small"
             variant="outlined"
           />
-        )}
-        {techPending && (
-          <Tooltip
-            title={
-              onEdit
-                ? "Attach a catalog entry to validate this tool"
-                : "Not in your tech catalog"
-            }
-          >
-            <Chip
-              icon={<WarningOutlined style={{ fontSize: 12 }} />}
-              label="Not in catalog"
-              size="small"
-              color="warning"
-              variant="outlined"
-              onClick={onEdit ? () => onEdit(signal, signalType) : undefined}
-              sx={onEdit ? { cursor: "pointer" } : undefined}
-            />
-          </Tooltip>
         )}
         {isPeople && signal.role_display && (
           <Chip label={signal.role_display} size="small" variant="outlined" />
@@ -283,7 +261,10 @@ SignalDetailCard.propTypes = {
     source_context: PropTypes.shape({
       contacts: PropTypes.arrayOf(PropTypes.object),
     }),
-    tech_catalog_entry: PropTypes.object,
+    tech_name: PropTypes.string,
+    is_competitor: PropTypes.bool,
+    is_integration: PropTypes.bool,
+    is_to_replace: PropTypes.bool,
     metadata: PropTypes.object,
   }).isRequired,
   signalType: PropTypes.oneOf([

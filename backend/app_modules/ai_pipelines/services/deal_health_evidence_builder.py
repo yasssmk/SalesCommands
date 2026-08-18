@@ -145,10 +145,12 @@ class DealHealthEvidenceBuilder:
                     decision_cycle=dc, status=validated,
                 ).select_related('target_department')
             ),
+            # S10: tech identity lives on the signal's own columns, so
+            # the catalogue FK is no longer joined.
             'techstack': self._serialize_techstack_signals(
                 TechStackSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('tech_catalog_entry', 'usage_department')
+                ).select_related('usage_department')
             ),
             'blocker': self._serialize_blocker_signals(
                 BlockerSignal.objects.filter(
@@ -228,23 +230,28 @@ class DealHealthEvidenceBuilder:
 
     @staticmethod
     def _serialize_techstack_signals(qs):
+        """
+        Tech evidence, read entirely off the signal (S10).
+
+        Was: the tool label came from str(tech_catalog_entry) and the two
+        commercial flags from that catalogue row. The extractor no longer
+        populates the FK, so all three emitted None / False / False and
+        the tool name vanished from the diagnostic prompt.
+
+        `canonical_key` is not emitted: TechStack is not clusterable, so
+        it was always None. diagnostic_v1._format_signal falls back to the
+        signal type for its header line when the key is absent.
+
+        `is_to_replace` is new here — the catalogue had no equivalent.
+        """
         return [
             {
                 'summary': '',
                 'source_quote': s.source_quote or '',
-                'canonical_key': s.canonical_key,
-                'catalog_name': (
-                    str(s.tech_catalog_entry)
-                    if s.tech_catalog_entry else None
-                ),
-                'is_competitor': (
-                    s.tech_catalog_entry.is_competitor
-                    if s.tech_catalog_entry else False
-                ),
-                'is_integration_target': (
-                    s.tech_catalog_entry.is_integration_target
-                    if s.tech_catalog_entry else False
-                ),
+                'tech_name': s.tech_name or '',
+                'is_competitor': s.is_competitor,
+                'is_integration': s.is_integration,
+                'is_to_replace': s.is_to_replace,
                 'on_deal': s.decision_cycle_id is not None,
                 'usage_department': (
                     s.usage_department.get_name_display()

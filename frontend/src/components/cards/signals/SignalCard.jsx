@@ -311,27 +311,14 @@ ObjectiveSignalBody.propTypes = { signal: PropTypes.object.isRequired };
  * and calls SignalCard directly with signalType='tech-stack' — a case
  * that should never happen in normal flow.
  *
- * The legacy TechStackSignal model fields (tech_name, category,
- * satisfaction, usage, limitations, workarounds, integrations,
- * renewal_date as a flat field) no longer exist on the new model.
- * The current model is anchored on a TechCatalog FK and exposes
- * structured lifecycle / scope nested fields — handled exclusively
- * by TechStackCard.
+ * The current model identifies the tool by free text (`tech_name`)
+ * and carries structured lifecycle / scope fields plus the three
+ * qualification booleans — handled exclusively by TechStackCard.
  */
 function TechStackSignalBody({ signal }) {
-  // Try to derive a minimal label from the new catalog payload so
-  // the fallback isn't completely opaque to the rep if it ever lands.
-  const entry = signal.tech_catalog_entry;
-  const company = entry?.company_name?.trim() || "";
-  const product = entry?.product_name?.trim() || "";
-  const label =
-    !company && !product
-      ? "Unknown tool"
-      : !company
-        ? product
-        : !product || product === company
-          ? company
-          : `${company} ${product}`;
+  // Minimal label so the fallback isn't opaque to the rep if it ever
+  // lands. S10: read the signal's own name, not a catalogue payload.
+  const label = signal.tech_name?.trim() || "Unknown tool";
 
   return (
     <Stack spacing={0.75} sx={{ mt: 1 }}>
@@ -710,11 +697,7 @@ SignalCard.propTypes = {
     // TechStackSignal — fallback path only. Authoritative shape lives
     // on TechStackCard.propTypes; here we keep the minimal subset the
     // fallback components actually read.
-    tech_catalog_entry: PropTypes.shape({
-      id: PropTypes.string,
-      company_name: PropTypes.string,
-      product_name: PropTypes.string,
-    }),
+    tech_name: PropTypes.string,
   }).isRequired,
 
   /** Signal type — never inferred from the signal object itself */

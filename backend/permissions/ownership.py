@@ -216,15 +216,6 @@ OWNERSHIP_MAP: Dict[str, Dict[OwnershipKey, str]] = {
         'account_fk': '-',                           # Not applicable
     },
 
-    'tech_catalog': {
-        'client_account_fk': 'client_id',           # TechCatalog.client_id
-        'owner_user': '-',                          # No per-record owner
-        'owner_team': '-',                          # No team ownership
-        'created_by': 'created_by_id',              # ModuleBaseModel.created_by
-        'assigned_to_user': '-',                    # Not applicable
-        'account_fk': '-',                           # Not applicable (no Account FK)
-    },
-
     'product_catalog': {
         'client_account_fk': 'client_id',           # ProductCatalog.client_id
         'owner_user': '-',                          # No per-record owner
@@ -275,7 +266,6 @@ OWNERSHIP_TYPES = {
     'pipelines': 'opportunity',   # Inherits from opportunity (buying process)
     'templates': 'none',          # No ownership
     'products': 'none',          # No ownership
-    'tech_catalog': 'none',       # Tenant-level master catalog (admin-curated)
     'product_catalog': 'none',    # Tenant-level product catalog (admin-curated)
     'signals': 'none',            # Operational records — tenant-wide collaboration
     'ai_pipelines': 'none',       # Audit records — tenant-wide read on metadata only

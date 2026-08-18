@@ -42,10 +42,10 @@ The standardisation refactor removed the `source_contact` FK from
 BaseSignal -- source contacts are derived at read time from
 `source_activity.contacts`. The LLM emits no contact hint.
 
-Optional PainSignal fields (notes, related_techstack,
-related_techstack_mention) are NOT extracted in v1:
+Optional PainSignal fields (notes, related_techstack_mention) are NOT
+extracted in v1:
   * notes is rep-authored qualitative context, added post-validation.
-  * related_techstack / related_techstack_mention are cross-references
+  * related_techstack_mention is a cross-reference
     to the techstack sub-call. v1 leaves the cross-link to the rep
     during validation.
 

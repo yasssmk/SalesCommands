@@ -44,7 +44,6 @@ export const FEATURES = {
   TERRITORIES: true,       // Territory management - Active
   CAMPAIGNS: true,         // Campaign management - Active
   SALES_PLAN: false,       // Sales planning - Coming soon
-  TECH_CATALOG: true,         // Tech catalog (master list of products) - Active
   
   // ============================================
   // BUSINESS DATA FEATURES

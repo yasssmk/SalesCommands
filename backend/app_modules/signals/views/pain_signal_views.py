@@ -3,7 +3,7 @@
 PainSignalViewSet — CRUD + validate/reject for PainSignal.
 
 Inherits all shared logic from BaseSignalViewSet. Extends get_queryset()
-with PainSignal-specific FKs (decision_cycle, campaign, related_techstack)
+with PainSignal-specific FKs (decision_cycle, campaign)
 that do not exist on every concrete signal type and therefore are not
 preloaded by the base.
 """
@@ -61,7 +61,7 @@ class PainSignalViewSet(BaseSignalViewSet):
           - decision_cycle      : exposed inside the source_context block
                                   on detail responses.
           - campaign            : same.
-          - related_techstack   : compact TechCatalog payload rendered by
+          - related_techstack_mention : free-text tool trace rendered by
                                   the Pain List and Detail serializers
                                   on every row (no extra query per row).
         """
@@ -69,6 +69,5 @@ class PainSignalViewSet(BaseSignalViewSet):
         qs = qs.select_related(
             'decision_cycle',
             'campaign',
-            'related_techstack',
         )
         return qs

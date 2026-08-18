@@ -21,7 +21,7 @@ transcript_signals/context.py rather than copying the rendering code.
     must propagate to every pipeline that uses it -- import-side reuse
     guarantees that.
 
-  * We do NOT import _build_taxonomy_block or _build_techcatalog_block:
+  * We do NOT import _build_taxonomy_block:
     NextStepSignal has no canonical axes and is not tied to the
     TechCatalog. The next-step prompt is meant to elicit a STRUCTURED
     PAYLOAD (suggested_title / suggested_activity_type /

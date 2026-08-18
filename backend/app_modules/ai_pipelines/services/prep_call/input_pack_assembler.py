@@ -245,10 +245,13 @@ class PrepInputPackAssembler:
                     'target_department__name',
                 )
             ),
+            # S10: tech identity lives on the signal's own columns, so
+            # the catalogue FK is no longer joined. usage_department is
+            # not read by _serialize_techstack_signals either.
             'techstack': self._serialize_techstack_signals(
                 TechStackSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('tech_catalog_entry', 'usage_department')
+                )
             ),
             'blocker': self._serialize_blocker_signals(
                 BlockerSignal.objects.filter(
@@ -284,19 +287,22 @@ class PrepInputPackAssembler:
 
     @staticmethod
     def _serialize_techstack_signals(qs):
+        """
+        Tech rows, read entirely off the signal (S10).
+
+        Was: label from str(tech_catalog_entry), flags from that
+        catalogue row. The extractor no longer sets the FK, so every row
+        came out {None, False, False} and _build_competitive_context
+        below produced tools named "unknown" in the prompt.
+
+        `is_to_replace` is new here — the catalogue had no equivalent.
+        """
         return [
             {
-                'catalog_name': (
-                    str(s.tech_catalog_entry) if s.tech_catalog_entry else None
-                ),
-                'is_competitor': (
-                    s.tech_catalog_entry.is_competitor
-                    if s.tech_catalog_entry else False
-                ),
-                'is_integration_target': (
-                    s.tech_catalog_entry.is_integration_target
-                    if s.tech_catalog_entry else False
-                ),
+                'tech_name': s.tech_name or '',
+                'is_competitor': s.is_competitor,
+                'is_integration': s.is_integration,
+                'is_to_replace': s.is_to_replace,
             }
             for s in qs
         ]
@@ -444,17 +450,36 @@ class PrepInputPackAssembler:
 
     @staticmethod
     def _build_competitive_context(signals):
+        """
+        Split the account's tooling into commercial buckets.
+
+        S10: reads `tech_name` (was `catalog_name`, derived from the
+        TechCatalog FK the extractor no longer sets — every tool was
+        rendering as "unknown" in the prompt).
+
+        `to_replace` is a NEW bucket, not a partition of the other two: a
+        tool the account intends to drop is an open door whether or not
+        we compete with it, so a competitor slated for replacement
+        legitimately appears in both `competing_on_deal` and `to_replace`.
+        `incumbents` and `competing_on_deal` stay mutually exclusive, as
+        before.
+        """
         techstack = signals.get('techstack', [])
         return {
             'incumbents': [
-                {'tool': t['catalog_name'], 'is_competitor': t['is_competitor']}
+                {'tool': t['tech_name'], 'is_competitor': t['is_competitor']}
                 for t in techstack
                 if not t.get('is_competitor')
             ],
             'competing_on_deal': [
-                {'tool': t['catalog_name'], 'is_competitor': True}
+                {'tool': t['tech_name'], 'is_competitor': True}
                 for t in techstack
                 if t.get('is_competitor')
+            ],
+            'to_replace': [
+                {'tool': t['tech_name'], 'is_competitor': t['is_competitor']}
+                for t in techstack
+                if t.get('is_to_replace')
             ],
         }
 

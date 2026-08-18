@@ -14,14 +14,14 @@
  *   - Source Contact            → person who reported it (required)
  *   - Source Quote              → verbatim excerpt (optional)
  *   - Notes                     → additional qualitative context (optional)
- *   - Related TechStack         → optional cross-reference to a TechCatalog
+ *   - Related tool              → optional free-text cross-reference
  *                                  entry — only surfaced when what === 'TECH'
  *   - Related TechStack mention → optional free-text fallback when the
  *                                  catalog doesn't include the tool yet
  *
  * Cross-reference rule (UI-only)
  * ------------------------------
- * The two related_techstack fields are independent at the model level
+ * The related_techstack_mention field is independent at the model level
  * (see PainSignal model docstring) but the UI nudges the rep toward
  * the structured FK: the mention TextField is hidden as soon as a
  * catalog entry is picked. The rep can clear the FK to surface the
@@ -69,7 +69,6 @@ import PlusOutlined from "@ant-design/icons/PlusOutlined";
 // project imports
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import AsyncActivitySelect from "components/AsyncSelection/AsyncActivitySelect";
-import AsyncTechCatalogSelect from "components/AsyncSelection/AsyncTechCatalogSelect";
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -103,7 +102,6 @@ const validationSchema = Yup.object({
   // No .when() guard on `what`: the section is unmounted entirely when
   // what !== 'TECH', and useEffect clears both fields on transition,
   // so a stale value can never reach validation.
-  related_techstack: Yup.object().nullable(),
   related_techstack_mention: Yup.string()
     .nullable()
     .max(200, "Mention must be 200 characters or fewer"),
@@ -127,9 +125,7 @@ function buildInitialValues(defaultContact) {
     notes: "",
 
     // Cross-reference — TechStack
-    // Object whole for the FK (AsyncTechCatalogSelect compatibility),
     // empty string for the mention (TextField default).
-    related_techstack: null,
     related_techstack_mention: "",
   };
 }
@@ -253,13 +249,11 @@ export default function InlinePainForm({
       // section (when what !== 'TECH'), in which case the useEffect
       // above has already cleared the fields to null / "".
       //
-      //   related_techstack          : object | null  → wizard extracts
       //                                 .id at dispatch time (or sends null)
       //   related_techstack_mention  : string ('' allowed)
       //                                 The model field is CharField with
       //                                 blank=True, so '' is a valid
       //                                 "no mention" signal — never null.
-      payload.related_techstack = values.related_techstack ?? null;
       payload.related_techstack_mention =
         values.related_techstack_mention &&
         values.related_techstack_mention.trim()
@@ -298,10 +292,8 @@ export default function InlinePainForm({
   useEffect(() => {
     if (
       formik.values.what !== "TECH" &&
-      (formik.values.related_techstack ||
-        formik.values.related_techstack_mention)
+      formik.values.related_techstack_mention
     ) {
-      formik.setFieldValue("related_techstack", null);
       formik.setFieldValue("related_techstack_mention", "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -555,39 +547,15 @@ export default function InlinePainForm({
               <SectionHeader
                 index={3}
                 title="Related tool (optional)"
-                subtitle="If this pain involves a specific tool, link it to the catalog."
+                subtitle="If this pain involves a specific tool, name it."
               />
 
-              {/* Catalog picker — primary surface */}
-              <AsyncTechCatalogSelect
-                label="Related tool"
-                value={formik.values.related_techstack}
-                onChange={(_e, entry) =>
-                  formik.setFieldValue("related_techstack", entry)
-                }
-                onBlur={() => formik.setFieldTouched("related_techstack", true)}
-                error={
-                  formik.touched.related_techstack &&
-                  Boolean(formik.errors.related_techstack)
-                }
-                helperText={
-                  (formik.touched.related_techstack &&
-                    formik.errors.related_techstack) ||
-                  "Pick the tool from your tenant's tech catalog if it's already there."
-                }
-              />
-
-              {/* Mention TextField — fallback when the FK is empty.
-                  Hiding it on FK selection keeps the form compact and
-                  reinforces the structured choice without blocking the
-                  rep from removing the FK to surface the mention. */}
-              {!formik.values.related_techstack && (
-                <TextField
+              <TextField
                   fullWidth
                   size="small"
                   id="pain-related-techstack-mention"
                   name="related_techstack_mention"
-                  label="Tool mention (free text)"
+                  label="Related tool"
                   placeholder="e.g. Salesforce, the legacy CRM, our scheduling tool…"
                   value={formik.values.related_techstack_mention}
                   onChange={formik.handleChange}
@@ -599,11 +567,10 @@ export default function InlinePainForm({
                   helperText={
                     (formik.touched.related_techstack_mention &&
                       formik.errors.related_techstack_mention) ||
-                    "Type the tool's name. We'll catalog it later — once it's in the catalog, you can come back and link it properly."
+                    "Type the tool's name as it came up. Free text — it is a trace on the pain, not a link."
                   }
                   inputProps={{ maxLength: 200 }}
-                />
-              )}
+              />
             </Stack>
 
             <Divider />
