@@ -205,6 +205,28 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         return max(0, delta)
     
     @property
+    def total_deal_value(self):
+        """The cycle's deal amount: Σ of its DealProduct lines.
+
+        THE single source of truth for a DC amount. The formula lives once, in
+        SQL, in services/deal_value_sql.py — this accessor never re-implements
+        it, so a single-cycle read and a mass roll-up can never disagree.
+
+        Cost: FREE on a queryset annotated with ``annotate_deal_value()`` (the
+        annotation is read straight off the instance); ONE query otherwise.
+        Never read this in a loop over many cycles — annotate instead.
+
+        Distinct from ``estimated_value``, which is a manual, independent field
+        (its reconciliation with this roll-up is TD-75).
+        """
+        from .services.deal_value_sql import DEAL_VALUE_ALIAS, deal_value_for
+
+        annotated = getattr(self, DEAL_VALUE_ALIAS, None)
+        if annotated is not None:
+            return annotated
+        return deal_value_for(self)
+
+    @property
     def steps_count(self):
         """Return total number of steps in this cycle."""
         return self.steps.count()

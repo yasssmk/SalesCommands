@@ -245,9 +245,18 @@ def _all_field_names():
 
 class TestDecisionCycleRollUp:
 
-    def test_no_total_deal_value_attribute(self):
-        """Tripwire: there is no DC-level total today, stored or computed."""
-        assert not hasattr(DecisionCycle, 'total_deal_value')
+    def test_total_deal_value_is_derived_never_stored(self):
+        """Sub-step 2 added ``DecisionCycle.total_deal_value`` as the single
+        source of truth (tripwire updated then; it previously asserted that no
+        DC-level total existed at all).
+
+        It stays DERIVED: no column, no stored total, nothing to keep in sync.
+        Its parity with the SQL roll-up is covered by test_deal_value_rollup.py.
+        """
+        assert hasattr(DecisionCycle, 'total_deal_value')
+        assert isinstance(
+            DecisionCycle.__dict__['total_deal_value'], property
+        )
         assert 'total_deal_value' not in {
             f.name for f in DecisionCycle._meta.concrete_fields
         }

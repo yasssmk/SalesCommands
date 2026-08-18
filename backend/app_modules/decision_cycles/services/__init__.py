@@ -15,6 +15,12 @@ from .cycle_aggregation_service import CycleAggregationService
 from .readiness_score_service import ReadinessScoreService
 from .people_consolidation_service import PeopleConsolidationService
 from .derivation_sql import annotate_step_derived_status, annotate_cycle_state
+from .deal_value_sql import (
+    DEAL_VALUE_ALIAS,
+    DEAL_VALUE_SUM,
+    annotate_deal_value,
+    deal_value_for,
+)
 
 __all__ = [
     'CompletenessScoreService',
@@ -25,4 +31,8 @@ __all__ = [
     'PeopleConsolidationService',
     'annotate_step_derived_status',
     'annotate_cycle_state',
+    'DEAL_VALUE_ALIAS',
+    'DEAL_VALUE_SUM',
+    'annotate_deal_value',
+    'deal_value_for',
 ]
