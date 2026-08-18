@@ -337,6 +337,86 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint S10 ✅ — Suppression du catalogue tech + signal tech autoporté (branche `feat/s10-techstack-signal`)
+- **Objectif** : RETIRER le modèle de catalogue tech et accepter tout signal tech
+  TEL QUEL, avec le mécanisme anti-doublon LE PLUS SIMPLE POSSIBLE + un filtrage
+  par technologie.
+- **Livré** :
+  - **Catalogue tech SUPPRIMÉ** : modèle `TechCatalog` + table + données, CRUD
+    back (viewset / serializers / urls / registry permissions / feature flag) et
+    front (route, vue liste, modale, formulaires add/edit/delete, API layer,
+    `AsyncTechCatalogSelect`), et le **workflow admin de validation** (émetteur
+    E4 « tech inconnue », endpoint `/tech-stack/detected/`, catégorie
+    `UNKNOWN_TECH_DETECTED`).
+  - **Le signal tech porte désormais son identité** : `tech_name` (brut, tel
+    qu'écrit — affichage) + `tech_name_normalized` (INDEXÉ, clé de
+    regroupement / filtre / dédup, DÉRIVÉE au `save()` par lower + trim +
+    collapse des espaces internes). `tech_name` est la source de vérité unique :
+    la colonne normalisée est recalculée à chaque écriture, les deux ne peuvent
+    pas désynchroniser. `save()` est le point de normalisation UNIQUE (pipeline,
+    API REST, shell, commande de management passent tous par là).
+  - **3 booléens INDÉPENDANTS** : `is_competitor` / `is_integration` /
+    `is_to_replace`. Toutes les combinaisons sont valides ;
+    **false/false/false = techno simplement utilisée** (cas courant, pas une
+    anomalie). Les métadonnées par compte sont CONSERVÉES intactes (usage_scope,
+    département, année de début, renouvellement, coût, discontinuation, notes).
+  - **Extraction transcript REFONDUE** : le LLM sort `tech_name` + les 3
+    booléens ; le XOR `tech_catalog_entry_id` / `tech_name_raw` (match catalogue
+    par UUID) est supprimé, ainsi que l'injection du catalogue tenant dans le
+    prompt. Dédup de batch repointée sur le NOM NORMALISÉ (via le helper du
+    modèle, réutilisé — pas ré-implémenté). Effet de bord : la surface
+    d'attaque cross-tenant disparaît avec l'UUID (plus aucun identifiant tenant
+    envoyé au modèle ni relu de lui sur ce chemin).
+  - **Packs IA repointés** (deal-health + prep-call) sur `tech_name` + booléens ;
+    ils lisaient la FK catalogue et sortaient `None` / `False` depuis la refonte
+    d'extraction. Bucket **`to_replace`** ajouté au contexte concurrentiel prep-call,
+    **chevauchant et non partitionnant** : un outil que le compte veut quitter est
+    une porte ouverte, qu'on le concurrence ou non.
+  - **Filtre `has_tech_stack` repointé** sur `tech_name_normalized` (match exact
+    sur la forme normalisée, entrée normalisée par le même helper, sémantique
+    liste/OR conservée, entrée blanche = PAS de filtre). Ferme TD-61 — et la
+    dette était sous-évaluée : le filtre ne « ne matchait rien », il **levait**
+    (`bigint = uuid`), donc renvoyait un 500.
+  - **`PainSignal.related_techstack` (FK) supprimée** ; `related_techstack_mention`
+    (texte libre) CONSERVÉE — le lien Pain↔outil survit comme la trace textuelle
+    qu'il a toujours été.
+- **Migrations** : `module_signals/0024` (retrait des 2 FK + 3 index, dont
+  l'index inert `tssig_account_canon_idx`), `tech_catalog/0002`
+  (`DeleteModel`, dépendant de `0024` pour que les FK `PROTECT` tombent AVANT
+  la table), `notifications/0004` (retrait de la catégorie E4).
+- **Validation** : suites backend vertes (531 au dernier run PO) ; front vitest
+  796 tests verts ; `next build` sans import non résolu.
+- **Dette fermée** : TD-61, TD-62, TD-63, TD-67. **TD-60 reste OPEN** —
+  l'endpoint mort `/company-accounts/<id>/tech-stacks/` n'a PAS été touché par
+  S10 (vérifié sur la branche : route, action et appel `get_tech_stacks_data`
+  toujours présents). **Dette ajoutée** : TD-166 (`tech_catalog` gardé en app
+  migrations-only), TD-167 (commentaires front de filiation obsolètes).
+- **⏸️ REPORTÉ — à NE PAS considérer comme livré** :
+  - **Wording de qualification par booléen dans les prompts** — délibérément
+    hors périmètre S10 (le sprint a posé le SCHÉMA de sortie, pas la pédagogie).
+    Ancres `TODO(S10→AI-sprint)` laissées dans
+    `prompts/transcript_signals/techstack_v1.py` (définitions par booléen,
+    distinction PASSÉ/FUTUR pour `is_to_replace`, few-shots) et
+    `prompts/transcript_signals/context.py` (données de grounding éventuelles).
+    **Jusque-là le LLM SOUS-REMPLIRA les booléens** — mode d'échec choisi :
+    un rep coche une case, alors qu'un faux « concurrent » oriente mal le deal.
+    → **Bloc « Commandes IA » (#4)**.
+  - **Affichage** : liste des technologies au niveau COMPTE + concurrents /
+    intégrations au niveau DC. → **Sprints UI signaux / DC**.
+  - **UI du filtre par technologie** (le backend filtre, rien ne le pilote
+    depuis l'interface). → **Sprint Filtres & recherche transverses**.
+  - **Regroupement / UI de cluster pour l'affichage des signaux tech** — écarté
+    par le PO au cadrage S10. Le mécanisme anti-doublon tech est INDÉPENDANT des
+    clusters pain / impact / objectif : TechStack n'a PAS de `canonical_key` et
+    n'est pas servi par `SignalClusterService`. → **Sprint UI signaux**.
+  - **SMOKE TRANSVERSE de la chaîne tech** (extraction → qualification →
+    affichage compte/DC → filtre), à exécuter une fois Commandes IA + DC +
+    Filtres livrés. **S10 n'est pas smoquable seul** : ses débouchés visibles
+    vivent dans ces sprints.
+- **Prochain jalon** (ordre cible) : **Bloc « Modèle Decision Cycle » (#3)**.
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -358,6 +438,12 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
    ce sprint (objectif + ciblage départements + retrait mode ACCOUNT seulement).
    Prochain sprint : #2 S10 — Tech Catalogue.**
 2. **S10 — Tech Catalogue** — RECADRÉ. Fiche existante conservée + note.
+   **✅ LIVRÉ (branche `feat/s10-techstack-signal`) — voir la fiche « Sprint S10 ✅ »
+   ci-dessus.** Catalogue supprimé, signal tech autoporté (`tech_name` +
+   `tech_name_normalized` + 3 booléens). NB : l'AFFICHAGE (technos au niveau compte,
+   concurrents/intégrations au niveau DC), l'UI du filtre et le WORDING des prompts
+   de qualification ne sont PAS livrés — voir « ⏸️ REPORTÉ » dans la fiche.
+   Prochain sprint : #3 Bloc « Modèle Decision Cycle ».
 3. **Bloc « Modèle Decision Cycle »** (regroupe deux fiches conservées) :
    Sprint C — Produit & Finance + Sprint decision_cycles/steps.
 4. **Bloc « Commandes IA »** (UN SEUL sprint, pensé d'un bloc, sous-étapes
@@ -899,6 +985,12 @@ campagnes. **Le chip est la référence.**
 > doublons AVEC LE SYSTÈME LE PLUS SIMPLE POSSIBLE + FILTRAGE des technologies.
 > Revérifier le bug « HubSpot n'apparaît jamais » (lié à l'anti-doublon
 > actuel). Contenu existant « À cadrer » conservé.
+>
+> **✅ LIVRÉ — voir la fiche « Sprint S10 ✅ » plus haut** (branche
+> `feat/s10-techstack-signal`). NB : le bug « HubSpot n'apparaît jamais » a été
+> ÉCARTÉ par le PO au cadrage et n'a pas été traité ; l'audit S10 l'a rattaché à
+> la classification du prompt (tech vendeur vs prospect), pas au mapping
+> d'extraction — cf. TD-64, qui reste OPEN et relève du bloc « Commandes IA ».
 
 ### S11 — Signals UX (+ TD-29)
 - **Objectif** : améliorer l'UX des signaux, réponse aux notes de signal.
