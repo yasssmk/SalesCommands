@@ -106,7 +106,7 @@ describe("SignalDetailCard", () => {
       id: "ts1",
       status: "PENDING",
       _signalType: "tech-stack",
-      tech_catalog_entry: { product_name: "Salesforce" },
+      tech_name: "Salesforce",
       source_quote: "We use Salesforce for everything",
       source_context: { contacts: [] },
     };
@@ -140,11 +140,11 @@ describe("SignalDetailCard", () => {
 
   // ==============================|| TECH STACK NAME (Fix 3a) ||============================== //
 
-  it("renders tech_catalog_entry.product_name for tech-stack", () => {
+  it("renders tech_name for tech-stack", () => {
     const signal = {
       id: "ts1",
       status: "PENDING",
-      tech_catalog_entry: { product_name: "Salesforce", company_name: "SFDC" },
+      tech_name: "Salesforce",
       source_context: { contacts: [] },
     };
     render(<SignalDetailCard signal={signal} signalType="tech-stack" />);
@@ -153,46 +153,28 @@ describe("SignalDetailCard", () => {
     expect(screen.queryByText("Not in catalog")).not.toBeInTheDocument();
   });
 
-  it("renders pending_tech_name with 'Not in catalog' chip", () => {
+  it("never shows a 'Not in catalog' chip (S10 — no catalogue to be absent from)", () => {
+    // The chip flagged a tool the LLM could not match to the tenant
+    // catalogue. With identity carried on the signal itself, every tech
+    // signal names its tool and nothing is "pending a match".
     const signal = {
       id: "ts2",
       status: "PENDING",
-      tech_catalog_entry: null,
+      tech_name: "Notion",
       metadata: { pending_tech_name: "Notion" },
       source_context: { contacts: [] },
     };
     render(<SignalDetailCard signal={signal} signalType="tech-stack" />);
 
     expect(screen.getByText("Notion")).toBeInTheDocument();
-    expect(screen.getByText("Not in catalog")).toBeInTheDocument();
+    expect(screen.queryByText("Not in catalog")).not.toBeInTheDocument();
   });
 
-  it("'Not in catalog' chip opens the editor (calls onEdit) when editable", () => {
-    const onEdit = vi.fn();
-    const signal = {
-      id: "ts2",
-      status: "PENDING",
-      tech_catalog_entry: null,
-      metadata: { pending_tech_name: "Notion" },
-      source_context: { contacts: [] },
-    };
-    render(
-      <SignalDetailCard
-        signal={signal}
-        signalType="tech-stack"
-        onEdit={onEdit}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Not in catalog"));
-    expect(onEdit).toHaveBeenCalledWith(signal, "tech-stack");
-  });
-
-  it("renders 'Unknown tool' when neither catalog entry nor pending name", () => {
+  it("renders 'Unknown tool' when the signal has no name", () => {
     const signal = {
       id: "ts3",
       status: "PENDING",
-      tech_catalog_entry: null,
+      tech_name: "",
       metadata: null,
       source_context: { contacts: [] },
     };
@@ -260,7 +242,7 @@ describe("SignalDetailCard", () => {
     const ts = {
       id: "ts4",
       status: "PENDING",
-      tech_catalog_entry: { product_name: "HubSpot" },
+      tech_name: "HubSpot",
       source_context: {
         contacts: [{ id: "c3", first_name: "Alice", last_name: "Dupont" }],
       },

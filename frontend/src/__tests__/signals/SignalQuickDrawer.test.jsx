@@ -35,12 +35,10 @@ const MOCK_TECHSTACK = {
   id: "ts1",
   status: "PENDING",
   summary: null,
-  tech_catalog_entry: {
-    product_name: "Salesforce",
-    company_name: "Salesforce Inc.",
-    is_competitor: true,
-    is_integration_target: false,
-  },
+  tech_name: "Salesforce",
+  is_competitor: true,
+  is_integration: false,
+  is_to_replace: false,
   metadata: {},
   usage_scope_display: "Company-wide",
   usage_start_year: 2022,
@@ -278,7 +276,7 @@ describe("SignalQuickDrawer", () => {
     expect(screen.getByText("Pierre Dupont")).toBeInTheDocument();
   });
 
-  it("shows tech-stack-specific fields: tool, company, scope, cost", () => {
+  it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
     render(
       <SignalQuickDrawer
         open={true}
@@ -290,7 +288,7 @@ describe("SignalQuickDrawer", () => {
 
     expect(screen.getByText("IDENTITY")).toBeInTheDocument();
     expect(screen.getAllByText("Salesforce").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Salesforce Inc.")).toBeInTheDocument();
+    expect(screen.getByText("Qualification")).toBeInTheDocument();
     expect(screen.getAllByText("Competitor").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("USAGE")).toBeInTheDocument();
     expect(screen.getByText("Company-wide")).toBeInTheDocument();
@@ -393,25 +391,33 @@ describe("SignalQuickDrawer", () => {
     expect(screen.queryByText("RELATED TOOL")).not.toBeInTheDocument();
   });
 
-  it("shows Not in catalog chip for pending tech-stack", () => {
-    const pendingTech = {
+  it("shows no qualification row when all three booleans are false", () => {
+    // A tool the account simply uses — the row is omitted entirely
+    // rather than rendered empty. The old "Not in catalog" chip this
+    // replaces is gone with the catalogue (S10).
+    const plainTech = {
       id: "pt1",
       status: "PENDING",
-      tech_catalog_entry: null,
-      metadata: { pending_tech_name: "CustomTool" },
-      source_quote: "They use CustomTool",
+      tech_name: "CustomTool",
+      is_competitor: false,
+      is_integration: false,
+      is_to_replace: false,
+      source_quote: "They rely on it heavily",
       contact: null,
       source_context: { contacts: [] },
     };
     render(
       <SignalQuickDrawer
         open={true}
-        signal={pendingTech}
+        signal={plainTech}
         signalType="tech-stack"
         onClose={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("Not in catalog")).toBeInTheDocument();
+    // Appears twice: drawer header + IDENTITY row.
+    expect(screen.getAllByText("CustomTool").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("Qualification")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not in catalog")).not.toBeInTheDocument();
   });
 });

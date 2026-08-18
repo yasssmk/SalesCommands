@@ -14,7 +14,7 @@
  * Model alignment
  * ---------------
  * The staged payload follows the TechStackSignal model:
- *   tech_catalog_entry  : full TechCatalog object (UUID extracted at dispatch)
+ *   tech_name           : free-text tool name (+ 3 qualification booleans)
  *   usage_scope         : 'TEAM' | 'DEPARTMENT' | 'COMPANY' | 'UNKNOWN' | null
  *   usage_department    : department object | null (DEPARTMENT scope only)
  *   usage_start_year    : number | null
@@ -61,23 +61,13 @@ import { buildEditInitialValues } from "../forms/buildEditInitialValues";
 // ==============================|| HELPERS ||============================== //
 
 /**
- * Build the canonical display label from a tech_catalog_entry payload.
- * Mirrors the same helper in TechStackCard / SignalClusterCard /
- * SignalClusterDetailDrawer — kept local for symmetry.
+ * Display label for a staged tech signal.
  *
- *   { company_name: "Salesforce", product_name: "Sales Cloud" }
- *     → "Salesforce Sales Cloud"
- *   { company_name: "Notion", product_name: "Notion" }
- *     → "Notion"
+ * S10: the tool is named by free text on the signal (`tech_name`).
+ * Mirrors getToolLabel in TechStackCard — kept local for symmetry.
  */
-function getCatalogLabel(entry) {
-  if (!entry) return "Unknown tool";
-  const company = entry.company_name?.trim() || "";
-  const product = entry.product_name?.trim() || "";
-  if (!company && !product) return "Unknown tool";
-  if (!company) return product;
-  if (!product || product === company) return company;
-  return `${company} ${product}`;
+function getToolLabel(signal) {
+  return signal?.tech_name?.trim() || "Unknown tool";
 }
 
 /**
@@ -157,15 +147,11 @@ function StagedTechStackCard({
 }) {
   const isRejected = signal._status === "REJECTED";
 
-  // ----- Catalog anchor -----
-  const catalogLabel = useMemo(
-    () => getCatalogLabel(signal.tech_catalog_entry),
-    [signal.tech_catalog_entry],
-  );
-  const isCompetitor = Boolean(signal.tech_catalog_entry?.is_competitor);
-  const isIntegrationTarget = Boolean(
-    signal.tech_catalog_entry?.is_integration_target,
-  );
+  // ----- Tech identity + qualification -----
+  const toolLabel = useMemo(() => getToolLabel(signal), [signal]);
+  const isCompetitor = Boolean(signal.is_competitor);
+  const isIntegration = Boolean(signal.is_integration);
+  const isToReplace = Boolean(signal.is_to_replace);
 
   // ----- Scope -----
   const scopeLabel = signal.usage_scope
@@ -258,9 +244,9 @@ function StagedTechStackCard({
                 minWidth: 0,
                 flex: "0 1 auto",
               }}
-              title={catalogLabel}
+              title={toolLabel}
             >
-              {catalogLabel}
+              {toolLabel}
             </Typography>
             {isCompetitor && !isRejected && (
               <Chip
@@ -270,10 +256,19 @@ function StagedTechStackCard({
                 sx={{ fontSize: "0.6rem", height: 18 }}
               />
             )}
-            {isIntegrationTarget && !isRejected && (
+            {isIntegration && !isRejected && (
               <Chip
                 label="Integration"
                 color="info"
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: "0.6rem", height: 18 }}
+              />
+            )}
+            {isToReplace && !isRejected && (
+              <Chip
+                label="To replace"
+                color="warning"
                 size="small"
                 variant="outlined"
                 sx={{ fontSize: "0.6rem", height: 18 }}
@@ -425,13 +420,10 @@ StagedTechStackCard.propTypes = {
     _key: PropTypes.string.isRequired,
     _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
     // Catalog anchor — object whole; UUID extracted at dispatch.
-    tech_catalog_entry: PropTypes.shape({
-      id: PropTypes.string,
-      company_name: PropTypes.string,
-      product_name: PropTypes.string,
-      is_competitor: PropTypes.bool,
-      is_integration_target: PropTypes.bool,
-    }),
+    tech_name: PropTypes.string,
+    is_competitor: PropTypes.bool,
+    is_integration: PropTypes.bool,
+    is_to_replace: PropTypes.bool,
     // Scope axis
     usage_scope: PropTypes.oneOf(["TEAM", "DEPARTMENT", "COMPANY", "UNKNOWN"]),
     usage_department: PropTypes.oneOfType([
@@ -663,7 +655,7 @@ TechStackSection.propTypes = {
       _key: PropTypes.string.isRequired,
       _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
       // Staged shape — see file docstring.
-      tech_catalog_entry: PropTypes.object,
+      tech_name: PropTypes.string,
       usage_scope: PropTypes.string,
       usage_department: PropTypes.oneOfType([
         PropTypes.string,

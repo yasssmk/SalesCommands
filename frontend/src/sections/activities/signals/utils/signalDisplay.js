@@ -1,13 +1,20 @@
 // frontend/src/sections/activities/signals/utils/signalDisplay.js
 
+/**
+ * Display name for a tech-stack signal.
+ *
+ * S10: the tool is identified by free text on the signal itself
+ * (`tech_name`). This used to prefer a `tech_catalog_entry` payload and
+ * fall back to `metadata.pending_tech_name`, flagging the latter as
+ * `pending` ("not in your tech catalog"). Both the catalogue and that
+ * pending state are gone — there is no reference list left to be absent
+ * from — so the object shape no longer carries a `pending` key.
+ *
+ * The object shape is kept (rather than returning a bare string) so the
+ * four call sites keep reading `.name` unchanged.
+ */
 export function getTechSummary(signal) {
-  if (signal.tech_catalog_entry?.product_name) {
-    return { name: signal.tech_catalog_entry.product_name, pending: false };
-  }
-  if (signal.metadata?.pending_tech_name) {
-    return { name: signal.metadata.pending_tech_name, pending: true };
-  }
-  return { name: "Unknown tool", pending: false };
+  return { name: signal?.tech_name?.trim() || "Unknown tool" };
 }
 
 export function getContact(signal) {

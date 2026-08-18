@@ -3,10 +3,10 @@
  * InlineTechStackForm — inline form for staging a single TechStackSignal.
  *
  * Captures structured intelligence about a tool used by the account,
- * anchored to a tenant-level TechCatalog entry. The form mirrors the
+ * identified by free text (tech_name). The form mirrors the
  * * This form captures strictly:
  *
- *   S1 — Which tool?      tech_catalog_entry (REQUIRED)
+ *   S1 — Which tool?      tech_name (REQUIRED) + 3 qualification toggles
  *   S2 — How is it used?  usage_scope + usage_department (conditional)
  *   S3 — Lifecycle        usage_start_year, renewal_date, cost_description
  *   S4 — State            is_discontinued + discontinued_date (conditional)
@@ -27,7 +27,7 @@
  * The form does NOT call createSignal directly. It calls onAdd(payload)
  * with a ready-to-dispatch payload — the wizard injects account + source
  * + extraPayload at dispatch time and extracts UUIDs from object refs
- * (tech_catalog_entry, usage_department, source_activity).
+ * (usage_department, source_activity).
  *
  * Edit mode is supported via initialValues + submitLabel — when set, the
  * form reinitializes from the prefilled values and the submit button
@@ -78,8 +78,6 @@ import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // project imports
-import AsyncTechCatalogSelect from "components/AsyncSelection/AsyncTechCatalogSelect";
-import { canEditCatalogEntry } from "sections/activities/signals/signalValidationRules";
 import { useGetContactChoices } from "api/businessData/contacts";
 
 // ==============================|| CONSTANTS ||============================== //
@@ -127,9 +125,9 @@ const MAX_USAGE_YEAR = new Date().getFullYear() + 1;
  */
 const validationSchema = Yup.object({
   // S1 — Which tool?
-  tech_catalog_entry: Yup.object()
-    .nullable()
-    .required("Pick a tool from the catalog"),
+  tech_name: Yup.string()
+    .trim()
+    .required("Name the tool this signal is about"),
 
   // S2 — Scope
   // null is the "not set" sentinel; '' is coerced to null at submit time.
@@ -194,7 +192,10 @@ const validationSchema = Yup.object({
 function buildInitialValues() {
   return {
     // S1
-    tech_catalog_entry: null,
+    tech_name: "",
+    is_competitor: false,
+    is_integration: false,
+    is_to_replace: false,
     // S2
     usage_scope: "",
     usage_department: "",
@@ -246,75 +247,6 @@ SectionHeader.propTypes = {
   index: PropTypes.number.isRequired,
   title: PropTypes.string.isRequired,
   subtitle: PropTypes.string,
-};
-
-// ==============================|| CATALOG PREVIEW CARD ||============================== //
-
-/**
- * Compact preview shown below the AsyncTechCatalogSelect once an entry
- * is picked. Reinforces the choice and surfaces strategic flags so
- * the rep can spot a competitor or integration target at a glance.
- *
- * Hidden when no entry is selected — the picker carries its own empty
- * state.
- */
-function CatalogPreview({ entry }) {
-  if (!entry) return null;
-
-  const company = entry.company_name?.trim() || "";
-  const product = entry.product_name?.trim() || "";
-  const sameName = !product || product === company;
-
-  return (
-    <Box
-      sx={{
-        px: 1.5,
-        py: 1,
-        bgcolor: "action.hover",
-        borderRadius: 1,
-        borderLeft: "3px solid",
-        borderLeftColor: "primary.main",
-      }}
-    >
-      <Stack
-        direction="row"
-        spacing={1}
-        alignItems="center"
-        flexWrap="wrap"
-        useFlexGap
-      >
-        <Typography
-          variant="body2"
-          fontWeight={600}
-          sx={{ color: "text.primary" }}
-        >
-          {sameName ? company : `${company} ${product}`}
-        </Typography>
-        {entry.is_competitor && (
-          <Chip
-            label="Competitor"
-            size="small"
-            color="error"
-            variant="outlined"
-            sx={{ fontSize: "0.62rem", height: 18 }}
-          />
-        )}
-        {entry.is_integration_target && (
-          <Chip
-            label="Integration target"
-            size="small"
-            color="info"
-            variant="outlined"
-            sx={{ fontSize: "0.62rem", height: 18 }}
-          />
-        )}
-      </Stack>
-    </Box>
-  );
-}
-
-CatalogPreview.propTypes = {
-  entry: PropTypes.object,
 };
 
 // ==============================|| INLINE TECH STACK FORM ||============================== //
@@ -376,24 +308,15 @@ export default function InlineTechStackForm({
       // stale value on the backend (mirror of InlineObjectiveForm's
       // strategy). Empty strings → null for nullable fields.
 
-      // Catalog anchor: emit the UUID only. The field value is the
-      // compact catalog object (edit) or the selected option (create);
-      // the writable FK on the update serializer expects a UUID, not the
-      // object. Omit it entirely when unchanged in edit mode — a
-      // scope/notes edit must not touch or re-send the immutable anchor
-      // (mirrors the backend lock-on-change; create still requires it,
-      // so always emit there).
-      const catalogId =
-        values.tech_catalog_entry &&
-        typeof values.tech_catalog_entry === "object"
-          ? values.tech_catalog_entry.id
-          : values.tech_catalog_entry ?? null;
-      const originalCatalogId =
-        initialValuesProp?.tech_catalog_entry?.id ??
-        initialValuesProp?.tech_catalog_entry ??
-        null;
-
       const payload = {
+        // S1 — tech identity + qualification (S10). Always emitted:
+        // tech_name is required on create and freely editable after,
+        // and the three booleans are plain toggles with no lock.
+        tech_name: values.tech_name?.trim() || "",
+        is_competitor: Boolean(values.is_competitor),
+        is_integration: Boolean(values.is_integration),
+        is_to_replace: Boolean(values.is_to_replace),
+
         // S2 — scope axis (always emit both for clean clear-on-change)
         usage_scope: values.usage_scope || null,
         usage_department:
@@ -422,12 +345,6 @@ export default function InlineTechStackForm({
         source_quote: values.source_quote?.trim() || null,
         notes: values.notes?.trim() || "",
       };
-
-      // S1 — catalog anchor (UUID): always on create; on edit only when
-      // it actually changed (attach on a PENDING signal).
-      if (!initialValuesProp || catalogId !== originalCatalogId) {
-        payload.tech_catalog_entry = catalogId;
-      }
 
       onAdd(payload);
 
@@ -471,7 +388,6 @@ export default function InlineTechStackForm({
   // Catalog anchor is editable in create mode and while the signal is
   // PENDING (so an LLM-extracted, unmatched signal can be linked before
   // validation); locked once VALIDATED — mirrors the backend rule.
-  const catalogEditable = canEditCatalogEntry(initialValuesProp);
 
   // ==============================|| RENDER ||============================== //
 
@@ -515,43 +431,87 @@ export default function InlineTechStackForm({
           <SectionHeader
             index={1}
             title="Which tool?"
-            subtitle="Pick the tool from your tenant's tech catalog."
+            subtitle="Name the tool as it came up in the conversation."
           />
 
-          <AsyncTechCatalogSelect
+          <TextField
+            fullWidth
+            size="small"
+            id="ts-tech-name"
+            name="tech_name"
             label="Tool *"
-            value={formik.values.tech_catalog_entry}
-            onChange={(_e, entry) =>
-              formik.setFieldValue("tech_catalog_entry", entry)
-            }
-            onBlur={() => formik.setFieldTouched("tech_catalog_entry", true)}
-            error={
-              formik.touched.tech_catalog_entry &&
-              Boolean(formik.errors.tech_catalog_entry)
-            }
+            placeholder="e.g. Salesforce"
+            value={formik.values.tech_name}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            error={formik.touched.tech_name && Boolean(formik.errors.tech_name)}
             helperText={
-              (formik.touched.tech_catalog_entry &&
-                formik.errors.tech_catalog_entry) ||
-              undefined
+              (formik.touched.tech_name && formik.errors.tech_name) ||
+              "Write the tool's name as it was mentioned. Matching across signals is handled for you."
             }
-            // Editable while PENDING (link an unmatched signal before
-            // validation); locked once VALIDATED — mirrors the backend.
-            disabled={!catalogEditable}
           />
 
-          {/* Compact preview — reinforces the choice */}
-          <CatalogPreview entry={formik.values.tech_catalog_entry} />
+          {/* Qualification — three INDEPENDENT toggles. Any combination
+              is valid, and all-off is the common case: a tool the
+              account simply uses. Mirrors the Switch pattern used by
+              `is_discontinued` in section 4 below. */}
+          <Stack spacing={0.5}>
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={Boolean(formik.values.is_competitor)}
+                  onChange={(e) =>
+                    formik.setFieldValue("is_competitor", e.target.checked)
+                  }
+                  inputProps={{ "aria-label": "Tool is a competitor" }}
+                />
+              }
+              label={
+                <Typography variant="body2">
+                  Competitor — overlaps with what we sell
+                </Typography>
+              }
+              sx={{ m: 0 }}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={Boolean(formik.values.is_integration)}
+                  onChange={(e) =>
+                    formik.setFieldValue("is_integration", e.target.checked)
+                  }
+                  inputProps={{ "aria-label": "Tool is an integration" }}
+                />
+              }
+              label={
+                <Typography variant="body2">
+                  Integration — our product connects to it
+                </Typography>
+              }
+              sx={{ m: 0 }}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={Boolean(formik.values.is_to_replace)}
+                  onChange={(e) =>
+                    formik.setFieldValue("is_to_replace", e.target.checked)
+                  }
+                  inputProps={{ "aria-label": "Tool is to be replaced" }}
+                />
+              }
+              label={
+                <Typography variant="body2">
+                  To replace — the account intends to move off it
+                </Typography>
+              }
+              sx={{ m: 0 }}
+            />
+          </Stack>
 
-          {isEditMode && !catalogEditable && (
-            <Typography
-              variant="caption"
-              color="text.disabled"
-              sx={{ fontStyle: "italic" }}
-            >
-              The tool cannot be changed once the signal is validated. To point
-              this signal at a different tool, delete it and create a new one.
-            </Typography>
-          )}
         </Stack>
 
         <Divider />

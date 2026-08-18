@@ -81,17 +81,9 @@ function getPrimaryLabel(type, signal) {
       return signal.summary
         ? signal.summary.slice(0, 80) + (signal.summary.length > 80 ? "…" : "")
         : "—";
-    case "tech-stack": {
-      // TechStack: "Salesforce Sales Cloud" or fallback to Unnamed tool
-      const entry = signal.tech_catalog_entry;
-      if (!entry) return "Unnamed tool";
-      const company = entry.company_name?.trim() || "";
-      const product = entry.product_name?.trim() || "";
-      if (!company && !product) return "Unnamed tool";
-      if (!company) return product;
-      if (!product || product === company) return company;
-      return `${company} ${product}`;
-    }
+    case "tech-stack":
+      // S10: the tool names itself on the signal (free text).
+      return signal.tech_name?.trim() || "Unnamed tool";
     default:
       return "—";
   }

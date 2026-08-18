@@ -118,21 +118,18 @@ function truncate(str, max = 120) {
 }
 
 /**
- * Build the canonical display label from a tech_catalog_entry payload.
+ * Display label for a tech signal.
  *
- * The backend serializer returns a compact dict
- * { id, company_name, product_name, is_competitor, is_integration_target }
- * — never null when the signal exists (catalog FK is required at create time).
- * Defensive fallback to "Unknown tool" guards against malformed reads.
+ * S10: the tool is identified by free text on the signal itself
+ * (`tech_name`, raw as the LLM or the rep wrote it). The previous
+ * `tech_catalog_entry` payload — a compact dict from the tenant tech
+ * catalogue — is gone along with the catalogue.
+ *
+ * Defensive fallback to "Unknown tool" guards against a legacy row
+ * migrated with an empty name.
  */
-function getCatalogLabel(entry) {
-  if (!entry) return "Unknown tool";
-  const company = entry.company_name?.trim() || "";
-  const product = entry.product_name?.trim() || "";
-  if (!company && !product) return "Unknown tool";
-  if (!company) return product;
-  if (!product || product === company) return company;
-  return `${company} ${product}`;
+function getToolLabel(techStack) {
+  return techStack?.tech_name?.trim() || "Unknown tool";
 }
 
 // ==============================|| CONFIRM DIALOG ||============================== //
@@ -224,17 +221,16 @@ export default function TechStackCard({
 
   const createdDate = formatShortDate(techStack.created_at);
 
-  /** Catalog label — "Salesforce Sales Cloud" */
-  const catalogLabel = useMemo(
-    () => getCatalogLabel(techStack.tech_catalog_entry),
-    [techStack.tech_catalog_entry],
+  /** Tool label — the raw tech_name, e.g. "Salesforce CRM" */
+  const toolLabel = useMemo(
+    () => getToolLabel(techStack),
+    [techStack],
   );
 
-  /** Strategic flags from the catalog entry */
-  const isCompetitor = Boolean(techStack.tech_catalog_entry?.is_competitor);
-  const isIntegrationTarget = Boolean(
-    techStack.tech_catalog_entry?.is_integration_target,
-  );
+  /** Qualification flags — three independent booleans on the signal. */
+  const isCompetitor = Boolean(techStack.is_competitor);
+  const isIntegration = Boolean(techStack.is_integration);
+  const isToReplace = Boolean(techStack.is_to_replace);
 
   /** Usage scope chip config */
   const scopeCfg = useMemo(() => {
@@ -329,15 +325,15 @@ export default function TechStackCard({
   const borderColor = useMemo(() => {
     if (isPending) return "warning.light";
     if (isCompetitor) return "error.main";
-    if (isIntegrationTarget) return "info.main";
+    if (isIntegration) return "info.main";
     return "divider";
-  }, [isPending, isCompetitor, isIntegrationTarget]);
+  }, [isPending, isCompetitor, isIntegration]);
 
   /** Border thickness — competitors/integration get a stronger emphasis */
   const borderWidth = useMemo(() => {
-    if (isCompetitor || isIntegrationTarget) return "2px";
+    if (isCompetitor || isIntegration || isToReplace) return "2px";
     return "1px";
-  }, [isCompetitor, isIntegrationTarget]);
+  }, [isCompetitor, isIntegration, isToReplace]);
 
   // ==============================|| MENU HANDLERS ||============================== //
 
@@ -413,19 +409,20 @@ export default function TechStackCard({
 
           {/* Canonical chip — vendor + product, primary palette */}
           <Chip
-            label={catalogLabel}
+            label={toolLabel}
             size="small"
             color="primary"
             variant="outlined"
             sx={{ fontSize: "0.68rem", height: 20, fontWeight: 500 }}
           />
 
-          {/* Strategic flags — competitor / integration target.
-              These earn their own chip (not just the border) because
-              the rep needs to spot them mid-list, not only when
-              focusing on the card. */}
+          {/* Qualification flags — competitor / integration / to replace.
+              Independent: a tool can carry several at once, or none (a
+              tool the account simply uses). Each earns its own chip (not
+              just the border) because the rep needs to spot them
+              mid-list, not only when focusing on the card. */}
           {isCompetitor && (
-            <Tooltip title="This vendor competes with us">
+            <Tooltip title="This tool competes with what we sell">
               <Chip
                 label="Competitor"
                 color="error"
@@ -434,11 +431,22 @@ export default function TechStackCard({
               />
             </Tooltip>
           )}
-          {isIntegrationTarget && (
-            <Tooltip title="This vendor is an integration target">
+          {isIntegration && (
+            <Tooltip title="Our product integrates with this tool">
               <Chip
                 label="Integration"
                 color="info"
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: "0.62rem", height: 18 }}
+              />
+            </Tooltip>
+          )}
+          {isToReplace && (
+            <Tooltip title="The account intends to replace this tool">
+              <Chip
+                label="To replace"
+                color="warning"
                 size="small"
                 variant="outlined"
                 sx={{ fontSize: "0.62rem", height: 18 }}
@@ -628,7 +636,7 @@ export default function TechStackCard({
       <ConfirmDialog
         open={confirmDeleteOpen}
         title="Delete this tech stack signal?"
-        message="This signal will be deleted permanently. The catalog entry remains available for other signals."
+        message="This signal will be deleted permanently."
         confirmLabel="Delete signal"
         onConfirm={handleDeleteConfirm}
         onClose={() => setConfirmDeleteOpen(false)}
@@ -644,14 +652,14 @@ TechStackCard.propTypes = {
     id: PropTypes.string.isRequired,
     status: PropTypes.string,
 
-    // Catalog anchor — compact dict from List/Detail serializer
-    tech_catalog_entry: PropTypes.shape({
-      id: PropTypes.string,
-      company_name: PropTypes.string,
-      product_name: PropTypes.string,
-      is_competitor: PropTypes.bool,
-      is_integration_target: PropTypes.bool,
-    }),
+    // Tech identity — free text on the signal (S10)
+    tech_name: PropTypes.string,
+    tech_name_normalized: PropTypes.string,
+
+    // Qualification — three independent booleans
+    is_competitor: PropTypes.bool,
+    is_integration: PropTypes.bool,
+    is_to_replace: PropTypes.bool,
 
     // Scope axis
     usage_scope: PropTypes.oneOf(["TEAM", "DEPARTMENT", "COMPANY", "UNKNOWN"]),

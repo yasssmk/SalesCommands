@@ -4,7 +4,6 @@ import { describe, it, expect } from "vitest";
 import {
   getRequiredFields,
   getMissingFields,
-  canEditCatalogEntry,
 } from "sections/activities/signals/signalValidationRules";
 
 describe("getRequiredFields", () => {
@@ -35,7 +34,7 @@ describe("getRequiredFields", () => {
   it("returns tech-stack required fields", () => {
     const fields = getRequiredFields("tech-stack");
     expect(fields).toEqual([
-      { key: "tech_catalog_entry", label: "Tech catalog entry" },
+      { key: "tech_name", label: "Tool name" },
     ]);
   });
 
@@ -100,24 +99,23 @@ describe("getMissingFields", () => {
     expect(missing[0].key).toBe("dimension");
   });
 
-  it("tech-stack: missing when no tech_catalog_entry", () => {
+  it("tech-stack: missing when no tech_name", () => {
     const signal = {};
     const missing = getMissingFields(signal, "tech-stack");
     expect(missing).toHaveLength(1);
-    expect(missing[0].key).toBe("tech_catalog_entry");
+    expect(missing[0].key).toBe("tech_name");
   });
 
-  it("tech-stack: still missing when only metadata.pending_tech_name present", () => {
-    // A catalog-less PENDING signal is NOT validatable as-is: the rep
-    // must attach a catalog entry first (mirrors the backend guard).
-    const signal = { metadata: { pending_tech_name: "Notion" } };
-    const missing = getMissingFields(signal, "tech-stack");
+  it("tech-stack: blank tech_name is missing", () => {
+    // An extracted signal always names its tool, so this is the
+    // defensive case: a legacy row migrated with an empty name.
+    const missing = getMissingFields({ tech_name: "" }, "tech-stack");
     expect(missing).toHaveLength(1);
-    expect(missing[0].key).toBe("tech_catalog_entry");
+    expect(missing[0].key).toBe("tech_name");
   });
 
-  it("tech-stack: not missing when tech_catalog_entry present", () => {
-    const signal = { tech_catalog_entry: { id: "t1" } };
+  it("tech-stack: not missing when tech_name present", () => {
+    const signal = { tech_name: "Salesforce" };
     expect(getMissingFields(signal, "tech-stack")).toEqual([]);
   });
 
@@ -132,21 +130,3 @@ describe("getMissingFields", () => {
   });
 });
 
-describe("canEditCatalogEntry", () => {
-  it("editable in create mode (no signal)", () => {
-    expect(canEditCatalogEntry(null)).toBe(true);
-    expect(canEditCatalogEntry(undefined)).toBe(true);
-  });
-
-  it("editable while PENDING", () => {
-    expect(canEditCatalogEntry({ status: "PENDING" })).toBe(true);
-  });
-
-  it("locked once VALIDATED", () => {
-    expect(canEditCatalogEntry({ status: "VALIDATED" })).toBe(false);
-  });
-
-  it("locked when REJECTED", () => {
-    expect(canEditCatalogEntry({ status: "REJECTED" })).toBe(false);
-  });
-});

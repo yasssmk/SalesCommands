@@ -328,8 +328,6 @@ export default function WizardSignalAdd({
         // Fields covered:
         //   target_contact       — Objective PERSONAL scope (target FK)
         //   source_activity      — Pain (required) / Objective / TechStack (optional)
-        //   tech_catalog_entry   — TechStack catalog anchor (required)
-        //   related_techstack    — Pain cross-reference to a TechCatalog
         //                          entry (optional, only meaningful when
         //                          what === 'TECH')
         if (
@@ -343,18 +341,6 @@ export default function WizardSignalAdd({
           typeof payload.source_activity === "object"
         ) {
           payload.source_activity = payload.source_activity.id;
-        }
-        if (
-          payload.tech_catalog_entry &&
-          typeof payload.tech_catalog_entry === "object"
-        ) {
-          payload.tech_catalog_entry = payload.tech_catalog_entry.id;
-        }
-        if (
-          payload.related_techstack &&
-          typeof payload.related_techstack === "object"
-        ) {
-          payload.related_techstack = payload.related_techstack.id;
         }
 
         const result = await createSignal(type, {

@@ -50,7 +50,7 @@ export function buildEditInitialValues(signalType, signal) {
  *   - Diagnosis  : summary, what, dimension
  *   - Source     : source_activity (required for Pain post-standardisation)
  *   - Narrative  : source_quote, notes
- *   - Cross-ref  : related_techstack, related_techstack_mention
+ *   - Cross-ref  : related_techstack_mention (free text)
  *                  (visible only when what === 'TECH')
  *
  * Activity / catalog objects are passed whole — the matching Async*
@@ -67,12 +67,11 @@ export function buildEditInitialValues(signalType, signal) {
  *                          as a form field anymore.
  *
  * Cross-reference fields:
- *   - related_techstack          : object whole | null
  *                                  Backend exposes a compact catalog
  *                                  payload via the _PainDisplayMixin
  *                                  (id + company_name + product_name +
  *                                  is_competitor + is_integration_target)
- *                                  — directly usable by AsyncTechCatalogSelect.
+ *                                  — directly usable by the async pickers.
  *   - related_techstack_mention  : free-text string (max 200 chars)
  *
  * Both fields are emitted unconditionally — InlinePainForm's render
@@ -95,7 +94,6 @@ function buildPainInitialValues(signal) {
     notes: signal.notes ?? "",
 
     // Cross-reference — TechStack
-    related_techstack: signal.related_techstack ?? null,
     related_techstack_mention: signal.related_techstack_mention ?? "",
   };
 }
@@ -153,7 +151,7 @@ function buildObjectiveInitialValues(signal) {
  * @param {Object} signal - TechStackSignal read object
  * @returns {Object}
  *
- * TechStackSignal is anchored to a tenant-level TechCatalog entry
+ * TechStackSignal is identified by free text (tech_name)
  * with structured lifecycle + scope. The previous flat-field model
  * (tech_name / category / satisfaction / usage / limitations /
  * workarounds / integrations / source_department / source_quote /
@@ -161,14 +159,14 @@ function buildObjectiveInitialValues(signal) {
  *
  * This builder mirrors exactly the 5-section InlineTechStackForm:
  *
- *   S1 — tech_catalog_entry            (object, immutable on Update)
+ *   S1 — tech_name + qualification booleans
  *   S2 — usage_scope, usage_department (conditional)
  *   S3 — usage_start_year, renewal_date, cost_description
  *   S4 — is_discontinued, discontinued_date (conditional)
  *   S5 — source_activity, source_quote, notes
  *
  * Field shape notes:
- *   - tech_catalog_entry passed whole — AsyncTechCatalogSelect expects
+ *   - tech_name is a plain string — the form renders a TextField
  *     the full option object as its value prop, not a UUID string.
  *     The List/Detail serializers expose it as a compact dict
  *     ({ id, company_name, product_name, is_competitor,
@@ -190,7 +188,10 @@ function buildTechStackInitialValues(signal) {
     status: signal.status ?? null,
 
     // S1 — Catalog anchor (object whole)
-    tech_catalog_entry: signal.tech_catalog_entry ?? null,
+    tech_name: signal.tech_name ?? "",
+    is_competitor: Boolean(signal.is_competitor),
+    is_integration: Boolean(signal.is_integration),
+    is_to_replace: Boolean(signal.is_to_replace),
 
     // S2 — Scope axis
     usage_scope: signal.usage_scope ?? "",

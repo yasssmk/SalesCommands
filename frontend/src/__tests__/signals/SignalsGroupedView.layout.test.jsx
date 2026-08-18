@@ -33,7 +33,7 @@ const makeTechStack = (id, name = "Tool") => ({
   _signalType: "tech-stack",
   status: "PENDING",
   summary: name,
-  tech_catalog_entry: null,
+  tech_name: "Salesforce",
   metadata: { pending_tech_name: name },
 });
 

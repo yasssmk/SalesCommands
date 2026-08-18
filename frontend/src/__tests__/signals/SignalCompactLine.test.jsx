@@ -147,7 +147,7 @@ describe("SignalCompactLine", () => {
     const tsSignal = {
       id: "ts1",
       status: "PENDING",
-      tech_catalog_entry: { product_name: "Salesforce", company_name: "SFDC" },
+      tech_name: "Salesforce",
     };
     render(
       <SignalCompactLine
