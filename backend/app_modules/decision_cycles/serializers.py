@@ -5,9 +5,12 @@ Serializers for Decision Cycle module.
 Follows the same patterns as CompanyAccountSerializer for consistency.
 """
 
+from decimal import Decimal
+
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 from core.client_scope import ClientScopeManager
+from core.currency import TenantCurrencySerializerMixin
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
 from app_modules.core_modules.models import StandardDepartment
@@ -1101,7 +1104,9 @@ class DecisionStepUpdateSerializer(ClientScopeManager.SerializerMixin, serialize
 # DECISION CYCLE SERIALIZERS
 # ============================================================================
 
-class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class DecisionCycleListSerializer(TenantCurrencySerializerMixin,
+                                  ClientScopeManager.SerializerMixin,
+                                  serializers.ModelSerializer):
     """
     Lightweight serializer for cycle lists.
     """
@@ -1138,6 +1143,16 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
     current_step_name = serializers.CharField(
         source=CURRENT_STEP_NAME_ALIAS, read_only=True, allow_null=True
     )
+    # The Amount column: the DERIVED product roll-up. Reads the _deal_value
+    # annotation the list queryset carries (annotate_deal_value), so it costs no
+    # extra query per row. estimated_value stays in the payload as the legacy
+    # manual field — no runtime path populates it, so nothing displays it.
+    total_deal_value = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True,
+    )
+    # The unit of that amount — the tenant's single currency, resolved at read
+    # time (core.currency). One per tenant, no conversion.
+    currency = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = DecisionCycle
@@ -1146,6 +1161,7 @@ class DecisionCycleListSerializer(ClientScopeManager.SerializerMixin, serializer
             'account', 'account_name',
             'owner', 'owner_name', 'owner_email', 'team',
             'is_active',
+            'total_deal_value', 'currency',
             'estimated_value',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
@@ -1389,7 +1405,35 @@ class DealHealthSnapshotDetailSerializer(ClientScopeManager.SerializerMixin, ser
 # DEAL PRODUCT SERIALIZERS
 # ============================================================================
 
-class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+DISCOUNT_PERCENT_MIN = Decimal('0')
+DISCOUNT_PERCENT_MAX = Decimal('100')
+
+
+def validate_discount_percent_range(value):
+    """TD-74 — the discount must stay within [0, 100].
+
+    Enforced here so an out-of-range value is a clean business-rule 400 instead
+    of the IntegrityError the DB CheckConstraint
+    (``deal_product_discount_percent_bounds``) would otherwise raise. Shared by
+    the create and update serializers so the rule is stated once.
+
+    Mirrors the project's ``validate_<field>`` + StandardizedValidationError +
+    CoreErrorMessages convention (e.g. DecisionCycleCreateSerializer.validate_name).
+    """
+    if value is None:
+        return value
+    if value < DISCOUNT_PERCENT_MIN or value > DISCOUNT_PERCENT_MAX:
+        raise StandardizedValidationError(
+            CoreErrorMessages.INVALID_FIELD.format(
+                field='discount_percent must be between 0 and 100'
+            )
+        )
+    return value
+
+
+class DealProductListSerializer(TenantCurrencySerializerMixin,
+                                ClientScopeManager.SerializerMixin,
+                                serializers.ModelSerializer):
     """
     Read-only serializer for DealProduct list views.
     """
@@ -1398,6 +1442,10 @@ class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.
     line_total = serializers.DecimalField(
         max_digits=14, decimal_places=2, read_only=True,
     )
+    # The unit of unit_price / line_total. Resolved from the TENANT at read
+    # time (core.currency), never stored on the line — one currency per tenant,
+    # no conversion.
+    currency = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = DealProduct
@@ -1408,7 +1456,9 @@ class DealProductListSerializer(ClientScopeManager.SerializerMixin, serializers.
             'product_catalog_entry_detail',
             'quantity',
             'unit_price',
+            'discount_percent',
             'line_total',
+            'currency',
             'notes',
             'created_at',
             'updated_at',
@@ -1446,6 +1496,7 @@ class DealProductCreateSerializer(ClientScopeManager.SerializerMixin, serializer
             'product_catalog_entry',
             'quantity',
             'unit_price',
+            'discount_percent',
             'notes',
         ]
         validators = []
@@ -1453,8 +1504,12 @@ class DealProductCreateSerializer(ClientScopeManager.SerializerMixin, serializer
             'product_catalog_entry': {'required': True},
             'quantity': {'required': False},
             'unit_price': {'required': False, 'allow_null': True},
+            'discount_percent': {'required': False},
             'notes': {'required': False, 'allow_blank': True},
         }
+
+    def validate_discount_percent(self, value):
+        return validate_discount_percent_range(value)
 
     def validate(self, attrs):
         client_id = self._get_client_id_from_context()
@@ -1500,14 +1555,19 @@ class DealProductUpdateSerializer(ClientScopeManager.SerializerMixin, serializer
         fields = [
             'quantity',
             'unit_price',
+            'discount_percent',
             'notes',
         ]
         validators = []
         extra_kwargs = {
             'quantity': {'required': False},
             'unit_price': {'required': False, 'allow_null': True},
+            'discount_percent': {'required': False},
             'notes': {'required': False, 'allow_blank': True},
         }
+
+    def validate_discount_percent(self, value):
+        return validate_discount_percent_range(value)
 
     def update(self, instance, validated_data):
         user = self.context.get('request').user if self.context.get('request') else None

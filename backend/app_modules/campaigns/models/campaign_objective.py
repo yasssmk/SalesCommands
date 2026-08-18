@@ -6,8 +6,8 @@ CampaignObjective model — measurable goals for a campaign.
 - MEETINGS: Activity.type=MEETING + COMPLETED
 - DECISION_CYCLES: DecisionCycle created via campaign
 - CONTACTS_REACHED: Distinct contacts with COMPLETED activities
-- PIPELINE_VALUE: SUM(DecisionCycle.estimated_value) open cycles
-- REVENUE_WON: SUM(DecisionCycle.estimated_value) WHERE outcome=WON
+- PIPELINE_VALUE: SUM(DecisionCycle.total_deal_value) open cycles (outcome NULL)
+- REVENUE_WON: SUM(DecisionCycle.total_deal_value) WHERE outcome=WON
 - NEW_LOGOS: CompanyAccount.type PROSPECT → CLIENT via campaign
 
 Each campaign can have multiple objectives, but only one is_primary.

@@ -16,6 +16,7 @@ Usage:
 from dataclasses import dataclass, field
 from typing import List
 
+from ..services.deal_value_sql import DEAL_VALUE_ALIAS
 from ..services.derivation_sql import (
     CURRENT_STEP_STAGE_ALIAS,
     CYCLE_STATUS_ALIAS,
@@ -36,8 +37,10 @@ class FilterConfig:
     )
 
     # The eight orderable columns. Flat fields and FK traversals order directly;
-    # stage and status order on the 1b cycle-state annotations (present on the
-    # list queryset). Clients send these exact terms (DRF OrderingFilter passes
+    # stage and status order on the 1b cycle-state annotations, and Amount on
+    # the deal-value annotation — all three present on the list queryset.
+    # Amount orders on the DERIVED roll-up, not on estimated_value: that manual
+    # field is never populated, so sorting by it sorted nothing (TD-75). Clients send these exact terms (DRF OrderingFilter passes
     # the term straight to order_by — it does not alias).
     dc_ordering_fields: List[str] = field(
         default_factory=lambda: [
@@ -45,7 +48,7 @@ class FilterConfig:
             'account__company_name',
             CURRENT_STEP_STAGE_ALIAS,    # current-step stage (annotation)
             CYCLE_STATUS_ALIAS,          # effective status (annotation)
-            'estimated_value',
+            DEAL_VALUE_ALIAS,            # Amount column — the product roll-up
             'owner__first_name',         # owner (name)
             'owner__team__name',         # team name
             'updated_at',

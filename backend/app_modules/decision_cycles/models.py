@@ -205,6 +205,28 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         return max(0, delta)
     
     @property
+    def total_deal_value(self):
+        """The cycle's deal amount: Σ of its DealProduct lines.
+
+        THE single source of truth for a DC amount. The formula lives once, in
+        SQL, in services/deal_value_sql.py — this accessor never re-implements
+        it, so a single-cycle read and a mass roll-up can never disagree.
+
+        Cost: FREE on a queryset annotated with ``annotate_deal_value()`` (the
+        annotation is read straight off the instance); ONE query otherwise.
+        Never read this in a loop over many cycles — annotate instead.
+
+        Distinct from ``estimated_value``, which is a manual, independent field
+        (its reconciliation with this roll-up is TD-75).
+        """
+        from .services.deal_value_sql import DEAL_VALUE_ALIAS, deal_value_for
+
+        annotated = getattr(self, DEAL_VALUE_ALIAS, None)
+        if annotated is not None:
+            return annotated
+        return deal_value_for(self)
+
+    @property
     def steps_count(self):
         """Return total number of steps in this cycle."""
         return self.steps.count()
@@ -917,6 +939,25 @@ class DealProduct(ModuleBaseModel, ClientScopeManager.ModelMixin):
         db_table = 'deal_products'
         verbose_name = _('Deal Product')
         verbose_name_plural = _('Deal Products')
+        constraints = [
+            # TD-74 — the discount DRIVES the derived amount
+            # (quantity x price x (1 - discount/100)), so an out-of-range value
+            # silently corrupts the line, the cycle total and KPI 7 (a >100%
+            # discount turns the deal NEGATIVE). Integrity backstop for every
+            # write path, including the ones that never touch the serializer
+            # (shell, data migration, import). Mirrors
+            # end_users/models/sales_milestone.py:144-148
+            # (milestone_achievement_rate_bounds) — same bounded-percentage
+            # shape and <model>_<field>_bounds naming; declared with
+            # `condition=` (Django 5.1) rather than the deprecated `check=`
+            # those older siblings still use.
+            models.CheckConstraint(
+                condition=models.Q(
+                    discount_percent__gte=0, discount_percent__lte=100,
+                ),
+                name='deal_product_discount_percent_bounds',
+            ),
+        ]
 
     def __str__(self):
         return (

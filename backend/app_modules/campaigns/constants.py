@@ -168,7 +168,7 @@ class ObjectiveType(models.TextChoices):
     DECISION_CYCLES  = 'DECISION_CYCLES',  _('Decision Cycles Opened')
     CONTACTS_REACHED = 'CONTACTS_REACHED', _('Contacts Reached')
     PIPELINE_VALUE   = 'PIPELINE_VALUE',   _('Pipeline Value')
-    REVENUE_WON      = 'REVENUE_WON',      _('Revenue Won')
+    REVENUE_WON      = 'REVENUE_WON',      _('Won Value')   # TD-127 — display label only; the key is unchanged
     NEW_LOGOS        = 'NEW_LOGOS',        _('New Logos')
 
 

@@ -615,7 +615,7 @@ class SalesQuota(BaseModelApp, ClientScopeManager.ModelMixin):
                 'client_fiscal_info': {
                     'fiscal_start_month': self.user.client_account.fiscal_year_start_month,
                     'fiscal_start_day': self.user.client_account.fiscal_year_start_day,
-                    'currency': self.user.client_account.default_quota_currency
+                    'currency': self.user.client_account.currency
                 }
             }
         }

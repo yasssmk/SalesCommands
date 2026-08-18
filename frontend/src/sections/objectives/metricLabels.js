@@ -10,7 +10,7 @@ export const METRICS = [
   { value: 'MEETINGS', label: 'Meetings', monetary: false },
   { value: 'NEW_LOGOS', label: 'New logos', monetary: false },
   { value: 'PIPELINE_VALUE', label: 'Pipeline value', monetary: true },
-  { value: 'REVENUE_WON', label: 'Revenue won', monetary: true },
+  { value: 'REVENUE_WON', label: 'Won value', monetary: true },
 ];
 
 const BY_VALUE = METRICS.reduce((acc, m) => {

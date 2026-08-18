@@ -88,7 +88,7 @@ export const OBJECTIVE_TYPE_LABELS = {
   DECISION_CYCLES: "Decision Cycles Created",
   CONTACTS_REACHED: "Contacts Reached",
   PIPELINE_VALUE: "Pipeline Value",
-  REVENUE_WON: "Revenue Won",
+  REVENUE_WON: "Won Value",
   NEW_LOGOS: "New Logos",
 };
 

@@ -42,7 +42,7 @@ class KPIDefinition:
         source:   zero-arg callable returning the BASE queryset (before tenant,
                   scope and period filtering — the compute layer applies those).
         aggregation: a Django DB-level aggregation expression (e.g.
-                  Count('id'), Sum('estimated_value')). Opaque here; evaluated
+                  Count('id'), DEAL_VALUE_SUM). Opaque here; evaluated
                   by the compute layer via .aggregate()/.annotate(). NEVER a
                   Python-side loop.
         scope_module: OWNERSHIP_MAP key passed to
@@ -80,6 +80,11 @@ class KPIDefinition:
     target: Optional[Callable[..., Any]] = None
     cache_tags: Tuple[str, ...] = ()
     invalidation_sources: Tuple[str, ...] = ()
+    # What the value IS, when that changes how it must be read. 'currency' marks
+    # a MONETARY KPI: the presentation layer then attaches the tenant's currency
+    # to the payload (core.currency), because a bare 60000 has no unit. Left
+    # None for counts, percentages and states — a count in EUR is nonsense.
+    unit: Optional[str] = None
     # Escape hatch for KPIs that are NOT a single aggregate over a scoped
     # queryset (ratios, parameterized/per-entity metrics — e.g. coverage %,
     # quota attainment). When set, compute.run() delegates to it instead of the

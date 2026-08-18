@@ -174,7 +174,7 @@ class ValidationConfig:
         ('DECISION_CYCLES', 'Decision Cycles Opened'),
         ('CONTACTS_REACHED', 'Contacts Reached'),
         ('PIPELINE_VALUE', 'Pipeline Value'),
-        ('REVENUE_WON', 'Revenue Won'),
+        ('REVENUE_WON', 'Won Value'),        # TD-127 — display label only
         ('NEW_LOGOS', 'New Logos'),
     ])
 

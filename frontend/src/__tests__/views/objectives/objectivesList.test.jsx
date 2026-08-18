@@ -62,7 +62,7 @@ describe('ObjectivesListPage — payload, toggle, order', () => {
     render(<ObjectivesListPage />);
 
     // default = Active -> the PAST one is hidden
-    expect(screen.getByText('Revenue won')).toBeTruthy();
+    expect(screen.getByText('Won value')).toBeTruthy();
     expect(screen.getByText('Meetings')).toBeTruthy();
     expect(screen.queryByText('Leads')).toBeNull();
 
@@ -75,7 +75,7 @@ describe('ObjectivesListPage — payload, toggle, order', () => {
     mockUseGetObjectives.mockReturnValue({ objectives: [c1, c2], objectivesLoading: false });
     render(<ObjectivesListPage />);
     // c2 (end 2026-08-15) must come before c1 (end 2026-08-31)
-    expect(precedes(title('Meetings'), title('Revenue won'))).toBe(true);
+    expect(precedes(title('Meetings'), title('Won value'))).toBe(true);
   });
 
   it('breaks an end-date tie by lowest attainment first', () => {
@@ -100,8 +100,8 @@ describe('ObjectivesListPage — payload, toggle, order', () => {
     });
     render(<ObjectivesListPage />);
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
-    // current (Revenue won) -> future (Pipeline value) -> past (Leads)
-    expect(precedes(title('Revenue won'), title('Pipeline value'))).toBe(true);
+    // current (Won value) -> future (Pipeline value) -> past (Leads)
+    expect(precedes(title('Won value'), title('Pipeline value'))).toBe(true);
     expect(precedes(title('Pipeline value'), title('Leads'))).toBe(true);
   });
 
@@ -114,7 +114,7 @@ describe('ObjectivesListPage — payload, toggle, order', () => {
     });
     render(<ObjectivesListPage />);
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
-    expect(precedes(title('Meetings'), title('Revenue won'))).toBe(true); // c2 before c1
-    expect(precedes(title('Revenue won'), title('Leads'))).toBe(true); // currents before past
+    expect(precedes(title('Meetings'), title('Won value'))).toBe(true); // c2 before c1
+    expect(precedes(title('Won value'), title('Leads'))).toBe(true); // currents before past
   });
 });

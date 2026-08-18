@@ -47,12 +47,20 @@ class ClientAccount(BaseModel):
         help_text=_("Client's business timezone (e.g., 'Europe/Paris', 'America/New_York')")
     )
     
-    default_quota_currency = models.CharField(
+    currency = models.CharField(
         max_length=3,
         choices=CURRENCY,
         default='EUR',
-        verbose_name=_('Default Quota Currency'),
-        help_text=_("Default currency for quotas (EUR, USD, GBP, etc.)")
+        verbose_name=_('Currency'),
+        help_text=_(
+            "The tenant's single currency (ISO-4217). EVERY amount this client "
+            "owns — product prices, deal lines, cycle totals, KPI figures, quota "
+            "targets — is expressed in it. There is no conversion and no "
+            "per-deal currency: amounts are stored as plain numbers and this is "
+            "the context that gives them a unit. Renamed from "
+            "default_quota_currency: the currency belongs to the tenant, not to "
+            "the quota that happened to read it first."
+        )
     )
 
     class Meta:

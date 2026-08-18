@@ -134,7 +134,7 @@ def compute_kpi(request, *, key, scope, period_name, period_start, period_end, p
     except ValueError as exc:
         raise ValidationError(str(exc))
 
-    return serialize_result(result, definition)
+    return serialize_result(result, definition, client_id=auth_ctx.client_id)
 
 
 class KPIDetailView(BaseAPIView):
@@ -228,7 +228,8 @@ class KPIBatchView(BaseAPIView):
                 # Per-spec path — behaviour unchanged for every non-bulk KPI.
                 try:
                     result = cached_run(definition, auth_ctx, scope, period, params=params)
-                    results[i] = serialize_result(result, definition)
+                    results[i] = serialize_result(
+                        result, definition, client_id=auth_ctx.client_id)
                 except ValueError as exc:
                     results[i] = {'key': key, 'error': str(exc), 'status': 400}
 
@@ -250,7 +251,8 @@ class KPIBatchView(BaseAPIView):
                     # 400 exactly like the per-spec ValueError -> ValidationError.
                     results[i] = {'key': definition.key, 'error': str(res), 'status': 400}
                 else:
-                    results[i] = serialize_result(res, definition)
+                    results[i] = serialize_result(
+                        res, definition, client_id=auth_ctx.client_id)
 
         return Response({'success': True, 'data': {'results': results}})
 

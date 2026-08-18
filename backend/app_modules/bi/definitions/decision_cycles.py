@@ -12,49 +12,31 @@ KPI 7 — DC monetary ($ pipeline / $ result): product roll-up value.
   — a FLUX.
 Both are STANDARD KPIs (a scalar Sum over a scoped DecisionCycle queryset):
 source = DecisionCycle (so apply_role_scope('decision_cycles') scopes owner +
-C6 correctly — DealProduct has no owner), and the value is a DB-level Sum over
-the reverse `deal_products` relation of the line roll-up
-(quantity × Coalesce(unit_price, catalog default, 0) × (1 − discount%/100)) —
-no Python loop, line_total property NOT used. estimated_value is a separate
+C6 correctly — DealProduct has no owner), and the value is the CANONICAL deal
+value — `DEAL_VALUE_SUM`, imported from decision_cycles/services/deal_value_sql.py,
+which is also what `DecisionCycle.total_deal_value` returns. The formula is
+declared there and nowhere else; this module states no arithmetic of its own.
+No Python loop, line_total property NOT used. estimated_value is a separate
 manual field, not used here. The scope filters are to-one joins (owner,
 account), and the aggregate is over a single to-many (deal_products), so there
 is no double-counting across a cycle's multiple lines.
 """
 
-from decimal import Decimal
-
-from django.db.models import (
-    Count, DecimalField, ExpressionWrapper, F, Sum, Value,
-)
-from django.db.models.functions import Coalesce
+from django.db.models import Count
 
 from app_modules.bi.registry import KPIDefinition
 from app_modules.bi.types import KPIResult, OutputShape
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
+from app_modules.decision_cycles.services.deal_value_sql import DEAL_VALUE_SUM
 from permissions.scope_filter import apply_role_scope
 
 
-# Per-line value, in SQL: quantity × price × (1 − discount%/100).
-# price = unit_price override, else the catalog default_unit_price, else 0.
-_LINE_VALUE = ExpressionWrapper(
-    F('deal_products__quantity')
-    * Coalesce(
-        F('deal_products__unit_price'),
-        F('deal_products__product_catalog_entry__default_unit_price'),
-        Value(Decimal('0')),
-        output_field=DecimalField(max_digits=14, decimal_places=2),
-    )
-    * (Value(Decimal('1')) - F('deal_products__discount_percent') / Value(Decimal('100'))),
-    output_field=DecimalField(max_digits=24, decimal_places=4),
-)
-
-# Σ of the line values over a cycle's deal_products (0 when there are none).
-_PRODUCT_ROLLUP = Coalesce(
-    Sum(_LINE_VALUE),
-    Value(Decimal('0')),
-    output_field=DecimalField(max_digits=24, decimal_places=4),
-)
+# The roll-up is NOT redeclared here: KPI 7's money IS the canonical deal value
+# (decision_cycles/services/deal_value_sql.py), so the formula lives in exactly
+# one place and this module consumes it. Kept under the historical name so the
+# KPI definitions below read unchanged.
+_PRODUCT_ROLLUP = DEAL_VALUE_SUM
 
 
 # KPI 5 — cycles by outcome (None = open).
@@ -82,6 +64,7 @@ dc_pipeline_value = KPIDefinition(
     scope_module='decision_cycles',
     period_field='created_at',           # STOCK — call with period=None (see module docstring)
     output_shape=OutputShape.SCALAR,
+    unit='currency',                     # money — payload carries the tenant's currency
     allowed_scopes=('mine', 'team', 'client'),
     # STOCK metric: the API default must NOT window it. default_period='all'
     # makes the endpoint's "absent -> default_period" resolve to no period
@@ -105,6 +88,7 @@ dc_won_value = KPIDefinition(
     scope_module='decision_cycles',
     period_field='outcome_date',         # FLUX — call with the period
     output_shape=OutputShape.SCALAR,
+    unit='currency',                     # money — payload carries the tenant's currency
     allowed_scopes=('mine', 'team', 'client'),
     cache_tags=('decision_cycles',),
     invalidation_sources=(

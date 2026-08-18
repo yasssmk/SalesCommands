@@ -148,11 +148,27 @@ class TestDealProductUpdateSerializer:
 class TestDealProductListSerializer:
 
     def test_line_total_exposed(self, deal_product):
+        """The serialized amount IS the derived property (read-time, discount
+        included) — not a re-computation. The previous expectation multiplied
+        quantity x unit_price by hand, which only matched because this fixture
+        carries no discount; see test_line_total_exposed_includes_discount."""
         serializer = DealProductListSerializer(deal_product)
         data = serializer.data
         assert 'line_total' in data
-        expected = deal_product.quantity * deal_product.unit_price
-        assert float(data['line_total']) == float(expected)
+        assert float(data['line_total']) == float(deal_product.line_total)
+
+    def test_line_total_exposed_includes_discount(self, deal_product):
+        """A discounted line serializes its DISCOUNTED amount, immediately —
+        nothing is stored, so nothing can be stale."""
+        from decimal import Decimal
+
+        deal_product.discount_percent = Decimal('25')
+        deal_product.save()
+
+        data = DealProductListSerializer(deal_product).data
+        # 2 x 9500 = 19000, minus 25% -> 14250
+        assert float(data['line_total']) == 14250.0
+        assert float(data['line_total']) == float(deal_product.line_total)
 
     def test_product_catalog_entry_detail(self, deal_product):
         serializer = DealProductListSerializer(deal_product)

@@ -23,6 +23,10 @@ from app_modules.activities.constants import ActivityType, ActivityStatus
 from app_modules.bi import metrics
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
+from app_modules.decision_cycles.services.deal_value_sql import (
+    DEAL_VALUE_ALIAS,
+    annotate_deal_value,
+)
 
 from ..constants import DECISION_CYCLE_OBJECTIVE_TYPES
 from ..models import (
@@ -288,13 +292,20 @@ class CampaignAnalyticsService:
         # DecisionCycle family — one conditional aggregate for the up-to-three
         # cycle-based metrics present (count + two filtered sums).
         if present_types & DECISION_CYCLE_OBJECTIVE_TYPES:
+            # Amounts are the DERIVED product roll-up (TD-75), summed off the
+            # per-cycle annotation rather than a deal_products JOIN: a join
+            # would multiply each cycle row by its line count and inflate
+            # dc_count. The annotation is one scalar subquery per cycle, so the
+            # count stays exact.
             agg = (
-                DecisionCycle.objects
-                .filter(client_id=self.client_id, source_campaign=campaign)
+                annotate_deal_value(
+                    DecisionCycle.objects
+                    .filter(client_id=self.client_id, source_campaign=campaign)
+                )
                 .aggregate(
                     dc_count=Count('id'),
-                    pipeline=Sum('estimated_value', filter=Q(outcome__isnull=True)),
-                    revenue=Sum('estimated_value', filter=Q(outcome=CycleOutcome.WON)),
+                    pipeline=Sum(DEAL_VALUE_ALIAS, filter=Q(outcome__isnull=True)),
+                    revenue=Sum(DEAL_VALUE_ALIAS, filter=Q(outcome=CycleOutcome.WON)),
                 )
             )
             value_by_type[ObjectiveType.DECISION_CYCLES] = agg['dc_count'] or 0
@@ -646,14 +657,14 @@ class CampaignAnalyticsService:
         )
 
     def _sum_pipeline_value(self, campaign):
-        """PIPELINE_VALUE: Σ estimated_value of OPEN cycles attributed to the
+        """PIPELINE_VALUE: Σ total_deal_value of OPEN cycles attributed to the
         campaign via ``DecisionCycle.source_campaign`` (canonical formula)."""
         return metrics.pipeline_value(
             self._dc_base_queryset(), source_campaign=campaign, period=None
         )
 
     def _sum_revenue_won(self, campaign):
-        """REVENUE_WON: Σ estimated_value of WON cycles attributed to the campaign
+        """REVENUE_WON: Σ total_deal_value of WON cycles attributed to the campaign
         via ``DecisionCycle.source_campaign`` (canonical formula)."""
         return metrics.revenue_won(
             self._dc_base_queryset(), source_campaign=campaign, period=None

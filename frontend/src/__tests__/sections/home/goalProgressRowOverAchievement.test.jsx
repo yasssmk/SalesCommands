@@ -32,7 +32,7 @@ function barFill(container) {
 describe('GoalProgressRow — over-achievement colour', () => {
   it('ratio > 1: FULL bar uses the success token (same as normal 100%), NOT gold', () => {
     const { container } = render(
-      <GoalProgressRow label="Revenue won" gradient={gradient} overAchievementRatio={1.3} />
+      <GoalProgressRow label="Won value" gradient={gradient} overAchievementRatio={1.3} />
     );
     const bar = container.querySelector('.MuiLinearProgress-root');
     // bar carries the success colour token (the normal full-bar token) ...
