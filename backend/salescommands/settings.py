@@ -221,7 +221,7 @@ INSTALLED_APPS = [
     'app_modules.core_modules',
     'app_modules.campaigns',
     'app_modules.signals',
-    'app_modules.tech_catalog',  # Tenant-level technology master catalog
+    'app_modules.tech_catalog',  # REMOVED in S10 — migrations-only (see its apps.py)
     'app_modules.product_catalog',  # Tenant-level product master catalog
     'app_modules.ai_pipelines',  # LLM orchestration (transcript extraction, future game-plan, ...)
     'app_modules.notifications',  # In-app notification system (tenant-scoped)
@@ -711,7 +711,6 @@ PERMISSIONS_CONFIG = {
         'templates': False,     # Email/doc templates
         'users': True,         # User management
         'products': False,      # Product catalog
-        'tech_catalog': True,   # Tenant-level technology master catalog
         'product_catalog': True,  # Tenant-level product master catalog
         'ai_pipelines': True,
         'signals': True,       # Signal management

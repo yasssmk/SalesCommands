@@ -22,7 +22,6 @@ from .products_registry import PRODUCTS_REGISTRY
 from .campaigns_registry import CAMPAIGNS_REGISTRY
 from .territories_registry import TERRITORIES_REGISTRY
 from .decision_cycles_registry import DECISION_CYCLES_REGISTRY
-from .tech_catalog_registry import TECH_CATALOG_REGISTRY
 from .product_catalog_registry import PRODUCT_CATALOG_REGISTRY
 from .signals_registry import SIGNALS_REGISTRY
 from .ai_pipelines_registry import AI_PIPELINES_REGISTRY
@@ -61,7 +60,6 @@ def build_registry() -> Dict:
     registry.update(OPPORTUNITIES_REGISTRY)
     registry.update(TERRITORIES_REGISTRY)
     registry.update(DECISION_CYCLES_REGISTRY)
-    registry.update(TECH_CATALOG_REGISTRY)
     registry.update(PRODUCT_CATALOG_REGISTRY)
     registry.update(SIGNALS_REGISTRY)
     registry.update(AI_PIPELINES_REGISTRY)

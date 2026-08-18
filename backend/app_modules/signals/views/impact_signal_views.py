@@ -69,8 +69,7 @@ class ImpactSignalViewSet(BaseSignalViewSet):
         for the standardised source_context block).
 
         ImpactSignal carries no Impact-specific FK (no equivalent to
-        Pain's related_techstack, Objective's target_contact /
-        target_department, or TechStack's tech_catalog_entry).
+        Objective's target_contact / target_department).
         Lifecycle data is captured directly on the model
         (impact_type, scope_level, metric_text, human_impact) — all
         scalar fields requiring no relational preload.

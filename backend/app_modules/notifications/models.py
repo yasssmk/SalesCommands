@@ -19,15 +19,18 @@ class NotificationCategory(models.TextChoices):
     MANAGER_NOTE = 'MANAGER_NOTE', _('Manager note added')                 # E1
     ACTIVITY_INVITATION = 'ACTIVITY_INVITATION', _('Activity invitation')   # E2
     DECISION_CYCLE_CREATED = 'DECISION_CYCLE_CREATED', _('Decision cycle created')  # E3
-    UNKNOWN_TECH_DETECTED = 'UNKNOWN_TECH_DETECTED', _('Unknown technology detected')  # E4
+
+    # E4 (UNKNOWN_TECH_DETECTED) was removed in S10 with the tech
+    # catalogue: "unknown" meant "not in the tenant catalogue", and there
+    # is no catalogue left to be unknown to.
 
 
 class NotificationResponseStatus(models.TextChoices):
     """Response state for ACTIONABLE notifications (E2 invitation, E3 handoff).
 
-    null (no value) marks an INFORMATIVE notification (E1 manager note,
-    E4 unknown tech) that carries no action. A non-null value marks an
-    actionable notification and tracks the recipient's response.
+    null (no value) marks an INFORMATIVE notification (E1 manager note)
+    that carries no action. A non-null value marks an actionable
+    notification and tracks the recipient's response.
     """
     PENDING = 'PENDING', _('Pending')
     ACCEPTED = 'ACCEPTED', _('Accepted')

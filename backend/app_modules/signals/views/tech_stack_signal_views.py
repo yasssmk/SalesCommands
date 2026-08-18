@@ -5,23 +5,19 @@ TechStackSignalViewSet — CRUD + validate/reject for TechStackSignal.
 Inherits all shared logic from BaseSignalViewSet.
 
 Notes:
-  * The model uses a catalog FK + structured lifecycle fields — see
+  * The model identifies its tool by free text (tech_name + the derived
+    tech_name_normalized) and carries three qualification booleans — see
     app_modules/signals/models/tech_stack_signal.py for the full
     architecture.
   * `invalidate_cluster_tag = False`: TechStack is NOT clusterable
     (product decision) — it produces no clusters, so writes only need to
     bust SIGNALS_CACHE_TAG, never SIGNAL_CLUSTERS_CACHE_TAG.
-  * Search now traverses the catalog FK so the rep can search by
-    company / product name without dragging the catalog ID through the
-    UI.
+  * Search hits the tool name directly (raw and normalised), so a rep
+    typing "salesforce" matches however the LLM spelled it.
 """
 
-from rest_framework.decorators import action
-from rest_framework.response import Response
+from core.logging import get_logger
 
-from core.logging import ctx_from_request, get_logger
-
-from ..constants import SignalStatus
 from ..models import TechStackSignal
 from ..serializers import (
     TechStackSignalListSerializer,
@@ -66,67 +62,25 @@ class TechStackSignalViewSet(BaseSignalViewSet):
     # must NOT bust the signal_clusters cache tag.
     invalidate_cluster_tag = False
 
-    # Search across narrative fields and the catalog FK's text columns,
-    # so a rep typing "Salesforce" in the search box hits matching
-    # signals without needing the catalog UUID.
+    # Search across the tool name and the narrative fields. Both the raw
+    # and the normalised name are searchable: the raw one matches what
+    # the rep sees on the card, the normalised one makes the search
+    # case- and spacing-insensitive without a DB function.
     search_fields = [
+        'tech_name',
+        'tech_name_normalized',
         'notes',
         'cost_description',
-        'tech_catalog_entry__company_name',
-        'tech_catalog_entry__product_name',
     ]
 
     def get_queryset(self):
         """
         Extend base queryset with TechStackSignal-specific select_related.
 
-        Adds tech_catalog_entry (the compact catalog payload exposed by
-        the serializers) and usage_department (often null but exposed
-        compactly when set; prefetching avoids N+1 on list views).
+        usage_department is often null but is exposed compactly when set;
+        prefetching avoids N+1 on list views. The tool name lives on the
+        row itself, so nothing else needs joining.
         """
         qs = super().get_queryset()
-        qs = qs.select_related(
-            'tech_catalog_entry',
-            'usage_department',
-        )
+        qs = qs.select_related('usage_department')
         return qs
-
-    @action(detail=False, methods=['get'], url_path='detected')
-    def detected(self, request):
-        """
-        List "detected" TechStack signals: PENDING observations whose
-        LLM-extracted tool could not be matched to the tenant catalog
-        (tech_catalog_entry is null; the raw name lives in
-        metadata['pending_tech_name']).
-
-        GET /tech-stack/detected/
-
-        These are the signals an admin needs to reconcile — attach (or
-        create) a catalog entry, then validate. Attaching goes through
-        the normal PATCH path (TechStackSignalUpdateSerializer allows the
-        FK while PENDING); this endpoint only surfaces the work list.
-
-        Tenant-scoped (ScopedQuerysetMixin), paginated, ordered
-        most-recent-first (TechStackSignal.Meta.ordering).
-        """
-        logger.info(
-            'tech_stack_signal_detected_requested',
-            extra=ctx_from_request(request),
-        )
-
-        qs = self.get_queryset().filter(
-            status=SignalStatus.PENDING,
-            tech_catalog_entry__isnull=True,
-        )
-
-        page = self.paginate_queryset(qs)
-        if page is not None:
-            serializer = self.list_serializer_class(
-                page, many=True, context={'request': request},
-            )
-            return self.get_paginated_response(serializer.data)
-
-        serializer = self.list_serializer_class(
-            qs, many=True, context={'request': request},
-        )
-        return Response({'success': True, 'data': serializer.data})

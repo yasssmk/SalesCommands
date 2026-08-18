@@ -45,23 +45,21 @@ malformed LLM emission, cross-tenant UUID, validation failure from
 SignalManager.create(). The pipeline only needs the integer; granular
 reasons live in module logs (WARN level) for ops investigation.
 
-TechCatalog is no longer consulted (S10 sub-step 2)
----------------------------------------------------
+Tech identity is free text (S10)
+--------------------------------
 The techstack stage used to ask the LLM to match each mention against
 the tenant's TechCatalog and emit a UUID, which this service then
 re-validated against activity.client_id as defense in depth against a
 hallucinated or cross-tenant id.
 
-That whole mechanism is gone: the LLM now emits the tool name as free
-text plus three qualification booleans, and the extractor writes them
-to `tech_name` / `is_competitor` / `is_integration` / `is_to_replace`.
-`tech_catalog_entry` is left NULL on every extracted signal.
+That whole mechanism is gone, along with the catalogue itself: the LLM
+emits the tool name as free text plus three qualification booleans, and
+the extractor writes them to `tech_name` / `is_competitor` /
+`is_integration` / `is_to_replace`.
 
-The cross-tenant attack surface disappears with the UUID: no
+The cross-tenant attack surface disappeared with the UUID: no
 tenant-owned identifier is sent to the model or read back from it on
-this path. `_resolve_catalog_uuid` below is consequently dead on the
-techstack path and is removed with the rest of the catalogue in
-S10 sub-step 5.
+this path.
 
 Concurrency / atomicity
 -----------------------
@@ -86,7 +84,6 @@ a different filter strategy could subclass).
 """
 
 import logging
-import uuid as uuid_module
 
 from django.db import transaction
 from django.utils import timezone
@@ -98,10 +95,6 @@ from app_modules.signals.constants import (
 )
 from app_modules.signals.models import TechStackSignal
 from app_modules.signals.services.signal_manager import SignalManager
-from app_modules.tech_catalog.models import TechCatalog
-from app_modules.notifications.models import NotificationCategory
-from app_modules.notifications.services import NotificationService
-from end_users.models import User
 from core.exceptions import StandardizedValidationError
 
 from .safety_filter import passes_safety_filter, safe_float
@@ -228,9 +221,6 @@ class TranscriptSignalExtractor:
                     client_id=client_id,
                 )
                 persisted.append(signal)
-                # Notify tenant admins of a newly-detected unknown tech.
-                # Self-contained and non-raising (see helper docstring).
-                self._maybe_notify_unknown_tech(signal, client_id)
             except StandardizedValidationError as exc:
                 logger.warning(
                     'signal_create_validation_failed',
@@ -254,101 +244,6 @@ class TranscriptSignalExtractor:
                 dropped_count += 1
 
         return persisted, dropped_count
-
-    def _maybe_notify_unknown_tech(self, signal, client_id):
-        """
-        Notify tenant admins when a newly-detected unknown technology is
-        persisted: a PENDING, LLM-extracted TechStackSignal with no catalog
-        entry. Emission runs on transaction commit (so it never fires for a
-        rolled-back batch) and fans out one notification per active admin.
-
-        DORMANT since S10 sub-step 2. "Unknown tech" was defined as "the
-        LLM could not match this tool to the tenant TechCatalog". The
-        extractor no longer performs any catalogue match, so
-        `tech_catalog_entry_id is None` is now true of EVERY extracted
-        tech signal -- keeping the old condition would fan a notification
-        out to every admin for every tool mentioned on every call. The
-        guard below therefore returns before any emission.
-
-        TODO(S10 sub-step 5): delete this helper, its call site in
-        persist_stage(), the NotificationCategory.UNKNOWN_TECH_DETECTED
-        member and tests/ai_pipelines/test_unknown_tech_notification.py,
-        together with the rest of the catalogue-validation workflow. It is
-        neutralised rather than deleted here so that sub-step 2 stays a
-        pure extraction rework and the removal happens in one reviewable
-        place. If the product later wants a "new tool seen on this
-        account" notification, that is a NEW emitter keyed on the
-        normalised name, not a revival of this one.
-
-        Non-raising by contract: the persist loop swallows per-signal
-        exceptions, so a notification failure must never propagate and make
-        an already-extracted signal disappear. Any error is logged and
-        swallowed here.
-        """
-        # S10: the catalogue match that gave this notification its meaning
-        # is gone. See the docstring TODO before re-enabling anything here.
-        return
-
-        try:
-            is_unknown_tech = (
-                isinstance(signal, TechStackSignal)
-                and signal.tech_catalog_entry_id is None
-                and signal.source == SignalSource.LLM_EXTRACTED
-                and signal.status == SignalStatus.PENDING
-            )
-            if not is_unknown_tech:
-                return
-
-            # Resolve admin recipients now (before commit), as primitives.
-            admin_ids = list(
-                User.objects.filter(
-                    client_account_id=client_id,
-                    is_active=True,
-                    role__is_admin=True,
-                ).values_list('id', flat=True)
-            )
-            if not admin_ids:
-                return
-
-            tech_name = (signal.metadata or {}).get('pending_tech_name', '')
-            signal_id = signal.id
-            # System detection: no actor prefix. Account may be null on a
-            # signal, so append it only when present.
-            account_name = signal.account.company_name if signal.account_id else ''
-            if account_name:
-                title = f"Unknown technology detected: {tech_name} · {account_name}"
-            else:
-                title = f"Unknown technology detected: {tech_name}"
-
-            def _emit():
-                # System detection: actor=None, so every admin is notified.
-                # Guard each emit so a single failure neither stops the fan-out
-                # nor propagates out of the post-commit callback.
-                for admin_id in admin_ids:
-                    try:
-                        NotificationService.emit(
-                            client_id=client_id,
-                            recipient=admin_id,
-                            category=NotificationCategory.UNKNOWN_TECH_DETECTED,
-                            title=title,
-                            related_object_type='tech_stack_signal',
-                            related_object_id=signal_id,
-                            payload={'tech_name': tech_name},
-                        )
-                    except Exception:
-                        logger.warning(
-                            'unknown_tech_notify_emit_failed',
-                            extra={'event': 'ai_pipeline_persist'},
-                            exc_info=True,
-                        )
-
-            transaction.on_commit(_emit)
-        except Exception:
-            logger.warning(
-                'unknown_tech_notify_failed',
-                extra={'event': 'ai_pipeline_persist'},
-                exc_info=True,
-            )
 
     # =========================================================================
     # SAFETY FILTER (delegated to the shared module)
@@ -570,18 +465,14 @@ class TranscriptSignalExtractor:
             source_quote, confidence, is_inferred.
 
         Tech identity (S10):
-            The LLM no longer matches a TechCatalog UUID. It emits the
-            tool name as free text and the extractor writes it verbatim
-            to `tech_name`. TechStackSignal.save() derives
+            The LLM emits the tool name as free text and the extractor
+            writes it verbatim to `tech_name`. TechStackSignal.save() derives
             `tech_name_normalized` from it -- do NOT normalise here, or
             the raw display text would be lost.
 
-            `tech_catalog_entry` is deliberately left unset. The FK still
-            exists on the model (removed in S10 sub-step 5) but nothing
-            populates it anymore, and no catalogue lookup happens on this
-            path. `metadata['pending_tech_name']` is likewise no longer
-            written -- the column is the identity carrier now, and a
-            second copy of the same string could only drift from it.
+            `metadata['pending_tech_name']` is no longer written -- the
+            column is the identity carrier now, and a second copy of the
+            same string could only drift from it.
 
         Qualification booleans:
             Three independent flags, coerced with bool() so a JSON
@@ -626,9 +517,6 @@ class TranscriptSignalExtractor:
             # Raw, verbatim. TechStackSignal.save() computes the
             # normalised grouping key from it.
             'tech_name':       str(tech_name),
-
-            # Catalogue anchor is never set on this path anymore.
-            'tech_catalog_entry': None,
 
             'is_competitor':   bool(raw.get('is_competitor')),
             'is_integration':  bool(raw.get('is_integration')),
@@ -699,60 +587,6 @@ class TranscriptSignalExtractor:
             # v1: contact attribution deferred to validation UI -- TD-6.
             # Field stays at model default (None).
         }
-
-    # =========================================================================
-    # DEFENSE-IN-DEPTH HELPERS
-    # =========================================================================
-
-    @staticmethod
-    def _resolve_catalog_uuid(catalog_id, client_id):
-        """
-        Resolve a TechCatalog UUID to its model instance, with tenant
-        isolation enforcement.
-
-        The LLM is fed a tenant-scoped catalog (see context.py) but a
-        prompt-injection attempt or model hallucination could still
-        produce a UUID that does not belong to the requesting tenant.
-        This helper is the second line of defense.
-
-        Returns:
-            TechCatalog instance on success.
-            None on:
-                * malformed UUID string
-                * UUID not found in the tenant's catalog (cross-tenant
-                  or hallucinated)
-
-        Failures are WARN-logged for ops investigation.
-        """
-        # Validate UUID shape.
-        try:
-            catalog_uuid = uuid_module.UUID(str(catalog_id))
-        except (ValueError, TypeError, AttributeError):
-            logger.warning(
-                'techstack_catalog_uuid_malformed',
-                extra={
-                    'catalog_id': str(catalog_id),
-                    'event': 'ai_pipeline_defense_in_depth',
-                },
-            )
-            return None
-
-        # Tenant-scoped lookup.
-        try:
-            return TechCatalog.objects.get(
-                id=catalog_uuid,
-                client_id=client_id,
-            )
-        except TechCatalog.DoesNotExist:
-            logger.warning(
-                'techstack_catalog_uuid_cross_tenant_or_hallucination',
-                extra={
-                    'catalog_id': str(catalog_uuid),
-                    'client_id': str(client_id),
-                    'event': 'ai_pipeline_defense_in_depth',
-                },
-            )
-            return None
 
     # =========================================================================
     # MISC HELPERS (delegated to the shared module)

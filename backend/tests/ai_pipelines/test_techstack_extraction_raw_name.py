@@ -14,8 +14,7 @@ straight onto the sub-step-1 fields:
     is_integration   ->  is_integration
     is_to_replace    ->  is_to_replace
 
-`tech_catalog_entry` is never set by the extractor anymore (the FK still
-exists on the model — it is removed in sub-step 5).
+The tech catalogue is gone entirely: nothing on this path references it.
 
 Harness mirrors TestPersistStageBlocker in
 tests/ai_pipelines/test_pipeline_extractor_blocker.py:194-249 — the real
@@ -96,14 +95,12 @@ class TestRawNameExtraction:
         assert sig.tech_name == 'Salesforce'
         assert sig.tech_name_normalized == 'salesforce'
         assert sig.is_competitor is True
-        assert sig.tech_catalog_entry_id is None
 
         # And it is what actually landed in the DB.
         sig.refresh_from_db()
         assert sig.tech_name == 'Salesforce'
         assert sig.tech_name_normalized == 'salesforce'
         assert sig.is_competitor is True
-        assert sig.tech_catalog_entry_id is None
 
     def test_raw_text_is_preserved_verbatim_and_normalised_by_save(
         self, account, activity, user_a,

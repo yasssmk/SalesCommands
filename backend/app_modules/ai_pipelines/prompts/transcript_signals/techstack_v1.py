@@ -7,7 +7,7 @@ family. It is combined at call time with:
   * system.py        -- universal output / evidence / taxonomy rules.
   * build_context_layer(activity, 'techstack') -- session grounding +
     the UsageScope enum. The TECH CATALOG list is no longer injected
-    (S10 sub-step 2 -- see _build_techcatalog_block in context.py).
+    (the catalogue was removed in S10).
 The full assembly is performed by PromptBuilder.assemble() in base.py.
 
 Schema (v1 — S10 revision)
@@ -34,8 +34,8 @@ What replaced the catalogue match (S10)
 ---------------------------------------
 Until S10 the schema was a XOR: `tech_catalog_entry_id` (a UUID from the
 tenant's TechCatalog, injected into the context layer) OR
-`tech_name_raw` when nothing matched. The catalogue is being removed, so
-identity is now carried by free text: the model reports the name it
+`tech_name_raw` when nothing matched. The catalogue has been removed, so
+identity is carried by free text: the model reports the name it
 heard, and the backend derives a normalised grouping key from it in
 TechStackSignal.save(). Nothing in this prompt needs to know about
 tenant reference data anymore.
@@ -44,7 +44,7 @@ Empty result is represented by {"signals": []}.
 
 Why scope_level DEPARTMENT is excluded from v1
 ----------------------------------------------
-UsageScope.DEPARTMENT triggers TechStackSignal.clean() rule 2 requiring
+UsageScope.DEPARTMENT triggers TechStackSignal.clean() rule 1 requiring
 `usage_department` (FK to StandardDepartment). Resolving a department
 reference from free text would require either an LLM second-pass or
 fuzzy text matching, neither of which is MVP material. We instruct the
@@ -118,8 +118,6 @@ Fields filled by the service from the request context:
 
 Hardcoded defaults at create:
 
-    tech_catalog_entry  =  None    (catalogue no longer consulted; the
-                                    FK is removed in S10 sub-step 5)
     is_discontinued     =  False
     discontinued_date   =  None
     usage_department    =  None    (DEPARTMENT scope excluded in v1)

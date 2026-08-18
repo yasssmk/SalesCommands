@@ -48,7 +48,6 @@ def _mk_tech(account, owner, ca, tech_name, status=SignalStatus.VALIDATED):
     )
     sig = TechStackSignal(
         account=account,
-        tech_catalog_entry=None,
         tech_name=tech_name,
         source=source,
         status=status,

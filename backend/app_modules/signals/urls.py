@@ -170,13 +170,6 @@ def get_urlpatterns():
             TechStackSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
             name='tech-stack-list',
         ),
-        # Literal 'detected/' must precede the <uuid:pk> route so it is
-        # not captured as a detail lookup.
-        path(
-            'tech-stack/detected/',
-            TechStackSignalViewSet.as_view({'get': 'detected'}),
-            name='tech-stack-detected',
-        ),
         path(
             'tech-stack/<uuid:pk>/',
             TechStackSignalViewSet.as_view({

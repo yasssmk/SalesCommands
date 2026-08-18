@@ -25,8 +25,6 @@ Product rules under test:
 Non-regression:
   * `canonical_key` stays None — TechStack is not clusterable and the
     new save() override must not touch it.
-  * `tech_catalog_entry` (still live in this sub-step) keeps working
-    alongside the new fields.
   * The existing metadata surface (usage_scope, renewal_date, notes,
     metadata JSON, ...) is untouched by normalisation.
 
@@ -59,7 +57,6 @@ def _make_signal(account, activity, user, **overrides):
     kwargs = {
         'account': account,
         'source_activity': activity,
-        'tech_catalog_entry': None,
         'source': SignalSource.LLM_EXTRACTED,
     }
     kwargs.update(overrides)
@@ -67,14 +64,6 @@ def _make_signal(account, activity, user, **overrides):
     sig = TechStackSignal(**kwargs)
     sig.save(user=user, client_id=account.client_id)
     return sig
-
-
-def _make_catalog_entry(client_id, user, *, company='Salesforce', product='Sales Cloud'):
-    """Mirror of the catalog helper in test_techstack_pending_catalog_link.py:44-48."""
-    from app_modules.tech_catalog.models import TechCatalog
-    entry = TechCatalog(company_name=company, product_name=product)
-    entry.save(user=user, client_id=client_id)
-    return entry
 
 
 # =============================================================================
@@ -264,22 +253,6 @@ class TestExistingSurfaceUntouched:
         assert sig.canonical_key is None
         sig.refresh_from_db()
         assert sig.canonical_key is None
-
-    def test_catalog_fk_still_works_alongside_the_new_fields(
-        self, account, activity, user_a, client_account_a,
-    ):
-        """The catalogue stays live in this sub-step — both coexist."""
-        entry = _make_catalog_entry(client_account_a.id, user_a)
-
-        sig = _make_signal(
-            account, activity, user_a,
-            tech_catalog_entry=entry,
-            tech_name='Salesforce Sales Cloud',
-        )
-
-        sig.refresh_from_db()
-        assert sig.tech_catalog_entry_id == entry.id
-        assert sig.tech_name_normalized == 'salesforce sales cloud'
 
     def test_metadata_surface_is_untouched_by_normalisation(
         self, account, activity, user_a,

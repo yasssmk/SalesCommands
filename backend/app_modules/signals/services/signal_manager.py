@@ -269,15 +269,14 @@ class SignalManager:
 
         Guards (raised before any mutation):
           1. Signal must be in status=PENDING.
-          2. TechStackSignal must have tech_catalog_entry set. PENDING
-             LLM-extracted TechStack signals may legitimately exist
-             with tech_catalog_entry=None — the LLM could not match
-             the mentioned tool to the tenant catalog at extraction
-             time (see TechStackSignal.clean() rule 1 and the LLM-
-             PENDING exception). Promotion to VALIDATED requires the
-             catalog anchor because canonical_key is derived from it
-             and cluster aggregation cannot work without it. The rep
-             must attach (or create) a catalog entry before validating.
+
+        S10 removed a second guard that refused to validate a
+        TechStackSignal whose tech_catalog_entry was null. That FK was
+        the tool's identity and had to be attached before promotion; the
+        catalogue is gone and the signal now carries its own tech_name,
+        so a tech signal is validatable as extracted — which is the
+        point: the rep confirms the observation, they no longer have to
+        curate a reference row first.
 
         Sets status → VALIDATED, records validated_by and validated_at.
 
@@ -294,18 +293,6 @@ class SignalManager:
         if signal.status != SignalStatus.PENDING:
             raise StandardizedValidationError(
                 SignalErrorMessages.NOT_PENDING_VALIDATED
-            )
-
-        # TechStack-specific guard — cannot validate without the catalog FK.
-        # The model only allows the FK to be null on PENDING LLM-extracted
-        # signals (see TechStackSignal.clean() rule 1). Validation forces
-        # the rep to attach the anchor before promoting the signal.
-        if (
-            isinstance(signal, TechStackSignal)
-            and signal.tech_catalog_entry_id is None
-        ):
-            raise StandardizedValidationError(
-                SignalErrorMessages.TECHSTACK_CATALOG_ENTRY_REQUIRED
             )
 
         signal.status       = SignalStatus.VALIDATED

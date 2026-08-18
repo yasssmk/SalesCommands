@@ -52,7 +52,7 @@ Removed vs. previous versions:
                            SignalWhat × SignalDimension)
   - PainLevel             (replaced by ScopeLevel — Pain is now a pure
                            diagnosis)
-  - TechCategory          (replaced by FK to TechCatalog — categorisation
+  - TechCategory          (replaced by free-text tech_name — categorisation
                            moves out of the signal into the tenant-level
                            tech master catalog)
   - Satisfaction          (dropped — qualitative feel of a tool was rarely

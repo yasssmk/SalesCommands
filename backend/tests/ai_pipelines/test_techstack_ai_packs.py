@@ -6,8 +6,8 @@ Both LLM-facing packs used to compose the tool label and the commercial
 flags from the TechCatalog FK:
 
     catalog_name          <- str(signal.tech_catalog_entry)
-    is_competitor         <- tech_catalog_entry.is_competitor
-    is_integration_target <- tech_catalog_entry.is_integration_target
+    is_competitor         <- the catalogue row's flag
+    is_integration_target <- the catalogue row's flag
 
 Since sub-step 2 the extractor never populates that FK, so those three
 emitted None / False / False on every extracted tech signal — the tool
@@ -82,7 +82,6 @@ def _create_tech(dc, user, client_id, tech_name='Salesforce', **flags):
         decision_cycle=dc,
         source=SignalSource.MANUAL,
         status=SignalStatus.VALIDATED,
-        tech_catalog_entry=None,
         tech_name=tech_name,
         source_quote=f'They run everything on {tech_name}',
         is_competitor=flags.get('is_competitor', False),

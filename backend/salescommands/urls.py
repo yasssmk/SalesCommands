@@ -74,7 +74,6 @@ urlpatterns = [
     path('campaigns/', include('app_modules.campaigns.urls')),
     path('module-signals/', include('app_modules.signals.urls')),
     path('module-ai-pipelines/', include('app_modules.ai_pipelines.urls')),
-    path('tech-catalog/', include('app_modules.tech_catalog.urls')),
     path('product-catalog/', include('app_modules.product_catalog.urls')),
     path('notifications/', include('app_modules.notifications.urls')),
     path('bi/', include('app_modules.bi.urls')),

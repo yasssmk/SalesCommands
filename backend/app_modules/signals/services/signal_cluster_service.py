@@ -673,8 +673,7 @@ class SignalClusterService:
         product rule as Pain / Objective).
 
         ImpactSignal carries no Impact-specific FK (no equivalent to
-        Pain's related_techstack, Objective's target_contact /
-        target_department, or TechStack's tech_catalog_entry).
+        Objective's target_contact / target_department).
         Impact-specific data (impact_type, scope_level, metric_text,
         human_impact) are scalar fields requiring no relational preload.
 

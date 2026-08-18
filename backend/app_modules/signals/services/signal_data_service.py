@@ -75,8 +75,6 @@ _RELATED_BY_TYPE = {
         'validated_by',
         'decision_cycle',
         'campaign',
-        # Cross-reference TechCatalog:
-        'related_techstack',
     ],
     'objective': [
         'source_activity',
@@ -104,7 +102,6 @@ _RELATED_BY_TYPE = {
     'tech_stack': [
         'source_activity',
         'validated_by',
-        'tech_catalog_entry',  # Drives canonical_key + display payload.
         'usage_department',    # Often null but cheap to prefetch.
     ],
 }
@@ -299,7 +296,7 @@ class SignalDataService:
         - summary         : Pain / Objective use signal.summary (or
                             notes fallback). TechStack composes
                             "<company> <product>" from
-                            tech_catalog_entry plus notes when set.
+                            tech_name plus notes when set.
         - contact         : Now uniformly derived from
                             source_activity.contacts.first() across
                             all 3 types. Previous per-type branching
@@ -455,7 +452,7 @@ class SignalDataService:
                            optionally suffixed with notes when set.
 
                            S10: this used to compose
-                           "<company> <product>" from tech_catalog_entry.
+                           "<company> <product>" from the catalogue FK.
                            The extractor no longer populates that FK, so
                            reading it would return '' on every extracted
                            signal and blank the tool name out of every

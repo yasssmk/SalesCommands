@@ -41,7 +41,7 @@ Sub-call sequence
                                        validation -- see TD-6)
 
 Each sub-call shares system prompt + context, varying only the request
-layer. The context layer includes the TechCatalog UUIDs only on the
+layer. The context layer used to include TechCatalog UUIDs on the
 techstack stage (token economy). The context layer SKIPS the taxonomy
 block entirely on the blocker stage (BlockerSignal has no canonical
 axes).

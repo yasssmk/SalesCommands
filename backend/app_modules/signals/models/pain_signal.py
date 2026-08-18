@@ -52,40 +52,26 @@ create time.
 
 Cross-reference with TechStack
 ------------------------------
-Two optional fields enable a Pain to reference a tool that is part of
-the diagnosed problem — typically (but not exclusively) when what=TECH:
+`related_techstack_mention` — free text — lets a Pain name a tool that
+is part of the diagnosed problem, typically (but not exclusively) when
+what=TECH.
 
-  * related_techstack          — FK to a tenant-level TechCatalog entry
-                                  (structured cross-reference)
-  * related_techstack_mention  — free-text mention of a tool not yet
-                                  catalogued, or whose identity could
-                                  not be resolved at extraction time
+S10 removed the structured companion `related_techstack`, a FK to the
+tenant TechCatalog. The catalogue is gone, and TechStackSignal now
+carries its own free-text identity (`tech_name` + the normalised key),
+so a structured Pain→tool link has nothing left to point at. The
+textual mention survives as the trace it always was.
 
-The two fields are NOT mutually exclusive at the model level. Both may
-be set simultaneously during a migration window where a textual mention
-gets enriched with a structured FK. The frontend UI hides the textual
-field once a FK is set, but that is purely a UX convenience — the
-backend stays permissive so that progressive enrichment (mention →
-identification → FK) is possible without changing schema state.
-
-Why SET_NULL on related_techstack
----------------------------------
-The cluster identity of a Pain is driven solely by what × dimension;
-a related_techstack FK is secondary metadata. Removing a catalog entry
-does not destroy a Pain — only its enriched cross-reference. The
-mention field can survive as a textual trace.
-
-This contrasts with TechStackSignal.tech_catalog_entry which uses
-PROTECT, because that FK directly drives the TechStack cluster identity
-(canonical_key = "techstack:<entry.id>") and cannot be safely nulled.
+If a structured link is wanted again later, the natural target is the
+normalised tech name shared with TechStackSignal.tech_name_normalized —
+not a resurrected catalogue.
 
 UI conditionality (frontend only)
 ---------------------------------
-The form rule "show related_techstack* fields only when what=TECH" is
+The form rule "show related_techstack_mention only when what=TECH" is
 intentionally NOT enforced in the model. A Pain with what=DATA might
-legitimately reference a BI tool (TechCatalog entry), and the rep
-should be able to surface that cross-reference without the schema
-fighting them.
+legitimately reference a BI tool, and the rep should be able to surface
+that cross-reference without the schema fighting them.
 """
 
 from django.core.exceptions import ValidationError
@@ -206,40 +192,18 @@ class PainSignal(BaseSignal):
     # CROSS-REFERENCE — TechStack
     # =========================================================================
     #
-    # Both fields are optional and not mutually exclusive at the model
-    # level — see class docstring for rationale. The frontend hides the
-    # mention TextField when the FK is set, as a UX convenience.
-    #
-    # Used by SignalClusterService when computing the TechStack cluster's
-    # `related_pain_clusters` payload: filter PainSignal.related_techstack
-    # = <catalog_entry_id> on the same account, group by canonical_key,
-    # and return enriched cluster summaries. The composite index below
-    # (account, related_techstack) supports that lookup pattern.
-
-    related_techstack = models.ForeignKey(
-        'tech_catalog.TechCatalog',
-        on_delete=models.SET_NULL,
-        related_name='related_pain_signals',
-        null=True,
-        blank=True,
-        verbose_name=_('Related TechStack'),
-        help_text=_(
-            'Optional structured cross-reference to a tool involved in '
-            'this pain. Set when the rep can identify the tool against '
-            'the tenant tech catalog. SET_NULL on catalog deletion — the '
-            'pain itself remains valid, only the enriched cross-ref is lost.'
-        ),
-    )
+    # Optional — see class docstring. The structured FK companion
+    # (related_techstack -> TechCatalog) was removed in S10 along with
+    # the catalogue; the mention is the whole cross-reference now.
 
     related_techstack_mention = models.CharField(
         max_length=200,
         blank=True,
         verbose_name=_('Related TechStack Mention'),
         help_text=_(
-            'Free-text mention of a tool that could not be matched against '
-            'the catalog (or whose match was deferred). Allows progressive '
-            'enrichment: a textual mention can later be promoted to a '
-            'structured FK once the catalog includes the tool.'
+            'Free-text mention of a tool involved in this pain '
+            '(e.g. "Salesforce"). Not linked to any TechStackSignal — '
+            'purely a textual trace captured alongside the pain.'
         ),
     )
 
@@ -266,13 +230,6 @@ class PainSignal(BaseSignal):
             models.Index(
                 fields=['account', 'canonical_key'],
                 name='painsig_account_canon_idx',
-            ),
-            # Composite index for TechStack cluster's related_pain_clusters
-            # lookup: "find all Pains on account X cross-referencing
-            # TechCatalog entry Y". See SignalClusterService.
-            models.Index(
-                fields=['account', 'related_techstack'],
-                name='painsig_account_techref_idx',
             ),
         ]
 

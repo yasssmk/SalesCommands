@@ -13,8 +13,8 @@ Also exposes:
   - scope_level       : organisational scope at which the pain is felt
                         (BUSINESS / DEPARTMENT / PERSONAL) — defaults to
                         BUSINESS at the model layer if not provided
-  - related_techstack : compact catalog reference when the pain points
-                        to a tool from the tenant tech catalog
+  - related_techstack_mention : free-text tool reference when the pain points
+                        to a tool, as free text
 
 Validation rules surfaced from the model (PainSignal.clean):
   1. source_activity is required
@@ -72,29 +72,6 @@ class _PainDisplayMixin:
     def get_scope_level_display(self, obj):
         return obj.get_scope_level_display() if obj.scope_level else None
 
-    def get_related_techstack(self, obj):
-        """
-        Compact catalog payload for the cross-reference FK.
-
-        Mirror of TechStackSignal serializers' get_tech_catalog_entry —
-        keeps the frontend from issuing a separate /tech-catalog/<id>/
-        fetch just to render the tool name on a Pain card.
-
-        Returns None when the FK is not set (the textual
-        related_techstack_mention is exposed as a separate field).
-        """
-        entry = obj.related_techstack
-        if not entry:
-            return None
-        return {
-            'id':                    str(entry.id),
-            'company_name':          entry.company_name,
-            'product_name':          entry.product_name,
-            'is_competitor':         entry.is_competitor,
-            'is_integration_target': entry.is_integration_target,
-        }
-
-
 # =============================================================================
 # LIST
 # =============================================================================
@@ -105,10 +82,9 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
 
     Exposes the canonical axes (what × dimension), the scope axis, the
     narrative summary (notes live on the detail view), and the optional
-    cross-reference to a TechStack catalog entry.
+    free-text cross-reference to a tool.
 
     Cross-reference exposure:
-      - related_techstack          : compact catalog payload or None
       - related_techstack_mention  : free-text mention or empty string
 
     Both fields are emitted unconditionally — the UI hides them when
@@ -123,8 +99,7 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
     # Scope axis
     scope_level_display = serializers.SerializerMethodField()
 
-    # Cross-reference — compact catalog payload (read)
-    related_techstack   = serializers.SerializerMethodField()
+    # Cross-reference — free-text tool mention
 
     class Meta(BaseSignalListSerializer.Meta):
         model = PainSignal
@@ -137,7 +112,6 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
             # Narrative
             'summary',
             # Cross-reference — TechStack
-            'related_techstack',
             'related_techstack_mention',
         ]
         read_only_fields = fields
@@ -161,8 +135,7 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
     dimension_display   = serializers.SerializerMethodField()
     scope_level_display = serializers.SerializerMethodField()
 
-    # Cross-reference — compact catalog payload (read)
-    related_techstack   = serializers.SerializerMethodField()
+    # Cross-reference — free-text tool mention
 
     class Meta(BaseSignalDetailSerializer.Meta):
         model = PainSignal
@@ -173,7 +146,6 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
             'summary',
             'notes',
             # Cross-reference — TechStack
-            'related_techstack',
             'related_techstack_mention',
         ]
         read_only_fields = fields
@@ -199,7 +171,6 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
       - scope_level                — defaults to BUSINESS at the model
                                       layer when omitted
       - notes                      — free-text additional context
-      - related_techstack          — FK to TechCatalog, written as UUID
       - related_techstack_mention  — free-text tool mention
 
     Contacts who participated in the source conversation are derived
@@ -228,7 +199,6 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
             'summary',
             'notes',
             # Cross-reference — TechStack
-            'related_techstack',
             'related_techstack_mention',
         ]
         extra_kwargs = {
@@ -238,7 +208,6 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
             'scope_level': {'required': False},  # default BUSINESS at model
             'summary':     {'required': True},
             'notes':       {'required': False, 'allow_blank': True},
-            'related_techstack':         {'required': False, 'allow_null': True},
             'related_techstack_mention': {'required': False, 'allow_blank': True},
         }
 
@@ -251,7 +220,7 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
              to a real conversation (stricter than BaseSignal, where
              activity is optional).
 
-        Cross-reference fields (related_techstack / related_techstack_mention)
+        The cross-reference field (related_techstack_mention)
         carry no model-level constraint — see PainSignal model docstring
         for the rationale of permissive backend behaviour.
 
@@ -283,7 +252,7 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
       - scope_level              — scope axis (re-anchors the pain at a
                                     different organisational layer)
       - summary, notes
-      - related_techstack, related_techstack_mention
+      - related_techstack_mention
 
     Changing `what` or `dimension` is allowed — the model's save() recomputes
     canonical_key automatically. A pain can therefore be re-classified
@@ -293,12 +262,9 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
     canonical_key itself is NOT writable: it is derived, not authored.
     Cluster metadata is recomputed on read from the current canonical_key.
 
-    Cross-reference fields support progressive enrichment:
-      - PATCH related_techstack_mention='Salesforce' first
-      - Later PATCH related_techstack=<uuid> when the catalog has been
-        populated
-      - The UI may then drop the mention textually, but the backend
-        accepts both being set simultaneously without error.
+    `related_techstack_mention` is free text — a trace of the tool
+    involved in the pain. Its structured FK companion was removed in S10
+    along with the tech catalogue.
 
     Impact-level evidence (metrics, human consequences) is not mutated
     here. ImpactSignal is a separate first-class signal type with its
@@ -314,7 +280,6 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'summary',
             'notes',
             # Cross-reference — TechStack
-            'related_techstack',
             'related_techstack_mention',
         ]
         extra_kwargs = {
@@ -324,6 +289,5 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'scope_level': {'required': False},
             'summary':     {'required': False},
             'notes':       {'required': False, 'allow_blank': True},
-            'related_techstack':         {'required': False, 'allow_null': True},
             'related_techstack_mention': {'required': False, 'allow_blank': True},
         }

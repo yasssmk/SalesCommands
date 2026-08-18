@@ -9,8 +9,8 @@ S10: the grouping key is the NORMALISED `tech_name`
 (TechStackSignal._normalize_tech_name — lower + trim + collapse), the
 same function the model's save() uses to fill `tech_name_normalized`.
 It replaces the previous key, which was the catalog entry id with a
-fallback on metadata['pending_tech_name'] — neither of which the
-extractor produces anymore.
+fallback on metadata['pending_tech_name'] — neither of which exists
+anymore.
 
 These are pure-function tests on the candidate dicts: no DB, no LLM.
 The end-to-end behaviour through persist_stage() is covered by
@@ -30,7 +30,6 @@ class TestTechStackDedup:
         candidate = {
             'signal_type': 'tech_stack',
             'tech_name': tech_name,
-            'tech_catalog_entry': None,
             'is_competitor': False,
             'is_integration': False,
             'is_to_replace': False,

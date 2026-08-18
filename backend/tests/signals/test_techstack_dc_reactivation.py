@@ -29,17 +29,6 @@ pytestmark = pytest.mark.django_db
 # =============================================================================
 
 @pytest.fixture
-def tech_catalog_entry(db, client_account_a, user_a):
-    from app_modules.tech_catalog.models import TechCatalog
-    entry = TechCatalog(
-        company_name='Salesforce',
-        product_name='Sales Cloud',
-    )
-    entry.save(user=user_a, client_id=client_account_a.id)
-    return entry
-
-
-@pytest.fixture
 def decision_cycle(db, account, user_a):
     from app_modules.decision_cycles.models import DecisionCycle
     dc = DecisionCycle(
@@ -63,12 +52,12 @@ class TestTechStackDecisionCycleRestored:
         assert field.null is True
 
     def test_save_without_decision_cycle(
-        self, account, activity, tech_catalog_entry, user_a,
+        self, account, activity, user_a,
     ):
         s = TechStackSignal(
             account=account,
             source_activity=activity,
-            tech_catalog_entry=tech_catalog_entry,
+            tech_name='Salesforce',
             source=SignalSource.MANUAL,
         )
         s.save(user=user_a, client_id=account.client_id)
@@ -76,12 +65,12 @@ class TestTechStackDecisionCycleRestored:
         assert s.decision_cycle_id is None
 
     def test_save_with_decision_cycle(
-        self, account, activity, tech_catalog_entry, decision_cycle, user_a,
+        self, account, activity, decision_cycle, user_a,
     ):
         s = TechStackSignal(
             account=account,
             source_activity=activity,
-            tech_catalog_entry=tech_catalog_entry,
+            tech_name='Salesforce',
             decision_cycle=decision_cycle,
             source=SignalSource.MANUAL,
         )
