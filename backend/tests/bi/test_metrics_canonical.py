@@ -31,7 +31,7 @@ from app_modules.campaigns.services.campaign_analytics_service import (
 from app_modules.decision_cycles.constants import CycleOutcome, PipelineStep
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from app_modules.bi import metrics
-from tests.deal_value_helpers import give_deal_value, set_closed_at
+from tests.deal_value_helpers import give_deal_value
 
 
 TODAY = timezone.now().date()
@@ -439,20 +439,14 @@ class TestRevenueWonFilters:
         _mk_cycle(owner_a, acc, client_account_a, name='open', estimated_value=999)
         assert metrics.revenue_won(_dc_base(client_account_a)) == 700.0
 
-    def test_period_on_closed_at(self, owner_a, client_account_a):
-        """The won window anchors on closed_at (the WON transition), not on
-        outcome_date — see metrics.revenue_won. Both cycles below carry the same
-        outcome_date; only their closed_at differs, so the window can only be
-        reading the new anchor."""
+    def test_period_on_outcome_date(self, owner_a, client_account_a):
+        """The won window anchors on the cycle's single close date; the WON
+        population is selected by status first (see metrics.revenue_won)."""
         acc = _mk_account('Acc', owner_a, client_account_a)
-        inside = _mk_cycle(owner_a, acc, client_account_a, name='in',
-                           estimated_value=700, outcome=CycleOutcome.WON,
-                           outcome_date=TODAY)
-        outside = _mk_cycle(owner_a, acc, client_account_a, name='out',
-                            estimated_value=700, outcome=CycleOutcome.WON,
-                            outcome_date=TODAY)
-        set_closed_at(inside, timezone.now() - timedelta(days=3))
-        set_closed_at(outside, timezone.now() - timedelta(days=40))
+        _mk_cycle(owner_a, acc, client_account_a, name='in', estimated_value=700,
+                  outcome=CycleOutcome.WON, outcome_date=TODAY - timedelta(days=3))
+        _mk_cycle(owner_a, acc, client_account_a, name='out', estimated_value=700,
+                  outcome=CycleOutcome.WON, outcome_date=TODAY - timedelta(days=40))
 
         window = (TODAY - timedelta(days=10), TODAY)
         assert metrics.revenue_won(_dc_base(client_account_a), period=window) == 700.0

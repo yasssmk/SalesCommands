@@ -14,12 +14,12 @@ The rule, as implemented and asserted here:
             REVENUE_WON    -> WON cycles    (outcome = WON)
             never mixed; LOST counts in neither.
 
-  PERIOD    WON      -> bounded by ``closed_at``, the timestamp of the WON
-                       transition, stamped by DecisionCycle.save() and compared
-                       at date granularity (sales_metrics.revenue_won). The
-                       scenarios below give the two won cycles the SAME
-                       outcome_date and differ only in closed_at, so the window
-                       can only be reading the new anchor.
+  PERIOD    WON      -> the WON population is selected by STATUS
+                       (outcome=WON) and then windowed on ``outcome_date``, the
+                       cycle's single close date — set on every close
+                       (views/views.py:735), cleared on reopen (:839). So a
+                       reopened deal leaves the won attainment by both criteria
+                       at once.
             PIPELINE -> bounded by the cycle's EXPECTED CLOSE, which is derived
                        as ``Max(steps.expected_end)`` via a correlated Subquery
                        (sales_metrics.py:222-235). DecisionCycle stores no
@@ -59,7 +59,7 @@ from app_modules.decision_cycles.models import DealProduct, DecisionCycle, Decis
 from app_modules.product_catalog.models import ProductCatalog
 from app_modules.quotas.models import Quota
 from app_modules.quotas.services import progress as P
-from tests.deal_value_helpers import give_deal_value, set_closed_at
+from tests.deal_value_helpers import give_deal_value
 
 
 pytestmark = pytest.mark.django_db
@@ -70,13 +70,6 @@ WINDOW_START = TODAY - timedelta(days=15)
 WINDOW_END = TODAY + timedelta(days=15)
 BEFORE_WINDOW = WINDOW_START - timedelta(days=1)
 AFTER_WINDOW = WINDOW_END + timedelta(days=1)
-
-
-def _at(day, hour=12):
-    """Midday on ``day``, aware — a closed_at value for a win on that date."""
-    return timezone.make_aware(
-        timezone.datetime(day.year, day.month, day.day, hour, 0)
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +104,7 @@ def _account(owner, ca, name='Acc'):
 
 
 def _cycle(owner, ca, *, amount, name='dc', outcome=None, outcome_date=None,
-           closed_at=None, expected_close=None, account=None):
+           expected_close=None, account=None):
     """A cycle worth ``amount``.
 
     ``expected_close`` becomes a step's ``expected_end`` — the cycle-level
@@ -127,10 +120,6 @@ def _cycle(owner, ca, *, amount, name='dc', outcome=None, outcome_date=None,
                             order=1, expected_end=expected_close)
         step.save(user=owner, client_id=ca.id)
     give_deal_value(cycle, amount, user=owner)
-    if closed_at is not None:
-        # save() stamped closed_at at the transition (i.e. now); rewrite it when
-        # the scenario needs the win dated elsewhere.
-        set_closed_at(cycle, closed_at)
     return cycle
 
 
@@ -256,14 +245,10 @@ class TestWonQuota:
             == Decimal('40000')
 
     def test_cycle_won_outside_the_window_is_excluded(self, rep, client_account_a):
-        """Both cycles carry outcome_date=TODAY (inside the window); they differ
-        only in closed_at. Only the WON-transition anchor can exclude the second
-        one, so this test fails if the window ever reads outcome_date again."""
         _cycle(rep, client_account_a, amount=Decimal('40000'), name='won',
                outcome=CycleOutcome.WON, outcome_date=TODAY)
         _cycle(rep, client_account_a, amount=Decimal('15000'), name='old-won',
-               outcome=CycleOutcome.WON, outcome_date=TODAY,
-               closed_at=_at(BEFORE_WINDOW))
+               outcome=CycleOutcome.WON, outcome_date=BEFORE_WINDOW)
 
         assert _attainment(_quota(rep, client_account_a, MetricKey.REVENUE_WON)) \
             == Decimal('40000')
@@ -284,6 +269,36 @@ class TestWonQuota:
 
         assert _attainment(_quota(rep, client_account_a, MetricKey.REVENUE_WON)) \
             == Decimal('40000')
+
+    def test_a_cycle_won_long_before_this_sprint_still_counts(
+        self, rep, client_account_a,
+    ):
+        """THE convergence delta. outcome_date has been set on every close since
+        migration 0009, so a win that predates Sprint C is windowed like any
+        other. The short-lived won-only stamp was added without a backfill, so
+        the same cycle was invisible to every DATED read under it — this test
+        was red against that implementation."""
+        _cycle(rep, client_account_a, amount=Decimal('40000'), name='historic',
+               outcome=CycleOutcome.WON, outcome_date=TODAY)
+
+        assert _attainment(_quota(rep, client_account_a, MetricKey.REVENUE_WON)) \
+            == Decimal('40000')
+
+    def test_a_reopened_cycle_exits_the_won_quota(self, rep, client_account_a):
+        """PO-locked semantics: reopening a won deal takes its amount back OUT of
+        the won attainment. The close date is cleared on reopen
+        (views/views.py:839), so a status+outcome_date window sees it leave —
+        which a won-only stamp that survives the reopen would not."""
+        won = _cycle(rep, client_account_a, amount=Decimal('40000'), name='won',
+                     outcome=CycleOutcome.WON, outcome_date=TODAY)
+        quota = _quota(rep, client_account_a, MetricKey.REVENUE_WON)
+        assert _attainment(quota) == Decimal('40000')
+
+        won.outcome = None
+        won.outcome_date = None
+        won.save(user=rep)
+
+        assert _attainment(quota) == Decimal('0')
 
     def test_the_won_amount_is_the_deal_roll_up_not_a_target(
         self, rep, client_account_a,
@@ -330,8 +345,7 @@ class TestWindowEdges:
             ('day-after', AFTER_WINDOW, Decimal('8000')),
         ):
             _cycle(rep, client_account_a, amount=amount, name=label,
-                   outcome=CycleOutcome.WON, outcome_date=when,
-                   closed_at=_at(when))
+                   outcome=CycleOutcome.WON, outcome_date=when)
 
         assert _attainment(_quota(rep, client_account_a, MetricKey.REVENUE_WON)) \
             == Decimal('3000')

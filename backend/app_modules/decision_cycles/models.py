@@ -142,21 +142,6 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Resume date when cycle is ON_HOLD. Required for ON_HOLD only.')
     )
 
-    closed_at = models.DateTimeField(
-        blank=True,
-        null=True,
-        editable=False,
-        verbose_name=_('Closed At (won)'),
-        help_text=_(
-            'Timestamp of the LATEST transition to WON, stamped automatically by '
-            'save() — the anchor won amounts are windowed on. Re-winning a '
-            'reopened cycle overwrites it; reopening leaves it untouched (it is '
-            'only ever read for a cycle whose outcome IS WON). Null on a cycle '
-            'that has never been won, and on cycles won before this field '
-            'existed (no backfill, PO decision).'
-        ),
-    )
-
     # READINESS
     readiness_score = models.PositiveSmallIntegerField(
         null=True,
@@ -269,47 +254,15 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # METHODS
     # ==========================================================================
     
-    @classmethod
-    def from_db(cls, db, field_names, values):
-        """Snapshot the persisted ``outcome`` so save() can detect a TRANSITION
-        to WON without re-reading the row. Skipped when the field was deferred
-        (``.only()`` / ``.values()`` paths never transition anything)."""
-        instance = super().from_db(db, field_names, values)
-        if 'outcome' in field_names:
-            instance._persisted_outcome = instance.outcome
-        return instance
-
-    def _stamp_closed_at_on_won_transition(self, kwargs):
-        """Set ``closed_at`` when — and only when — this save moves the cycle
-        INTO the WON outcome.
-
-        Stamped here rather than in the close endpoint (the only API path that
-        writes ``outcome``, views/views.py:734) so that every write reaches it:
-        the endpoint, a data migration, a shell fix, a future service. A cycle
-        already WON that is saved again keeps its original stamp; a reopened
-        cycle that is won again gets the LATER one.
-        """
-        if self.outcome != CycleOutcome.WON:
-            return
-        if getattr(self, '_persisted_outcome', None) == CycleOutcome.WON:
-            return                                  # already won, not a transition
-
-        self.closed_at = timezone.now()
-        # A targeted save(update_fields=[...]) must still persist the stamp.
-        update_fields = kwargs.get('update_fields')
-        if update_fields is not None:
-            kwargs['update_fields'] = list(update_fields) + ['closed_at']
-
     def save(self, *args, **kwargs):
         """
-        Override save to enforce three invariants:
+        Override save to enforce two invariants:
           1. a DecisionCycle is never persisted ownerless — if no owner is set,
              fall back to the creator (the ``save(user=)`` actor, else the
              already-set ``created_by``). This is a creation-time safety net;
              ``owner`` stays freely reassignable afterwards. No account-owner
              default: owner is always the creator, never the account owner.
           2. only one active cycle per account.
-          3. ``closed_at`` records the latest transition to WON.
         """
         # 1. Owner safety net (no DB query: resolve via ids where possible).
         if self.owner_id is None:
@@ -328,14 +281,7 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
                 is_active=True
             ).exclude(pk=self.pk).update(is_active=False)
 
-        # 3. Won-transition stamp (before the write, so it lands in the same row).
-        self._stamp_closed_at_on_won_transition(kwargs)
-
         super().save(*args, **kwargs)
-
-        # The row is now the persisted state — re-baseline the transition
-        # snapshot so a second save() on the same instance is not a transition.
-        self._persisted_outcome = self.outcome
 
 
 class DecisionStep(ModuleBaseModel, ClientScopeManager.ModelMixin):
