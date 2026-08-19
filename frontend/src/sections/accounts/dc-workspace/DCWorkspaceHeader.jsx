@@ -49,20 +49,13 @@ import {
 import DecisionCycleModal from "sections/accounts/decision-cycles/DecisionCycleModal";
 import DealHealthRunButton from "./DealHealthRunButton";
 import CycleCloseDialog, { useCycleCloseReopen } from "./CycleCloseDialog";
+import formatAmount from "utils/formatAmount";
 
-// ==============================|| HELPERS ||============================== //
-
-function formatCurrency(value) {
-  if (value == null) return null;
-  const num = Number(value);
-  if (Number.isNaN(num)) return null;
-  return num.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
-}
+// The deal amount is rendered by the shared helper (utils/formatAmount), the
+// same one the DC list Amount column uses, so the two surfaces can never format
+// the same number differently. It takes the tenant currency FROM THE PAYLOAD —
+// this header used to hardcode "USD", which was wrong for every tenant on
+// anything else.
 
 // ==============================|| DC WORKSPACE HEADER HOOK ||============================== //
 
@@ -229,8 +222,15 @@ export default function useDCWorkspaceHeaderProps({
     );
   }
 
-  // Estimated value
-  const formattedValue = formatCurrency(cycle?.estimated_value);
+  // Deal amount — the DERIVED product roll-up served by the cycle payload, in
+  // the tenant's currency. NOT estimated_value: that manual field is never
+  // populated (TD-75), so this line used to be absent or misleading on every
+  // cycle. A cycle with no product line has a 0 roll-up and shows nothing.
+  const dealValue = cycle?.total_deal_value;
+  const formattedValue =
+    dealValue == null || Number(dealValue) === 0
+      ? null
+      : formatAmount(dealValue, cycle?.currency);
   if (formattedValue) {
     infoItems.push(
       <Stack key="value" direction="row" spacing={0.75} alignItems="center">

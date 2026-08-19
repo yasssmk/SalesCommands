@@ -1138,7 +1138,13 @@ export async function createDCProduct(cycleId, payload) {
   if (result.success) {
     revalidateMultiple([
       endpoints.cycleProducts(cycleId),
+      // The cycle payloads carry the DERIVED deal amount (total_deal_value), so
+      // a product write changes them too: the detail, the workspace
+      // (by-account) and the DC LIST Amount column all have to be revalidated,
+      // not just the line collection. `cycles` was missing, which left the
+      // list's Amount stale right after the action that changed it.
       endpoints.cycleDetail(cycleId),
+      endpoints.cycles,
       '/decision_cycles/by-account/',
     ]);
     const data = result.data?.data || result.data;
@@ -1179,7 +1185,13 @@ export async function updateDCProduct(cycleId, productId, payload) {
   if (result.success) {
     revalidateMultiple([
       endpoints.cycleProducts(cycleId),
+      // The cycle payloads carry the DERIVED deal amount (total_deal_value), so
+      // a product write changes them too: the detail, the workspace
+      // (by-account) and the DC LIST Amount column all have to be revalidated,
+      // not just the line collection. `cycles` was missing, which left the
+      // list's Amount stale right after the action that changed it.
       endpoints.cycleDetail(cycleId),
+      endpoints.cycles,
       '/decision_cycles/by-account/',
     ]);
     const data = result.data?.data || result.data;
@@ -1218,7 +1230,13 @@ export async function deleteDCProduct(cycleId, productId) {
   if (result.success || result.status === 204) {
     revalidateMultiple([
       endpoints.cycleProducts(cycleId),
+      // The cycle payloads carry the DERIVED deal amount (total_deal_value), so
+      // a product write changes them too: the detail, the workspace
+      // (by-account) and the DC LIST Amount column all have to be revalidated,
+      // not just the line collection. `cycles` was missing, which left the
+      // list's Amount stale right after the action that changed it.
       endpoints.cycleDetail(cycleId),
+      endpoints.cycles,
       '/decision_cycles/by-account/',
     ]);
     return { success: true, status: result.status ?? 204 };

@@ -328,12 +328,19 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
                 ).order_by('-scheduled_date', '-created_at')[:15]
             )
             
-            queryset = queryset.select_related('account', 'owner').prefetch_related(
-                Prefetch(
-                    'steps',
-                    queryset=DecisionStep.objects.select_related('previous_step').order_by('order')
-                ),
-                activities_prefetch
+            # annotate_deal_value carries the product roll-up (_deal_value) that
+            # DecisionCycleSerializer.total_deal_value reads — one correlated
+            # subquery on the single row being retrieved, instead of the extra
+            # query the model property would otherwise issue. Same annotation,
+            # same formula as the list branch above.
+            queryset = annotate_deal_value(
+                queryset.select_related('account', 'owner').prefetch_related(
+                    Prefetch(
+                        'steps',
+                        queryset=DecisionStep.objects.select_related('previous_step').order_by('order')
+                    ),
+                    activities_prefetch
+                )
             )
         else:
             # Create/Update/Delete: minimal - just account and owner
@@ -970,7 +977,12 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
         
         # Build cycle queryset with annotations
         # NOTE: Use different names to avoid conflict with model @property
-        queryset = DecisionCycle.objects.filter(
+        # annotate_deal_value carries the product roll-up (_deal_value) that
+        # DecisionCycleTimelineSerializer.total_deal_value reads — an ISOLATED
+        # correlated subquery per row, so it neither fans out against the steps
+        # Count above nor costs one query per cycle. It is what the DC workspace
+        # header and the Products tab display.
+        queryset = annotate_deal_value(DecisionCycle.objects.filter(
             client_id=self.get_client_id(),
             account_id=account_id
         ).select_related(
@@ -979,7 +991,7 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
             _annotated_steps_count=Count('steps', distinct=True),
             # NOTE: validated_steps_count is now DERIVED (bulk context) in the
             # timeline serializer — the stored-column annotation was stale (~0).
-        ).prefetch_related(
+        )).prefetch_related(
             Prefetch('steps', queryset=steps_queryset),
             activities_prefetch
         ).order_by('-is_active', '-updated_at')

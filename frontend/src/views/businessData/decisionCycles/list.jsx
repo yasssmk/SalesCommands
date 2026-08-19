@@ -30,6 +30,7 @@ import { tenantKey } from "api/_swr";
 
 // utils
 import { formatDateTime } from "config/formatters";
+import formatAmount from "utils/formatAmount";
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -90,24 +91,6 @@ const FACET_CHIP_LABEL = {
 // forces it red as the "act now" lever. Mirror that override so both surfaces
 // agree, without mutating the shared CYCLE_STATUS_COLORS.
 const STATUS_COLOR = { ...CYCLE_STATUS_COLORS, STALLED: "error" };
-
-// ==============================|| AMOUNT FORMAT ||============================== //
-
-/**
- * Format a deal amount for display: the grouped decimal followed by the tenant's
- * currency code (e.g. "60,000.00 EUR"). The currency comes from the row — one
- * per tenant, resolved server-side — so no code here assumes one. null → dash.
- */
-function formatAmount(value, currency) {
-  if (value === null || value === undefined || value === "") return "—";
-  const n = Number(value);
-  if (Number.isNaN(n)) return "—";
-  const amount = n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  return currency ? `${amount} ${currency}` : amount;
-}
 
 // ==============================|| DECISION CYCLES LIST PAGE ||============================== //
 

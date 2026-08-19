@@ -314,7 +314,8 @@ class DecisionStepTimelineSerializer(serializers.ModelSerializer):
         return agg.get('effective_end_date')
 
 
-class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
+class DecisionCycleTimelineSerializer(TenantCurrencySerializerMixin,
+                                      serializers.ModelSerializer):
     """
     Lightweight serializer for cycle list in by_account endpoint.
     
@@ -355,7 +356,22 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
     stalled_steps_count = serializers.SerializerMethodField(read_only=True)
     is_at_risk = serializers.SerializerMethodField(read_only=True)
     closed_by_name = serializers.SerializerMethodField(read_only=True)
-    
+
+    # The cycle's amount: the DERIVED product roll-up, discount included. Same
+    # field, same formula as the DC list's Amount column — declared once in
+    # services/deal_value_sql.py and read here off the ``_deal_value``
+    # annotation the by_account queryset carries, so it costs no query per row.
+    # This is the number the workspace header and the Products tab display;
+    # ``estimated_value`` below stays in the payload as the legacy manual field
+    # (TD-75: no runtime path populates it) and nothing reads it any more.
+    total_deal_value = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True,
+    )
+    # The unit of that amount — the tenant's single currency, resolved at read
+    # time (core.currency), memoised per serialization pass so a page of cycles
+    # costs ONE resolution, not one per row.
+    currency = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = DecisionCycle
         fields = [
@@ -366,6 +382,7 @@ class DecisionCycleTimelineSerializer(serializers.ModelSerializer):
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'readiness_score',
+            'total_deal_value', 'currency',
             'estimated_value', 'estimated_timeline_days',
             'closed_by_name',
             'steps', 'steps_count', 'validated_steps_count',
@@ -1188,14 +1205,16 @@ class DecisionCycleListSerializer(TenantCurrencySerializerMixin,
         return {'id': str(team.id), 'name': team.name} if team else None
 
 
-class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.ModelSerializer):
+class DecisionCycleSerializer(TenantCurrencySerializerMixin,
+                              ClientScopeManager.SerializerMixin,
+                              serializers.ModelSerializer):
     """
     Complete serializer for cycle detail view.
-    
+
     Cycle-level attention flags (has_steps_needing_attention) are now
     provided by CycleAggregationService via timeline context, not here.
     """
-    
+
     account_name = serializers.SerializerMethodField(read_only=True)
     owner_name = serializers.SerializerMethodField(read_only=True)
     steps = DecisionStepListSerializer(many=True, read_only=True)
@@ -1203,7 +1222,18 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
     validated_steps_count = serializers.IntegerField(read_only=True)
     estimated_timeline_days = serializers.IntegerField(read_only=True)
     source_campaign_detail = serializers.SerializerMethodField(read_only=True)
-    
+    # The cycle's amount — the SAME derived roll-up the list and the workspace
+    # payload serve (services/deal_value_sql.py). Read off the ``_deal_value``
+    # annotation the retrieve queryset carries; the property falls back to one
+    # query if an unannotated caller ever serializes a lone instance.
+    # estimated_value is deliberately NOT added here: it has never been in this
+    # payload, and nothing populates it (TD-75).
+    total_deal_value = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True,
+    )
+    # The unit of that amount — the tenant's single currency (core.currency).
+    currency = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = DecisionCycle
         fields = [
@@ -1213,6 +1243,7 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
             'is_active',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
+            'total_deal_value', 'currency',
             'steps', 'steps_count', 'validated_steps_count',
             'estimated_timeline_days', 'source_campaign_detail',
             'created_by', 'updated_by',
@@ -1221,6 +1252,7 @@ class DecisionCycleSerializer(ClientScopeManager.SerializerMixin, serializers.Mo
         read_only_fields = [
             'id', 'account_name', 'owner', 'owner_name', 'steps', 'steps_count',
             'validated_steps_count', 'estimated_timeline_days',
+            'total_deal_value', 'currency',
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'created_by', 'updated_by', 'created_at', 'updated_at'
         ]

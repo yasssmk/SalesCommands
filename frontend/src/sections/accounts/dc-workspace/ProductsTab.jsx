@@ -3,7 +3,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 
 // MUI
 import Autocomplete from "@mui/material/Autocomplete";
@@ -47,18 +47,12 @@ import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
+import formatAmount from "utils/formatAmount";
 
-// ==============================|| HELPERS ||============================== //
-
-function formatCurrency(value) {
-  if (value === null || value === undefined) return "—";
-  const num = parseFloat(value);
-  if (isNaN(num)) return "—";
-  return num.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+// Amounts are rendered by the shared helper (utils/formatAmount) with the
+// tenant currency the payload carries — the same helper and the same currency
+// as the DC list and the workspace header, so one deal reads identically on all
+// three. Lines carry their own `currency`; the deal total uses the cycle's.
 
 // ==============================|| ADD / EDIT DIALOG ||============================== //
 
@@ -242,15 +236,16 @@ export default function ProductsTab({ cycleId, cycle }) {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState(null);
 
-  // Totals
-  const dealTotal = useMemo(() => {
-    if (!products || products.length === 0) return 0;
-    return products.reduce((sum, p) => sum + (parseFloat(p.line_total) || 0), 0);
-  }, [products]);
-
-  const estimatedValue = cycle?.estimated_value
-    ? parseFloat(cycle.estimated_value)
-    : null;
+  // The deal total comes from the SERVER — `total_deal_value`, the derived
+  // roll-up declared once in decision_cycles/services/deal_value_sql.py and now
+  // served on the cycle payload. It is NOT re-summed here: a second
+  // implementation in JavaScript would drift the moment the formula gains a
+  // term. `currency` is its unit, resolved from the tenant server-side.
+  //
+  // estimated_value is deliberately not displayed any more: no runtime path
+  // populates it (TD-75), so the "Estimated value" line it fed was always dead.
+  const dealTotal = cycle?.total_deal_value ?? null;
+  const dealCurrency = cycle?.currency ?? null;
 
   // Handlers
   const handleAdd = useCallback(
@@ -419,10 +414,13 @@ export default function ProductsTab({ cycleId, cycle }) {
                     </TableCell>
                     <TableCell align="right">{p.quantity}</TableCell>
                     <TableCell align="right">
-                      {formatCurrency(p.unit_price || p.product_catalog_entry_detail?.default_unit_price)}
+                      {formatAmount(
+                        p.unit_price || p.product_catalog_entry_detail?.default_unit_price,
+                        p.currency,
+                      )}
                     </TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600 }}>
-                      {formatCurrency(p.line_total)}
+                      {formatAmount(p.line_total, p.currency)}
                     </TableCell>
                     <TableCell>
                       <Typography
@@ -471,22 +469,12 @@ export default function ProductsTab({ cycleId, cycle }) {
           <Stack spacing={0.5} alignItems="flex-end" sx={{ pr: 2 }}>
             <Stack direction="row" spacing={2} alignItems="baseline">
               <Typography variant="body2" color="text.secondary">
-                Products total:
+                Deal total:
               </Typography>
               <Typography variant="subtitle1" fontWeight={700}>
-                {formatCurrency(dealTotal)}
+                {formatAmount(dealTotal, dealCurrency)}
               </Typography>
             </Stack>
-            {estimatedValue !== null && (
-              <Stack direction="row" spacing={2} alignItems="baseline">
-                <Typography variant="body2" color="text.secondary">
-                  Estimated value:
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {formatCurrency(estimatedValue)}
-                </Typography>
-              </Stack>
-            )}
           </Stack>
         </>
       )}
@@ -542,6 +530,7 @@ export default function ProductsTab({ cycleId, cycle }) {
 ProductsTab.propTypes = {
   cycleId: PropTypes.string.isRequired,
   cycle: PropTypes.shape({
-    estimated_value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    total_deal_value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    currency: PropTypes.string,
   }),
 };
