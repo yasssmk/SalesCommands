@@ -46,8 +46,8 @@ from app_modules.campaigns.models.campaign_objective import CampaignObjective
 from app_modules.campaigns.services.campaign_analytics_service import (
     CampaignAnalyticsService,
 )
-from app_modules.decision_cycles.constants import CycleOutcome, PipelineStep
-from app_modules.decision_cycles.models import DealProduct, DecisionCycle, DecisionStep
+from app_modules.decision_cycles.constants import CycleOutcome
+from app_modules.decision_cycles.models import DealProduct, DecisionCycle
 from app_modules.product_catalog.models import ProductCatalog
 from app_modules.quotas.models import Quota
 from app_modules.quotas.services import progress as quota_progress
@@ -96,16 +96,16 @@ def _campaign(owner, ca, name='Camp'):
 
 
 def _cycle(owner, account, ca, *, name, campaign, outcome=None, is_active=False):
+    # expected_close_date puts the cycle inside the period a quota windows on.
+    # It is level 1 of the effective close date
+    # (decision_cycles/services/close_date_sql.py), which replaced the old
+    # Max(steps.expected_end) anchor this factory used to seed with a dated step.
     cycle = DecisionCycle(account=account, owner=owner, name=name,
                           source_campaign=campaign, outcome=outcome,
                           outcome_date=TODAY if outcome else None,
+                          expected_close_date=TODAY,
                           is_active=is_active)
     cycle.save(user=owner, client_id=ca.id)
-    # A dated step gives the cycle the Max(expected_end) anchor that
-    # pipeline_value windows on, so period-bounded callers (quotas) see it.
-    step = DecisionStep(cycle=cycle, name='s', stage=PipelineStep.QUALIFICATION,
-                        order=1, expected_end=TODAY)
-    step.save(user=owner, client_id=ca.id)
     return cycle
 
 

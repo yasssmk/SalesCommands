@@ -48,8 +48,8 @@ from app_modules.campaigns.services.campaign_analytics_service import (
 from app_modules.campaigns.services.campaign_objective_progress import (
     compute_primary_objective_progress_batch,
 )
-from app_modules.decision_cycles.constants import CycleOutcome, PipelineStep
-from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
+from app_modules.decision_cycles.constants import CycleOutcome
+from app_modules.decision_cycles.models import DecisionCycle
 from app_modules.quotas.models import Quota
 from app_modules.quotas.services import progress as quota_progress
 from tests.deal_value_helpers import give_deal_value
@@ -91,18 +91,20 @@ def _campaign(owner, ca, name='Camp'):
 def _cycle(owner, account, ca, *, name, amount, outcome=None, outcome_date=None,
            source_campaign=None, dated_step=True):
     """A cycle worth ``amount`` through a real product line, carrying a DECOY
-    estimated_value. ``dated_step`` gives it the Max(expected_end) anchor
-    pipeline_value windows on, so it survives a period filter."""
+    estimated_value. ``dated_step`` gives it the expected close date
+    pipeline_value windows on, so it survives a period filter.
+
+    The parameter keeps its name so every call site below reads unchanged, but
+    the date now lives on the cycle's own ``expected_close_date`` — level 1 of
+    the effective close date (decision_cycles/services/close_date_sql.py) that
+    replaced the old Max(steps.expected_end) anchor."""
     dc = DecisionCycle(
         account=account, owner=owner, name=name, source_campaign=source_campaign,
         outcome=outcome, outcome_date=outcome_date, estimated_value=DECOY,
+        expected_close_date=TODAY if dated_step else None,
     )
     dc.save(user=owner, client_id=ca.id)
     give_deal_value(dc, amount, user=owner)
-    if dated_step:
-        step = DecisionStep(cycle=dc, name='s', stage=PipelineStep.QUALIFICATION,
-                            order=1, expected_end=TODAY)
-        step.save(user=owner, client_id=ca.id)
     return dc
 
 

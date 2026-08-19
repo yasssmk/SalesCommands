@@ -3,11 +3,18 @@
  * Decision Cycle Modal Component
  * 
  * Modal for creating and editing decision cycles.
- * Simple form with name and description.
- * 
+ * Simple form: name, description, and the expected close date.
+ *
+ * `expected_close_date` is OPTIONAL and manual. It is level 1 of the deal's
+ * EFFECTIVE close date (backend: decision_cycles/services/close_date_sql.py) —
+ * when the rep sets it, it wins; left blank, the date falls back to the CLOSING
+ * step's last activity. That effective date is what puts the deal inside (or
+ * outside) a personal PIPELINE objective's period, so this input is how a rep
+ * says which period a deal belongs to.
+ *
  * Features:
  * - Create new cycle
- * - Edit existing cycle (rename/description)
+ * - Edit existing cycle (rename / description / expected close date)
  */
 
 'use client';
@@ -46,7 +53,15 @@ const validationSchema = Yup.object({
     .required('Cycle name is required')
     .max(255, 'Name must be at most 255 characters'),
   description: Yup.string()
-    .max(1000, 'Description must be at most 1000 characters')
+    .max(1000, 'Description must be at most 1000 characters'),
+  // Optional. A native date input yields '' when empty and 'YYYY-MM-DD'
+  // otherwise — exactly the format DRF's DateField accepts, so no parsing.
+  expected_close_date: Yup.string()
+    .nullable()
+    .matches(/^\d{4}-\d{2}-\d{2}$/, {
+      message: 'Use a valid date',
+      excludeEmptyString: true
+    })
 });
 
 // ==============================|| DECISION CYCLE MODAL ||============================== //
@@ -75,7 +90,8 @@ export default function DecisionCycleModal({
   const formik = useFormik({
     initialValues: {
       name: cycle?.name || '',
-      description: cycle?.description || ''
+      description: cycle?.description || '',
+      expected_close_date: cycle?.expected_close_date || ''
     },
     validationSchema,
     enableReinitialize: true,
@@ -89,7 +105,10 @@ export default function DecisionCycleModal({
           // Update existing cycle
           result = await updateDecisionCycle(cycle.id, {
             name: values.name.trim(),
-            description: values.description?.trim() || null
+            description: values.description?.trim() || null,
+            // '' clears the manual date server-side (null), handing the close
+            // date back to the closing-step fallback.
+            expected_close_date: values.expected_close_date || null
           });
         } else {
           // Create new cycle
@@ -97,6 +116,7 @@ export default function DecisionCycleModal({
             account_id: accountId,
             name: values.name.trim(),
             description: values.description?.trim() || null,
+            expected_close_date: values.expected_close_date || null,
             is_active: true
           });
         }
@@ -134,7 +154,8 @@ export default function DecisionCycleModal({
       resetForm({
         values: {
           name: cycle?.name || '',
-          description: cycle?.description || ''
+          description: cycle?.description || '',
+          expected_close_date: cycle?.expected_close_date || ''
         }
       });
     }
@@ -225,7 +246,28 @@ export default function DecisionCycleModal({
                   />
                 </Stack>
               </Grid>
-              
+
+              {/* Expected close date — drives which period this deal counts in */}
+              <Grid item xs={12} sm={6}>
+                <Stack spacing={1}>
+                  <InputLabel>Expected Close Date</InputLabel>
+                  <TextField
+                    fullWidth
+                    type="date"
+                    name="expected_close_date"
+                    value={values.expected_close_date}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                    error={touched.expected_close_date && Boolean(errors.expected_close_date)}
+                    helperText={
+                      (touched.expected_close_date && errors.expected_close_date) ||
+                      'Optional. Left blank, the date of the last Closing-step activity is used.'
+                    }
+                    InputLabelProps={{ shrink: true }}
+                  />
+                </Stack>
+              </Grid>
+
             </Grid>
           </Box>
           

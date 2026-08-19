@@ -20,14 +20,15 @@ The rule, as implemented and asserted here:
                        (views/views.py:735), cleared on reopen (:839). So a
                        reopened deal leaves the won attainment by both criteria
                        at once.
-            PIPELINE -> bounded by the cycle's EXPECTED CLOSE, which is derived
-                       as ``Max(steps.expected_end)`` via a correlated Subquery
-                       (sales_metrics.py:222-235). DecisionCycle stores no
-                       ``expected_close_date`` column — see the module note in
-                       the report; an open cycle with no dated step has a NULL
-                       anchor and therefore falls outside ANY window. That
-                       consequence is pinned below because it is easy to read as
-                       a bug and is in fact the documented behaviour.
+            PIPELINE -> bounded by the cycle's EFFECTIVE CLOSE DATE
+                       (decision_cycles/services/close_date_sql.py): the MANUAL
+                       ``DecisionCycle.expected_close_date`` when set, else the
+                       date of the CLOSING step's last activity. A cycle with
+                       neither has a NULL anchor and therefore falls outside ANY
+                       window. That consequence is pinned below because it is
+                       easy to read as a bug and is in fact the documented
+                       behaviour — it now means "nobody stated when this deal
+                       closes", which the rep can fix by setting the date.
             Both bounds are INCLUSIVE (``__gte`` / ``__lte``, sales_metrics.py
             ``_between``) — asserted on the exact edges.
 
@@ -54,8 +55,8 @@ from django.utils import timezone
 
 from app_modules.accounts.models import CompanyAccount
 from app_modules.bi.metrics import MetricKey
-from app_modules.decision_cycles.constants import CycleOutcome, PipelineStep
-from app_modules.decision_cycles.models import DealProduct, DecisionCycle, DecisionStep
+from app_modules.decision_cycles.constants import CycleOutcome
+from app_modules.decision_cycles.models import DealProduct, DecisionCycle
 from app_modules.product_catalog.models import ProductCatalog
 from app_modules.quotas.models import Quota
 from app_modules.quotas.services import progress as P
@@ -105,20 +106,24 @@ def _account(owner, ca, name='Acc'):
 
 def _cycle(owner, ca, *, amount, name='dc', outcome=None, outcome_date=None,
            expected_close=None, account=None):
-    """A cycle worth ``amount``.
+    """A cycle worth ``amount``, expected to close on ``expected_close``.
 
-    ``expected_close`` becomes a step's ``expected_end`` — the cycle-level
-    expected close the pipeline window is evaluated on. Pass None to leave the
-    cycle undated (it then falls outside every window).
+    ``expected_close`` sets the cycle's MANUAL ``expected_close_date`` — level 1
+    of the effective close date the pipeline window is evaluated on
+    (decision_cycles/services/close_date_sql.py). Pass None to leave the cycle
+    undated (it then falls outside every window; the closing-step fallback is
+    covered in tests/decision_cycles/test_effective_close_date.py).
+
+    It previously created a step with ``expected_end=expected_close``, back when
+    the anchor was ``Max(steps.expected_end)``. The intent of every test below
+    is unchanged — "this deal is expected to close on that date" — only the
+    field carrying it moved, with the anchor.
     """
     account = account or _account(owner, ca, name=f'Acc-{owner.email}')
     cycle = DecisionCycle(account=account, owner=owner, name=f'{name}-{owner.email}',
-                          outcome=outcome, outcome_date=outcome_date)
+                          outcome=outcome, outcome_date=outcome_date,
+                          expected_close_date=expected_close)
     cycle.save(user=owner, client_id=ca.id)
-    if expected_close is not None:
-        step = DecisionStep(cycle=cycle, name='s', stage=PipelineStep.QUALIFICATION,
-                            order=1, expected_end=expected_close)
-        step.save(user=owner, client_id=ca.id)
     give_deal_value(cycle, amount, user=owner)
     return cycle
 

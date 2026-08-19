@@ -42,12 +42,15 @@ undated numbers simply pass ``period=None``.
 
 from __future__ import annotations
 
-from django.db.models import Max, OuterRef, Subquery, Sum
+from django.db.models import OuterRef, Subquery, Sum
 
 from app_modules.activities.constants import ActivityOutcome, ActivityStatus
 from app_modules.activities.models import Activity
 from app_modules.decision_cycles.constants import CycleOutcome
-from app_modules.decision_cycles.models import DecisionStep
+from app_modules.decision_cycles.services.close_date_sql import (
+    CLOSE_DATE_ALIAS,
+    annotate_effective_close_date,
+)
 from app_modules.decision_cycles.services.deal_value_sql import (
     DEAL_VALUE_ALIAS,
     annotate_deal_value,
@@ -208,8 +211,18 @@ def new_logos(base_queryset, *, user=None, period=None, source_campaign=None):
 def pipeline_value(base_queryset, *, user=None, period=None, source_campaign=None):
     """PIPELINE_VALUE — Σ deal value of OPEN decision cycles (outcome empty).
 
-    Anchor: ``Max(steps.expected_end)`` at the cycle level, computed as a
-    READ-ONLY correlated Subquery annotation (the field is never modified).
+    Anchor: the cycle's EFFECTIVE CLOSE DATE —
+    ``decision_cycles/services/close_date_sql.py``, where the rule is declared
+    once: the manual ``expected_close_date`` when the rep set one, else the date
+    of the CLOSING step's last activity, else NULL. This metric states no date
+    rule of its own; it consumes that one, exactly as it consumes
+    ``annotate_deal_value`` for the money.
+
+    It previously anchored on ``Max(steps.expected_end)``, which is NULL on
+    every freshly created cycle — step auto-creation sets ``expected_end=None``
+    on all five steps — so a normally used deal fell out of every windowed read
+    and a personal pipeline objective showed 0.
+
     Campaign attribution: ``source_campaign`` on the DC.
     Owner: the DC ``owner``.
     Amount: the DERIVED product roll-up — ``total_deal_value``, summed through
@@ -220,29 +233,25 @@ def pipeline_value(base_queryset, *, user=None, period=None, source_campaign=Non
     Pipeline is EXCLUSIVE: only ``outcome IS NULL`` counts, so a WON or LOST
     cycle has left the pipeline (ON_HOLD too — it carries an outcome).
 
-    Both to-many traversals stay isolated: the anchor is a Subquery (not a
-    ``.annotate(Max('steps__expected_end'))`` join) and the amount is a
-    correlated per-cycle Subquery over ``deal_products``, so neither fans out
-    over the other. Open cycles with no dated step have a NULL anchor and
-    therefore fall OUTSIDE any given period window (correct: their expected
-    close is unknown); with ``period=None`` every open cycle is summed.
+    Every to-many traversal stays isolated: the close date is a correlated
+    Subquery over the closing step's activities and the amount is a correlated
+    per-cycle Subquery over ``deal_products``, so neither fans out over the
+    other (a ``.annotate(Max('steps__...'))`` join would). A cycle with NO
+    effective close date has a NULL anchor and therefore falls OUTSIDE any given
+    period window — now meaning "nobody stated when this closes", which the rep
+    can fix by setting the date; with ``period=None`` every open cycle is summed,
+    which is how the CAMPAIGN paths call it (they are deliberately unwindowed,
+    so this anchor never affects a campaign number).
 
     ``base_queryset`` is a (tenant+scope bounded) DecisionCycle queryset.
     """
-    latest_expected_end = Subquery(
-        DecisionStep.objects
-        .filter(cycle=OuterRef('pk'))
-        .values('cycle')
-        .annotate(_m=Max('expected_end'))
-        .values('_m')
-    )
     qs = base_queryset.filter(outcome__isnull=True)
     if user is not None:
         qs = qs.filter(owner=user)
     if source_campaign is not None:
         qs = qs.filter(source_campaign=source_campaign)
-    qs = qs.annotate(_anchor=latest_expected_end)
-    qs = _between(qs, '_anchor', period)
+    qs = annotate_effective_close_date(qs)
+    qs = _between(qs, CLOSE_DATE_ALIAS, period)
     return _amount(
         annotate_deal_value(qs).aggregate(total=Sum(DEAL_VALUE_ALIAS))['total']
     )

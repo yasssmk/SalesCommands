@@ -372,6 +372,13 @@ class DecisionCycleTimelineSerializer(TenantCurrencySerializerMixin,
     # costs ONE resolution, not one per row.
     currency = serializers.SerializerMethodField(read_only=True)
 
+    # The close date that actually drives a personal PIPELINE objective's window:
+    # the manual ``expected_close_date`` above when the rep set one, else the
+    # date of the CLOSING step's last activity, else null. Declared once in
+    # services/close_date_sql.py; read here off the ``_effective_close_date``
+    # annotation the queryset carries, so it costs no query per row.
+    effective_close_date = serializers.DateField(read_only=True, allow_null=True)
+
     class Meta:
         model = DecisionCycle
         fields = [
@@ -383,6 +390,7 @@ class DecisionCycleTimelineSerializer(TenantCurrencySerializerMixin,
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'readiness_score',
             'total_deal_value', 'currency',
+            'expected_close_date', 'effective_close_date',
             'estimated_value', 'estimated_timeline_days',
             'closed_by_name',
             'steps', 'steps_count', 'validated_steps_count',
@@ -1171,6 +1179,13 @@ class DecisionCycleListSerializer(TenantCurrencySerializerMixin,
     # time (core.currency). One per tenant, no conversion.
     currency = serializers.SerializerMethodField(read_only=True)
 
+    # The close date that actually drives a personal PIPELINE objective's window:
+    # the manual ``expected_close_date`` above when the rep set one, else the
+    # date of the CLOSING step's last activity, else null. Declared once in
+    # services/close_date_sql.py; read here off the ``_effective_close_date``
+    # annotation the queryset carries, so it costs no query per row.
+    effective_close_date = serializers.DateField(read_only=True, allow_null=True)
+
     class Meta:
         model = DecisionCycle
         fields = [
@@ -1179,6 +1194,7 @@ class DecisionCycleListSerializer(TenantCurrencySerializerMixin,
             'owner', 'owner_name', 'owner_email', 'team',
             'is_active',
             'total_deal_value', 'currency',
+            'expected_close_date', 'effective_close_date',
             'estimated_value',
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
@@ -1234,6 +1250,13 @@ class DecisionCycleSerializer(TenantCurrencySerializerMixin,
     # The unit of that amount — the tenant's single currency (core.currency).
     currency = serializers.SerializerMethodField(read_only=True)
 
+    # The close date that actually drives a personal PIPELINE objective's window:
+    # the manual ``expected_close_date`` above when the rep set one, else the
+    # date of the CLOSING step's last activity, else null. Declared once in
+    # services/close_date_sql.py; read here off the ``_effective_close_date``
+    # annotation the queryset carries, so it costs no query per row.
+    effective_close_date = serializers.DateField(read_only=True, allow_null=True)
+
     class Meta:
         model = DecisionCycle
         fields = [
@@ -1244,6 +1267,7 @@ class DecisionCycleSerializer(TenantCurrencySerializerMixin,
             # Cycle outcome (two-layer architecture)
             'outcome', 'outcome_date', 'outcome_notes', 'hold_until',
             'total_deal_value', 'currency',
+            'expected_close_date', 'effective_close_date',
             'steps', 'steps_count', 'validated_steps_count',
             'estimated_timeline_days', 'source_campaign_detail',
             'created_by', 'updated_by',
@@ -1288,14 +1312,20 @@ class DecisionCycleCreateSerializer(ClientScopeManager.SerializerMixin, serializ
     
     class Meta:
         model = DecisionCycle
-        fields = ['account_id', 'name', 'description', 'is_active']
+        # expected_close_date is OPTIONAL and manual: level 1 of the effective
+        # close date (services/close_date_sql.py), which is what windows a
+        # personal PIPELINE objective. Left blank, the date falls back to the
+        # CLOSING step's last activity.
+        fields = ['account_id', 'name', 'description', 'is_active',
+                  'expected_close_date']
         extra_kwargs = {
             'name': {
                 'required': True,
                 'error_messages': {
                     'required': CoreErrorMessages.REQUIRED_FIELD.format(field='Name'),
                 }
-            }
+            },
+            'expected_close_date': {'required': False, 'allow_null': True},
         }
     
     def validate_name(self, value):
@@ -1362,8 +1392,14 @@ class DecisionCycleUpdateSerializer(ClientScopeManager.SerializerMixin, serializ
     
     class Meta:
         model = DecisionCycle
-        fields = ['name', 'description', 'is_active']
-    
+        # See the create serializer: manual, optional, and the first level of
+        # the effective close date. Sending null clears it and hands the date
+        # back to the closing-step fallback.
+        fields = ['name', 'description', 'is_active', 'expected_close_date']
+        extra_kwargs = {
+            'expected_close_date': {'required': False, 'allow_null': True},
+        }
+
     def update(self, instance, validated_data):
         """Update decision cycle with proper audit fields."""
         user = self.context.get('request').user if self.context.get('request') else None

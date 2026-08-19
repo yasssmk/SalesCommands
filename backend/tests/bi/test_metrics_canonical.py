@@ -60,10 +60,12 @@ def _mk_campaign(owner, ca, name='Camp'):
 
 
 def _mk_cycle(owner, account, ca, *, name='dc', source_campaign=None,
-              estimated_value=None, outcome=None, outcome_date=None, created_on=None):
+              estimated_value=None, outcome=None, outcome_date=None, created_on=None,
+              expected_close_date=None):
     dc = DecisionCycle(account=account, owner=owner, name=name,
                        source_campaign=source_campaign,
-                       outcome=outcome, outcome_date=outcome_date)
+                       outcome=outcome, outcome_date=outcome_date,
+                       expected_close_date=expected_close_date)
     dc.save(user=owner, client_id=ca.id)
     # TD-75: the money metrics sum the DERIVED product roll-up, so the amount is
     # seeded as a real product line. The parameter keeps its name so every call
@@ -403,22 +405,48 @@ class TestPipelineValueFilters:
                   outcome=CycleOutcome.WON, outcome_date=TODAY)
         assert metrics.pipeline_value(_dc_base(client_account_a)) == 300.0
 
-    def test_anchor_is_max_expected_end_not_created_at(self, owner_a, client_account_a):
+    def test_anchor_is_the_effective_close_date_not_created_at(
+        self, owner_a, client_account_a,
+    ):
+        """The window is evaluated on the cycle's EFFECTIVE CLOSE DATE
+        (decision_cycles/services/close_date_sql.py), not on when it was created.
+
+        This test previously pinned the old anchor, ``Max(steps.expected_end)``.
+        That anchor was NULL on every freshly created cycle (step auto-creation
+        leaves expected_end unset), so a normally used deal fell out of every
+        windowed read. Same shape of proof, new rule.
+        """
         acc = _mk_account('Acc', owner_a, client_account_a)
-        # created LONG ago, but the furthest step expected_end is recent.
-        dc = _mk_cycle(owner_a, acc, client_account_a, name='dc', estimated_value=400,
-                       created_on=TODAY - timedelta(days=120))
-        _mk_step(dc, client_account_a, 1, TODAY - timedelta(days=90), owner_a)
-        _mk_step(dc, client_account_a, 2, TODAY - timedelta(days=2), owner_a)   # MAX
-        # window catches the MAX expected_end (day -2), NOT created_at (day -120)
+        # created LONG ago, expected to close recently.
+        _mk_cycle(owner_a, acc, client_account_a, name='dc', estimated_value=400,
+                  created_on=TODAY - timedelta(days=120),
+                  expected_close_date=TODAY - timedelta(days=2))
+        # window catches the close date (day -2), NOT created_at (day -120)
         win_in = (TODAY - timedelta(days=5), TODAY)
         assert metrics.pipeline_value(_dc_base(client_account_a), period=win_in) == 400.0
-        # window around the earlier step only -> the cycle's MAX is outside -> excluded
+        # a window elsewhere -> the close date is outside -> excluded
         win_out = (TODAY - timedelta(days=95), TODAY - timedelta(days=85))
         assert metrics.pipeline_value(_dc_base(client_account_a), period=win_out) == 0.0
         # a window around created_at must NOT include it (proves not created_at anchored)
         win_created = (TODAY - timedelta(days=125), TODAY - timedelta(days=115))
         assert metrics.pipeline_value(_dc_base(client_account_a), period=win_created) == 0.0
+
+    def test_a_dated_step_alone_no_longer_anchors_the_window(
+        self, owner_a, client_account_a,
+    ):
+        """Anti-regression on the anchor SWAP: a step's expected_end is no longer
+        the pipeline anchor. Only the manual close date or the CLOSING step's
+        activities put a deal in a window."""
+        acc = _mk_account('Acc', owner_a, client_account_a)
+        dc = _mk_cycle(owner_a, acc, client_account_a, name='stepdated',
+                       estimated_value=400)
+        _mk_step(dc, client_account_a, 1, TODAY, owner_a)
+
+        assert metrics.pipeline_value(
+            _dc_base(client_account_a), period=(TODAY - timedelta(days=5), TODAY)
+        ) == 0.0
+        # ...but an unwindowed read (the campaign convention) still counts it.
+        assert metrics.pipeline_value(_dc_base(client_account_a), period=None) == 400.0
 
     def test_user_and_campaign(self, owner_a, owner_a2, client_account_a):
         acc = _mk_account('Acc', owner_a, client_account_a)
