@@ -436,7 +436,26 @@ class ActivityCreationService:
                 updated_by=self.user,
             )
             activity.save()
-            
+
+            # Re-read the row so the instance carries DB-TYPED values.
+            #
+            # Every field above is assigned RAW from the JSON payload, so
+            # due_date / scheduled_date / scheduled_time arrive as STRINGS.
+            # save() coerces on the way OUT to SQL, but Django never re-reads,
+            # so without this the returned instance keeps the strings — and the
+            # view serialises THIS instance (views.py create_with_entities),
+            # where ActivitySerializer.is_overdue evaluates
+            # ``due_date < timezone.now().date()`` and raised
+            # ``'<' not supported between instances of 'str' and 'datetime.date'``.
+            # Since that view is @transaction.atomic, the TypeError rolled the
+            # whole operation back: a 500 AND no activity, no inline cycle.
+            #
+            # One re-read rather than coercing the two known date fields: it
+            # covers every field, including any added later, at the single point
+            # where an unvalidated payload becomes a model instance. The cost is
+            # one query on a single-object creation path.
+            activity.refresh_from_db()
+
             # Add contacts M2M
             if contact_ids:
                 contacts = Contact.objects.filter(
