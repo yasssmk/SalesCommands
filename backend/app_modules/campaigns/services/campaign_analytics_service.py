@@ -25,10 +25,12 @@ from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
 from app_modules.decision_cycles.services.deal_value_sql import (
     DEAL_VALUE_ALIAS,
+    DEAL_VALUE_SUM,
     annotate_deal_value,
 )
 
 from ..constants import DECISION_CYCLE_OBJECTIVE_TYPES
+from .campaign_dc_attribution import attributed_cycles
 from ..models import (
     CampaignAccount,
     CampaignAccountStatus,
@@ -657,18 +659,31 @@ class CampaignAnalyticsService:
         )
 
     def _sum_pipeline_value(self, campaign):
-        """PIPELINE_VALUE: Σ total_deal_value of OPEN cycles attributed to the
-        campaign via ``DecisionCycle.source_campaign`` (canonical formula)."""
-        return metrics.pipeline_value(
-            self._dc_base_queryset(), source_campaign=campaign, period=None
-        )
+        """PIPELINE_VALUE: Σ total_deal_value of OPEN cycles the campaign may
+        claim — born from it OR carrying a SUCCESSFUL activity of it.
+
+        The attribution is NOT stated here: it is
+        ``campaign_dc_attribution.attributed_cycles``, the single declaration the
+        LIST path calls too. It narrows the queryset with a correlated Exists, so
+        the result is one row per cycle and DEAL_VALUE_SUM cannot multiply by a
+        cycle's activities or by its product lines.
+
+        The canonical ``metrics.pipeline_value`` is deliberately NOT used with
+        ``source_campaign=``: that argument means origin-only and is shared with
+        personal quotas, which must keep it.
+        """
+        total = attributed_cycles(
+            self._dc_base_queryset().filter(outcome__isnull=True), campaign.id,
+        ).aggregate(total=DEAL_VALUE_SUM)['total']
+        return float(total or 0)
 
     def _sum_revenue_won(self, campaign):
-        """REVENUE_WON: Σ total_deal_value of WON cycles attributed to the campaign
-        via ``DecisionCycle.source_campaign`` (canonical formula)."""
-        return metrics.revenue_won(
-            self._dc_base_queryset(), source_campaign=campaign, period=None
-        )
+        """REVENUE_WON: Σ total_deal_value of WON cycles the campaign may claim —
+        same union as _sum_pipeline_value, WON instead of open."""
+        total = attributed_cycles(
+            self._dc_base_queryset().filter(outcome=CycleOutcome.WON), campaign.id,
+        ).aggregate(total=DEAL_VALUE_SUM)['total']
+        return float(total or 0)
 
     def _count_new_logos(self, campaign):
         """

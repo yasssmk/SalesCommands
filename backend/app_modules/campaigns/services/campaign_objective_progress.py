@@ -29,6 +29,8 @@ from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
 from app_modules.decision_cycles.services.deal_value_sql import DEAL_VALUE_SUM
 
+from .campaign_dc_attribution import attributed_cycles
+
 from ..models import (
     CampaignAccount,
     CampaignAccountStatus,
@@ -102,6 +104,38 @@ def _meetings_by_campaign(campaign_ids):
     return dict(counts)
 
 
+def _money_by_campaign(campaign_ids, state_q):
+    """{campaign_id: Σ total_deal_value} for the cycles each campaign may CLAIM.
+
+    Attribution is the union declared in
+    ``campaign_dc_attribution.attributed_cycles`` — born from the campaign OR
+    carrying a SUCCESSFUL activity of it — the SAME callable the per-campaign
+    detail path uses, so the card and the workspace cannot drift. A parity test
+    asserts it on every objective type.
+
+    ``state_q`` selects the population: open (pipeline) or WON (result).
+
+    WHY NOT ``_grouped`` LIKE THE OTHER BRANCHES: that helper groups on
+    ``source_campaign``, and under the union a cycle no longer has ONE campaign —
+    it may be claimed by several. There is no column to GROUP BY, so the
+    attribution is resolved per campaign. Each pass is a single aggregate whose
+    Exists keeps it at one row per cycle.
+
+    COST, stated plainly: this is one query per campaign carrying a money
+    objective on the page, where the other branches are one query for the whole
+    page. The module's "bounded by objective type, never by campaign count"
+    property therefore no longer holds for these two types. It is the price of an
+    attribution that is not a column; correctness first, and the count is pinned
+    by a test so any future optimisation has a baseline.
+    """
+    return {
+        campaign_id: attributed_cycles(
+            DecisionCycle.objects.filter(state_q), campaign_id,
+        ).aggregate(total=DEAL_VALUE_SUM)['total'] or 0
+        for campaign_id in campaign_ids
+    }
+
+
 def _values_for_type(objective_type, campaign_ids, client_id):
     """{campaign_id: current_value} for one objective_type in ONE grouped query.
 
@@ -118,16 +152,10 @@ def _values_for_type(objective_type, campaign_ids, client_id):
     # would join the alias into the GROUP BY and split each campaign's row.
     # Summing over the deal_products join is exact for a money aggregate.
     if objective_type == ObjectiveType.PIPELINE_VALUE:
-        qs = DecisionCycle.objects.filter(
-            source_campaign_id__in=campaign_ids, outcome__isnull=True,
-        )
-        return _grouped(qs, 'source_campaign', DEAL_VALUE_SUM)
+        return _money_by_campaign(campaign_ids, Q(outcome__isnull=True))
 
     if objective_type == ObjectiveType.REVENUE_WON:
-        qs = DecisionCycle.objects.filter(
-            source_campaign_id__in=campaign_ids, outcome=CycleOutcome.WON,
-        )
-        return _grouped(qs, 'source_campaign', DEAL_VALUE_SUM)
+        return _money_by_campaign(campaign_ids, Q(outcome=CycleOutcome.WON))
 
     if objective_type == ObjectiveType.MEETINGS:
         return _meetings_by_campaign(campaign_ids)
