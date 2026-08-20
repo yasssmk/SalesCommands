@@ -736,3 +736,214 @@ class TestIsolationAndQueryBound:
         # owner fetch + team adjacency descent + the metric aggregate.
         with django_assert_num_queries(3):
             P.compute_progress(quota)
+
+
+# ===========================================================================
+# WINDOW EDGES — the anchors are DateTimeFields, compared at DATE granularity
+# ===========================================================================
+
+class TestWindowEdges:
+    """Every windowed personal metric must include BOTH bounds, whatever the
+    time of day.
+
+    Three of the five anchor on a DateTimeField (``became_client_at``,
+    ``completed_at``, ``created_at``), and a naive ``<= end`` on one of those
+    compares against MIDNIGHT — silently dropping everything recorded later on
+    the closing day. ``_between(..., is_datetime=True)`` is what casts to a date
+    first; these tests are what stops it being forgotten again.
+
+    The money metrics' edges are pinned in
+    tests/quotas/test_quota_attainment_amounts.py::TestWindowEdges — their
+    anchors are DateFields, so they cannot fail this way.
+    """
+
+    @staticmethod
+    def _at(day, hour):
+        return timezone.make_aware(
+            timezone.datetime(day.year, day.month, day.day, hour, 0))
+
+    def test_a_logo_converted_late_on_the_last_day_still_counts(
+        self, am, client_account_a,
+    ):
+        """THE bug: an account that became a client at 14:00 on the period's last
+        day read 0, because ``became_client_at <= <end>`` resolved to
+        ``<= <end> 00:00``. A whole day of conversions vanished from every
+        objective that ended that day."""
+        acc = _account(client_account_a, account_owner=am, name='LateConv')
+        acc.became_client_at = self._at(WINDOW_END, 14)
+        acc.save(user=am)
+
+        assert _attainment(_quota(am, client_account_a, MetricKey.NEW_LOGOS,
+                                  target=Decimal('5'))) == Decimal('1')
+
+    def test_new_logos_includes_both_edges_and_excludes_the_days_outside(
+        self, am, client_account_a,
+    ):
+        for label, when in (
+            ('edge-start', self._at(WINDOW_START, 0)),
+            ('edge-end', self._at(WINDOW_END, 23)),
+            ('day-before', self._at(WINDOW_START - timedelta(days=1), 23)),
+            ('day-after', self._at(WINDOW_END + timedelta(days=1), 0)),
+        ):
+            acc = _account(client_account_a, account_owner=am, name=label)
+            acc.became_client_at = when
+            acc.save(user=am)
+
+        assert _attainment(_quota(am, client_account_a, MetricKey.NEW_LOGOS,
+                                  target=Decimal('9'))) == Decimal('2')
+
+    def test_meetings_includes_both_edges_and_excludes_the_days_outside(
+        self, sdr, client_account_a,
+    ):
+        acc = _account(client_account_a, account_owner=sdr, name='SdrAcc')
+        for label, when in (
+            ('edge-start', self._at(WINDOW_START, 0)),
+            ('edge-end', self._at(WINDOW_END, 23)),
+            ('day-before', self._at(WINDOW_START - timedelta(days=1), 23)),
+            ('day-after', self._at(WINDOW_END + timedelta(days=1), 0)),
+        ):
+            _meeting(client_account_a, created_by=sdr, account=acc,
+                     completed_at=when)
+
+        assert _attainment(_quota(sdr, client_account_a, MetricKey.MEETINGS,
+                                  target=Decimal('9'))) == Decimal('2')
+
+    def test_decision_cycles_includes_both_edges_and_excludes_the_days_outside(
+        self, sdr, client_account_a,
+    ):
+        for label, when in (
+            ('edge-start', self._at(WINDOW_START, 0)),
+            ('edge-end', self._at(WINDOW_END, 23)),
+            ('day-before', self._at(WINDOW_START - timedelta(days=1), 23)),
+            ('day-after', self._at(WINDOW_END + timedelta(days=1), 0)),
+        ):
+            cycle = _cycle(client_account_a, owner=sdr, created_by=sdr,
+                           amount=Decimal('1'), name=label)
+            # created_at is auto_now_add; force it past the auto value.
+            DecisionCycle.objects.filter(pk=cycle.pk).update(created_at=when)
+
+        assert _attainment(_quota(sdr, client_account_a,
+                                  MetricKey.DECISION_CYCLES,
+                                  target=Decimal('9'))) == Decimal('2')
+
+
+# ===========================================================================
+# ADMIN — the whole tenant, for EVERY metric (not just the one that had a test)
+# ===========================================================================
+
+class TestAdminMeasuresTheWholeTenant:
+    """The admin perimeter drops the ``user=`` filter entirely
+    (progress._compute_value), so it is the one tier where a metric's attribution
+    rule does not apply at all. That was pinned for PIPELINE_VALUE only; a metric
+    that silently kept a personal filter on the admin path would have gone
+    unnoticed. All five are checked here, against data owned by SOMEONE ELSE."""
+
+    @pytest.fixture
+    def admin(self, client_account_a):
+        return _user('adm@a.test', client_account_a,
+                     _role(client_account_a, 'Adm', admin=True))
+
+    @pytest.fixture
+    def stranger(self, client_account_a, ind_role):
+        return _user('stranger@a.test', client_account_a, ind_role)
+
+    def test_every_metric_sees_another_users_production(
+        self, admin, stranger, client_account_a,
+    ):
+        acc = _account(client_account_a, account_owner=stranger, name='TheirAcc')
+        # open deal -> PIPELINE, and it is also a cycle they OPENED -> DECISION_CYCLES
+        _cycle(client_account_a, owner=stranger, created_by=stranger, account=acc,
+               amount=Decimal('60000'), name='open')
+        # won deal on a converted account -> WON + NEW_LOGOS
+        converted = _account(client_account_a, account_owner=stranger,
+                             name='Converted')
+        converted.became_client_at = timezone.now()
+        converted.save(user=stranger)
+        _cycle(client_account_a, owner=stranger, created_by=stranger,
+               account=converted, amount=Decimal('40000'), name='won',
+               outcome=CycleOutcome.WON, outcome_date=TODAY)
+        # a meeting they held -> MEETINGS
+        _meeting(client_account_a, created_by=stranger, account=acc,
+                 completed_at=timezone.now())
+
+        expected = {
+            MetricKey.PIPELINE_VALUE: Decimal('60000'),
+            MetricKey.REVENUE_WON: Decimal('40000'),
+            MetricKey.DECISION_CYCLES: Decimal('2'),
+            MetricKey.NEW_LOGOS: Decimal('1'),
+            MetricKey.MEETINGS: Decimal('1'),
+        }
+        for metric, value in expected.items():
+            quota = _quota(admin, client_account_a, metric,
+                           target=Decimal('100000'))
+            assert _attainment(quota) == value, metric
+
+    def test_an_admin_still_never_sees_another_tenant(self, admin,
+                                                      client_account_a):
+        from end_users.models import ClientAccount
+
+        other_tenant = ClientAccount.objects.create(
+            name='Tenant B Co', is_b2b=True, max_users=20,
+        )
+        other_rep = _user('rep@b.test', other_tenant,
+                          _role(other_tenant, 'IndB', individual=True))
+        _cycle(other_tenant, owner=other_rep, created_by=other_rep,
+               amount=Decimal('99000'), name='foreign')
+
+        assert _attainment(_quota(admin, client_account_a,
+                                  MetricKey.PIPELINE_VALUE)) == Decimal('0')
+
+
+# ===========================================================================
+# Remaining union / isolation guards
+# ===========================================================================
+
+class TestUnionDedupOnWon:
+
+    def test_all_three_links_on_one_user_is_still_one_won_deal(
+        self, ae, client_account_a,
+    ):
+        """The WON twin of TestCountedOncePerDeal: owner AND created_by AND
+        account_owner all the same rep, on a WON deal — 40 000, not 120 000."""
+        acc = _account(client_account_a, account_owner=ae, name='AeAcc')
+        _cycle(client_account_a, owner=ae, created_by=ae, account=acc,
+               amount=Decimal('40000'), name='won',
+               outcome=CycleOutcome.WON, outcome_date=TODAY)
+
+        assert _attainment(_quota(ae, client_account_a, MetricKey.REVENUE_WON)) \
+            == Decimal('40000')
+
+
+class TestNewLogosManagerIsolation:
+
+    def test_a_managers_subtree_never_reaches_another_tenant(self,
+                                                             client_account_a):
+        """The NEW_LOGOS team predicate reaches cycles through a ``pk__in``
+        sub-query that carries no ``client_id`` of its own
+        (attribution_scope._account_scope). It is safe because the outer queryset
+        is tenant-bounded and a user belongs to one tenant — asserted rather than
+        argued."""
+        from end_users.models import ClientAccount
+
+        mgr_role = _role(client_account_a, 'MgrIso', manager=True)
+        manager = _user('mgriso@a.test', client_account_a, mgr_role)
+        region = _team(client_account_a, 'RegionIso', manager=manager)
+        manager.team = region
+        manager.save()
+
+        other_tenant = ClientAccount.objects.create(
+            name='Tenant C Co', is_b2b=True, max_users=20,
+        )
+        other_rep = _user('rep@c.test', other_tenant,
+                          _role(other_tenant, 'IndC', individual=True))
+        converted = _account(other_tenant, account_owner=other_rep,
+                             name='ForeignConv')
+        converted.became_client_at = timezone.now()
+        converted.save(user=other_rep)
+        _cycle(other_tenant, owner=other_rep, created_by=other_rep,
+               account=converted, amount=Decimal('40000'), name='won',
+               outcome=CycleOutcome.WON, outcome_date=TODAY)
+
+        assert _attainment(_quota(manager, client_account_a,
+                                  MetricKey.NEW_LOGOS,
+                                  target=Decimal('5'))) == Decimal('0')

@@ -449,3 +449,55 @@ class TestIsolationAndQueryBound:
 
         with django_assert_num_queries(1):
             assert campaign_new_logos(camp_a.id, client_account_a.id) == 4
+
+
+# ===========================================================================
+# NO DATE WINDOW — a campaign reports a RESULT, not a state
+# ===========================================================================
+
+class TestCampaignMetricsIgnoreDates:
+    """Campaign objectives are ALL-TIME by rule: they answer "what did this
+    campaign produce", which does not expire. Nothing in the campaign paths
+    passes a period — the money aggregates without one
+    (campaign_dc_attribution.campaign_money) and so does the logo count.
+
+    Asserted with data old enough that any fiscal-year or current-period default
+    would drop it, across all four campaign figures at once, so a windowing
+    regression on any one of them fails here."""
+
+    def test_a_two_year_old_deal_still_counts_in_every_campaign_figure(
+        self, user_a, client_account_a,
+    ):
+        long_ago = TODAY - timedelta(days=730)
+        camp = _campaign(user_a, client_account_a, name='Ancient')
+        acc = _converted(user_a, client_account_a, name='AncientConv',
+                         when=timezone.now() - timedelta(days=730))
+        won = _cycle(user_a, acc, client_account_a, source_campaign=camp,
+                     amount=Decimal('40000'), outcome=CycleOutcome.WON,
+                     outcome_date=long_ago, name='ancient-won')
+        _activity(user_a, acc, client_account_a, campaign=camp, cycle=won)
+        DecisionCycle.objects.filter(pk=won.pk).update(
+            created_at=timezone.now() - timedelta(days=730))
+
+        service = CampaignAnalyticsService(client_id=client_account_a.id)
+
+        assert service._sum_revenue_won(camp) == 40000.0
+        # won stays in the campaign's pipeline (result, not state)
+        assert service._sum_pipeline_value(camp) == 40000.0
+        assert service._count_decision_cycles(camp) == 1
+        assert service._count_new_logos(camp) == 1
+
+    def test_a_deal_dated_in_the_future_counts_too(self, user_a,
+                                                   client_account_a):
+        """The other end of the same rule: no upper bound either."""
+        camp = _campaign(user_a, client_account_a, name='Future')
+        acc = _converted(user_a, client_account_a, name='FutureConv',
+                         when=timezone.now() + timedelta(days=365))
+        _cycle(user_a, acc, client_account_a, source_campaign=camp,
+               amount=Decimal('40000'), outcome=CycleOutcome.WON,
+               outcome_date=TODAY + timedelta(days=365), name='future-won')
+
+        service = CampaignAnalyticsService(client_id=client_account_a.id)
+
+        assert service._sum_revenue_won(camp) == 40000.0
+        assert service._count_new_logos(camp) == 1

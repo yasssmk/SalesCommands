@@ -70,11 +70,13 @@ def _between(queryset, field, period, *, is_datetime=False):
     """Filter ``queryset`` to ``period = (start, end)`` on ``field``.
 
     ``None`` period is a no-op. A ``None`` bound makes the window half-open.
-    For a DateTimeField anchor (``created_at``) the bounds are compared at DATE
-    granularity (``__date``) so an ``end`` bound includes the whole day — a
-    plain ``<= end`` would drop everything on ``end`` after 00:00. DateField
-    anchors (scheduled_date, outcome_date, the steps' expected_end) compare
-    directly.
+    A DateTimeField anchor (``created_at``, ``completed_at``,
+    ``became_client_at``) MUST pass ``is_datetime=True``: the bounds are then
+    compared at DATE granularity (``__date``) so an ``end`` bound includes the
+    whole day. Without it, ``<= end`` compares against MIDNIGHT and silently
+    drops everything recorded later on the closing day — a real bug that shipped
+    on NEW_LOGOS. DateField anchors (outcome_date, expected_close_date) compare
+    directly and must NOT pass it.
     """
     if period is None:
         return queryset
@@ -222,8 +224,11 @@ def new_logos(base_queryset, *, user=None, period=None, source_campaign=None):
             account=OuterRef('pk'), campaign=source_campaign
         )
         qs = qs.filter(pk__in=Subquery(worked_in_campaign.values('account')))
-    # Anchor on became_client_at (sub-step 3 field).
-    qs = _between(qs, 'became_client_at', period)
+    # Anchor on became_client_at. It is a DateTimeField, so the window is
+    # compared at DATE granularity (``is_datetime=True``) exactly as ``created_at``
+    # and ``completed_at`` are: a bare ``<= end`` compares against MIDNIGHT on the
+    # closing day and silently drops every account converted later that day.
+    qs = _between(qs, 'became_client_at', period, is_datetime=True)
     return qs.count()
 
 
