@@ -55,6 +55,25 @@ SUCCESSFUL_OUTCOMES: frozenset = frozenset({
     ActivityOutcome.MEETING_SCHEDULED,
 })
 
+# Outcomes that mean a CONVERSATION HAPPENED — we got through to the person,
+# whatever they then said. Read-side only: unlike the two sets above, this one
+# drives no state machine, it defines the CONTACTS_REACHED metric
+# (services/campaign_contact_reach.py, where the rule and its edges are
+# documented). It lives here so the three outcome groupings the product reasons
+# with stay in ONE place and can be compared at a glance.
+#
+# Reached is NOT the same question as successful: NOT_INTERESTED and
+# UNSUBSCRIBE_OPTOUT are refusals AND contacts — someone picked up and said no.
+# CALLBACK_REQUESTED is not (a gatekeeper or a voicemail promising a call back is
+# not the person), and OTHER carries no information to decide on.
+REACHED_OUTCOMES: frozenset = frozenset({
+    ActivityOutcome.SUCCESSFUL,
+    ActivityOutcome.MEETING_SCHEDULED,
+    ActivityOutcome.NOT_INTERESTED,
+    ActivityOutcome.FOLLOW_UP_NEEDED,
+    ActivityOutcome.UNSUBSCRIBE_OPTOUT,
+})
+
 # Fallback title prefix for campaign activities whose campaign runs without an
 # automated sequence (sequence_type is empty, so no sequence declares a prefix).
 DEFAULT_CAMPAIGN_PREFIX = "CMP"

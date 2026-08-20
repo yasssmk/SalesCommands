@@ -26,6 +26,7 @@ from app_modules.decision_cycles.models import DecisionCycle
 
 from ..constants import DECISION_CYCLE_OBJECTIVE_TYPES
 from .campaign_dc_attribution import campaign_money
+from .campaign_contact_reach import contacts_reached_count
 from ..models import (
     CampaignAccount,
     CampaignAccountStatus,
@@ -621,11 +622,18 @@ class CampaignAnalyticsService:
         )
 
     def _count_contacts_reached(self, campaign):
-        """CONTACTS_REACHED: distinct contacts with at least one completed activity."""
-        return Activity.objects.filter(
-            campaign=campaign,
-            status=ActivityStatus.COMPLETED,
-        ).values('contacts').distinct().count()
+        """CONTACTS_REACHED: distinct campaign contacts the campaign got through to.
+
+        Neither the outcome set nor the dedup is stated here: both live in
+        ``campaign_contact_reach.contacts_reached_count``, the single calculation
+        the LIST batch also calls — same arrangement as the money, which is
+        declared once in ``campaign_dc_attribution.campaign_money``.
+
+        This branch used to count distinct ``contacts`` on any COMPLETED campaign
+        activity, with no outcome filter, so a dial that hit voicemail counted as
+        reaching the contact.
+        """
+        return contacts_reached_count(campaign.id)
 
     def _dc_base_queryset(self):
         """Tenant-bounded DecisionCycle queryset for the canonical metric formulas.

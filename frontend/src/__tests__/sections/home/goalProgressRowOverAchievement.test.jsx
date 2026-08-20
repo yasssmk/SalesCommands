@@ -100,7 +100,7 @@ describe('GoalProgressRow — over-achievement colour', () => {
   });
 
   it('WITHOUT the prop the row is unchanged (non-regression for the Home)', () => {
-    const { container } = render(<GoalProgressRow label="Leads" gradient={gradient} />);
+    const { container } = render(<GoalProgressRow label="Meetings" gradient={gradient} />);
     expect(screen.getByText('50%')).toBeTruthy();
     expect(screen.getByText('5 done')).toBeTruthy();
     expect(screen.queryByLabelText('over-achieved')).toBeNull();

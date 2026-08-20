@@ -11,8 +11,11 @@ by campaign, so the query count is bounded by the number of distinct objective
 types on the page (<= 6) — never by the number of campaigns.
 
 The grouped predicates mirror _calculate_objective_value branch for branch
-(source_campaign for the DecisionCycle metrics, Activity.campaign for MEETINGS /
-CONTACTS_REACHED, the CampaignAccount pivot for NEW_LOGOS). A parity test
+(source_campaign for the DecisionCycle metrics, Activity.campaign for MEETINGS,
+the CampaignAccount pivot for NEW_LOGOS) — except where a branch calls the SAME
+declaration the detail path calls, which is now the case for the money
+(campaign_dc_attribution) and for CONTACTS_REACHED (campaign_contact_reach):
+mirroring is only needed while two implementations exist. A parity test
 (tests/campaigns/test_campaign_list_objective_progress.py) locks each grouped
 result to the per-campaign calculation so the two paths can never drift.
 """
@@ -26,6 +29,7 @@ from django.db.models import Count, Q, Sum
 from app_modules.activities.constants import ActivityStatus, ActivityType
 from app_modules.activities.models import Activity
 from app_modules.decision_cycles.models import DecisionCycle
+from .campaign_contact_reach import contacts_reached_by_campaign
 from .campaign_dc_attribution import campaign_money
 
 from ..models import (
@@ -156,10 +160,12 @@ def _values_for_type(objective_type, campaign_ids, client_id):
         return _meetings_by_campaign(campaign_ids)
 
     if objective_type == ObjectiveType.CONTACTS_REACHED:
-        qs = Activity.objects.filter(
-            campaign_id__in=campaign_ids, status=ActivityStatus.COMPLETED,
-        )
-        return _grouped(qs, 'campaign', Count('contacts', distinct=True))
+        # The grouped twin of the per-campaign calculation, from the SAME module,
+        # so the card and the detail page cannot disagree. They did: this branch
+        # counted `Count('contacts', distinct=True)` while the detail counted
+        # `.values('contacts').distinct().count()`, and those differ by one on
+        # any campaign activity with no contact attached.
+        return contacts_reached_by_campaign(campaign_ids)
 
     if objective_type == ObjectiveType.NEW_LOGOS:
         qs = CampaignAccount.objects.filter(

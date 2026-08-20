@@ -20,14 +20,19 @@ import pytest
 from django.utils import timezone
 
 from app_modules.accounts.models import CompanyAccount
-from app_modules.activities.constants import ActivityStatus, ActivityType
+from app_modules.activities.constants import (
+    ActivityOutcome, ActivityStatus, ActivityType,
+)
 from app_modules.activities.models import Activity
 from app_modules.campaigns.constants import (
     CampaignAccountStatus,
+    CampaignContactStatus,
     CampaignType,
     ObjectiveType,
 )
-from app_modules.campaigns.models import Campaign, CampaignAccount, CampaignObjective
+from app_modules.campaigns.models import (
+    Campaign, CampaignAccount, CampaignContact, CampaignObjective,
+)
 from app_modules.campaigns.services.campaign_analytics_service import (
     CampaignAnalyticsService,
 )
@@ -62,9 +67,10 @@ def _seed_all_types(user, ca):
         company_name="ProspectCo", has_buying_decision=True, account_owner=user
     )
     other_acc.save(user=user, client_id=ca.id)
-    CampaignAccount(
+    campaign_account = CampaignAccount(
         campaign=camp, account=client_acc, status=CampaignAccountStatus.COMPLETED
-    ).save(user=user, client_id=ca.id)
+    )
+    campaign_account.save(user=user, client_id=ca.id)
 
     # A completed campaign MEETING -> MEETINGS = 1.
     Activity(
@@ -78,16 +84,31 @@ def _seed_all_types(user, ca):
         scheduled_date=TODAY,
     ).save(user=user, client_id=ca.id)
 
-    # A completed campaign activity carrying a contact -> CONTACTS_REACHED >= 1.
+    # A campaign contact we GOT THROUGH TO -> CONTACTS_REACHED = 1.
+    #
+    # This used to be a completed activity with the contact on the `contacts`
+    # M2M and no outcome at all, which counted under the old rule ("any completed
+    # campaign activity"). CONTACTS_REACHED now requires an outcome saying a
+    # conversation happened, and identifies the person by the CampaignContact
+    # pivot rather than the M2M (campaign_contact_reach.py).
     contact = Contact(account=client_acc, first_name="Reached", last_name="Contact")
     contact.save(user=user, client_id=ca.id)
+    campaign_contact = CampaignContact(
+        campaign_account=campaign_account,
+        contact=contact,
+        status=CampaignContactStatus.IN_PROGRESS,
+    )
+    campaign_contact.save(user=user, client_id=ca.id)
     reached = Activity(
         title="call",
         activity_type=ActivityType.CALL,
         status=ActivityStatus.COMPLETED,
+        outcome=ActivityOutcome.SUCCESSFUL,
         account=client_acc,
         owner=user,
         campaign=camp,
+        campaign_account=campaign_account,
+        campaign_contact=campaign_contact,
         scheduled_date=TODAY,
     )
     reached.save(user=user, client_id=ca.id)

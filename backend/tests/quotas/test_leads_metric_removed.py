@@ -77,10 +77,13 @@ class TestAStoredUnknownMetricDoesNotCrashTheRead:
     (``_SPEC[metric]``), which would raise KeyError and take down the whole
     objectives list, not just the dead row.
 
-    It now reports 0 — and therefore 0% of its target — so one dead row cannot
-    hide every live objective on the page. Nothing is deleted here: what to do
-    with such a row is the PO's call, and this keeps it visible instead of
-    fatal."""
+    It reports 0 — and therefore 0% of its target — so one dead row cannot hide
+    every live objective on the page.
+
+    The guard stays even though migration 0004 now purges those rows: the purge
+    fixes the rows that existed when it ran, the guard fixes the class of
+    failure. A row written by an old client between the deploy and the migration,
+    or any metric retired later, meets the same wall."""
 
     @pytest.mark.django_db
     def test_it_reports_zero_instead_of_raising(self, client_account_a):
@@ -112,3 +115,75 @@ class TestAStoredUnknownMetricDoesNotCrashTheRead:
         assert result.current_value == 0
         assert result.ratio == 0.0          # 0 of a live target, not undefined
         assert result.target_value == 10.0  # the row is intact, only unmeasurable
+
+
+class TestTheStoredRowsArePurged:
+    """Migration 0004 deletes the Quota rows stored under the retired metric.
+
+    The migration's forward function is called directly here, against the real
+    model registry, so what is tested IS the code that runs on deploy — not a
+    re-implementation of it beside it. A schema migration would be untestable
+    this way; a data migration is a plain function over ``apps``, and this one is
+    written as a named function precisely so it can be.
+
+    Order matters and is asserted: the run leaves the LIVE objectives untouched.
+    A purge that took the whole table with it would otherwise pass a
+    "the LEADS row is gone" assertion perfectly.
+    """
+
+    @staticmethod
+    def _purge():
+        from importlib import import_module
+
+        from django.apps import apps as global_apps
+
+        migration = import_module(
+            'app_modules.quotas.migrations.0004_purge_leads_quotas'
+        )
+        migration.purge_leads_quotas(global_apps, None)
+
+    @pytest.mark.django_db
+    def test_it_deletes_the_retired_rows_and_spares_the_live_ones(
+        self, client_account_a,
+    ):
+        from datetime import date, timedelta
+        from decimal import Decimal
+
+        from end_users.models import User, UserRole
+
+        role = UserRole.objects.create(
+            client_account=client_account_a, name='Ind', is_individual=True,
+            read=True, write=True, modify=True, can_delete=True,
+        )
+        owner = User.objects.create(email='purge@a.test',
+                                    client_account=client_account_a,
+                                    role=role, is_active=True)
+        today = date.today()
+
+        def _quota(metric):
+            quota = Quota(owner=owner, metric=MetricKey.DECISION_CYCLES,
+                          target_value=Decimal('10'),
+                          period_start=today - timedelta(days=15),
+                          period_end=today + timedelta(days=15))
+            quota.save(user=owner, client_id=client_account_a.id)
+            if metric != MetricKey.DECISION_CYCLES:
+                # straight through the column, the way a pre-deletion row exists
+                Quota.objects.filter(pk=quota.pk).update(metric=metric)
+            return quota
+
+        stale = _quota('LEADS')
+        live = _quota(MetricKey.DECISION_CYCLES)
+
+        self._purge()
+
+        assert not Quota.objects.filter(pk=stale.pk).exists()
+        assert Quota.objects.filter(pk=live.pk).exists()
+
+    @pytest.mark.django_db
+    def test_it_is_a_no_op_when_there_is_nothing_to_purge(self, client_account_a):
+        """Idempotent: the second run — and the run on a clean database — deletes
+        nothing and raises nothing."""
+        self._purge()
+        self._purge()
+
+        assert Quota.objects.filter(metric='LEADS').count() == 0
