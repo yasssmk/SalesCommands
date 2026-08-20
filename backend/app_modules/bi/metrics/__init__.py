@@ -13,7 +13,6 @@ See ``sales_metrics`` for the shared signature and the per-metric anchors.
 from .keys import METRIC_FUNCTIONS, MetricKey
 from .sales_metrics import (
     decision_cycles,
-    leads,
     meetings,
     new_logos,
     pipeline_value,
@@ -24,7 +23,6 @@ __all__ = [
     'MetricKey',
     'METRIC_FUNCTIONS',
     'decision_cycles',
-    'leads',
     'meetings',
     'new_logos',
     'pipeline_value',

@@ -42,7 +42,7 @@ const q = (id, metric, state, period_end, progress_ratio) => ({
 // c2 ends before c1; p1 is PAST.
 const c1 = q('1', 'REVENUE_WON', 'CURRENT', '2026-08-31', 1.3);
 const c2 = q('2', 'MEETINGS', 'CURRENT', '2026-08-15', 0.3);
-const p1 = q('3', 'LEADS', 'PAST', '2020-12-31', 0.5);
+const p1 = q('3', 'NEW_LOGOS', 'PAST', '2020-12-31', 0.5);
 
 const precedes = (a, b) =>
   Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -64,11 +64,11 @@ describe('ObjectivesListPage — payload, toggle, order', () => {
     // default = Active -> the PAST one is hidden
     expect(screen.getByText('Won value')).toBeTruthy();
     expect(screen.getByText('Meetings')).toBeTruthy();
-    expect(screen.queryByText('Leads')).toBeNull();
+    expect(screen.queryByText('New logos')).toBeNull();
 
     // switch to All -> the PAST one appears
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
-    expect(screen.getByText('Leads')).toBeTruthy();
+    expect(screen.getByText('New logos')).toBeTruthy();
   });
 
   it('orders by soonest end date first (then lowest attainment)', () => {
@@ -93,16 +93,16 @@ describe('ObjectivesListPage — payload, toggle, order', () => {
     // payload `state` is the PRIMARY key, never recomputed client side.
     const cur = q('10', 'REVENUE_WON', 'CURRENT', '2026-12-31', 0.5); // latest end
     const fut = q('11', 'PIPELINE_VALUE', 'FUTURE', '2026-09-01', 0.0); // middle end
-    const pas = q('12', 'LEADS', 'PAST', '2020-12-31', 0.9); // earliest end
+    const pas = q('12', 'NEW_LOGOS', 'PAST', '2020-12-31', 0.9); // earliest end
     mockUseGetObjectives.mockReturnValue({
       objectives: [pas, fut, cur],
       objectivesLoading: false,
     });
     render(<ObjectivesListPage />);
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
-    // current (Won value) -> future (Pipeline value) -> past (Leads)
+    // current (Won value) -> future (Pipeline value) -> past (New logos)
     expect(precedes(title('Won value'), title('Pipeline value'))).toBe(true);
-    expect(precedes(title('Pipeline value'), title('Leads'))).toBe(true);
+    expect(precedes(title('Pipeline value'), title('New logos'))).toBe(true);
   });
 
   it('within a state group the internal end-date order is preserved', () => {
@@ -115,6 +115,6 @@ describe('ObjectivesListPage — payload, toggle, order', () => {
     render(<ObjectivesListPage />);
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
     expect(precedes(title('Meetings'), title('Won value'))).toBe(true); // c2 before c1
-    expect(precedes(title('Won value'), title('Leads'))).toBe(true); // currents before past
+    expect(precedes(title('Won value'), title('New logos'))).toBe(true); // currents before past
   });
 });

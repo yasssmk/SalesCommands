@@ -15,10 +15,11 @@ Common signature:
 - base_queryset : the starting queryset (DecisionCycle, Activity or
   CompanyAccount depending on the metric), already tenant+scope bounded.
 - user          : filter to the rows that BELONG to that user when provided
-  (None = no user filter). "Belong" is not a single field: it is declared once
-  in ``attribution_scope`` — owner OR created_by OR account owner for the deal
-  metrics, ``created_by`` for MEETINGS. See that module for the rule and its
-  consequences.
+  (None = no user filter). "Belong" is not one rule for all five: it is declared
+  once in ``attribution_scope`` — owner OR created_by OR account owner for the
+  metrics that measure a DEAL (PIPELINE_VALUE, REVENUE_WON, NEW_LOGOS), and
+  ``created_by`` alone for the metrics that count an ACT (DECISION_CYCLES,
+  MEETINGS). See that module for both rules and their consequences.
 - period        : a ``(date_start, date_end)`` couple filtered on the metric's
   OWN anchor date (see each function). None = no time bound. Either bound may be
   None to make the window half-open.
@@ -29,14 +30,13 @@ match the existing campaign-objective service, the living parity reference).
 
 Design rules honoured here (mirror of the S7c patterns in
 decision_cycles/services/derivation_sql.py and campaigns/views/campaign_views.py):
-- Every to-many traversal (LEADS via activities, PIPELINE_VALUE via steps) uses
-  an ISOLATED correlated sub-query (Exists / Subquery), never a Count/Sum over a
-  deep join that fan-outs and double-counts.
+- Every to-many traversal (NEW_LOGOS via the campaign pivot, PIPELINE_VALUE via
+  the deal lines) uses an ISOLATED correlated sub-query (Exists / Subquery),
+  never a Count/Sum over a deep join that fan-outs and double-counts.
 - Nullable FK traversals are written in positive form; the join itself drops the
   null rows (documented at each call site).
-- CANCELLED activities are excluded from activity-based counts, consistent with
-  the existing status derivation.
-- ``ActivityOutcome.MEETING_SCHEDULED`` is imported, never hardcoded as a literal.
+- Outcome sets are imported from where the business already declares them
+  (``SUCCESSFUL_OUTCOMES``), never re-listed as literals here.
 
 RECONCILIATION NOTE (PO decision): where the current BI and the campaign
 objectives diverge (the campaign service computes WITHOUT a date filter), the
@@ -48,8 +48,7 @@ from __future__ import annotations
 
 from django.db.models import OuterRef, Subquery, Sum
 
-from app_modules.activities.constants import ActivityOutcome, ActivityStatus
-from app_modules.activities.models import Activity
+from app_modules.activities.constants import ActivityStatus
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.services.close_date_sql import (
     CLOSE_DATE_ALIAS,
@@ -60,7 +59,7 @@ from app_modules.decision_cycles.services.deal_value_sql import (
     annotate_deal_value,
 )
 
-from .attribution_scope import account_scope_q, activity_scope_q, cycle_scope_q
+from .attribution_scope import account_scope_q, creator_scope_q, cycle_scope_q
 
 
 # ---------------------------------------------------------------------------
@@ -98,52 +97,34 @@ def _amount(value):
 
 
 # ---------------------------------------------------------------------------
-# The six canonical metrics
+# The five canonical metrics
 # ---------------------------------------------------------------------------
 
 def decision_cycles(base_queryset, *, user=None, period=None, source_campaign=None):
-    """DECISION_CYCLES — count of decision cycles.
+    """DECISION_CYCLES — count of decision cycles a rep OPENED.
 
-    Anchor: the DC creation date (``created_at``).
+    Anchor: the DC creation date (``created_at``), compared at DATE granularity.
     Campaign attribution: ``source_campaign`` on the DC.
-    Owner: the DC ``owner``.
+    Owner: ``attribution_scope.creator_scope_q`` — ``created_by``, the person
+    who opened the deal.
+
+    It scoped on ``owner`` before, which reads a different question: who runs
+    the deal NOW. The two diverge exactly where this metric matters — an SDR
+    opens a deal and hands it to an AE, and under the old rule the SDR had
+    opened nothing while the AE had opened a deal they had not yet touched.
+    Ownership is what the VALUE metrics are attributed by (a wider union, see
+    attribution_scope); opening is an act, and an act belongs to whoever
+    performed it.
+
+    Deliberately NOT the three-branch union: this counts deals opened, and
+    exactly one person opens a deal. Widening it would make one deal a
+    "cycle opened" for three people.
 
     ``base_queryset`` is a (tenant+scope bounded) DecisionCycle queryset.
     """
     qs = base_queryset
     if user is not None:
-        qs = qs.filter(owner=user)
-    if source_campaign is not None:
-        qs = qs.filter(source_campaign=source_campaign)
-    qs = _between(qs, 'created_at', period, is_datetime=True)
-    return qs.count()
-
-
-def leads(base_queryset, *, user=None, period=None, source_campaign=None):
-    """LEADS — count of decision cycles that have at least one activity whose
-    outcome is MEETING_SCHEDULED.
-
-    Anchor: the DC creation date (``created_at``).
-    Campaign attribution: ``source_campaign`` on the DC.
-    Owner: the DC ``owner``.
-
-    The "has a scheduled-meeting activity" test is an ISOLATED correlated
-    EXISTS on Activity (not a join+count), so a DC with several such activities
-    is still counted once — no fan-out. CANCELLED activities are excluded.
-
-    ``base_queryset`` is a (tenant+scope bounded) DecisionCycle queryset.
-    """
-    has_meeting = (
-        Activity.objects
-        .filter(
-            decision_cycle=OuterRef('pk'),
-            outcome=ActivityOutcome.MEETING_SCHEDULED,
-        )
-        .exclude(status=ActivityStatus.CANCELLED)
-    )
-    qs = base_queryset.filter(pk__in=Subquery(has_meeting.values('decision_cycle')))
-    if user is not None:
-        qs = qs.filter(owner=user)
+        qs = qs.filter(creator_scope_q(user))
     if source_campaign is not None:
         qs = qs.filter(source_campaign=source_campaign)
     qs = _between(qs, 'created_at', period, is_datetime=True)
@@ -203,7 +184,7 @@ def meetings(base_queryset, *, user=None, period=None, source_campaign=None):
         outcome__in=SUCCESSFUL_OUTCOMES,
     )
     if user is not None:
-        qs = qs.filter(activity_scope_q(user))
+        qs = qs.filter(creator_scope_q(user))
     if source_campaign is not None:
         # positive form; drops activities without a cycle of origin.
         qs = qs.filter(decision_step__cycle__source_campaign=source_campaign)

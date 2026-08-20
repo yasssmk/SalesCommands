@@ -8,6 +8,15 @@ campaign objectives).
 (``choices=MetricKey.choices``) without re-declaring a parallel list. Each key
 maps 1:1 to the pure formula of the same concept in ``sales_metrics`` via
 ``METRIC_FUNCTIONS`` — the calculation binding a later sub-step will use.
+
+There were six. LEADS was removed (PO): it counted decision cycles carrying at
+least one MEETING_SCHEDULED activity — neither a cycle count nor a meeting
+count, but a third population nobody set an objective on. Its absence is
+asserted in tests/quotas/test_leads_metric_removed.py, at every layer it could
+have survived in. Unrelated namesake, deliberately untouched:
+``bi/definitions/leads.py`` declares two BI DASHBOARD KPIs
+(``leads_dc_created``, ``leads_activities_created``) in the separate
+``bi.registry`` namespace.
 """
 
 from __future__ import annotations
@@ -19,10 +28,9 @@ from . import sales_metrics
 
 
 class MetricKey(models.TextChoices):
-    """The six canonical Sales metrics. Values are stable identifiers."""
+    """The five canonical Sales metrics. Values are stable identifiers."""
 
     DECISION_CYCLES = 'DECISION_CYCLES', _('Decision cycles')
-    LEADS = 'LEADS', _('Leads')
     MEETINGS = 'MEETINGS', _('Meetings')
     NEW_LOGOS = 'NEW_LOGOS', _('New logos')
     PIPELINE_VALUE = 'PIPELINE_VALUE', _('Pipeline value')
@@ -33,7 +41,6 @@ class MetricKey(models.TextChoices):
 # Kept beside the enum so the vocabulary and the calculation never drift apart.
 METRIC_FUNCTIONS = {
     MetricKey.DECISION_CYCLES: sales_metrics.decision_cycles,
-    MetricKey.LEADS: sales_metrics.leads,
     MetricKey.MEETINGS: sales_metrics.meetings,
     MetricKey.NEW_LOGOS: sales_metrics.new_logos,
     MetricKey.PIPELINE_VALUE: sales_metrics.pipeline_value,

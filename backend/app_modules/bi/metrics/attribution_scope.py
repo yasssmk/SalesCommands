@@ -29,13 +29,20 @@ through activities (to-many) and needs an ``Exists`` to stay flat
 (campaigns/services/campaign_dc_attribution.py). A cycle matching all three
 branches is still one row, so it is summed once.
 
-MEETINGS DOES NOT USE THIS UNION
---------------------------------
-A meeting is credited to whoever HELD it — ``Activity.created_by``, one link,
-no union (see ``activity_scope_q``). It used to be credited through
-``decision_step -> cycle -> owner``, which answered a different question
-entirely ("who owns the deal this meeting is attached to") and silently dropped
-every meeting logged without a decision step.
+THE COUNT-AN-ACT METRICS DO NOT USE THIS UNION
+----------------------------------------------
+MEETINGS and DECISION_CYCLES count an ACT — a meeting held, a deal opened — and
+an act belongs to whoever performed it: ``created_by``, one link, no union (see
+``creator_scope_q``, shared by both). The union above is for metrics that
+measure a DEAL's value or outcome, where several people legitimately have a
+claim on the same object.
+
+Both used to read the wrong field. MEETINGS was credited through
+``decision_step -> cycle -> owner``, which answered "who owns the deal this
+meeting is attached to" and silently dropped every meeting logged without a
+decision step. DECISION_CYCLES was credited to ``owner``, so an SDR who opened
+ten deals and handed them to an AE had opened none, and the AE had opened ten
+they had not yet touched.
 
 THE TEAM FORM IS THE SAME RULE, WIDENED
 ---------------------------------------
@@ -84,15 +91,21 @@ def cycle_scope_q_for_teams(team_ids):
 
 
 # ---------------------------------------------------------------------------
-# Activity-based metric — MEETINGS
+# The count-an-act metrics — MEETINGS (Activity) and DECISION_CYCLES (cycles)
 # ---------------------------------------------------------------------------
 
-def activity_scope_q(user):
-    """Who a meeting belongs to: the person who logged it. One link, no union."""
+def creator_scope_q(user):
+    """Who an ACT belongs to: the person who performed it. One link, no union.
+
+    ``created_by`` is the audit field ``ModuleBaseModel`` stamps from
+    ``save(user=)``, so it is on every model here and means the same thing on
+    each — which is why one pair of functions serves both metrics rather than
+    two near-identical ones drifting apart.
+    """
     return Q(created_by=user)
 
 
-def activity_scope_q_for_teams(team_ids):
+def creator_scope_q_for_teams(team_ids):
     return Q(created_by__team_id__in=team_ids)
 
 

@@ -361,53 +361,6 @@ class TestDecisionCyclesFilters:
         assert metrics.decision_cycles(_dc_base(client_account_a)) == 2
 
 
-class TestLeadsFilters:
-    def _dc_with_meeting(self, owner, ca, acc, **kw):
-        dc = _mk_cycle(owner, acc, ca, **kw)
-        _mk_activity(owner, acc, ca, decision_cycle=dc,
-                     outcome=ActivityOutcome.MEETING_SCHEDULED,
-                     status=ActivityStatus.COMPLETED)
-        return dc
-
-    def test_requires_meeting_scheduled_activity(self, owner_a, client_account_a):
-        acc = _mk_account('Acc', owner_a, client_account_a)
-        self._dc_with_meeting(owner_a, client_account_a, acc, name='lead')
-        # a DC with an activity that is NOT meeting_scheduled -> not a lead
-        plain = _mk_cycle(owner_a, acc, client_account_a, name='plain')
-        _mk_activity(owner_a, acc, client_account_a, decision_cycle=plain,
-                     outcome=ActivityOutcome.NO_ANSWER)
-        assert metrics.leads(_dc_base(client_account_a)) == 1
-
-    def test_cancelled_meeting_excluded(self, owner_a, client_account_a):
-        acc = _mk_account('Acc', owner_a, client_account_a)
-        dc = _mk_cycle(owner_a, acc, client_account_a, name='c')
-        _mk_activity(owner_a, acc, client_account_a, decision_cycle=dc,
-                     outcome=ActivityOutcome.MEETING_SCHEDULED,
-                     status=ActivityStatus.CANCELLED)
-        assert metrics.leads(_dc_base(client_account_a)) == 0
-
-    def test_counted_once_when_two_meetings(self, owner_a, client_account_a):
-        acc = _mk_account('Acc', owner_a, client_account_a)
-        dc = _mk_cycle(owner_a, acc, client_account_a, name='c')
-        for _ in range(2):
-            _mk_activity(owner_a, acc, client_account_a, decision_cycle=dc,
-                         outcome=ActivityOutcome.MEETING_SCHEDULED,
-                         status=ActivityStatus.COMPLETED)
-        assert metrics.leads(_dc_base(client_account_a)) == 1  # no fan-out
-
-    def test_user_and_campaign_and_period(self, owner_a, owner_a2, client_account_a):
-        acc = _mk_account('Acc', owner_a, client_account_a)
-        camp = _mk_campaign(owner_a, client_account_a)
-        self._dc_with_meeting(owner_a, client_account_a, acc, name='mine',
-                              source_campaign=camp, created_on=TODAY - timedelta(days=2))
-        self._dc_with_meeting(owner_a2, client_account_a, acc, name='other',
-                              source_campaign=camp, created_on=TODAY - timedelta(days=2))
-        assert metrics.leads(_dc_base(client_account_a), user=owner_a) == 1
-        assert metrics.leads(_dc_base(client_account_a), source_campaign=camp) == 2
-        assert metrics.leads(_dc_base(client_account_a),
-                             period=(TODAY - timedelta(days=1), TODAY)) == 0
-
-
 class TestMeetingsFilters:
     """MEETINGS counts meetings HELD and gone well — COMPLETED with an outcome in
     SUCCESSFUL_OUTCOMES — credited to whoever LOGGED it and windowed on
@@ -633,7 +586,6 @@ class TestAntiFanOut:
         open_sum = 0.0
         won_sum = 0.0
         dc_count = 0
-        lead_count = 0
         meeting_count = 0
         for owner in owners:
             for i in range(cycles_per_owner):
@@ -657,10 +609,8 @@ class TestAntiFanOut:
                                  status=ActivityStatus.COMPLETED)
                     if j == 0:
                         meeting_count += 1
-                if acts_per_cycle >= 1:
-                    lead_count += 1
         return dict(open_sum=open_sum, won_sum=won_sum, dc_count=dc_count,
-                    lead_count=lead_count, meeting_count=meeting_count)
+                    meeting_count=meeting_count)
 
     def test_all_metrics_correct_and_query_bounded(
             self, django_assert_num_queries, owner_a, owner_a2, client_account_a):
@@ -670,7 +620,6 @@ class TestAntiFanOut:
         # Correctness together (open cycles have 3 steps each -> pipeline must NOT
         # be multiplied by 3; wons counted once despite many activities).
         assert metrics.decision_cycles(_dc_base(client_account_a)) == exp['dc_count']
-        assert metrics.leads(_dc_base(client_account_a)) == exp['lead_count']
         assert metrics.meetings(_act_base(client_account_a)) == exp['meeting_count']
         assert metrics.pipeline_value(_dc_base(client_account_a)) == exp['open_sum']
         assert metrics.revenue_won(_dc_base(client_account_a)) == exp['won_sum']
@@ -678,8 +627,6 @@ class TestAntiFanOut:
         # Each pure metric is ONE query, regardless of the data volume above.
         with django_assert_num_queries(1):
             metrics.decision_cycles(_dc_base(client_account_a))
-        with django_assert_num_queries(1):
-            metrics.leads(_dc_base(client_account_a))
         with django_assert_num_queries(1):
             metrics.meetings(_act_base(client_account_a))
         with django_assert_num_queries(1):

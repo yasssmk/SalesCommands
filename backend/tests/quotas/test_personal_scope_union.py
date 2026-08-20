@@ -170,6 +170,116 @@ def am(db, client_account_a, ind_role):
 
 
 # ===========================================================================
+# DECISION_CYCLES — the CREATOR, not the owner (it is a count of what a rep
+# OPENED, so it cannot be read off the field that says who runs it now)
+# ===========================================================================
+
+class TestDecisionCyclesAttribution:
+    """DECISION_CYCLES does NOT use the three-branch union: it counts what a rep
+    CREATED, one link, ``created_by``. It scoped on ``owner`` before, which
+    answered a different question — an SDR who opened ten deals and handed them
+    to an AE had opened none, and the AE had opened ten they never touched at
+    that stage.
+
+    Same rule as MEETINGS (``creator_scope_q``): both count an ACT, and the act
+    belongs to whoever performed it."""
+
+    def _count(self, quota):
+        return int(_attainment(quota))
+
+    def test_the_creator_counts_not_the_owner(self, sdr, ae, client_account_a):
+        acc = _account(client_account_a, account_owner=ae, name='AeAcc')
+        _cycle(client_account_a, owner=ae, created_by=sdr, account=acc,
+               amount=Decimal('60000'))
+
+        assert self._count(_quota(sdr, client_account_a,
+                                  MetricKey.DECISION_CYCLES,
+                                  target=Decimal('10'))) == 1
+        assert self._count(_quota(ae, client_account_a,
+                                  MetricKey.DECISION_CYCLES,
+                                  target=Decimal('10'))) == 0
+
+    def test_owning_a_cycle_someone_else_opened_counts_nothing(
+        self, sdr, ae, client_account_a,
+    ):
+        """The negative of the same rule, stated on its own so a widening back
+        to a union would fail here: the AE owns this deal and it is still not
+        one they opened."""
+        acc = _account(client_account_a, account_owner=ae, name='AeAcc')
+        _cycle(client_account_a, owner=ae, created_by=sdr, account=acc,
+               amount=Decimal('60000'))
+        # ... and owning the ACCOUNT is not opening the deal either.
+        assert self._count(_quota(ae, client_account_a,
+                                  MetricKey.DECISION_CYCLES,
+                                  target=Decimal('10'))) == 0
+
+    def test_the_window_is_the_creation_date(self, sdr, client_account_a):
+        """Anchor unchanged — ``created_at``, compared at DATE granularity."""
+        inside = _cycle(client_account_a, owner=sdr, created_by=sdr,
+                        amount=Decimal('1'), name='in')
+        outside = _cycle(client_account_a, owner=sdr, created_by=sdr,
+                         amount=Decimal('1'), name='out')
+        DecisionCycle.objects.filter(pk=outside.pk).update(
+            created_at=timezone.make_aware(timezone.datetime(
+                (WINDOW_START - timedelta(days=40)).year,
+                (WINDOW_START - timedelta(days=40)).month,
+                (WINDOW_START - timedelta(days=40)).day, 12, 0)))
+
+        assert self._count(_quota(sdr, client_account_a,
+                                  MetricKey.DECISION_CYCLES,
+                                  target=Decimal('10'))) == 1
+        assert inside.pk != outside.pk
+
+    def test_a_manager_sees_the_cycles_their_team_opened(self, client_account_a):
+        """Manager = the same ``created_by`` rule over the subtree: a deal a
+        member OPENED counts even though an outsider owns it, and a deal a
+        member merely owns does not."""
+        mgr_role = _role(client_account_a, 'Mgr', manager=True)
+        ind_role = _role(client_account_a, 'Ind', individual=True)
+        manager = _user('mgrdc@a.test', client_account_a, mgr_role)
+        region = _team(client_account_a, 'RegionDC', manager=manager)
+        country = _team(client_account_a, 'CountryDC', parent=region)
+        manager.team = region
+        manager.save()
+        direct = _user('dcm1@a.test', client_account_a, ind_role, team=region)
+        deep = _user('dcm2@a.test', client_account_a, ind_role, team=country)
+        outsider = _user('dcout@a.test', client_account_a, ind_role,
+                         team=_team(client_account_a, 'OtherDC'))
+
+        out_acc = _account(client_account_a, account_owner=outsider,
+                           name='OutAccDC')
+        # opened by a member, owned outside -> the team opened it
+        _cycle(client_account_a, owner=outsider, created_by=direct,
+               account=out_acc, amount=Decimal('1'), name='byteam')
+        # opened deep in the subtree
+        _cycle(client_account_a, owner=deep, created_by=deep, amount=Decimal('1'),
+               name='deep')
+        # TWO cycles opened outside and owned by members -> not the team's.
+        # Two, not one, on purpose: with one the owner rule and the creator rule
+        # both total 2 over different sets and the assertion would pass either
+        # way. Two makes the old rule read 3 and the new one 2.
+        member_acc = _account(client_account_a, account_owner=direct,
+                              name='MemberAccDC')
+        for index in range(2):
+            _cycle(client_account_a, owner=direct, created_by=outsider,
+                   account=member_acc, amount=Decimal('1'),
+                   name=f'byoutsider{index}')
+
+        assert self._count(_quota(manager, client_account_a,
+                                  MetricKey.DECISION_CYCLES,
+                                  target=Decimal('10'))) == 2
+
+    def test_it_stays_one_query(self, sdr, client_account_a,
+                                django_assert_num_queries):
+        for index in range(5):
+            _cycle(client_account_a, owner=sdr, created_by=sdr,
+                   amount=Decimal('1'), name=f'dc{index}')
+
+        with django_assert_num_queries(1):
+            metrics.decision_cycles(_dc_base(client_account_a), user=sdr)
+
+
+# ===========================================================================
 # G1 — the three branches of the union, one at a time
 # ===========================================================================
 
