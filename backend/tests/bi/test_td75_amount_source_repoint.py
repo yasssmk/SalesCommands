@@ -22,8 +22,23 @@ still read the old field the number would be unmistakable — the decoy is the
 proof, not a comment.
 
 Shared scenario: OPEN cycle worth 60_000, WON cycle worth 40_000, LOST cycle
-worth 77_000 (must count nowhere). Pipeline is EXCLUSIVE — won and lost have
-left it.
+worth 77_000 (must count nowhere). The PERSONAL pipeline is EXCLUSIVE — won and
+lost have left it.
+
+THE CAMPAIGN SITES READ A DIFFERENT POPULATION, on two rules that landed after
+this module was written and that it must not paper over:
+
+* a campaign claims a cycle's value only once it has WORKED it — a COMPLETED
+  campaign activity with a successful outcome (campaign_dc_attribution.py).
+  ``source_campaign`` alone claims nothing, so the fixture below now gives each
+  cycle that activity; without it every campaign figure here is 0;
+* a campaign's PIPELINE covers OPEN **or** WON — it reports what it put on the
+  table, not what is still open. So sites 2 and 3 expect 100_000 where sites 1,
+  4 and 5 expect 60_000, and that gap is the rule, not a drift.
+
+What TD-75 itself asserts — that the amount is the derived roll-up and never
+``estimated_value`` — is unchanged on all five sites, and the DECOY still proves
+it on each.
 
 Harness mirrors tests/bi/test_metrics_canonical.py (same factories, same
 AuthContext helper) and tests/bi/test_kpi_quota.py for the legacy SalesQuota.
@@ -36,6 +51,10 @@ import pytest
 from django.core.cache import cache
 
 from app_modules.accounts.models import CompanyAccount
+from app_modules.activities.constants import (
+    ActivityOutcome, ActivityStatus, ActivityType,
+)
+from app_modules.activities.models import Activity
 from app_modules.bi import metrics
 from app_modules.bi.metrics import MetricKey
 from app_modules.bi.quota import compute_quota_current_value
@@ -65,6 +84,9 @@ PERIOD_END = TODAY + timedelta(days=30)
 OPEN_VALUE = Decimal('60000')
 WON_VALUE = Decimal('40000')
 LOST_VALUE = Decimal('77000')
+
+# A campaign's pipeline keeps the won deal (see the module docstring).
+CAMPAIGN_PIPELINE_VALUE = OPEN_VALUE + WON_VALUE
 
 # If any aggregation still summed estimated_value, totals would land here.
 DECOY = Decimal('999999')
@@ -108,6 +130,19 @@ def _cycle(owner, account, ca, *, name, amount, outcome=None, outcome_date=None,
     return dc
 
 
+def _worked_by_campaign(cycle, owner, campaign):
+    """The COMPLETED + successful campaign activity a campaign now needs before
+    it may claim a cycle's value (campaign_dc_attribution.py)."""
+    activity = Activity(
+        title=f'worked-{cycle.name}', activity_type=ActivityType.CALL,
+        status=ActivityStatus.COMPLETED, outcome=ActivityOutcome.SUCCESSFUL,
+        account=cycle.account, owner=owner, campaign=campaign,
+        decision_cycle=cycle, scheduled_date=TODAY,
+    )
+    activity.save(user=owner, client_id=cycle.client_id)
+    return activity
+
+
 @pytest.fixture(autouse=True)
 def _flush_cache():
     cache.clear()
@@ -142,6 +177,11 @@ def scenario(db, client_account_a, user_a):
     lost = _cycle(user_a, account, client_account_a, name='lost', amount=LOST_VALUE,
                   outcome=CycleOutcome.LOST, outcome_date=TODAY,
                   source_campaign=campaign)
+
+    # The campaign has WORKED all three, so the campaign figures below exclude
+    # what they exclude on the deal's own status, not for want of attribution.
+    for cycle in (opened, won, lost):
+        _worked_by_campaign(cycle, user_a, campaign)
 
     return {
         'account': account, 'campaign': campaign,
@@ -222,8 +262,11 @@ class TestCampaignObjectives:
         rows = CampaignAnalyticsService(ca.id).get_objectives_progress(campaign)
         by_id = {row['id']: row['current_value'] for row in rows}
 
-        assert Decimal(str(by_id[str(pipe.id)])) == OPEN_VALUE
+        assert Decimal(str(by_id[str(pipe.id)])) == CAMPAIGN_PIPELINE_VALUE
         assert Decimal(str(by_id[str(won.id)])) == WON_VALUE
+        # the roll-up, never the decoy, on both
+        assert DECOY not in (Decimal(str(by_id[str(pipe.id)])),
+                             Decimal(str(by_id[str(won.id)])))
 
     def test_grouped_batch_matches_per_objective(self, scenario):
         """The batch aggregate (Count + two filtered Sums in ONE query) must
@@ -238,7 +281,7 @@ class TestCampaignObjectives:
         service = CampaignAnalyticsService(ca.id)
         values = service.calculate_objective_values(campaign, [pipe, won, cycles])
 
-        assert Decimal(str(values[pipe.id])) == OPEN_VALUE
+        assert Decimal(str(values[pipe.id])) == CAMPAIGN_PIPELINE_VALUE
         assert Decimal(str(values[won.id])) == WON_VALUE
         assert values[cycles.id] == 3          # open + won + lost, NOT x lines
 
@@ -250,7 +293,7 @@ class TestCampaignObjectives:
         batch = compute_primary_objective_progress_batch([campaign], ca.id)
         row = batch[campaign.id]
 
-        assert Decimal(str(row['current_value'])) == OPEN_VALUE
+        assert Decimal(str(row['current_value'])) == CAMPAIGN_PIPELINE_VALUE
 
 
 # ===========================================================================
@@ -335,7 +378,8 @@ class TestEstimatedValueIsNoLongerRead:
         ]
 
         assert all(v not in (DECOY, DECOY * 3) for v in values)
-        assert values == [OPEN_VALUE, WON_VALUE, OPEN_VALUE, WON_VALUE]
+        # personal pipeline excludes the won deal, the campaign's keeps it.
+        assert values == [OPEN_VALUE, WON_VALUE, CAMPAIGN_PIPELINE_VALUE, WON_VALUE]
 
     def test_the_decoy_is_really_on_the_rows(self, scenario):
         """Guards the guard: if the fixture stopped setting estimated_value the
@@ -366,16 +410,29 @@ class TestQueryBound:
         with django_assert_num_queries(1):
             metrics.revenue_won(_dc_base(scenario['ca']), period=None)
 
-    def test_campaign_batch_stays_one_query_for_the_dc_family(
+    def test_campaign_batch_stays_bounded_for_the_dc_family(
         self, scenario, django_assert_num_queries,
     ):
+        """TWO queries for the three DC-based objectives, and two whatever the
+        volume — this is a bound, not an N+1.
+
+        It was one while the count and the money shared a single aggregate. They
+        can no longer: DECISION_CYCLES is ORIGIN-only (what the campaign
+        created) and the money is the WORKED set (what it moved), two different
+        populations. The money's own query is the single canonical
+        ``campaign_money`` the list card and the detail page also call, so the
+        second query buys the three surfaces agreeing."""
         campaign, ca, user = scenario['campaign'], scenario['ca'], scenario['user']
         objectives = [
             _objective(campaign, ca, user, ObjectiveType.PIPELINE_VALUE),
             _objective(campaign, ca, user, ObjectiveType.REVENUE_WON),
             _objective(campaign, ca, user, ObjectiveType.DECISION_CYCLES),
         ]
+        for index in range(5):
+            bulk = _cycle(user, scenario['account'], ca, name=f'bulk-{index}',
+                          amount=Decimal('1000'), source_campaign=campaign)
+            _worked_by_campaign(bulk, user, campaign)
         service = CampaignAnalyticsService(ca.id)
 
-        with django_assert_num_queries(1):
+        with django_assert_num_queries(2):
             service.calculate_objective_values(campaign, objectives)

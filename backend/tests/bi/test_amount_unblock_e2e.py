@@ -27,8 +27,23 @@ Paths and entry points:
   4. Personal objective / sales plan -> SalesPlanningService (see the GAP class
      at the bottom: this path does NOT read decision cycles at all)
 
-Status is the only criterion: ``outcome IS NULL`` = open, ``outcome=WON`` = won.
-``is_active`` plays no part — asserted explicitly.
+Status is the only criterion for the PERSONAL paths: ``outcome IS NULL`` = open,
+``outcome=WON`` = won. ``is_active`` plays no part — asserted explicitly.
+
+THE CAMPAIGN PATHS DO NOT READ THE SAME POPULATION, and this module used to
+assume they did. Two rules landed on them after it was written:
+
+* a campaign claims a deal's value only once it has WORKED it — at least one
+  COMPLETED activity of the campaign with a successful outcome
+  (campaigns/services/campaign_dc_attribution.py). Being the deal's origin is
+  no longer enough, so every campaign figure here was 0: the fixture linked its
+  cycles by ``source_campaign`` and gave them no activity at all. The fixture
+  now gives each one the successful campaign activity the rule asks for;
+* a campaign reports a RESULT, not a state, so its PIPELINE covers OPEN **or**
+  WON — a deal it put on the table does not vanish from its pipeline the moment
+  it is won. The personal pipeline stays EXCLUSIVE. The two therefore differ by
+  the won cycle BY DESIGN, and the campaign expectations below say so
+  explicitly rather than asserting the personal number.
 """
 
 from datetime import date, timedelta
@@ -38,6 +53,10 @@ import pytest
 from django.core.cache import cache
 
 from app_modules.accounts.models import CompanyAccount
+from app_modules.activities.constants import (
+    ActivityOutcome, ActivityStatus, ActivityType,
+)
+from app_modules.activities.models import Activity
 from app_modules.bi.metrics import MetricKey
 from app_modules.bi.quota import compute_quota_current_value
 from app_modules.campaigns.constants import ObjectiveType
@@ -68,6 +87,10 @@ OPEN_VALUE = Decimal('60000')            # 40_000 + 20_000
 OPEN_VALUE_IF_DISCOUNT_IGNORED = Decimal('80000')
 WON_VALUE = Decimal('40000')
 LOST_VALUE = Decimal('30000')
+
+# A campaign's pipeline is OPEN **or** WON (see the module docstring), so it is
+# the personal pipeline plus the won deal. LOST is in neither.
+CAMPAIGN_PIPELINE_VALUE = OPEN_VALUE + WON_VALUE
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +130,20 @@ def _cycle(owner, account, ca, *, name, campaign, outcome=None, is_active=False)
                           is_active=is_active)
     cycle.save(user=owner, client_id=ca.id)
     return cycle
+
+
+def _worked_by_campaign(cycle, owner, campaign):
+    """The COMPLETED + successful campaign activity a campaign now needs before
+    it may claim a cycle's value (campaign_dc_attribution.py). Without it every
+    campaign figure is 0, whatever ``source_campaign`` says."""
+    activity = Activity(
+        title=f'worked-{cycle.name}', activity_type=ActivityType.CALL,
+        status=ActivityStatus.COMPLETED, outcome=ActivityOutcome.SUCCESSFUL,
+        account=cycle.account, owner=owner, campaign=campaign,
+        decision_cycle=cycle, scheduled_date=TODAY,
+    )
+    activity.save(user=owner, client_id=cycle.client_id)
+    return activity
 
 
 def _line(cycle, owner, *, price, discount=Decimal('0'), label='p'):
@@ -150,6 +187,11 @@ def world(db, client_account_a, owner):
     lost = _cycle(owner, account, ca, name='lost', campaign=campaign,
                   outcome=CycleOutcome.LOST)
     _line(lost, owner, price=LOST_VALUE, label='lost')
+
+    # The campaign has WORKED all three — so what the campaign figures exclude,
+    # they exclude on the deal's own status, not for want of attribution.
+    for cycle in (opened, won, lost):
+        _worked_by_campaign(cycle, owner, campaign)
 
     return {'ca': ca, 'owner': owner, 'account': account, 'campaign': campaign,
             'open': opened, 'won': won, 'lost': lost}
@@ -221,28 +263,48 @@ class TestCampaignObjectives:
         return {row['objective_type']: Decimal(str(row['current_value']))
                 for row in rows}
 
-    def test_pipeline_value_is_the_open_cycle_only(self, world):
+    def test_pipeline_value_is_the_open_and_won_cycles(self, world):
+        """A campaign reports what it PUT ON THE TABLE, so its pipeline keeps the
+        won deal. The discount control is the point of this test and is unchanged:
+        60 000 of open money, not 80 000."""
         _objective(world, ObjectiveType.PIPELINE_VALUE)
         _objective(world, ObjectiveType.REVENUE_WON)
 
         values = self._values(world)
 
-        assert values[ObjectiveType.PIPELINE_VALUE] == OPEN_VALUE
-        assert values[ObjectiveType.PIPELINE_VALUE] != OPEN_VALUE_IF_DISCOUNT_IGNORED
+        assert values[ObjectiveType.PIPELINE_VALUE] == CAMPAIGN_PIPELINE_VALUE
+        assert values[ObjectiveType.PIPELINE_VALUE] \
+            != OPEN_VALUE_IF_DISCOUNT_IGNORED + WON_VALUE
 
     def test_revenue_won_is_the_won_cycle_only(self, world):
         _objective(world, ObjectiveType.REVENUE_WON)
 
         assert self._values(world)[ObjectiveType.REVENUE_WON] == WON_VALUE
 
-    def test_won_and_lost_are_out_of_the_pipeline_figure(self, world):
+    def test_lost_is_out_of_the_pipeline_figure(self, world):
+        """What a campaign's pipeline excludes: the LOST deal, on its status.
+        The won deal stays in — the personal pipeline is where it leaves."""
         _objective(world, ObjectiveType.PIPELINE_VALUE)
 
         pipeline = self._values(world)[ObjectiveType.PIPELINE_VALUE]
 
-        assert pipeline == OPEN_VALUE
-        assert pipeline != OPEN_VALUE + WON_VALUE
+        assert pipeline == CAMPAIGN_PIPELINE_VALUE
         assert pipeline != OPEN_VALUE + WON_VALUE + LOST_VALUE
+
+    def test_a_cycle_the_campaign_never_worked_is_in_neither_figure(self, world):
+        """The attribution rule itself: origin alone claims nothing. A cycle
+        linked to the campaign by ``source_campaign`` but carrying no successful
+        campaign activity adds nothing to either figure."""
+        _objective(world, ObjectiveType.PIPELINE_VALUE)
+        _objective(world, ObjectiveType.REVENUE_WON)
+        untouched = _cycle(world['owner'], world['account'], world['ca'],
+                           name='untouched', campaign=world['campaign'])
+        _line(untouched, world['owner'], price=Decimal('77000'), label='untouched')
+
+        values = self._values(world)
+
+        assert values[ObjectiveType.PIPELINE_VALUE] == CAMPAIGN_PIPELINE_VALUE
+        assert values[ObjectiveType.REVENUE_WON] == WON_VALUE
 
     def test_lost_is_in_neither_figure(self, world):
         _objective(world, ObjectiveType.PIPELINE_VALUE)
@@ -250,11 +312,14 @@ class TestCampaignObjectives:
 
         values = self._values(world)
 
-        assert values[ObjectiveType.PIPELINE_VALUE] + \
-            values[ObjectiveType.REVENUE_WON] == OPEN_VALUE + WON_VALUE
+        assert LOST_VALUE not in (values[ObjectiveType.PIPELINE_VALUE],
+                                  values[ObjectiveType.REVENUE_WON])
+        assert values[ObjectiveType.PIPELINE_VALUE] \
+            == OPEN_VALUE + WON_VALUE          # lost absent
+        assert values[ObjectiveType.REVENUE_WON] == WON_VALUE
 
     def test_progress_percentage_follows_the_real_amount(self, world):
-        """The unblock is visible where the user reads it: 60k / 200k = 30%."""
+        """The unblock is visible where the user reads it: 100k / 200k = 50%."""
         _objective(world, ObjectiveType.PIPELINE_VALUE, target=Decimal('200000'))
 
         rows = CampaignAnalyticsService(world['ca'].id).get_objectives_progress(
@@ -263,7 +328,7 @@ class TestCampaignObjectives:
         row = next(r for r in rows
                    if r['objective_type'] == ObjectiveType.PIPELINE_VALUE)
 
-        assert row['progress_percentage'] == 30.0
+        assert row['progress_percentage'] == 50.0
 
 
 # ===========================================================================
