@@ -9,7 +9,7 @@ import useSWR, { mutate }from 'swr';
 import { useMemo } from 'react';
 import { useAuth } from 'hooks/useAuth';
 import { api } from 'utils/axiosClient';
-import { tenantKey, revalidateMultiple } from 'api/_swr';
+import { tenantKey, revalidateMetricSurfaces } from 'api/_swr';
 import { isValidUUID, sanitizeObject } from 'utils/validators';
 
 // ==============================|| CONSTANTS ||============================== //
@@ -743,7 +743,7 @@ export async function createDecisionCycle(payload) {
   const result = await api.post(endpoints.cycles, sanitized);
   
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.cycles,
       endpoints.cyclesByAccount(payload.account_id),
       '/company-accounts/'
@@ -782,7 +782,7 @@ export async function updateDecisionCycle(cycleId, payload) {
   const result = await api.patch(endpoints.cycleDetail(cycleId), sanitized);
   
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.cycles,
       endpoints.cycleDetail(cycleId),
       '/company-accounts/',
@@ -871,7 +871,7 @@ export async function closeCycle(cycleId, payload = {}) {
   const result = await api.post(endpoints.closeCycle(cycleId), payload);
   
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.cycles,
       endpoints.cycleDetail(cycleId),
       '/decision_cycles/by-account/',
@@ -909,7 +909,7 @@ export async function reopenCycle(cycleId) {
   const result = await api.post(endpoints.reopenCycle(cycleId), {});
   
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.cycles,
       endpoints.cycleDetail(cycleId),
       '/decision_cycles/by-account/',
@@ -941,7 +941,7 @@ export async function createDecisionStep(payload) {
   const result = await api.post(endpoints.steps, sanitized);
   
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.steps,
       endpoints.cycles,
       endpoints.cycleDetail(payload.cycle_id)
@@ -991,7 +991,7 @@ export async function updateDecisionStep(stepId, payload, cycleId = null) {
       revalidatePaths.push(endpoints.cycleDetail(cycleId));
     }
     
-    revalidateMultiple(revalidatePaths);
+    revalidateMetricSurfaces(revalidatePaths);
     // Extract nested data from backend response { success, data }
     const stepData = result.data?.data || result.data;
     return { success: true, data: stepData };
@@ -1034,7 +1034,7 @@ export async function deleteDecisionStep(stepId, cycleId = null) {
       revalidatePaths.push(endpoints.cycleDetail(cycleId));
     }
 
-    revalidateMultiple(revalidatePaths);
+    revalidateMetricSurfaces(revalidatePaths);
     return { success: true, status: result.status ?? 204 };
   }
 
@@ -1136,7 +1136,7 @@ export async function createDCProduct(cycleId, payload) {
   const result = await api.post(endpoints.cycleProducts(cycleId), payload);
 
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.cycleProducts(cycleId),
       // The cycle payloads carry the DERIVED deal amount (total_deal_value), so
       // a product write changes them too: the detail, the workspace
@@ -1183,7 +1183,7 @@ export async function updateDCProduct(cycleId, productId, payload) {
   );
 
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.cycleProducts(cycleId),
       // The cycle payloads carry the DERIVED deal amount (total_deal_value), so
       // a product write changes them too: the detail, the workspace
@@ -1228,7 +1228,7 @@ export async function deleteDCProduct(cycleId, productId) {
   );
 
   if (result.success || result.status === 204) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.cycleProducts(cycleId),
       // The cycle payloads carry the DERIVED deal amount (total_deal_value), so
       // a product write changes them too: the detail, the workspace
@@ -1338,7 +1338,7 @@ export async function createManagerNote(cycleId, content) {
   const result = await api.post(endpoints.cycleNotes(cycleId), { content });
 
   if (result.success) {
-    revalidateMultiple([endpoints.cycleNotes(cycleId)]);
+    revalidateMetricSurfaces([endpoints.cycleNotes(cycleId)]);
     const data = result.data?.data || result.data;
     return { success: true, data };
   }
@@ -1373,7 +1373,7 @@ export async function deleteManagerNote(cycleId, noteId) {
   );
 
   if (result.success || result.status === 204) {
-    revalidateMultiple([endpoints.cycleNotes(cycleId)]);
+    revalidateMetricSurfaces([endpoints.cycleNotes(cycleId)]);
     return { success: true, status: result.status ?? 204 };
   }
 

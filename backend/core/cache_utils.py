@@ -458,6 +458,27 @@ def disable_signals_with_invalidation(
 # CACHE KEY BUILDING
 # ============================================================================
 
+def build_tag_signature(client_id, tags) -> str:
+    """`"tag=version,tag=version"` across EVERY tag a cached payload depends on.
+
+    Folded into a cache key's `extra`, it makes a bump of ANY of those tags move
+    the key — where `build_drf_cache_key`'s `tag_namespace` covers exactly one.
+    A payload assembled from several modules needs the signature; a payload with
+    a single source does not.
+
+    Declared here, beside `get_tag_version`, because two layers use it: the BI
+    KPI cache (bi/cache.py, which folds a KPIDefinition's `cache_tags`) and the
+    campaign read caches (campaigns/views/campaign_views.py, whose numbers come
+    from decision cycles, activities and accounts). One rule, one place — the
+    second layer shipped without it and served stale campaign cards for a full
+    TTL.
+
+    Order is preserved, so callers must pass a stable sequence: a reordered
+    signature is a different key and would drop the cache for no reason.
+    """
+    return ",".join(f"{t}={get_tag_version(client_id, t)}" for t in tags)
+
+
 def build_drf_cache_key(
     namespace: str,
     client_id: int,

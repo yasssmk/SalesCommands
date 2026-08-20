@@ -32,6 +32,7 @@ from core.logging.audit import audit_log
 from core.cache_utils import (
     invalidate_tag,
     build_drf_cache_key,
+    build_tag_signature,
     cache_get_set,
     get_permissions_version,
     _is_redis_backend,
@@ -92,6 +93,53 @@ class CampaignFilterSet(django_filters.FilterSet):
         return queryset.filter(
             Q(owner__team_id=value) | Q(executor__team_id=value)
         ).distinct()
+
+
+# Every tag whose bump can change a NUMBER in a campaign payload. The card, the
+# detail page and the workspace dashboard all carry objective current-values, and
+# those come from decision cycles (source_campaign, outcome), deal products (the
+# money), activities (touched-by attribution, contacts reached, meetings) and
+# accounts (the prospect -> client conversion behind NEW_LOGOS).
+#
+# 'campaigns' is here too even though it is also the tag_namespace: this list is
+# the payload's full dependency declaration, and a future writer feeding a
+# campaign number from a new module has ONE place to extend.
+CAMPAIGN_CACHE_TAGS = ('campaigns', 'decision_cycles', 'activities', 'accounts')
+
+
+def build_campaign_cache_key(*, namespace, client_id, user_id,
+                             query_string='', extra=''):
+    """Cache key for a campaign READ surface, versioned by every tag its payload
+    depends on.
+
+    ``build_drf_cache_key``'s ``tag_namespace`` folds exactly ONE tag version
+    (core/cache_utils.py:461-504). That was enough while these payloads were
+    campaign structure; it stopped being enough once they started carrying
+    objective values, because the writes that change those values bump
+    ``decision_cycles`` / ``activities`` / ``accounts`` and never ``campaigns``.
+    The key never moved, so the card served a stale body for its whole TTL — and
+    a browser refresh could not help, the staleness being in Redis.
+
+    The fix is the signature ``bi/cache.py`` already folds for KPI keys, applied
+    here: ``build_tag_signature`` over CAMPAIGN_CACHE_TAGS, appended to ``extra``.
+    Chosen over adding ``invalidate_tag(client_id, 'campaigns')`` calls to the
+    decision-cycle, deal-product and activity handlers because it cannot be
+    forgotten: a new write path that bumps any declared tag busts these caches
+    without knowing they exist.
+
+    ``tag_namespace='campaigns'`` stays — it keeps the structure bump working and
+    the tag plumbing (lock, namespace) unchanged.
+    """
+    tag_sig = build_tag_signature(client_id, CAMPAIGN_CACHE_TAGS)
+    return build_drf_cache_key(
+        namespace=namespace,
+        client_id=client_id,
+        user_id=user_id,
+        perm_version=get_permissions_version(),
+        query_string=query_string,
+        extra=f'{extra}|tags={tag_sig}' if extra else f'tags={tag_sig}',
+        tag_namespace='campaigns',
+    )
 
 
 class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets.ModelViewSet):
@@ -404,13 +452,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             return Response(self._list_uncached_data(request))
 
         client_id = self.get_client_id()
-        cache_key = build_drf_cache_key(
+        cache_key = build_campaign_cache_key(
             namespace='campaigns_list',
             client_id=client_id,
             user_id=request.user.id,
-            perm_version=get_permissions_version(),
             query_string=request.META.get('QUERY_STRING', ''),
-            tag_namespace='campaigns',
         )
 
         cached_data = cache_get_set(
@@ -496,13 +542,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             return Response({'success': True, 'data': serializer.data})
 
         client_id = self.get_client_id()
-        cache_key = build_drf_cache_key(
+        cache_key = build_campaign_cache_key(
             namespace='campaign_detail',
             client_id=client_id,
             user_id=request.user.id,
-            perm_version=get_permissions_version(),
             extra=str(pk),
-            tag_namespace='campaigns',
         )
 
         def producer():
@@ -915,13 +959,11 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             return Response({'success': True, 'data': data})
 
         client_id = self.get_client_id()
-        cache_key = build_drf_cache_key(
+        cache_key = build_campaign_cache_key(
             namespace='campaign_dashboard',
             client_id=client_id,
             user_id=request.user.id,
-            perm_version=get_permissions_version(),
             extra=str(campaign.id),
-            tag_namespace='campaigns',
         )
 
         cached_data = cache_get_set(
