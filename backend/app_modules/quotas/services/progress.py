@@ -75,14 +75,18 @@ _SPEC = {
 
 @dataclass(frozen=True)
 class QuotaProgress:
-    """Progress of one quota. ``ratio`` is value/target, NOT clamped."""
+    """Progress of one quota. ``ratio`` is value/target, NOT clamped, so
+    over-achievement stays visible.
+
+    No ``is_over_achieved`` helper: the serializer emits ``current_value`` and
+    ``progress_ratio`` only (quotas/serializers.py:35-36), and the UI decides
+    what counts as over-achieved from the ratio
+    (frontend GoalProgressRow.jsx:35). One rule, one place — the helper here was
+    a second copy that nothing in production read.
+    """
     current_value: float
     target_value: float
     ratio: Optional[float]        # None when target_value <= 0 (undefined)
-
-    @property
-    def is_over_achieved(self) -> bool:
-        return self.ratio is not None and self.ratio > 1.0
 
 
 def _owner_tier(owner) -> str:

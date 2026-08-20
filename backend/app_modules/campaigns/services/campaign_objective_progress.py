@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q
 
 from app_modules.activities.constants import ActivityStatus, ActivityType
 from app_modules.activities.models import Activity
@@ -32,12 +32,7 @@ from app_modules.decision_cycles.models import DecisionCycle
 from .campaign_contact_reach import contacts_reached_by_campaign
 from .campaign_dc_attribution import campaign_money, campaign_new_logos
 
-from ..models import (
-    CampaignAccount,
-    CampaignAccountStatus,
-    CampaignObjective,
-    ObjectiveType,
-)
+from ..models import CampaignObjective, ObjectiveType
 
 
 def progress_percentage(current_value, target_value):
@@ -144,12 +139,6 @@ def _values_for_type(objective_type, campaign_ids, client_id):
         qs = DecisionCycle.objects.filter(source_campaign_id__in=campaign_ids)
         return _grouped(qs, 'source_campaign', Count('id'))
 
-    # PIPELINE_VALUE / REVENUE_WON sum the DERIVED product roll-up (TD-75), via
-    # DEAL_VALUE_SUM -- the JOIN form of the canonical expression. The per-row
-    # annotation form is deliberately NOT used here: this is a
-    # `.values(group).annotate(agg)` GROUP BY, and a pre-existing annotation
-    # would join the alias into the GROUP BY and split each campaign's row.
-    # Summing over the deal_products join is exact for a money aggregate.
     if objective_type == ObjectiveType.PIPELINE_VALUE:
         return _money_by_campaign(campaign_ids, client_id, 'pipeline')
 

@@ -147,16 +147,15 @@ class TestTouchedByAttribution:
 
         assert _both(client_account_a, camp_b, obj_b) == 60000.0
 
-    def test_the_origin_counts_once_it_has_worked_the_deal(
+    def test_the_origin_matching_both_branches_counts_once(
         self, user_a, client_account_a, account,
     ):
-        """The origin campaign claims the money through the same door as anyone
-        else: a completed successful activity.
+        """The origin campaign matches BOTH branches at once: it opened the
+        deal (born-from) and it has worked it (a completed successful activity).
 
-        This test used to assert that being the origin was enough on its own.
-        The PO reversed that — creation is rewarded by DECISION_CYCLES, value by
-        work — so the unworked case is now pinned in
-        TestMoneyRequiresASuccessfulActivity."""
+        The union must count that cycle ONCE — 60 000, not 120 000. The
+        unworked-origin case, where only born-from matches, is pinned in
+        TestBornFromIsUnconditionalAndTouchedByIsGated."""
         camp_a = _mk_campaign(user_a, client_account_a, name='A')
         obj_a = _mk_objective(camp_a, user_a, client_account_a,
                               ObjectiveType.PIPELINE_VALUE)

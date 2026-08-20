@@ -13,7 +13,7 @@ Follows legacy campaign_analytics_service.py patterns,
 simplified for new CampaignAccount pivot architecture.
 """
 
-from django.db.models import Count, Exists, OuterRef, Q, Sum
+from django.db.models import Count, Exists, OuterRef, Q
 from django.utils import timezone
 
 from core.logging import get_logger
@@ -21,10 +21,8 @@ from core.logging import get_logger
 from app_modules.activities.models import Activity
 from app_modules.activities.constants import ActivityType, ActivityStatus
 from app_modules.bi import metrics
-from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
 
-from ..constants import DECISION_CYCLE_OBJECTIVE_TYPES
 from .campaign_dc_attribution import campaign_money, campaign_new_logos
 from .campaign_contact_reach import contacts_reached_count
 from ..models import (

@@ -225,7 +225,7 @@ class TestCampaignWindowOverachievement:
         prog = P.compute_progress(q)
         assert prog.current_value == 13
         assert prog.ratio == 1.3          # NOT clamped to 1.0
-        assert prog.is_over_achieved is True
+        assert prog.ratio > 1.0           # what the UI reads to flag it
 
     def test_meetings_metric_individual(self, client_account_a):
         # exercises the Activity-based metric path (owner = whoever LOGGED the

@@ -22,14 +22,16 @@ SCOPE CHANGE asserted below:
   ``source_campaign`` is NULL is no longer counted.
 
 LATER PO REVISIONS, folded into the expectations below — the ORIGIN branch this
-module was written for is unchanged, but two rules around it moved:
+module was written for is unchanged, and still sufficient on its own:
 
-1. The money branches no longer read ``source_campaign`` at all: a campaign
-   claims a deal's VALUE only once it has a COMPLETED + SUCCESSFUL activity on
-   it (campaign_dc_attribution). Being the origin counts for DECISION_CYCLES and
-   nothing else, so the fixture below attaches a worked activity wherever money
-   is asserted. The "dropped" cohort above still drops: the decoy's campaign
-   activity carries no successful outcome.
+1. Attribution became a UNION: born-from (``source_campaign``, UNCONDITIONAL —
+   what this module is about) OR touched-by (a COMPLETED + SUCCESSFUL activity
+   of the campaign), declared in campaign_dc_attribution. Origin alone still
+   counts for the money, so the "gained" cohort above is unaffected. The
+   "dropped" cohort still drops, now for two reasons at once: the decoy has no
+   ``source_campaign``, and its campaign activity carries no successful outcome.
+   The fixture attaches worked activities anyway, to prove the two branches
+   matching the same cycle count it ONCE.
 2. A campaign reports a RESULT, not a state: a WON cycle STAYS in the campaign's
    PIPELINE_VALUE instead of leaving it on win. So the mixed fixture's pipeline
    is 1000 (open) + 500 (won) = 1500, where it was 1000. Personal pipeline keeps
@@ -120,8 +122,9 @@ def _build_mixed(owner, ca):
                         estimated_value=1000)
     # modal cohort: activity linked to the DC but NOT tagged with the campaign
     _mk_activity(owner, acc, ca, campaign=None, decision_cycle=open_dc)
-    # ...and one the campaign actually WORKED, which is what lets it claim the
-    # value (origin alone counts only for DECISION_CYCLES — see the header).
+    # ...and one the campaign actually WORKED. Origin alone already claims the
+    # value; this makes BOTH branches match, so the union is proved not to
+    # double-count (see the header).
     _mk_activity(owner, acc, ca, campaign=camp, decision_cycle=open_dc,
                  outcome=ActivityOutcome.SUCCESSFUL)
 
