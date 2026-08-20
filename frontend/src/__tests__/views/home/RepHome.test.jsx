@@ -32,7 +32,6 @@ vi.mock('sections/home/RepActivityTable', () => ({
 }));
 vi.mock('api/campaigns/campaigns', () => ({ useGetMyCampaigns: () => ({ campaigns: [] }) }));
 vi.mock('api/territories/territories', () => ({ useGetTerritories: () => ({ territories: [], territoriesCount: 0 }) }));
-vi.mock('api/quotas/quotas', () => ({ useGetMyActiveQuotas: () => ({ quotas: [] }) }));
 vi.mock('utils/displayError', () => ({ displayErrorSnackbar: vi.fn() }));
 
 import RepHome from 'views/home/RepHome';
@@ -40,17 +39,25 @@ import RepHome from 'views/home/RepHome';
 afterEach(() => cleanup());
 
 describe('RepHome', () => {
-  it('renders the three blocks with their section headings', () => {
+  it('renders the blocks with their section headings', () => {
     render(<RepHome />);
     expect(screen.getByText('What I have to do')).toBeInTheDocument();
     expect(screen.getByText('My progress')).toBeInTheDocument();
-    expect(screen.getByText('Where I am')).toBeInTheDocument();
+    expect(screen.getByText('My objectives')).toBeInTheDocument();
     // Block a — window tiles + the activity table.
     expect(screen.getByText('Today')).toBeInTheDocument();
     expect(screen.getByText('Next 4 weeks')).toBeInTheDocument();
     expect(screen.getByTestId('rep-activity-table')).toBeInTheDocument();
     // Empty entity lists -> graceful empty states.
     expect(screen.getByText('No active campaigns.')).toBeInTheDocument();
-    expect(screen.getByText('No active quota for this period.')).toBeInTheDocument();
+  });
+
+  it('no longer renders the legacy quota card', () => {
+    // "Where I am" read the legacy end_users SalesQuota through bi/quota.py —
+    // the pre-Sprint-C rules, on a table the app never writes. It was removed
+    // rather than repointed; a replacement would be built on the modern engine.
+    render(<RepHome />);
+    expect(screen.queryByText('Where I am')).not.toBeInTheDocument();
+    expect(screen.queryByText('No active quota for this period.')).not.toBeInTheDocument();
   });
 });

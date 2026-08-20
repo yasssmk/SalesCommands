@@ -23,7 +23,7 @@ vi.mock('hooks/useLocalStorage', async () => {
   return { default: (_key, initial) => React.useState(initial) };
 });
 
-// Two teams — only the one managed by mgr1 must render a quota group.
+// Two teams — one managed by mgr1, one not (subtree resolution).
 vi.mock('api/admin/teams', () => ({
   useGetTeams: () => ({
     teams: [
@@ -31,11 +31,6 @@ vi.mock('api/admin/teams', () => ({
       { id: 't2', name: 'Beta', manager: { id: 'someone-else' } },
     ],
   }),
-}));
-
-// Quota group is untouched by E2 — stub it (its internals are covered elsewhere).
-vi.mock('sections/home/TeamQuotaGroup', () => ({
-  default: ({ teamName }) => <div data-testid="quota-group">{teamName}</div>,
 }));
 
 // The tiles: capture the options so we can assert the TEAM windows KPI is used.
@@ -64,7 +59,7 @@ vi.mock('api/bi/kpi', () => ({
     }
     if (key === 'campaign_progress_by_team') {
       campaignKpiOpts = opts;
-      // Distinct labels: must not collide with the quota-group team names
+      // Distinct labels: must not collide with the team names elsewhere
       // (Alpha/Beta) or the DC block team (AMER) rendered alongside.
       return _aggregate(
         { tc1: 'Squad One', tc2: 'Squad Two' },
@@ -167,7 +162,7 @@ describe('managedTeamSubtree', () => {
 });
 
 describe('ManagerHome — same screen as the rep, team scope', () => {
-  it('renders the 4 window tiles + the team table + the per-member quota section', () => {
+  it('renders the 4 window tiles + the team table', () => {
     render(<ManagerHome />);
 
     expect(screen.getByText('What the team has to do')).toBeInTheDocument();
@@ -178,10 +173,9 @@ describe('ManagerHome — same screen as the rep, team scope', () => {
     expect(screen.getByText('Next 4 weeks')).toBeInTheDocument();
     // the table
     expect(screen.getByTestId('team-activity-table')).toBeInTheDocument();
-    // the quota section — only the managed team (Alpha), not Beta
-    expect(screen.getByText('Progress by person')).toBeInTheDocument();
-    expect(screen.getByText('Alpha')).toBeInTheDocument();
-    expect(screen.queryByText('Beta')).not.toBeInTheDocument();
+    // the legacy per-member quota section is gone: it read end_users SalesQuota
+    // through bi/quota.py (pre-Sprint-C rules) on a table the app never writes.
+    expect(screen.queryByText('Progress by person')).not.toBeInTheDocument();
   });
 
   it('feeds the tiles from the TEAM windows KPI, not the rep one', () => {

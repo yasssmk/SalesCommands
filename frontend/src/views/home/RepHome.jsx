@@ -12,7 +12,6 @@ import { useKpiBatch } from 'api/bi/kpi';
 import { useGetTodoWindows } from 'api/bi/todo';
 import { useGetMyCampaigns } from 'api/campaigns/campaigns';
 import { useGetTerritories } from 'api/territories/territories';
-import { useGetMyActiveQuotas } from 'api/quotas/quotas';
 import { useGetDecisionCycles } from 'api/accounts/decisionCycles';
 import { displayErrorSnackbar } from 'utils/displayError';
 import useLocalStorage from 'hooks/useLocalStorage';
@@ -22,7 +21,6 @@ import RepActivityTable from 'sections/home/RepActivityTable';
 import ProgressBlock from 'sections/home/ProgressBlock';
 import ObjectivesBlock from 'sections/home/ObjectivesBlock';
 import DecisionCyclesBlock from 'sections/home/DecisionCyclesBlock';
-import QuotaBlock from 'sections/home/QuotaBlock';
 
 // ==============================|| REP HOME ||============================== //
 
@@ -42,7 +40,6 @@ export default function RepHome() {
   // Entity resolution (mine paths).
   const { campaigns, campaignsCount, campaignsLoading } = useGetMyCampaigns({ filters: { status: 'ACTIVE' } });
   const { territories, territoriesCount, territoriesLoading } = useGetTerritories({ filters: { owner_scope: 'mine' } });
-  const { quotas } = useGetMyActiveQuotas();
   // My OPEN decision cycles — possession (owner_scope=mine), open == outcome
   // IS NULL. The bare list is tenant-wide (read=client); these two params are
   // the "mine + open" path. is_active is NOT "open" (see the outcome filter).
@@ -60,14 +57,11 @@ export default function RepHome() {
     (territories || []).forEach((t) =>
       reqs.push({ kind: 'territory', entity: t, req: { key: 'territory_coverage', scope: 'mine', params: { territory_id: t.id } } }),
     );
-    (quotas || []).forEach((q) =>
-      reqs.push({ kind: 'quota', entity: q, req: { key: 'quota_attainment', scope: 'mine', params: { quota_id: q.id } } }),
-    );
     (openCycles || []).forEach((c) =>
       reqs.push({ kind: 'dc', entity: c, req: { key: 'dc_cycle_state', scope: 'mine', params: { cycle_id: c.id } } }),
     );
     return reqs;
-  }, [campaigns, territories, quotas, openCycles]);
+  }, [campaigns, territories, openCycles]);
 
   const { results, resultsLoading, resultsError } = useKpiBatch(entityReqs.map((e) => e.req));
 
@@ -77,7 +71,6 @@ export default function RepHome() {
   );
   const campaignResults = enriched.filter((e) => e.kind === 'campaign');
   const territoryResults = enriched.filter((e) => e.kind === 'territory');
-  const quotaResults = enriched.filter((e) => e.kind === 'quota');
   const cycleItems = useMemo(
     () => enriched.filter((e) => e.kind === 'dc').map((e) => ({ cycle: e.entity, result: e.result })),
     [enriched],
@@ -169,16 +162,6 @@ export default function RepHome() {
           <DecisionCyclesBlock items={cycleItems} loading={resultsLoading} />
         </Stack>
       ) : null}
-
-      <Stack spacing={1.5} useFlexGap>
-        <Box>
-          <Typography variant="h5">Where I am</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Your result against target — and what&apos;s left.
-          </Typography>
-        </Box>
-        <QuotaBlock quotas={quotaResults} loading={resultsLoading} />
-      </Stack>
     </Stack>
   );
 }

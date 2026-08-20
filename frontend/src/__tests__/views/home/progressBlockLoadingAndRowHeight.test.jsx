@@ -28,7 +28,6 @@ let kpiBatchReturn = { results: [], resultsLoading: false, resultsError: null };
 
 vi.mock('api/campaigns/campaigns', () => ({ useGetMyCampaigns: () => campaignsReturn }));
 vi.mock('api/territories/territories', () => ({ useGetTerritories: () => territoriesReturn }));
-vi.mock('api/quotas/quotas', () => ({ useGetMyActiveQuotas: () => ({ quotas: [] }) }));
 vi.mock('api/accounts/decisionCycles', () => ({
   useGetDecisionCycles: () => ({ cycles: [] }),
   CYCLE_DERIVED_STATUS_LABELS: {},
