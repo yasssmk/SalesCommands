@@ -91,12 +91,17 @@ def _mk_step(cycle, ca, order, expected_end, owner):
 
 def _mk_activity(owner, account, ca, *, outcome=None, status=ActivityStatus.PLANNED,
                  activity_type=ActivityType.MEETING, scheduled_date=None,
-                 decision_cycle=None, decision_step=None, campaign=None):
+                 decision_cycle=None, decision_step=None, campaign=None,
+                 completed_at=None, created_by=None):
+    """``created_by`` is who MEETINGS is attributed to (attribution_scope);
+    ``completed_at`` is the date it is windowed on. Both default to the shape
+    the older tests here assume — logged by the owner, undated."""
     a = Activity(title='a', activity_type=activity_type, status=status, outcome=outcome,
                  account=account, owner=owner, campaign=campaign,
                  decision_cycle=decision_cycle, decision_step=decision_step,
-                 scheduled_date=scheduled_date or TODAY)
-    a.save(user=owner, client_id=ca.id)
+                 scheduled_date=scheduled_date or TODAY,
+                 completed_at=completed_at)
+    a.save(user=created_by or owner, client_id=ca.id)
     return a
 
 
@@ -131,9 +136,14 @@ class TestParityWithCampaignObjectives:
 
     def _consistent_campaign_data(self, owner, ca):
         """A campaign where every attributed DC carries BOTH the DC.source_campaign
-        link (canonical attribution) AND a campaign activity pointing at it
-        (campaign-service attribution), so the two attribution paths select the
-        same cycles and parity is meaningful."""
+        link (canonical attribution) AND a COMPLETED + SUCCESSFUL campaign
+        activity pointing at it (campaign-service attribution), so the two
+        attribution paths select the same cycles and parity is meaningful.
+
+        The activities used to be left PLANNED, which stopped being enough: a
+        campaign now claims a cycle's value only once it has WORKED it
+        (campaign_dc_attribution.py), so every campaign figure read 0 and the
+        parity assertions below were comparing against nothing."""
         camp = _mk_campaign(owner, ca)
         acc = _mk_account('Acc', owner, ca)
 
@@ -141,30 +151,46 @@ class TestParityWithCampaignObjectives:
         open_dc = _mk_cycle(owner, acc, ca, name='open', source_campaign=camp,
                             estimated_value=1000)
         _mk_activity(owner, acc, ca, campaign=camp, decision_cycle=open_dc,
-                     activity_type=ActivityType.CALL)
+                     activity_type=ActivityType.CALL,
+                     status=ActivityStatus.COMPLETED,
+                     outcome=ActivityOutcome.SUCCESSFUL)
 
         # won cycle attributed to the campaign, estimated_value 500
         won_dc = _mk_cycle(owner, acc, ca, name='won', source_campaign=camp,
                            estimated_value=500, outcome=CycleOutcome.WON,
                            outcome_date=TODAY)
         _mk_activity(owner, acc, ca, campaign=camp, decision_cycle=won_dc,
-                     activity_type=ActivityType.CALL)
+                     activity_type=ActivityType.CALL,
+                     status=ActivityStatus.COMPLETED,
+                     outcome=ActivityOutcome.SUCCESSFUL)
 
         # a DC of ANOTHER campaign — must not leak into the campaign totals
         other_camp = _mk_campaign(owner, ca, name='Other')
         other_dc = _mk_cycle(owner, acc, ca, name='other', source_campaign=other_camp,
                              estimated_value=9999)
         _mk_activity(owner, acc, ca, campaign=other_camp, decision_cycle=other_dc,
-                     activity_type=ActivityType.CALL)
+                     activity_type=ActivityType.CALL,
+                     status=ActivityStatus.COMPLETED,
+                     outcome=ActivityOutcome.SUCCESSFUL)
 
         return camp
 
-    def test_pipeline_value_parity(self, owner_a, client_account_a):
+    def test_pipeline_diverges_from_campaign_by_definition(self, owner_a,
+                                                           client_account_a):
+        """NOT parity, and it must not be faked into one: the personal pipeline
+        is EXCLUSIVE (a won deal has left it) while a campaign's covers OPEN or
+        WON — it reports what the campaign put on the table. Same fixture, same
+        campaign: 1000 personal, 1500 campaign, and the difference is exactly the
+        won deal."""
         camp = self._consistent_campaign_data(owner_a, client_account_a)
         svc = CampaignAnalyticsService(client_id=client_account_a.id)
+
         canonical = metrics.pipeline_value(
             _dc_base(client_account_a), source_campaign=camp, period=None)
-        assert canonical == svc._sum_pipeline_value(camp) == 1000.0
+
+        assert canonical == 1000.0
+        assert svc._sum_pipeline_value(camp) == 1500.0
+        assert svc._sum_pipeline_value(camp) - canonical == 500.0   # the won deal
 
     def test_revenue_won_parity(self, owner_a, client_account_a):
         camp = self._consistent_campaign_data(owner_a, client_account_a)
@@ -172,6 +198,24 @@ class TestParityWithCampaignObjectives:
         canonical = metrics.revenue_won(
             _dc_base(client_account_a), source_campaign=camp, period=None)
         assert canonical == svc._sum_revenue_won(camp) == 500.0
+
+    def test_a_campaign_claims_nothing_it_has_not_worked(self, owner_a,
+                                                         client_account_a):
+        """Guards the fixture above: without the COMPLETED + SUCCESSFUL activity
+        the campaign figures are 0 whatever ``source_campaign`` says, so the
+        parity assertions would be comparing two zeroes."""
+        camp = _mk_campaign(owner_a, client_account_a)
+        acc = _mk_account('Acc', owner_a, client_account_a)
+        _mk_cycle(owner_a, acc, client_account_a, name='untouched',
+                  source_campaign=camp, estimated_value=1000)
+
+        svc = CampaignAnalyticsService(client_id=client_account_a.id)
+
+        assert svc._sum_pipeline_value(camp) == 0.0
+        assert svc._sum_revenue_won(camp) == 0.0
+        # ... while the ORIGIN-based canonical read still sees it.
+        assert metrics.pipeline_value(
+            _dc_base(client_account_a), source_campaign=camp, period=None) == 1000.0
 
     def test_decision_cycles_parity(self, owner_a, client_account_a):
         # NB divergence documented: campaign attributes via Activity.campaign,
@@ -184,19 +228,24 @@ class TestParityWithCampaignObjectives:
         assert canonical == svc._count_decision_cycles(camp) == 2
 
     def test_meetings_diverges_from_campaign_by_definition(self, owner_a, client_account_a):
-        # Campaign MEETINGS = Activity type=MEETING + status=COMPLETED.
-        # Canonical MEETINGS = outcome=MEETING_SCHEDULED. Different predicate.
+        # Campaign MEETINGS = Activity TYPE=MEETING + status=COMPLETED, whatever
+        # the outcome. Canonical MEETINGS = COMPLETED + a SUCCESSFUL outcome,
+        # whatever the type. Still different predicates — the canonical one moved
+        # (it was outcome=MEETING_SCHEDULED alone, which counted a booking), and
+        # the two now overlap without coinciding.
         camp = _mk_campaign(owner_a, client_account_a)
         acc = _mk_account('Acc', owner_a, client_account_a)
         cyc = _mk_cycle(owner_a, acc, client_account_a, source_campaign=camp)
         step = _mk_step(cyc, client_account_a, 1, TODAY, owner_a)
 
-        # counted by CAMPAIGN only (completed meeting, but not MEETING_SCHEDULED)
+        # counted by CAMPAIGN only: a completed MEETING whose outcome is not a
+        # success — the campaign counts the meeting, the canonical metric does not.
         _mk_activity(owner_a, acc, client_account_a, campaign=camp,
                      decision_cycle=cyc, decision_step=step,
                      activity_type=ActivityType.MEETING,
-                     status=ActivityStatus.COMPLETED, outcome=ActivityOutcome.SUCCESSFUL)
-        # counted by CANONICAL only (MEETING_SCHEDULED outcome, but a CALL)
+                     status=ActivityStatus.COMPLETED,
+                     outcome=ActivityOutcome.NO_ANSWER)
+        # counted by CANONICAL only: a successful CALL — not a MEETING type.
         _mk_activity(owner_a, acc, client_account_a, campaign=camp,
                      decision_cycle=cyc, decision_step=step,
                      activity_type=ActivityType.CALL,
@@ -207,7 +256,7 @@ class TestParityWithCampaignObjectives:
         canonical = metrics.meetings(
             _act_base(client_account_a), source_campaign=camp, period=None)
         assert svc._count_meetings(camp) == 1     # the MEETING+COMPLETED one
-        assert canonical == 1                      # the MEETING_SCHEDULED one
+        assert canonical == 1                      # the successful one
         # Same campaign, same fixtures, DIFFERENT sets — divergence is real.
 
 
@@ -251,12 +300,20 @@ class TestNewLogosFilters:
         assert metrics.new_logos(self._acc_base(client_account_a), period=window) == 1
         assert metrics.new_logos(self._acc_base(client_account_a)) == 2
 
-    def test_user_filters_by_account_owner(self, owner_a, owner_a2, client_account_a):
+    def test_user_filters_by_the_attribution_union(self, owner_a, owner_a2,
+                                                   client_account_a):
+        """A logo is attributed like the deal that produced it
+        (attribution_scope.account_scope_q): the account's owner or creator, OR
+        anyone attached to the WON cycle that converted it. Here each account is
+        owned AND created by one rep, so the narrow reading and the union agree
+        — the cycle branch is proved in
+        tests/quotas/test_personal_scope_union.py."""
         self._acc(owner_a, client_account_a,
                   became_client_at=timezone.now(), name='mine')
         self._acc(owner_a2, client_account_a,
                   became_client_at=timezone.now(), name='other')
         assert metrics.new_logos(self._acc_base(client_account_a), user=owner_a) == 1
+        assert metrics.new_logos(self._acc_base(client_account_a), user=owner_a2) == 1
         assert metrics.new_logos(self._acc_base(client_account_a)) == 2
 
     def test_source_campaign_filters_via_pivot(self, owner_a, client_account_a):
@@ -352,47 +409,106 @@ class TestLeadsFilters:
 
 
 class TestMeetingsFilters:
-    def test_outcome_and_cancelled(self, owner_a, client_account_a):
+    """MEETINGS counts meetings HELD and gone well — COMPLETED with an outcome in
+    SUCCESSFUL_OUTCOMES — credited to whoever LOGGED it and windowed on
+    ``completed_at``.
+
+    All three of those replaced weaker rules. The population was
+    ``outcome=MEETING_SCHEDULED`` minus CANCELLED, which counted an intention;
+    the owner was the cycle owner reached through a nullable decision_step; the
+    anchor was ``scheduled_date``, the date the meeting was booked FOR. The
+    attribution and the anchor are proved in
+    tests/quotas/test_personal_scope_union.py; what is proved here is the
+    population and the campaign filter."""
+
+    def test_population_is_completed_plus_a_successful_outcome(
+        self, owner_a, client_account_a,
+    ):
         acc = _mk_account('Acc', owner_a, client_account_a)
+        # counts: completed + successful
         _mk_activity(owner_a, acc, client_account_a,
+                     status=ActivityStatus.COMPLETED,
                      outcome=ActivityOutcome.MEETING_SCHEDULED)
+        # does not: completed but the outcome is not a success
         _mk_activity(owner_a, acc, client_account_a,
-                     outcome=ActivityOutcome.NO_ANSWER)          # wrong outcome
+                     status=ActivityStatus.COMPLETED,
+                     outcome=ActivityOutcome.NO_ANSWER)
+        # does not: a successful outcome on a row that was never completed —
+        # outcome is only meaningful once completed, so a stray one cannot count
         _mk_activity(owner_a, acc, client_account_a,
-                     outcome=ActivityOutcome.MEETING_SCHEDULED,
-                     status=ActivityStatus.CANCELLED)            # cancelled
+                     status=ActivityStatus.PLANNED,
+                     outcome=ActivityOutcome.MEETING_SCHEDULED)
+        # does not: CANCELLED needs no special case, it is not COMPLETED
+        _mk_activity(owner_a, acc, client_account_a,
+                     status=ActivityStatus.CANCELLED,
+                     outcome=ActivityOutcome.MEETING_SCHEDULED)
         assert metrics.meetings(_act_base(client_account_a)) == 1
 
-    def test_period_on_scheduled_date(self, owner_a, client_account_a):
+    def test_both_successful_outcomes_count(self, owner_a, client_account_a):
+        """SUCCESSFUL_OUTCOMES is the campaign progression's own set, reused
+        here — {SUCCESSFUL, MEETING_SCHEDULED}, not a second opinion."""
         acc = _mk_account('Acc', owner_a, client_account_a)
+        for outcome in (ActivityOutcome.SUCCESSFUL,
+                        ActivityOutcome.MEETING_SCHEDULED):
+            _mk_activity(owner_a, acc, client_account_a,
+                         status=ActivityStatus.COMPLETED, outcome=outcome)
+        assert metrics.meetings(_act_base(client_account_a)) == 2
+
+    def test_period_on_completed_at_not_scheduled_date(self, owner_a,
+                                                       client_account_a):
+        """Anchor SWAP: the window is when the meeting was HELD, not when it was
+        booked for. Both rows below are booked on the same day and completed 27
+        days apart; only the recent completion is in the window."""
+        acc = _mk_account('Acc', owner_a, client_account_a)
+        booked_on = TODAY - timedelta(days=3)
         _mk_activity(owner_a, acc, client_account_a,
+                     status=ActivityStatus.COMPLETED,
                      outcome=ActivityOutcome.MEETING_SCHEDULED,
-                     scheduled_date=TODAY - timedelta(days=3))
+                     scheduled_date=booked_on,
+                     completed_at=timezone.now() - timedelta(days=3))
         _mk_activity(owner_a, acc, client_account_a,
+                     status=ActivityStatus.COMPLETED,
                      outcome=ActivityOutcome.MEETING_SCHEDULED,
-                     scheduled_date=TODAY - timedelta(days=30))
+                     scheduled_date=booked_on,
+                     completed_at=timezone.now() - timedelta(days=30))
         window = (TODAY - timedelta(days=10), TODAY)
         assert metrics.meetings(_act_base(client_account_a), period=window) == 1
         assert metrics.meetings(_act_base(client_account_a)) == 2
+        # ... and the booking date, identical on both, decides nothing.
+        assert metrics.meetings(
+            _act_base(client_account_a),
+            period=(booked_on, booked_on),
+        ) == 1
 
-    def test_user_and_campaign_via_cycle(self, owner_a, owner_a2, client_account_a):
+    def test_user_is_the_logger_and_campaign_is_still_via_the_cycle(
+        self, owner_a, owner_a2, client_account_a,
+    ):
         acc = _mk_account('Acc', owner_a, client_account_a)
         camp = _mk_campaign(owner_a, client_account_a)
-        # cycle owned by owner_a, attributed to camp
+        # a meeting on a campaign cycle, LOGGED BY owner_a2 though owner_a owns
+        # the cycle: it is owner_a2's meeting and the campaign's.
         cyc = _mk_cycle(owner_a, acc, client_account_a, source_campaign=camp)
         step = _mk_step(cyc, client_account_a, 1, TODAY, owner_a)
         _mk_activity(owner_a, acc, client_account_a, decision_step=step,
-                     decision_cycle=cyc, outcome=ActivityOutcome.MEETING_SCHEDULED)
-        # cycle owned by owner_a2, no campaign
+                     decision_cycle=cyc, created_by=owner_a2,
+                     status=ActivityStatus.COMPLETED,
+                     outcome=ActivityOutcome.MEETING_SCHEDULED)
+        # a meeting on a non-campaign cycle, logged by owner_a2
         cyc2 = _mk_cycle(owner_a2, acc, client_account_a, name='c2')
         step2 = _mk_step(cyc2, client_account_a, 1, TODAY, owner_a2)
         _mk_activity(owner_a2, acc, client_account_a, decision_step=step2,
-                     decision_cycle=cyc2, outcome=ActivityOutcome.MEETING_SCHEDULED)
-        # a MEETING_SCHEDULED activity with NO step -> excluded by owner/campaign filters
-        _mk_activity(owner_a, acc, client_account_a,
+                     decision_cycle=cyc2, created_by=owner_a2,
+                     status=ActivityStatus.COMPLETED,
+                     outcome=ActivityOutcome.MEETING_SCHEDULED)
+        # a meeting with NO decision step at all, logged by owner_a. It used to
+        # be dropped by the positive traversal of the nullable step FK; it now
+        # belongs to the person who logged it, as it should.
+        _mk_activity(owner_a, acc, client_account_a, created_by=owner_a,
+                     status=ActivityStatus.COMPLETED,
                      outcome=ActivityOutcome.MEETING_SCHEDULED)
 
         assert metrics.meetings(_act_base(client_account_a)) == 3      # no filter
+        assert metrics.meetings(_act_base(client_account_a), user=owner_a2) == 2
         assert metrics.meetings(_act_base(client_account_a), user=owner_a) == 1
         assert metrics.meetings(_act_base(client_account_a), source_campaign=camp) == 1
 
@@ -449,12 +565,23 @@ class TestPipelineValueFilters:
         assert metrics.pipeline_value(_dc_base(client_account_a), period=None) == 400.0
 
     def test_user_and_campaign(self, owner_a, owner_a2, client_account_a):
+        """``user=`` is the attribution UNION, not ``owner`` alone
+        (attribution_scope): both cycles below sit on an account owned by
+        owner_a, so both are owner_a's — the second one through the account even
+        though owner_a2 owns and created it. Only owner_a2's own link is narrow.
+
+        This test used to assert 100.0 for owner_a, which pinned the owner-only
+        rule the union replaces; the fixture is unchanged, the expectation is
+        re-derived under the new rule."""
         acc = _mk_account('Acc', owner_a, client_account_a)
         camp = _mk_campaign(owner_a, client_account_a)
         _mk_cycle(owner_a, acc, client_account_a, name='mine', estimated_value=100,
                   source_campaign=camp)
         _mk_cycle(owner_a2, acc, client_account_a, name='other', estimated_value=100)
-        assert metrics.pipeline_value(_dc_base(client_account_a), user=owner_a) == 100.0
+        # owner_a reaches both: one as owner, one as the ACCOUNT's owner.
+        assert metrics.pipeline_value(_dc_base(client_account_a), user=owner_a) == 200.0
+        # owner_a2 reaches only the cycle they own/created.
+        assert metrics.pipeline_value(_dc_base(client_account_a), user=owner_a2) == 100.0
         assert metrics.pipeline_value(_dc_base(client_account_a), source_campaign=camp) == 100.0
         assert metrics.pipeline_value(_dc_base(client_account_a)) == 200.0
 
@@ -481,13 +608,16 @@ class TestRevenueWonFilters:
         assert metrics.revenue_won(_dc_base(client_account_a)) == 1400.0
 
     def test_user_and_campaign(self, owner_a, owner_a2, client_account_a):
+        """Same union as PIPELINE_VALUE — a deal does not change hands when it is
+        won. Both cycles sit on owner_a's account, so both are owner_a's."""
         acc = _mk_account('Acc', owner_a, client_account_a)
         camp = _mk_campaign(owner_a, client_account_a)
         _mk_cycle(owner_a, acc, client_account_a, name='mine', estimated_value=100,
                   outcome=CycleOutcome.WON, outcome_date=TODAY, source_campaign=camp)
         _mk_cycle(owner_a2, acc, client_account_a, name='other', estimated_value=100,
                   outcome=CycleOutcome.WON, outcome_date=TODAY)
-        assert metrics.revenue_won(_dc_base(client_account_a), user=owner_a) == 100.0
+        assert metrics.revenue_won(_dc_base(client_account_a), user=owner_a) == 200.0
+        assert metrics.revenue_won(_dc_base(client_account_a), user=owner_a2) == 100.0
         assert metrics.revenue_won(_dc_base(client_account_a), source_campaign=camp) == 100.0
         assert metrics.revenue_won(_dc_base(client_account_a)) == 200.0
 

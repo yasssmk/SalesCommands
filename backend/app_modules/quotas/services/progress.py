@@ -8,7 +8,10 @@ bi) because quotas depends on bi/metrics — the reverse would be circular.
 
 Perimeter rule (PO decision) — the base data a quota is measured over depends on
 the TIER OF ITS OWNER, not on who is looking:
-- individual owner -> the owner's own data (metric ``user=owner``);
+- individual owner -> the owner's own data (metric ``user=owner``). "Own" is
+  the union declared in bi/metrics/attribution_scope — owner OR creator OR
+  account owner for the deal metrics — not a single field, so a deal handed
+  from an SDR to an AE stays in BOTH their attainments;
 - manager owner    -> the whole SUBTREE rooted at the owner's team node: the
   node's members plus every descendant team's members, recursively to the leaves
   (``Team`` is a self-FK hierarchy). The objective is the manager's, but its
@@ -30,24 +33,48 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
 
+from django.db.models import Q
+
 from app_modules.accounts.models import CompanyAccount
 from app_modules.activities.models import Activity
 from app_modules.bi import metrics
 from app_modules.bi.metrics import MetricKey
+from app_modules.bi.metrics.attribution_scope import (
+    account_scope_q_for_teams,
+    activity_scope_q_for_teams,
+    cycle_scope_q_for_teams,
+)
 from app_modules.decision_cycles.models import DecisionCycle
 
 
-# Per-metric wiring: the canonical function, its base model, and the field that
-# reaches the OWNER's team from that base (for the manager perimeter). The owner
-# path mirrors each metric's own ``user=`` filter: DC metrics own on ``owner``,
-# MEETINGS on the activity's cycle owner, NEW_LOGOS on ``account_owner``.
+def _owner_team_q(field):
+    """A team predicate for the metrics that still scope on a SINGLE owner field
+    (DECISION_CYCLES, LEADS — the count metrics, untouched by the union)."""
+    return lambda team_ids: Q(**{f'{field}__in': team_ids})
+
+
+# Per-metric wiring: the canonical function, its base model, and the predicate
+# that bounds that base to a TEAM SUBTREE (for the manager perimeter).
+#
+# The team predicate is the queryset-level twin of the metric's own ``user=``
+# filter — the SAME rule with ``= user`` replaced by ``__team_id__in``, taken
+# from bi/metrics/attribution_scope so the personal and manager readings cannot
+# drift. It used to be a single field path per metric, which was only expressible
+# while a metric belonged to exactly one owner field; the deal metrics now belong
+# to a union of three.
 _SPEC = {
-    MetricKey.DECISION_CYCLES: (metrics.decision_cycles, DecisionCycle, 'owner__team_id'),
-    MetricKey.LEADS: (metrics.leads, DecisionCycle, 'owner__team_id'),
-    MetricKey.PIPELINE_VALUE: (metrics.pipeline_value, DecisionCycle, 'owner__team_id'),
-    MetricKey.REVENUE_WON: (metrics.revenue_won, DecisionCycle, 'owner__team_id'),
-    MetricKey.MEETINGS: (metrics.meetings, Activity, 'decision_step__cycle__owner__team_id'),
-    MetricKey.NEW_LOGOS: (metrics.new_logos, CompanyAccount, 'account_owner__team_id'),
+    MetricKey.DECISION_CYCLES: (metrics.decision_cycles, DecisionCycle,
+                                _owner_team_q('owner__team_id')),
+    MetricKey.LEADS: (metrics.leads, DecisionCycle,
+                      _owner_team_q('owner__team_id')),
+    MetricKey.PIPELINE_VALUE: (metrics.pipeline_value, DecisionCycle,
+                               cycle_scope_q_for_teams),
+    MetricKey.REVENUE_WON: (metrics.revenue_won, DecisionCycle,
+                            cycle_scope_q_for_teams),
+    MetricKey.MEETINGS: (metrics.meetings, Activity,
+                         activity_scope_q_for_teams),
+    MetricKey.NEW_LOGOS: (metrics.new_logos, CompanyAccount,
+                          account_scope_q_for_teams),
 }
 
 
@@ -126,15 +153,21 @@ def compute_metric_for_team_node(metric, team_id, client_id, *, period=None,
     only the current manager's. Sub-step 5 reuses this to decompose a manager's
     aggregate by direct child node.
 
-    The perimeter is expressed by bounding the base queryset to the subtree's
-    owners (``<owner>__team_id__in``); the canonical function then runs its own
-    isolated aggregate — no fan-out join. One query for the subtree ids + one for
-    the metric, independent of the tree depth."""
-    fn, model, team_field = _SPEC[metric]
+    The perimeter is expressed by bounding the base queryset with the metric's
+    team predicate (attribution_scope, the widened form of its own ``user=``
+    rule); the canonical function then runs its own isolated aggregate — no
+    fan-out join. One query for the subtree ids + one for the metric,
+    independent of the tree depth.
+
+    Rows are DEDUPED, not summed per member: a deal created by an SDR and owned
+    by an AE who are both in the subtree is ONE row here, counted once, while it
+    counts for each of the two reps individually. The team has one deal; the two
+    reps each delivered it. See attribution_scope for why both are right."""
+    fn, model, team_q = _SPEC[metric]
     ids = team_subtree_ids(team_id, client_id)
     if not ids:
         return fn(model.objects.none(), period=period, source_campaign=source_campaign)
-    base = model.objects.filter(client_id=client_id, **{f'{team_field}__in': ids})
+    base = model.objects.filter(client_id=client_id).filter(team_q(ids))
     return fn(base, period=period, source_campaign=source_campaign)
 
 
@@ -143,7 +176,7 @@ def _compute_value(metric, owner, period, source_campaign) -> float:
     campaign). One isolated metric call — the perimeter is expressed by bounding
     the base queryset (team) or via the metric's own ``user=`` filter
     (individual), never a fan-out join."""
-    fn, model, team_field = _SPEC[metric]
+    fn, model, _team_q = _SPEC[metric]
     client_id = owner.client_account_id
     tier = _owner_tier(owner)
 

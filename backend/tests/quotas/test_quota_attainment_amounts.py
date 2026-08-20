@@ -32,7 +32,13 @@ The rule, as implemented and asserted here:
             Both bounds are INCLUSIVE (``__gte`` / ``__lte``, sales_metrics.py
             ``_between``) — asserted on the exact edges.
 
-  SCOPE     individual -> the owner's own cycles.
+  SCOPE     individual -> the rep's own cycles, "own" being the UNION declared
+                          in bi/metrics/attribution_scope.py (owner OR creator
+                          OR account owner). Every fixture below gives all three
+                          links to the same person, so the scope rule is not what
+                          these tests discriminate — they are about type, period
+                          and amount. The union itself is pinned in
+                          tests/quotas/test_personal_scope_union.py.
             manager    -> the WHOLE team subtree rooted at the manager's node,
                           resolved by quotas/services/progress.team_subtree_ids
                           (progress.py:86-119) and applied by
@@ -217,9 +223,20 @@ class TestPipelineQuota:
             user=rep, period=None,
         ))) == Decimal('60000')
 
-    def test_only_the_owner_cycles_count_for_an_individual(
+    def test_a_cycle_with_no_link_to_the_rep_does_not_count(
         self, rep, client_account_a,
     ):
+        """Attribution is a UNION of three links — owner, creator, account owner
+        (bi/metrics/attribution_scope.py) — so this asserts the NEGATIVE side of
+        it: a deal with none of the three does not count. ``other``'s cycle sits
+        on ``other``'s own account and was created by them, so no branch reaches
+        ``rep``.
+
+        It used to be named "only the owner cycles count" and read as a proof of
+        the owner-ONLY rule. It never was one — the fixture gives all three links
+        to the same person, so it passes identically under either rule. The
+        union's three branches are proved where they can actually fail, in
+        tests/quotas/test_personal_scope_union.py."""
         other = _user('other@a.test', client_account_a,
                       _role(client_account_a, 'Ind2', individual=True))
         _cycle(rep, client_account_a, amount=Decimal('60000'), expected_close=TODAY)

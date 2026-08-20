@@ -14,7 +14,11 @@ Common signature:
 
 - base_queryset : the starting queryset (DecisionCycle, Activity or
   CompanyAccount depending on the metric), already tenant+scope bounded.
-- user          : filter by owner when provided (None = no owner filter).
+- user          : filter to the rows that BELONG to that user when provided
+  (None = no user filter). "Belong" is not a single field: it is declared once
+  in ``attribution_scope`` — owner OR created_by OR account owner for the deal
+  metrics, ``created_by`` for MEETINGS. See that module for the rule and its
+  consequences.
 - period        : a ``(date_start, date_end)`` couple filtered on the metric's
   OWN anchor date (see each function). None = no time bound. Either bound may be
   None to make the window half-open.
@@ -55,6 +59,8 @@ from app_modules.decision_cycles.services.deal_value_sql import (
     DEAL_VALUE_ALIAS,
     annotate_deal_value,
 )
+
+from .attribution_scope import account_scope_q, activity_scope_q, cycle_scope_q
 
 
 # ---------------------------------------------------------------------------
@@ -145,35 +151,63 @@ def leads(base_queryset, *, user=None, period=None, source_campaign=None):
 
 
 def meetings(base_queryset, *, user=None, period=None, source_campaign=None):
-    """MEETINGS — count of activities whose outcome is MEETING_SCHEDULED.
+    """MEETINGS — count of meetings actually HELD and gone well.
 
-    Anchor: the activity date (``scheduled_date``).
-    Campaign attribution: via the activity's decision cycle
-    (``decision_step -> cycle -> source_campaign``).
-    Owner: the owner of the activity's cycle
-    (``decision_step -> cycle -> owner``).
+    Population: ``status=COMPLETED`` AND ``outcome in SUCCESSFUL_OUTCOMES``.
+    Anchor: ``completed_at`` — when the meeting was marked done.
+    Owner: ``created_by`` — the person who logged it (attribution_scope).
+    Campaign attribution: via the activity's cycle of origin
+    (``decision_step -> cycle -> source_campaign``), unchanged.
 
-    CANCELLED activities are excluded. The owner / campaign filters traverse the
-    nullable ``decision_step`` FK in positive form: an activity with no
-    decision_step has no cycle owner/campaign, so the inner join drops it — the
-    intended semantics (it cannot be attributed to a cycle owner or a campaign
-    of origin). The step->cycle->owner/campaign path is entirely to-ONE, so
-    counting activities does not fan out.
+    THREE RULES CHANGED HERE, all in the same direction — from "a meeting was
+    planned somewhere on a deal" to "this person held a meeting and it worked":
+
+    * the POPULATION was ``outcome=MEETING_SCHEDULED`` minus CANCELLED, which
+      counted an intention. A row planned for next month, or completed with a
+      NO_ANSWER, was a meeting. Now completion is required and the outcome must
+      be one the business calls a success — the SAME set the campaign
+      progression uses to close a contact, ``SUCCESSFUL_OUTCOMES``, not a second
+      opinion about what "successful" means. Pairing it with ``status`` matters:
+      ``Activity.outcome`` is only meaningful once completed, so a PLANNED row
+      carrying a stray outcome must not count. CANCELLED needs no explicit
+      exclusion any more — it is not COMPLETED.
+    * the OWNER was ``decision_step -> cycle -> owner``, which answered a
+      different question ("who owns the deal this meeting hangs off") and, being
+      a positive traversal of a NULLABLE FK, silently dropped every meeting
+      logged without a decision step — most of them. An SDR's meetings landed in
+      the AE's number, or in nobody's.
+    * the ANCHOR was ``scheduled_date``, the date the meeting was booked FOR.
+      A meeting booked in March and held in April counted in March. It now
+      anchors on ``completed_at``, a DateTimeField, so the window is compared at
+      DATE granularity (``is_datetime=True``) exactly as ``created_at`` is.
+
+    ``completed_at`` is an accepted PROXY for the moment the outcome became
+    successful (PO): nothing records that transition on its own, and the two
+    coincide in the normal flow — a rep completes the activity and sets its
+    outcome in the same action. A row completed first and re-qualified as
+    successful days later is anchored on the completion, not the re-qualification.
+
+    No traversal here fans out: the campaign path is to-ONE, and the population
+    filters are on the row itself, so counting activities counts rows.
 
     ``base_queryset`` is a (tenant+scope bounded) Activity queryset.
     """
-    qs = (
-        base_queryset
-        .filter(outcome=ActivityOutcome.MEETING_SCHEDULED)
-        .exclude(status=ActivityStatus.CANCELLED)
+    # Deferred import: campaigns imports bi.metrics, so this cannot be top-level
+    # (same reason as the CampaignAccount import in new_logos below).
+    from app_modules.campaigns.services.campaign_execution_service import (
+        SUCCESSFUL_OUTCOMES,
+    )
+
+    qs = base_queryset.filter(
+        status=ActivityStatus.COMPLETED,
+        outcome__in=SUCCESSFUL_OUTCOMES,
     )
     if user is not None:
-        # positive form; drops activities whose decision_step (nullable) is null.
-        qs = qs.filter(decision_step__cycle__owner=user)
+        qs = qs.filter(activity_scope_q(user))
     if source_campaign is not None:
         # positive form; drops activities without a cycle of origin.
         qs = qs.filter(decision_step__cycle__source_campaign=source_campaign)
-    qs = _between(qs, 'scheduled_date', period)
+    qs = _between(qs, 'completed_at', period, is_datetime=True)
     return qs.count()
 
 
@@ -184,7 +218,11 @@ def new_logos(base_queryset, *, user=None, period=None, source_campaign=None):
     ``became_client_at`` IS the definition of "became a client": an account
     imported as CLIENT (null timestamp) is never a new logo, so it is excluded
     regardless of the period.
-    Owner: the account owner (``account_owner``).
+    Owner: ``attribution_scope.account_scope_q`` — the account's own owner or
+    creator, OR anyone attached to the WON cycle that made it a client. The
+    account-only rule that preceded it credited the logo to the account manager
+    and to nobody else, while the deal metrics beside it credited the whole
+    union; the logo now follows the same rule as the deal that produced it.
     Campaign attribution: the account was worked in the campaign (isolated
     EXISTS on the CampaignAccount pivot).
 
@@ -195,7 +233,7 @@ def new_logos(base_queryset, *, user=None, period=None, source_campaign=None):
     """
     qs = base_queryset.filter(became_client_at__isnull=False)
     if user is not None:
-        qs = qs.filter(account_owner=user)
+        qs = qs.filter(account_scope_q(user))
     if source_campaign is not None:
         # deferred import to avoid a module-load cycle through campaigns.
         from app_modules.campaigns.models.campaign_account import CampaignAccount
@@ -224,7 +262,8 @@ def pipeline_value(base_queryset, *, user=None, period=None, source_campaign=Non
     and a personal pipeline objective showed 0.
 
     Campaign attribution: ``source_campaign`` on the DC.
-    Owner: the DC ``owner``.
+    Owner: ``attribution_scope.cycle_scope_q`` — owner OR created_by OR the
+    account's owner, one row per cycle (all three links are to-ONE).
     Amount: the DERIVED product roll-up — ``total_deal_value``, summed through
     the ``annotate_deal_value`` SQL annotation (TD-75). The manual
     ``estimated_value`` field is no longer read here: no runtime path ever
@@ -247,7 +286,7 @@ def pipeline_value(base_queryset, *, user=None, period=None, source_campaign=Non
     """
     qs = base_queryset.filter(outcome__isnull=True)
     if user is not None:
-        qs = qs.filter(owner=user)
+        qs = qs.filter(cycle_scope_q(user))
     if source_campaign is not None:
         qs = qs.filter(source_campaign=source_campaign)
     qs = annotate_effective_close_date(qs)
@@ -271,14 +310,15 @@ def revenue_won(base_queryset, *, user=None, period=None, source_campaign=None):
     carried the field since migration 0009, so historic wins are visible in a
     window — there is no dark period.
     Campaign attribution: ``source_campaign`` on the DC.
-    Owner: the DC ``owner``.
+    Owner: ``attribution_scope.cycle_scope_q`` — the same union as
+    PIPELINE_VALUE, so a deal does not change hands when it is won.
     Amount: the DERIVED product roll-up (see PIPELINE_VALUE — TD-75).
 
     ``base_queryset`` is a (tenant+scope bounded) DecisionCycle queryset.
     """
     qs = base_queryset.filter(outcome=CycleOutcome.WON)
     if user is not None:
-        qs = qs.filter(owner=user)
+        qs = qs.filter(cycle_scope_q(user))
     if source_campaign is not None:
         qs = qs.filter(source_campaign=source_campaign)
     qs = _between(qs, 'outcome_date', period)
