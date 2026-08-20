@@ -765,3 +765,116 @@ class TestMoneyRequiresASuccessfulActivity:
                   source_campaign=camp_a, amount=Decimal('60000'))
 
         assert _all_three(client_account_a, camp_a, obj_a) == 1.0
+
+
+# ===========================================================================
+# CANCELLING THE WORK REMOVES THE CLAIM — no special cancel handling
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestCancellingTheActivityDropsTheDeal:
+
+    def test_cancelling_the_only_successful_activity_drops_the_deal(
+        self, user_a, client_account_a, account,
+    ):
+        """Attribution rests entirely on Exists(COMPLETED + SUCCESSFUL), so a
+        cancelled activity stops matching and the deal leaves the campaign's
+        money on its own. There is no cancel-handling code to get wrong."""
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=None, amount=Decimal('60000'))
+        activity = _mk_activity(user_a, account, client_account_a,
+                                campaign=camp_b, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 60000.0
+
+        activity.status = ActivityStatus.CANCELLED
+        activity.save(user=user_a, client_id=client_account_a.id)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 0.0
+
+    def test_cancelling_one_of_two_leaves_the_deal_counted(
+        self, user_a, client_account_a, account,
+    ):
+        """The claim survives while ANY successful activity remains — and the
+        deal is still counted ONCE, not twice."""
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=None, amount=Decimal('60000'))
+        first = _mk_activity(user_a, account, client_account_a,
+                             campaign=camp_b, cycle=cycle, title='a1')
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle, title='a2')
+
+        first.status = ActivityStatus.CANCELLED
+        first.save(user=user_a, client_id=client_account_a.id)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 60000.0
+
+    def test_cancelling_does_not_touch_the_created_count(
+        self, user_a, client_account_a, account,
+    ):
+        """DECISION_CYCLES records CREATION. Cancelling the work done on a deal
+        does not un-create it."""
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.DECISION_CYCLES, target=10)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_a, amount=Decimal('60000'))
+        activity = _mk_activity(user_a, account, client_account_a,
+                                campaign=camp_a, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 1.0
+
+        activity.status = ActivityStatus.CANCELLED
+        activity.save(user=user_a, client_id=client_account_a.id)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 1.0
+
+
+@pytest.mark.django_db
+class TestDecisionCyclesCountsEveryCreatedDeal:
+
+    def test_a_lost_deal_still_counts_as_created(
+        self, user_a, client_account_a, account,
+    ):
+        """Creating it was a campaign result even if it went nowhere: the count
+        is not filtered by outcome, and there is no DC-cancel concept to filter
+        on either (CycleOutcome has no CANCELLED)."""
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.DECISION_CYCLES, target=10)
+
+        _mk_cycle(user_a, account, client_account_a, name='lost',
+                  source_campaign=camp_a, amount=Decimal('60000'),
+                  outcome=CycleOutcome.LOST, outcome_date=TODAY)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 1.0
+
+    def test_every_outcome_counts_as_created(
+        self, user_a, client_account_a, account,
+    ):
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.DECISION_CYCLES, target=10)
+
+        for name, outcome in (
+            ('open', None),
+            ('won', CycleOutcome.WON),
+            ('lost', CycleOutcome.LOST),
+            ('hold', CycleOutcome.ON_HOLD),
+            ('nq', CycleOutcome.NOT_QUALIFIED),
+        ):
+            _mk_cycle(user_a, account, client_account_a, name=name,
+                      source_campaign=camp_a, amount=Decimal('1000'),
+                      outcome=outcome,
+                      outcome_date=TODAY if outcome else None)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 5.0
