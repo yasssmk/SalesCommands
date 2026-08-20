@@ -199,23 +199,37 @@ class TestParityWithCampaignObjectives:
             _dc_base(client_account_a), source_campaign=camp, period=None)
         assert canonical == svc._sum_revenue_won(camp) == 500.0
 
-    def test_a_campaign_claims_nothing_it_has_not_worked(self, owner_a,
-                                                         client_account_a):
-        """Guards the fixture above: without the COMPLETED + SUCCESSFUL activity
-        the campaign figures are 0 whatever ``source_campaign`` says, so the
-        parity assertions would be comparing two zeroes."""
+    def test_a_campaign_claims_a_deal_it_did_not_open_only_once_it_works_it(
+        self, owner_a, client_account_a,
+    ):
+        """Guards the fixture above: the successful activity is what attributes a
+        PRE-EXISTING deal, so without it the parity assertions would be comparing
+        two zeroes.
+
+        A deal the campaign OPENED is a different case — born-from is
+        unconditional, and it is exercised by the campaign tests
+        (tests/campaigns/test_campaign_value_touched_by.py). Here the cycle has no
+        ``source_campaign``, so only the activity can pull it in."""
         camp = _mk_campaign(owner_a, client_account_a)
         acc = _mk_account('Acc', owner_a, client_account_a)
-        _mk_cycle(owner_a, acc, client_account_a, name='untouched',
-                  source_campaign=camp, estimated_value=1000)
+        cycle = _mk_cycle(owner_a, acc, client_account_a, name='pre-existing',
+                          source_campaign=None, estimated_value=1000)
 
         svc = CampaignAnalyticsService(client_id=client_account_a.id)
 
         assert svc._sum_pipeline_value(camp) == 0.0
         assert svc._sum_revenue_won(camp) == 0.0
-        # ... while the ORIGIN-based canonical read still sees it.
+
+        _mk_activity(owner_a, acc, client_account_a, campaign=camp,
+                     decision_cycle=cycle, activity_type=ActivityType.CALL,
+                     status=ActivityStatus.COMPLETED,
+                     outcome=ActivityOutcome.SUCCESSFUL)
+
+        assert svc._sum_pipeline_value(camp) == 1000.0
+        # ... and the ORIGIN-based canonical read never saw it: the cycle has no
+        # source_campaign, which is exactly the divergence between the two.
         assert metrics.pipeline_value(
-            _dc_base(client_account_a), source_campaign=camp, period=None) == 1000.0
+            _dc_base(client_account_a), source_campaign=camp, period=None) == 0.0
 
     def test_decision_cycles_parity(self, owner_a, client_account_a):
         # NB divergence documented: campaign attributes via Activity.campaign,

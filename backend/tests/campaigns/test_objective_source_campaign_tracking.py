@@ -182,8 +182,9 @@ class TestSourceCampaignAttribution:
         is NOT attributed anymore (decoy_dc, value 777, is absent from every total)."""
         camp = _build_mixed(user_a, client_account_a)
         svc = _svc(client_account_a)
-        # 1000 open + 500 won; 777 still absent — the decoy's activity is neither
-        # COMPLETED nor SUCCESSFUL, so the widened attribution does not reach it.
+        # 1000 open + 500 won; 777 still absent — the decoy was not born from the
+        # campaign, and its activity is neither COMPLETED nor SUCCESSFUL, so
+        # neither branch of the union reaches it.
         assert svc._sum_pipeline_value(camp) == 1500.0
         assert svc._count_decision_cycles(camp) == 2        # decoy not counted
 
@@ -212,22 +213,26 @@ class TestContractSourceCampaignAloneCounts:
         # NO Activity rows at all → old Activity.campaign attribution would see 0.
 
         svc = _svc(client_account_a)
-        # The COUNT still rests on source_campaign alone — that is what this
-        # contract is about, and it is unchanged.
+        # The COUNT rests on source_campaign alone — unchanged.
         assert svc._count_decision_cycles(camp) == 2
-        # The MONEY no longer does: the campaign created these deals but has not
-        # worked either of them.
-        assert svc._sum_pipeline_value(camp) == 0.0
-        assert svc._sum_revenue_won(camp) == 0.0
+        # ...and so does the MONEY: born-from is unconditional, so the campaign
+        # claims the deals it opened with nothing logged on them. 300 open + 200
+        # won; the won deal stays in the campaign's pipeline too (campaign =
+        # result, not state).
+        #
+        # These two asserted 0.0 while born-from was gated behind a successful
+        # activity. That gating was reversed (PO, final) — see
+        # campaign_dc_attribution's module docstring.
+        assert svc._sum_pipeline_value(camp) == 500.0
+        assert svc._sum_revenue_won(camp) == 200.0
 
-        # One completed successful activity per deal, and the value follows.
+        # Working the deals adds nothing: the union already claimed them, and it
+        # must not count them twice.
         _mk_activity(user_a, acc, client_account_a, campaign=camp,
                      decision_cycle=open_dc, outcome=ActivityOutcome.SUCCESSFUL)
         _mk_activity(user_a, acc, client_account_a, campaign=camp,
                      decision_cycle=won_dc, outcome=ActivityOutcome.SUCCESSFUL)
 
-        # 300 open + 200 won — the won deal stays in the campaign's pipeline
-        # (campaign = result, not state). Was 300 under the exclusive rule.
         assert svc._sum_pipeline_value(camp) == 500.0
         assert svc._sum_revenue_won(camp) == 200.0
 

@@ -33,12 +33,11 @@ Status is the only criterion for the PERSONAL paths: ``outcome IS NULL`` = open,
 THE CAMPAIGN PATHS DO NOT READ THE SAME POPULATION, and this module used to
 assume they did. Two rules landed on them after it was written:
 
-* a campaign claims a deal's value only once it has WORKED it — at least one
-  COMPLETED activity of the campaign with a successful outcome
-  (campaigns/services/campaign_dc_attribution.py). Being the deal's origin is
-  no longer enough, so every campaign figure here was 0: the fixture linked its
-  cycles by ``source_campaign`` and gave them no activity at all. The fixture
-  now gives each one the successful campaign activity the rule asks for;
+* a campaign claims a deal it OPENED unconditionally (born-from), and a deal it
+  did not open only once it has WORKED it — a COMPLETED activity of the campaign
+  with a successful outcome (campaigns/services/campaign_dc_attribution.py). The
+  fixture's cycles are all born from the campaign AND carry a successful
+  activity, so both branches match and the union must still count each once;
 * a campaign reports a RESULT, not a state, so its PIPELINE covers OPEN **or**
   WON — a deal it put on the table does not vanish from its pipeline the moment
   it is won. The personal pipeline stays EXCLUSIVE. The two therefore differ by
@@ -133,9 +132,10 @@ def _cycle(owner, account, ca, *, name, campaign, outcome=None, is_active=False)
 
 
 def _worked_by_campaign(cycle, owner, campaign):
-    """The COMPLETED + successful campaign activity a campaign now needs before
-    it may claim a cycle's value (campaign_dc_attribution.py). Without it every
-    campaign figure is 0, whatever ``source_campaign`` says."""
+    """A COMPLETED + successful campaign activity — the touched-by branch of the
+    attribution (campaign_dc_attribution.py). These cycles are also born from the
+    campaign, so both branches match: the point is that the union still counts
+    each cycle once."""
     activity = Activity(
         title=f'worked-{cycle.name}', activity_type=ActivityType.CALL,
         status=ActivityStatus.COMPLETED, outcome=ActivityOutcome.SUCCESSFUL,
@@ -291,15 +291,34 @@ class TestCampaignObjectives:
         assert pipeline == CAMPAIGN_PIPELINE_VALUE
         assert pipeline != OPEN_VALUE + WON_VALUE + LOST_VALUE
 
-    def test_a_cycle_the_campaign_never_worked_is_in_neither_figure(self, world):
-        """The attribution rule itself: origin alone claims nothing. A cycle
-        linked to the campaign by ``source_campaign`` but carrying no successful
-        campaign activity adds nothing to either figure."""
+    def test_a_cycle_the_campaign_opened_counts_before_anyone_works_it(self, world):
+        """The attribution rule itself, born-from side: a cycle linked to the
+        campaign by ``source_campaign`` counts from the moment it exists, with no
+        activity on it at all. It is OPEN, so it lands in the pipeline only.
+
+        This test asserted the opposite while born-from was gated behind a
+        successful activity."""
         _objective(world, ObjectiveType.PIPELINE_VALUE)
         _objective(world, ObjectiveType.REVENUE_WON)
         untouched = _cycle(world['owner'], world['account'], world['ca'],
                            name='untouched', campaign=world['campaign'])
         _line(untouched, world['owner'], price=Decimal('77000'), label='untouched')
+
+        values = self._values(world)
+
+        assert values[ObjectiveType.PIPELINE_VALUE] == \
+            CAMPAIGN_PIPELINE_VALUE + Decimal('77000')
+        assert values[ObjectiveType.REVENUE_WON] == WON_VALUE
+
+    def test_a_cycle_of_another_campaign_is_in_neither_figure(self, world):
+        """The other side of the same rule: neither branch reaches a deal this
+        campaign neither opened nor worked."""
+        _objective(world, ObjectiveType.PIPELINE_VALUE)
+        _objective(world, ObjectiveType.REVENUE_WON)
+        other = _campaign(world['owner'], world['ca'], name='Other')
+        foreign = _cycle(world['owner'], world['account'], world['ca'],
+                         name='foreign', campaign=other)
+        _line(foreign, world['owner'], price=Decimal('77000'), label='foreign')
 
         values = self._values(world)
 

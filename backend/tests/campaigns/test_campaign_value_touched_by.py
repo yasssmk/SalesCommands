@@ -653,29 +653,38 @@ class TestWonStaysInCampaignPipeline:
 
 
 # ===========================================================================
-# MONEY REQUIRES WORK DONE — the origin is not a free pass
+# THE TWO BRANCHES ARE GATED DIFFERENTLY — born-from is not, touched-by is
 # ===========================================================================
 #
-# PO rule, final: a campaign claims a deal's VALUE only once it has at least one
-# COMPLETED + SUCCESSFUL activity on that deal. This applies to the ORIGIN
-# campaign too — being born from a campaign no longer contributes money on its
-# own. DECISION_CYCLES is unaffected: it counts what the campaign CREATED,
-# whether or not anyone has worked it since.
+# PO rule, final: a deal counts for a campaign's money if EITHER it was OPENED
+# from the campaign (born-from, UNCONDITIONAL — from the moment it exists, with
+# nothing logged on it) OR the campaign has a COMPLETED + SUCCESSFUL activity on
+# it (touched-by, gated). A deal a campaign opened is that campaign's deal
+# immediately; a deal it did not open has to be earned.
 #
-# This also closes two symptoms the PO reported, without touching the write
-# path: a deal could enter a campaign's pipeline as soon as an activity was
-# CREATED (before completion), and stayed there when that activity was
-# cancelled. Both came in through the born-from branch; requiring a completed
-# successful activity removes the leak.
+# For a while born-from was gated too, to fix two symptoms the PO reported: a
+# deal entered a campaign's pipeline as soon as an activity was CREATED (before
+# completion) and stayed there after that activity was CANCELLED. Both were the
+# UNVALIDATED-activity bug, and requiring status=COMPLETED on the touched-by
+# branch is what actually fixed them — gating born-from as well was a wrong
+# diagnosis, and is reversed here.
+#
+# The asymmetry is the point of this class, so each case below names which
+# branch it exercises: the born-from cases carry source_campaign, the gated
+# cases use a PRE-EXISTING deal (source_campaign=None) that only an activity can
+# pull in.
 
 @pytest.mark.django_db
-class TestMoneyRequiresASuccessfulActivity:
+class TestBornFromIsUnconditionalAndTouchedByIsGated:
 
-    def test_the_origin_alone_no_longer_counts_money(
+    def test_the_origin_alone_counts_the_money(
         self, user_a, client_account_a, account,
     ):
         """A deal born from campaign A, with products, and NOTHING done on it
-        yet: A's pipeline is 0. Before this rule it was the full 60k."""
+        yet: A's pipeline is the full 60k. The campaign opened it, so it is the
+        campaign's from that moment.
+
+        This test asserted 0.0 while born-from was gated."""
         camp_a = _mk_campaign(user_a, client_account_a, name='A')
         obj_a = _mk_objective(camp_a, user_a, client_account_a,
                               ObjectiveType.PIPELINE_VALUE)
@@ -683,45 +692,67 @@ class TestMoneyRequiresASuccessfulActivity:
         _mk_cycle(user_a, account, client_account_a,
                   source_campaign=camp_a, amount=Decimal('60000'))
 
-        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
-
-    def test_a_successful_activity_of_the_origin_unlocks_the_money(
-        self, user_a, client_account_a, account,
-    ):
-        camp_a = _mk_campaign(user_a, client_account_a, name='A')
-        obj_a = _mk_objective(camp_a, user_a, client_account_a,
-                              ObjectiveType.PIPELINE_VALUE)
-
-        cycle = _mk_cycle(user_a, account, client_account_a,
-                          source_campaign=camp_a, amount=Decimal('60000'))
-
-        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
-
-        _mk_activity(user_a, account, client_account_a,
-                     campaign=camp_a, cycle=cycle)
-
         assert _all_three(client_account_a, camp_a, obj_a) == 60000.0
 
-    def test_an_uncompleted_activity_of_the_origin_does_not_unlock_it(
+    def test_a_pre_existing_deal_needs_a_successful_activity(
         self, user_a, client_account_a, account,
     ):
-        """The symptom: the money moved as soon as the activity was CREATED."""
-        camp_a = _mk_campaign(user_a, client_account_a, name='A')
-        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+        """The other branch, and its gate: campaign B did not open this deal, so
+        it counts nothing until B has worked it."""
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
                               ObjectiveType.PIPELINE_VALUE)
 
         cycle = _mk_cycle(user_a, account, client_account_a,
-                          source_campaign=camp_a, amount=Decimal('60000'))
-        _mk_activity(user_a, account, client_account_a, campaign=camp_a,
+                          source_campaign=None, amount=Decimal('60000'))
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 0.0
+
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 60000.0
+
+    def test_an_uncompleted_activity_does_not_pull_in_a_pre_existing_deal(
+        self, user_a, client_account_a, account,
+    ):
+        """THE symptom that caused the confusion: the money moved as soon as the
+        activity was CREATED. status=COMPLETED is what fixes it — and it is
+        enough on its own, without gating born-from."""
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=None, amount=Decimal('60000'))
+        _mk_activity(user_a, account, client_account_a, campaign=camp_b,
                      cycle=cycle, status=ActivityStatus.PLANNED,
                      outcome=ActivityOutcome.SUCCESSFUL)
 
-        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
+        assert _all_three(client_account_a, camp_b, obj_b) == 0.0
 
-    def test_a_cancelled_activity_of_the_origin_does_not_unlock_it(
+    def test_a_cancelled_activity_does_not_pull_in_a_pre_existing_deal(
         self, user_a, client_account_a, account,
     ):
-        """The other symptom: cancelling the activity left the deal counted."""
+        """The second symptom: cancelling the activity left the deal counted."""
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=None, amount=Decimal('60000'))
+        _mk_activity(user_a, account, client_account_a, campaign=camp_b,
+                     cycle=cycle, status=ActivityStatus.CANCELLED,
+                     outcome=ActivityOutcome.SUCCESSFUL)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 0.0
+
+    def test_a_cancelled_activity_does_not_take_away_a_born_from_deal(
+        self, user_a, client_account_a, account,
+    ):
+        """The asymmetry, stated where it bites: cancelling the work drops a deal
+        the campaign never opened, but a deal it DID open stays — the born-from
+        branch holds it with no activity at all."""
         camp_a = _mk_campaign(user_a, client_account_a, name='A')
         obj_a = _mk_objective(camp_a, user_a, client_account_a,
                               ObjectiveType.PIPELINE_VALUE)
@@ -732,25 +763,40 @@ class TestMoneyRequiresASuccessfulActivity:
                      cycle=cycle, status=ActivityStatus.CANCELLED,
                      outcome=ActivityOutcome.SUCCESSFUL)
 
-        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
+        assert _all_three(client_account_a, camp_a, obj_a) == 60000.0
 
     def test_the_rule_applies_to_won_value_too(
         self, user_a, client_account_a, account,
     ):
+        """Born-from is unconditional on the won side as well: a deal the
+        campaign opened and won counts with nothing logged."""
         camp_a = _mk_campaign(user_a, client_account_a, name='A')
         obj_a = _mk_objective(camp_a, user_a, client_account_a,
                               ObjectiveType.REVENUE_WON)
 
-        cycle = _mk_cycle(user_a, account, client_account_a,
-                          source_campaign=camp_a, amount=Decimal('40000'),
-                          outcome=CycleOutcome.WON, outcome_date=TODAY)
-
-        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
-
-        _mk_activity(user_a, account, client_account_a,
-                     campaign=camp_a, cycle=cycle)
+        _mk_cycle(user_a, account, client_account_a,
+                  source_campaign=camp_a, amount=Decimal('40000'),
+                  outcome=CycleOutcome.WON, outcome_date=TODAY)
 
         assert _all_three(client_account_a, camp_a, obj_a) == 40000.0
+
+    def test_a_pre_existing_won_deal_still_needs_the_work(
+        self, user_a, client_account_a, account,
+    ):
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.REVENUE_WON)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=None, amount=Decimal('40000'),
+                          outcome=CycleOutcome.WON, outcome_date=TODAY)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 0.0
+
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 40000.0
 
     def test_DECISION_CYCLES_still_counts_an_unworked_deal(
         self, user_a, client_account_a, account,

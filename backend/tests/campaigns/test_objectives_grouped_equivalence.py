@@ -58,7 +58,9 @@ def _seed_all_types(user, ca):
     )
     camp.save(user=user, client_id=ca.id)
 
-    # A CLIENT account with a COMPLETED CampaignAccount -> NEW_LOGOS = 1.
+    # An account IMPORTED as a client: a completed CampaignAccount on it used to
+    # make it a "new logo" under the old proxy. It has no became_client_at, so it
+    # never transitioned and is NOT a logo — the conversion below is.
     client_acc = CompanyAccount(
         company_name="ClientCo", has_buying_decision=True, account_owner=user, type="CLIENT"
     )
@@ -137,9 +139,17 @@ def _seed_all_types(user, ca):
     won.save(user=user, client_id=ca.id)
     give_deal_value(won, 900, user=user)
 
-    # A campaign claims a deal's VALUE only once it has WORKED it — being the
-    # deal's source_campaign counts for DECISION_CYCLES and nothing else. So each
-    # money-bearing cycle gets one completed + SUCCESSFUL campaign activity.
+    # That win converted ProspectCo -> NEW_LOGOS = 1. The close hook stamps
+    # became_client_at in production; it is editable=False, so it is assigned
+    # here the way tests/bi/test_metrics_canonical.py seeds it. The winning cycle
+    # is born from the campaign, which is what attributes the logo to it.
+    other_acc.type = "CLIENT"
+    other_acc.became_client_at = timezone.now()
+    other_acc.save(user=user)
+
+    # These cycles are all born from the campaign, so the money already counts
+    # them. The completed + SUCCESSFUL activity below adds the touched-by branch
+    # on top: both branches match, and the union must still count each deal ONCE.
     for cycle in (open_a, open_b, won):
         worked = Activity(
             title=f"worked-{cycle.name}", activity_type=ActivityType.CALL,

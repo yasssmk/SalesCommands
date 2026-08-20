@@ -11,11 +11,11 @@ by campaign, so the query count is bounded by the number of distinct objective
 types on the page (<= 6) — never by the number of campaigns.
 
 The grouped predicates mirror _calculate_objective_value branch for branch
-(source_campaign for the DecisionCycle metrics, Activity.campaign for MEETINGS,
-the CampaignAccount pivot for NEW_LOGOS) — except where a branch calls the SAME
-declaration the detail path calls, which is now the case for the money
-(campaign_dc_attribution) and for CONTACTS_REACHED (campaign_contact_reach):
-mirroring is only needed while two implementations exist. A parity test
+(source_campaign for DECISION_CYCLES, Activity.campaign for MEETINGS) — except
+where a branch calls the SAME declaration the detail path calls, which is now the
+case for the money and NEW_LOGOS (campaign_dc_attribution) and for
+CONTACTS_REACHED (campaign_contact_reach): mirroring is only needed while two
+implementations exist. A parity test
 (tests/campaigns/test_campaign_list_objective_progress.py) locks each grouped
 result to the per-campaign calculation so the two paths can never drift.
 """
@@ -30,7 +30,7 @@ from app_modules.activities.constants import ActivityStatus, ActivityType
 from app_modules.activities.models import Activity
 from app_modules.decision_cycles.models import DecisionCycle
 from .campaign_contact_reach import contacts_reached_by_campaign
-from .campaign_dc_attribution import campaign_money
+from .campaign_dc_attribution import campaign_money, campaign_new_logos
 
 from ..models import (
     CampaignAccount,
@@ -168,12 +168,14 @@ def _values_for_type(objective_type, campaign_ids, client_id):
         return contacts_reached_by_campaign(campaign_ids)
 
     if objective_type == ObjectiveType.NEW_LOGOS:
-        qs = CampaignAccount.objects.filter(
-            campaign_id__in=campaign_ids,
-            status=CampaignAccountStatus.COMPLETED,
-            account__type='CLIENT',
-        )
-        return _grouped(qs, 'campaign', Count('id'))
+        # The same canonical calculation the detail page calls, per campaign for
+        # the same reason the money is (see _money_by_campaign): attribution is a
+        # union, so there is no single column to GROUP BY. It replaces a grouped
+        # proxy over CampaignAccount that consulted no decision cycle at all.
+        return {
+            campaign_id: campaign_new_logos(campaign_id, client_id)
+            for campaign_id in campaign_ids
+        }
 
     return {}
 

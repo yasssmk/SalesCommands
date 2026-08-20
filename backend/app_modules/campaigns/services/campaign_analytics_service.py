@@ -25,7 +25,7 @@ from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
 
 from ..constants import DECISION_CYCLE_OBJECTIVE_TYPES
-from .campaign_dc_attribution import campaign_money
+from .campaign_dc_attribution import campaign_money, campaign_new_logos
 from .campaign_contact_reach import contacts_reached_count
 from ..models import (
     CampaignAccount,
@@ -677,14 +677,18 @@ class CampaignAnalyticsService:
         return campaign_money(campaign.id, self.client_id)['won']
 
     def _count_new_logos(self, campaign):
-        """
-        NEW_LOGOS: accounts that transitioned from PROSPECT to CLIENT.
+        """NEW_LOGOS: accounts that became clients through a deal this campaign
+        carried.
 
-        MVP: count completed CampaignAccounts where account.type changed.
-        Simplified — full tracking requires event sourcing in future.
+        Neither the transition test nor the attribution is stated here: both live
+        in ``campaign_dc_attribution.campaign_new_logos``, the single calculation
+        the LIST batch also calls — same arrangement as the money.
+
+        It replaces an MVP proxy (its own docstring said so) that counted every
+        COMPLETED CampaignAccount whose account is CURRENTLY typed CLIENT. That
+        consulted no decision cycle, so it could not tell a conversion from an
+        account imported as a client and enrolled in the campaign, and it
+        credited the logo to any campaign that had worked the account rather than
+        to the one that carried the winning deal.
         """
-        return CampaignAccount.objects.filter(
-            campaign=campaign,
-            status=CampaignAccountStatus.COMPLETED,
-            account__type='CLIENT',
-        ).count()
+        return campaign_new_logos(campaign.id, self.client_id)
