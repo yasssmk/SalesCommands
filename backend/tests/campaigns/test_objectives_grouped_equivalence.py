@@ -116,6 +116,18 @@ def _seed_all_types(user, ca):
     won.save(user=user, client_id=ca.id)
     give_deal_value(won, 900, user=user)
 
+    # A campaign claims a deal's VALUE only once it has WORKED it — being the
+    # deal's source_campaign counts for DECISION_CYCLES and nothing else. So each
+    # money-bearing cycle gets one completed + SUCCESSFUL campaign activity.
+    for cycle in (open_a, open_b, won):
+        worked = Activity(
+            title=f"worked-{cycle.name}", activity_type=ActivityType.CALL,
+            status=ActivityStatus.COMPLETED, outcome="SUCCESSFUL",
+            account=other_acc, owner=user, campaign=camp,
+            decision_cycle=cycle, scheduled_date=TODAY,
+        )
+        worked.save(user=user, client_id=ca.id)
+
     for idx, otype in enumerate(ObjectiveType.values):
         CampaignObjective(
             campaign=camp, name=str(otype), objective_type=otype,

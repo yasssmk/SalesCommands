@@ -24,11 +24,12 @@ SCOPE CHANGE asserted below:
 LATER PO REVISIONS, folded into the expectations below — the ORIGIN branch this
 module was written for is unchanged, but two rules around it moved:
 
-1. The money branches are no longer origin-ONLY: they are origin OR touched-by a
-   SUCCESSFUL, COMPLETED activity of the campaign (campaign_dc_attribution). The
-   "dropped" cohort above still drops HERE because the decoy's activity is
-   neither completed nor successful — attribution widened, but not to any
-   activity. DECISION_CYCLES stays strictly origin-only.
+1. The money branches no longer read ``source_campaign`` at all: a campaign
+   claims a deal's VALUE only once it has a COMPLETED + SUCCESSFUL activity on
+   it (campaign_dc_attribution). Being the origin counts for DECISION_CYCLES and
+   nothing else, so the fixture below attaches a worked activity wherever money
+   is asserted. The "dropped" cohort above still drops: the decoy's campaign
+   activity carries no successful outcome.
 2. A campaign reports a RESULT, not a state: a WON cycle STAYS in the campaign's
    PIPELINE_VALUE instead of leaving it on win. So the mixed fixture's pipeline
    is 1000 (open) + 500 (won) = 1500, where it was 1000. Personal pipeline keeps
@@ -42,7 +43,9 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from app_modules.activities.constants import ActivityStatus, ActivityType
+from app_modules.activities.constants import (
+    ActivityOutcome, ActivityStatus, ActivityType,
+)
 from app_modules.activities.models import Activity
 from app_modules.campaigns.constants import CampaignType, ObjectiveType
 from app_modules.campaigns.models import Campaign, CampaignObjective
@@ -83,8 +86,9 @@ def _mk_cycle(owner, account, ca, *, name='dc', source_campaign=None,
 
 def _mk_activity(owner, account, ca, *, campaign=None, decision_cycle=None,
                  activity_type=ActivityType.CALL,
-                 status=ActivityStatus.COMPLETED):
+                 status=ActivityStatus.COMPLETED, outcome=None):
     a = Activity(title='a', activity_type=activity_type, status=status,
+                 outcome=outcome,
                  account=account, owner=owner, campaign=campaign,
                  decision_cycle=decision_cycle, scheduled_date=TODAY)
     a.save(user=owner, client_id=ca.id)
@@ -116,10 +120,16 @@ def _build_mixed(owner, ca):
                         estimated_value=1000)
     # modal cohort: activity linked to the DC but NOT tagged with the campaign
     _mk_activity(owner, acc, ca, campaign=None, decision_cycle=open_dc)
+    # ...and one the campaign actually WORKED, which is what lets it claim the
+    # value (origin alone counts only for DECISION_CYCLES — see the header).
+    _mk_activity(owner, acc, ca, campaign=camp, decision_cycle=open_dc,
+                 outcome=ActivityOutcome.SUCCESSFUL)
 
     won_dc = _mk_cycle(owner, acc, ca, name='won', source_campaign=camp,
                        estimated_value=500, outcome=CycleOutcome.WON,
                        outcome_date=TODAY)
+    _mk_activity(owner, acc, ca, campaign=camp, decision_cycle=won_dc,
+                 outcome=ActivityOutcome.SUCCESSFUL)
 
     decoy_dc = _mk_cycle(owner, acc, ca, name='decoy', source_campaign=None,
                          estimated_value=777)
@@ -196,12 +206,26 @@ class TestContractSourceCampaignAloneCounts:
 
         open_dc = _mk_cycle(user_a, acc, client_account_a, name='o',
                             source_campaign=camp, estimated_value=300)
-        _mk_cycle(user_a, acc, client_account_a, name='w', source_campaign=camp,
-                  estimated_value=200, outcome=CycleOutcome.WON, outcome_date=TODAY)
+        won_dc = _mk_cycle(user_a, acc, client_account_a, name='w',
+                           source_campaign=camp, estimated_value=200,
+                           outcome=CycleOutcome.WON, outcome_date=TODAY)
         # NO Activity rows at all → old Activity.campaign attribution would see 0.
 
         svc = _svc(client_account_a)
+        # The COUNT still rests on source_campaign alone — that is what this
+        # contract is about, and it is unchanged.
         assert svc._count_decision_cycles(camp) == 2
+        # The MONEY no longer does: the campaign created these deals but has not
+        # worked either of them.
+        assert svc._sum_pipeline_value(camp) == 0.0
+        assert svc._sum_revenue_won(camp) == 0.0
+
+        # One completed successful activity per deal, and the value follows.
+        _mk_activity(user_a, acc, client_account_a, campaign=camp,
+                     decision_cycle=open_dc, outcome=ActivityOutcome.SUCCESSFUL)
+        _mk_activity(user_a, acc, client_account_a, campaign=camp,
+                     decision_cycle=won_dc, outcome=ActivityOutcome.SUCCESSFUL)
+
         # 300 open + 200 won — the won deal stays in the campaign's pipeline
         # (campaign = result, not state). Was 300 under the exclusive rule.
         assert svc._sum_pipeline_value(camp) == 500.0
@@ -212,8 +236,11 @@ class TestContractSourceCampaignAloneCounts:
         must surface the source_campaign-attributed DC in current_value."""
         acc = _account_for(user_a, client_account_a)
         camp = _mk_campaign(user_a, client_account_a)
-        _mk_cycle(user_a, acc, client_account_a, name='o', source_campaign=camp,
-                  estimated_value=1500)
+        cycle = _mk_cycle(user_a, acc, client_account_a, name='o',
+                          source_campaign=camp, estimated_value=1500)
+        # Worked by the campaign — the condition the money now rests on.
+        _mk_activity(user_a, acc, client_account_a, campaign=camp,
+                     decision_cycle=cycle, outcome=ActivityOutcome.SUCCESSFUL)
 
         obj = CampaignObjective(campaign=camp, name='Pipe',
                                 objective_type=ObjectiveType.PIPELINE_VALUE,

@@ -147,16 +147,24 @@ class TestTouchedByAttribution:
 
         assert _both(client_account_a, camp_b, obj_b) == 60000.0
 
-    def test_the_origin_still_counts_without_any_activity(
+    def test_the_origin_counts_once_it_has_worked_the_deal(
         self, user_a, client_account_a, account,
     ):
-        """Edge 2 — the born-from branch is not lost by adding the union."""
+        """The origin campaign claims the money through the same door as anyone
+        else: a completed successful activity.
+
+        This test used to assert that being the origin was enough on its own.
+        The PO reversed that — creation is rewarded by DECISION_CYCLES, value by
+        work — so the unworked case is now pinned in
+        TestMoneyRequiresASuccessfulActivity."""
         camp_a = _mk_campaign(user_a, client_account_a, name='A')
         obj_a = _mk_objective(camp_a, user_a, client_account_a,
                               ObjectiveType.PIPELINE_VALUE)
 
-        _mk_cycle(user_a, account, client_account_a,
-                  source_campaign=camp_a, amount=Decimal('60000'))
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_a, amount=Decimal('60000'))
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_a, cycle=cycle)
 
         assert _both(client_account_a, camp_a, obj_a) == 60000.0
 
@@ -253,8 +261,12 @@ class TestCountedOncePerCampaign:
 
         cycle = _mk_cycle(user_a, account, client_account_a,
                           source_campaign=camp_a, amount=Decimal('60000'))
+        # Each campaign claims through its OWN successful activity — A's origin
+        # is not a claim on the money by itself.
         _mk_activity(user_a, account, client_account_a,
-                     campaign=camp_b, cycle=cycle)
+                     campaign=camp_a, cycle=cycle, title='by-a')
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle, title='by-b')
 
         assert _both(client_account_a, camp_a, obj_a) == 60000.0
         assert _both(client_account_a, camp_b, obj_b) == 60000.0
@@ -591,6 +603,8 @@ class TestWonStaysInCampaignPipeline:
 
         cycle = _mk_cycle(user_a, account, client_account_a,
                           source_campaign=camp_b, amount=Decimal('60000'))
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle)
 
         assert _all_three(client_account_a, camp_b, obj_pipeline) == 60000.0
 
@@ -636,3 +650,118 @@ class TestWonStaysInCampaignPipeline:
                   outcome=CycleOutcome.LOST, outcome_date=TODAY)
 
         assert _all_three(client_account_a, camp_b, obj_b) == 0.0
+
+
+# ===========================================================================
+# MONEY REQUIRES WORK DONE — the origin is not a free pass
+# ===========================================================================
+#
+# PO rule, final: a campaign claims a deal's VALUE only once it has at least one
+# COMPLETED + SUCCESSFUL activity on that deal. This applies to the ORIGIN
+# campaign too — being born from a campaign no longer contributes money on its
+# own. DECISION_CYCLES is unaffected: it counts what the campaign CREATED,
+# whether or not anyone has worked it since.
+#
+# This also closes two symptoms the PO reported, without touching the write
+# path: a deal could enter a campaign's pipeline as soon as an activity was
+# CREATED (before completion), and stayed there when that activity was
+# cancelled. Both came in through the born-from branch; requiring a completed
+# successful activity removes the leak.
+
+@pytest.mark.django_db
+class TestMoneyRequiresASuccessfulActivity:
+
+    def test_the_origin_alone_no_longer_counts_money(
+        self, user_a, client_account_a, account,
+    ):
+        """A deal born from campaign A, with products, and NOTHING done on it
+        yet: A's pipeline is 0. Before this rule it was the full 60k."""
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        _mk_cycle(user_a, account, client_account_a,
+                  source_campaign=camp_a, amount=Decimal('60000'))
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
+
+    def test_a_successful_activity_of_the_origin_unlocks_the_money(
+        self, user_a, client_account_a, account,
+    ):
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_a, amount=Decimal('60000'))
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
+
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_a, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 60000.0
+
+    def test_an_uncompleted_activity_of_the_origin_does_not_unlock_it(
+        self, user_a, client_account_a, account,
+    ):
+        """The symptom: the money moved as soon as the activity was CREATED."""
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_a, amount=Decimal('60000'))
+        _mk_activity(user_a, account, client_account_a, campaign=camp_a,
+                     cycle=cycle, status=ActivityStatus.PLANNED,
+                     outcome=ActivityOutcome.SUCCESSFUL)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
+
+    def test_a_cancelled_activity_of_the_origin_does_not_unlock_it(
+        self, user_a, client_account_a, account,
+    ):
+        """The other symptom: cancelling the activity left the deal counted."""
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_a, amount=Decimal('60000'))
+        _mk_activity(user_a, account, client_account_a, campaign=camp_a,
+                     cycle=cycle, status=ActivityStatus.CANCELLED,
+                     outcome=ActivityOutcome.SUCCESSFUL)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
+
+    def test_the_rule_applies_to_won_value_too(
+        self, user_a, client_account_a, account,
+    ):
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.REVENUE_WON)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_a, amount=Decimal('40000'),
+                          outcome=CycleOutcome.WON, outcome_date=TODAY)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 0.0
+
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_a, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 40000.0
+
+    def test_DECISION_CYCLES_still_counts_an_unworked_deal(
+        self, user_a, client_account_a, account,
+    ):
+        """The count is about CREATION, not work: a deal the campaign created
+        counts even with no activity at all. This is the asymmetry with money."""
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.DECISION_CYCLES, target=10)
+
+        _mk_cycle(user_a, account, client_account_a,
+                  source_campaign=camp_a, amount=Decimal('60000'))
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 1.0

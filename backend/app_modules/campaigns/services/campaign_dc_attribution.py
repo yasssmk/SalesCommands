@@ -6,9 +6,21 @@ PO rule, per KPI type:
 
 * ``DECISION_CYCLES`` counts what the campaign CREATED — origin only
   (``DecisionCycle.source_campaign``). This module does not apply to it.
-* ``PIPELINE_VALUE`` / ``REVENUE_WON`` count what the campaign CREATED **or**
-  **WORKED**: a cycle's value is claimed when the cycle is born from the
-  campaign OR carries a SUCCESSFUL activity of it.
+* ``PIPELINE_VALUE`` / ``REVENUE_WON`` count what the campaign **WORKED**: a
+  cycle's value is claimed only once the campaign has at least one COMPLETED +
+  SUCCESSFUL activity on that cycle.
+
+BEING THE ORIGIN IS NOT A CLAIM ON THE MONEY (PO, final rule). A cycle born from
+a campaign that nobody has worked yet contributes NOTHING to that campaign's
+pipeline — the campaign gets credit for the value when it has actually moved the
+deal, not for having opened it. The count above is where creation is rewarded;
+these two are where work is.
+
+That single condition also closes two reported symptoms at once, without
+touching any write path: a deal used to enter a campaign's pipeline the moment
+an activity was CREATED (before completion), and to stay there after that
+activity was CANCELLED. Both arrived through the born-from branch, which no
+longer contributes on its own; ``status=COMPLETED`` settles the rest.
 
 A cycle may therefore be claimed by SEVERAL campaigns, and campaign values are
 NOT additive across campaigns. That is intended: two campaigns that both moved a
@@ -32,19 +44,19 @@ progression already uses to complete a contact — paired with
 completed", so the pairing keeps a PLANNED row with a stray outcome from
 attributing.
 
-THREE EDGES, THE SAME THREE AS MEETINGS
----------------------------------------
-Mirrors ``CampaignAnalyticsService._count_meetings``, which already unions them
-because no single field is enough (``Activity.decision_cycle`` and
+HOW AN ACTIVITY BELONGS TO A CAMPAIGN
+-------------------------------------
+Two edges, both taken from ``CampaignAnalyticsService._count_meetings``, which
+unions them because neither field alone is enough (``Activity.campaign`` and
 ``source_activity`` are both nullable):
 
 1. ``Activity.campaign``                 — a campaign activity logged on the cycle;
-2. ``DecisionCycle.source_campaign``     — the born-from branch (a field of the
-   cycle itself, so it is a plain filter here rather than an activity edge);
-3. ``Activity.source_activity.campaign`` — a follow-up born from a campaign
-   activity, on a cycle that never got ``source_campaign``. This is the
-   pre-existing-deal case: the modal sets the cycle but leaves
-   ``Activity.campaign`` None.
+2. ``Activity.source_activity.campaign`` — a follow-up born from a campaign
+   activity. This is the pre-existing-deal case: the modal sets the cycle but
+   leaves ``Activity.campaign`` None.
+
+``DecisionCycle.source_campaign`` was a third edge here until the rule above made
+work, not origin, the condition for money. It still decides DECISION_CYCLES.
 
 ONCE PER CAMPAIGN — THE CORRECTNESS RISK
 ----------------------------------------
@@ -57,8 +69,7 @@ silently and plausibly.
 
 ``Exists`` is what makes that impossible: it is a correlated BOOLEAN subquery, so
 three matching activities and one give the same answer, and the outer row set
-stays one row per cycle. The born-from branch ORs into the same predicate, so a
-cycle that is both born-from and touched-by is still a single row.
+stays one row per cycle.
 """
 
 from django.db.models import Exists, OuterRef, Q, Sum
@@ -89,8 +100,8 @@ def successful_campaign_activity(campaign_id):
     a boolean: the number of matching activities never reaches the outer row set,
     which is precisely what keeps the money from multiplying.
 
-    Edges 1 and 3 of the union (edge 2, born-from, is a field of the cycle and is
-    applied by ``attributed_cycles`` below).
+    Both campaign edges are tested here; the cycle's own ``source_campaign`` is
+    not one of them (see the module docstring).
     """
     return Exists(
         Activity.objects
@@ -107,22 +118,26 @@ def successful_campaign_activity(campaign_id):
 
 
 def attributed_cycles(queryset, campaign_id):
-    """Narrow a DecisionCycle queryset to the cycles ``campaign_id`` may claim:
-    born from it OR carrying a successful activity of it.
+    """Narrow a DecisionCycle queryset to the cycles ``campaign_id`` may claim
+    the VALUE of: those carrying at least one COMPLETED + SUCCESSFUL activity of
+    the campaign.
 
-    Returns a queryset with ONE ROW PER CYCLE — safe to aggregate
-    ``DEAL_VALUE_SUM`` over, and safe to combine with the deal_products join
-    because the added predicate is a scalar subquery, not a join.
+    Being the cycle's ``source_campaign`` is deliberately NOT sufficient — see
+    the module docstring. Origin decides DECISION_CYCLES, work decides the money.
 
-    THE single declaration of the rule: both the campaign LIST path
-    (campaign_objective_progress) and the campaign DETAIL path
-    (CampaignAnalyticsService) call this, so they cannot drift — and a parity
-    test asserts they agree on every objective type.
+    Returns a queryset with ONE ROW PER CYCLE — safe to aggregate over, and safe
+    to combine with the deal_products join, because the predicate is a scalar
+    subquery, not a join.
+
+    THE single declaration of the rule: the campaign LIST path
+    (campaign_objective_progress), the campaign DETAIL path and the campaign
+    DASHBOARD all call this, so they cannot drift — and a parity test asserts
+    they agree on every objective type.
     """
     return (
         queryset
         .annotate(**{TOUCHED_BY_ALIAS: successful_campaign_activity(campaign_id)})
-        .filter(Q(source_campaign_id=campaign_id) | Q(**{TOUCHED_BY_ALIAS: True}))
+        .filter(**{TOUCHED_BY_ALIAS: True})
     )
 
 
