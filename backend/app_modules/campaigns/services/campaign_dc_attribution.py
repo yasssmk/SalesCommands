@@ -61,10 +61,16 @@ stays one row per cycle. The born-from branch ORs into the same predicate, so a
 cycle that is both born-from and touched-by is still a single row.
 """
 
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, OuterRef, Q, Sum
 
 from app_modules.activities.constants import ActivityStatus
 from app_modules.activities.models import Activity
+from app_modules.decision_cycles.constants import CycleOutcome
+from app_modules.decision_cycles.models import DecisionCycle
+from app_modules.decision_cycles.services.deal_value_sql import (
+    DEAL_VALUE_ALIAS,
+    annotate_deal_value,
+)
 
 from .campaign_execution_service import SUCCESSFUL_OUTCOMES
 
@@ -118,3 +124,47 @@ def attributed_cycles(queryset, campaign_id):
         .annotate(**{TOUCHED_BY_ALIAS: successful_campaign_activity(campaign_id)})
         .filter(Q(source_campaign_id=campaign_id) | Q(**{TOUCHED_BY_ALIAS: True}))
     )
+
+
+# A campaign reports a RESULT, not a state (PO): a deal the campaign produced does
+# not vanish from its pipeline the moment it is won. So campaign PIPELINE covers
+# OPEN **or** WON, and campaign WON covers WON — the same won deal counts in both,
+# and that overlap is intended. This is the ONE place the two populations differ
+# from the personal metrics, where pipeline is exclusive (a won deal leaves it):
+# a rep's pipeline answers "what is still to close", a campaign's answers "what
+# did this campaign put on the table". LOST / ON_HOLD / NOT_QUALIFIED are in
+# neither: the campaign produced nothing there.
+_CAMPAIGN_PIPELINE_STATES = Q(outcome__isnull=True) | Q(outcome=CycleOutcome.WON)
+_CAMPAIGN_WON_STATES = Q(outcome=CycleOutcome.WON)
+
+
+def campaign_money(campaign_id, client_id):
+    """``{'pipeline': float, 'won': float}`` for ONE campaign.
+
+    THE canonical campaign money calculation. Every campaign surface calls this
+    — the list card, the detail serializer and the workspace dashboard — so the
+    three cannot show different numbers. Before it existed they each had their
+    own aggregate, and the dashboard's was still origin-only.
+
+    Both figures come from ONE query over the attributed set:
+
+    * ``annotate_deal_value`` gives each cycle its roll-up as a correlated
+      SUBQUERY, so summing it with two different filters cannot fan out — a
+      ``DEAL_VALUE_SUM`` join would multiply each cycle by its line count and
+      make the two sums disagree with the row set they came from;
+    * ``attributed_cycles`` adds the born-from OR successful-activity predicate
+      as an ``Exists``, keeping one row per cycle whatever its activity count.
+
+    No period filter: campaign metrics are all-time by rule.
+    """
+    agg = attributed_cycles(
+        annotate_deal_value(DecisionCycle.objects.filter(client_id=client_id)),
+        campaign_id,
+    ).aggregate(
+        pipeline=Sum(DEAL_VALUE_ALIAS, filter=_CAMPAIGN_PIPELINE_STATES),
+        won=Sum(DEAL_VALUE_ALIAS, filter=_CAMPAIGN_WON_STATES),
+    )
+    return {
+        'pipeline': float(agg['pipeline'] or 0),
+        'won': float(agg['won'] or 0),
+    }

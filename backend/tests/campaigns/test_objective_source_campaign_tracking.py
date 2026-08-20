@@ -21,6 +21,19 @@ SCOPE CHANGE asserted below:
 - DROPPED: a DC merely linked by a campaign activity but whose own
   ``source_campaign`` is NULL is no longer counted.
 
+LATER PO REVISIONS, folded into the expectations below — the ORIGIN branch this
+module was written for is unchanged, but two rules around it moved:
+
+1. The money branches are no longer origin-ONLY: they are origin OR touched-by a
+   SUCCESSFUL, COMPLETED activity of the campaign (campaign_dc_attribution). The
+   "dropped" cohort above still drops HERE because the decoy's activity is
+   neither completed nor successful — attribution widened, but not to any
+   activity. DECISION_CYCLES stays strictly origin-only.
+2. A campaign reports a RESULT, not a state: a WON cycle STAYS in the campaign's
+   PIPELINE_VALUE instead of leaving it on win. So the mixed fixture's pipeline
+   is 1000 (open) + 500 (won) = 1500, where it was 1000. Personal pipeline keeps
+   the exclusive rule; only the campaign side changed.
+
 DB: Postgres (aggregates/subqueries exercised for real).
 """
 
@@ -140,10 +153,13 @@ class TestSourceCampaignAttribution:
         # and other (other campaign) excluded. OLD calc returned 1 (decoy only).
         assert _svc(client_account_a)._count_decision_cycles(camp) == 2
 
-    def test_pipeline_value_sums_source_campaign_open_cycles(self, user_a, client_account_a):
+    def test_pipeline_value_sums_source_campaign_open_and_won_cycles(
+            self, user_a, client_account_a):
         camp = _build_mixed(user_a, client_account_a)
-        # open_dc (1000) only. OLD calc returned 777 (decoy via its campaign activity).
-        assert _svc(client_account_a)._sum_pipeline_value(camp) == 1000.0
+        # open_dc (1000) + won_dc (500): a campaign reports a RESULT, so winning a
+        # deal does not remove it from the campaign's pipeline. Was 1000 when the
+        # campaign side still used the exclusive (personal) rule.
+        assert _svc(client_account_a)._sum_pipeline_value(camp) == 1500.0
 
     def test_revenue_won_sums_source_campaign_won_cycles(self, user_a, client_account_a):
         camp = _build_mixed(user_a, client_account_a)
@@ -156,7 +172,9 @@ class TestSourceCampaignAttribution:
         is NOT attributed anymore (decoy_dc, value 777, is absent from every total)."""
         camp = _build_mixed(user_a, client_account_a)
         svc = _svc(client_account_a)
-        assert svc._sum_pipeline_value(camp) == 1000.0     # 777 not included
+        # 1000 open + 500 won; 777 still absent — the decoy's activity is neither
+        # COMPLETED nor SUCCESSFUL, so the widened attribution does not reach it.
+        assert svc._sum_pipeline_value(camp) == 1500.0
         assert svc._count_decision_cycles(camp) == 2        # decoy not counted
 
 
@@ -184,7 +202,9 @@ class TestContractSourceCampaignAloneCounts:
 
         svc = _svc(client_account_a)
         assert svc._count_decision_cycles(camp) == 2
-        assert svc._sum_pipeline_value(camp) == 300.0
+        # 300 open + 200 won — the won deal stays in the campaign's pipeline
+        # (campaign = result, not state). Was 300 under the exclusive rule.
+        assert svc._sum_pipeline_value(camp) == 500.0
         assert svc._sum_revenue_won(camp) == 200.0
 
     def test_objectives_progress_reflects_source_campaign_dc(self, user_a, client_account_a):

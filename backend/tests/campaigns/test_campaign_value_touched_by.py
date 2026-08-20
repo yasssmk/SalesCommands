@@ -342,21 +342,25 @@ class TestWonMirrorsPipeline:
 
         assert _both(client_account_a, camp_b, obj_b) == 40000.0
 
-    def test_an_open_deal_is_not_in_won_and_a_won_deal_is_not_in_pipeline(
-        self, user_a, client_account_a, account,
-    ):
-        """Exclusivity survives the union."""
+    def test_an_open_deal_is_not_in_won(self, user_a, client_account_a, account):
+        """WON stays selective: an open deal the campaign worked is in its
+        pipeline but not in its won value.
+
+        The converse is NOT true and is asserted in
+        TestWonStaysInCampaignPipeline: a WON deal REMAINS in the campaign
+        pipeline. This test previously asserted that exclusivity in both
+        directions; the PO reversed the pipeline side (a campaign reports a
+        result, not a state), so only the won side remains selective."""
         camp_b = _mk_campaign(user_a, client_account_a, name='B')
-        obj_pipeline = _mk_objective(camp_b, user_a, client_account_a,
-                                     ObjectiveType.PIPELINE_VALUE)
+        obj_won = _mk_objective(camp_b, user_a, client_account_a,
+                                ObjectiveType.REVENUE_WON)
 
-        won = _mk_cycle(user_a, account, client_account_a, name='won',
-                        source_campaign=None, amount=Decimal('40000'),
-                        outcome=CycleOutcome.WON, outcome_date=TODAY)
+        open_dc = _mk_cycle(user_a, account, client_account_a, name='open',
+                            source_campaign=None, amount=Decimal('40000'))
         _mk_activity(user_a, account, client_account_a,
-                     campaign=camp_b, cycle=won, title='on-won')
+                     campaign=camp_b, cycle=open_dc, title='on-open')
 
-        assert _both(client_account_a, camp_b, obj_pipeline) == 0.0
+        assert _both(client_account_a, camp_b, obj_won) == 0.0
 
 
 @pytest.mark.django_db
@@ -469,3 +473,166 @@ class TestQueryCost:
             )
 
         assert batch[camp.id]['current_value'] == 1000.0
+
+
+# ===========================================================================
+# ALL THREE SURFACES — list card, detail serializer, DASHBOARD
+# ===========================================================================
+#
+# Campaign money was computed in THREE places. The parity guard in
+# test_campaign_list_objective_progress.py compares the LIST batch against
+# ``_calculate_objective_value`` (the DETAIL path) — it never touched
+# ``calculate_objective_values``, the batch behind ``get_objectives_progress``,
+# which is what the campaign DASHBOARD renders. That third site stayed
+# origin-only, so the drift was invisible to every existing test and visible to
+# the PO.
+
+def _dashboard_value(ca, campaign, objective_type):
+    """The value the campaign WORKSPACE DASHBOARD renders."""
+    svc = CampaignAnalyticsService(client_id=ca.id)
+    rows = svc.get_objectives_progress(campaign)
+    row = next(r for r in rows if r['objective_type'] == objective_type)
+    return float(row['current_value'])
+
+
+def _all_three(ca, campaign, objective):
+    """list == detail == dashboard, or fail naming which drifted."""
+    detail = _detail_value(ca, campaign, objective)
+    listed = _list_value(ca, campaign)
+    dashboard = _dashboard_value(ca, campaign, objective.objective_type)
+    assert listed == detail, f'list {listed} != detail {detail}'
+    assert dashboard == detail, f'dashboard {dashboard} != detail {detail}'
+    return detail
+
+
+@pytest.mark.django_db
+class TestAllSurfacesAgree:
+
+    def test_the_dashboard_counts_a_touched_by_deal(
+        self, user_a, client_account_a, account,
+    ):
+        """THE bug the PO sees: card and detail moved, the dashboard stayed at 0."""
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=None, amount=Decimal('60000'))
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 60000.0
+
+    def test_the_dashboard_counts_a_touched_by_deal_in_won(
+        self, user_a, client_account_a, account,
+    ):
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.REVENUE_WON)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=None, amount=Decimal('40000'),
+                          outcome=CycleOutcome.WON, outcome_date=TODAY)
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 40000.0
+
+    def test_the_dashboard_does_not_inflate_on_several_activities(
+        self, user_a, client_account_a, account,
+    ):
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=None, amount=Decimal('60000'))
+        for i in range(3):
+            _mk_activity(user_a, account, client_account_a,
+                         campaign=camp_b, cycle=cycle, title=f'a{i}')
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 60000.0
+
+    def test_the_dashboard_keeps_DECISION_CYCLES_origin_only(
+        self, user_a, client_account_a, account,
+    ):
+        camp_a = _mk_campaign(user_a, client_account_a, name='A')
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_a = _mk_objective(camp_a, user_a, client_account_a,
+                              ObjectiveType.DECISION_CYCLES, target=10)
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.DECISION_CYCLES, target=10)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_a, amount=Decimal('60000'))
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle)
+
+        assert _all_three(client_account_a, camp_a, obj_a) == 1.0
+        assert _all_three(client_account_a, camp_b, obj_b) == 0.0
+
+
+# ===========================================================================
+# D3 — a campaign reports a RESULT, not a state: a won deal STAYS in pipeline
+# ===========================================================================
+
+@pytest.mark.django_db
+class TestWonStaysInCampaignPipeline:
+
+    def test_winning_a_deal_does_not_empty_the_campaign_pipeline(
+        self, user_a, client_account_a, account,
+    ):
+        """PO-confirmed: campaign pipeline is what the campaign PRODUCED, so a
+        deal it produced does not vanish the moment it is won. The overlap with
+        WON is intended — the same deal counts in both."""
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_pipeline = _mk_objective(camp_b, user_a, client_account_a,
+                                     ObjectiveType.PIPELINE_VALUE)
+
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_b, amount=Decimal('60000'))
+
+        assert _all_three(client_account_a, camp_b, obj_pipeline) == 60000.0
+
+        cycle.outcome = CycleOutcome.WON
+        cycle.outcome_date = TODAY
+        cycle.save(user=user_a, client_id=client_account_a.id)
+
+        # STILL in pipeline — it did not drop to 0.
+        assert _all_three(client_account_a, camp_b, obj_pipeline) == 60000.0
+
+    def test_the_won_deal_is_in_pipeline_AND_in_won(
+        self, user_a, client_account_a, account,
+    ):
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        cycle = _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp_b, amount=Decimal('60000'),
+                          outcome=CycleOutcome.WON, outcome_date=TODAY)
+        _mk_activity(user_a, account, client_account_a,
+                     campaign=camp_b, cycle=cycle)
+
+        svc = CampaignAnalyticsService(client_id=client_account_a.id)
+        obj_pipeline = _mk_objective(camp_b, user_a, client_account_a,
+                                     ObjectiveType.PIPELINE_VALUE)
+        assert float(svc._calculate_objective_value(camp_b, obj_pipeline)) == 60000.0
+
+        obj_won = CampaignObjective(campaign=camp_b, name='won',
+                                    objective_type=ObjectiveType.REVENUE_WON,
+                                    target_value=100000, is_primary=False)
+        obj_won.save(user=user_a, client_id=client_account_a.id)
+        assert float(svc._calculate_objective_value(camp_b, obj_won)) == 60000.0
+
+    def test_a_LOST_deal_leaves_the_campaign_pipeline(
+        self, user_a, client_account_a, account,
+    ):
+        """Open OR won — a LOST deal is neither, so it drops. The campaign
+        produced nothing there."""
+        camp_b = _mk_campaign(user_a, client_account_a, name='B')
+        obj_b = _mk_objective(camp_b, user_a, client_account_a,
+                              ObjectiveType.PIPELINE_VALUE)
+
+        _mk_cycle(user_a, account, client_account_a,
+                  source_campaign=camp_b, amount=Decimal('60000'),
+                  outcome=CycleOutcome.LOST, outcome_date=TODAY)
+
+        assert _all_three(client_account_a, camp_b, obj_b) == 0.0

@@ -23,14 +23,9 @@ from app_modules.activities.constants import ActivityType, ActivityStatus
 from app_modules.bi import metrics
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
-from app_modules.decision_cycles.services.deal_value_sql import (
-    DEAL_VALUE_ALIAS,
-    DEAL_VALUE_SUM,
-    annotate_deal_value,
-)
 
 from ..constants import DECISION_CYCLE_OBJECTIVE_TYPES
-from .campaign_dc_attribution import attributed_cycles
+from .campaign_dc_attribution import campaign_money
 from ..models import (
     CampaignAccount,
     CampaignAccountStatus,
@@ -293,26 +288,21 @@ class CampaignAnalyticsService:
 
         # DecisionCycle family — one conditional aggregate for the up-to-three
         # cycle-based metrics present (count + two filtered sums).
-        if present_types & DECISION_CYCLE_OBJECTIVE_TYPES:
-            # Amounts are the DERIVED product roll-up (TD-75), summed off the
-            # per-cycle annotation rather than a deal_products JOIN: a join
-            # would multiply each cycle row by its line count and inflate
-            # dc_count. The annotation is one scalar subquery per cycle, so the
-            # count stays exact.
-            agg = (
-                annotate_deal_value(
-                    DecisionCycle.objects
-                    .filter(client_id=self.client_id, source_campaign=campaign)
-                )
-                .aggregate(
-                    dc_count=Count('id'),
-                    pipeline=Sum(DEAL_VALUE_ALIAS, filter=Q(outcome__isnull=True)),
-                    revenue=Sum(DEAL_VALUE_ALIAS, filter=Q(outcome=CycleOutcome.WON)),
-                )
-            )
-            value_by_type[ObjectiveType.DECISION_CYCLES] = agg['dc_count'] or 0
-            value_by_type[ObjectiveType.PIPELINE_VALUE] = float(agg['pipeline'] or 0)
-            value_by_type[ObjectiveType.REVENUE_WON] = float(agg['revenue'] or 0)
+        # DECISION_CYCLES is ORIGIN-ONLY — what the campaign CREATED — so it
+        # keeps its own count over source_campaign. It can no longer share an
+        # aggregate with the money, whose population is the wider attributed set.
+        if ObjectiveType.DECISION_CYCLES in present_types:
+            value_by_type[ObjectiveType.DECISION_CYCLES] = self._count_decision_cycles(campaign)
+
+        # The money comes from the ONE canonical calculation
+        # (campaign_dc_attribution.campaign_money) that the list card and the
+        # detail serializer also call. This branch used to carry its own
+        # origin-only aggregate, which is why the dashboard kept showing 0 for a
+        # deal the campaign had worked but not created.
+        if present_types & {ObjectiveType.PIPELINE_VALUE, ObjectiveType.REVENUE_WON}:
+            money = campaign_money(campaign.id, self.client_id)
+            value_by_type[ObjectiveType.PIPELINE_VALUE] = money['pipeline']
+            value_by_type[ObjectiveType.REVENUE_WON] = money['won']
 
         # Activity / CampaignAccount sources — distinct populations, one query
         # each, reusing the existing per-campaign helpers.
@@ -659,31 +649,24 @@ class CampaignAnalyticsService:
         )
 
     def _sum_pipeline_value(self, campaign):
-        """PIPELINE_VALUE: Σ total_deal_value of OPEN cycles the campaign may
-        claim — born from it OR carrying a SUCCESSFUL activity of it.
+        """PIPELINE_VALUE: the canonical campaign pipeline — Σ total_deal_value of
+        the cycles this campaign may claim that are OPEN or WON.
 
-        The attribution is NOT stated here: it is
-        ``campaign_dc_attribution.attributed_cycles``, the single declaration the
-        LIST path calls too. It narrows the queryset with a correlated Exists, so
-        the result is one row per cycle and DEAL_VALUE_SUM cannot multiply by a
-        cycle's activities or by its product lines.
+        Neither the attribution nor the population is stated here: both live in
+        ``campaign_dc_attribution.campaign_money``, the single calculation the
+        list card and the dashboard also call.
 
-        The canonical ``metrics.pipeline_value`` is deliberately NOT used with
-        ``source_campaign=``: that argument means origin-only and is shared with
-        personal quotas, which must keep it.
+        The canonical ``metrics.pipeline_value`` is deliberately NOT used: its
+        ``source_campaign=`` means origin-only, and its population is exclusive
+        (a won deal leaves the pipeline) — correct for a rep, wrong for a
+        campaign, and shared with personal quotas that must keep both.
         """
-        total = attributed_cycles(
-            self._dc_base_queryset().filter(outcome__isnull=True), campaign.id,
-        ).aggregate(total=DEAL_VALUE_SUM)['total']
-        return float(total or 0)
+        return campaign_money(campaign.id, self.client_id)['pipeline']
 
     def _sum_revenue_won(self, campaign):
-        """REVENUE_WON: Σ total_deal_value of WON cycles the campaign may claim —
-        same union as _sum_pipeline_value, WON instead of open."""
-        total = attributed_cycles(
-            self._dc_base_queryset().filter(outcome=CycleOutcome.WON), campaign.id,
-        ).aggregate(total=DEAL_VALUE_SUM)['total']
-        return float(total or 0)
+        """REVENUE_WON: the canonical campaign won value — same attributed set,
+        WON cycles only."""
+        return campaign_money(campaign.id, self.client_id)['won']
 
     def _count_new_logos(self, campaign):
         """

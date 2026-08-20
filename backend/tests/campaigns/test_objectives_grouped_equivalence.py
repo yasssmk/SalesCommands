@@ -153,7 +153,10 @@ class TestGroupedObjectiveValuesEquivalence:
             obj.objective_type: grouped[obj.id] for obj in objectives
         }
         assert by_type[ObjectiveType.DECISION_CYCLES] == 3
-        assert by_type[ObjectiveType.PIPELINE_VALUE] == 2000.0
+        # 2000 open + 900 won: a campaign reports a RESULT, so a won deal stays
+        # in its pipeline instead of leaving on win (it is in BOTH figures). Was
+        # 2000 when the campaign side used the personal, exclusive rule.
+        assert by_type[ObjectiveType.PIPELINE_VALUE] == 2900.0
         assert by_type[ObjectiveType.REVENUE_WON] == 900.0
         assert by_type[ObjectiveType.MEETINGS] == 1
         assert by_type[ObjectiveType.NEW_LOGOS] == 1
