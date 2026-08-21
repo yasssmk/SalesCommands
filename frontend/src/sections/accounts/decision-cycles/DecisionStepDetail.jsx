@@ -1,3 +1,4 @@
+// LEGACY: remplacé par StepDetailDrawer, conservé temporairement
 // frontend/src/sections/accounts/decision-cycles/DecisionStepDetail.jsx
 /**
  * Decision Step Detail Component
