@@ -21,6 +21,12 @@ from .deal_value_sql import (
     annotate_deal_value,
     deal_value_for,
 )
+from .close_date_sql import (
+    CLOSE_DATE_ALIAS,
+    annotate_effective_close_date,
+    effective_close_date_expr,
+    effective_close_date_for,
+)
 
 __all__ = [
     'CompletenessScoreService',
@@ -35,4 +41,8 @@ __all__ = [
     'DEAL_VALUE_SUM',
     'annotate_deal_value',
     'deal_value_for',
+    'CLOSE_DATE_ALIAS',
+    'annotate_effective_close_date',
+    'effective_close_date_expr',
+    'effective_close_date_for',
 ]

@@ -1,8 +1,10 @@
 // frontend/src/api/objectives/objectives.js
 //
 // SWR data layer for the personal Objectives (backend module `quotas/`, endpoint
-// /quotas/quotas/). Named `objectives` to stay distinct from the legacy
-// api/quotas/quotas.js, which reads the OLD end_users sales-quotas.
+// /quotas/quotas/). Named `objectives` because that is what the product calls
+// them; the backend module is `quotas` for historical reasons. The legacy
+// api/quotas/quotas.js — which read the OLD end_users sales-quotas on the
+// pre-Sprint-C rules — was deleted with the Home cards it fed.
 //
 // Mirrors api/territories/territories.js: a tenant-keyed SWR list hook plus
 // create/update/delete async helpers that revalidate the list on success.

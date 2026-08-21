@@ -102,7 +102,21 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Estimated Value'),
         help_text=_('Estimated deal value for pipeline/revenue tracking in campaigns')
     )
-    
+
+    expected_close_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_('Expected Close Date'),
+        help_text=_(
+            'When the rep expects this deal to close. MANUAL and optional: it '
+            'is the FIRST level of the effective close date '
+            '(services/close_date_sql.py) — when set it wins, otherwise the '
+            'date is derived from the CLOSING step\'s last activity. That '
+            'effective date is what windows a personal PIPELINE objective, so '
+            'setting it here is how a rep puts a deal in a given period.'
+        )
+    )
+
     # ==========================================================================
     # CYCLE OUTCOME (two-layer architecture)
     # ==========================================================================
@@ -225,6 +239,34 @@ class DecisionCycle(ModuleBaseModel, ClientScopeManager.ModelMixin):
         if annotated is not None:
             return annotated
         return deal_value_for(self)
+
+    @property
+    def effective_close_date(self):
+        """When this deal is expected to close — the manual date if the rep set
+        one, else the date of the CLOSING step's last activity, else None.
+
+        THE single source of truth for a DC close date. The rule lives once, in
+        SQL, in services/close_date_sql.py — this accessor never re-implements
+        it, so a single-cycle read and the pipeline's mass windowing can never
+        disagree. Same shape, and same reason, as ``total_deal_value`` above.
+
+        Cost: FREE on a queryset annotated with
+        ``annotate_effective_close_date()``; ONE query otherwise (and zero when
+        the manual field is set). Never read this in a loop — annotate instead.
+
+        Distinct from ``outcome_date``, which records when a deal ACTUALLY
+        closed and is what windows the WON metrics.
+        """
+        from .services.close_date_sql import CLOSE_DATE_ALIAS, effective_close_date_for
+
+        # hasattr, NOT `getattr(...) is not None`: unlike the deal roll-up (which
+        # is zero-coalesced and never NULL), a NULL close date is the ORDINARY
+        # case — a deal nobody dated. Testing the value would treat every such
+        # annotated row as un-annotated and fire one query per row, which is
+        # exactly the N+1 the DC list's own guard catches.
+        if hasattr(self, CLOSE_DATE_ALIAS):
+            return getattr(self, CLOSE_DATE_ALIAS)
+        return effective_close_date_for(self)
 
     @property
     def steps_count(self):

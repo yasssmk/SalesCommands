@@ -92,6 +92,39 @@ export const revalidateMultiple = (prefixes, options = {}) => {
   });
 };
 
+/**
+ * ✅ SURFACES QUI AFFICHENT DES MÉTRIQUES DÉRIVÉES
+ *
+ * The read surfaces whose numbers are COMPUTED from decision cycles, deal
+ * products, activities and account conversions — rather than returned by the
+ * endpoint that was just written to.
+ *
+ * A write helper revalidates its own keys, which is why the DC list refreshes
+ * but the campaign card does not: the card lives behind /campaigns/ and nothing
+ * told SWR that a product write changed it. Any helper that mutates a metric
+ * INPUT should append these, so the card refreshes on save instead of on focus.
+ *
+ * Matched by prefix (see matchKey), so '/campaigns/' covers the list, every
+ * detail and every dashboard, and '/bi/kpi/' covers both the single-KPI reads
+ * and the Home batch.
+ */
+export const METRIC_SURFACE_PREFIXES = [
+  '/campaigns/',       // campaign cards, detail, workspace dashboard
+  '/quotas/quotas/',   // personal objectives (My Objectives + the Home block)
+  '/bi/kpi/',          // every KPI read, single and batched
+];
+
+/**
+ * Revalide les surfaces de métriques dérivées (voir METRIC_SURFACE_PREFIXES).
+ *
+ * @param {string[]} extraPrefixes - Prefixes propres à l'appelant, revalidés
+ *                                   dans la même opération.
+ */
+export const revalidateMetricSurfaces = (extraPrefixes = [], options = {}) => {
+  return revalidateMultiple([...extraPrefixes, ...METRIC_SURFACE_PREFIXES], options);
+};
+
+
 
 // ==============================|| HANDLE BULK TIMEOUT ||============================== //
 

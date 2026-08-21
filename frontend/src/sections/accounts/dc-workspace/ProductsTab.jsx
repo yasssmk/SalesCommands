@@ -3,7 +3,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 
 // MUI
 import Autocomplete from "@mui/material/Autocomplete";
@@ -47,18 +47,12 @@ import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
+import formatAmount from "utils/formatAmount";
 
-// ==============================|| HELPERS ||============================== //
-
-function formatCurrency(value) {
-  if (value === null || value === undefined) return "—";
-  const num = parseFloat(value);
-  if (isNaN(num)) return "—";
-  return num.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+// Amounts are rendered by the shared helper (utils/formatAmount) with the
+// tenant currency the payload carries — the same helper and the same currency
+// as the DC list and the workspace header, so one deal reads identically on all
+// three. Lines carry their own `currency`; the deal total uses the cycle's.
 
 // ==============================|| ADD / EDIT DIALOG ||============================== //
 
@@ -77,12 +71,25 @@ function ProductFormDialog({
   );
   const [quantity, setQuantity] = useState(initialValues?.quantity ?? 1);
   const [unitPrice, setUnitPrice] = useState(initialValues?.unitPrice ?? "");
+  const [discount, setDiscount] = useState(initialValues?.discount ?? "");
   const [notes, setNotes] = useState(initialValues?.notes ?? "");
+
+  // 0-100, the same bounds the backend enforces
+  // (serializers.validate_discount_percent_range + the DB CheckConstraint
+  // deal_product_discount_percent_bounds). `inputProps.max` only constrains the
+  // spinner — it does not stop a pasted 150 — so the value is checked here too
+  // and submission is blocked, turning what would be a 400 into an inline
+  // message. The backend check stays the real backstop.
+  const discountError =
+    discount !== "" && (Number.isNaN(Number(discount)) || Number(discount) < 0 || Number(discount) > 100);
 
   const handleSubmit = () => {
     const payload = {
       quantity: parseInt(quantity, 10) || 1,
       unit_price: unitPrice !== "" ? unitPrice : null,
+      // Empty means "no discount": the column defaults to 0, and sending 0
+      // explicitly is what CLEARS a discount on edit (null would be rejected).
+      discount_percent: discount !== "" ? discount : 0,
       notes: notes.trim(),
     };
     if (!editMode && selectedProduct) {
@@ -91,7 +98,7 @@ function ProductFormDialog({
     onSubmit(payload);
   };
 
-  const canSubmit = editMode || Boolean(selectedProduct);
+  const canSubmit = (editMode || Boolean(selectedProduct)) && !discountError;
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -143,6 +150,17 @@ function ProductFormDialog({
               : "Catalog default"
           }
           inputProps={{ min: 0, step: "0.01" }}
+        />
+        <TextField
+          label="Discount %"
+          type="number"
+          size="small"
+          value={discount}
+          onChange={(e) => setDiscount(e.target.value)}
+          placeholder="0"
+          inputProps={{ min: 0, max: 100, step: "0.01" }}
+          error={discountError}
+          helperText={discountError ? "Discount must be between 0 and 100" : " "}
         />
         <TextField
           label="Notes"
@@ -242,15 +260,16 @@ export default function ProductsTab({ cycleId, cycle }) {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState(null);
 
-  // Totals
-  const dealTotal = useMemo(() => {
-    if (!products || products.length === 0) return 0;
-    return products.reduce((sum, p) => sum + (parseFloat(p.line_total) || 0), 0);
-  }, [products]);
-
-  const estimatedValue = cycle?.estimated_value
-    ? parseFloat(cycle.estimated_value)
-    : null;
+  // The deal total comes from the SERVER — `total_deal_value`, the derived
+  // roll-up declared once in decision_cycles/services/deal_value_sql.py and now
+  // served on the cycle payload. It is NOT re-summed here: a second
+  // implementation in JavaScript would drift the moment the formula gains a
+  // term. `currency` is its unit, resolved from the tenant server-side.
+  //
+  // estimated_value is deliberately not displayed any more: no runtime path
+  // populates it (TD-75), so the "Estimated value" line it fed was always dead.
+  const dealTotal = cycle?.total_deal_value ?? null;
+  const dealCurrency = cycle?.currency ?? null;
 
   // Handlers
   const handleAdd = useCallback(
@@ -402,6 +421,7 @@ export default function ProductsTab({ cycleId, cycle }) {
                   <TableCell>Product</TableCell>
                   <TableCell align="right">Qty</TableCell>
                   <TableCell align="right">Unit Price</TableCell>
+                  <TableCell align="right">Discount</TableCell>
                   <TableCell align="right">Line Total</TableCell>
                   <TableCell>Notes</TableCell>
                   <TableCell align="center" sx={{ width: 80 }}>
@@ -419,10 +439,21 @@ export default function ProductsTab({ cycleId, cycle }) {
                     </TableCell>
                     <TableCell align="right">{p.quantity}</TableCell>
                     <TableCell align="right">
-                      {formatCurrency(p.unit_price || p.product_catalog_entry_detail?.default_unit_price)}
+                      {formatAmount(
+                        p.unit_price || p.product_catalog_entry_detail?.default_unit_price,
+                        p.currency,
+                      )}
+                    </TableCell>
+                    {/* Without this column a discounted line's total does not
+                        match Qty x Unit Price, with nothing on screen to explain
+                        the gap. */}
+                    <TableCell align="right">
+                      {Number(p.discount_percent) > 0
+                        ? `${Number(p.discount_percent)}%`
+                        : "\u2014"}
                     </TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600 }}>
-                      {formatCurrency(p.line_total)}
+                      {formatAmount(p.line_total, p.currency)}
                     </TableCell>
                     <TableCell>
                       <Typography
@@ -471,22 +502,12 @@ export default function ProductsTab({ cycleId, cycle }) {
           <Stack spacing={0.5} alignItems="flex-end" sx={{ pr: 2 }}>
             <Stack direction="row" spacing={2} alignItems="baseline">
               <Typography variant="body2" color="text.secondary">
-                Products total:
+                Deal total:
               </Typography>
               <Typography variant="subtitle1" fontWeight={700}>
-                {formatCurrency(dealTotal)}
+                {formatAmount(dealTotal, dealCurrency)}
               </Typography>
             </Stack>
-            {estimatedValue !== null && (
-              <Stack direction="row" spacing={2} alignItems="baseline">
-                <Typography variant="body2" color="text.secondary">
-                  Estimated value:
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {formatCurrency(estimatedValue)}
-                </Typography>
-              </Stack>
-            )}
           </Stack>
         </>
       )}
@@ -519,6 +540,7 @@ export default function ProductsTab({ cycleId, cycle }) {
             product: editProduct.product_catalog_entry_detail,
             quantity: editProduct.quantity,
             unitPrice: editProduct.unit_price || "",
+            discount: editProduct.discount_percent ?? "",
             notes: editProduct.notes || "",
           }}
         />
@@ -542,6 +564,7 @@ export default function ProductsTab({ cycleId, cycle }) {
 ProductsTab.propTypes = {
   cycleId: PropTypes.string.isRequired,
   cycle: PropTypes.shape({
-    estimated_value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    total_deal_value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    currency: PropTypes.string,
   }),
 };

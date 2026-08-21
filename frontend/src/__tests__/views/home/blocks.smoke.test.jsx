@@ -25,7 +25,6 @@ import TodoBlock from 'sections/home/TodoBlock';
 import ProgressBlock from 'sections/home/ProgressBlock';
 import TeamCampaignsBlock from 'sections/home/TeamCampaignsBlock';
 import TeamTerritoriesBlock from 'sections/home/TeamTerritoriesBlock';
-import QuotaBlock from 'sections/home/QuotaBlock';
 
 afterEach(() => cleanup());
 
@@ -224,22 +223,5 @@ describe('TeamTerritoriesBlock — the manager territory aggregate', () => {
     );
     expect(screen.getByText('Team territories')).toBeInTheDocument();
     expect(screen.getByText('No territories yet.')).toBeInTheDocument();
-  });
-});
-
-describe('QuotaBlock', () => {
-  it('renders quota attainment with the remaining framing near the finish', () => {
-    const quotas = [
-      { entity: { id: 1, name: 'Meetings Q3' }, result: { value: 80, meta: { current: 8, target: 10, target_type: 'meetings' } } },
-    ];
-    render(<QuotaBlock quotas={quotas} loading={false} />);
-    expect(screen.getByText('Meetings Q3')).toBeInTheDocument();
-    expect(screen.getByText('Only 2 left')).toBeInTheDocument();
-    expect(screen.getByText('8 of 10')).toBeInTheDocument();
-  });
-
-  it('renders an empty state with no active quota', () => {
-    render(<QuotaBlock quotas={[]} loading={false} />);
-    expect(screen.getByText('No active quota for this period.')).toBeInTheDocument();
   });
 });

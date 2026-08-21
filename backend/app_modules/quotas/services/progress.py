@@ -8,7 +8,13 @@ bi) because quotas depends on bi/metrics — the reverse would be circular.
 
 Perimeter rule (PO decision) — the base data a quota is measured over depends on
 the TIER OF ITS OWNER, not on who is looking:
-- individual owner -> the owner's own data (metric ``user=owner``);
+- individual owner -> the owner's own data (metric ``user=owner``). "Own" is
+  declared in bi/metrics/attribution_scope and is not one rule for all five:
+  the metrics measuring a DEAL (pipeline, won, new logos) take the union owner
+  OR creator OR account owner, so a deal handed from an SDR to an AE stays in
+  BOTH their attainments; the metrics counting an ACT (decision cycles,
+  meetings) take ``created_by``, because one person opens a deal and one person
+  holds a meeting;
 - manager owner    -> the whole SUBTREE rooted at the owner's team node: the
   node's members plus every descendant team's members, recursively to the leaves
   (``Team`` is a self-FK hierarchy). The objective is the manager's, but its
@@ -34,33 +40,53 @@ from app_modules.accounts.models import CompanyAccount
 from app_modules.activities.models import Activity
 from app_modules.bi import metrics
 from app_modules.bi.metrics import MetricKey
+from app_modules.bi.metrics.attribution_scope import (
+    account_scope_q_for_teams,
+    creator_scope_q_for_teams,
+    cycle_scope_q_for_teams,
+)
 from app_modules.decision_cycles.models import DecisionCycle
 
 
-# Per-metric wiring: the canonical function, its base model, and the field that
-# reaches the OWNER's team from that base (for the manager perimeter). The owner
-# path mirrors each metric's own ``user=`` filter: DC metrics own on ``owner``,
-# MEETINGS on the activity's cycle owner, NEW_LOGOS on ``account_owner``.
+# Per-metric wiring: the canonical function, its base model, and the predicate
+# that bounds that base to a TEAM SUBTREE (for the manager perimeter).
+#
+# The team predicate is the queryset-level twin of the metric's own ``user=``
+# filter — the SAME rule with ``= user`` replaced by ``__team_id__in``, taken
+# from bi/metrics/attribution_scope so the personal and manager readings cannot
+# drift. It used to be a single field path per metric, which was only expressible
+# while a metric belonged to exactly one owner field.
+#
+# Two rules, matching the two kinds of metric: the ones measuring a DEAL take the
+# three-branch union, the ones counting an ACT take its creator.
 _SPEC = {
-    MetricKey.DECISION_CYCLES: (metrics.decision_cycles, DecisionCycle, 'owner__team_id'),
-    MetricKey.LEADS: (metrics.leads, DecisionCycle, 'owner__team_id'),
-    MetricKey.PIPELINE_VALUE: (metrics.pipeline_value, DecisionCycle, 'owner__team_id'),
-    MetricKey.REVENUE_WON: (metrics.revenue_won, DecisionCycle, 'owner__team_id'),
-    MetricKey.MEETINGS: (metrics.meetings, Activity, 'decision_step__cycle__owner__team_id'),
-    MetricKey.NEW_LOGOS: (metrics.new_logos, CompanyAccount, 'account_owner__team_id'),
+    MetricKey.DECISION_CYCLES: (metrics.decision_cycles, DecisionCycle,
+                                creator_scope_q_for_teams),
+    MetricKey.PIPELINE_VALUE: (metrics.pipeline_value, DecisionCycle,
+                               cycle_scope_q_for_teams),
+    MetricKey.REVENUE_WON: (metrics.revenue_won, DecisionCycle,
+                            cycle_scope_q_for_teams),
+    MetricKey.MEETINGS: (metrics.meetings, Activity,
+                         creator_scope_q_for_teams),
+    MetricKey.NEW_LOGOS: (metrics.new_logos, CompanyAccount,
+                          account_scope_q_for_teams),
 }
 
 
 @dataclass(frozen=True)
 class QuotaProgress:
-    """Progress of one quota. ``ratio`` is value/target, NOT clamped."""
+    """Progress of one quota. ``ratio`` is value/target, NOT clamped, so
+    over-achievement stays visible.
+
+    No ``is_over_achieved`` helper: the serializer emits ``current_value`` and
+    ``progress_ratio`` only (quotas/serializers.py:35-36), and the UI decides
+    what counts as over-achieved from the ratio
+    (frontend GoalProgressRow.jsx:35). One rule, one place — the helper here was
+    a second copy that nothing in production read.
+    """
     current_value: float
     target_value: float
     ratio: Optional[float]        # None when target_value <= 0 (undefined)
-
-    @property
-    def is_over_achieved(self) -> bool:
-        return self.ratio is not None and self.ratio > 1.0
 
 
 def _owner_tier(owner) -> str:
@@ -126,15 +152,21 @@ def compute_metric_for_team_node(metric, team_id, client_id, *, period=None,
     only the current manager's. Sub-step 5 reuses this to decompose a manager's
     aggregate by direct child node.
 
-    The perimeter is expressed by bounding the base queryset to the subtree's
-    owners (``<owner>__team_id__in``); the canonical function then runs its own
-    isolated aggregate — no fan-out join. One query for the subtree ids + one for
-    the metric, independent of the tree depth."""
-    fn, model, team_field = _SPEC[metric]
+    The perimeter is expressed by bounding the base queryset with the metric's
+    team predicate (attribution_scope, the widened form of its own ``user=``
+    rule); the canonical function then runs its own isolated aggregate — no
+    fan-out join. One query for the subtree ids + one for the metric,
+    independent of the tree depth.
+
+    Rows are DEDUPED, not summed per member: a deal created by an SDR and owned
+    by an AE who are both in the subtree is ONE row here, counted once, while it
+    counts for each of the two reps individually. The team has one deal; the two
+    reps each delivered it. See attribution_scope for why both are right."""
+    fn, model, team_q = _SPEC[metric]
     ids = team_subtree_ids(team_id, client_id)
     if not ids:
         return fn(model.objects.none(), period=period, source_campaign=source_campaign)
-    base = model.objects.filter(client_id=client_id, **{f'{team_field}__in': ids})
+    base = model.objects.filter(client_id=client_id).filter(team_q(ids))
     return fn(base, period=period, source_campaign=source_campaign)
 
 
@@ -142,8 +174,19 @@ def _compute_value(metric, owner, period, source_campaign) -> float:
     """Run the canonical metric for one (metric, owner-perimeter, window,
     campaign). One isolated metric call — the perimeter is expressed by bounding
     the base queryset (team) or via the metric's own ``user=`` filter
-    (individual), never a fan-out join."""
-    fn, model, team_field = _SPEC[metric]
+    (individual), never a fan-out join.
+
+    A metric this dispatch does not know reports 0, it does not raise.
+    ``Quota.metric`` is a plain CharField — ``choices`` is checked on write and
+    never enforced by the database — so a row saved under a metric that has
+    since been retired (LEADS) outlives the vocabulary. Raising here would take
+    down the whole objectives list over one dead row instead of just that row.
+    Nothing is deleted or rewritten: the stale row stays visible, at 0 against
+    its original target, which is what makes it findable."""
+    spec = _SPEC.get(metric)
+    if spec is None:
+        return 0.0
+    fn, model, _team_q = spec
     client_id = owner.client_account_id
     tier = _owner_tier(owner)
 

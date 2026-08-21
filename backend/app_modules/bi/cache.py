@@ -31,9 +31,9 @@ from typing import Optional
 from core.cache_utils import (
     _is_redis_backend,
     build_drf_cache_key,
+    build_tag_signature,
     cache_get_set,
     get_permissions_version,
-    get_tag_version,
 )
 
 from . import compute
@@ -71,10 +71,8 @@ def build_kpi_cache_key(definition: KPIDefinition, auth_ctx, scope: str,
     primary_tag = definition.cache_tags[0] if definition.cache_tags else None
 
     # Version signature across ALL cache_tags (not just the primary), so a bump
-    # of any of them changes the key.
-    tag_sig = ",".join(
-        f"{t}={get_tag_version(client_id, t)}" for t in definition.cache_tags
-    )
+    # of any of them changes the key. Same helper the campaign read caches use.
+    tag_sig = build_tag_signature(client_id, definition.cache_tags)
     extra = (
         f"scope={scope}|period={_period_token(period)}"
         f"|params={_params_token(params)}|tags={tag_sig}"

@@ -101,6 +101,15 @@ class ActivityCreationService:
             contact_ids = list(activity_data.get('contact_ids', []))
             cycle_id = activity_data.get('decision_cycle_id')
             step_id = activity_data.get('decision_step_id')
+            source_activity_id = activity_data.get('source_activity_id')
+
+            # The campaign this activity comes from, resolved BEFORE step 2 so a
+            # cycle created below can be stamped with its origin at birth.
+            # DecisionCycle.source_campaign answers "which campaign CREATED this
+            # deal" and is the whole basis of the DECISION_CYCLES objective, so
+            # it is written exactly once, on a cycle that did not exist before.
+            # A cycle that already exists is NEVER re-parented — see _create_cycle.
+            origin_campaign_id = self._campaign_of(source_activity_id)
             
             # ==================================================================
             # STEP 1: Create Contact (if inline_contact provided)
@@ -119,7 +128,8 @@ class ActivityCreationService:
             # STEP 2: Create DecisionCycle (if inline_cycle provided)
             # ==================================================================
             if inline_cycle:
-                cycle = self._create_cycle(inline_cycle, account_id)
+                cycle = self._create_cycle(inline_cycle, account_id,
+                                           source_campaign_id=origin_campaign_id)
                 created_entities['cycle'] = cycle
                 cycle_id = str(cycle.id)
                 
@@ -186,8 +196,6 @@ class ActivityCreationService:
             # ==================================================================
             # STEP 4: Create Activity
             # ==================================================================
-            source_activity_id = activity_data.get('source_activity_id')
-
             activity = self._create_activity(
                 activity_data=activity_data,
                 contact_ids=contact_ids,
@@ -197,27 +205,18 @@ class ActivityCreationService:
                 source_activity_id=source_activity_id,
             )
 
-            # Backfill source_campaign on the cycle when activity originates from a campaign.
-            # Covers both: inline cycle creation AND linking to an existing cycle.
-            if source_activity_id and cycle_id:
-                source_act = Activity.objects.filter(
-                    id=source_activity_id,
-                    client_id=self.client_id,
-                ).select_related('campaign').first()
-
-                if source_act and source_act.campaign_id:
-                    # Resolve cycle instance — prefer already-created inline cycle
-                    cycle_instance = created_entities.get('cycle')
-                    if not cycle_instance:
-                        cycle_instance = DecisionCycle.objects.filter(
-                            id=cycle_id,
-                            client_id=self.client_id,
-                        ).first()
-
-                    if cycle_instance and not cycle_instance.source_campaign_id:
-                        cycle_instance.source_campaign_id = source_act.campaign_id
-                        cycle_instance.save(update_fields=['source_campaign_id'])
-
+            # NO BACKFILL HERE. This used to write source_campaign on whatever
+            # cycle the activity pointed at, "covering both inline cycle creation
+            # AND linking to an existing cycle" — so a PRE-EXISTING deal silently
+            # became "created by" a campaign that had merely touched it, at
+            # activity-creation time and with no completed work. Only the first
+            # half was legitimate, and it now happens above, at construction.
+            #
+            # Campaign VALUE no longer depends on source_campaign at all
+            # (campaigns/services/campaign_dc_attribution.py: money requires a
+            # COMPLETED + SUCCESSFUL activity of the campaign), so a touched
+            # pre-existing deal still counts in that campaign's pipeline —
+            # through work, not through a rewritten origin.
 
             created_entities['activity'] = activity
             
@@ -296,7 +295,23 @@ class ActivityCreationService:
                 ActivityErrorMessages.CONTACT_CREATION_FAILED
             )
     
-    def _create_cycle(self, data: dict, account_id: str) -> DecisionCycle:
+    def _campaign_of(self, source_activity_id):
+        """The campaign of the activity this one is created FROM, or None.
+
+        One query, and only when a source activity was named. Returns the id so
+        the caller can stamp a NEW cycle without holding the instance.
+        """
+        if not source_activity_id:
+            return None
+        return (
+            Activity.objects
+            .filter(id=source_activity_id, client_id=self.client_id)
+            .values_list('campaign_id', flat=True)
+            .first()
+        )
+
+    def _create_cycle(self, data: dict, account_id: str,
+                      source_campaign_id=None) -> DecisionCycle:
         """
         Create a decision cycle with auto-created pipeline steps.
         
@@ -322,6 +337,10 @@ class ActivityCreationService:
                 name=name,
                 is_active=True,
                 owner=self.user,
+                # Origin, stamped at BIRTH: this cycle did not exist before the
+                # campaign activity that is creating it, so the campaign really
+                # did create it. None when the activity carries no campaign.
+                source_campaign_id=source_campaign_id,
                 created_by=self.user,
                 updated_by=self.user,
             )
@@ -436,7 +455,26 @@ class ActivityCreationService:
                 updated_by=self.user,
             )
             activity.save()
-            
+
+            # Re-read the row so the instance carries DB-TYPED values.
+            #
+            # Every field above is assigned RAW from the JSON payload, so
+            # due_date / scheduled_date / scheduled_time arrive as STRINGS.
+            # save() coerces on the way OUT to SQL, but Django never re-reads,
+            # so without this the returned instance keeps the strings — and the
+            # view serialises THIS instance (views.py create_with_entities),
+            # where ActivitySerializer.is_overdue evaluates
+            # ``due_date < timezone.now().date()`` and raised
+            # ``'<' not supported between instances of 'str' and 'datetime.date'``.
+            # Since that view is @transaction.atomic, the TypeError rolled the
+            # whole operation back: a 500 AND no activity, no inline cycle.
+            #
+            # One re-read rather than coercing the two known date fields: it
+            # covers every field, including any added later, at the single point
+            # where an unvalidated payload becomes a model instance. The cost is
+            # one query on a single-object creation path.
+            activity.refresh_from_db()
+
             # Add contacts M2M
             if contact_ids:
                 contacts = Contact.objects.filter(

@@ -20,14 +20,19 @@ import pytest
 from django.utils import timezone
 
 from app_modules.accounts.models import CompanyAccount
-from app_modules.activities.constants import ActivityStatus, ActivityType
+from app_modules.activities.constants import (
+    ActivityOutcome, ActivityStatus, ActivityType,
+)
 from app_modules.activities.models import Activity
 from app_modules.campaigns.constants import (
     CampaignAccountStatus,
+    CampaignContactStatus,
     CampaignType,
     ObjectiveType,
 )
-from app_modules.campaigns.models import Campaign, CampaignAccount, CampaignObjective
+from app_modules.campaigns.models import (
+    Campaign, CampaignAccount, CampaignContact, CampaignObjective,
+)
 from app_modules.campaigns.services.campaign_analytics_service import (
     CampaignAnalyticsService,
 )
@@ -53,7 +58,9 @@ def _seed_all_types(user, ca):
     )
     camp.save(user=user, client_id=ca.id)
 
-    # A CLIENT account with a COMPLETED CampaignAccount -> NEW_LOGOS = 1.
+    # An account IMPORTED as a client: a completed CampaignAccount on it used to
+    # make it a "new logo" under the old proxy. It has no became_client_at, so it
+    # never transitioned and is NOT a logo — the conversion below is.
     client_acc = CompanyAccount(
         company_name="ClientCo", has_buying_decision=True, account_owner=user, type="CLIENT"
     )
@@ -62,9 +69,10 @@ def _seed_all_types(user, ca):
         company_name="ProspectCo", has_buying_decision=True, account_owner=user
     )
     other_acc.save(user=user, client_id=ca.id)
-    CampaignAccount(
+    campaign_account = CampaignAccount(
         campaign=camp, account=client_acc, status=CampaignAccountStatus.COMPLETED
-    ).save(user=user, client_id=ca.id)
+    )
+    campaign_account.save(user=user, client_id=ca.id)
 
     # A completed campaign MEETING -> MEETINGS = 1.
     Activity(
@@ -78,16 +86,31 @@ def _seed_all_types(user, ca):
         scheduled_date=TODAY,
     ).save(user=user, client_id=ca.id)
 
-    # A completed campaign activity carrying a contact -> CONTACTS_REACHED >= 1.
+    # A campaign contact we GOT THROUGH TO -> CONTACTS_REACHED = 1.
+    #
+    # This used to be a completed activity with the contact on the `contacts`
+    # M2M and no outcome at all, which counted under the old rule ("any completed
+    # campaign activity"). CONTACTS_REACHED now requires an outcome saying a
+    # conversation happened, and identifies the person by the CampaignContact
+    # pivot rather than the M2M (campaign_contact_reach.py).
     contact = Contact(account=client_acc, first_name="Reached", last_name="Contact")
     contact.save(user=user, client_id=ca.id)
+    campaign_contact = CampaignContact(
+        campaign_account=campaign_account,
+        contact=contact,
+        status=CampaignContactStatus.IN_PROGRESS,
+    )
+    campaign_contact.save(user=user, client_id=ca.id)
     reached = Activity(
         title="call",
         activity_type=ActivityType.CALL,
         status=ActivityStatus.COMPLETED,
+        outcome=ActivityOutcome.SUCCESSFUL,
         account=client_acc,
         owner=user,
         campaign=camp,
+        campaign_account=campaign_account,
+        campaign_contact=campaign_contact,
         scheduled_date=TODAY,
     )
     reached.save(user=user, client_id=ca.id)
@@ -115,6 +138,26 @@ def _seed_all_types(user, ca):
     )
     won.save(user=user, client_id=ca.id)
     give_deal_value(won, 900, user=user)
+
+    # That win converted ProspectCo -> NEW_LOGOS = 1. The close hook stamps
+    # became_client_at in production; it is editable=False, so it is assigned
+    # here the way tests/bi/test_metrics_canonical.py seeds it. The winning cycle
+    # is born from the campaign, which is what attributes the logo to it.
+    other_acc.type = "CLIENT"
+    other_acc.became_client_at = timezone.now()
+    other_acc.save(user=user)
+
+    # These cycles are all born from the campaign, so the money already counts
+    # them. The completed + SUCCESSFUL activity below adds the touched-by branch
+    # on top: both branches match, and the union must still count each deal ONCE.
+    for cycle in (open_a, open_b, won):
+        worked = Activity(
+            title=f"worked-{cycle.name}", activity_type=ActivityType.CALL,
+            status=ActivityStatus.COMPLETED, outcome="SUCCESSFUL",
+            account=other_acc, owner=user, campaign=camp,
+            decision_cycle=cycle, scheduled_date=TODAY,
+        )
+        worked.save(user=user, client_id=ca.id)
 
     for idx, otype in enumerate(ObjectiveType.values):
         CampaignObjective(
@@ -153,7 +196,10 @@ class TestGroupedObjectiveValuesEquivalence:
             obj.objective_type: grouped[obj.id] for obj in objectives
         }
         assert by_type[ObjectiveType.DECISION_CYCLES] == 3
-        assert by_type[ObjectiveType.PIPELINE_VALUE] == 2000.0
+        # 2000 open + 900 won: a campaign reports a RESULT, so a won deal stays
+        # in its pipeline instead of leaving on win (it is in BOTH figures). Was
+        # 2000 when the campaign side used the personal, exclusive rule.
+        assert by_type[ObjectiveType.PIPELINE_VALUE] == 2900.0
         assert by_type[ObjectiveType.REVENUE_WON] == 900.0
         assert by_type[ObjectiveType.MEETINGS] == 1
         assert by_type[ObjectiveType.NEW_LOGOS] == 1

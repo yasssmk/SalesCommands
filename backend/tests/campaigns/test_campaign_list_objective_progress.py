@@ -75,6 +75,21 @@ def _mk_cycle(owner, account, ca, *, source_campaign, estimated_value=None,
     return dc
 
 
+def _mk_worked(campaign, account, owner, ca, cycle):
+    """A completed + SUCCESSFUL campaign activity on ``cycle``.
+
+    Since the PO's final rule, a campaign claims a deal's VALUE only once it has
+    worked it — being the deal's ``source_campaign`` is not enough (that decides
+    DECISION_CYCLES). The money builders below therefore attach one of these.
+    """
+    a = Activity(title='worked', activity_type=ActivityType.CALL,
+                 status=ActivityStatus.COMPLETED, outcome='SUCCESSFUL',
+                 account=account, owner=owner, campaign=campaign,
+                 decision_cycle=cycle, scheduled_date=TODAY)
+    a.save(user=owner, client_id=ca.id)
+    return a
+
+
 def _mk_meeting(campaign, account, owner, ca):
     a = Activity(title='m', activity_type=ActivityType.MEETING,
                  status=ActivityStatus.COMPLETED, outcome='SUCCESSFUL',
@@ -130,8 +145,11 @@ class TestListExposesProgress:
         camp = _mk_campaign(user_a, client_account_a)
         _mk_objective(camp, user_a, client_account_a,
                       ObjectiveType.PIPELINE_VALUE, target=5000)
-        _mk_cycle(user_a, account, client_account_a, source_campaign=camp,
-                  estimated_value=1500)
+        cycle = _mk_cycle(user_a, account, client_account_a, source_campaign=camp,
+                          estimated_value=1500)
+        # The campaign must have WORKED the deal to claim its value (creation
+        # alone counts only for DECISION_CYCLES).
+        _mk_worked(camp, account, user_a, client_account_a, cycle)
 
         list_primary = _row_for(authed_api_a.get(LIST_URL), camp.id)['primary_objective']
         detail = authed_api_a.get(f'{LIST_URL}{camp.id}/')
@@ -169,16 +187,22 @@ class TestBatchParityWithService:
         assert exp == 1.0
 
     def test_pipeline_value(self, user_a, client_account_a, account):
-        exp = self._one(user_a, client_account_a, account, ObjectiveType.PIPELINE_VALUE,
-                        lambda camp: _mk_cycle(user_a, account, client_account_a,
-                                               source_campaign=camp, estimated_value=900))
+        exp = self._one(
+            user_a, client_account_a, account, ObjectiveType.PIPELINE_VALUE,
+            lambda camp: _mk_worked(
+                camp, account, user_a, client_account_a,
+                _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp, estimated_value=900)))
         assert exp == 900.0
 
     def test_revenue_won(self, user_a, client_account_a, account):
-        exp = self._one(user_a, client_account_a, account, ObjectiveType.REVENUE_WON,
-                        lambda camp: _mk_cycle(user_a, account, client_account_a,
-                                               source_campaign=camp, estimated_value=700,
-                                               outcome=CycleOutcome.WON, outcome_date=TODAY))
+        exp = self._one(
+            user_a, client_account_a, account, ObjectiveType.REVENUE_WON,
+            lambda camp: _mk_worked(
+                camp, account, user_a, client_account_a,
+                _mk_cycle(user_a, account, client_account_a,
+                          source_campaign=camp, estimated_value=700,
+                          outcome=CycleOutcome.WON, outcome_date=TODAY)))
         assert exp == 700.0
 
     def test_meetings(self, user_a, client_account_a, account):

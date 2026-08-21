@@ -79,12 +79,16 @@ def _cycle(owner, account, ca, *, name='dc', source_campaign=None, created_on=No
 
 
 def _meeting(owner, account, cycle, ca):
+    """A meeting HELD by ``owner``. ``completed_at`` is what MEETINGS is windowed
+    on (bi/metrics/sales_metrics.meetings) — without it the row is outside every
+    period, which is the documented meaning of a meeting never completed."""
     step = DecisionStep(cycle=cycle, name='s', stage=PipelineStep.QUALIFICATION, order=1,
                         expected_end=None)
     step.save(user=owner, client_id=ca.id)
     a = Activity(title='m', activity_type=ActivityType.CALL, status=ActivityStatus.COMPLETED,
                  outcome=ActivityOutcome.MEETING_SCHEDULED, account=account, owner=owner,
-                 decision_cycle=cycle, decision_step=step, scheduled_date=TODAY)
+                 decision_cycle=cycle, decision_step=step, scheduled_date=TODAY,
+                 completed_at=timezone.now())
     a.save(user=owner, client_id=ca.id)
     return a
 
@@ -221,10 +225,11 @@ class TestCampaignWindowOverachievement:
         prog = P.compute_progress(q)
         assert prog.current_value == 13
         assert prog.ratio == 1.3          # NOT clamped to 1.0
-        assert prog.is_over_achieved is True
+        assert prog.ratio > 1.0           # what the UI reads to flag it
 
     def test_meetings_metric_individual(self, client_account_a):
-        # exercises the Activity-based metric path (owner = cycle owner).
+        # exercises the Activity-based metric path (owner = whoever LOGGED the
+        # meeting — bi/metrics/attribution_scope.activity_scope_q).
         role = _role(client_account_a, 'Ind', individual=True)
         me = _user('me6@a.test', client_account_a, role)
         acc = _account(me, client_account_a)

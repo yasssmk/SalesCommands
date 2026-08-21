@@ -27,7 +27,6 @@ import TeamCampaignsBlock from 'sections/home/TeamCampaignsBlock';
 import TeamTerritoriesBlock from 'sections/home/TeamTerritoriesBlock';
 import DecisionCyclesBlock from 'sections/home/DecisionCyclesBlock';
 import ObjectivesBlock from 'sections/home/ObjectivesBlock';
-import TeamQuotaGroup from 'sections/home/TeamQuotaGroup';
 
 // The full roster of owners with open tasks (a no-window todo_team_by_owner):
 // the Owner filter's options + the chip name, sorted by name.
@@ -95,12 +94,6 @@ export default function ManagerHome() {
     () => managedTeamSubtree(teams, currentUserId),
     [teams, currentUserId],
   );
-  // The quota groups list the roots the manager owns directly.
-  const managedRoots = useMemo(
-    () => (teams || []).filter((t) => t?.manager && String(t.manager.id) === String(currentUserId)),
-    [teams, currentUserId],
-  );
-
   // The shared filter state (team + owner), driven by the standard filter panel.
   const {
     filters,
@@ -296,28 +289,6 @@ export default function ManagerHome() {
           />
         </Stack>
       ) : null}
-
-      <Stack spacing={1.5}>
-        <Box>
-          <Typography variant="h5">Progress by person</Typography>
-          <Typography variant="body2" color="text.secondary">
-            Each member&apos;s quota attainment for the current period.
-          </Typography>
-        </Box>
-        {managedRoots.length === 0 ? (
-          <MainCard>
-            <Typography variant="body2" color="text.secondary">
-              No team to display yet.
-            </Typography>
-          </MainCard>
-        ) : (
-          <Stack spacing={2}>
-            {managedRoots.map((t) => (
-              <TeamQuotaGroup key={t.id} teamId={t.id} teamName={t.name} />
-            ))}
-          </Stack>
-        )}
-      </Stack>
     </Stack>
   );
 }

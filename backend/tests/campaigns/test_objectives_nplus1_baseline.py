@@ -257,20 +257,32 @@ class TestObjectivesNPlusOneRedBaseline:
             f"per open: {dash6} + {det6} = {dash6 + det6} queries at 6 objectives.\n"
         )
 
-        # ---- Grouped slope: +4 objectives (types) -> +2 queries on EVERY path.
+        # ---- Grouped slope: +4 objectives (types) -> +3 queries on EVERY path.
         # Between 2 and 6 objectives the test adds CONTACTS_REACHED and NEW_LOGOS
-        # (two irreducible sources) plus PIPELINE_VALUE/REVENUE_WON, which fold
-        # into the already-present DecisionCycle aggregate for free. So +2, not
-        # +4. Break the DecisionCycle collapse and this jumps back to +4. ----
-        assert dash6 - dash2 == 2, f"dashboard slope regressed: {dash2} -> {dash6}"
-        assert det6 - det2 == 2, f"detail slope regressed: {det2} -> {det6}"
-        assert kpi6 - kpi2 == 2, f"kpi slope regressed: {kpi2} -> {kpi6}"
+        # (two irreducible sources) plus PIPELINE_VALUE/REVENUE_WON.
+        #
+        # The money used to fold into the already-present DecisionCycle aggregate
+        # for free (+2). It no longer can: DECISION_CYCLES is ORIGIN-only while
+        # the money is origin OR touched-by a successful campaign activity, so
+        # the two populations differ and cannot share one aggregate. The money
+        # costs one aggregate of its own — hence +3.
+        #
+        # The count is still bounded by the number of objective TYPES, never by
+        # the number of cycles or activities: PIPELINE_VALUE and REVENUE_WON
+        # together are ONE query (campaign_dc_attribution.campaign_money returns
+        # both figures from a single aggregate). Break that and this jumps to +4.
+        assert dash6 - dash2 == 3, f"dashboard slope regressed: {dash2} -> {dash6}"
+        assert det6 - det2 == 3, f"detail slope regressed: {det2} -> {det6}"
+        assert kpi6 - kpi2 == 3, f"kpi slope regressed: {kpi2} -> {kpi6}"
 
         # ---- KPI absolute: campaign + accounts agg + objectives load + one
         # query per SOURCE present. 2 obj (MEETINGS + DECISION_CYCLES) = 3 + 2 = 5;
-        # 6 obj (all types, DC family folded) = 3 + 4 sources = 7 (was 9). ----
+        # 6 obj = 3 + 5 sources = 8: DECISION_CYCLES (origin-only) and the money
+        # (origin OR touched-by) are now separate populations and no longer fold
+        # into one aggregate, so the DC family costs 2 queries instead of 1. Was
+        # 7, and 9 before the family was grouped at all. ----
         assert kpi2 == 5, f"KPI at 2 objectives expected 5, got {kpi2}"
-        assert kpi6 == 7, f"KPI at 6 objectives expected 7, got {kpi6}"
+        assert kpi6 == 8, f"KPI at 6 objectives expected 8, got {kpi6}"
 
         # ---- Endpoints carry a large constant baseline ON TOP of the loop. ----
         assert dash2 >= 10, f"dashboard baseline unexpectedly low: {dash2}"

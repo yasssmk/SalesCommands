@@ -20,18 +20,25 @@ The rule, as implemented and asserted here:
                        (views/views.py:735), cleared on reopen (:839). So a
                        reopened deal leaves the won attainment by both criteria
                        at once.
-            PIPELINE -> bounded by the cycle's EXPECTED CLOSE, which is derived
-                       as ``Max(steps.expected_end)`` via a correlated Subquery
-                       (sales_metrics.py:222-235). DecisionCycle stores no
-                       ``expected_close_date`` column — see the module note in
-                       the report; an open cycle with no dated step has a NULL
-                       anchor and therefore falls outside ANY window. That
-                       consequence is pinned below because it is easy to read as
-                       a bug and is in fact the documented behaviour.
+            PIPELINE -> bounded by the cycle's EFFECTIVE CLOSE DATE
+                       (decision_cycles/services/close_date_sql.py): the MANUAL
+                       ``DecisionCycle.expected_close_date`` when set, else the
+                       date of the CLOSING step's last activity. A cycle with
+                       neither has a NULL anchor and therefore falls outside ANY
+                       window. That consequence is pinned below because it is
+                       easy to read as a bug and is in fact the documented
+                       behaviour — it now means "nobody stated when this deal
+                       closes", which the rep can fix by setting the date.
             Both bounds are INCLUSIVE (``__gte`` / ``__lte``, sales_metrics.py
             ``_between``) — asserted on the exact edges.
 
-  SCOPE     individual -> the owner's own cycles.
+  SCOPE     individual -> the rep's own cycles, "own" being the UNION declared
+                          in bi/metrics/attribution_scope.py (owner OR creator
+                          OR account owner). Every fixture below gives all three
+                          links to the same person, so the scope rule is not what
+                          these tests discriminate — they are about type, period
+                          and amount. The union itself is pinned in
+                          tests/quotas/test_personal_scope_union.py.
             manager    -> the WHOLE team subtree rooted at the manager's node,
                           resolved by quotas/services/progress.team_subtree_ids
                           (progress.py:86-119) and applied by
@@ -54,8 +61,8 @@ from django.utils import timezone
 
 from app_modules.accounts.models import CompanyAccount
 from app_modules.bi.metrics import MetricKey
-from app_modules.decision_cycles.constants import CycleOutcome, PipelineStep
-from app_modules.decision_cycles.models import DealProduct, DecisionCycle, DecisionStep
+from app_modules.decision_cycles.constants import CycleOutcome
+from app_modules.decision_cycles.models import DealProduct, DecisionCycle
 from app_modules.product_catalog.models import ProductCatalog
 from app_modules.quotas.models import Quota
 from app_modules.quotas.services import progress as P
@@ -105,20 +112,24 @@ def _account(owner, ca, name='Acc'):
 
 def _cycle(owner, ca, *, amount, name='dc', outcome=None, outcome_date=None,
            expected_close=None, account=None):
-    """A cycle worth ``amount``.
+    """A cycle worth ``amount``, expected to close on ``expected_close``.
 
-    ``expected_close`` becomes a step's ``expected_end`` — the cycle-level
-    expected close the pipeline window is evaluated on. Pass None to leave the
-    cycle undated (it then falls outside every window).
+    ``expected_close`` sets the cycle's MANUAL ``expected_close_date`` — level 1
+    of the effective close date the pipeline window is evaluated on
+    (decision_cycles/services/close_date_sql.py). Pass None to leave the cycle
+    undated (it then falls outside every window; the closing-step fallback is
+    covered in tests/decision_cycles/test_effective_close_date.py).
+
+    It previously created a step with ``expected_end=expected_close``, back when
+    the anchor was ``Max(steps.expected_end)``. The intent of every test below
+    is unchanged — "this deal is expected to close on that date" — only the
+    field carrying it moved, with the anchor.
     """
     account = account or _account(owner, ca, name=f'Acc-{owner.email}')
     cycle = DecisionCycle(account=account, owner=owner, name=f'{name}-{owner.email}',
-                          outcome=outcome, outcome_date=outcome_date)
+                          outcome=outcome, outcome_date=outcome_date,
+                          expected_close_date=expected_close)
     cycle.save(user=owner, client_id=ca.id)
-    if expected_close is not None:
-        step = DecisionStep(cycle=cycle, name='s', stage=PipelineStep.QUALIFICATION,
-                            order=1, expected_end=expected_close)
-        step.save(user=owner, client_id=ca.id)
     give_deal_value(cycle, amount, user=owner)
     return cycle
 
@@ -212,9 +223,20 @@ class TestPipelineQuota:
             user=rep, period=None,
         ))) == Decimal('60000')
 
-    def test_only_the_owner_cycles_count_for_an_individual(
+    def test_a_cycle_with_no_link_to_the_rep_does_not_count(
         self, rep, client_account_a,
     ):
+        """Attribution is a UNION of three links — owner, creator, account owner
+        (bi/metrics/attribution_scope.py) — so this asserts the NEGATIVE side of
+        it: a deal with none of the three does not count. ``other``'s cycle sits
+        on ``other``'s own account and was created by them, so no branch reaches
+        ``rep``.
+
+        It used to be named "only the owner cycles count" and read as a proof of
+        the owner-ONLY rule. It never was one — the fixture gives all three links
+        to the same person, so it passes identically under either rule. The
+        union's three branches are proved where they can actually fail, in
+        tests/quotas/test_personal_scope_union.py."""
         other = _user('other@a.test', client_account_a,
                       _role(client_account_a, 'Ind2', individual=True))
         _cycle(rep, client_account_a, amount=Decimal('60000'), expected_close=TODAY)

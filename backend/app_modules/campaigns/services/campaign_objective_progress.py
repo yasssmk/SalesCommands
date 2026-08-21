@@ -11,8 +11,11 @@ by campaign, so the query count is bounded by the number of distinct objective
 types on the page (<= 6) — never by the number of campaigns.
 
 The grouped predicates mirror _calculate_objective_value branch for branch
-(source_campaign for the DecisionCycle metrics, Activity.campaign for MEETINGS /
-CONTACTS_REACHED, the CampaignAccount pivot for NEW_LOGOS). A parity test
+(source_campaign for DECISION_CYCLES, Activity.campaign for MEETINGS) — except
+where a branch calls the SAME declaration the detail path calls, which is now the
+case for the money and NEW_LOGOS (campaign_dc_attribution) and for
+CONTACTS_REACHED (campaign_contact_reach): mirroring is only needed while two
+implementations exist. A parity test
 (tests/campaigns/test_campaign_list_objective_progress.py) locks each grouped
 result to the per-campaign calculation so the two paths can never drift.
 """
@@ -21,20 +24,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q
 
 from app_modules.activities.constants import ActivityStatus, ActivityType
 from app_modules.activities.models import Activity
-from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.models import DecisionCycle
-from app_modules.decision_cycles.services.deal_value_sql import DEAL_VALUE_SUM
+from .campaign_contact_reach import contacts_reached_by_campaign
+from .campaign_dc_attribution import campaign_money, campaign_new_logos
 
-from ..models import (
-    CampaignAccount,
-    CampaignAccountStatus,
-    CampaignObjective,
-    ObjectiveType,
-)
+from ..models import CampaignObjective, ObjectiveType
 
 
 def progress_percentage(current_value, target_value):
@@ -102,6 +100,36 @@ def _meetings_by_campaign(campaign_ids):
     return dict(counts)
 
 
+def _money_by_campaign(campaign_ids, client_id, key):
+    """{campaign_id: campaign money} for the page, from the ONE canonical
+    calculation.
+
+    ``campaign_dc_attribution.campaign_money`` owns both the attribution (born
+    from the campaign OR carrying a SUCCESSFUL activity of it) and the population
+    (pipeline = open or won, won = won). The detail serializer and the workspace
+    dashboard call exactly the same function, so the three surfaces cannot drift
+    — a parity test asserts all three agree on every objective type.
+
+    ``key`` selects which of the two figures this objective type wants.
+
+    WHY NOT ``_grouped`` LIKE THE OTHER BRANCHES: that helper groups on
+    ``source_campaign``, and under the union a cycle no longer has ONE campaign —
+    it may be claimed by several. There is no column to GROUP BY, so the
+    attribution is resolved per campaign.
+
+    COST, stated plainly: one query per campaign carrying a money objective on
+    the page, where the other branches are one query for the whole page. The
+    module's "bounded by objective type, never by campaign count" property
+    therefore no longer holds for these two types. It is the price of an
+    attribution that is not a column; correctness first, and the count is pinned
+    by a test so any future optimisation has a baseline.
+    """
+    return {
+        campaign_id: campaign_money(campaign_id, client_id)[key]
+        for campaign_id in campaign_ids
+    }
+
+
 def _values_for_type(objective_type, campaign_ids, client_id):
     """{campaign_id: current_value} for one objective_type in ONE grouped query.
 
@@ -111,40 +139,32 @@ def _values_for_type(objective_type, campaign_ids, client_id):
         qs = DecisionCycle.objects.filter(source_campaign_id__in=campaign_ids)
         return _grouped(qs, 'source_campaign', Count('id'))
 
-    # PIPELINE_VALUE / REVENUE_WON sum the DERIVED product roll-up (TD-75), via
-    # DEAL_VALUE_SUM -- the JOIN form of the canonical expression. The per-row
-    # annotation form is deliberately NOT used here: this is a
-    # `.values(group).annotate(agg)` GROUP BY, and a pre-existing annotation
-    # would join the alias into the GROUP BY and split each campaign's row.
-    # Summing over the deal_products join is exact for a money aggregate.
     if objective_type == ObjectiveType.PIPELINE_VALUE:
-        qs = DecisionCycle.objects.filter(
-            source_campaign_id__in=campaign_ids, outcome__isnull=True,
-        )
-        return _grouped(qs, 'source_campaign', DEAL_VALUE_SUM)
+        return _money_by_campaign(campaign_ids, client_id, 'pipeline')
 
     if objective_type == ObjectiveType.REVENUE_WON:
-        qs = DecisionCycle.objects.filter(
-            source_campaign_id__in=campaign_ids, outcome=CycleOutcome.WON,
-        )
-        return _grouped(qs, 'source_campaign', DEAL_VALUE_SUM)
+        return _money_by_campaign(campaign_ids, client_id, 'won')
 
     if objective_type == ObjectiveType.MEETINGS:
         return _meetings_by_campaign(campaign_ids)
 
     if objective_type == ObjectiveType.CONTACTS_REACHED:
-        qs = Activity.objects.filter(
-            campaign_id__in=campaign_ids, status=ActivityStatus.COMPLETED,
-        )
-        return _grouped(qs, 'campaign', Count('contacts', distinct=True))
+        # The grouped twin of the per-campaign calculation, from the SAME module,
+        # so the card and the detail page cannot disagree. They did: this branch
+        # counted `Count('contacts', distinct=True)` while the detail counted
+        # `.values('contacts').distinct().count()`, and those differ by one on
+        # any campaign activity with no contact attached.
+        return contacts_reached_by_campaign(campaign_ids)
 
     if objective_type == ObjectiveType.NEW_LOGOS:
-        qs = CampaignAccount.objects.filter(
-            campaign_id__in=campaign_ids,
-            status=CampaignAccountStatus.COMPLETED,
-            account__type='CLIENT',
-        )
-        return _grouped(qs, 'campaign', Count('id'))
+        # The same canonical calculation the detail page calls, per campaign for
+        # the same reason the money is (see _money_by_campaign): attribution is a
+        # union, so there is no single column to GROUP BY. It replaces a grouped
+        # proxy over CampaignAccount that consulted no decision cycle at all.
+        return {
+            campaign_id: campaign_new_logos(campaign_id, client_id)
+            for campaign_id in campaign_ids
+        }
 
     return {}
 

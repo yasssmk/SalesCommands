@@ -9,7 +9,7 @@ import useSWR, { mutate } from "swr";
 import { useMemo } from "react";
 import { useAuth } from "hooks/useAuth";
 import { api } from "utils/axiosClient";
-import { tenantKey, revalidateMultiple, matchKey } from "api/_swr";
+import { tenantKey, revalidateMetricSurfaces, matchKey } from "api/_swr";
 import { isValidUUID, sanitizeObject } from "utils/validators";
 
 // ==============================|| CONSTANTS ||============================== //
@@ -520,7 +520,7 @@ export async function linkActivityToStep(
       revalidatePaths.push(endpoints.unlinkedByAccount(accountId));
     }
 
-    revalidateMultiple(revalidatePaths);
+    revalidateMetricSurfaces(revalidatePaths);
     const activityData = result.data?.data || result.data;
     return { success: true, data: activityData };
   }
@@ -557,7 +557,7 @@ export async function unlinkActivityFromStep(activityId) {
   });
 
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.activities,
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
@@ -751,7 +751,7 @@ export async function createActivity(payload) {
   const result = await api.post(endpoints.activities, sanitized);
 
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.activities,
       endpoints.myActivities,
       endpoints.byAccount,
@@ -841,7 +841,7 @@ export async function createActivityWithEntities(payload) {
 
   if (result.success) {
     // Revalidate all potentially affected endpoints
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.activities,
       endpoints.myActivities,
       "/company-accounts/",
@@ -895,7 +895,7 @@ export async function updateActivity(activityId, payload) {
   );
 
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.activities,
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
@@ -938,7 +938,7 @@ export async function deleteActivity(activityId) {
     });
 
     // Revalidate list endpoints only (avoid broad prefix that matches detail URLs)
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.myActivities,
       endpoints.byAccount,
       endpoints.byStep,
@@ -979,7 +979,7 @@ export async function completeActivity(activityId, payload = {}) {
   const result = await api.post(endpoints.complete(activityId), sanitized);
 
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.activities,
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
@@ -1018,7 +1018,7 @@ export async function cancelActivity(activityId, payload = {}) {
   const result = await api.post(endpoints.cancel(activityId), payload);
 
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.activities,
       endpoints.activityDetail(activityId),
       endpoints.myActivities,
@@ -1060,7 +1060,7 @@ export async function reopenActivity(activityId, payload = {}) {
   const result = await api.post(endpoints.reopen(activityId), payload);
 
   if (result.success) {
-    revalidateMultiple([
+    revalidateMetricSurfaces([
       endpoints.activities,
       endpoints.activityDetail(activityId),
       endpoints.myActivities,

@@ -518,6 +518,133 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint C ✅ — Wiring / UI / métriques (branche `feat/sprint-c-wiring`)
+- **Objectif** : aligner TOUTES les métriques BI — personnelles ET campagne —
+  sur la table de vérité, en déclarant CHAQUE règle UNE fois. Avant ce sprint
+  chaque surface répondait à une question légèrement différente sans le dire :
+  le périmètre personnel variait d'un KPI à l'autre, l'attribution campagne
+  existait en plusieurs implémentations divergentes, `LEADS` restait servi alors
+  que le produit ne le revendiquait plus, et les cartes campagne pouvaient
+  afficher un chiffre périmé pendant tout un TTL après l'action qui l'avait
+  changé.
+- **Livré** :
+  - **Périmètre personnel unifié, déclaré une fois** —
+    `backend/app_modules/bi/metrics/attribution_scope.py` répond à « de QUI est
+    ce chiffre » pour toutes les métriques : union
+    `owner ∪ created_by ∪ account.account_owner` (`cycle_scope_q`), sa
+    transposition équipe (`…_for_teams`), et la règle CRÉATEUR
+    (`creator_scope_q`) pour les métriques qui comptent un ACTE plutôt qu'une
+    possession. Le périmètre COMPTE ajoute les comptes gagnés par la personne
+    (`account_scope_q`). Les `Q` unions sur des FK to-one ne provoquent pas de
+    fan-out ; les corrélations to-many passent par `Exists()` (`ce6193f`).
+  - **`DECISION_CYCLES` = ce qu'un rep a OUVERT** — bascule sur `created_by`
+    (un cycle créé, pas un cycle possédé), fenêtré sur `created_at` en
+    DATETIME. **`MEETINGS`** ne compte que les rendez-vous `COMPLETED` à
+    l'issue réussie, attribués au créateur, fenêtrés sur `completed_at`
+    (`ce6193f`, `6d4e4eb`).
+  - **`LEADS` retiré du produit** — métrique supprimée du moteur, purge des
+    objectifs stockés (`quotas/0004_purge_leads_quotas`), et garde de source
+    côté front vérifiant qu'aucun `LEADS` ne subsiste dans le vocabulaire
+    d'objectifs (`6d4e4eb`, `83963e1`).
+  - **`CONTACTS_REACHED` = une conversation a EU LIEU** — défini sur
+    `REACHED_OUTCOMES` (déclaré UNE fois à côté de `SUCCESSFUL`/`TERMINAL` dans
+    `campaign_execution_service.py`), la personne étant identifiée par le pivot
+    to-one `Activity.campaign_contact` et comptée `distinct=True` — un contact
+    relancé cinq fois reste UN contact atteint
+    (`campaigns/services/campaign_contact_reach.py`, `83963e1`).
+  - **Attribution campagne unifiée : born-from ∪ touched-by** — une campagne
+    revendique un deal s'il est NÉ d'elle (`source_campaign`, inconditionnel)
+    OU si elle l'a TRAVAILLÉ (activité aboutie). Une seule fonction,
+    `attributed_cycles` (`campaigns/services/campaign_dc_attribution.py`),
+    sert `PIPELINE`, `WON` et `NEW_LOGOS` — plus d'implémentation par surface
+    (`f979caf`, `18107b1`, `14193fd`, `81fd6e1`).
+  - **`NEW_LOGOS` campagne = la TRANSITION, pas le compte** — le deal gagné qui
+    a fait passer un compte de prospect à client : plus ancienne victoire du
+    compte (`Subquery` corrélée sur `outcome_date`), compte effectivement
+    converti (`became_client_at`), puis filtré par l'attribution ci-dessus
+    (`81fd6e1`).
+  - **Origine campagne estampillée à la NAISSANCE** — `source_campaign` est posé
+    à la création du cycle et jamais rétro-appliqué : un backfill avait
+    re-parenté des DC préexistants, ce qui faussait le born-from (`f1436f4`).
+  - **F1 — `NEW_LOGOS` perdait toute conversion après minuit du dernier jour** :
+    `became_client_at` est un DateTimeField fenêtré sans le drapeau, donc
+    `_between` comparait `<= <dernier jour> 00:00:00` et jetait 23 h 59 de
+    conversions. Démontré en vidant le SQL généré (avec le `RuntimeWarning`
+    naive-datetime de Django à l'appui) avant correction (`8047345`).
+  - **Fraîcheur des cartes campagne — les DEUX couches** : côté SERVEUR,
+    `build_drf_cache_key(tag_namespace=…)` ne pliait qu'UN tag (`campaigns`)
+    alors que les chiffres viennent des cycles, des lignes produit, des
+    activités et des conversions de compte ; `CAMPAIGN_CACHE_TAGS` +
+    `build_tag_signature` (ajouté dans `core/cache_utils.py`, réutilisé par les
+    deux couches) plient désormais les quatre tags dans la clé des trois
+    surfaces cachées (liste, détail, dashboard). Côté CLIENT, les 21 helpers
+    d'écriture ne revalidaient que leurs propres clés :
+    `revalidateMetricSurfaces` / `METRIC_SURFACE_PREFIXES` (`api/_swr.js`)
+    rafraîchissent aussi `/campaigns/`, `/quotas/quotas/` et `/bi/kpi/`.
+    Corriger une seule couche laissait Redis resservir le même corps périmé
+    (`b05c6de`).
+  - **Saisie de la remise sur les lignes produit** — le champ
+    `discount_percent` avait une colonne, une `CheckConstraint`, un validateur
+    et un terme dans la formule du total, mais AUCUNE entrée : chaque ligne
+    naissait à 0 %. Le dialogue gagne un champ Discount % (garde 0-100 côté
+    front, backend inchangé et toujours le vrai filet), et le tableau une
+    colonne Discount entre Prix unitaire et Total ligne — sans quoi le total
+    d'une ligne remisée ne s'explique pas à l'écran (`d852ccf`).
+  - **Puce de date de clôture repointée sur `effective_close_date`** — l'en-tête
+    du workspace dérivait sa date de `created_at + estimated_timeline_days`,
+    c'est-à-dire une DURÉE estimée et non une date convenue : éditer la date de
+    clôture ne déplaçait rien. Elle lit désormais la règle unique du backend
+    (`close_date_sql.py`), avec un état vide neutre « No close date » quand il
+    n'y a ni date manuelle ni activité de clôture datée
+    (`e59c7b8`, `d852ccf`).
+  - **Retrait du chemin quota LEGACY des deux Home** — `QuotaBlock`,
+    `TeamQuotaGroup`, `utils/quotaFormat.js` et `api/quotas/quotas.js` supprimés
+    fichier par fichier (preuve grep par fichier, jamais de balayage global :
+    `CampaignAccount` est mort dans un fichier et vivant dans un autre)
+    (`41bd456`, `ec81155`).
+- **Migrations** : `decision_cycles/0023` (`expected_close_date`),
+  `quotas/0003` (valeurs de `Quota.metric`), `quotas/0004` (purge des objectifs
+  `LEADS` stockés).
+- **Validation** : chaque sous-étape validée par une reproduction ROUGE d'abord
+  puis une sonde de NON-VACUITÉ (mutation du code de production → le test
+  re-échoue → restauration par édition ciblée). Front vitest : **832 tests, 116
+  fichiers, vert**. Backend : suites vertes hors les 7 échecs PRÉ-EXISTANTS
+  dépendants de Redis (`tests/bi/test_cache.py`, `test_invalidation.py`,
+  `test_end_to_end.py`), identiques sur `origin/main`. **Écart signalé** : les
+  tests de la table de vérité assertent sur la CLÉ de cache et non sur une
+  péremption observée — les deux couches de cache se court-circuitent sans
+  Redis, donc un test comparatif passerait à VIDE dans cet environnement.
+  **Épisode de régression** : trois commits campagne ont laissé 12 tests rouges
+  dans `tests/bi` (seules `tests/campaigns` et `tests/decision_cycles` avaient
+  été jouées) ; détecté en rejouant la baseline dans des worktrees jetables,
+  corrigé en `0a24ab0`.
+- **Dette fermée** : aucune entrée TECH_DEBT existante n'était ouverte sur ces
+  sujets — l'attribution campagne, `LEADS` vivant et le « brouillon » monétaire
+  campagne n'étaient tracés nulle part (vérifié par recherche sur les 169
+  entrées). **Dette ajoutée** : **TD-171** (moteur quota/personnel legacy à
+  retirer), **TD-172** (`apps/campaign/*` legacy), **TD-173** (décalage d'un
+  jour sur `outcome_date`), **TD-174** (`estimated_timeline_days` conservé mais
+  débranché), **TD-175** (renommage `quotas` → `objectives`), **TD-176**
+  (migration corrective `source_campaign`), **TD-177** (branche `new_logos`
+  campagne possiblement morte), **TD-178** (agrégation par campagne non
+  mutualisée).
+- **⏸️ REPORTÉ — à NE PAS considérer comme livré** :
+  - **Smoke PO « éditer `expected_close_date` → la puce d'en-tête bouge »** :
+    l'INPUT existe (modale DC, Formik) et le backend est PRÊT, mais l'accès
+    éditable final vit dans le workspace DC. **Backend prêt, smoke reporté au
+    sprint Workspace / DC** (3bis) puis à la période de test finale. **Ne PAS
+    marquer fait.**
+  - **Vue Objectifs** (permissions + filtres de périmètre) → sprint
+    **« Objectifs — Vue » (3ter)**.
+  - **Smoke de bout en bout sur environnement Redis** → **Sprint test**
+    (pré-déploiement) : sans Redis, la moitié des gardes de fraîcheur ne
+    s'exécute pas.
+  - **Surfaces legacy** (`bi/quota.py`, `SalesQuota`, `apps/campaign/*`) →
+    nettoyage avant déploiement, TD-171 / TD-172.
+- **Prochain jalon** (ordre cible) : **Sprint Workspace / DC (3bis)**.
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -547,6 +674,16 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
    Prochain sprint : #3 Bloc « Modèle Decision Cycle ».
 3. **Bloc « Modèle Decision Cycle »** (regroupe deux fiches conservées) :
    Sprint C — Produit & Finance + Sprint decision_cycles/steps.
+   **✅ Sprint C — Produit & Finance LIVRÉ** (branche `feat/sprint-c-product-finance`)
+   **et Sprint C — Wiring / UI / métriques LIVRÉ** (branche `feat/sprint-c-wiring`)
+   — voir les deux fiches « Sprint C ✅ » ci-dessus. Le **Sprint
+   decision_cycles/steps** reste à faire dans ce bloc.
+   Prochain sprint : #3bis Workspace / DC.
+3bis. **Workspace / DC** — NOUVEAU (2026-08-21). Édition complète de l'overview
+   DC. Voir la fiche « Sprint Workspace / DC » dans « Nouveaux sprints ».
+3ter. **Objectifs — Vue** — NOUVEAU (2026-08-21), APRÈS le sprint DC. UI +
+   permissions + filtres de périmètre. Voir la fiche « Sprint Objectifs — Vue »
+   dans « Nouveaux sprints ».
 4. **Bloc « Commandes IA »** (UN SEUL sprint, pensé d'un bloc, sous-étapes
    possibles) : S12 — Signaux Tech stack (prompt) DÉPLACÉ ici + Prep call
    (prompt + UI) + Signaux (tester TOUS les signaux + UI) + Deal health
@@ -565,6 +702,13 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 > l'a pas tranché) — ils gardent leur position dans l'ordre, sans étiquette
 > launch. Ne PAS inventer de classement.
 
+> **Note de numérotation (2026-08-21).** Les deux sprints ajoutés après le bloc
+> DC sont numérotés **3bis** et **3ter** plutôt que par décalage de #4 → #12 :
+> les numéros #3 à #10 sont référencés en 13 endroits du document (fiches de
+> recadrage, jalon LAUNCH, « Nouveaux sprints »), qu'une renumérotation
+> invaliderait silencieusement. L'ORDRE est celui de la liste ; seule
+> l'étiquette évite le décalage. À renuméroter proprement si le PO préfère.
+
 ### 🚀 Jalon LAUNCH (frontière pré / post déploiement)
 
 **PRÉ-LAUNCH — bloquant AVANT déploiement :**
@@ -576,6 +720,9 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Checklist infra** (NOUVEAU — absente de la roadmap, ajoutée ici) : pooling
   DB Supabase, dimensionnement des workers web. À vérifier/durcir avant la
   montée en charge multi-tenant.
+- **Sprint test** (NOUVEAU 2026-08-21) — smoke PO de bout en bout de TOUTE la
+  chaîne visible, **sur un environnement AVEC Redis**. Voir la fiche « Sprint
+  test » dans « Nouveaux sprints ». DERNIER avant déploiement.
 
 **POST-LAUNCH :**
 - **Homogénéisation** (#8) — audit CODE des patterns.
@@ -629,6 +776,59 @@ possibles) :
 - **Objectif** : interface d'administration de gestion des tenants — suivi de
   CONSOMMATION, LIMITATIONS, etc.
 - **Lien** : rattaché à **G3 — Provisioning des tenants** (voir phase Go-Live).
+
+#### Sprint Workspace / DC (NOUVEAU 2026-08-21)
+- **Position** : **3bis** de l'ordre cible, juste après le bloc « Modèle
+  Decision Cycle » (#3).
+- **Objectif** : **édition complète de l'overview DC** — rendre éditables depuis
+  le workspace les champs que le rep doit pouvoir corriger là où il travaille,
+  et non seulement depuis la modale de création.
+- **⚠️ Smoke REPORTÉ ICI depuis le Sprint C wiring — `expected_close_date`** :
+  l'**INPUT EXISTE** (modale DC, Formik, `DecisionCycleModal.jsx`) et le
+  **BACKEND est PRÊT** (`expected_close_date` écrivable, `effective_close_date`
+  annoté et sérialisé, puce d'en-tête repointée dessus au Sprint C wiring). Ce
+  qui manque est l'**accès éditable final dans le workspace DC**, qui appartient
+  à ce sprint. Le smoke PO « éditer `expected_close_date` → la puce d'en-tête se
+  déplace sur CETTE date » est donc **DIFFÉRÉ à ce sprint + à la période de test
+  finale**. Statut à retenir : **backend prêt, smoke reporté au sprint
+  workspace** — **NE PAS marquer fait**.
+- **Lien** : voir aussi TD-29 (front manager-notes hors intention produit, point
+  de départ logique du recadrage DC) et TD-174
+  (`estimated_timeline_days` conservé mais débranché de la puce — à re-câbler si
+  la fonctionnalité « jours restants » est construite ici).
+
+#### Sprint Objectifs — Vue (NOUVEAU 2026-08-21)
+- **Position** : **3ter** de l'ordre cible, **APRÈS** le sprint Workspace / DC.
+- **Constat racine** : un utilisateur peut aujourd'hui **VOIR et TENTER
+  D'ÉDITER des objectifs qui ne sont pas les siens** — le refus arrive au
+  niveau du propriétaire (mismatch owner) et remonte sous forme d'erreur de
+  permission, donc l'interface propose une action qu'elle aurait dû ne pas
+  offrir.
+- **Objectif** :
+  - **Modèle de permissions vue/édition** : ses propres objectifs éditables ; le
+    manager voit ceux de son équipe en **lecture seule**.
+  - **Filtre de périmètre de vue** : ne présenter que ce que le rôle a le droit
+    de consulter, au lieu de tout lister et d'échouer à l'écriture.
+  - **UI propre** : l'action indisponible ne doit pas être proposée puis
+    refusée.
+- **Lien** : le moteur d'objectifs moderne (`/quotas/quotas/` →
+  `bi/metrics/sales_metrics.py`) est la source unique depuis le Sprint C wiring ;
+  voir TD-171 (retrait des vestiges legacy) et TD-175 (ambiguïté de vocabulaire
+  `quotas` / `objectives`).
+
+#### Sprint test (NOUVEAU 2026-08-21 — PRÉ-LAUNCH, DERNIER avant déploiement)
+- **Position** : après la phase fonctionnelle, **avant le déploiement** (voir
+  « 🚀 Jalon LAUNCH »).
+- **Objectif** : **smoke PO de bout en bout de TOUTE la chaîne visible**, en une
+  seule traversée : ligne produit + remise → valeur du deal → objectif personnel
+  **et** métriques campagne → fraîcheur des cartes.
+- **⚠️ Exigence d'environnement : AVEC REDIS.** Les deux couches de cache se
+  court-circuitent en son absence (`campaign_views.py`, `bi/cache.py`), donc
+  toute la moitié « fraîcheur » du Sprint C wiring est **inobservable** sans
+  Redis — c'est précisément pourquoi ses tests assertent sur la clé de cache et
+  non sur une péremption constatée. Un smoke sans Redis validerait à VIDE.
+- **Contenu** : reprise groupée des smokes différés des sprints précédents, dont
+  celui d'`expected_close_date` (voir Sprint Workspace / DC).
 
 ---
 

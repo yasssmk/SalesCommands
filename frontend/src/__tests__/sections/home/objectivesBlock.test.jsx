@@ -55,12 +55,12 @@ describe('ObjectivesBlock — current objectives, cap, order, See all', () => {
     const c1 = q('1', 'REVENUE_WON', 'CURRENT', '2026-08-31', 0.6);
     const c2 = q('2', 'MEETINGS', 'CURRENT', '2026-08-15', 0.3);
     const fut = q('3', 'PIPELINE_VALUE', 'FUTURE', '2026-09-01', 0.0);
-    const past = q('4', 'LEADS', 'PAST', '2020-12-31', 0.9);
+    const past = q('4', 'NEW_LOGOS', 'PAST', '2020-12-31', 0.9);
     mount([c1, past, fut, c2]);
 
     // non-current excluded
     expect(screen.queryByText('Pipeline value')).toBeNull();
-    expect(screen.queryByText('Leads')).toBeNull();
+    expect(screen.queryByText('New logos')).toBeNull();
     // currents present, c2 (ends 2026-08-15) before c1 (ends 2026-08-31)
     expect(label('Meetings')).toBeTruthy();
     expect(label('Won value')).toBeTruthy();
@@ -69,7 +69,9 @@ describe('ObjectivesBlock — current objectives, cap, order, See all', () => {
 
   it('caps the list to PROGRESS_TOP_N (5) rows, dropping the latest-ending', () => {
     // Six currents with ascending end dates; the 6th (latest end) must be cut.
-    const metrics = ['MEETINGS', 'LEADS', 'REVENUE_WON', 'NEW_LOGOS', 'DECISION_CYCLES', 'PIPELINE_VALUE'];
+    // NEW_LOGOS twice: there are only five metrics and this needs six rows to
+    // push one past the cap. The two labels asserted below stay unique.
+    const metrics = ['MEETINGS', 'NEW_LOGOS', 'REVENUE_WON', 'NEW_LOGOS', 'DECISION_CYCLES', 'PIPELINE_VALUE'];
     const objs = metrics.map((m, i) =>
       q(String(i), m, 'CURRENT', `2026-1${i}-01`, 0.5),
     );
@@ -89,7 +91,7 @@ describe('ObjectivesBlock — current objectives, cap, order, See all', () => {
   });
 
   it('empty state keeps the block (fixed-height zone + message), not hidden', () => {
-    const { container } = mount([q('1', 'LEADS', 'PAST', '2020-12-31', 0.5)]); // no currents
+    const { container } = mount([q('1', 'NEW_LOGOS', 'PAST', '2020-12-31', 0.5)]); // no currents
     expect(screen.getByText('No active objectives.')).toBeTruthy();
     // the fixed-height rows zone is still present (block not collapsed/hidden)
     expect(container.querySelector('[data-testid="objectives-rows-zone"]')).not.toBeNull();
