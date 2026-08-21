@@ -12,7 +12,6 @@ import PropTypes from "prop-types";
 
 // MUI
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
@@ -31,7 +30,6 @@ import {
   CloseOutlined,
   DashboardOutlined,
   FileTextOutlined,
-  LoginOutlined,
 } from "@ant-design/icons";
 
 // Project imports
@@ -46,7 +44,7 @@ const DRAWER_WIDTH = 420;
 
 // ==============================|| STEP DETAIL DRAWER ||============================== //
 
-export default function StepDetailDrawer({ open, step, onClose, onGoToStep }) {
+export default function StepDetailDrawer({ open, step, onClose }) {
   if (!step) return null;
 
   const stageConfig = PIPELINE_STEP_CONFIG[step.stage] || {};
@@ -177,23 +175,6 @@ export default function StepDetailDrawer({ open, step, onClose, onGoToStep }) {
           </Box>
         )}
       </Box>
-
-      <Divider />
-
-      {/* Footer */}
-      <Box sx={{ px: 2.5, py: 1.5 }}>
-        <Button
-          fullWidth
-          variant="outlined"
-          startIcon={<LoginOutlined />}
-          onClick={() => {
-            onGoToStep?.(step);
-            onClose();
-          }}
-        >
-          Open Step Workspace
-        </Button>
-      </Box>
     </Drawer>
   );
 }
@@ -202,5 +183,4 @@ StepDetailDrawer.propTypes = {
   open: PropTypes.bool.isRequired,
   step: PropTypes.object,
   onClose: PropTypes.func.isRequired,
-  onGoToStep: PropTypes.func,
 };

@@ -29,15 +29,6 @@ export default function TimelineTab({ cycle, accountId, onRefresh }) {
     setDrawerStep(step);
   }, []);
 
-  const handleGoToStep = useCallback(
-    (step) => {
-      if (accountId) {
-        router.push(`/accounts/${accountId}/decisionSteps/${step.id}`);
-      }
-    },
-    [accountId, router],
-  );
-
   const handleActivityClick = useCallback(
     (activity) => {
       router.push(`/activities/${activity.id}`);
@@ -79,7 +70,6 @@ export default function TimelineTab({ cycle, accountId, onRefresh }) {
         open={Boolean(drawerStep)}
         step={drawerStep}
         onClose={() => setDrawerStep(null)}
-        onGoToStep={handleGoToStep}
       />
 
       <ActivityModal
