@@ -643,6 +643,35 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
     nettoyage avant déploiement, TD-171 / TD-172.
 - **Prochain jalon** (ordre cible) : **Sprint Workspace / DC (3bis)**.
 
+### Sprint DC-step élagage ✅ — Retrait de la page per-step workspace (front, branche `feat/dc-step-elagage`)
+- **Objectif** : élaguer l'UI du Decision Cycle en SUPPRIMANT la PAGE per-step
+  workspace et en reroutant ses accès vers le DC workspace, SANS toucher à la
+  couche données/linkage (modèle step + FK activité + services).
+- **Livré** :
+  - **Suppression de la page per-step** (S3) : route
+    `/accounts/[id]/decisionSteps/[stepId]`, sa vue, ses 5 onglets + header
+    (dossier `Decision-steps/`), et le builder `buildStepBreadcrumbs`.
+  - **Reroutes vers le DC workspace, onglet timeline**
+    (`/accounts/{id}/dc/{cycleId}?tab=timeline`) : crumb « étape » du breadcrumb
+    d'activité (S1) + clic sur le nom du cycle dans le header d'activité (S2.1).
+    Fallback `?tab=decision-cycle` si le cycleId est absent.
+  - **Retrait des 3 accès restants à la page** (S2.2) : bouton « Open Step
+    Workspace » du `StepDetailDrawer`, fallback dormant de
+    `DecisionCycleTimeline`, lien cassé `/decision-steps/` d'`ActivityOverviewTab`.
+- **Conservé (couche données/linkage, HORS périmètre UI)** : modèle
+  `DecisionStep`, FK `Activity.decision_step`, services derivation/BI/AI, endpoint
+  `/decision_cycles/steps/` + ses serializers (pickers d'étape), `StepDetailDrawer`
+  (panneau info, reste dans le DC workspace), `DecisionStepTimelineSerializer`.
+- **Constat clé — question « mort ou vivant » TRANCHÉE** : `/decision_cycles/steps/`
+  N'EST PAS mort — consommé par les pickers d'étape (`ActivityModal`,
+  `ActivityOverviewTab`) via `?cycle_id=`. Verdict : **VIVANT, conservé.** AUCUNE
+  optimisation faite : l'élagage était UI (page per-step), PAS perf — la lenteur
+  3,3s reste ouverte et distincte (**TD-154** RESOLVED mort/vivant + **TD-179** perf).
+- **Validation** : suite vitest verte (834 tests) ; `next build` OK (route per-step
+  disparue de la table, aucun import non résolu). Dettes tracées : **TD-154**
+  (RESOLVED) + **TD-179 → TD-185**.
+- **Prochain jalon** (ordre cible) : **Sprint Workspace / DC (3bis)**.
+
 ---
 
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
@@ -677,7 +706,9 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
    **✅ Sprint C — Produit & Finance LIVRÉ** (branche `feat/sprint-c-product-finance`)
    **et Sprint C — Wiring / UI / métriques LIVRÉ** (branche `feat/sprint-c-wiring`)
    — voir les deux fiches « Sprint C ✅ » ci-dessus. Le **Sprint
-   decision_cycles/steps** reste à faire dans ce bloc.
+   decision_cycles/steps** est **✅ LIVRÉ** (branche `feat/dc-step-elagage`) — voir
+   la fiche « Sprint DC-step élagage ✅ » ci-dessus : mort/vivant tranché (endpoint
+   VIVANT, conservé) + élagage UI de la page per-step. Ce bloc est donc terminé.
    Prochain sprint : #3bis Workspace / DC.
 3bis. **Workspace / DC** — NOUVEAU (2026-08-21). Édition complète de l'overview
    DC. Voir la fiche « Sprint Workspace / DC » dans « Nouveaux sprints ».
@@ -1211,6 +1242,13 @@ campagnes. **Le chip est la référence.**
 > **↪ Recadrage (réorg 2026-08-15) — regroupé dans le bloc « Modèle Decision
 > Cycle » (#3 de l'ordre cible), avec le Sprint C — Produit & Finance.** Fiche
 > conservée telle quelle ; regroupement seulement.
+>
+> **✅ LIVRÉ — voir la fiche « Sprint DC-step élagage ✅ » plus haut** (branche
+> `feat/dc-step-elagage`). Question mort/vivant TRANCHÉE : l'endpoint est **VIVANT**
+> (pickers d'étape via `?cycle_id=`), donc **conservé, ni supprimé ni optimisé**.
+> Le sprint a fait l'ÉLAGAGE UI (suppression de la page per-step workspace + reroutes
+> vers le DC workspace timeline), PAS la perf : la lenteur 3,3s reste ouverte dans
+> **TD-179** (distincte de **TD-154**, désormais RESOLVED).
 
 ### Sprint — Doublons de requêtes + efficacité cache (front/back) — ⏸️ REPORTÉ (pré-launch)
 - **Statut (décision PO)** : **REPORTÉ / à faire AVANT déploiement** (pré-launch,
