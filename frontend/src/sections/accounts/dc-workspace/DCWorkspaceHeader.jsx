@@ -18,7 +18,7 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Date formatting
-import { format, differenceInDays, addDays } from "date-fns";
+import { format, differenceInDays, parseISO } from "date-fns";
 
 // Icons
 import {
@@ -287,7 +287,17 @@ export default function useDCWorkspaceHeaderProps({
     );
   }
 
-  // Closing date (created_at + estimated_timeline_days, or outcome_date)
+  // Closing date. THE close date is `effective_close_date` — the backend's one
+  // rule (decision_cycles/services/close_date_sql.py:116): the manual
+  // `expected_close_date`, else the last dated activity of the CLOSING step,
+  // else null. It is annotated onto the by-account queryset the workspace reads
+  // (decision_cycles/views/views.py:989) and serialized at serializers.py:380.
+  //
+  // It used to be computed here as created_at + estimated_timeline_days, which
+  // is a different number: a deal's estimated DURATION, not the date anyone
+  // agreed to close on. Editing the close date in the modal therefore moved
+  // nothing on this chip. `estimated_timeline_days` is untouched and still
+  // served — it is simply no longer the source of the close date.
   if (cycle?.outcome_date) {
     infoItems.push(
       <Stack key="closing" direction="row" spacing={0.75} alignItems="center">
@@ -303,15 +313,7 @@ export default function useDCWorkspaceHeaderProps({
         </Typography>
       </Stack>,
     );
-  } else if (
-    cycle?.created_at &&
-    cycle?.estimated_timeline_days != null &&
-    cycle.estimated_timeline_days > 0
-  ) {
-    const closingDate = addDays(
-      new Date(cycle.created_at),
-      cycle.estimated_timeline_days,
-    );
+  } else if (cycle?.effective_close_date) {
     infoItems.push(
       <Stack key="closing" direction="row" spacing={0.75} alignItems="center">
         <FieldTimeOutlined
@@ -322,13 +324,20 @@ export default function useDCWorkspaceHeaderProps({
           }}
         />
         <Typography variant="body2" color="text.secondary">
-          Est. close {format(closingDate, "MMM d, yyyy")}
+          {/* A DateField arrives as "YYYY-MM-DD". `new Date` would read that as
+              UTC midnight and render the day BEFORE in any negative-offset
+              browser; parseISO reads it as a local calendar date. */}
+          Est. close{" "}
+          {format(parseISO(cycle.effective_close_date), "MMM d, yyyy")}
         </Typography>
       </Stack>,
     );
-  } else if (cycle?.created_at) {
+  } else if (cycle) {
+    // No manual date and no dated closing activity. Say so plainly rather than
+    // showing some other date in the close-date slot — an unlabelled created_at
+    // here read as a close date, and the age chip already carries that.
     infoItems.push(
-      <Stack key="date" direction="row" spacing={0.75} alignItems="center">
+      <Stack key="closing" direction="row" spacing={0.75} alignItems="center">
         <CalendarOutlined
           style={{
             fontSize: theme.iconSizes?.sm,
@@ -337,7 +346,7 @@ export default function useDCWorkspaceHeaderProps({
           }}
         />
         <Typography variant="body2" color="text.secondary">
-          {format(new Date(cycle.created_at), "MMM d, yyyy")}
+          No close date
         </Typography>
       </Stack>,
     );

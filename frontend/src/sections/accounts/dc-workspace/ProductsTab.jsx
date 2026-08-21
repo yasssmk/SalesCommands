@@ -71,12 +71,25 @@ function ProductFormDialog({
   );
   const [quantity, setQuantity] = useState(initialValues?.quantity ?? 1);
   const [unitPrice, setUnitPrice] = useState(initialValues?.unitPrice ?? "");
+  const [discount, setDiscount] = useState(initialValues?.discount ?? "");
   const [notes, setNotes] = useState(initialValues?.notes ?? "");
+
+  // 0-100, the same bounds the backend enforces
+  // (serializers.validate_discount_percent_range + the DB CheckConstraint
+  // deal_product_discount_percent_bounds). `inputProps.max` only constrains the
+  // spinner — it does not stop a pasted 150 — so the value is checked here too
+  // and submission is blocked, turning what would be a 400 into an inline
+  // message. The backend check stays the real backstop.
+  const discountError =
+    discount !== "" && (Number.isNaN(Number(discount)) || Number(discount) < 0 || Number(discount) > 100);
 
   const handleSubmit = () => {
     const payload = {
       quantity: parseInt(quantity, 10) || 1,
       unit_price: unitPrice !== "" ? unitPrice : null,
+      // Empty means "no discount": the column defaults to 0, and sending 0
+      // explicitly is what CLEARS a discount on edit (null would be rejected).
+      discount_percent: discount !== "" ? discount : 0,
       notes: notes.trim(),
     };
     if (!editMode && selectedProduct) {
@@ -85,7 +98,7 @@ function ProductFormDialog({
     onSubmit(payload);
   };
 
-  const canSubmit = editMode || Boolean(selectedProduct);
+  const canSubmit = (editMode || Boolean(selectedProduct)) && !discountError;
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -137,6 +150,17 @@ function ProductFormDialog({
               : "Catalog default"
           }
           inputProps={{ min: 0, step: "0.01" }}
+        />
+        <TextField
+          label="Discount %"
+          type="number"
+          size="small"
+          value={discount}
+          onChange={(e) => setDiscount(e.target.value)}
+          placeholder="0"
+          inputProps={{ min: 0, max: 100, step: "0.01" }}
+          error={discountError}
+          helperText={discountError ? "Discount must be between 0 and 100" : " "}
         />
         <TextField
           label="Notes"
@@ -397,6 +421,7 @@ export default function ProductsTab({ cycleId, cycle }) {
                   <TableCell>Product</TableCell>
                   <TableCell align="right">Qty</TableCell>
                   <TableCell align="right">Unit Price</TableCell>
+                  <TableCell align="right">Discount</TableCell>
                   <TableCell align="right">Line Total</TableCell>
                   <TableCell>Notes</TableCell>
                   <TableCell align="center" sx={{ width: 80 }}>
@@ -418,6 +443,14 @@ export default function ProductsTab({ cycleId, cycle }) {
                         p.unit_price || p.product_catalog_entry_detail?.default_unit_price,
                         p.currency,
                       )}
+                    </TableCell>
+                    {/* Without this column a discounted line's total does not
+                        match Qty x Unit Price, with nothing on screen to explain
+                        the gap. */}
+                    <TableCell align="right">
+                      {Number(p.discount_percent) > 0
+                        ? `${Number(p.discount_percent)}%`
+                        : "\u2014"}
                     </TableCell>
                     <TableCell align="right" sx={{ fontWeight: 600 }}>
                       {formatAmount(p.line_total, p.currency)}
@@ -507,6 +540,7 @@ export default function ProductsTab({ cycleId, cycle }) {
             product: editProduct.product_catalog_entry_detail,
             quantity: editProduct.quantity,
             unitPrice: editProduct.unit_price || "",
+            discount: editProduct.discount_percent ?? "",
             notes: editProduct.notes || "",
           }}
         />
