@@ -1889,12 +1889,6 @@ function CycleStepSubsection({ activity, onSave, isLocked = false }) {
     }
   };
 
-  const handleStepClick = () => {
-    if (currentStepId) {
-      router.push(`/decision-steps/${currentStepId}`);
-    }
-  };
-
   return (
     <Stack
       direction="row"

@@ -2,11 +2,12 @@
 /**
  * useDecisionStepEdit — Shared hook for step field editing
  *
- * Centralizes all step edit operations to avoid duplication between
- * DecisionStepDetail (modal) and DecisionStepOverviewTab (workspace).
+ * Centralizes step edit operations. Its remaining consumer is the legacy
+ * DecisionStepDetail modal (the per-step workspace Overview tab that also
+ * used it has been retired).
  *
- * Both consumers pass the same { step, accountId, onUpdate } and get
- * back identical handler signatures + options data for dropdowns.
+ * Consumers pass { step, accountId, onUpdate } and get back handler
+ * signatures + options data for dropdowns.
  *
  * @param {Object} options
  * @param {Object} options.step        - Step data object (must have .id and .cycle)

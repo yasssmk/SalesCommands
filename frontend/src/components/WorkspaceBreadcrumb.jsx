@@ -163,34 +163,6 @@ WorkspaceBreadcrumb.propTypes = {
 // ==============================|| HELPER BUILDERS ||============================== //
 
 /**
- * Build breadcrumb items for Step detail page
- * 
- * @param {Object} params
- * @param {string} params.accountId - Account UUID
- * @param {string} params.accountName - Account display name
- * @param {string} params.cycleName - Decision Cycle name
- * @param {string} params.stepName - Step name (current page)
- * @returns {Object[]} Breadcrumb items array
- */
-export function buildStepBreadcrumbs({ accountId, accountName, cycleId, cycleName, stepName }) {
-  const cycleParam = cycleId ? `&cycle=${cycleId}` : '';
-  return [
-    {
-      label: accountName || 'Account',
-      href: `/accounts/${accountId}?tab=decision-cycle${cycleParam}`
-    },
-    {
-      label: cycleName || 'Decision Cycle',
-      href: `/accounts/${accountId}?tab=decision-cycle${cycleParam}`
-    },
-    {
-      label: stepName || 'Step'
-      // No href - current page
-    }
-  ];
-}
-
-/**
  * Build breadcrumb items for Activity workspace
  * 
  * @param {Object} params
@@ -232,11 +204,17 @@ export function buildActivityBreadcrumbs({
     href: `/accounts/${accountId}?tab=decision-cycle${cycleParam}`
   });
 
-  // Add step if activity is linked to a step
+  // Add step if activity is linked to a step.
+  // Routes to the DC workspace TIMELINE tab of the step's parent cycle
+  // (the per-step workspace is being retired). Falls back to the account's
+  // decision-cycle tab when the cycle id is unavailable, so the crumb never
+  // builds a broken `/dc/undefined` link.
   if (stepId && stepName) {
     items.push({
       label: stepName,
-      href: `/accounts/${accountId}/decisionSteps/${stepId}`
+      href: cycleId
+        ? `/accounts/${accountId}/dc/${cycleId}?tab=timeline`
+        : `/accounts/${accountId}?tab=decision-cycle`
     });
   }
 

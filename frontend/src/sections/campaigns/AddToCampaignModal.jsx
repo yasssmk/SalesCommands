@@ -16,7 +16,6 @@
  * Reusable from:
  *   - AccountHeader (account level)
  *   - AccountContactsTab (contact row)
- *   - DecisionStepHeader (step level → account)
  */
 
 "use client";

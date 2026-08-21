@@ -1151,12 +1151,12 @@ export default function DecisionCycleTimeline({
     }
   }, [steps, cycle?.id]);
   
-  // Default handlers - use callbacks or fallback to correct routes
+  // Step clicks are delegated to the parent (onStepClick opens the step
+  // detail drawer). The per-step workspace route has been retired, so there
+  // is no fallback navigation here.
   const handleStepClick = (step) => {
     if (onStepClick) {
       onStepClick(step);
-    } else if (accountId) {
-      router.push(`/accounts/${accountId}/decisionSteps/${step.id}`);
     }
   };
   

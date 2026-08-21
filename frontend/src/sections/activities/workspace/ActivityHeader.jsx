@@ -254,9 +254,14 @@ export default function useActivityHeaderProps({
   const handleCycleClick = () => {
     if (activity.account_detail?.id) {
       const cycleId = activity.decision_cycle || null;
-      const cycleParam = cycleId ? `&cycle=${cycleId}` : "";
+      // Route to the DC workspace TIMELINE tab of the parent cycle (the
+      // per-step workspace is being retired). Fall back to the account's
+      // decision-cycle tab when the cycle id is unavailable, so the click
+      // never builds a broken `/dc/undefined` link.
       router.push(
-        `/accounts/${activity.account_detail.id}?tab=decision-cycle${cycleParam}`,
+        cycleId
+          ? `/accounts/${activity.account_detail.id}/dc/${cycleId}?tab=timeline`
+          : `/accounts/${activity.account_detail.id}?tab=decision-cycle`,
       );
     }
   };
