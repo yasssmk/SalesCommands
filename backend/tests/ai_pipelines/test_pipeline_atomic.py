@@ -74,16 +74,12 @@ def _run_kwargs():
     return_value='mock-context',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.transcript_signals.build_pain_request',
-    return_value='mock-pain-request',
+    'app_modules.ai_pipelines.pipelines.transcript_signals.build_pain_impact_request',
+    return_value='mock-pain-impact-request',
 )
 @patch(
     'app_modules.ai_pipelines.pipelines.transcript_signals.build_objective_request',
     return_value='mock-objective-request',
-)
-@patch(
-    'app_modules.ai_pipelines.pipelines.transcript_signals.build_impact_request',
-    return_value='mock-impact-request',
 )
 @patch(
     'app_modules.ai_pipelines.pipelines.transcript_signals.build_techstack_request',
@@ -96,28 +92,27 @@ def _run_kwargs():
 def test_qualification_soft_error_partial_success(
     _mock_blocker_req,
     _mock_techstack_req,
-    _mock_impact_req,
     _mock_objective_req,
-    _mock_pain_req,
+    _mock_pain_impact_req,
     _mock_context,
     mock_persist_stage,
 ):
     """
-    A per-stage LLMTimeoutError on the 4th stage (techstack) should NOT
-    roll back prior persisted signals. The run should finalise as PARTIAL.
+    A per-stage LLMTimeoutError on the techstack stage should NOT roll back
+    prior persisted signals. The run should finalise as PARTIAL.
     """
     pipeline = _make_pipeline(QualificationSignalsPipeline)
 
-    # Stages: pain(0), objective(1), impact(2), techstack(3), blocker(4)
-    # Succeed on 0-2, timeout on 3, succeed on 4.
+    # A2 stages: pain_impact(0), objective(1), techstack(2), blocker(3).
+    # Succeed on 0-1, timeout on 2 (techstack), succeed on 3.
     call_count = 0
 
     def _call_llm_side_effect(*, system_prompt, context, request):
         nonlocal call_count
         idx = call_count
         call_count += 1
-        if idx == 3:  # techstack stage
-            raise LLMTimeoutError('stage 4 timed out')
+        if idx == 2:  # techstack stage
+            raise LLMTimeoutError('techstack stage timed out')
         return _LLM_SUCCESS_RESPONSE
 
     with patch.object(pipeline, '_create_run', return_value=MagicMock(id='test-run-id')) as mock_create, \
@@ -141,16 +136,12 @@ def test_qualification_soft_error_partial_success(
     return_value='mock-context',
 )
 @patch(
-    'app_modules.ai_pipelines.pipelines.transcript_signals.build_pain_request',
-    return_value='mock-pain-request',
+    'app_modules.ai_pipelines.pipelines.transcript_signals.build_pain_impact_request',
+    return_value='mock-pain-impact-request',
 )
 @patch(
     'app_modules.ai_pipelines.pipelines.transcript_signals.build_objective_request',
     return_value='mock-objective-request',
-)
-@patch(
-    'app_modules.ai_pipelines.pipelines.transcript_signals.build_impact_request',
-    return_value='mock-impact-request',
 )
 @patch(
     'app_modules.ai_pipelines.pipelines.transcript_signals.build_techstack_request',
@@ -163,16 +154,15 @@ def test_qualification_soft_error_partial_success(
 def test_qualification_hard_crash_rolls_back(
     _mock_blocker_req,
     _mock_techstack_req,
-    _mock_impact_req,
     _mock_objective_req,
-    _mock_pain_req,
+    _mock_pain_impact_req,
     _mock_context,
 ):
     """
-    A RuntimeError raised by persist_stage on the 2nd stage should
-    escape the atomic block, rolling back ALL persisted signals.
-    The run should finalise as LLM_ERROR with 'hard crash' in the
-    error message, and the RuntimeError should be re-raised.
+    A RuntimeError raised by persist_stage should escape the atomic block,
+    rolling back ALL persisted signals. The run should finalise as
+    LLM_ERROR with 'hard crash' in the error message, and the RuntimeError
+    should be re-raised.
     """
     pipeline = _make_pipeline(QualificationSignalsPipeline)
 
@@ -182,7 +172,10 @@ def test_qualification_hard_crash_rolls_back(
         nonlocal persist_call_count
         idx = persist_call_count
         persist_call_count += 1
-        if idx == 1:  # second stage (objective)
+        # A2: the merged pain_impact stage calls persist_stage twice
+        # (pain=0, impact=1). Crash on the impact persist -- a hard crash
+        # anywhere inside the atomic block must roll everything back.
+        if idx == 1:
             raise RuntimeError('DB connection lost')
         return _PERSIST_SUCCESS
 

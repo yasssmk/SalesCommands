@@ -4,15 +4,15 @@ Orchestration-level tests for QualificationSignalsPipeline (Sprint B3).
 
 Covers everything that lives at the pipeline-runner boundary:
 
-  * 5 stages run in the canonical order
-    (pain -> objective -> impact -> techstack -> blocker).
+  * 4 stages run in the canonical order
+    (pain_impact -> objective -> techstack -> blocker).
   * Prompt structure per stage: system + context + transcript marker
     + stage-specific TASK header. Driven via FakeProvider.calls which
     captures every kwarg passed to provider.call().
   * AIPipelineRun.PROMPT_VERSIONS contains all 6 keys, including the
     new 'blocker' entry.
   * Final status derivation:
-      * all 5 stages succeed -> SUCCESS
+      * all 4 stages succeed -> SUCCESS
       * any stage raises -> PARTIAL (provided at least one succeeded)
   * Safety filter still applies to the Blocker stage:
       * confidence < 0.5 -> drop
@@ -80,7 +80,7 @@ class TestPromptVersionsRegistry:
         # All 6 keys must be present (system + context + 5 stage versions).
         # Use a set comparison to keep the assertion order-agnostic.
         assert set(QualificationSignalsPipeline.PROMPT_VERSIONS.keys()) == {
-            'system', 'context', 'pain', 'objective', 'impact',
+            'system', 'context', 'pain_impact', 'objective',
             'techstack', 'blocker',
         }
 
@@ -90,7 +90,7 @@ class TestPromptVersionsRegistry:
 # =============================================================================
 
 class TestPipelineStageOrder:
-    """The 5 stages must run in the canonical order."""
+    """The 4 stages must run in the canonical order."""
 
     def test_five_stages_run_in_canonical_order(
         self, account, activity, user_a, fake_provider, patch_active_provider,
@@ -98,7 +98,7 @@ class TestPipelineStageOrder:
         from app_modules.ai_pipelines.pipelines.transcript_signals import (
             QualificationSignalsPipeline,
         )
-        # Configure happy replies for all 5 stages so each stage persists
+        # Configure happy replies for all stages so each persists
         # 1 signal -- baseline scenario for ordering assertions.
         fake_provider.replies = dict(CANNED_REPLIES_HAPPY)
 
@@ -110,7 +110,7 @@ class TestPipelineStageOrder:
         )
 
         assert fake_provider.stages_in_order() == [
-            'pain', 'objective', 'impact', 'techstack', 'blocker',
+            'pain_impact', 'objective', 'techstack', 'blocker',
         ]
         assert result['run'].status == AIPipelineStatus.SUCCESS
 
@@ -136,7 +136,7 @@ class TestPromptStructurePerStage:
     def _run_full_pipeline(
         self, account, activity, user_a, fake_provider, patch_active_provider,
     ):
-        """Run the pipeline once with happy replies so all 5 stages fire."""
+        """Run the pipeline once with happy replies so all stages fire."""
         from app_modules.ai_pipelines.pipelines.transcript_signals import (
             QualificationSignalsPipeline,
         )
@@ -154,11 +154,10 @@ class TestPromptStructurePerStage:
     @pytest.mark.parametrize(
         'stage,expected_marker',
         [
-            ('pain',       'Extract PAIN signals'),
-            ('objective',  'Extract OBJECTIVE signals'),
-            ('impact',     'Extract IMPACT signals'),
-            ('techstack',  'Extract TECH STACK signals'),
-            ('blocker',    'Extract BLOCKER signals'),
+            ('pain_impact', 'Extract PAIN and IMPACT signals'),
+            ('objective',   'Extract OBJECTIVE signals'),
+            ('techstack',   'Extract TECH STACK signals'),
+            ('blocker',     'Extract BLOCKER signals'),
         ],
     )
     def test_user_prompt_contains_stage_task_header(self, stage, expected_marker):
@@ -168,7 +167,7 @@ class TestPromptStructurePerStage:
 
     @pytest.mark.parametrize(
         'stage',
-        ['pain', 'objective', 'impact', 'techstack', 'blocker'],
+        ['pain_impact', 'objective', 'techstack', 'blocker'],
     )
     def test_user_prompt_embeds_transcript_verbatim(self, stage):
         calls = self._provider.calls_for(stage)
@@ -176,7 +175,7 @@ class TestPromptStructurePerStage:
 
     @pytest.mark.parametrize(
         'stage',
-        ['pain', 'objective', 'impact', 'techstack', 'blocker'],
+        ['pain_impact', 'objective', 'techstack', 'blocker'],
     )
     def test_system_prompt_is_non_empty(self, stage):
         calls = self._provider.calls_for(stage)
@@ -186,7 +185,7 @@ class TestPromptStructurePerStage:
 
     @pytest.mark.parametrize(
         'stage',
-        ['pain', 'objective', 'impact', 'techstack', 'blocker'],
+        ['pain_impact', 'objective', 'techstack', 'blocker'],
     )
     def test_temperature_is_zero_for_extraction(self, stage):
         calls = self._provider.calls_for(stage)
@@ -217,11 +216,11 @@ class TestPromptStructurePerStage:
         section's header literal must NOT appear in the blocker user
         prompt. The other stages still expose it.
         """
-        blocker_user = self._provider.calls_for('blocker')[0]['user']
-        pain_user    = self._provider.calls_for('pain')[0]['user']
+        blocker_user     = self._provider.calls_for('blocker')[0]['user']
+        pain_impact_user = self._provider.calls_for('pain_impact')[0]['user']
 
         assert 'CANONICAL TAXONOMY' not in blocker_user
-        assert 'CANONICAL TAXONOMY' in pain_user  # baseline / regression
+        assert 'CANONICAL TAXONOMY' in pain_impact_user  # baseline / regression
 
 
 # =============================================================================
@@ -278,7 +277,7 @@ class TestAIPipelineRunAuditRow:
         )
         sub_call_stages = [c['stage'] for c in result['run'].sub_calls]
         assert sub_call_stages == [
-            'pain', 'objective', 'impact', 'techstack', 'blocker',
+            'pain_impact', 'objective', 'techstack', 'blocker',
         ]
 
 

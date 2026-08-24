@@ -123,6 +123,12 @@ class FakeProvider:
     # transcript_signals/ family (QualificationSignalsPipeline); the
     # last belongs to the next_steps/ family (NextStepsPipeline, B4).
     _STAGE_MARKERS = (
+        # A2: the merged pain+impact stage. Listed FIRST and its header
+        # ("Extract PAIN and IMPACT signals") deliberately does not contain
+        # the legacy "Extract PAIN signals" / "Extract IMPACT signals"
+        # substrings, so inference maps it to 'pain_impact', not a legacy
+        # stage.
+        ('Extract PAIN and IMPACT signals', 'pain_impact'),
         ('Extract PAIN signals',       'pain'),
         ('Extract OBJECTIVE signals',  'objective'),
         ('Extract IMPACT signals',     'impact'),
@@ -247,6 +253,34 @@ def patch_active_provider(monkeypatch, fake_provider):
 # tests that want a "everything succeeded" baseline without hand-rolling
 # JSON per test.
 CANNED_REPLIES_HAPPY = {
+    # A2: the merged pain+impact stage returns ONE object with two arrays.
+    # One pain + one impact so the happy-path run persists 1 of each into
+    # the separate 'pain' / 'impact' response keys.
+    'pain_impact': (
+        '{"pains": [{'
+        '"what": "OPS", '
+        '"dimension": "TIME", '
+        '"scope_level": "BUSINESS", '
+        '"target_department": null, '
+        '"summary": "Reporting takes 3 weeks", '
+        '"source_quote": "Our reporting takes 3 weeks", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}], "impacts": [{'
+        '"what": "OPS", '
+        '"dimension": "TIME", '
+        '"impact_type": "TIME", '
+        '"scope_level": "BUSINESS", '
+        '"target_department": null, '
+        '"summary": "Managers spend 5h/week on manual reports", '
+        '"source_quote": "Managers spend 5 hours a week on manual reports", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}]}'
+    ),
+    # Legacy single-stage replies retained for tests that still drive the
+    # standalone 'pain' / 'impact' stages directly (not used by the merged
+    # pipeline, which reads 'pain_impact').
     'pain': (
         '{"signals": [{'
         '"what": "OPS", '
@@ -316,6 +350,32 @@ CANNED_REPLIES_HAPPY = {
 # resolves target_department to the FK (A1). The 'Marketing' department
 # must exist in the DB (post_migrate seed, or get_or_create in the test).
 CANNED_REPLIES_DEPARTMENT = {
+    # A2 merged stage, INDEPENDENT SCOPE proof drawn from one passage
+    # ("the marketing data isn't reliable, it costs the company ~40k/quarter"):
+    #   pain   -> DEPARTMENT / Marketing (who HAS the problem)
+    #   impact -> BUSINESS / FINANCIAL   (who BEARS the cost)
+    'pain_impact': (
+        '{"pains": [{'
+        '"what": "DATA", '
+        '"dimension": "QUALITY", '
+        '"scope_level": "DEPARTMENT", '
+        '"target_department": "Marketing", '
+        '"summary": "Marketing data quality is poor", '
+        '"source_quote": "the marketing data isn\'t reliable", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}], "impacts": [{'
+        '"what": "DATA", '
+        '"dimension": "QUALITY", '
+        '"impact_type": "FINANCIAL", '
+        '"scope_level": "BUSINESS", '
+        '"target_department": null, '
+        '"summary": "Unreliable marketing data costs ~40k per quarter", '
+        '"source_quote": "it costs the company about 40k per quarter", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}]}'
+    ),
     'pain': (
         '{"signals": [{'
         '"what": "DATA", '
