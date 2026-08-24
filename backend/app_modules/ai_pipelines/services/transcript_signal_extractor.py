@@ -144,32 +144,8 @@ def resolve_scope_and_department(raw):
 
     scope_raw = raw.get('scope_level')
 
-    # ===================================================================
-    # [SCOPE-DIAG] TEMPORARY diagnostic — REMOVE after the PO smoke.
-    # -------------------------------------------------------------------
-    # Reveals, per qualification signal, whether a signal that lands
-    # BUSINESS did so because the LLM returned BUSINESS (H1) or because it
-    # returned DEPARTMENT with a target_department string that did not
-    # match the controlled StandardDepartment vocabulary -- e.g. the LABEL
-    # ("Marketing & Communications") instead of the VALUE ("Marketing") --
-    # so the lookup folded it to BUSINESS (H2). Observation ONLY: it does
-    # not change any resolution branch. PII-safe: it logs the scope + the
-    # department string (controlled vocabulary), never the summary or
-    # source_quote.
-    _diag_dept_raw = raw.get('target_department')
-
-    def _scope_diag(matched_id, final_scope):
-        logger.info(
-            '[SCOPE-DIAG] scope_raw=%r target_department_raw=%r '
-            'matched_department_id=%s final_scope=%s',
-            scope_raw, _diag_dept_raw, matched_id, final_scope,
-            extra={'event': 'scope_diag'},
-        )
-    # ===================================================================
-
     # GUARD 1 — anything that is not an explicit DEPARTMENT is BUSINESS.
     if scope_raw != ScopeLevel.DEPARTMENT:
-        _scope_diag(None, ScopeLevel.BUSINESS)  # [SCOPE-DIAG]
         return ScopeLevel.BUSINESS, None
 
     # DEPARTMENT requested — resolve the department by exact name.
@@ -182,15 +158,12 @@ def resolve_scope_and_department(raw):
 
     # Unresolved department name -> fold to BUSINESS (no drop, no raise).
     if department is None:
-        _scope_diag(None, ScopeLevel.BUSINESS)  # [SCOPE-DIAG]
         return ScopeLevel.BUSINESS, None
 
     # GUARD 2 — General Management is a company-wide / executive scope.
     if department.name == StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT:
-        _scope_diag(department.id, ScopeLevel.BUSINESS)  # [SCOPE-DIAG]
         return ScopeLevel.BUSINESS, None
 
-    _scope_diag(department.id, ScopeLevel.DEPARTMENT)  # [SCOPE-DIAG]
     return ScopeLevel.DEPARTMENT, department
 
 
