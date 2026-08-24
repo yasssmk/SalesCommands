@@ -182,15 +182,28 @@ EMISSION RULES
   the source_quote into the summary.
 - `source_quote` must be a verbatim excerpt from the transcript, preserving
   the original language, punctuation, and casing. Never translate.
-- `scope_level` MUST be exactly BUSINESS or DEPARTMENT. An objective pursued
-  across the whole company, or set at executive / C-level / general-management
-  level, is BUSINESS. An objective specific to one department is DEPARTMENT.
-  Never emit PERSONAL or any other value.
+- `scope_level` MUST be exactly BUSINESS or DEPARTMENT, decided ONLY by the
+  SUBJECT of the objective -- which perimeter it concerns -- never by who is
+  speaking. DEPARTMENT = the objective names or clearly identifies one specific
+  department (use that department verbatim, no interpretation), even if the
+  speaker belongs to another department and even if the benefit hits the whole
+  company. BUSINESS = no specific department is named; the objective is
+  company-wide or cross-departmental. A senior person (CEO, GM, C-level)
+  describing one department's objective is still DEPARTMENT. Never emit
+  PERSONAL or any other value.
 - `target_department` is REQUIRED when scope_level is DEPARTMENT: pick exactly
   one value from the `target_department` list in the context. It MUST be null
   when scope_level is BUSINESS.
 - If NO objective evidence is present anywhere in the transcript, return
   exactly: {{"signals": []}}
+
+SCOPE EXAMPLES (the SUBJECT decides the scope, never the speaker)
+- The CFO says "the sales team wants to cut new-rep ramp time"
+  -> scope_level = "DEPARTMENT", target_department = "Sales"
+     (a department is named; the CFO speaking does not make it BUSINESS)
+- Someone says "company-wide, we want to reduce costs by 15%"
+  -> scope_level = "BUSINESS", target_department = null
+     (no single department is the subject)
 
 TRANSCRIPT
 <<<TRANSCRIPT_START>>>

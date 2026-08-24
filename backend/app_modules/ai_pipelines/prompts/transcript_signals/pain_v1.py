@@ -159,15 +159,28 @@ EMISSION RULES
   source_quote into the summary.
 - `source_quote` must be a verbatim excerpt from the transcript, preserving
   the original language, punctuation, and casing. Never translate.
-- `scope_level` MUST be exactly BUSINESS or DEPARTMENT. A pain felt across the
-  whole company, or raised at executive / C-level / general-management level,
-  is BUSINESS. A pain specific to one department is DEPARTMENT. Never emit
-  PERSONAL or any other value.
+- `scope_level` MUST be exactly BUSINESS or DEPARTMENT, decided ONLY by the
+  SUBJECT of the pain -- which perimeter it concerns -- never by who is
+  speaking. DEPARTMENT = the pain names or clearly identifies one specific
+  department (use that department verbatim, no interpretation), even if the
+  speaker belongs to another department and even if the consequence hits the
+  whole company. BUSINESS = no specific department is named; the pain is
+  company-wide or cross-departmental. A senior person (CEO, GM, C-level)
+  describing one department's pain is still DEPARTMENT. Never emit PERSONAL or
+  any other value.
 - `target_department` is REQUIRED when scope_level is DEPARTMENT: pick exactly
   one value from the `target_department` list in the context. It MUST be null
   when scope_level is BUSINESS.
 - If NO pain evidence is present anywhere in the transcript, return exactly:
   {{"signals": []}}
+
+SCOPE EXAMPLES (the SUBJECT decides the scope, never the speaker)
+- The CEO says "our marketing team can't trust its campaign data"
+  -> scope_level = "DEPARTMENT", target_department = "Marketing"
+     (a department is named; the CEO speaking does not make it BUSINESS)
+- Someone says "company-wide, our consolidated reporting takes three weeks"
+  -> scope_level = "BUSINESS", target_department = null
+     (no single department is the subject)
 
 TRANSCRIPT
 <<<TRANSCRIPT_START>>>

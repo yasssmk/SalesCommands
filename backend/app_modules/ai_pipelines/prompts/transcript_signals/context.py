@@ -362,9 +362,11 @@ def _scope_taxonomy_lines():
     pain / objective / impact stages.
 
     scope_level is deliberately restricted to BUSINESS | DEPARTMENT --
-    PERSONAL is NOT offered to the model (a company-wide or executive /
-    general-management observation is BUSINESS; a department-specific one
-    is DEPARTMENT). target_department is drawn from the controlled
+    PERSONAL is NOT offered to the model. Scope is decided by the SUBJECT
+    of the observation (which department it concerns), never by the
+    seniority or department of the speaker: an observation naming one
+    department is DEPARTMENT, a company-wide / cross-departmental one is
+    BUSINESS. target_department is drawn from the controlled
     StandardDepartment vocabulary (DB values), so whatever the model
     emits resolves by an exact name lookup in the extractor -- no fuzzy
     matching. It is REQUIRED when scope_level is DEPARTMENT and null
@@ -383,9 +385,17 @@ def _scope_taxonomy_lines():
     return [
         '- scope_level (organisational scope of the observation): '
         '["BUSINESS", "DEPARTMENT"] '
-        '-- BUSINESS = true across the whole company or at the '
-        'executive / general-management level; DEPARTMENT = specific to '
-        'one department. Never emit any other value.',
+        '-- the scope is determined by the SUBJECT of the observation '
+        '(which perimeter the pain/objective/impact concerns), NOT by who '
+        'is speaking. DEPARTMENT = the observation names or clearly '
+        'identifies one specific department; use that department verbatim '
+        'as stated, even if a person from another department says it, and '
+        'even if the financial consequence hits the whole company. '
+        'BUSINESS = no specific department is named; the observation is '
+        'company-wide or cross-departmental. The seniority, role, or '
+        'department of the SPEAKER never determines scope -- a senior '
+        'person describing one department is DEPARTMENT. Never emit any '
+        'other value.',
         '- target_department (REQUIRED when scope_level is "DEPARTMENT", '
         'null when "BUSINESS"; pick exactly one value from this list): '
         + _enum_json_array(StandardDepartment.DepartmentChoices),
