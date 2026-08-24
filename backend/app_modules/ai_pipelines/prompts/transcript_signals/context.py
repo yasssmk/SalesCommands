@@ -76,7 +76,9 @@ logger = logging.getLogger(__name__)
 
 CONTEXT_VERSION = 'v1'
 
-_SUPPORTED_STAGES = ('pain', 'objective', 'impact', 'techstack', 'blocker')
+_SUPPORTED_STAGES = (
+    'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
+)
 
 
 # =============================================================================
@@ -91,8 +93,10 @@ def build_context_layer(activity, target_stage):
     Args:
         activity: app_modules.activities.models.Activity. Anchor for all
             session grounding (tenant, account, contacts).
-        target_stage: One of 'pain', 'objective', 'impact', 'techstack',
-            'blocker'. Drives which canonical enums are exposed.
+        target_stage: One of 'pain_impact', 'pain', 'objective', 'impact',
+            'techstack', 'blocker'. Drives which canonical enums are
+            exposed. 'pain_impact' is the merged stage (A2) and exposes the
+            union of the pain and impact axes.
 
     Returns:
         str: A ready-to-concatenate context block. Will be combined
@@ -297,7 +301,27 @@ def _build_taxonomy_block(target_stage):
         '(pick exactly one value from each list, or OMIT the signal)'
     ]
 
-    if target_stage == 'pain':
+    if target_stage == 'pain_impact':
+        # Merged pain + impact stage: the union of the pain axes and the
+        # impact axes. `what` / `dimension` apply to both; `impact_type`
+        # applies to IMPACT signals only; the scope block applies to both
+        # (each signal resolves its own scope independently).
+        lines.append(
+            '- what (area of the business affected): '
+            + _enum_json_array(SignalWhat)
+        )
+        lines.append(
+            '- dimension (friction or outcome experienced): '
+            + _enum_json_array(SignalDimension)
+        )
+        lines.append(
+            '- impact_type (nature of the observed consequence -- '
+            'IMPACT signals only): '
+            + _enum_json_array(ImpactType)
+        )
+        lines.extend(_scope_taxonomy_lines())
+
+    elif target_stage == 'pain':
         lines.append(
             '- what (area of the business affected): '
             + _enum_json_array(SignalWhat)
