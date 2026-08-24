@@ -251,6 +251,8 @@ CANNED_REPLIES_HAPPY = {
         '{"signals": [{'
         '"what": "OPS", '
         '"dimension": "TIME", '
+        '"scope_level": "BUSINESS", '
+        '"target_department": null, '
         '"summary": "Reporting takes 3 weeks", '
         '"source_quote": "Our reporting takes 3 weeks", '
         '"confidence": 0.9, '
@@ -261,6 +263,8 @@ CANNED_REPLIES_HAPPY = {
         '{"signals": [{'
         '"what": "GROWTH", '
         '"dimension": "TIME", '
+        '"scope_level": "BUSINESS", '
+        '"target_department": null, '
         '"summary": "Cut onboarding time in half", '
         '"source_quote": "We want to onboard customers twice as fast", '
         '"confidence": 0.9, '
@@ -272,6 +276,8 @@ CANNED_REPLIES_HAPPY = {
         '"what": "OPS", '
         '"dimension": "TIME", '
         '"impact_type": "TIME", '
+        '"scope_level": "BUSINESS", '
+        '"target_department": null, '
         '"summary": "Managers spend 5h/week on manual reports", '
         '"source_quote": "Managers spend 5 hours a week on manual reports", '
         '"confidence": 0.9, '
@@ -296,6 +302,53 @@ CANNED_REPLIES_HAPPY = {
         '{"signals": [{'
         '"summary": "No budget allocated for Q4", '
         '"source_quote": "We have no budget for this in Q4", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}]}'
+    ),
+}
+
+
+# DEPARTMENT-scoped variants for pain / objective / impact. Each carries
+# scope_level = DEPARTMENT and a target_department drawn from the
+# StandardDepartment controlled vocabulary ("Marketing"). Used by the
+# scope-extraction tests to assert the extractor reads scope_level and
+# resolves target_department to the FK (A1). The 'Marketing' department
+# must exist in the DB (post_migrate seed, or get_or_create in the test).
+CANNED_REPLIES_DEPARTMENT = {
+    'pain': (
+        '{"signals": [{'
+        '"what": "DATA", '
+        '"dimension": "QUALITY", '
+        '"scope_level": "DEPARTMENT", '
+        '"target_department": "Marketing", '
+        '"summary": "Marketing data quality is poor", '
+        '"source_quote": "Our marketing team cannot trust the campaign data", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}]}'
+    ),
+    'objective': (
+        '{"signals": [{'
+        '"what": "DATA", '
+        '"dimension": "QUALITY", '
+        '"scope_level": "DEPARTMENT", '
+        '"target_department": "Marketing", '
+        '"summary": "Improve marketing data quality", '
+        '"source_quote": "Marketing wants clean, trustworthy campaign data", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}]}'
+    ),
+    'impact': (
+        '{"signals": [{'
+        '"what": "DATA", '
+        '"dimension": "QUALITY", '
+        '"impact_type": "PRODUCTIVITY", '
+        '"scope_level": "DEPARTMENT", '
+        '"target_department": "Marketing", '
+        '"summary": "Marketing loses time on bad data", '
+        '"source_quote": "Marketing spends 6 hours a week cleaning campaign data", '
         '"confidence": 0.9, '
         '"is_inferred": false'
         '}]}'

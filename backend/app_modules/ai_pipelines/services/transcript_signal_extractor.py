@@ -110,6 +110,63 @@ logger = logging.getLogger(__name__)
 _TECHSTACK_USAGE_SCOPE_ALLOWED = {'TEAM', 'COMPANY', 'UNKNOWN'}
 
 
+def resolve_scope_and_department(raw):
+    """
+    Resolve (scope_level, target_department) for a qualification signal
+    (pain / objective / impact) from the LLM-emitted payload.
+
+    Shared by the three builders so the guards live in ONE place.
+
+    The v0 offers the model only BUSINESS | DEPARTMENT (PERSONAL is not
+    surfaced in the prompt). Three safety-net guards fold anything that
+    would otherwise produce an inconsistent row back to BUSINESS:
+
+      GUARD 1 (anti-PERSONAL): any scope_level other than the literal
+        "DEPARTMENT" -- including "PERSONAL", missing, or junk -- resolves
+        to BUSINESS with no department. Only an explicit DEPARTMENT can
+        carry a department.
+
+      unresolved department: a DEPARTMENT scope whose target_department
+        name does not resolve to a StandardDepartment row folds to
+        BUSINESS + None. The signal is NOT dropped and nothing is raised
+        -- an unresolved department is business-normal (rep refines
+        later).
+
+      GUARD 2 (general-management -> BUSINESS): a resolved department that
+        is "General Management" folds to BUSINESS + None. A company-wide /
+        executive observation is BUSINESS by definition, even if the model
+        tagged the GM department.
+
+    Returns:
+        tuple (scope_level: str, target_department: StandardDepartment | None)
+    """
+    from app_modules.core_modules.models import StandardDepartment
+
+    scope_raw = raw.get('scope_level')
+
+    # GUARD 1 — anything that is not an explicit DEPARTMENT is BUSINESS.
+    if scope_raw != ScopeLevel.DEPARTMENT:
+        return ScopeLevel.BUSINESS, None
+
+    # DEPARTMENT requested — resolve the department by exact name.
+    name = raw.get('target_department')
+    department = None
+    if name:
+        department = (
+            StandardDepartment.objects.filter(name=name).first()
+        )
+
+    # Unresolved department name -> fold to BUSINESS (no drop, no raise).
+    if department is None:
+        return ScopeLevel.BUSINESS, None
+
+    # GUARD 2 — General Management is a company-wide / executive scope.
+    if department.name == StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT:
+        return ScopeLevel.BUSINESS, None
+
+    return ScopeLevel.DEPARTMENT, department
+
+
 class TranscriptSignalExtractor:
     """
     Stage-by-stage persistence for the TranscriptSignalsPipeline.
@@ -346,18 +403,27 @@ class TranscriptSignalExtractor:
         if not all(k in raw and raw[k] is not None for k in required):
             return None
 
+        # Scope + department are now LLM-extracted (BUSINESS | DEPARTMENT),
+        # with the safety-net guards folding invalid/PERSONAL/unresolved
+        # emissions back to BUSINESS. Replaces the previous reliance on the
+        # PainSignal model default (BUSINESS).
+        scope_level, target_department = resolve_scope_and_department(raw)
+
         return {
-            'signal_type':     'pain',
-            'account':         activity.account,
-            'source_activity': activity,
-            'source':          SignalSource.LLM_EXTRACTED,
-            'status':          SignalStatus.PENDING,
-            'what':            raw['what'],
-            'dimension':       raw['dimension'],
-            'summary':         raw['summary'],
-            'source_quote':    raw['source_quote'],
-            'confidence':      self._safe_float(raw.get('confidence')),
-            'is_inferred':     bool(raw.get('is_inferred')),
+            'signal_type':      'pain',
+            'account':          activity.account,
+            'source_activity':  activity,
+            'source':           SignalSource.LLM_EXTRACTED,
+            'status':           SignalStatus.PENDING,
+            'what':             raw['what'],
+            'dimension':        raw['dimension'],
+            'summary':          raw['summary'],
+            'source_quote':     raw['source_quote'],
+            'confidence':       self._safe_float(raw.get('confidence')),
+            'is_inferred':      bool(raw.get('is_inferred')),
+
+            'scope_level':        scope_level,
+            'target_department':  target_department,
         }
 
     # ---------------------- Objective ----------------------
@@ -378,21 +444,29 @@ class TranscriptSignalExtractor:
         if not all(k in raw and raw[k] is not None for k in required):
             return None
 
-        return {
-            'signal_type':     'objective',
-            'account':         activity.account,
-            'source_activity': activity,
-            'source':          SignalSource.LLM_EXTRACTED,
-            'status':          SignalStatus.PENDING,
-            'what':            raw['what'],
-            'dimension':       raw['dimension'],
-            'summary':         raw['summary'],
-            'source_quote':    raw['source_quote'],
-            'confidence':      self._safe_float(raw.get('confidence')),
-            'is_inferred':     bool(raw.get('is_inferred')),
+        # Scope + department are now LLM-extracted (BUSINESS | DEPARTMENT)
+        # with the shared safety-net guards. Replaces the previous forced
+        # scope_level=BUSINESS. target_contact stays unset (PERSONAL is not
+        # offered), so the built dict always satisfies ObjectiveSignal.clean():
+        #   DEPARTMENT -> target_department set, target_contact absent;
+        #   BUSINESS   -> neither set.
+        scope_level, target_department = resolve_scope_and_department(raw)
 
-            # v1 hardcoded scope -- rep refines during validation.
-            'scope_level':     ScopeLevel.BUSINESS,
+        return {
+            'signal_type':      'objective',
+            'account':          activity.account,
+            'source_activity':  activity,
+            'source':           SignalSource.LLM_EXTRACTED,
+            'status':           SignalStatus.PENDING,
+            'what':             raw['what'],
+            'dimension':        raw['dimension'],
+            'summary':          raw['summary'],
+            'source_quote':     raw['source_quote'],
+            'confidence':       self._safe_float(raw.get('confidence')),
+            'is_inferred':      bool(raw.get('is_inferred')),
+
+            'scope_level':        scope_level,
+            'target_department':  target_department,
         }
     
     # ---------------------- Impact ----------------------
@@ -430,22 +504,28 @@ class TranscriptSignalExtractor:
         if not all(k in raw and raw[k] is not None for k in required):
             return None
 
-        return {
-            'signal_type':     'impact',
-            'account':         activity.account,
-            'source_activity': activity,
-            'source':          SignalSource.LLM_EXTRACTED,
-            'status':          SignalStatus.PENDING,
-            'what':            raw['what'],
-            'dimension':       raw['dimension'],
-            'impact_type':     raw['impact_type'],
-            'summary':         raw['summary'],
-            'source_quote':    raw['source_quote'],
-            'confidence':      self._safe_float(raw.get('confidence')),
-            'is_inferred':     bool(raw.get('is_inferred')),
+        # Scope + department are now LLM-extracted (BUSINESS | DEPARTMENT)
+        # with the shared safety-net guards. Replaces the previous forced
+        # scope_level=BUSINESS. ImpactSignal.clean() has no scope-conditional
+        # rule, so target_department is purely descriptive here.
+        scope_level, target_department = resolve_scope_and_department(raw)
 
-            # v1 hardcoded scope -- rep refines during validation.
-            'scope_level':     ScopeLevel.BUSINESS,
+        return {
+            'signal_type':      'impact',
+            'account':          activity.account,
+            'source_activity':  activity,
+            'source':           SignalSource.LLM_EXTRACTED,
+            'status':           SignalStatus.PENDING,
+            'what':             raw['what'],
+            'dimension':        raw['dimension'],
+            'impact_type':      raw['impact_type'],
+            'summary':          raw['summary'],
+            'source_quote':     raw['source_quote'],
+            'confidence':       self._safe_float(raw.get('confidence')),
+            'is_inferred':      bool(raw.get('is_inferred')),
+
+            'scope_level':        scope_level,
+            'target_department':  target_department,
 
             # metric_text and human_impact NOT extracted in v1 -- rep
             # fills during validation. The fields are nullable on the
