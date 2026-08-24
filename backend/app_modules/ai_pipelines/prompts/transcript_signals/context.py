@@ -306,10 +306,9 @@ def _build_taxonomy_block(target_stage):
             '- dimension (friction or outcome experienced): '
             + _enum_json_array(SignalDimension)
         )
+        lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'objective':
-        # v1: scope_level is forced to BUSINESS by the persistence service
-        # (rep refines scope and target during validation).
         lines.append(
             '- what (area of the business targeted): '
             + _enum_json_array(SignalWhat)
@@ -318,13 +317,9 @@ def _build_taxonomy_block(target_stage):
             '- dimension (outcome sought): '
             + _enum_json_array(SignalDimension)
         )
+        lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'impact':
-        # v1: scope_level is forced to BUSINESS by the persistence
-        # service (rep refines scope during validation). metric_text
-        # and human_impact are NOT extracted in v1 -- the rep adds
-        # them during validation when relevant. See impact_v1.py
-        # docstring for the rationale.
         lines.append(
             '- what (area of the business affected): '
             + _enum_json_array(SignalWhat)
@@ -337,6 +332,7 @@ def _build_taxonomy_block(target_stage):
             '- impact_type (nature of the observed consequence): '
             + _enum_json_array(ImpactType)
         )
+        lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'techstack':
         lines.append(
@@ -358,3 +354,39 @@ def _enum_json_array(enum_cls):
     must emit back to us -- no translation step needed on read.
     """
     return '[' + ', '.join(f'"{v}"' for v in enum_cls.values) + ']'
+
+
+def _scope_taxonomy_lines():
+    """
+    Render the scope_level + target_department taxonomy shared by the
+    pain / objective / impact stages.
+
+    scope_level is deliberately restricted to BUSINESS | DEPARTMENT --
+    PERSONAL is NOT offered to the model (a company-wide or executive /
+    general-management observation is BUSINESS; a department-specific one
+    is DEPARTMENT). target_department is drawn from the controlled
+    StandardDepartment vocabulary (DB values), so whatever the model
+    emits resolves by an exact name lookup in the extractor -- no fuzzy
+    matching. It is REQUIRED when scope_level is DEPARTMENT and null
+    otherwise.
+
+    The backend applies the same restriction as a safety net (any value
+    other than DEPARTMENT folds to BUSINESS; an unresolved department
+    folds to BUSINESS), so a drifting model emission never produces an
+    invalid row.
+    """
+    # Lazy import: StandardDepartment lives in core_modules; importing it
+    # at module load would couple the prompt package to that app's load
+    # order for no benefit (this builder runs at request time only).
+    from app_modules.core_modules.models import StandardDepartment
+
+    return [
+        '- scope_level (organisational scope of the observation): '
+        '["BUSINESS", "DEPARTMENT"] '
+        '-- BUSINESS = true across the whole company or at the '
+        'executive / general-management level; DEPARTMENT = specific to '
+        'one department. Never emit any other value.',
+        '- target_department (REQUIRED when scope_level is "DEPARTMENT", '
+        'null when "BUSINESS"; pick exactly one value from this list): '
+        + _enum_json_array(StandardDepartment.DepartmentChoices),
+    ]

@@ -138,6 +138,8 @@ Return a single JSON object with this exact shape:
     {{
       "what":         "<one value from the `what` list in the CANONICAL TAXONOMY of the context>",
       "dimension":    "<one value from the `dimension` list in the CANONICAL TAXONOMY of the context>",
+      "scope_level":  "<one value from the `scope_level` list in the context: BUSINESS or DEPARTMENT>",
+      "target_department": "<one value from the `target_department` list when scope_level is DEPARTMENT, otherwise null>",
       "summary":      "<one short sentence rephrasing the pain in your own words, around 200 chars or less>",
       "source_quote": "<verbatim excerpt from the transcript supporting this pain>",
       "confidence":   <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
@@ -157,6 +159,13 @@ EMISSION RULES
   source_quote into the summary.
 - `source_quote` must be a verbatim excerpt from the transcript, preserving
   the original language, punctuation, and casing. Never translate.
+- `scope_level` MUST be exactly BUSINESS or DEPARTMENT. A pain felt across the
+  whole company, or raised at executive / C-level / general-management level,
+  is BUSINESS. A pain specific to one department is DEPARTMENT. Never emit
+  PERSONAL or any other value.
+- `target_department` is REQUIRED when scope_level is DEPARTMENT: pick exactly
+  one value from the `target_department` list in the context. It MUST be null
+  when scope_level is BUSINESS.
 - If NO pain evidence is present anywhere in the transcript, return exactly:
   {{"signals": []}}
 
