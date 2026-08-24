@@ -3,7 +3,8 @@
 """
 QualificationSignalsPipeline -- the concrete pipeline that extracts
 Pain / Objective / Impact / TechStack / Blocker signals from a sales
-transcript via 5 sequential LLM sub-calls.
+transcript via 4 sequential LLM sub-calls (A2: Pain and Impact are
+extracted together in a single 'pain_impact' call).
 
 Naming note (Sprint B3 rename)
 ------------------------------
@@ -25,26 +26,25 @@ operational this sprint -- deprecation deferred to Sprint B5.
 
 Sub-call sequence
 -----------------
-    pain      -> Pain signals       (4 narrative + 2 epistemic fields)
-    objective -> Objective signals  (4 narrative + 2 epistemic; service
-                                       forces scope_level=BUSINESS)
-    impact    -> Impact signals     (5 narrative + 2 epistemic; service
-                                       forces scope_level=BUSINESS and
-                                       leaves metric_text / human_impact
-                                       unset -- rep fills during
-                                       validation)
-    techstack -> TechStack signals  (4 techstack + 2 epistemic; catalog
-                                       matching via context layer)
-    blocker   -> Blocker signals    (2 narrative + 2 epistemic; no
-                                       canonical taxonomy axes; contact
-                                       attribution deferred to rep at
-                                       validation -- see TD-6)
+    pain_impact -> Pain + Impact signals in ONE call (A2). The model
+                                       sorts the cause->consequence pair
+                                       in a single pass and returns
+                                       {"pains": [...], "impacts": [...]}.
+                                       The pipeline persists each list
+                                       through the unchanged persistence
+                                       service (stage='pain' / 'impact')
+                                       into the separate 'pain' / 'impact'
+                                       response keys. scope_level is now
+                                       LLM-extracted (BUSINESS|DEPARTMENT,
+                                       independently per signal -- A1).
+    objective   -> Objective signals  (service forces scope_level=BUSINESS)
+    techstack   -> TechStack signals  (free-text tech_name + booleans)
+    blocker     -> Blocker signals    (no canonical taxonomy axes; contact
+                                       attribution deferred to rep -- TD-6)
 
 Each sub-call shares system prompt + context, varying only the request
-layer. The context layer used to include TechCatalog UUIDs on the
-techstack stage (token economy). The context layer SKIPS the taxonomy
-block entirely on the blocker stage (BlockerSignal has no canonical
-axes).
+layer. The context layer SKIPS the taxonomy block entirely on the
+blocker stage (BlockerSignal has no canonical axes).
 
 Safety filter
 -------------
@@ -74,8 +74,8 @@ Error handling per stage
 
 Final status determination
 --------------------------
-    All 5 stages succeeded               -> SUCCESS
-    1, 2, 3 or 4 stages succeeded        -> PARTIAL
+    All 4 stages succeeded               -> SUCCESS
+    1, 2 or 3 stages succeeded           -> PARTIAL
     0 succeeded, all 'parse_error'       -> PARSE_ERROR
     0 succeeded, all 'timeout'           -> TIMEOUT
     0 succeeded, mixed failures          -> LLM_ERROR
@@ -130,17 +130,13 @@ from ..prompts.transcript_signals.context import (
     build_context_layer,
     CONTEXT_VERSION,
 )
-from ..prompts.transcript_signals.pain_v1 import (
-    build_pain_request,
-    PAIN_PROMPT_VERSION,
+from ..prompts.transcript_signals.pain_impact_v1 import (
+    build_pain_impact_request,
+    PAIN_IMPACT_PROMPT_VERSION,
 )
 from ..prompts.transcript_signals.objective_v1 import (
     build_objective_request,
     OBJECTIVE_PROMPT_VERSION,
-)
-from ..prompts.transcript_signals.impact_v1 import (
-    build_impact_request,
-    IMPACT_PROMPT_VERSION,
 )
 from ..prompts.transcript_signals.techstack_v1 import (
     build_techstack_request,
@@ -170,9 +166,13 @@ from django.db import transaction
 # with the rep's mental flow (qualification first, then "what stands
 # in the way").
 _STAGES = [
-    ('pain', build_pain_request),
+    # A2: pain and impact are extracted in a SINGLE LLM call (the merged
+    # 'pain_impact' stage) so the model sorts the cause->consequence pair in
+    # one pass. The stage still persists into the separate 'pain' and
+    # 'impact' response keys (see the run-loop branch), so nothing
+    # downstream changed.
+    ('pain_impact', build_pain_impact_request),
     ('objective', build_objective_request),
-    ('impact', build_impact_request),
     ('techstack', build_techstack_request),
     ('blocker', build_blocker_request),
 ]
@@ -186,13 +186,12 @@ class QualificationSignalsPipeline(BasePipeline):
     PIPELINE_TYPE = AIPipelineType.TRANSCRIPT_SIGNALS
 
     PROMPT_VERSIONS = {
-        'system':    SYSTEM_PROMPT_VERSION,
-        'context':   CONTEXT_VERSION,
-        'pain':      PAIN_PROMPT_VERSION,
-        'objective': OBJECTIVE_PROMPT_VERSION,
-        'impact':    IMPACT_PROMPT_VERSION,
-        'techstack': TECHSTACK_PROMPT_VERSION,
-        'blocker':   BLOCKER_PROMPT_VERSION,
+        'system':      SYSTEM_PROMPT_VERSION,
+        'context':     CONTEXT_VERSION,
+        'pain_impact': PAIN_IMPACT_PROMPT_VERSION,
+        'objective':   OBJECTIVE_PROMPT_VERSION,
+        'techstack':   TECHSTACK_PROMPT_VERSION,
+        'blocker':     BLOCKER_PROMPT_VERSION,
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.TRANSCRIPT_SIGNALS]
@@ -245,6 +244,11 @@ class QualificationSignalsPipeline(BasePipeline):
 
         extractor = TranscriptSignalExtractor()
         signals_by_stage = {name: [] for name, _ in _STAGES}
+        # The merged 'pain_impact' stage persists into the separate response
+        # keys 'pain' and 'impact' (kept distinct downstream). Seed them so
+        # the return contract holds even if that stage fails before writing.
+        signals_by_stage.setdefault('pain', [])
+        signals_by_stage.setdefault('impact', [])
         stage_outcomes = {}     # stage_name -> outcome string
         total_persisted = 0
         fatal_aborted = False
@@ -262,38 +266,94 @@ class QualificationSignalsPipeline(BasePipeline):
                             request=request_layer,
                         )
 
-                        # Defensive: if the LLM returned a JSON shape that lacks
-                        # `signals` we treat it as "zero signals emitted" rather
-                        # than an error -- the safety filter will then drop nothing
-                        # and we log emitted_count=0 in sub_calls.
-                        if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
-                            raw_signals = parsed['signals']
+                        if stage_name == 'pain_impact':
+                            # Merged stage: ONE LLM call, TWO persistence passes.
+                            # parsed = {"pains": [...], "impacts": [...]}. A
+                            # missing / non-list array means "zero emitted" for
+                            # that side, NOT an error (mirror of the single-list
+                            # defensive handling below).
+                            pains = parsed.get('pains') if isinstance(parsed, dict) else None
+                            impacts = parsed.get('impacts') if isinstance(parsed, dict) else None
+                            pains = pains if isinstance(pains, list) else []
+                            impacts = impacts if isinstance(impacts, list) else []
+
+                            # Route each list through the UNCHANGED persistence
+                            # service under its own stage key, so _build_pain_data
+                            # and _build_impact_data, the scope resolver, and the
+                            # 'pain' / 'impact' response keys stay exactly as they
+                            # were.
+                            pain_persisted, pain_dropped = extractor.persist_stage(
+                                stage='pain',
+                                raw_signals=pains,
+                                activity=activity,
+                                user=user,
+                                client_id=client_id,
+                                confidence_min=self.CONFIDENCE_MIN,
+                                drop_inferred=self.DROP_INFERRED,
+                                source_run=run,
+                            )
+                            impact_persisted, impact_dropped = extractor.persist_stage(
+                                stage='impact',
+                                raw_signals=impacts,
+                                activity=activity,
+                                user=user,
+                                client_id=client_id,
+                                confidence_min=self.CONFIDENCE_MIN,
+                                drop_inferred=self.DROP_INFERRED,
+                                source_run=run,
+                            )
+
+                            signals_by_stage['pain'] = pain_persisted
+                            signals_by_stage['impact'] = impact_persisted
+                            total_persisted += len(pain_persisted) + len(impact_persisted)
+                            dropped_count = pain_dropped + impact_dropped
+                            stage_outcomes[stage_name] = 'success'
+
+                            # One sub-call audit entry for the single LLM call.
+                            # Synthesize a `signals` list (pains + impacts) so
+                            # _log_sub_call records the COMBINED emitted count.
+                            self._log_sub_call(
+                                run,
+                                stage=stage_name,
+                                sub_call_meta=sub_call_meta,
+                                parsed={'signals': pains + impacts},
+                                error=None,
+                                dropped_count=dropped_count,
+                            )
+
                         else:
-                            raw_signals = []
+                            # Defensive: if the LLM returned a JSON shape that lacks
+                            # `signals` we treat it as "zero signals emitted" rather
+                            # than an error -- the safety filter will then drop nothing
+                            # and we log emitted_count=0 in sub_calls.
+                            if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
+                                raw_signals = parsed['signals']
+                            else:
+                                raw_signals = []
 
-                        persisted, dropped_count = extractor.persist_stage(
-                            stage=stage_name,
-                            raw_signals=raw_signals,
-                            activity=activity,
-                            user=user,
-                            client_id=client_id,
-                            confidence_min=self.CONFIDENCE_MIN,
-                            drop_inferred=self.DROP_INFERRED,
-                            source_run=run,
-                        )
+                            persisted, dropped_count = extractor.persist_stage(
+                                stage=stage_name,
+                                raw_signals=raw_signals,
+                                activity=activity,
+                                user=user,
+                                client_id=client_id,
+                                confidence_min=self.CONFIDENCE_MIN,
+                                drop_inferred=self.DROP_INFERRED,
+                                source_run=run,
+                            )
 
-                        signals_by_stage[stage_name] = persisted
-                        total_persisted += len(persisted)
-                        stage_outcomes[stage_name] = 'success'
+                            signals_by_stage[stage_name] = persisted
+                            total_persisted += len(persisted)
+                            stage_outcomes[stage_name] = 'success'
 
-                        self._log_sub_call(
-                            run,
-                            stage=stage_name,
-                            sub_call_meta=sub_call_meta,
-                            parsed=parsed,
-                            error=None,
-                            dropped_count=dropped_count,
-                        )
+                            self._log_sub_call(
+                                run,
+                                stage=stage_name,
+                                sub_call_meta=sub_call_meta,
+                                parsed=parsed,
+                                error=None,
+                                dropped_count=dropped_count,
+                            )
 
                     # --- Specific subclasses first, then generic LLMProviderError ---
 
