@@ -75,6 +75,51 @@ describe("useAggregatedSignals — URL building", () => {
     expect(url).toContain("page_size=20");
   });
 
+  it("appends department when set (StandardDepartment id)", () => {
+    renderHook(() =>
+      useAggregatedSignals({ accountId: ACCOUNT, department: 7 }),
+    );
+    expect(lastKeyUrl()).toContain("department=7");
+  });
+
+  it("appends contact when set (contact id)", () => {
+    const CONTACT = "44444444-4444-4444-8444-444444444444";
+    renderHook(() =>
+      useAggregatedSignals({ accountId: ACCOUNT, contact: CONTACT }),
+    );
+    expect(lastKeyUrl()).toContain(`contact=${CONTACT}`);
+  });
+
+  it("appends scope when set (BUSINESS | DEPARTMENT)", () => {
+    renderHook(() =>
+      useAggregatedSignals({ accountId: ACCOUNT, scope: "DEPARTMENT" }),
+    );
+    expect(lastKeyUrl()).toContain("scope=DEPARTMENT");
+  });
+
+  it("omits department / contact / scope when not set", () => {
+    renderHook(() => useAggregatedSignals({ accountId: ACCOUNT }));
+    const url = lastKeyUrl();
+    expect(url).not.toContain("department=");
+    expect(url).not.toContain("contact=");
+    expect(url).not.toContain("scope=");
+  });
+
+  it("combines type + status + department into a single query", () => {
+    renderHook(() =>
+      useAggregatedSignals({
+        accountId: ACCOUNT,
+        statuses: ["PENDING"],
+        signalTypes: ["pain"],
+        department: 3,
+      }),
+    );
+    const url = lastKeyUrl();
+    expect(url).toContain("signal_type=pain");
+    expect(url).toContain("status=PENDING");
+    expect(url).toContain("department=3");
+  });
+
   it("uses decision_cycle_id when scoped to a cycle", () => {
     renderHook(() => useAggregatedSignals({ decisionCycleId: CYCLE }));
     const url = lastKeyUrl();

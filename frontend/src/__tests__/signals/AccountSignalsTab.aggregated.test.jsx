@@ -33,6 +33,18 @@ vi.mock("utils/displayError", () => ({
   displayErrorSnackbar: vi.fn(),
 }));
 
+// Controlled department list for the drawer; useGetContacts feeds the
+// AsyncContactSelect (empty options are fine for these tests).
+vi.mock("api/businessData/contacts", () => ({
+  useGetContactChoices: vi.fn(() => ({
+    standardDepartments: [
+      { value: 7, label: "Marketing" },
+      { value: 9, label: "Engineering" },
+    ],
+  })),
+  useGetContacts: vi.fn(() => ({ contacts: [], contactsLoading: false })),
+}));
+
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import AccountSignalsTab from "sections/accounts/workspace/AccountSignalsTab";
@@ -125,6 +137,55 @@ describe("AccountSignalsTab — aggregated flat list", () => {
     const args = lastHookArgs();
     expect(args.signalTypes).toEqual(["tech-stack"]);
     expect(args.page).toBe(1);
+  });
+
+  it("filters by department via the drawer (passes the StandardDepartment id) and resets to page 1", () => {
+    useAggregatedSignals.mockImplementation(() => aggReturn({ pageCount: 3 }));
+    render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+
+    // No department by default.
+    expect(lastHookArgs().department).toBeUndefined();
+
+    // advance to page 2 first
+    fireEvent.click(screen.getByRole("button", { name: /go to next page/i }));
+    expect(lastHookArgs().page).toBe(2);
+
+    // open drawer, pick Marketing from the Department select, apply
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.mouseDown(screen.getByLabelText("Department"));
+    fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    const args = lastHookArgs();
+    expect(args.department).toBe(7);
+    expect(args.page).toBe(1);
+  });
+
+  it("filters by scope via the drawer (BUSINESS | DEPARTMENT)", () => {
+    render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    expect(lastHookArgs().scope).toBeUndefined();
+
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.mouseDown(screen.getByLabelText("Scope"));
+    fireEvent.click(screen.getByRole("option", { name: "Department" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(lastHookArgs().scope).toBe("DEPARTMENT");
+  });
+
+  it("combines type + status + department into one aggregated call", () => {
+    render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.click(screen.getByLabelText("Tech Stack"));
+    fireEvent.click(screen.getByLabelText("Include rejected"));
+    fireEvent.mouseDown(screen.getByLabelText("Department"));
+    fireEvent.click(screen.getByRole("option", { name: "Engineering" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    const args = lastHookArgs();
+    expect(args.signalTypes).toEqual(["tech-stack"]);
+    expect(args.statuses).toContain("REJECTED");
+    expect(args.department).toBe(9);
   });
 
   it("includes rejected only when opted in via the drawer", () => {
