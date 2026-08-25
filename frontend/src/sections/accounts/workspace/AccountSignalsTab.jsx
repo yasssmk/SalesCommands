@@ -15,19 +15,17 @@
  * Responsibilities
  * ----------------
  *   - Fetch all 4 signal types for the account (4 SWR calls)
- *   - Own all modal/drawer states (wizard add, edit, reject, impact CRUD)
- *   - Dispatch validate / reject / delete to the API layer
- *   - Render one SignalList at a time based on the active section
+ *   - Own modal/drawer states (edit, reject, signal detail drawer)
+ *   - Dispatch validate / reject / reopen to the API layer
+ *   - Render the active type's signals as compact SignalLine rows via
+ *     the shared SignalsFlatView (20/page), same component as Activity/DC
  *   - Status filter applied server-side via SWR filters — universal
  *     across all 4 types
  *
- * Pain-specific add-on
- * --------------------
- * PainCard exposes 3 impact callbacks (onAddImpact / onEditImpact /
- * onDeleteImpact). They are wired to AddPainImpactDialog mounted at
- * tab level so impacts can be created, edited, or deleted directly
- * from the flat Pain list — same UX as when impacts were nested
- * inside the cluster drawer.
+ * Note: the legacy pain->impact manual dialog (AddPainImpactDialog) is
+ * still mounted but no longer reachable from this surface (SignalLine has
+ * no add-impact affordance); it is removed with the rest of the manual
+ * system in a later step.
  */
 
 "use client";
@@ -47,7 +45,8 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 
 // project imports
-import SignalList from "../signals/SignalList";
+import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
+import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 import AddPainImpactDialog from "../signals/pain/AddPainImpactDialog";
@@ -56,6 +55,7 @@ import {
   useGetSignalsByAccount,
   useGetSignalChoices,
   validateSignal,
+  reopenSignal,
   deleteSignal,
 } from "api/signals/signals";
 import { deletePainImpact } from "api/signals/painImpacts";
@@ -121,6 +121,11 @@ export default function AccountSignalsTab({ accountId, account }) {
     painSignalId: null,
     initialImpact: null,
   });
+
+  // Signal detail drawer (opened by clicking a signal line).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedSignal, setSelectedSignal] = useState(null);
+  const [selectedType, setSelectedType] = useState(null);
 
   // ==============================|| DATA FETCHING ||============================== //
 
@@ -241,6 +246,13 @@ export default function AccountSignalsTab({ accountId, account }) {
     techError,
   ]);
 
+  // Tag the active type's signals with _signalType so the shared SignalLine
+  // (which keys off it, like the aggregated Activity/DC hooks) renders them.
+  const flatSignals = useMemo(
+    () => (activeData.signals ?? []).map((s) => ({ ...s, _signalType: activeType })),
+    [activeData.signals, activeType],
+  );
+
   // ==============================|| FILTER HANDLERS ||============================== //
 
   const handleTypeChange = useCallback((_e, newValue) => {
@@ -265,6 +277,32 @@ export default function AccountSignalsTab({ accountId, account }) {
     },
     [mutateAll],
   );
+
+  const handleReopen = useCallback(
+    async (signal, signalType) => {
+      const result = await reopenSignal(signalType, signal.id);
+      if (result.success) {
+        mutateAll();
+        displaySuccessSnackbar("Signal reopened — now pending");
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutateAll],
+  );
+
+  // Drawer open/close — clicking a signal line shows its detail.
+  const handleSelect = useCallback((signal, signalType) => {
+    setSelectedSignal(signal);
+    setSelectedType(signalType);
+    setDrawerOpen(true);
+  }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    setDrawerOpen(false);
+    setSelectedSignal(null);
+    setSelectedType(null);
+  }, []);
 
   const handleRejectOpen = useCallback((signal, signalType) => {
     setRejectModal({ open: true, signal, signalType });
@@ -427,38 +465,38 @@ export default function AccountSignalsTab({ accountId, account }) {
 
       {/* ==================== ACTIVE SECTION ==================== */}
       {/*
-        SignalList routes signalType='pain' to PainCard internally and
-        forwards the impact callbacks (onAddImpact / onEditImpact /
-        onDeleteImpact) only to PainCard. The other 3 types ignore them.
-        `choices` is needed by PainCard (impact labels) and by
-        ObjectiveCard (canonical axis + scope labels).
+        The active type's signals render as compact SignalLine rows via the
+        shared SignalsFlatView (same component as Activity / DC flat), with
+        20/page pagination. Clicking a line opens the signal drawer. There is
+        no delete on this surface by design.
       */}
-      <SignalList
-        signals={activeData.signals}
-        signalType={activeType}
-        loading={activeData.loading}
-        error={activeData.error}
-        choices={choices}
+      <SignalsFlatView
+        signals={flatSignals}
+        sortKey="date-desc"
+        onSelect={handleSelect}
         onValidate={handleValidate}
         onReject={handleRejectOpen}
         onEdit={handleEdit}
-        onDelete={handleDelete}
-        onAddImpact={handleAddImpact}
-        onEditImpact={handleEditImpact}
-        onDeleteImpact={handleDeleteImpact}
+        onReopen={handleReopen}
         emptyMessage={
           statusFilter
             ? `No ${activeType} signals match this status`
             : `No ${activeType} signals yet for this account`
         }
-        emptyDescription={
-          !statusFilter
-            ? "Open the wizard to capture signals from a conversation"
-            : undefined
-        }
       />
 
       {/* ==================== MODALS ==================== */}
+
+      {/* Signal detail drawer (opened by clicking a line) */}
+      <SignalQuickDrawer
+        open={drawerOpen}
+        signal={selectedSignal}
+        signalType={selectedType}
+        onClose={handleCloseDrawer}
+        onValidate={handleValidate}
+        onReject={handleRejectOpen}
+        onEdit={handleEdit}
+      />
 
       {/* Reject confirmation */}
       <AlertSignalReject
