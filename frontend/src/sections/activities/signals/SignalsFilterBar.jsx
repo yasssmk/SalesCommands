@@ -26,6 +26,7 @@ export default function SignalsFilterBar({
   includeRejected,
   onToggleRejected,
   signals = [],
+  hideCounts = false,
 }) {
   const counts = useMemo(() => {
     const c = { "all-active": 0, PENDING: 0, VALIDATED: 0, REJECTED: 0 };
@@ -52,7 +53,7 @@ export default function SignalsFilterBar({
       {FILTERS.map((f) => (
         <Chip
           key={f.value}
-          label={`${f.label} (${counts[f.value]})`}
+          label={hideCounts ? f.label : `${f.label} (${counts[f.value]})`}
           size="small"
           variant={activeFilter === f.value ? "filled" : "outlined"}
           color={activeFilter === f.value ? "primary" : "default"}
@@ -70,7 +71,9 @@ export default function SignalsFilterBar({
         }
         label={
           <Typography variant="caption" color="text.secondary">
-            Include rejected ({counts.REJECTED})
+            {hideCounts
+              ? "Include rejected"
+              : `Include rejected (${counts.REJECTED})`}
           </Typography>
         }
         sx={{ ml: 1 }}
@@ -90,4 +93,5 @@ SignalsFilterBar.propTypes = {
       status: PropTypes.string,
     }),
   ),
+  hideCounts: PropTypes.bool,
 };

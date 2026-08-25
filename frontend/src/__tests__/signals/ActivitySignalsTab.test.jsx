@@ -67,6 +67,27 @@ vi.mock("api/signals/signals", () => ({
   })),
   validateSignal: vi.fn(() => Promise.resolve({ success: true })),
   rejectSignal: vi.fn(() => Promise.resolve({ success: true })),
+  reopenSignal: vi.fn(() => Promise.resolve({ success: true })),
+}));
+
+// Flat branch is now fed by the aggregated endpoint. Mirror the grouped
+// fixture's summaries so the "toggle to Flat" assertions still find them.
+vi.mock("api/signals/aggregatedSignals", () => ({
+  default: vi.fn(() => ({
+    signals: [
+      { id: "p1", status: "PENDING", summary: "Pain signal A", _signalType: "pain" },
+      { id: "o1", status: "VALIDATED", summary: "Objective signal B", _signalType: "objective" },
+      { id: "b1", status: "PENDING", summary: "Budget frozen Q4", _signalType: "blockers" },
+    ],
+    count: 3,
+    next: null,
+    previous: null,
+    pageCount: 1,
+    loading: false,
+    validating: false,
+    error: null,
+    mutate: vi.fn(),
+  })),
 }));
 
 vi.mock("utils/displayError", () => ({

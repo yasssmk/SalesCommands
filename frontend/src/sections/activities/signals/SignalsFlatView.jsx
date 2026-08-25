@@ -7,6 +7,7 @@ import { useMemo, useState, useEffect } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
 import Pagination from "@mui/material/Pagination";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -72,9 +73,15 @@ function sortSignals(signals, sortKey) {
 
 /**
  * Shared flat renderer for the three signal surfaces (Activity / DC / Account).
- * Renders each signal as a compact SignalLine and paginates the list at
- * PAGE_SIZE (20) per page over whatever array the parent passes — an
- * aggregated mixed list on Activity/DC, a single-type list on Account.
+ * Renders each signal as a compact SignalLine.
+ *
+ * Two modes:
+ *  - CLIENT (default): sorts by `sortKey` and paginates the given array at
+ *    PAGE_SIZE (20) per page in the component.
+ *  - SERVER (`serverPaginated`): the parent already fetched one server page
+ *    (sorted + sliced by the aggregated endpoint). This view renders it as
+ *    given and drives the Pagination control from `page` / `pageCount` /
+ *    `onPageChange`; it shows a loading spinner while a page fetches.
  *
  * Clicking a line calls onSelect so the parent opens the signal drawer.
  */
@@ -88,27 +95,51 @@ export default function SignalsFlatView({
   onReopen,
   isLocked,
   emptyMessage = "No signals found for this activity",
+  // Server-pagination mode (optional):
+  serverPaginated = false,
+  page: serverPage,
+  pageCount: serverPageCount,
+  onPageChange,
+  loading = false,
 }) {
   const sortedSignals = useMemo(
-    () => sortSignals(signals, sortKey),
-    [signals, sortKey],
+    () => (serverPaginated ? signals : sortSignals(signals, sortKey)),
+    [serverPaginated, signals, sortKey],
   );
 
-  const totalPages = Math.ceil(sortedSignals.length / PAGE_SIZE);
-  const [page, setPage] = useState(1);
+  const [clientPage, setClientPage] = useState(1);
 
-  // Keep the current page in range when the list shrinks (filter/sort change).
+  const totalPages = serverPaginated
+    ? serverPageCount ?? 1
+    : Math.ceil(sortedSignals.length / PAGE_SIZE);
+  const currentPage = serverPaginated ? serverPage ?? 1 : clientPage;
+
+  // Client mode: keep the current page in range when the list shrinks.
   useEffect(() => {
-    if (page > totalPages && totalPages > 0) setPage(totalPages);
-    if (totalPages === 0 && page !== 1) setPage(1);
-  }, [page, totalPages]);
+    if (serverPaginated) return;
+    if (clientPage > totalPages && totalPages > 0) setClientPage(totalPages);
+    if (totalPages === 0 && clientPage !== 1) setClientPage(1);
+  }, [serverPaginated, clientPage, totalPages]);
 
   const pageSignals = useMemo(
-    () => sortedSignals.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [sortedSignals, page],
+    () =>
+      serverPaginated
+        ? sortedSignals
+        : sortedSignals.slice((clientPage - 1) * PAGE_SIZE, clientPage * PAGE_SIZE),
+    [serverPaginated, sortedSignals, clientPage],
   );
 
+  // Loading a page (server mode) with nothing to show yet → spinner.
+  if (serverPaginated && loading && !sortedSignals.length) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
+        <CircularProgress size={28} />
+      </Box>
+    );
+  }
+
   if (!sortedSignals.length) {
+    // Business-empty is information, not an error (neutral tone).
     return (
       <Box
         display="flex"
@@ -126,8 +157,25 @@ export default function SignalsFlatView({
     );
   }
 
+  const handlePageChange = (e, next) => {
+    if (serverPaginated) onPageChange?.(next);
+    else setClientPage(next);
+  };
+
   return (
-    <Box>
+    <Box sx={{ position: "relative" }}>
+      {/* Subtle overlay while re-fetching a different page in server mode. */}
+      {serverPaginated && loading && (
+        <Box
+          sx={{
+            position: "absolute", top: 0, right: 0,
+            p: 1, zIndex: 1,
+          }}
+        >
+          <CircularProgress size={18} />
+        </Box>
+      )}
+
       {pageSignals.map((signal) => (
         <SignalLine
           key={signal.id}
@@ -146,8 +194,8 @@ export default function SignalsFlatView({
         <Stack direction="row" justifyContent="center" sx={{ mt: 2 }}>
           <Pagination
             count={totalPages}
-            page={page}
-            onChange={(e, next) => setPage(next)}
+            page={currentPage}
+            onChange={handlePageChange}
             showFirstButton
             showLastButton
             color="primary"
@@ -174,4 +222,10 @@ SignalsFlatView.propTypes = {
   onReopen: PropTypes.func,
   isLocked: PropTypes.bool,
   emptyMessage: PropTypes.string,
+  // Server-pagination mode
+  serverPaginated: PropTypes.bool,
+  page: PropTypes.number,
+  pageCount: PropTypes.number,
+  onPageChange: PropTypes.func,
+  loading: PropTypes.bool,
 };

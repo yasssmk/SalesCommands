@@ -36,13 +36,13 @@ import { useState, useCallback, useMemo } from "react";
 // material-ui
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Typography from "@mui/material/Typography";
 
 // project imports
 import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
@@ -52,12 +52,12 @@ import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 import AddPainImpactDialog from "../signals/pain/AddPainImpactDialog";
 
 import {
-  useGetSignalsByAccount,
   useGetSignalChoices,
   validateSignal,
   reopenSignal,
   deleteSignal,
 } from "api/signals/signals";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
 import { deletePainImpact } from "api/signals/painImpacts";
 import {
   displaySuccessSnackbar,
@@ -95,6 +95,7 @@ export default function AccountSignalsTab({ accountId, account }) {
 
   const [activeType, setActiveType] = useState("pain");
   const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
 
   // ==============================|| MODAL STATE ||============================== //
 
@@ -129,138 +130,43 @@ export default function AccountSignalsTab({ accountId, account }) {
 
   // ==============================|| DATA FETCHING ||============================== //
 
-  const sharedFilters = useMemo(
-    () => ({ status: statusFilter || undefined }),
+  // One aggregated call for the active type, server-paginated (20/page).
+  // The type toggle drives signal_type; the status Select drives status.
+  const statuses = useMemo(
+    () => (statusFilter ? [statusFilter] : undefined),
     [statusFilter],
   );
 
-  const sharedOptions = useMemo(
-    () => ({ ordering: "-created_at", filters: sharedFilters }),
-    [sharedFilters],
-  );
-
   const {
-    signals: painSignals,
-    signalsLoading: painLoading,
-    signalsError: painError,
-    mutateSignals: mutatePain,
-  } = useGetSignalsByAccount(accountId, "pain", sharedOptions);
-
-  const {
-    signals: objectiveSignals,
-    signalsLoading: objectiveLoading,
-    signalsError: objectiveError,
-    mutateSignals: mutateObjective,
-  } = useGetSignalsByAccount(accountId, "objective", sharedOptions);
-
-  const {
-    signals: impactSignals,
-    signalsLoading: impactLoading,
-    signalsError: impactError,
-    mutateSignals: mutateImpact,
-  } = useGetSignalsByAccount(accountId, "impact", sharedOptions);
-
-  const {
-    signals: techSignals,
-    signalsLoading: techLoading,
-    signalsError: techError,
-    mutateSignals: mutateTech,
-  } = useGetSignalsByAccount(accountId, "tech-stack", sharedOptions);
+    signals: flatSignals,
+    pageCount,
+    loading,
+    error,
+    mutate: mutateAll,
+  } = useAggregatedSignals({
+    accountId,
+    signalTypes: [activeType],
+    statuses,
+    ordering: "date-desc",
+    page,
+    pageSize: 20,
+  });
 
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // ==============================|| DERIVED ||============================== //
-
-  /**
-   * Revalidate all 4 sections — called after any signal-level write.
-   * Pain mutations also implicitly invalidate the cluster cache via
-   * the API layer's revalidateMultiple — that's the Qualification tab's
-   * responsibility, not ours.
-   */
-  const mutateAll = useCallback(() => {
-    mutatePain();
-    mutateObjective();
-    mutateImpact();
-    mutateTech();
-  }, [mutatePain, mutateObjective, mutateImpact, mutateTech]);
-
-  /**
-   * Counts per type — shown as badges in the section toggle.
-   * All 4 types share the same flat-list semantics, so each count
-   * is the number of individual signals in the current view (after
-   * status filter).
-   */
-  const counts = useMemo(
-    () => ({
-      pain: painSignals.length,
-      objective: objectiveSignals.length,
-      impact: impactSignals.length,
-      "tech-stack": techSignals.length,
-    }),
-    [painSignals, objectiveSignals, impactSignals, techSignals],
-  );
-
-  /** Active section data — uniform shape across all 4 types. */
-  const activeData = useMemo(() => {
-    switch (activeType) {
-      case "pain":
-        return {
-          signals: painSignals,
-          loading: painLoading,
-          error: painError,
-        };
-      case "objective":
-        return {
-          signals: objectiveSignals,
-          loading: objectiveLoading,
-          error: objectiveError,
-        };
-      case "impact":
-        return {
-          signals: impactSignals,
-          loading: impactLoading,
-          error: impactError,
-        };
-      case "tech-stack":
-        return {
-          signals: techSignals,
-          loading: techLoading,
-          error: techError,
-        };
-      default:
-        return { signals: [], loading: false, error: null };
-    }
-  }, [
-    activeType,
-    painSignals,
-    painLoading,
-    painError,
-    objectiveSignals,
-    objectiveLoading,
-    objectiveError,
-    impactSignals,
-    impactLoading,
-    impactError,
-    techSignals,
-    techLoading,
-    techError,
-  ]);
-
-  // Tag the active type's signals with _signalType so the shared SignalLine
-  // (which keys off it, like the aggregated Activity/DC hooks) renders them.
-  const flatSignals = useMemo(
-    () => (activeData.signals ?? []).map((s) => ({ ...s, _signalType: activeType })),
-    [activeData.signals, activeType],
-  );
-
   // ==============================|| FILTER HANDLERS ||============================== //
 
+  // Reset to page 1 whenever the type or status narrows the result set.
   const handleTypeChange = useCallback((_e, newValue) => {
-    if (newValue !== null) setActiveType(newValue);
+    if (newValue !== null) {
+      setActiveType(newValue);
+      setPage(1);
+    }
   }, []);
 
   const handleStatusChange = useCallback((e) => {
     setStatusFilter(e.target.value);
+    setPage(1);
   }, []);
 
   // ==============================|| LIFECYCLE HANDLERS (universal) ||============================== //
@@ -381,21 +287,21 @@ export default function AccountSignalsTab({ accountId, account }) {
     // Pain list needs refresh because impacts are nested inline in
     // PainSignalListSerializer. The cluster cache also gets bust by
     // the API layer — that's transparent to this tab.
-    mutatePain();
+    mutateAll();
     displaySuccessSnackbar("Impact saved");
-  }, [mutatePain]);
+  }, [mutateAll]);
 
   const handleDeleteImpact = useCallback(
     async (impact) => {
       const result = await deletePainImpact(impact.id);
       if (result.success) {
-        mutatePain();
+        mutateAll();
         displaySuccessSnackbar("Impact deleted");
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutatePain],
+    [mutateAll],
   );
 
   // ==============================|| RENDER ||============================== //
@@ -430,18 +336,6 @@ export default function AccountSignalsTab({ accountId, account }) {
               sx={{ textTransform: "none", px: 1.5, fontSize: "0.78rem" }}
             >
               {opt.label}
-              {counts[opt.value] > 0 && (
-                <Chip
-                  label={counts[opt.value]}
-                  size="small"
-                  sx={{
-                    ml: 0.75,
-                    height: 18,
-                    fontSize: "0.62rem",
-                    pointerEvents: "none",
-                  }}
-                />
-              )}
             </ToggleButton>
           ))}
         </ToggleButtonGroup>
@@ -466,24 +360,39 @@ export default function AccountSignalsTab({ accountId, account }) {
       {/* ==================== ACTIVE SECTION ==================== */}
       {/*
         The active type's signals render as compact SignalLine rows via the
-        shared SignalsFlatView (same component as Activity / DC flat), with
-        20/page pagination. Clicking a line opens the signal drawer. There is
-        no delete on this surface by design.
+        shared SignalsFlatView (same component as Activity / DC flat), fed by
+        the aggregated endpoint with true server pagination (20/page). Clicking
+        a line opens the signal drawer. There is no delete on this surface.
       */}
-      <SignalsFlatView
-        signals={flatSignals}
-        sortKey="date-desc"
-        onSelect={handleSelect}
-        onValidate={handleValidate}
-        onReject={handleRejectOpen}
-        onEdit={handleEdit}
-        onReopen={handleReopen}
-        emptyMessage={
-          statusFilter
-            ? `No ${activeType} signals match this status`
-            : `No ${activeType} signals yet for this account`
-        }
-      />
+      {error ? (
+        <Box
+          display="flex"
+          justifyContent="center"
+          alignItems="center"
+          minHeight="200px"
+        >
+          <Typography color="error">Failed to load signals</Typography>
+        </Box>
+      ) : (
+        <SignalsFlatView
+          signals={flatSignals}
+          serverPaginated
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          loading={loading}
+          onSelect={handleSelect}
+          onValidate={handleValidate}
+          onReject={handleRejectOpen}
+          onEdit={handleEdit}
+          onReopen={handleReopen}
+          emptyMessage={
+            statusFilter
+              ? `No ${activeType} signals match this status`
+              : `No ${activeType} signals yet for this account`
+          }
+        />
+      )}
 
       {/* ==================== MODALS ==================== */}
 

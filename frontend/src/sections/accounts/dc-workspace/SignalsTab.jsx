@@ -7,15 +7,11 @@ import { useState, useCallback, useMemo } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
-import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-// Icons
-import { InboxOutlined } from "@ant-design/icons";
-
 // Project imports
-import useDCAllSignals from "hooks/useDCAllSignals";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
 import { useGetSignalChoices } from "api/signals/signals";
 import { validateSignal, rejectSignal, reopenSignal } from "api/signals/signals";
 import {
@@ -58,32 +54,23 @@ const EDITABLE_TYPES = new Set([
 
 import Chip from "@mui/material/Chip";
 
-function TypeFilterBar({ activeType, onChange, signalsByType }) {
+function TypeFilterBar({ activeType, onChange }) {
   return (
     <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
       <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
         Type:
       </Typography>
-      {TYPE_FILTERS.map((f) => {
-        const count =
-          f.value === "all"
-            ? Object.values(signalsByType).reduce(
-                (sum, arr) => sum + arr.length,
-                0,
-              )
-            : (signalsByType[f.value] || []).length;
-        return (
-          <Chip
-            key={f.value}
-            label={`${f.label} (${count})`}
-            size="small"
-            variant={activeType === f.value ? "filled" : "outlined"}
-            color={activeType === f.value ? "primary" : "default"}
-            onClick={() => onChange(f.value)}
-            clickable
-          />
-        );
-      })}
+      {TYPE_FILTERS.map((f) => (
+        <Chip
+          key={f.value}
+          label={f.label}
+          size="small"
+          variant={activeType === f.value ? "filled" : "outlined"}
+          color={activeType === f.value ? "primary" : "default"}
+          onClick={() => onChange(f.value)}
+          clickable
+        />
+      ))}
     </Stack>
   );
 }
@@ -91,20 +78,11 @@ function TypeFilterBar({ activeType, onChange, signalsByType }) {
 TypeFilterBar.propTypes = {
   activeType: PropTypes.string.isRequired,
   onChange: PropTypes.func.isRequired,
-  signalsByType: PropTypes.object.isRequired,
 };
 
 // ==============================|| DC SIGNALS TAB ||============================== //
 
 export default function SignalsTab({ cycleId, accountId }) {
-  const {
-    signalsByType,
-    allSignals,
-    loading,
-    error,
-    mutateAll,
-  } = useDCAllSignals(accountId, cycleId);
-
   const { choices, choicesLoading } = useGetSignalChoices();
 
   // Status filter state
@@ -117,6 +95,9 @@ export default function SignalsTab({ cycleId, accountId }) {
   // Sort state
   const [sortKey, setSortKey] = useState("date-desc");
 
+  // Pagination
+  const [page, setPage] = useState(1);
+
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedSignal, setSelectedSignal] = useState(null);
@@ -127,27 +108,37 @@ export default function SignalsTab({ cycleId, accountId }) {
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // Type-filtered signals
-  const typeFilteredSignals = useMemo(() => {
-    if (typeFilter === "all") return allSignals;
-    return allSignals.filter((s) => s._signalType === typeFilter);
-  }, [allSignals, typeFilter]);
+  // --- Map the toolbar controls to aggregated-endpoint params ---
+  // Status: "all-active" = PENDING + VALIDATED; a concrete status narrows;
+  // "Include rejected" adds REJECTED to whichever base set is active.
+  const statuses = useMemo(() => {
+    const base =
+      statusFilter === "all-active"
+        ? ["PENDING", "VALIDATED"]
+        : [statusFilter];
+    if (includeRejected && !base.includes("REJECTED")) base.push("REJECTED");
+    return base;
+  }, [statusFilter, includeRejected]);
 
-  // Status-filtered signals
-  const statusFilterFn = useCallback(
-    (s) => {
-      const isRejected = s.status === "REJECTED";
-      if (isRejected) return includeRejected;
-      if (statusFilter === "all-active") return true;
-      return s.status === statusFilter;
-    },
-    [statusFilter, includeRejected],
+  const signalTypes = useMemo(
+    () => (typeFilter === "all" ? undefined : [typeFilter]),
+    [typeFilter],
   );
 
-  const filteredSignals = useMemo(
-    () => typeFilteredSignals.filter(statusFilterFn),
-    [typeFilteredSignals, statusFilterFn],
-  );
+  const {
+    signals: filteredSignals,
+    pageCount,
+    loading,
+    error,
+    mutate: mutateAll,
+  } = useAggregatedSignals({
+    decisionCycleId: cycleId,
+    statuses,
+    signalTypes,
+    ordering: sortKey,
+    page,
+    pageSize: 20,
+  });
 
   // Handlers
   const handleValidate = useCallback(
@@ -218,21 +209,13 @@ export default function SignalsTab({ cycleId, accountId }) {
     setSelectedType(null);
   }, []);
 
-  // Loading state
-  if (loading) {
-    return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="300px"
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
+  // Reset to page 1 whenever any control changes the result set.
+  const onStatusChange = (v) => { setStatusFilter(v); setPage(1); };
+  const onToggleRejected = (v) => { setIncludeRejected(v); setPage(1); };
+  const onTypeChange = (v) => { setTypeFilter(v); setPage(1); };
+  const onSortChange = (v) => { setSortKey(v); setPage(1); };
 
-  // Error state
+  // Technical failure → standard error surface.
   if (error) {
     return (
       <Box
@@ -246,31 +229,9 @@ export default function SignalsTab({ cycleId, accountId }) {
     );
   }
 
-  // Empty state
-  if (allSignals.length === 0) {
-    return (
-      <Box
-        display="flex"
-        flexDirection="column"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="300px"
-        gap={1}
-      >
-        <InboxOutlined style={{ fontSize: 36, color: "#8c8c8c" }} />
-        <Typography color="text.secondary">
-          No signals captured for this cycle yet.
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Signals are extracted from activity transcripts or created manually.
-        </Typography>
-      </Box>
-    );
-  }
-
   return (
     <Box>
-      {/* Toolbar: status filter + type filter + sort */}
+      {/* Toolbar: status filter + type filter + sort (all server-driven) */}
       <Stack spacing={1.5} sx={{ mb: 2.5 }}>
         <Stack
           direction="row"
@@ -281,24 +242,24 @@ export default function SignalsTab({ cycleId, accountId }) {
         >
           <SignalsFilterBar
             activeFilter={statusFilter}
-            onChange={setStatusFilter}
+            onChange={onStatusChange}
             includeRejected={includeRejected}
-            onToggleRejected={setIncludeRejected}
-            signals={typeFilteredSignals}
+            onToggleRejected={onToggleRejected}
+            hideCounts
           />
-          <SignalsSortSelect value={sortKey} onChange={setSortKey} />
+          <SignalsSortSelect value={sortKey} onChange={onSortChange} />
         </Stack>
-        <TypeFilterBar
-          activeType={typeFilter}
-          onChange={setTypeFilter}
-          signalsByType={signalsByType}
-        />
+        <TypeFilterBar activeType={typeFilter} onChange={onTypeChange} />
       </Stack>
 
       {/* Signal list — flat view only (grouped view = Strategic/Themes tab) */}
       <SignalsFlatView
         signals={filteredSignals}
-        sortKey={sortKey}
+        serverPaginated
+        page={page}
+        pageCount={pageCount}
+        onPageChange={setPage}
+        loading={loading}
         onSelect={handleSelect}
         onValidate={handleValidate}
         onReject={handleReject}

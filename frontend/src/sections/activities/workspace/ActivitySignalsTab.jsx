@@ -13,6 +13,7 @@ import Typography from "@mui/material/Typography";
 
 // Project imports
 import useActivityAllSignals from "hooks/useActivityAllSignals";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
 import { useGetSignalChoices } from "api/signals/signals";
 import {
   validateSignal,
@@ -35,6 +36,16 @@ import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 
+// The activity flat view shows qualification (pain/objective/impact) plus
+// tech-stack and blockers — next-steps live in their own tab and are excluded.
+const ACTIVITY_FLAT_TYPES = [
+  "pain",
+  "objective",
+  "impact",
+  "tech-stack",
+  "blockers",
+];
+
 // ==============================|| ACTIVITY SIGNALS TAB ||============================== //
 
 export default function ActivitySignalsTab({
@@ -45,14 +56,14 @@ export default function ActivitySignalsTab({
   const activityId = activity?.id;
   const accountId = activity?.account;
 
-  // Signals data
+  // Grouped-view data (client-side; still per-type until the grouped step).
   const {
     qualificationSignals,
     techStackSignals,
     blockerSignals,
-    loading,
-    error,
-    mutateAll,
+    loading: groupedLoading,
+    error: groupedError,
+    mutateAll: mutateGrouped,
   } = useActivityAllSignals(activityId);
 
   // Choices for edit forms
@@ -68,6 +79,9 @@ export default function ActivitySignalsTab({
   // Sort state (flat view only)
   const [sortKey, setSortKey] = useState("date-desc");
 
+  // Pagination (flat view only)
+  const [page, setPage] = useState(1);
+
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedSignal, setSelectedSignal] = useState(null);
@@ -78,13 +92,38 @@ export default function ActivitySignalsTab({
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // All displayable signals (qualification + tech-stack + blockers, excluding next-steps)
+  // --- Flat view: one aggregated call, server-driven filter/sort/paginate ---
+  const statuses = useMemo(() => {
+    const base =
+      statusFilter === "all-active"
+        ? ["PENDING", "VALIDATED"]
+        : [statusFilter];
+    if (includeRejected && !base.includes("REJECTED")) base.push("REJECTED");
+    return base;
+  }, [statusFilter, includeRejected]);
+
+  const {
+    signals: flatSignals,
+    pageCount,
+    loading: flatLoading,
+    error: flatError,
+    mutate: mutateFlat,
+  } = useAggregatedSignals({
+    activityId,
+    statuses,
+    signalTypes: ACTIVITY_FLAT_TYPES,
+    ordering: sortKey,
+    page,
+    pageSize: 20,
+  });
+
+  // All displayable signals feed the grouped filter-bar counts.
   const displayableSignals = useMemo(
     () => [...qualificationSignals, ...techStackSignals, ...blockerSignals],
     [qualificationSignals, techStackSignals, blockerSignals],
   );
 
-  // Filtered signals
+  // Grouped view keeps client-side filtering.
   const filterFn = useCallback(
     (s) => {
       const isRejected = s.status === "REJECTED";
@@ -110,6 +149,12 @@ export default function ActivitySignalsTab({
     [blockerSignals, filterFn],
   );
 
+  // Refresh both data sources so either view is fresh after a mutation.
+  const mutateBoth = useCallback(() => {
+    mutateGrouped();
+    mutateFlat();
+  }, [mutateGrouped, mutateFlat]);
+
   // Handlers
   const handleSelect = useCallback((signal, signalType) => {
     setSelectedSignal(signal);
@@ -128,13 +173,13 @@ export default function ActivitySignalsTab({
       const result = await validateSignal(signalType, signal.id);
       if (result.success) {
         displaySuccessSnackbar("Signal validated");
-        mutateAll();
+        mutateBoth();
         mutateCounts?.();
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts],
+    [mutateBoth, mutateCounts],
   );
 
   const handleReject = useCallback(
@@ -142,13 +187,13 @@ export default function ActivitySignalsTab({
       const result = await rejectSignal(signalType, signal.id);
       if (result.success) {
         displaySuccessSnackbar("Signal rejected");
-        mutateAll();
+        mutateBoth();
         mutateCounts?.();
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts],
+    [mutateBoth, mutateCounts],
   );
 
   const handleReopen = useCallback(
@@ -156,13 +201,13 @@ export default function ActivitySignalsTab({
       const result = await reopenSignal(signalType, signal.id);
       if (result.success) {
         displaySuccessSnackbar("Signal reopened — now pending");
-        mutateAll();
+        mutateBoth();
         mutateCounts?.();
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts],
+    [mutateBoth, mutateCounts],
   );
 
   const handleEdit = useCallback((signal, signalType) => {
@@ -178,12 +223,26 @@ export default function ActivitySignalsTab({
   }, []);
 
   const handleEditSuccess = useCallback(() => {
-    mutateAll();
+    mutateBoth();
     mutateCounts?.();
-  }, [mutateAll, mutateCounts]);
+  }, [mutateBoth, mutateCounts]);
 
-  // Loading state
-  if (loading) {
+  // Reset to page 1 whenever a control changes the flat result set.
+  const onStatusChange = (v) => {
+    setStatusFilter(v);
+    setPage(1);
+  };
+  const onToggleRejected = (v) => {
+    setIncludeRejected(v);
+    setPage(1);
+  };
+  const onSortChange = (v) => {
+    setSortKey(v);
+    setPage(1);
+  };
+
+  // Loading state — grouped view only (flat view has its own inline spinner).
+  if (view === "grouped" && groupedLoading) {
     return (
       <Box
         display="flex"
@@ -196,8 +255,8 @@ export default function ActivitySignalsTab({
     );
   }
 
-  // Error state
-  if (error) {
+  // Error state — technical failure of whichever view is active.
+  if ((view === "grouped" && groupedError) || (view === "flat" && flatError)) {
     return (
       <Box
         display="flex"
@@ -221,14 +280,15 @@ export default function ActivitySignalsTab({
       >
         <SignalsFilterBar
           activeFilter={statusFilter}
-          onChange={setStatusFilter}
+          onChange={onStatusChange}
           includeRejected={includeRejected}
-          onToggleRejected={setIncludeRejected}
+          onToggleRejected={onToggleRejected}
           signals={displayableSignals}
+          hideCounts={view === "flat"}
         />
         <Stack direction="row" spacing={1} alignItems="center">
           {view === "flat" && (
-            <SignalsSortSelect value={sortKey} onChange={setSortKey} />
+            <SignalsSortSelect value={sortKey} onChange={onSortChange} />
           )}
           <SignalsViewToggle
             view={view}
@@ -251,14 +311,19 @@ export default function ActivitySignalsTab({
         />
       ) : (
         <SignalsFlatView
-          signals={[...filteredQualification, ...filteredTechStack, ...filteredBlockers]}
-          sortKey={sortKey}
+          signals={flatSignals}
+          serverPaginated
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          loading={flatLoading}
           onSelect={handleSelect}
           onValidate={handleValidate}
           onReject={handleReject}
           onEdit={handleEdit}
           onReopen={handleReopen}
           isLocked={isLocked}
+          emptyMessage="No signals for this activity"
         />
       )}
 

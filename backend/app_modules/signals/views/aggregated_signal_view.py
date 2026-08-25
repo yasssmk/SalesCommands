@@ -23,10 +23,16 @@ tech-stack / blockers / next-steps / people / constraints) so the unified
 SignalLine can read it straight off each item.
 
 Query params:
-  - account_id       (UUID)  — signals for the account across its cycles
+  - account_id        (UUID) — signals for the account across its cycles
   - decision_cycle_id (UUID) — signals for that decision cycle only
-  Exactly ONE of the two is required; neither or both → 400 business error.
-  - status (optional) — PENDING / VALIDATED / REJECTED filter.
+  - activity_id       (UUID) — signals whose source_activity is that activity
+  Exactly ONE scope is required; none or several → 400 business error.
+  - status (optional, repeatable) — restrict to these statuses
+    (e.g. ?status=PENDING&status=VALIDATED). Empty = all.
+  - signal_type (optional, repeatable) — restrict to these frontend type
+    slugs (e.g. ?signal_type=pain&signal_type=impact). Empty = all types.
+  - ordering (optional)     — one of the frontend sort keys: date-desc
+    (default) / date-asc / status / type / theme.
 
 Response envelope matches the per-type list endpoints:
   { "count": N, "next": ..., "previous": ..., "results": [ { ...signal, "signal_type": "pain" }, ... ] }
@@ -76,6 +82,41 @@ _TYPES = (
 
 _SERIALIZER_BY_SLUG = {slug: ser for slug, _vs, ser in _TYPES}
 
+# Sort vocabularies — mirror the frontend SignalsSortSelect keys so the
+# `ordering` param maps 1:1 to the UI control.
+_STATUS_ORDER = {'PENDING': 0, 'VALIDATED': 1, 'REJECTED': 2}
+_TYPE_ORDER = ('pain', 'objective', 'impact', 'tech-stack', 'blockers')
+
+
+def _theme_key(obj):
+    what = getattr(obj, 'what', None)
+    dimension = getattr(obj, 'dimension', None)
+    if what and dimension:
+        return f"{obj.get_what_display()} × {obj.get_dimension_display()}".lower()
+    return 'zzz'  # themeless types sort last, matching the flat view
+
+
+def _sort_merged(merged, ordering):
+    """
+    Sort the merged cross-type list. Base order is created_at DESC with id as
+    a stable secondary key (deterministic across page boundaries); the other
+    keys re-order that base with a stable sort so ties stay newest-first.
+    """
+    merged.sort(key=lambda o: (o.created_at, o.id), reverse=True)
+
+    if ordering == 'date-asc':
+        merged.reverse()
+    elif ordering == 'status':
+        merged.sort(key=lambda o: _STATUS_ORDER.get(o.status, 3))
+    elif ordering == 'type':
+        merged.sort(
+            key=lambda o: _TYPE_ORDER.index(o._signal_type)
+            if o._signal_type in _TYPE_ORDER else 99
+        )
+    elif ordering == 'theme':
+        merged.sort(key=_theme_key)
+    # 'date-desc' (default): base order already applied.
+
 
 class AggregatedSignalSerializer(serializers.BaseSerializer):
     """
@@ -108,26 +149,39 @@ class AggregatedSignalListView(BaseAPIView):
     def get(self, request):
         account_id        = request.query_params.get('account_id')
         decision_cycle_id = request.query_params.get('decision_cycle_id')
-        status_filter     = request.query_params.get('status')
+        activity_id       = request.query_params.get('activity_id')
+        # Multi-valued (repeatable): restrict to these statuses (empty = all).
+        status_filters    = request.query_params.getlist('status')
+        # Multi-valued: restrict to these frontend type slugs (empty = all).
+        requested_types   = request.query_params.getlist('signal_type')
+        ordering          = request.query_params.get('ordering') or 'date-desc'
 
         # Exactly one scope must be given.
-        if bool(account_id) == bool(decision_cycle_id):
+        scopes = (account_id, decision_cycle_id, activity_id)
+        if sum(1 for s in scopes if s) != 1:
             raise StandardizedValidationError(
-                "Provide exactly one of 'account_id' or 'decision_cycle_id'."
+                "Provide exactly one of 'account_id', 'decision_cycle_id' "
+                "or 'activity_id'."
             )
 
+        # Optionally narrow to a subset of types (the Account toggle / DC
+        # type chips send this). Unknown slugs are ignored.
+        types = _TYPES
+        if requested_types:
+            wanted = set(requested_types)
+            types = [t for t in _TYPES if t[0] in wanted]
+
         merged = []
-        for slug, viewset_cls, _ser in _TYPES:
+        for slug, viewset_cls, _ser in types:
             qs = self._scoped_queryset(
-                viewset_cls, request, account_id, decision_cycle_id, status_filter,
+                viewset_cls, request,
+                account_id, decision_cycle_id, activity_id, status_filters,
             )
             for obj in qs:
                 obj._signal_type = slug
                 merged.append(obj)
 
-        # Newest first; id as a stable secondary key so rows sharing a
-        # created_at keep a deterministic order across page boundaries.
-        merged.sort(key=lambda o: (o.created_at, o.id), reverse=True)
+        _sort_merged(merged, ordering)
 
         page = self.paginate_queryset(merged)
         serializer = AggregatedSignalSerializer(
@@ -136,7 +190,8 @@ class AggregatedSignalListView(BaseAPIView):
         return self.get_paginated_response(serializer.data)
 
     def _scoped_queryset(
-        self, viewset_cls, request, account_id, decision_cycle_id, status_filter,
+        self, viewset_cls, request,
+        account_id, decision_cycle_id, activity_id, status_filters,
     ):
         """
         Reuse a per-type ViewSet's get_queryset (tenant + owner scoping +
@@ -153,8 +208,10 @@ class AggregatedSignalListView(BaseAPIView):
         qs = vs.get_queryset()
         if account_id:
             qs = qs.filter(account_id=account_id)
-        else:
+        elif decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
-        if status_filter:
-            qs = qs.filter(status=status_filter)
-        return qs.order_by('-created_at', '-id')
+        else:
+            qs = qs.filter(source_activity_id=activity_id)
+        if status_filters:
+            qs = qs.filter(status__in=status_filters)
+        return qs

@@ -241,6 +241,71 @@ class TestAggregatedSignalsEndpoint:
         )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_scope_activity(self, authed_api_a, account, activity, user_a):
+        # Signal on this activity + one on a different activity (same account).
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityType, ActivityStatus
+        other = Activity(
+            title='Other call', activity_type=ActivityType.MEETING,
+            status=ActivityStatus.COMPLETED, account=account, owner=user_a,
+        )
+        other.save(user=user_a, client_id=account.client_id)
+
+        on_activity = _mk_pain(account, activity, user_a)
+        _mk_impact(account, other, user_a)  # different activity
+
+        resp = authed_api_a.get(_url(), {'activity_id': str(activity.id)})
+        body = resp.json()
+        assert body['count'] == 1
+        assert body['results'][0]['id'] == str(on_activity.id)
+
+    def test_signal_type_filter(self, authed_api_a, account, activity, user_a):
+        _mk_pain(account, activity, user_a)
+        _mk_impact(account, activity, user_a)
+        _mk_tech(account, activity, user_a)
+
+        resp = authed_api_a.get(
+            _url(),
+            # requests library serializes a list as repeated params
+            {'account_id': str(account.id), 'signal_type': ['pain', 'impact']},
+        )
+        body = resp.json()
+        assert body['count'] == 2
+        assert {r['signal_type'] for r in body['results']} == {'pain', 'impact'}
+
+    def test_multi_status_filter(self, authed_api_a, account, activity, user_a):
+        from app_modules.signals.constants import SignalStatus
+        p = _mk_pain(account, activity, user_a)      # will be PENDING
+        v = _mk_impact(account, activity, user_a)    # will be VALIDATED
+        r = _mk_blocker(account, activity, user_a)   # will be REJECTED
+        PainSignal.objects.filter(id=p.id).update(status=SignalStatus.PENDING)
+        ImpactSignal.objects.filter(id=v.id).update(status=SignalStatus.VALIDATED)
+        BlockerSignal.objects.filter(id=r.id).update(status=SignalStatus.REJECTED)
+
+        resp = authed_api_a.get(
+            _url(),
+            {'account_id': str(account.id), 'status': ['PENDING', 'VALIDATED']},
+        )
+        body = resp.json()
+        assert body['count'] == 2
+        assert {row['id'] for row in body['results']} == {str(p.id), str(v.id)}
+
+    def test_ordering_status(self, authed_api_a, account, activity, user_a):
+        # A VALIDATED pain (created newest) and a PENDING blocker (older).
+        from app_modules.signals.constants import SignalStatus
+        pending = _mk_blocker(account, activity, user_a)
+        validated = _mk_pain(account, activity, user_a)
+        BlockerSignal.objects.filter(id=pending.id).update(status=SignalStatus.PENDING)
+        PainSignal.objects.filter(id=validated.id).update(status=SignalStatus.VALIDATED)
+
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'ordering': 'status'},
+        )
+        rows = resp.json()['results']
+        # PENDING (order 0) before VALIDATED (order 1), regardless of created_at.
+        assert rows[0]['id'] == str(pending.id)
+        assert rows[1]['id'] == str(validated.id)
+
     def test_polymorphic_completeness_all_eight_types(
         self, authed_api_a, account, activity, user_a,
     ):
