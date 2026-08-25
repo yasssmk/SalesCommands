@@ -30,6 +30,7 @@ import {
   rejectSignal,
   reopenSignal,
 } from "api/signals/signals";
+import { useGetContactChoices } from "api/businessData/contacts";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -75,9 +76,25 @@ export default function ActivitySignalsTab({
     syncPending,
     statuses,
     activeTypes,
+    department,
+    contactId,
+    scope,
     activeCount,
     hasPendingChanges,
   } = useSignalFilters();
+
+  // Controlled department list + contact-search scope for the filter drawer.
+  const { standardDepartments } = useGetContactChoices();
+  const departmentOptions = useMemo(
+    () =>
+      (standardDepartments ?? []).map((d) => ({
+        value: d.value ?? d.id,
+        label: d.label ?? d.name,
+      })),
+    [standardDepartments],
+  );
+  const contactFilters = useMemo(() => ({ account_id: accountId }), [accountId]);
+
   const [sortKey, setSortKey] = useState("date-desc");
   const [page, setPage] = useState(1);
 
@@ -109,6 +126,9 @@ export default function ActivitySignalsTab({
     activityId,
     statuses,
     signalTypes,
+    department,
+    contact: contactId,
+    scope,
     ordering: sortKey,
     page,
     pageSize: 20,
@@ -263,6 +283,8 @@ export default function ActivitySignalsTab({
         open={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
         availableTypes={ACTIVITY_FLAT_TYPES}
+        departmentOptions={departmentOptions}
+        contactFilters={contactFilters}
         pendingFilters={pending}
         onFilterChange={updatePending}
         onApply={handleApplyFilters}

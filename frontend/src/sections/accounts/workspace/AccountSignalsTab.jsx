@@ -55,6 +55,7 @@ import {
 } from "api/signals/signals";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
 import useSignalFilters from "hooks/useSignalFilters";
+import { useGetContactChoices } from "api/businessData/contacts";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -87,9 +88,24 @@ export default function AccountSignalsTab({ accountId, account }) {
     syncPending,
     statuses,
     activeTypes,
+    department,
+    contactId,
+    scope,
     activeCount,
     hasPendingChanges,
   } = useSignalFilters();
+
+  // Controlled department list + contact-search scope for the filter drawer.
+  const { standardDepartments } = useGetContactChoices();
+  const departmentOptions = useMemo(
+    () =>
+      (standardDepartments ?? []).map((d) => ({
+        value: d.value ?? d.id,
+        label: d.label ?? d.name,
+      })),
+    [standardDepartments],
+  );
+  const contactFilters = useMemo(() => ({ account_id: accountId }), [accountId]);
 
   // ==============================|| MODAL STATE ||============================== //
 
@@ -130,6 +146,9 @@ export default function AccountSignalsTab({ accountId, account }) {
     accountId,
     signalTypes,
     statuses,
+    department,
+    contact: contactId,
+    scope,
     ordering: "date-desc",
     page,
     pageSize: 20,
@@ -309,6 +328,8 @@ export default function AccountSignalsTab({ accountId, account }) {
         open={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
         availableTypes={ACCOUNT_TYPES}
+        departmentOptions={departmentOptions}
+        contactFilters={contactFilters}
         pendingFilters={pending}
         onFilterChange={updatePending}
         onApply={handleApplyFilters}
