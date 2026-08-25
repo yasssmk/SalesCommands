@@ -29,6 +29,7 @@ import AccountContactsTab from "sections/accounts/contacts/AccountContactsTab";
 import DecisionCycleTab from "sections/accounts/workspace/DecisionCycleTab";
 import AccountActivitiesTab from "sections/accounts/activities/AccountActivitiesTab";
 import AccountSignalsTab from "sections/accounts/workspace/AccountSignalsTab";
+import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -239,6 +240,7 @@ function TabContent({
         "activities",
         "contacts",
         "signals",
+        "qualification",
       ].includes(tab)
     ) {
       setMountedTabs((prev) => {
@@ -274,6 +276,11 @@ function TabContent({
       {mountedTabs.has("signals") && (
         <Box sx={{ display: tab === "signals" ? "block" : "none" }}>
           <AccountSignalsTab accountId={accountId} account={account} />
+        </Box>
+      )}
+      {mountedTabs.has("qualification") && (
+        <Box sx={{ display: tab === "qualification" ? "block" : "none" }}>
+          <QualificationGroupedView surface="account" accountId={accountId} />
         </Box>
       )}
 

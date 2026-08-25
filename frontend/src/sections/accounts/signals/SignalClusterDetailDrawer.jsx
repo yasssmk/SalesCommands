@@ -65,8 +65,8 @@ import UndoOutlined from "@ant-design/icons/UndoOutlined";
 import UserOutlined from "@ant-design/icons/UserOutlined";
 
 // project imports
-import ObjectiveCard from "components/cards/signals/ObjectiveCard";
-import PainCard from "components/cards/signals/PainCard";
+import SignalLine from "components/signals/SignalLine";
+import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDialog from "./SignalEditDialog";
 
@@ -75,7 +75,7 @@ import {
   archiveCluster,
   unarchiveCluster,
 } from "api/signals/signalClusters";
-import { validateSignal, deleteSignal } from "api/signals/signals";
+import { validateSignal, reopenSignal } from "api/signals/signals";
 import {
   displayErrorSnackbar,
   displaySuccessSnackbar,
@@ -723,6 +723,15 @@ export default function SignalClusterDetailDrawer({
     signalType: null,
   });
 
+  // Per-member detail quick-drawer — opened by clicking a member line.
+  // Reuses the same SignalQuickDrawer as the flat views so members show
+  // their source quote + origin-activity link + shared per-type block.
+  const [memberDrawer, setMemberDrawer] = useState({
+    open: false,
+    signal: null,
+    signalType: null,
+  });
+
   const [archivalSubmitting, setArchivalSubmitting] = useState(false);
 
   // ==============================|| REVALIDATION ||============================== //
@@ -814,18 +823,27 @@ export default function SignalClusterDetailDrawer({
     notifyChange();
   }, [notifyChange]);
 
-  const handleDelete = useCallback(
+  const handleReopen = useCallback(
     async (signal, type) => {
-      const result = await deleteSignal(type, signal.id);
+      const result = await reopenSignal(type, signal.id);
       if (result.success) {
         notifyChange();
-        displaySuccessSnackbar("Signal deleted");
+        displaySuccessSnackbar("Signal reopened — now pending");
       } else {
         displayErrorSnackbar(result);
       }
     },
     [notifyChange],
   );
+
+  // Member detail quick-drawer open/close.
+  const handleMemberSelect = useCallback((signal, type) => {
+    setMemberDrawer({ open: true, signal, signalType: type });
+  }, []);
+
+  const handleMemberDrawerClose = useCallback(() => {
+    setMemberDrawer({ open: false, signal: null, signalType: null });
+  }, []);
 
   // ==============================|| RENDER: HEADER ||============================== //
 
@@ -1236,38 +1254,26 @@ export default function SignalClusterDetailDrawer({
       )}
 
       {/*
-        Member rendering branches on signal_type. The lifecycle handlers
-        (validate / reject / edit / delete) are shared — they accept the
-        signalType parameter and route to the right backend endpoint via
-        signals.js.
+        Members render as the shared SignalLine (same component as the flat
+        views), typed from the cluster's signal_type. Clicking a line opens
+        the shared SignalQuickDrawer (source quote + origin-activity link +
+        shared per-type block). Inline lifecycle actions — validate / reject
+        / edit / reopen — route through the shared handlers to signals.js.
       */}
       {members.length > 0 && (
-        <Stack spacing={1.5}>
-          {isPain &&
-            members.map((member) => (
-              <PainCard
-                key={member.id}
-                pain={member}
-                choices={choices}
-                onValidate={handleValidate}
-                onReject={handleRejectOpen}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            ))}
-
-          {isObjective &&
-            members.map((member) => (
-              <ObjectiveCard
-                key={member.id}
-                objective={member}
-                choices={choices}
-                onValidate={handleValidate}
-                onReject={handleRejectOpen}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            ))}
+        <Stack spacing={0.5}>
+          {members.map((member) => (
+            <SignalLine
+              key={member.id}
+              signal={member}
+              signalType={signalType}
+              onSelect={handleMemberSelect}
+              onValidate={handleValidate}
+              onReject={handleRejectOpen}
+              onEdit={handleEdit}
+              onReopen={handleReopen}
+            />
+          ))}
         </Stack>
       )}
     </Box>
@@ -1337,6 +1343,17 @@ export default function SignalClusterDetailDrawer({
         onSuccess={handleRejectSuccess}
         signal={rejectModal.signal}
         signalType={rejectModal.signalType}
+      />
+
+      {/* Member detail — shared quick-drawer (source quote + origin link) */}
+      <SignalQuickDrawer
+        open={memberDrawer.open}
+        signal={memberDrawer.signal}
+        signalType={memberDrawer.signalType}
+        onClose={handleMemberDrawerClose}
+        onValidate={handleValidate}
+        onReject={handleRejectOpen}
+        onEdit={handleEdit}
       />
     </>
   );
