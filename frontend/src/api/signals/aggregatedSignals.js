@@ -18,12 +18,25 @@ const AGGREGATED_URL = "/module-signals/all/";
  * required; optional status, repeatable signal_type, ordering, and the
  * standard page / page_size.
  */
-function buildUrl({ scope, statuses, signalTypes, ordering, page, pageSize }) {
+function buildUrl({
+  scope,
+  statuses,
+  signalTypes,
+  ordering,
+  department,
+  contact,
+  scopeLevel,
+  page,
+  pageSize,
+}) {
   const q = new URLSearchParams();
   q.append(scope.key, scope.id);
   (statuses || []).forEach((s) => q.append("status", s));
   (signalTypes || []).forEach((t) => q.append("signal_type", t));
   if (ordering) q.append("ordering", ordering);
+  if (department) q.append("department", String(department));
+  if (contact) q.append("contact", String(contact));
+  if (scopeLevel) q.append("scope", String(scopeLevel));
   q.append("page", String(page));
   q.append("page_size", String(pageSize));
   return `${AGGREGATED_URL}?${q.toString()}`;
@@ -55,6 +68,9 @@ export default function useAggregatedSignals({
   statuses,
   signalTypes,
   ordering,
+  department,
+  contact,
+  scope: scopeLevel,
   page = 1,
   pageSize = 20,
 } = {}) {
@@ -78,10 +94,31 @@ export default function useAggregatedSignals({
   const url = useMemo(
     () =>
       scope
-        ? buildUrl({ scope, statuses, signalTypes, ordering, page, pageSize })
+        ? buildUrl({
+            scope,
+            statuses,
+            signalTypes,
+            ordering,
+            department,
+            contact,
+            scopeLevel,
+            page,
+            pageSize,
+          })
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scopeKey, scopeId, statusKey, typesKey, ordering, page, pageSize],
+    [
+      scopeKey,
+      scopeId,
+      statusKey,
+      typesKey,
+      ordering,
+      department,
+      contact,
+      scopeLevel,
+      page,
+      pageSize,
+    ],
   );
 
   const swrKey = tenantKey(url, tenantId);
