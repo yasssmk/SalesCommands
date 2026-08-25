@@ -61,6 +61,10 @@ class PainSignalViewSet(BaseSignalViewSet):
           - decision_cycle      : exposed inside the source_context block
                                   on detail responses.
           - campaign            : same.
+          - target_department   : serialized (id + name) on the Pain List
+                                  and Detail serializers on every row —
+                                  select_related keeps it off the per-row
+                                  query path (A1.4).
           - related_techstack_mention : free-text tool trace rendered by
                                   the Pain List and Detail serializers
                                   on every row (no extra query per row).
@@ -69,5 +73,6 @@ class PainSignalViewSet(BaseSignalViewSet):
         qs = qs.select_related(
             'decision_cycle',
             'campaign',
+            'target_department',
         )
         return qs
