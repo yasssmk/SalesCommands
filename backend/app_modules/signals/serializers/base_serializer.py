@@ -64,7 +64,11 @@ class SignalSourceSerializer(serializers.Serializer):
       - activity        : compact ActivityCompactSerializer payload or null
       - contacts        : list of contacts who participated in the
                           activity, derived from activity.contacts (m2m).
-                          Empty list when source_activity is null.
+                          Each entry carries {id, first_name, last_name,
+                          job_title, department}; department is the
+                          contact's StandardDepartment as {id, name}
+                          (null when unset). Empty list when
+                          source_activity is null.
       - decision_cycle  : compact dict {id, name} or null
       - campaign        : compact dict {id, name} or null
       - decision_step   : compact dict {id, name} or null
@@ -99,7 +103,9 @@ class SignalSourceSerializer(serializers.Serializer):
     Performance
     -----------
     Relies on the parent ViewSet having
-    `prefetch_related('source_activity__contacts')` and
+    `prefetch_related('source_activity__contacts__standard_department')`
+    (the department nested prefetch keeps the contacts loop off the
+    per-contact query path) and
     `select_related('source_activity', 'source_activity__decision_cycle',
     'source_activity__campaign', 'source_activity__decision_step')` set
     on the queryset. See BaseSignalViewSet.get_queryset (PHASE E).
@@ -147,12 +153,29 @@ class SignalSourceSerializer(serializers.Serializer):
 
     @staticmethod
     def _compact_contact(contact):
-        """Render a Contact as a compact dict for the source_context block."""
+        """
+        Render a Contact as a compact dict for the source_context block.
+
+        `department` is the contact's own StandardDepartment, exposed as
+        {id, name} — the same shape every other FK in this block uses
+        (decision_cycle / campaign / decision_step, and the signal's
+        target_department). Null when the contact has no standard_department.
+        It powers the origin-contact display (name + job_title + department)
+        on the unified signal line. A past minimisation pass had dropped
+        department from the LLM-context surface (see SignalLLMSerializer);
+        it is intentionally re-exposed here because the origin contact is
+        already visible to the requesting user on the signal surface.
+        """
+        dept = getattr(contact, 'standard_department', None)
         return {
             'id':         str(contact.id),
             'first_name': contact.first_name,
             'last_name':  contact.last_name,
             'job_title':  getattr(contact, 'job_title', None),
+            'department': (
+                {'id': str(dept.id), 'name': dept.get_name_display()}
+                if dept else None
+            ),
         }
 
     # -------------------------------------------------------------------------
