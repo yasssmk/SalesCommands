@@ -15,9 +15,13 @@
  * --------------------------
  * The drawer owns its own dialogs (SignalEditDialog, AlertSignalReject)
  * and routes the member cards' callbacks to them. This keeps the parent
- * (AccountQualificationTab / AccountSignalsTab during transition) thin —
- * it only needs to provide accountId, choices, and a callback when
- * something happens so it can revalidate its own cluster list.
+ * (the grouped cluster surface) thin — it only needs to provide
+ * accountId, choices, and a callback when something happens so it can
+ * revalidate its own cluster list.
+ *
+ * NOTE: this drawer and SignalClusterCard are retained for the grouped
+ * cluster view (B5). The Account Qualification tab that previously mounted
+ * them was removed in B4; they currently have no live entry point.
  *
  * Cache flow
  * ----------

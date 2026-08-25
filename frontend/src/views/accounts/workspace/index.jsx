@@ -29,7 +29,6 @@ import AccountContactsTab from "sections/accounts/contacts/AccountContactsTab";
 import DecisionCycleTab from "sections/accounts/workspace/DecisionCycleTab";
 import AccountActivitiesTab from "sections/accounts/activities/AccountActivitiesTab";
 import AccountSignalsTab from "sections/accounts/workspace/AccountSignalsTab";
-import AccountQualificationTab from "sections/accounts/workspace/AccountQualificationTab";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -240,7 +239,6 @@ function TabContent({
         "activities",
         "contacts",
         "signals",
-        "qualification",
       ].includes(tab)
     ) {
       setMountedTabs((prev) => {
@@ -255,11 +253,6 @@ function TabContent({
   return (
     <>
       {/* KeepAlive tabs: mounted once, hidden with CSS when inactive */}
-      {mountedTabs.has("qualification") && (
-        <Box sx={{ display: tab === "qualification" ? "block" : "none" }}>
-          <AccountQualificationTab accountId={accountId} />
-        </Box>
-      )}
       {mountedTabs.has("decision-cycle") && (
         <Box sx={{ display: tab === "decision-cycle" ? "block" : "none" }}>
           <DecisionCycleTab
