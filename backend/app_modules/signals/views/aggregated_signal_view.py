@@ -33,6 +33,15 @@ Query params:
     slugs (e.g. ?signal_type=pain&signal_type=impact). Empty = all types.
   - ordering (optional)     — one of the frontend sort keys: date-desc
     (default) / date-asc / status / type / theme.
+  - department (optional)   — StandardDepartment id; only signals whose
+    target_department matches. Types without target_department (tech-stack /
+    blockers / next-steps) are EXCLUDED when this filter is active.
+  - contact (optional)      — Contact UUID; only signals whose source_activity
+    includes that contact. Applies to all types.
+  - scope (optional)        — scope_level (BUSINESS / DEPARTMENT / PERSONAL);
+    only signals with that scope_level. Types without scope_level (people /
+    constraints / tech-stack / blockers / next-steps) are EXCLUDED when active.
+  Field-specific filters combine with the others (AND). Invalid values → 400.
 
 Response envelope matches the per-type list endpoints:
   { "count": N, "next": ..., "previous": ..., "results": [ { ...signal, "signal_type": "pain" }, ... ] }
@@ -47,6 +56,7 @@ from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
 from core.exceptions import StandardizedValidationError
 from permissions.mixins import ScopedPermission
+from app_modules.signals.constants import ScopeLevel
 
 from app_modules.signals.serializers import (
     PainSignalListSerializer,
@@ -83,6 +93,15 @@ _TYPES = (
 )
 
 _SERIALIZER_BY_SLUG = {slug: ser for slug, _vs, ser in _TYPES}
+
+# Field-capability sets (frontend slugs). A field-specific filter (department /
+# scope) excludes the types that do not carry the field — a tech signal has no
+# target_department, so filtering by department must not return it.
+#   target_department FK : pain / objective / impact / people / constraints
+#   scope_level          : pain / objective / impact  ONLY
+# (people and constraints carry target_department but NOT scope_level.)
+_HAS_DEPARTMENT = {'pain', 'objective', 'impact', 'people', 'constraints'}
+_HAS_SCOPE = {'pain', 'objective', 'impact'}
 
 # Sort vocabularies — mirror the frontend SignalsSortSelect keys so the
 # `ordering` param maps 1:1 to the UI control.
@@ -157,6 +176,12 @@ class AggregatedSignalListView(BaseAPIView):
         # Multi-valued: restrict to these frontend type slugs (empty = all).
         requested_types   = request.query_params.getlist('signal_type')
         ordering          = request.query_params.get('ordering') or 'date-desc'
+        # Field-specific filters (each optional). department + scope only apply
+        # to the types that carry the field; contact applies to all types via
+        # source_activity.contacts.
+        department        = request.query_params.get('department')
+        contact           = request.query_params.get('contact')
+        scope             = request.query_params.get('scope')
 
         # Exactly one scope must be given.
         scopes = (account_id, decision_cycle_id, activity_id)
@@ -178,18 +203,50 @@ class AggregatedSignalListView(BaseAPIView):
                 "The scope id must be a valid UUID."
             )
 
-        # Optionally narrow to a subset of types (the Account toggle / DC
-        # type chips send this). Unknown slugs are ignored.
+        # Validate the field-specific filter values so a bad value is a clean
+        # 400 business error, never a raw 500 from the ORM.
+        department_id = None
+        if department:
+            try:
+                department_id = int(department)
+            except (ValueError, TypeError):
+                raise StandardizedValidationError(
+                    "The 'department' filter must be a valid department id."
+                )
+        contact_id = None
+        if contact:
+            try:
+                contact_id = str(uuid.UUID(str(contact)))
+            except (ValueError, TypeError, AttributeError):
+                raise StandardizedValidationError(
+                    "The 'contact' filter must be a valid UUID."
+                )
+        if scope and scope not in ScopeLevel.values:
+            raise StandardizedValidationError(
+                "The 'scope' filter must be one of: "
+                + ", ".join(ScopeLevel.values) + "."
+            )
+
+        # Optionally narrow to a subset of types (the type filter sends this).
+        # Unknown slugs are ignored.
         types = _TYPES
         if requested_types:
             wanted = set(requested_types)
             types = [t for t in _TYPES if t[0] in wanted]
+
+        # A field-specific filter excludes the types that do not carry the
+        # field (a tech signal has no target_department / scope_level).
+        if department_id is not None:
+            types = [t for t in types if t[0] in _HAS_DEPARTMENT]
+        if scope:
+            types = [t for t in types if t[0] in _HAS_SCOPE]
 
         merged = []
         for slug, viewset_cls, _ser in types:
             qs = self._scoped_queryset(
                 viewset_cls, request,
                 account_id, decision_cycle_id, activity_id, status_filters,
+                department_id, contact_id, scope,
             )
             for obj in qs:
                 obj._signal_type = slug
@@ -206,11 +263,14 @@ class AggregatedSignalListView(BaseAPIView):
     def _scoped_queryset(
         self, viewset_cls, request,
         account_id, decision_cycle_id, activity_id, status_filters,
+        department_id=None, contact_id=None, scope=None,
     ):
         """
         Reuse a per-type ViewSet's get_queryset (tenant + owner scoping +
-        select_related/prefetch), then narrow to the requested scope and
-        status. The queryset is NOT rewritten — only filtered.
+        select_related/prefetch), then narrow to the requested scope, status
+        and field-specific filters. The queryset is NOT rewritten — only
+        filtered. department_id / scope are only ever passed for types that
+        carry the field (the caller pre-filters the type list).
         """
         vs = viewset_cls()
         vs.request      = request
@@ -228,4 +288,13 @@ class AggregatedSignalListView(BaseAPIView):
             qs = qs.filter(source_activity_id=activity_id)
         if status_filters:
             qs = qs.filter(status__in=status_filters)
+        if department_id is not None:
+            qs = qs.filter(target_department_id=department_id)
+        if scope:
+            qs = qs.filter(scope_level=scope)
+        if contact_id:
+            # A signal whose origin activity includes this contact. The m2m
+            # filter matches each signal at most once (single-value), so no
+            # duplicates are introduced. contacts are already prefetched.
+            qs = qs.filter(source_activity__contacts=contact_id)
         return qs

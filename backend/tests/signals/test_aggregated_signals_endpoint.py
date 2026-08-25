@@ -360,3 +360,152 @@ class TestAggregatedSignalsEndpoint:
         with django_assert_max_num_queries(40):
             resp = authed_api_a.get(_url(), {'account_id': str(account.id), 'page_size': 20})
         assert resp.status_code == status.HTTP_200_OK
+
+    # ----------------------------------------------------------------------
+    # Field-specific filters: department / contact / scope
+    # ----------------------------------------------------------------------
+
+    def _dept(self, name):
+        from app_modules.core_modules.models import StandardDepartment
+        dept, _ = StandardDepartment.objects.get_or_create(name=name)
+        return dept
+
+    def test_filter_department_excludes_field_absent_types(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        marketing = self._dept('Marketing')
+        sales = self._dept('Sales')
+
+        p = _mk_pain(account, activity, user_a)
+        p.target_department = marketing
+        p.save(user=user_a, client_id=account.client_id)
+
+        p_other = _mk_pain(account, activity, user_a)
+        p_other.target_department = sales
+        p_other.save(user=user_a, client_id=account.client_id)
+
+        _mk_tech(account, activity, user_a)  # no target_department
+
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'department': marketing.id},
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        body = resp.json()
+        ids = {r['id'] for r in body['results']}
+        assert str(p.id) in ids           # Marketing pain returned
+        assert str(p_other.id) not in ids  # Sales pain filtered out
+        assert body['count'] == 1          # tech (no department) excluded
+
+    def test_filter_contact_via_source_activity(
+        self, authed_api_a, account, activity, user_a, contact,
+    ):
+        from app_modules.activities.models import Activity
+        from app_modules.activities.constants import ActivityType, ActivityStatus
+
+        # activity includes the contact; a second activity does not.
+        activity.contacts.add(contact)
+        other = Activity(
+            title='Call without the contact', activity_type=ActivityType.MEETING,
+            status=ActivityStatus.COMPLETED, account=account, owner=user_a,
+        )
+        other.save(user=user_a, client_id=account.client_id)
+
+        on_contact = _mk_pain(account, activity, user_a)
+        _mk_pain(account, other, user_a)  # different activity, no contact
+
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'contact': str(contact.id)},
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        body = resp.json()
+        assert body['count'] == 1
+        assert body['results'][0]['id'] == str(on_contact.id)
+
+    def test_filter_scope_excludes_scopeless_types(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        # A DEPARTMENT-scoped pain + types that carry no scope_level.
+        dept_pain = PainSignal(
+            account=account, source_activity=activity, source=SignalSource.MANUAL,
+            what=SignalWhat.DATA, dimension=SignalDimension.QUALITY,
+            scope_level=ScopeLevel.DEPARTMENT, summary='dept-scoped pain',
+            source_quote='q',
+        )
+        dept_pain.save(user=user_a, client_id=account.client_id)
+
+        _mk_pain(account, activity, user_a)       # BUSINESS-scoped pain
+        _mk_tech(account, activity, user_a)        # no scope_level
+        _mk_blocker(account, activity, user_a)     # no scope_level
+        _mk_people(account, activity, user_a)      # no scope_level
+
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'scope': 'DEPARTMENT'},
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        body = resp.json()
+        assert body['count'] == 1
+        assert body['results'][0]['id'] == str(dept_pain.id)
+
+    def test_filter_combined_department_and_status_is_AND(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        from app_modules.signals.constants import SignalStatus
+        marketing = self._dept('Marketing')
+
+        pending = _mk_pain(account, activity, user_a)
+        pending.target_department = marketing
+        pending.save(user=user_a, client_id=account.client_id)
+        # MANUAL source forces VALIDATED in save(); force PENDING via update().
+        PainSignal.objects.filter(id=pending.id).update(status=SignalStatus.PENDING)
+
+        validated = _mk_pain(account, activity, user_a)  # stays VALIDATED
+        validated.target_department = marketing
+        validated.save(user=user_a, client_id=account.client_id)
+
+        resp = authed_api_a.get(_url(), {
+            'account_id': str(account.id),
+            'department': marketing.id,
+            'status': 'PENDING',
+        })
+        assert resp.status_code == status.HTTP_200_OK
+        body = resp.json()
+        assert body['count'] == 1
+        assert body['results'][0]['id'] == str(pending.id)
+
+    def test_invalid_department_returns_400(self, authed_api_a, account):
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'department': 'not-an-int'},
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'error' in resp.json()
+
+    def test_invalid_scope_returns_400(self, authed_api_a, account):
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'scope': 'NONSENSE'},
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'error' in resp.json()
+
+    def test_invalid_contact_returns_400(self, authed_api_a, account):
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'contact': 'not-a-uuid'},
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'error' in resp.json()
+
+    def test_department_filter_query_count_bounded(
+        self, authed_api_a, account, activity, user_a, django_assert_max_num_queries,
+    ):
+        marketing = self._dept('Marketing')
+        for _ in range(15):
+            p = _mk_pain(account, activity, user_a)
+            p.target_department = marketing
+            p.save(user=user_a, client_id=account.client_id)
+
+        with django_assert_max_num_queries(40):
+            resp = authed_api_a.get(_url(), {
+                'account_id': str(account.id),
+                'department': marketing.id,
+                'page_size': 20,
+            })
+        assert resp.status_code == status.HTTP_200_OK
