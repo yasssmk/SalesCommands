@@ -1,6 +1,6 @@
 // frontend/src/components/cards/signals/PainCard.jsx
 /**
- * PainCard — display card for a single PainSignal with its nested impacts.
+ * PainCard — display card for a single PainSignal.
  *
  * Used by SignalList when signalType === 'pain', in place of the generic
  * SignalCard (which is kept for People / Objective / TechStack).
@@ -8,14 +8,13 @@
  * Responsibilities:
  *   - Render Pain header (type chip, status chip, creation date, actions)
  *   - Render Pain body (canonical chip, summary, source provenance line)
- *   - Render nested impacts list with add / edit / delete controls
+ *   - Render the Pain type-specific detail via the shared PainDetailBlock
  *   - Surface lifecycle actions (validate, reject) same as SignalCard
- *   - Confirm destructive actions (delete pain, delete impact)
+ *   - Confirm destructive action (delete pain)
  *
  * Contract — the parent (AccountSignalsTab / ActivitySignalsTab) owns:
  *   - SignalEditDialog opening for Pain edit (reuses existing flow)
- *   - AddPainImpactDialog opening for impact create / edit
- *   - API calls for validate / reject / delete pain + CRUD impacts
+ *   - API calls for validate / reject / delete pain
  *
  * PainCard only emits callbacks; it never calls the API directly.
  */
@@ -33,7 +32,6 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
@@ -47,10 +45,6 @@ import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import EditOutlined from "@ant-design/icons/EditOutlined";
 import MoreOutlined from "@ant-design/icons/MoreOutlined";
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
-
-// project imports
-import { resolveImpactLevel } from "sections/accounts/signals/signalClusters";
 
 // Shared per-type detail block — single rendering of pain-specific fields
 import PainDetailBlock from "components/signals/detail/PainDetailBlock";
@@ -72,14 +66,6 @@ function formatContact(contact) {
 }
 
 /**
- * Truncate a string to max length, append ellipsis if needed.
- */
-function truncate(str, max = 80) {
-  if (!str) return null;
-  return str.length > max ? `${str.slice(0, max)}…` : str;
-}
-
-/**
  * Resolve a choices-array label by value.
  */
 function resolveLabel(options, value) {
@@ -87,169 +73,10 @@ function resolveLabel(options, value) {
   return options.find((o) => o.value === value)?.label ?? value;
 }
 
-/**
- * Format an impact into a single readable line.
- *
- * BUSINESS   → "120k$/year lost productivity"
- * DEPARTMENT → "Sales · 15h/week lost"
- * PERSONAL   → "Marie Durand (OVERLOAD) · 3h/week overtime"
- *
- * Missing optional parts are skipped silently — no "N/A" filler.
- */
-function formatImpactLine(impact, choices) {
-  if (!impact) return "";
-
-  const parts = [];
-
-  // Scope
-  if (impact.level === "DEPARTMENT") {
-    const deptName = impact.impacted_department?.name;
-    if (deptName) parts.push(deptName);
-  } else if (impact.level === "PERSONAL") {
-    const contactName = formatContact(impact.impacted_contact);
-    const humanLabel = resolveLabel(
-      choices?.human_impacts,
-      impact.human_impact,
-    );
-    if (contactName && humanLabel) {
-      parts.push(`${contactName} (${humanLabel})`);
-    } else if (contactName) {
-      parts.push(contactName);
-    }
-  }
-  // BUSINESS has no scope detail — the level chip says it all.
-
-  // Metric — truncated for list view
-  if (impact.metric) {
-    parts.push(truncate(impact.metric, 60));
-  }
-
-  const line = parts.join(" · ");
-  return line || "(no details)";
-}
-
-// ==============================|| IMPACT ROW ||============================== //
-
-/**
- * Single impact line: colored bullet · level chip · free-text · actions.
- *
- * Click-to-edit is deliberately NOT wired on the row body — the rep uses
- * the edit icon. This avoids accidental triggers when reading dense lists.
- */
-function ImpactRow({ impact, choices, onEdit, onDelete }) {
-  const levelCfg = resolveImpactLevel(impact.level);
-
-  const line = formatImpactLine(impact, choices);
-
-  return (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="center"
-      sx={{
-        py: 0.5,
-        px: 0.5,
-        borderRadius: 0.75,
-        "&:hover": {
-          bgcolor: "action.hover",
-          "& .impact-actions": { opacity: 1 },
-        },
-      }}
-    >
-      {/* Colored bullet — visual anchor for scope */}
-      <Box
-        sx={{
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          bgcolor: `${levelCfg.color}.main`,
-          flexShrink: 0,
-        }}
-      />
-
-      {/* Level chip */}
-      <Chip
-        label={levelCfg.label}
-        size="small"
-        color={levelCfg.color}
-        variant="outlined"
-        sx={{ fontSize: "0.65rem", height: 18, flexShrink: 0 }}
-      />
-
-      {/* Content line — truncates on narrow widths */}
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={line}
-      >
-        {line}
-      </Typography>
-
-      {/* Actions — fade in on hover to keep list calm */}
-      <Stack
-        className="impact-actions"
-        direction="row"
-        spacing={0.25}
-        sx={{
-          opacity: { xs: 1, sm: 0 },
-          transition: "opacity 0.15s",
-          flexShrink: 0,
-        }}
-      >
-        <Tooltip title="Edit impact">
-          <IconButton
-            size="small"
-            onClick={() => onEdit(impact)}
-            aria-label="Edit impact"
-            sx={{
-              color: "text.disabled",
-              "&:hover": { color: "primary.main" },
-            }}
-          >
-            <EditOutlined style={{ fontSize: 12 }} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Delete impact">
-          <IconButton
-            size="small"
-            onClick={() => onDelete(impact)}
-            aria-label="Delete impact"
-            sx={{ color: "text.disabled", "&:hover": { color: "error.main" } }}
-          >
-            <DeleteOutlined style={{ fontSize: 12 }} />
-          </IconButton>
-        </Tooltip>
-      </Stack>
-    </Stack>
-  );
-}
-
-ImpactRow.propTypes = {
-  impact: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    level: PropTypes.string,
-    metric: PropTypes.string,
-    human_impact: PropTypes.string,
-    impacted_department: PropTypes.object,
-    impacted_contact: PropTypes.object,
-  }).isRequired,
-  choices: PropTypes.object,
-  onEdit: PropTypes.func.isRequired,
-  onDelete: PropTypes.func.isRequired,
-};
-
 // ==============================|| CONFIRM DIALOG ||============================== //
 
 /**
- * Minimal inline confirm dialog — one pattern reused for Pain delete
- * and Impact delete to avoid spinning up two nearly-identical components.
+ * Minimal inline confirm dialog for the Pain delete action.
  */
 function ConfirmDialog({
   open,
@@ -298,15 +125,12 @@ ConfirmDialog.propTypes = {
 /**
  * PainCard
  *
- * @param {Object}   pain             - PainSignal with nested .impacts[]
+ * @param {Object}   pain             - PainSignal
  * @param {Object}   choices          - From useGetSignalChoices()
  * @param {Function} onValidate       - (pain, 'pain') => void
  * @param {Function} onReject         - (pain, 'pain') => void
  * @param {Function} onEdit           - (pain, 'pain') => void — opens SignalEditDialog
- * @param {Function} onDelete         - (pain, 'pain') => void — parent handles API + cascade
- * @param {Function} onAddImpact      - (painId) => void — opens AddPainImpactDialog in create mode
- * @param {Function} onEditImpact     - (impact) => void — opens AddPainImpactDialog in edit mode
- * @param {Function} onDeleteImpact   - (impact) => void — parent handles API
+ * @param {Function} onDelete         - (pain, 'pain') => void — parent handles API
  */
 export default function PainCard({
   pain,
@@ -315,15 +139,11 @@ export default function PainCard({
   onReject,
   onEdit,
   onDelete,
-  onAddImpact,
-  onEditImpact,
-  onDeleteImpact,
 }) {
   // ==============================|| LOCAL STATE ||============================== //
 
   const [menuAnchor, setMenuAnchor] = useState(null);
   const [confirmDeletePainOpen, setConfirmDeletePainOpen] = useState(false);
-  const [confirmDeleteImpact, setConfirmDeleteImpact] = useState(null);
 
   // ==============================|| DERIVED ||============================== //
 
@@ -380,13 +200,6 @@ export default function PainCard({
     return null;
   }, [pain.source_contact, pain.source_activity]);
 
-
-  /** Nested impacts — always an array, default empty */
-  const impacts = useMemo(
-    () => (Array.isArray(pain.impacts) ? pain.impacts : []),
-    [pain.impacts],
-  );
-
   // ==============================|| MENU HANDLERS ||============================== //
 
   const handleMenuOpen = useCallback((e) => {
@@ -418,34 +231,6 @@ export default function PainCard({
   const handleReject = useCallback(() => {
     onReject(pain, "pain");
   }, [onReject, pain]);
-
-  // ==============================|| IMPACT HANDLERS ||============================== //
-
-  const handleAddImpact = useCallback(() => {
-    onAddImpact(pain.id);
-  }, [onAddImpact, pain.id]);
-
-  const handleEditImpact = useCallback(
-    (impact) => {
-      onEditImpact(impact);
-    },
-    [onEditImpact],
-  );
-
-  const handleDeleteImpactRequest = useCallback((impact) => {
-    setConfirmDeleteImpact(impact);
-  }, []);
-
-  const handleDeleteImpactConfirm = useCallback(() => {
-    if (confirmDeleteImpact) {
-      onDeleteImpact(confirmDeleteImpact);
-    }
-    setConfirmDeleteImpact(null);
-  }, [confirmDeleteImpact, onDeleteImpact]);
-
-  const handleDeleteImpactCancel = useCallback(() => {
-    setConfirmDeleteImpact(null);
-  }, []);
 
   // ==============================|| RENDER ||============================== //
 
@@ -590,8 +375,7 @@ export default function PainCard({
       {/* ==================== TYPE-SPECIFIC DETAIL (shared block) ==================== */}
       {/*
         related_techstack_mention is rendered by the shared PainDetailBlock so
-        the drawer and this card match. The manual pain→impact section above is
-        intentionally left untouched (removed in B3).
+        the drawer and this card match.
       */}
       <Box sx={{ mt: 1 }}>
         <PainDetailBlock signal={pain} />
@@ -609,89 +393,14 @@ export default function PainCard({
         </Typography>
       )}
 
-      {/* ==================== IMPACTS SECTION ==================== */}
-      <Divider sx={{ mt: 1.75, mb: 1.25 }} />
-
-      {/* Impacts header — always shows the "+ Add Impact" button */}
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="center"
-        sx={{ mb: 0.5 }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Typography variant="caption" color="text.secondary" fontWeight={600}>
-            Impacts
-          </Typography>
-          {impacts.length > 0 && (
-            <Chip
-              label={impacts.length}
-              size="small"
-              variant="outlined"
-              sx={{ height: 16, fontSize: "0.62rem" }}
-            />
-          )}
-        </Stack>
-
-        <Button
-          size="small"
-          variant="text"
-          color="primary"
-          startIcon={<PlusOutlined style={{ fontSize: 11 }} />}
-          onClick={handleAddImpact}
-          sx={{ fontSize: "0.7rem", py: 0.25, minWidth: 0 }}
-        >
-          Add Impact
-        </Button>
-      </Stack>
-
-      {/* Impacts list or empty state */}
-      {impacts.length === 0 ? (
-        <Typography
-          variant="caption"
-          color="text.disabled"
-          sx={{ display: "block", fontStyle: "italic", py: 0.5 }}
-        >
-          No impacts yet — start adding evidence to make this pain attackable.
-        </Typography>
-      ) : (
-        <Stack spacing={0.25}>
-          {impacts.map((impact) => (
-            <ImpactRow
-              key={impact.id}
-              impact={impact}
-              choices={choices}
-              onEdit={handleEditImpact}
-              onDelete={handleDeleteImpactRequest}
-            />
-          ))}
-        </Stack>
-      )}
-
       {/* ==================== CONFIRM: Delete Pain ==================== */}
       <ConfirmDialog
         open={confirmDeletePainOpen}
         title="Delete this pain?"
-        message={
-          impacts.length > 0
-            ? `This pain has ${impacts.length} impact${
-                impacts.length === 1 ? "" : "s"
-              }. Deleting the pain will also delete all its impacts permanently.`
-            : "This pain will be deleted permanently."
-        }
+        message="This pain will be deleted permanently."
         confirmLabel="Delete pain"
         onConfirm={handleDeletePainConfirm}
         onClose={() => setConfirmDeletePainOpen(false)}
-      />
-
-      {/* ==================== CONFIRM: Delete Impact ==================== */}
-      <ConfirmDialog
-        open={Boolean(confirmDeleteImpact)}
-        title="Delete this impact?"
-        message="This impact will be deleted permanently. The parent pain will remain."
-        confirmLabel="Delete impact"
-        onConfirm={handleDeleteImpactConfirm}
-        onClose={handleDeleteImpactCancel}
       />
     </Box>
   );
@@ -709,17 +418,6 @@ PainCard.propTypes = {
     source_contact: PropTypes.object,
     source_activity: PropTypes.object,
     created_at: PropTypes.string,
-    /** Nested impacts from PainSignalListSerializer / DetailSerializer */
-    impacts: PropTypes.arrayOf(
-      PropTypes.shape({
-        id: PropTypes.string.isRequired,
-        level: PropTypes.string,
-        metric: PropTypes.string,
-        human_impact: PropTypes.string,
-        impacted_department: PropTypes.object,
-        impacted_contact: PropTypes.object,
-      }),
-    ),
     /** Optional free-text tool cross-reference. */
     related_techstack_mention: PropTypes.string,
   }).isRequired,
@@ -730,9 +428,4 @@ PainCard.propTypes = {
   onReject: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
-
-  /** Impact actions — specific to Pain */
-  onAddImpact: PropTypes.func.isRequired,
-  onEditImpact: PropTypes.func.isRequired,
-  onDeleteImpact: PropTypes.func.isRequired,
 };

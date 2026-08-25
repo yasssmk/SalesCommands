@@ -476,7 +476,7 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *     "pain:<what>:<dimension>" on PainSignal and
  *     "objective:<what>:<dimension>" on ObjectiveSignal. See
  *     InlinePainForm / InlineObjectiveForm for rendering.
- *   - scope_levels drives PainImpact creation — see AddPainImpactDialog.
+ *   - scope_levels drives the organisational scope axis on scoped signal types.
  *
  * @returns {Object} { choices, choicesLoading, choicesError, mutateChoices }
  */

@@ -119,7 +119,7 @@ describe("PainCard adopts PainDetailBlock", () => {
   };
 
   it("renders related_techstack_mention via the block", () => {
-    render(<PainCard pain={pain} choices={{}} onValidate={vi.fn()} onReject={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} onAddImpact={vi.fn()} onEditImpact={vi.fn()} onDeleteImpact={vi.fn()} />);
+    render(<PainCard pain={pain} choices={{}} onValidate={vi.fn()} onReject={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.getByText("RELATED TOOL")).toBeInTheDocument();
     expect(screen.getByText("Excel")).toBeInTheDocument();
   });

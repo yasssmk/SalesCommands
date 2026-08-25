@@ -28,10 +28,6 @@ vi.mock("api/signals/signals", () => ({
   deleteSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
-vi.mock("api/signals/painImpacts", () => ({
-  deletePainImpact: vi.fn(() => Promise.resolve({ success: true })),
-}));
-
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(),
   displayErrorSnackbar: vi.fn(),

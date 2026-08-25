@@ -143,8 +143,7 @@ function StagedPainCard({ signal, choices, onToggleStatus, onEdit, onRemove }) {
 
           {/* Canonical axes chip — the only tag shown on a staged Pain.
               All impact-level data (scope, metric, human consequences)
-              lives on PainImpact and is captured separately from the
-              Account workspace. */}
+              is captured separately as first-class Impact signals. */}
           {signal.what && signal.dimension && (
             <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
               <Chip

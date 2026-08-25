@@ -4,7 +4,7 @@
  *
  * Renders all 4 signal types (Pain, Objective, Impact, Tech Stack) as
  * uniform flat lists of cards with full CRUD: validate / reject / edit
- * / delete, plus type-specific extras (Pain has nested impacts CRUD).
+ * / delete.
  *
  * Strict separation of concerns
  * -----------------------------
@@ -21,11 +21,6 @@
  *     the shared SignalsFlatView (20/page), same component as Activity/DC
  *   - Status filter applied server-side via SWR filters — universal
  *     across all 4 types
- *
- * Note: the legacy pain->impact manual dialog (AddPainImpactDialog) is
- * still mounted but no longer reachable from this surface (SignalLine has
- * no add-impact affordance); it is removed with the rest of the manual
- * system in a later step.
  */
 
 "use client";
@@ -49,7 +44,6 @@ import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
-import AddPainImpactDialog from "../signals/pain/AddPainImpactDialog";
 
 import {
   useGetSignalChoices,
@@ -58,7 +52,6 @@ import {
   deleteSignal,
 } from "api/signals/signals";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import { deletePainImpact } from "api/signals/painImpacts";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -109,18 +102,6 @@ export default function AccountSignalsTab({ accountId, account }) {
     open: false,
     signal: null,
     signalType: null,
-  });
-
-  /**
-   * Pain impact dialog state. Mounted at tab level (not gated on
-   * activeType) so it stays available even if the user has briefly
-   * switched type while the dialog is open.
-   */
-  const [impactDialog, setImpactDialog] = useState({
-    open: false,
-    mode: null,
-    painSignalId: null,
-    initialImpact: null,
   });
 
   // Signal detail drawer (opened by clicking a signal line).
@@ -250,60 +231,6 @@ export default function AccountSignalsTab({ accountId, account }) {
     [mutateAll],
   );
 
-  // ==============================|| IMPACT HANDLERS — Pain-only ||============================== //
-  //
-  // PainCard exposes 3 impact callbacks. They are passed down through
-  // SignalList to PainCard only when activeType === 'pain' (SignalList
-  // ignores them otherwise). The dialog itself is mounted at tab level.
-
-  const handleAddImpact = useCallback((painSignalId) => {
-    setImpactDialog({
-      open: true,
-      mode: "create",
-      painSignalId,
-      initialImpact: null,
-    });
-  }, []);
-
-  const handleEditImpact = useCallback((impact) => {
-    setImpactDialog({
-      open: true,
-      mode: "edit",
-      painSignalId: null,
-      initialImpact: impact,
-    });
-  }, []);
-
-  const handleImpactDialogClose = useCallback(() => {
-    setImpactDialog({
-      open: false,
-      mode: null,
-      painSignalId: null,
-      initialImpact: null,
-    });
-  }, []);
-
-  const handleImpactDialogSuccess = useCallback(() => {
-    // Pain list needs refresh because impacts are nested inline in
-    // PainSignalListSerializer. The cluster cache also gets bust by
-    // the API layer — that's transparent to this tab.
-    mutateAll();
-    displaySuccessSnackbar("Impact saved");
-  }, [mutateAll]);
-
-  const handleDeleteImpact = useCallback(
-    async (impact) => {
-      const result = await deletePainImpact(impact.id);
-      if (result.success) {
-        mutateAll();
-        displaySuccessSnackbar("Impact deleted");
-      } else {
-        displayErrorSnackbar(result);
-      }
-    },
-    [mutateAll],
-  );
-
   // ==============================|| RENDER ||============================== //
 
   return (
@@ -313,8 +240,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         Read-only operational view: signal creation now happens exclusively
         from the Activity Workspace (ActivitySignalsTab), where the source
         activity context is available for auto-propagation. This tab keeps
-        full lifecycle control (validate / reject / edit / delete) plus
-        Pain impact CRUD via PainCard.
+        full lifecycle control (validate / reject / edit / delete).
       */}
       <Stack
         direction={{ xs: "column", sm: "row" }}
@@ -426,17 +352,6 @@ export default function AccountSignalsTab({ accountId, account }) {
         accountId={accountId}
         choices={choices}
         choicesLoading={choicesLoading}
-      />
-
-      {/* Pain impact dialog — Pain-only by nature; mounted always so it
-          can be opened from any PainCard regardless of pending tab switch */}
-      <AddPainImpactDialog
-        open={impactDialog.open}
-        onClose={handleImpactDialogClose}
-        onSuccess={handleImpactDialogSuccess}
-        painSignalId={impactDialog.painSignalId}
-        accountId={accountId}
-        initialImpact={impactDialog.initialImpact}
       />
     </Box>
   );

@@ -14,17 +14,16 @@
  * signalType is parameterized end-to-end so any supported cluster signal
  * type (pain / objective / impact) works without refactor.
  *
- * Follows the pattern established by api/signals/painImpacts.js (the
- * most recent module) for URL building, revalidation, and mutation
- * return shape.
+ * Follows the URL-building, revalidation, and mutation-return-shape
+ * pattern shared by the other api/signals modules.
  *
  * Cache invalidation strategy
  * ---------------------------
  * Writes on a cluster's archival state do NOT change the underlying
- * signals or impacts — they only change which archival rows are "active".
- * However, writes on signals or impacts DO change the cluster payload
- * (confirmation_count, freshness, etc.), so painImpacts.js already
- * revalidates the pain cache tag. We complete the picture here by also
+ * signals — they only change which archival rows are "active".
+ * However, writes on signals DO change the cluster payload
+ * (confirmation_count, freshness, etc.), so the per-type signal modules
+ * already revalidate their cache tag. We complete the picture here by also
  * revalidating the clusters cache whenever an archive/unarchive happens.
  */
 
@@ -53,7 +52,6 @@ const endpoints = {
   // self-documenting. Any write that changes cluster data must revalidate
   // these prefixes as well.
   painList: "/module-signals/pain/",
-  painImpactList: "/module-signals/pain-impacts/",
 };
 
 // ==============================|| URL BUILDER ||============================== //
@@ -161,15 +159,14 @@ function buildDetailUrl(canonicalKey, accountId, signalType = "pain") {
  *
  * The cluster payload is derived from Pain signals + Impact signals + the
  * archival table. Writes on any of those should bust the cluster cache,
- * and writes on the cluster archival table should bust the Pain/Impact
- * caches to keep their detail views consistent (same cache tag on the
- * backend — 'signals').
+ * and writes on the cluster archival table should bust the Pain cache to
+ * keep its detail views consistent (same cache tag on the backend —
+ * 'signals').
  */
 function revalidateClusterCaches() {
   revalidateMultiple([
     endpoints.list,
     endpoints.painList,
-    endpoints.painImpactList,
   ]);
 }
 

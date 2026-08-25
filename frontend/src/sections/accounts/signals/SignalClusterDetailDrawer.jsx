@@ -6,27 +6,25 @@
  * Pain and Objective clusters. Branching is driven by
  * `clusterSummary.signal_type`:
  *
- *   Pain      → impact CRUD via AddPainImpactDialog, max_impact_level
- *               chip, human_impacts + metrics aggregation, member cards
- *               are PainCard.
- *   Objective → no impact CRUD, max_scope_level chip, target_dates
- *               section, member cards are ObjectiveCard.
+ *   Pain      → max_impact_level chip, human_impacts + metrics
+ *               aggregation, member cards are PainCard.
+ *   Objective → max_scope_level chip, target_dates section, member cards
+ *               are ObjectiveCard.
  *
  * Self-contained modal state
  * --------------------------
- * The drawer owns its own dialogs (SignalEditDialog, AlertSignalReject,
- * and AddPainImpactDialog for Pain only) and routes the member cards'
- * callbacks to them. This keeps the parent (AccountQualificationTab /
- * AccountSignalsTab during transition) thin — it only needs to provide
- * accountId, choices, and a callback when something happens so it can
- * revalidate its own cluster list.
+ * The drawer owns its own dialogs (SignalEditDialog, AlertSignalReject)
+ * and routes the member cards' callbacks to them. This keeps the parent
+ * (AccountQualificationTab / AccountSignalsTab during transition) thin —
+ * it only needs to provide accountId, choices, and a callback when
+ * something happens so it can revalidate its own cluster list.
  *
  * Cache flow
  * ----------
- * Any signal/impact mutation from the members revalidates the shared
- * caches (handled by painImpacts.js / signals.js). Since the cluster
- * endpoint shares the same backend cache tag, the drawer's own cluster
- * detail fetch automatically refreshes on next focus or next mutation.
+ * Any signal mutation from the members revalidates the shared caches
+ * (handled by signals.js). Since the cluster endpoint shares the same
+ * backend cache tag, the drawer's own cluster detail fetch automatically
+ * refreshes on next focus or next mutation.
  * We also call mutateCluster() explicitly for immediate UI feedback
  * after each action.
  */
@@ -65,7 +63,6 @@ import UserOutlined from "@ant-design/icons/UserOutlined";
 // project imports
 import ObjectiveCard from "components/cards/signals/ObjectiveCard";
 import PainCard from "components/cards/signals/PainCard";
-import AddPainImpactDialog from "./pain/AddPainImpactDialog";
 import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDialog from "./SignalEditDialog";
 
@@ -75,7 +72,6 @@ import {
   unarchiveCluster,
 } from "api/signals/signalClusters";
 import { validateSignal, deleteSignal } from "api/signals/signals";
-import { deletePainImpact } from "api/signals/painImpacts";
 import {
   displayErrorSnackbar,
   displaySuccessSnackbar,
@@ -723,13 +719,6 @@ export default function SignalClusterDetailDrawer({
     signalType: null,
   });
 
-  const [impactDialog, setImpactDialog] = useState({
-    open: false,
-    mode: null,
-    painSignalId: null,
-    initialImpact: null,
-  });
-
   const [archivalSubmitting, setArchivalSubmitting] = useState(false);
 
   // ==============================|| REVALIDATION ||============================== //
@@ -827,59 +816,6 @@ export default function SignalClusterDetailDrawer({
       if (result.success) {
         notifyChange();
         displaySuccessSnackbar("Signal deleted");
-      } else {
-        displayErrorSnackbar(result);
-      }
-    },
-    [notifyChange],
-  );
-
-  // ==============================|| IMPACT HANDLERS — PAIN ONLY ||============================== //
-  //
-  // These handlers are bound to PainCard's onAddImpact / onEditImpact /
-  // onDeleteImpact props. They never run for Objective members because
-  // ObjectiveCard does not have impact-related callbacks. The dialog
-  // they drive (AddPainImpactDialog) is also rendered conditionally
-  // (isPain &&) so it never mounts for Objective clusters.
-
-  const handleAddImpact = useCallback((painSignalId) => {
-    setImpactDialog({
-      open: true,
-      mode: "create",
-      painSignalId,
-      initialImpact: null,
-    });
-  }, []);
-
-  const handleEditImpact = useCallback((impact) => {
-    setImpactDialog({
-      open: true,
-      mode: "edit",
-      painSignalId: null,
-      initialImpact: impact,
-    });
-  }, []);
-
-  const handleImpactDialogClose = useCallback(() => {
-    setImpactDialog({
-      open: false,
-      mode: null,
-      painSignalId: null,
-      initialImpact: null,
-    });
-  }, []);
-
-  const handleImpactDialogSuccess = useCallback(() => {
-    notifyChange();
-    displaySuccessSnackbar("Impact saved");
-  }, [notifyChange]);
-
-  const handleDeleteImpact = useCallback(
-    async (impact) => {
-      const result = await deletePainImpact(impact.id);
-      if (result.success) {
-        notifyChange();
-        displaySuccessSnackbar("Impact deleted");
       } else {
         displayErrorSnackbar(result);
       }
@@ -1299,7 +1235,7 @@ export default function SignalClusterDetailDrawer({
         Member rendering branches on signal_type. The lifecycle handlers
         (validate / reject / edit / delete) are shared — they accept the
         signalType parameter and route to the right backend endpoint via
-        signals.js. Impact handlers are bound only on PainCard.
+        signals.js.
       */}
       {members.length > 0 && (
         <Stack spacing={1.5}>
@@ -1313,9 +1249,6 @@ export default function SignalClusterDetailDrawer({
                 onReject={handleRejectOpen}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
-                onAddImpact={handleAddImpact}
-                onEditImpact={handleEditImpact}
-                onDeleteImpact={handleDeleteImpact}
               />
             ))}
 
@@ -1401,24 +1334,6 @@ export default function SignalClusterDetailDrawer({
         signal={rejectModal.signal}
         signalType={rejectModal.signalType}
       />
-
-      {/* ==================== IMPACT DIALOG — Pain only ==================== */}
-      {/*
-        Conditional mount: AddPainImpactDialog never mounts for Objective
-        clusters. The handlers above are equally guarded by the fact that
-        ObjectiveCard simply does not have onAddImpact / onEditImpact /
-        onDeleteImpact in its prop surface — they cannot be triggered.
-      */}
-      {isPain && (
-        <AddPainImpactDialog
-          open={impactDialog.open}
-          onClose={handleImpactDialogClose}
-          onSuccess={handleImpactDialogSuccess}
-          painSignalId={impactDialog.painSignalId}
-          accountId={accountId}
-          initialImpact={impactDialog.initialImpact}
-        />
-      )}
     </>
   );
 }

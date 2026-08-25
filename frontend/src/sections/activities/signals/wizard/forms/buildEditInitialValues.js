@@ -52,8 +52,8 @@ export function buildEditInitialValues(signalType, signal) {
  *
  * Pain is a pure qualitative diagnosis. All impact-related data
  * (level, impacted_contact/department, human_impact, metric, etc.)
- * lives on PainImpact — captured separately via AddPainImpactDialog
- * in the Account Workspace, NOT in the wizard form.
+ * is captured separately as first-class Impact signals, NOT in the
+ * wizard form.
  *
  * This builder mirrors exactly the fields of InlinePainForm:
  *   - Diagnosis  : summary, what, dimension

@@ -154,16 +154,10 @@ export default function SignalList({
   emptyMessage,
   emptyDescription,
   // Props consumed by dedicated card components:
-  //   - `choices` is needed by PainCard (impact labels / human_impacts),
-  //     ObjectiveCard (canonical axes + scope labels), and TechStackCard
-  //     (usage scope + lifecycle labels). Safely ignored when absent.
-  //   - `onAddImpact` / `onEditImpact` / `onDeleteImpact` are Pain-only.
-  //     A Pain SignalList without these handlers will crash at PainCard
-  //     level — the failure is obvious.
+  //   - `choices` is needed by PainCard (canonical axes), ObjectiveCard
+  //     (canonical axes + scope labels), and TechStackCard (usage scope +
+  //     lifecycle labels). Safely ignored when absent.
   choices,
-  onAddImpact,
-  onEditImpact,
-  onDeleteImpact,
 }) {
   // ==============================|| LOADING ||============================== //
 
@@ -197,7 +191,7 @@ export default function SignalList({
   // ==============================|| LIST ||============================== //
 
   // Each signal type routes to its own dedicated card component:
-  //   - pain       → PainCard        (nested impacts + impact CRUD controls)
+  //   - pain       → PainCard        (canonical axes + related-tool block)
   //   - objective  → ObjectiveCard   (canonical axes + scope + target_date
   //                                    urgency)
   //   - impact     → ImpactCard      (canonical axes + scope + impact_type
@@ -225,9 +219,6 @@ export default function SignalList({
           onReject={onReject}
           onEdit={onEdit}
           onDelete={onDelete}
-          onAddImpact={onAddImpact}
-          onEditImpact={onEditImpact}
-          onDeleteImpact={onDeleteImpact}
         />
       );
     }
@@ -328,12 +319,5 @@ SignalList.propTypes = {
   // to render canonical axis / scope / lifecycle labels. Not enforced
   // strictly required so callers can omit it; lists missing the prop
   // will render raw enum values where applicable.
-  //
-  // `onAddImpact` / `onEditImpact` / `onDeleteImpact` are Pain-only —
-  // omitted for any other signalType. A Pain SignalList without these
-  // handlers will crash at the PainCard level (obvious failure).
   choices: PropTypes.object,
-  onAddImpact: PropTypes.func,
-  onEditImpact: PropTypes.func,
-  onDeleteImpact: PropTypes.func,
 };
