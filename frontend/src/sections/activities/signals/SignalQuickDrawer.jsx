@@ -3,6 +3,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useRouter } from "next/navigation";
 
 // MUI
 import Box from "@mui/material/Box";
@@ -21,6 +22,7 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   EditOutlined,
+  LinkOutlined,
 } from "@ant-design/icons";
 
 // Project imports
@@ -314,6 +316,55 @@ function NextStepDetails({ signal }) {
 }
 NextStepDetails.propTypes = { signal: PropTypes.object.isRequired };
 
+function PeopleDetails({ signal }) {
+  const targetContact = signal.target_contact
+    ? formatContact(signal.target_contact)
+    : null;
+  const targetDept = signal.target_department?.name;
+  return (
+    <>
+      <DrawerSection title="ROLE">
+        <DrawerFieldRow label="Role" value={signal.role_display} />
+        <DrawerFieldRow label="Influence" value={signal.influence_display} />
+        <DrawerFieldRow label="Contact" value={targetContact} />
+        <DrawerFieldRow label="Department" value={targetDept} />
+      </DrawerSection>
+      <DrawerSection title="CONTEXT">
+        <DrawerFieldRow label="Notes" value={signal.notes} />
+        <DrawerFieldRow label="Source quote">
+          <SourceQuoteBlock quote={signal.source_quote} />
+        </DrawerFieldRow>
+      </DrawerSection>
+    </>
+  );
+}
+PeopleDetails.propTypes = { signal: PropTypes.object.isRequired };
+
+function ConstraintDetails({ signal }) {
+  const contactName = formatContact(getContact(signal));
+  return (
+    <>
+      <DrawerSection title="CLASSIFICATION">
+        <DrawerFieldRow label="Theme" value={
+          signal.what_display && signal.dimension_display
+            ? `${signal.what_display} × ${signal.dimension_display}`
+            : null
+        } />
+        <DrawerFieldRow label="Rigidity" value={signal.rigidity_display} />
+        <DrawerFieldRow label="Department" value={signal.target_department?.name} />
+      </DrawerSection>
+      <DrawerSection title="CONTEXT">
+        <DrawerFieldRow label="Raised by" value={contactName} />
+        <DrawerFieldRow label="Notes" value={signal.notes} />
+        <DrawerFieldRow label="Source quote">
+          <SourceQuoteBlock quote={signal.source_quote} />
+        </DrawerFieldRow>
+      </DrawerSection>
+    </>
+  );
+}
+ConstraintDetails.propTypes = { signal: PropTypes.object.isRequired };
+
 function renderDetails(signal, signalType, onEdit) {
   switch (signalType) {
     case "pain": return <PainDetails signal={signal} />;
@@ -322,9 +373,64 @@ function renderDetails(signal, signalType, onEdit) {
     case "tech-stack": return <TechStackDetails signal={signal} />;
     case "blockers": return <BlockerDetails signal={signal} />;
     case "next-steps": return <NextStepDetails signal={signal} />;
+    case "people": return <PeopleDetails signal={signal} />;
+    case "constraints": return <ConstraintDetails signal={signal} />;
     default: return null;
   }
 }
+
+// ==============================|| PROVENANCE (contacts + origin activity) ||============================== //
+
+function formatDrawerContact(contact) {
+  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
+  const parts = [
+    name || null,
+    contact.job_title || null,
+    contact.department?.name || null,
+  ].filter(Boolean);
+  return parts.join(" · ") || null;
+}
+
+// Full activity provenance — every participating contact (name · job_title ·
+// department) plus a link to the origin activity page. Rendered for every
+// signal type so the drawer is the complete detail surface. Omitted entirely
+// when the signal carries neither contacts nor an origin activity id.
+function ProvenanceSection({ signal, onOpenActivity }) {
+  const contacts = signal.source_context?.contacts ?? [];
+  const activityId = signal.source_context?.activity?.id ?? null;
+  if (contacts.length === 0 && !activityId) return null;
+
+  return (
+    <DrawerSection title="ORIGIN">
+      {contacts.length > 0 && (
+        <DrawerFieldRow label={contacts.length > 1 ? "Contacts" : "Contact"}>
+          <Stack spacing={0.25}>
+            {contacts.map((c) => (
+              <Typography key={c.id} variant="body2">
+                {formatDrawerContact(c)}
+              </Typography>
+            ))}
+          </Stack>
+        </DrawerFieldRow>
+      )}
+      {activityId && (
+        <Button
+          size="small"
+          variant="text"
+          startIcon={<LinkOutlined style={{ fontSize: 13 }} />}
+          onClick={() => onOpenActivity(activityId)}
+          sx={{ mt: 0.5, px: 0 }}
+        >
+          View origin activity
+        </Button>
+      )}
+    </DrawerSection>
+  );
+}
+ProvenanceSection.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onOpenActivity: PropTypes.func.isRequired,
+};
 
 // ==============================|| SIGNAL QUICK DRAWER ||============================== //
 
@@ -338,6 +444,8 @@ export default function SignalQuickDrawer({
   onEdit,
   isLocked,
 }) {
+  const router = useRouter();
+
   if (!signal) return null;
 
   const isPending = signal.status === "PENDING";
@@ -345,6 +453,13 @@ export default function SignalQuickDrawer({
     ? getMissingFields(signal, signalType)
     : [];
   const validateDisabled = missingFields.length > 0;
+
+  // Origin activity is navigated to (there is no activity drawer) — matches
+  // the canonical /activities/{id} route used across the app.
+  const openOriginActivity = (activityId) => {
+    onClose?.();
+    router.push(`/activities/${activityId}`);
+  };
 
   return (
     <Drawer
@@ -404,6 +519,9 @@ export default function SignalQuickDrawer({
 
         {/* Type-specific detail sections */}
         {renderDetails(signal, signalType, onEdit)}
+
+        {/* Provenance — full contact list + origin activity link */}
+        <ProvenanceSection signal={signal} onOpenActivity={openOriginActivity} />
       </Box>
 
       <Divider />

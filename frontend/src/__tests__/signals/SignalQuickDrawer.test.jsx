@@ -2,10 +2,12 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { useRouter } from "next/navigation";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
 });
 
 const MOCK_PAIN = {
@@ -273,7 +275,9 @@ describe("SignalQuickDrawer", () => {
     expect(screen.getByText("Excel")).toBeInTheDocument();
     expect(screen.getByText("Microsoft")).toBeInTheDocument();
     expect(screen.getByText("Critical for Q3")).toBeInTheDocument();
-    expect(screen.getByText("Pierre Dupont")).toBeInTheDocument();
+    // Pierre Dupont now appears both as the per-type Contact row and in the
+    // ORIGIN provenance contact list.
+    expect(screen.getAllByText("Pierre Dupont").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
@@ -389,6 +393,67 @@ describe("SignalQuickDrawer", () => {
 
     expect(screen.queryByText("N/A")).not.toBeInTheDocument();
     expect(screen.queryByText("RELATED TOOL")).not.toBeInTheDocument();
+  });
+
+  // === ORIGIN provenance (B1) ===
+
+  it("renders the full contact list with job_title + department in ORIGIN", () => {
+    const signal = {
+      id: "pd1",
+      status: "PENDING",
+      summary: "Dept-scoped pain",
+      source_quote: "quote",
+      source_context: {
+        activity: { id: "act-1", subject: "Discovery call" },
+        contacts: [
+          { id: "c1", first_name: "Dana", last_name: "Lee", job_title: "CMO", department: { id: "d1", name: "Marketing" } },
+          { id: "c2", first_name: "Sam", last_name: "Roe" },
+        ],
+      },
+    };
+    render(
+      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={vi.fn()} />,
+    );
+    expect(screen.getByText("ORIGIN")).toBeInTheDocument();
+    expect(screen.getByText("Dana Lee · CMO · Marketing")).toBeInTheDocument();
+    expect(screen.getByText("Sam Roe")).toBeInTheDocument();
+  });
+
+  it("navigates to the origin activity on 'View origin activity' click", () => {
+    const push = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({ push });
+    const onClose = vi.fn();
+    const signal = {
+      id: "pd2",
+      status: "PENDING",
+      summary: "Dept-scoped pain",
+      source_context: {
+        activity: { id: "act-42" },
+        contacts: [{ id: "c1", first_name: "Dana", last_name: "Lee" }],
+      },
+    };
+    render(
+      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /view origin activity/i }));
+    expect(push).toHaveBeenCalledWith("/activities/act-42");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("omits ORIGIN when there is no activity id and no contacts", () => {
+    const signal = {
+      id: "pd3",
+      status: "PENDING",
+      summary: "bare",
+      source_context: { contacts: [] },
+    };
+    render(
+      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={vi.fn()} />,
+    );
+    expect(screen.queryByText("ORIGIN")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /view origin activity/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows no qualification row when all three booleans are false", () => {
