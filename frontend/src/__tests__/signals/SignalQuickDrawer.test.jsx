@@ -27,10 +27,7 @@ const MOCK_PAIN = {
   source_context: {
     contacts: [{ id: "c1", first_name: "Pierre", last_name: "Dupont" }],
   },
-  related_techstack: {
-    product_name: "Excel",
-    company_name: "Microsoft",
-  },
+  related_techstack_mention: "Excel",
 };
 
 const MOCK_TECHSTACK = {
@@ -61,6 +58,7 @@ const MOCK_OBJECTIVE = {
   summary: "Reduce reporting time by 50%",
   what_display: "Operations",
   dimension_display: "Time",
+  scope_level: "DEPARTMENT",
   scope_level_display: "Department",
   success_criteria: "Monthly reports done in 2 hours",
   target_date: "2026-12-31",
@@ -271,9 +269,9 @@ describe("SignalQuickDrawer", () => {
     expect(screen.getByText("CLASSIFICATION")).toBeInTheDocument();
     expect(screen.getByText("Data × Time")).toBeInTheDocument();
     expect(screen.getByText("Business")).toBeInTheDocument();
+    // related_techstack_mention now rendered via the shared PainDetailBlock
     expect(screen.getByText("RELATED TOOL")).toBeInTheDocument();
     expect(screen.getByText("Excel")).toBeInTheDocument();
-    expect(screen.getByText("Microsoft")).toBeInTheDocument();
     expect(screen.getByText("Critical for Q3")).toBeInTheDocument();
     // Pierre Dupont now appears both as the per-type Contact row and in the
     // ORIGIN provenance contact list.
@@ -292,12 +290,12 @@ describe("SignalQuickDrawer", () => {
 
     expect(screen.getByText("IDENTITY")).toBeInTheDocument();
     expect(screen.getAllByText("Salesforce").length).toBeGreaterThanOrEqual(1);
+    // Qualification + usage + lifecycle now rendered via the shared TechDetailBlock
     expect(screen.getByText("Qualification")).toBeInTheDocument();
     expect(screen.getAllByText("Competitor").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("USAGE")).toBeInTheDocument();
+    expect(screen.getByText("TOOL USAGE")).toBeInTheDocument();
     expect(screen.getByText("Company-wide")).toBeInTheDocument();
     expect(screen.getByText("2022")).toBeInTheDocument();
-    expect(screen.getByText("COST & STATUS")).toBeInTheDocument();
     expect(screen.getByText("~50k/year")).toBeInTheDocument();
     expect(screen.getByText("Main CRM tool")).toBeInTheDocument();
   });
@@ -312,10 +310,12 @@ describe("SignalQuickDrawer", () => {
       />,
     );
 
-    expect(screen.getByText("DETAILS")).toBeInTheDocument();
+    // Objective specifics now rendered via the shared ObjectiveDetailBlock.
+    // Owner line follows the card's single-truth logic: DEPARTMENT scope
+    // shows "Department: {name}" (not the target contact).
+    expect(screen.getByText("OBJECTIVE")).toBeInTheDocument();
     expect(screen.getByText("Monthly reports done in 2 hours")).toBeInTheDocument();
-    expect(screen.getByText("Marc Leblanc")).toBeInTheDocument();
-    expect(screen.getByText("Finance")).toBeInTheDocument();
+    expect(screen.getByText("Department: Finance")).toBeInTheDocument();
   });
 
   it("shows validated_by info for validated signals", () => {
@@ -393,6 +393,19 @@ describe("SignalQuickDrawer", () => {
 
     expect(screen.queryByText("N/A")).not.toBeInTheDocument();
     expect(screen.queryByText("RELATED TOOL")).not.toBeInTheDocument();
+  });
+
+  // === Shared-block composition (B1.2.1) ===
+
+  it("composes the shared ImpactDetailBlock (IMPACT EVIDENCE section)", () => {
+    // The 'IMPACT EVIDENCE' section heading is produced ONLY by the shared
+    // ImpactDetailBlock — its presence proves the drawer composes the block
+    // rather than keeping its own per-type copy.
+    render(
+      <SignalQuickDrawer open signal={MOCK_IMPACT} signalType="impact" onClose={vi.fn()} />,
+    );
+    expect(screen.getByText("IMPACT EVIDENCE")).toBeInTheDocument();
+    expect(screen.getByText("Time impact")).toBeInTheDocument();
   });
 
   // === ORIGIN provenance (B1) ===

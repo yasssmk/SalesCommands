@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 // MUI
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
@@ -39,6 +38,13 @@ import {
   getNextStepSummary,
   formatSuggestedContacts,
 } from "./utils/signalDisplay";
+
+// Shared per-type detail blocks — the single rendering of each type's
+// type-specific fields, consumed here and by the rich Account cards.
+import ImpactDetailBlock from "components/signals/detail/ImpactDetailBlock";
+import ObjectiveDetailBlock from "components/signals/detail/ObjectiveDetailBlock";
+import TechDetailBlock from "components/signals/detail/TechDetailBlock";
+import PainDetailBlock from "components/signals/detail/PainDetailBlock";
 
 const DRAWER_WIDTH = 400;
 
@@ -107,7 +113,6 @@ SourceQuoteBlock.propTypes = { quote: PropTypes.string };
 
 function PainDetails({ signal }) {
   const contactName = formatContact(getContact(signal));
-  const techRef = signal.related_techstack;
   return (
     <>
       <DrawerSection title="CLASSIFICATION">
@@ -119,23 +124,10 @@ function PainDetails({ signal }) {
         <DrawerFieldRow label="Scope" value={signal.scope_level_display} />
         <DrawerFieldRow label="Category" value={signal.signal_category_display} />
       </DrawerSection>
-      {techRef && (
-        <DrawerSection title="RELATED TOOL">
-          <DrawerFieldRow label="Tool" value={techRef.product_name} />
-          <DrawerFieldRow label="Company" value={techRef.company_name} />
-        </DrawerSection>
-      )}
-      {signal.related_techstack_mention && !techRef && (
-        <DrawerSection title="RELATED TOOL">
-          <DrawerFieldRow label="Mention" value={signal.related_techstack_mention} />
-        </DrawerSection>
-      )}
+      <PainDetailBlock signal={signal} />
       <DrawerSection title="CONTEXT">
         <DrawerFieldRow label="Contact" value={contactName} />
         <DrawerFieldRow label="Notes" value={signal.notes} />
-        <DrawerFieldRow label="Source quote">
-          <SourceQuoteBlock quote={signal.source_quote} />
-        </DrawerFieldRow>
       </DrawerSection>
     </>
   );
@@ -144,10 +136,6 @@ PainDetails.propTypes = { signal: PropTypes.object.isRequired };
 
 function ObjectiveDetails({ signal }) {
   const contactName = formatContact(getContact(signal));
-  const targetContact = signal.target_contact
-    ? formatContact(signal.target_contact)
-    : null;
-  const targetDept = signal.target_department?.name;
   return (
     <>
       <DrawerSection title="CLASSIFICATION">
@@ -158,18 +146,10 @@ function ObjectiveDetails({ signal }) {
         } />
         <DrawerFieldRow label="Scope" value={signal.scope_level_display} />
       </DrawerSection>
-      <DrawerSection title="DETAILS">
-        <DrawerFieldRow label="Success criteria" value={signal.success_criteria} />
-        <DrawerFieldRow label="Target date" value={formatDate(signal.target_date)} />
-        <DrawerFieldRow label="Target contact" value={targetContact} />
-        <DrawerFieldRow label="Target department" value={targetDept} />
-        <DrawerFieldRow label="Notes" value={signal.notes} />
-      </DrawerSection>
+      <ObjectiveDetailBlock signal={signal} />
       <DrawerSection title="CONTEXT">
         <DrawerFieldRow label="Contact" value={contactName} />
-        <DrawerFieldRow label="Source quote">
-          <SourceQuoteBlock quote={signal.source_quote} />
-        </DrawerFieldRow>
+        <DrawerFieldRow label="Notes" value={signal.notes} />
       </DrawerSection>
     </>
   );
@@ -186,18 +166,11 @@ function ImpactDetails({ signal }) {
             ? `${signal.what_display} × ${signal.dimension_display}`
             : null
         } />
-        <DrawerFieldRow label="Impact type" value={signal.impact_type_display} />
         <DrawerFieldRow label="Scope" value={signal.scope_level_display} />
       </DrawerSection>
-      <DrawerSection title="DETAILS">
-        <DrawerFieldRow label="Metric" value={signal.metric_text} />
-        <DrawerFieldRow label="Human impact" value={signal.human_impact_display} />
-      </DrawerSection>
+      <ImpactDetailBlock signal={signal} />
       <DrawerSection title="CONTEXT">
         <DrawerFieldRow label="Contact" value={contactName} />
-        <DrawerFieldRow label="Source quote">
-          <SourceQuoteBlock quote={signal.source_quote} />
-        </DrawerFieldRow>
       </DrawerSection>
     </>
   );
@@ -208,63 +181,17 @@ function TechStackDetails({ signal }) {
   const techInfo = getTechSummary(signal);
   const contactName = formatContact(getContact(signal));
 
-  // S10: qualification is three independent booleans on the signal —
-  // any combination, or none (a tool the account simply uses).
-  const qualifications = [
-    signal.is_competitor && { key: "competitor", label: "Competitor", color: "error" },
-    signal.is_integration && { key: "integration", label: "Integration", color: "info" },
-    signal.is_to_replace && { key: "to-replace", label: "To replace", color: "warning" },
-  ].filter(Boolean);
-
   return (
     <>
       <DrawerSection title="IDENTITY">
         <DrawerFieldRow label="Tool">
           <Typography variant="body2">{techInfo.name}</Typography>
         </DrawerFieldRow>
-        {qualifications.length > 0 && (
-          <DrawerFieldRow label="Qualification">
-            <Stack direction="row" spacing={0.5} flexWrap="wrap">
-              {qualifications.map((q) => (
-                <Chip
-                  key={q.key}
-                  label={q.label}
-                  size="small"
-                  color={q.color}
-                  variant="outlined"
-                  sx={{ height: 20, fontSize: "0.7rem" }}
-                />
-              ))}
-            </Stack>
-          </DrawerFieldRow>
-        )}
         <DrawerFieldRow label="Mentioned by" value={contactName} />
       </DrawerSection>
-      <DrawerSection title="USAGE">
-        <DrawerFieldRow label="Scope" value={signal.usage_scope_display} />
-        {signal.usage_department?.name && (
-          <DrawerFieldRow label="Department" value={signal.usage_department.name} />
-        )}
-        {signal.usage_start_year && (
-          <DrawerFieldRow label="Used since" value={String(signal.usage_start_year)} />
-        )}
-        <DrawerFieldRow label="Renewal date" value={formatDate(signal.renewal_date)} />
-      </DrawerSection>
-      <DrawerSection title="COST & STATUS">
-        <DrawerFieldRow label="Cost description" value={signal.cost_description} />
-        {signal.is_discontinued && (
-          <DrawerFieldRow label="Status">
-            <Typography variant="body2" color="error.main">
-              Discontinued{signal.discontinued_date ? ` (${formatDate(signal.discontinued_date)})` : ""}
-            </Typography>
-          </DrawerFieldRow>
-        )}
-      </DrawerSection>
+      <TechDetailBlock signal={signal} />
       <DrawerSection title="CONTEXT">
         <DrawerFieldRow label="Notes" value={signal.notes} />
-        <DrawerFieldRow label="Source quote">
-          <SourceQuoteBlock quote={signal.source_quote} />
-        </DrawerFieldRow>
       </DrawerSection>
     </>
   );
@@ -278,9 +205,6 @@ function BlockerDetails({ signal }) {
   return (
     <DrawerSection title="CONTEXT">
       <DrawerFieldRow label="Raised by" value={contactName} />
-      <DrawerFieldRow label="Source quote">
-        <SourceQuoteBlock quote={signal.source_quote} />
-      </DrawerFieldRow>
     </DrawerSection>
   );
 }
@@ -306,11 +230,6 @@ function NextStepDetails({ signal }) {
           <DrawerFieldRow label="Date" value={formatDate(linked.scheduled_date)} />
         </DrawerSection>
       )}
-      <DrawerSection title="CONTEXT">
-        <DrawerFieldRow label="Source quote">
-          <SourceQuoteBlock quote={signal.source_quote} />
-        </DrawerFieldRow>
-      </DrawerSection>
     </>
   );
 }
@@ -331,9 +250,6 @@ function PeopleDetails({ signal }) {
       </DrawerSection>
       <DrawerSection title="CONTEXT">
         <DrawerFieldRow label="Notes" value={signal.notes} />
-        <DrawerFieldRow label="Source quote">
-          <SourceQuoteBlock quote={signal.source_quote} />
-        </DrawerFieldRow>
       </DrawerSection>
     </>
   );
@@ -356,9 +272,6 @@ function ConstraintDetails({ signal }) {
       <DrawerSection title="CONTEXT">
         <DrawerFieldRow label="Raised by" value={contactName} />
         <DrawerFieldRow label="Notes" value={signal.notes} />
-        <DrawerFieldRow label="Source quote">
-          <SourceQuoteBlock quote={signal.source_quote} />
-        </DrawerFieldRow>
       </DrawerSection>
     </>
   );
@@ -519,6 +432,13 @@ export default function SignalQuickDrawer({
 
         {/* Type-specific detail sections */}
         {renderDetails(signal, signalType, onEdit)}
+
+        {/* Source quote — cross-type, rendered once at shell level */}
+        {signal.source_quote && (
+          <DrawerSection title="SOURCE QUOTE">
+            <SourceQuoteBlock quote={signal.source_quote} />
+          </DrawerSection>
+        )}
 
         {/* Provenance — full contact list + origin activity link */}
         <ProvenanceSection signal={signal} onOpenActivity={openOriginActivity} />
