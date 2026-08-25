@@ -66,11 +66,13 @@ describe("Activity workspace tabs", () => {
 });
 
 describe("ActivityQualificationTab (grouped)", () => {
-  it("renders the filter bar and the grouped qualification + blocker sections", () => {
+  it("renders the grouped qualification + blocker sections, with no filter chips", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
-    expect(screen.getByText(/Filter:/)).toBeInTheDocument();
     expect(screen.getByText("Qualification")).toBeInTheDocument();
     expect(screen.getByText(/Blockers/)).toBeInTheDocument();
+    // Grouped has no filter chips (no status filter bar).
+    expect(screen.queryByText(/Filter:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Validated \(/ })).not.toBeInTheDocument();
   });
 
   it("renders the theme block with signals", () => {
@@ -86,22 +88,11 @@ describe("ActivityQualificationTab (grouped)", () => {
     expect(screen.getByText("Pierre Dupont")).toBeInTheDocument();
   });
 
-  it("excludes REJECTED signals by default", () => {
+  it("always excludes REJECTED signals (never shown in the grouped synthesis)", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
     expect(screen.queryByText(/Rejected signal C/)).not.toBeInTheDocument();
-  });
-
-  it("filters by status (Validated only)", () => {
-    render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
-    fireEvent.click(screen.getByText(/Validated \(/));
-    expect(screen.getByText(/Objective signal B/)).toBeInTheDocument();
-    expect(screen.queryByText(/Pain signal A/)).not.toBeInTheDocument();
-  });
-
-  it("include-rejected checkbox reveals REJECTED signals", () => {
-    render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
-    fireEvent.click(screen.getByRole("checkbox"));
-    expect(screen.getByText(/Rejected signal C/)).toBeInTheDocument();
+    // And there is no control to reveal them.
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
   it("calls validateSignal and mutates on validate", async () => {

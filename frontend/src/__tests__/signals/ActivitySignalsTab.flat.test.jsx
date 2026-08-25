@@ -86,6 +86,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
     const args = lastHookArgs();
     expect(args.activityId).toBe("act-flat");
+    // No type filter selected → all activity flat types.
     expect(args.signalTypes).toEqual([
       "pain",
       "objective",
@@ -93,22 +94,30 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
       "tech-stack",
       "blockers",
     ]);
+    // Rejected excluded by default.
+    expect(args.statuses).toEqual(["PENDING", "VALIDATED"]);
     expect(args.pageSize).toBe(20);
   });
 
-  it("drives status filtering server-side (Validated → statuses arg)", () => {
+  it("shows the filter icon (not inline chips)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-
-    // hideCounts is on in flat mode → plain "Validated" chip label. The
-    // filter chip is a button; the row status chip is not, so scope by role.
-    fireEvent.click(screen.getByRole("button", { name: "Validated" }));
-    expect(lastHookArgs().statuses).toEqual(["VALIDATED"]);
+    expect(screen.getByLabelText("Open filters")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Validated" })).not.toBeInTheDocument();
   });
 
-  it("adds REJECTED to the statuses arg when 'Include rejected' is checked", () => {
+  it("filters by type via the drawer", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.click(screen.getByLabelText("Objective"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(lastHookArgs().signalTypes).toEqual(["objective"]);
+  });
 
-    fireEvent.click(screen.getByRole("checkbox"));
+  it("adds REJECTED to the statuses arg only when opted in via the drawer", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.click(screen.getByLabelText("Include rejected"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
     expect(lastHookArgs().statuses).toContain("REJECTED");
   });
 

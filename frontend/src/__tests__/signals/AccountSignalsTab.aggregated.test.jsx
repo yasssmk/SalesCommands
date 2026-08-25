@@ -90,15 +90,26 @@ describe("AccountSignalsTab — aggregated flat list", () => {
     expect(screen.getByText("Objective one")).toBeInTheDocument();
   });
 
-  it("scopes the aggregated call to the account and the active type (default pain)", () => {
+  it("scopes to the account and all account types by default, pending+validated only", () => {
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
     const args = lastHookArgs();
     expect(args.accountId).toBe(ACCOUNT_ID);
-    expect(args.signalTypes).toEqual(["pain"]);
+    // No type filter selected → all four account types.
+    expect(args.signalTypes).toEqual(["pain", "objective", "impact", "tech-stack"]);
+    // Rejected is excluded by default.
+    expect(args.statuses).toEqual(["PENDING", "VALIDATED"]);
+    expect(args.statuses).not.toContain("REJECTED");
     expect(args.pageSize).toBe(20);
   });
 
-  it("re-scopes signal_type and resets to page 1 on type toggle", () => {
+  it("shows the filter icon (not inline chips)", () => {
+    render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    expect(screen.getByLabelText("Open filters")).toBeInTheDocument();
+    // The old inline status chip is gone.
+    expect(screen.queryByRole("button", { name: "Validated" })).not.toBeInTheDocument();
+  });
+
+  it("filters by type via the drawer and resets to page 1", () => {
     useAggregatedSignals.mockImplementation(() => aggReturn({ pageCount: 3 }));
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
 
@@ -106,11 +117,22 @@ describe("AccountSignalsTab — aggregated flat list", () => {
     fireEvent.click(screen.getByRole("button", { name: /go to next page/i }));
     expect(lastHookArgs().page).toBe(2);
 
-    // switch type → page must reset and signal_type change
-    fireEvent.click(screen.getByRole("button", { name: "Tech Stack" }));
+    // open drawer, select Tech Stack, apply
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.click(screen.getByLabelText("Tech Stack"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
     const args = lastHookArgs();
     expect(args.signalTypes).toEqual(["tech-stack"]);
     expect(args.page).toBe(1);
+  });
+
+  it("includes rejected only when opted in via the drawer", () => {
+    render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.click(screen.getByLabelText("Include rejected"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(lastHookArgs().statuses).toContain("REJECTED");
   });
 
   it("renders a full page of 20 rows and pages forward/back via the server arg", () => {

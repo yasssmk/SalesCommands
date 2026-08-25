@@ -100,30 +100,34 @@ describe("DC SignalsTab — aggregated flat list", () => {
     expect(args.pageSize).toBe(20);
   });
 
-  it("drives the status filter server-side and resets to page 1", () => {
-    useAggregatedSignals.mockImplementation(() => aggReturn({ pageCount: 3 }));
+  it("shows the filter icon (not inline chips)", () => {
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
-
-    fireEvent.click(screen.getByRole("button", { name: /go to next page/i }));
-    expect(lastHookArgs().page).toBe(2);
-
-    fireEvent.click(screen.getByRole("button", { name: "Validated" }));
-    const args = lastHookArgs();
-    expect(args.statuses).toEqual(["VALIDATED"]);
-    expect(args.page).toBe(1);
+    expect(screen.getByLabelText("Open filters")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Validated" })).not.toBeInTheDocument();
   });
 
-  it("drives the type filter server-side and resets to page 1", () => {
+  it("filters by type via the drawer and resets to page 1", () => {
     useAggregatedSignals.mockImplementation(() => aggReturn({ pageCount: 3 }));
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
 
     fireEvent.click(screen.getByRole("button", { name: /go to next page/i }));
     expect(lastHookArgs().page).toBe(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "Pain" }));
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.click(screen.getByLabelText("Pain"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
     const args = lastHookArgs();
     expect(args.signalTypes).toEqual(["pain"]);
     expect(args.page).toBe(1);
+  });
+
+  it("includes rejected only when opted in via the drawer", () => {
+    render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    fireEvent.click(screen.getByLabelText("Include rejected"));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(lastHookArgs().statuses).toContain("REJECTED");
   });
 
   it("renders a full page of 20 rows and pages forward/back via the server arg", () => {

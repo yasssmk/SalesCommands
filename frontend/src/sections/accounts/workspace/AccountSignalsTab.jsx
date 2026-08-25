@@ -29,18 +29,20 @@ import PropTypes from "prop-types";
 import { useState, useCallback, useMemo, useEffect } from "react";
 
 // material-ui
+import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Divider from "@mui/material/Divider";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+
+// icons
+import FilterOutlined from "@ant-design/icons/FilterOutlined";
 
 // project imports
 import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
+import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
@@ -52,6 +54,7 @@ import {
   deleteSignal,
 } from "api/signals/signals";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
+import useSignalFilters from "hooks/useSignalFilters";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -59,21 +62,9 @@ import {
 
 // ==============================|| CONSTANTS ||============================== //
 
-/** Section toggle options — 4 signal types */
-/** Section toggle options — 4 signal types */
-const TYPE_OPTIONS = [
-  { value: "pain", label: "Pain" },
-  { value: "objective", label: "Objective" },
-  { value: "impact", label: "Impact" },
-  { value: "tech-stack", label: "Tech Stack" },
-];
-
-const STATUS_OPTIONS = [
-  { value: "", label: "All statuses" },
-  { value: "PENDING", label: "Pending" },
-  { value: "VALIDATED", label: "Validated" },
-  { value: "REJECTED", label: "Rejected" },
-];
+// The Account flat list covers the four durable, account-level signal types
+// (blockers / next-steps / people / constraints are deal- or cycle-scoped).
+const ACCOUNT_TYPES = ["pain", "objective", "impact", "tech-stack"];
 
 // ==============================|| ACCOUNT SIGNALS TAB ||============================== //
 
@@ -86,9 +77,19 @@ const STATUS_OPTIONS = [
 export default function AccountSignalsTab({ accountId, account }) {
   // ==============================|| FILTER STATE ||============================== //
 
-  const [activeType, setActiveType] = useState("pain");
-  const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const {
+    pending,
+    updatePending,
+    apply,
+    clear,
+    syncPending,
+    statuses,
+    activeTypes,
+    activeCount,
+    hasPendingChanges,
+  } = useSignalFilters();
 
   // ==============================|| MODAL STATE ||============================== //
 
@@ -111,11 +112,12 @@ export default function AccountSignalsTab({ accountId, account }) {
 
   // ==============================|| DATA FETCHING ||============================== //
 
-  // One aggregated call for the active type, server-paginated (20/page).
-  // The type toggle drives signal_type; the status Select drives status.
-  const statuses = useMemo(
-    () => (statusFilter ? [statusFilter] : undefined),
-    [statusFilter],
+  // One aggregated call, server-paginated (20/page). The filter drawer drives
+  // signal_type (a subset of the account types; none selected = all four) and
+  // status (default pending+validated, +rejected when opted in).
+  const signalTypes = useMemo(
+    () => (activeTypes.length ? activeTypes : ACCOUNT_TYPES),
+    [activeTypes],
   );
 
   const {
@@ -126,7 +128,7 @@ export default function AccountSignalsTab({ accountId, account }) {
     mutate: mutateAll,
   } = useAggregatedSignals({
     accountId,
-    signalTypes: [activeType],
+    signalTypes,
     statuses,
     ordering: "date-desc",
     page,
@@ -144,18 +146,21 @@ export default function AccountSignalsTab({ accountId, account }) {
 
   // ==============================|| FILTER HANDLERS ||============================== //
 
-  // Reset to page 1 whenever the type or status narrows the result set.
-  const handleTypeChange = useCallback((_e, newValue) => {
-    if (newValue !== null) {
-      setActiveType(newValue);
-      setPage(1);
-    }
-  }, []);
+  const handleOpenFilters = useCallback(() => {
+    syncPending();
+    setFilterPanelOpen(true);
+  }, [syncPending]);
 
-  const handleStatusChange = useCallback((e) => {
-    setStatusFilter(e.target.value);
+  // Applying filters narrows the result set → reset to page 1.
+  const handleApplyFilters = useCallback(() => {
+    apply();
     setPage(1);
-  }, []);
+  }, [apply]);
+
+  const handleClearFilters = useCallback(() => {
+    clear();
+    setPage(1);
+  }, [clear]);
 
   // ==============================|| LIFECYCLE HANDLERS (universal) ||============================== //
 
@@ -250,42 +255,18 @@ export default function AccountSignalsTab({ accountId, account }) {
         full lifecycle control (validate / reject / edit / delete).
       */}
       <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={1.5}
+        direction="row"
+        justifyContent="flex-end"
         alignItems="center"
         sx={{ mb: 2 }}
       >
-        <ToggleButtonGroup
-          value={activeType}
-          exclusive
-          onChange={handleTypeChange}
-          size="small"
-          aria-label="Signal section"
-        >
-          {TYPE_OPTIONS.map((opt) => (
-            <ToggleButton
-              key={opt.value}
-              value={opt.value}
-              sx={{ textTransform: "none", px: 1.5, fontSize: "0.78rem" }}
-            >
-              {opt.label}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-
-        <Select
-          value={statusFilter}
-          onChange={handleStatusChange}
-          size="small"
-          displayEmpty
-          sx={{ minWidth: 140, fontSize: "0.82rem" }}
-        >
-          {STATUS_OPTIONS.map((opt) => (
-            <MenuItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </MenuItem>
-          ))}
-        </Select>
+        <Tooltip title="Filters">
+          <IconButton onClick={handleOpenFilters} aria-label="Open filters">
+            <Badge badgeContent={activeCount} color="primary">
+              <FilterOutlined />
+            </Badge>
+          </IconButton>
+        </Tooltip>
       </Stack>
 
       <Divider sx={{ mb: 2 }} />
@@ -319,13 +300,21 @@ export default function AccountSignalsTab({ accountId, account }) {
           onReject={handleRejectOpen}
           onEdit={handleEdit}
           onReopen={handleReopen}
-          emptyMessage={
-            statusFilter
-              ? `No ${activeType} signals match this status`
-              : `No ${activeType} signals yet for this account`
-          }
+          emptyMessage="No signals match these filters"
         />
       )}
+
+      {/* Filter drawer */}
+      <SignalsFilterPanel
+        open={filterPanelOpen}
+        onClose={() => setFilterPanelOpen(false)}
+        availableTypes={ACCOUNT_TYPES}
+        pendingFilters={pending}
+        onFilterChange={updatePending}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        hasPendingChanges={hasPendingChanges}
+      />
 
       {/* ==================== MODALS ==================== */}
 

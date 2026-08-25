@@ -143,6 +143,9 @@ describe("QualificationGroupedView — Account surface", () => {
     );
     expect(techCall).toBeTruthy();
     expect(techCall[0].accountId).toBe(ACCOUNT_ID);
+    // Grouped excludes rejected: only pending + validated are fetched.
+    expect(techCall[0].statuses).toEqual(["PENDING", "VALIDATED"]);
+    expect(techCall[0].statuses).not.toContain("REJECTED");
   });
 
   it("scopes clusters to the account (no decisionCycleId)", () => {

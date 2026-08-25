@@ -78,16 +78,22 @@ const SECTION_PAGE_SIZE = 100;
 
 // ==============================|| SMALL PRESENTATION HELPERS ||============================== //
 
+// Section header matches the Activity grouped reference (SignalsGroupedView):
+// an uppercase, letter-spaced `overline` in the secondary colour.
 function SectionHeader({ title, count }) {
   return (
-    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1.5 }}>
+    <Typography
+      variant="overline"
+      color="text.secondary"
+      sx={{ mb: 1.5, display: "block", letterSpacing: 1.5 }}
+    >
       {title}
       {count > 0 && (
         <Typography
           component="span"
           variant="caption"
-          color="text.secondary"
-          sx={{ ml: 1 }}
+          color="text.disabled"
+          sx={{ ml: 1, letterSpacing: 0 }}
         >
           ({count})
         </Typography>
@@ -219,11 +225,17 @@ export default function QualificationGroupedView({
     });
 
   // ---- Typed sections via the aggregated endpoint ----
+  // The grouped synthesis shows only live signals (pending + validated) —
+  // rejected signals never appear here (clusters already exclude them at the
+  // service layer; the typed sections exclude them via the status filter).
+  const GROUPED_STATUSES = ["PENDING", "VALIDATED"];
+
   // Tech: scoped to the account (Account) or the decision cycle (DC).
   const tech = useAggregatedSignals({
     accountId: isDC ? undefined : accountId,
     decisionCycleId: isDC ? decisionCycleId : undefined,
     signalTypes: ["tech-stack"],
+    statuses: GROUPED_STATUSES,
     pageSize: SECTION_PAGE_SIZE,
   });
 
@@ -232,6 +244,7 @@ export default function QualificationGroupedView({
   const blockers = useAggregatedSignals({
     decisionCycleId: isDC ? decisionCycleId : undefined,
     signalTypes: ["blockers"],
+    statuses: GROUPED_STATUSES,
     pageSize: SECTION_PAGE_SIZE,
   });
 

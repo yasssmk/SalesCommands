@@ -11,12 +11,19 @@ import PropTypes from "prop-types";
 import { useState, useCallback, useMemo, useEffect } from "react";
 
 // MUI
+import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+
+// icons
+import FilterOutlined from "@ant-design/icons/FilterOutlined";
 
 // Project imports
 import useAggregatedSignals from "api/signals/aggregatedSignals";
+import useSignalFilters from "hooks/useSignalFilters";
 import { useGetSignalChoices } from "api/signals/signals";
 import {
   validateSignal,
@@ -29,7 +36,7 @@ import {
 } from "utils/displayError";
 
 // Section imports
-import SignalsFilterBar from "sections/activities/signals/SignalsFilterBar";
+import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
@@ -59,8 +66,18 @@ export default function ActivitySignalsTab({
   const { choices, choicesLoading } = useGetSignalChoices();
 
   // Filter / sort / pagination state
-  const [statusFilter, setStatusFilter] = useState("all-active");
-  const [includeRejected, setIncludeRejected] = useState(false);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  const {
+    pending,
+    updatePending,
+    apply,
+    clear,
+    syncPending,
+    statuses,
+    activeTypes,
+    activeCount,
+    hasPendingChanges,
+  } = useSignalFilters();
   const [sortKey, setSortKey] = useState("date-desc");
   const [page, setPage] = useState(1);
 
@@ -74,15 +91,13 @@ export default function ActivitySignalsTab({
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // One aggregated call, server-driven filter / sort / paginate.
-  const statuses = useMemo(() => {
-    const base =
-      statusFilter === "all-active"
-        ? ["PENDING", "VALIDATED"]
-        : [statusFilter];
-    if (includeRejected && !base.includes("REJECTED")) base.push("REJECTED");
-    return base;
-  }, [statusFilter, includeRejected]);
+  // One aggregated call, server-driven filter / sort / paginate. The filter
+  // drawer drives signal_type (a subset; none selected = all activity types)
+  // and status (default pending+validated, +rejected when opted in).
+  const signalTypes = useMemo(
+    () => (activeTypes.length ? activeTypes : ACTIVITY_FLAT_TYPES),
+    [activeTypes],
+  );
 
   const {
     signals: flatSignals,
@@ -93,7 +108,7 @@ export default function ActivitySignalsTab({
   } = useAggregatedSignals({
     activityId,
     statuses,
-    signalTypes: ACTIVITY_FLAT_TYPES,
+    signalTypes,
     ordering: sortKey,
     page,
     pageSize: 20,
@@ -172,16 +187,20 @@ export default function ActivitySignalsTab({
   }, [mutateAll, mutateCounts]);
 
   // Reset to page 1 whenever a control changes the result set.
-  const onStatusChange = (v) => {
-    setStatusFilter(v);
-    setPage(1);
-  };
-  const onToggleRejected = (v) => {
-    setIncludeRejected(v);
-    setPage(1);
-  };
   const onSortChange = (v) => {
     setSortKey(v);
+    setPage(1);
+  };
+  const handleOpenFilters = () => {
+    syncPending();
+    setFilterPanelOpen(true);
+  };
+  const handleApplyFilters = () => {
+    apply();
+    setPage(1);
+  };
+  const handleClearFilters = () => {
+    clear();
     setPage(1);
   };
 
@@ -194,21 +213,21 @@ export default function ActivitySignalsTab({
 
   return (
     <Box>
-      {/* Toolbar: status filter + sort (all server-driven) */}
+      {/* Toolbar: sort + filter icon (drawer) */}
       <Stack
         direction="row"
-        justifyContent="space-between"
+        justifyContent="flex-end"
         alignItems="center"
         sx={{ mb: 2.5, flexWrap: "wrap", gap: 1 }}
       >
-        <SignalsFilterBar
-          activeFilter={statusFilter}
-          onChange={onStatusChange}
-          includeRejected={includeRejected}
-          onToggleRejected={onToggleRejected}
-          hideCounts
-        />
         <SignalsSortSelect value={sortKey} onChange={onSortChange} />
+        <Tooltip title="Filters">
+          <IconButton onClick={handleOpenFilters} aria-label="Open filters">
+            <Badge badgeContent={activeCount} color="primary">
+              <FilterOutlined />
+            </Badge>
+          </IconButton>
+        </Tooltip>
       </Stack>
 
       {/* Technical failure with nothing to show → standard error surface. */}
@@ -235,9 +254,21 @@ export default function ActivitySignalsTab({
           onEdit={handleEdit}
           onReopen={handleReopen}
           isLocked={isLocked}
-          emptyMessage="No signals for this activity"
+          emptyMessage="No signals match these filters"
         />
       )}
+
+      {/* Filter drawer */}
+      <SignalsFilterPanel
+        open={filterPanelOpen}
+        onClose={() => setFilterPanelOpen(false)}
+        availableTypes={ACTIVITY_FLAT_TYPES}
+        pendingFilters={pending}
+        onFilterChange={updatePending}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        hasPendingChanges={hasPendingChanges}
+      />
 
       {/* Quick Drawer */}
       <SignalQuickDrawer

@@ -14,7 +14,6 @@ import { useState, useCallback, useMemo } from "react";
 // MUI
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
-import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Project imports
@@ -31,7 +30,6 @@ import {
 } from "utils/displayError";
 
 // Section imports
-import SignalsFilterBar from "sections/activities/signals/SignalsFilterBar";
 import SignalsGroupedView from "sections/activities/signals/SignalsGroupedView";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
@@ -57,10 +55,6 @@ export default function ActivityQualificationTab({
 
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // Filter state
-  const [statusFilter, setStatusFilter] = useState("all-active");
-  const [includeRejected, setIncludeRejected] = useState(false);
-
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedSignal, setSelectedSignal] = useState(null);
@@ -71,33 +65,21 @@ export default function ActivityQualificationTab({
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // Client-side status filtering (grouped view).
-  const filterFn = useCallback(
-    (s) => {
-      const isRejected = s.status === "REJECTED";
-      if (isRejected) return includeRejected;
-      if (statusFilter === "all-active") return true;
-      return s.status === statusFilter;
-    },
-    [statusFilter, includeRejected],
-  );
-
-  const displayableSignals = useMemo(
-    () => [...qualificationSignals, ...techStackSignals, ...blockerSignals],
-    [qualificationSignals, techStackSignals, blockerSignals],
-  );
+  // Grouped shows only live signals (pending + validated) — rejected signals
+  // never appear in the synthesis view.
+  const notRejected = useCallback((s) => s.status !== "REJECTED", []);
 
   const filteredQualification = useMemo(
-    () => qualificationSignals.filter(filterFn),
-    [qualificationSignals, filterFn],
+    () => qualificationSignals.filter(notRejected),
+    [qualificationSignals, notRejected],
   );
   const filteredTechStack = useMemo(
-    () => techStackSignals.filter(filterFn),
-    [techStackSignals, filterFn],
+    () => techStackSignals.filter(notRejected),
+    [techStackSignals, notRejected],
   );
   const filteredBlockers = useMemo(
-    () => blockerSignals.filter(filterFn),
-    [blockerSignals, filterFn],
+    () => blockerSignals.filter(notRejected),
+    [blockerSignals, notRejected],
   );
 
   // Handlers
@@ -202,23 +184,7 @@ export default function ActivityQualificationTab({
 
   return (
     <Box>
-      {/* Toolbar: status filter (with counts) */}
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="center"
-        sx={{ mb: 2.5, flexWrap: "wrap", gap: 1 }}
-      >
-        <SignalsFilterBar
-          activeFilter={statusFilter}
-          onChange={setStatusFilter}
-          includeRejected={includeRejected}
-          onToggleRejected={setIncludeRejected}
-          signals={displayableSignals}
-        />
-      </Stack>
-
-      {/* Grouped content */}
+      {/* Grouped content — no filter chips; only pending + validated shown */}
       <SignalsGroupedView
         qualificationSignals={filteredQualification}
         techStackSignals={filteredTechStack}
