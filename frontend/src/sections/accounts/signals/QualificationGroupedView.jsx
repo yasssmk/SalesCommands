@@ -373,7 +373,7 @@ export default function QualificationGroupedView({
     <Box>
       <Grid container spacing={3}>
         {/* Left column — Qualification clusters */}
-        <Grid item xs={12} md={7}>
+        <Grid item xs={12} md={6}>
           <SectionHeader title="Qualification" count={clusterList.length} />
 
           {clustersError ? (
@@ -422,7 +422,7 @@ export default function QualificationGroupedView({
         </Grid>
 
         {/* Right column — typed sections */}
-        <Grid item xs={12} md={5}>
+        <Grid item xs={12} md={6}>
           <TypedSignalSection
             title="Tech Stack"
             signals={tech.signals}

@@ -159,8 +159,8 @@ export default function SignalLine({
       }}
       sx={{
         display: "flex",
-        alignItems: "center",
-        gap: 1,
+        flexDirection: "column",
+        gap: 0.75,
         width: "100%",
         border: 1,
         borderColor: "divider",
@@ -174,126 +174,145 @@ export default function SignalLine({
         "&:hover": { bgcolor: "action.hover" },
       }}
     >
-      {/* Type + status */}
-      <SignalTypeChip signalType={signalType} size="small" />
-      <SignalStatusChip status={signal.status} size="small" />
-
-      {/* Scope */}
-      {scopeLabel && (
-        <Chip label={scopeLabel} size="small" variant="outlined" />
-      )}
-
-      {/* Message — takes the remaining width, truncates with ellipsis */}
-      <Typography
-        variant="body2"
-        noWrap
-        title={message}
-        sx={{ flexGrow: 1, minWidth: 0, fontWeight: 500 }}
+      {/* Row 1: type chip · status chip · scope chip · message */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        gap={1}
+        sx={{ width: "100%", minWidth: 0 }}
       >
-        {message}
-      </Typography>
+        <SignalTypeChip signalType={signalType} size="small" />
+        <SignalStatusChip status={signal.status} size="small" />
+        {scopeLabel && (
+          <Chip label={scopeLabel} size="small" variant="outlined" />
+        )}
 
-      {/* Origin contact */}
-      {originContact && (
-        <Stack
-          direction="row"
-          spacing={0.5}
-          alignItems="center"
-          sx={{ flexShrink: 0, maxWidth: 260, minWidth: 0 }}
+        {/* Message — takes the remaining width, truncates with ellipsis */}
+        <Typography
+          variant="body2"
+          noWrap
+          title={message}
+          sx={{ flexGrow: 1, minWidth: 0, fontWeight: 500 }}
         >
-          <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
-          <Typography variant="caption" color="text.secondary" noWrap>
-            {originContact}
-          </Typography>
-          {extraContacts > 0 && (
-            <Chip
-              label={`+${extraContacts}`}
-              size="small"
-              variant="outlined"
-              sx={{ height: 18, fontSize: "0.65rem" }}
-            />
-          )}
-        </Stack>
-      )}
+          {message}
+        </Typography>
+      </Stack>
 
-      {/* Date */}
-      {dateLabel && (
-        <Stack
-          direction="row"
-          spacing={0.5}
-          alignItems="center"
-          sx={{ flexShrink: 0 }}
-        >
-          <CalendarOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
-          <Typography variant="caption" color="text.secondary" noWrap>
-            {dateLabel}
-          </Typography>
-        </Stack>
-      )}
-
-      {/* Actions */}
-      {!isLocked && (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          sx={{ flexShrink: 0 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<EditOutlined style={{ fontSize: 13 }} />}
-            onClick={stop(onEdit)}
+      {/* Row 2: date · origin contact · actions (pushed right) */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        gap={1.5}
+        flexWrap="wrap"
+        sx={{ width: "100%" }}
+      >
+        {/* Date */}
+        {dateLabel && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            sx={{ flexShrink: 0 }}
           >
-            Edit
-          </Button>
+            <CalendarOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {dateLabel}
+            </Typography>
+          </Stack>
+        )}
 
-          {isPending && (
-            <>
-              <Button
-                variant="outlined"
+        {/* Origin contact */}
+        {originContact && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            sx={{ flexShrink: 1, minWidth: 0, maxWidth: 320 }}
+          >
+            <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {originContact}
+            </Typography>
+            {extraContacts > 0 && (
+              <Chip
+                label={`+${extraContacts}`}
                 size="small"
-                color="error"
-                startIcon={<CloseCircleOutlined style={{ fontSize: 13 }} />}
-                onClick={stop(onReject)}
-              >
-                Reject
-              </Button>
-              <Tooltip
-                title={
-                  validateDisabled
-                    ? "Complete missing fields before validating"
-                    : ""
-                }
-              >
-                <span>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    color="success"
-                    disabled={validateDisabled}
-                    startIcon={<CheckCircleOutlined style={{ fontSize: 13 }} />}
-                    onClick={stop(onValidate)}
-                  >
-                    Validate
-                  </Button>
-                </span>
-              </Tooltip>
-            </>
-          )}
+                variant="outlined"
+                sx={{ height: 18, fontSize: "0.65rem" }}
+              />
+            )}
+          </Stack>
+        )}
 
-          {isRejected && (
+        {/* Spacer pushes the actions to the right edge */}
+        <Box sx={{ flexGrow: 1 }} />
+
+        {/* Actions */}
+        {!isLocked && (
+          <Stack
+            direction="row"
+            spacing={0.75}
+            sx={{ flexShrink: 0 }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <Button
               variant="outlined"
               size="small"
-              startIcon={<ReloadOutlined style={{ fontSize: 13 }} />}
-              onClick={stop(onReopen)}
+              startIcon={<EditOutlined style={{ fontSize: 13 }} />}
+              onClick={stop(onEdit)}
             >
-              Reopen
+              Edit
             </Button>
-          )}
-        </Stack>
-      )}
+
+            {isPending && (
+              <>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  color="error"
+                  startIcon={<CloseCircleOutlined style={{ fontSize: 13 }} />}
+                  onClick={stop(onReject)}
+                >
+                  Reject
+                </Button>
+                <Tooltip
+                  title={
+                    validateDisabled
+                      ? "Complete missing fields before validating"
+                      : ""
+                  }
+                >
+                  <span>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      color="success"
+                      disabled={validateDisabled}
+                      startIcon={
+                        <CheckCircleOutlined style={{ fontSize: 13 }} />
+                      }
+                      onClick={stop(onValidate)}
+                    >
+                      Validate
+                    </Button>
+                  </span>
+                </Tooltip>
+              </>
+            )}
+
+            {isRejected && (
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ReloadOutlined style={{ fontSize: 13 }} />}
+                onClick={stop(onReopen)}
+              >
+                Reopen
+              </Button>
+            )}
+          </Stack>
+        )}
+      </Stack>
     </Box>
   );
 }

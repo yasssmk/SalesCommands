@@ -164,4 +164,21 @@ describe("SignalLine", () => {
     );
     expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
   });
+
+  it("renders on two rows: chips + message on row 1, date/contact/actions on row 2", () => {
+    render(
+      <SignalLine signal={DEPT_PAIN} signalType="pain" onValidate={vi.fn()} onReject={vi.fn()} onEdit={vi.fn()} />,
+    );
+    const line = screen.getByTestId("signal-line");
+    // The line is a two-row column: exactly two direct children (row 1, row 2).
+    expect(line.children).toHaveLength(2);
+
+    const [row1, row2] = line.children;
+    // Row 1 carries the message.
+    expect(row1).toHaveTextContent("Marketing data is unreliable");
+    // Row 2 carries the origin contact + date + the actions.
+    expect(row2).toHaveTextContent("Dana Lee");
+    expect(row2).toHaveTextContent(/2026/);
+    expect(row2.querySelector("button")).toBeTruthy();
+  });
 });

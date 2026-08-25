@@ -36,6 +36,7 @@ import ActivityOverviewTab from "sections/activities/workspace/ActivityOverviewT
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
+import ActivityQualificationTab from "sections/activities/workspace/ActivityQualificationTab";
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
 
 // ==============================|| ACTIVITY WORKSPACE PAGE ||============================== //
@@ -183,6 +184,14 @@ export default function ActivityWorkspacePage() {
       case "signals":
         return (
           <ActivitySignalsTab
+            activity={activity}
+            isLocked={isLocked}
+            mutateCounts={mutateCounts}
+          />
+        );
+      case "qualification":
+        return (
+          <ActivityQualificationTab
             activity={activity}
             isLocked={isLocked}
             mutateCounts={mutateCounts}

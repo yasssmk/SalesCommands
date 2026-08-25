@@ -1,22 +1,24 @@
-// frontend/src/sections/activities/workspace/ActivitySignalsTab.jsx
+// frontend/src/sections/activities/workspace/ActivityQualificationTab.jsx
 //
-// Activity "Signals" tab — the flat, exhaustive list of the activity's
-// signals (SignalLine rows via the aggregated endpoint scoped by activity_id,
-// server-paginated 20/page). The grouped synthesis lives in its own
-// "Qualification" tab (ActivityQualificationTab), mirroring Account / DC.
+// Activity "Qualification" tab — the grouped synthesis view for one activity
+// (qualification themes + tech + blockers), mirroring the two-tab architecture
+// used on the Account and Decision-Cycle workspaces. This is the existing
+// Activity grouped view (SignalsGroupedView), moved under its own tab; the
+// exhaustive flat list lives in the sibling "Signals" tab.
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
+import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Project imports
-import useAggregatedSignals from "api/signals/aggregatedSignals";
+import useActivityAllSignals from "hooks/useActivityAllSignals";
 import { useGetSignalChoices } from "api/signals/signals";
 import {
   validateSignal,
@@ -30,24 +32,13 @@ import {
 
 // Section imports
 import SignalsFilterBar from "sections/activities/signals/SignalsFilterBar";
+import SignalsGroupedView from "sections/activities/signals/SignalsGroupedView";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
-import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
-import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 
-// The activity flat view shows qualification (pain/objective/impact) plus
-// tech-stack and blockers — next-steps live in their own tab and are excluded.
-const ACTIVITY_FLAT_TYPES = [
-  "pain",
-  "objective",
-  "impact",
-  "tech-stack",
-  "blockers",
-];
+// ==============================|| ACTIVITY QUALIFICATION TAB (GROUPED) ||============================== //
 
-// ==============================|| ACTIVITY SIGNALS TAB (FLAT) ||============================== //
-
-export default function ActivitySignalsTab({
+export default function ActivityQualificationTab({
   activity,
   isLocked,
   mutateCounts,
@@ -55,14 +46,20 @@ export default function ActivitySignalsTab({
   const activityId = activity?.id;
   const accountId = activity?.account;
 
-  // Choices for edit forms
+  const {
+    qualificationSignals,
+    techStackSignals,
+    blockerSignals,
+    loading,
+    error,
+    mutateAll,
+  } = useActivityAllSignals(activityId);
+
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // Filter / sort / pagination state
+  // Filter state
   const [statusFilter, setStatusFilter] = useState("all-active");
   const [includeRejected, setIncludeRejected] = useState(false);
-  const [sortKey, setSortKey] = useState("date-desc");
-  const [page, setPage] = useState(1);
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -74,30 +71,34 @@ export default function ActivitySignalsTab({
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // One aggregated call, server-driven filter / sort / paginate.
-  const statuses = useMemo(() => {
-    const base =
-      statusFilter === "all-active"
-        ? ["PENDING", "VALIDATED"]
-        : [statusFilter];
-    if (includeRejected && !base.includes("REJECTED")) base.push("REJECTED");
-    return base;
-  }, [statusFilter, includeRejected]);
+  // Client-side status filtering (grouped view).
+  const filterFn = useCallback(
+    (s) => {
+      const isRejected = s.status === "REJECTED";
+      if (isRejected) return includeRejected;
+      if (statusFilter === "all-active") return true;
+      return s.status === statusFilter;
+    },
+    [statusFilter, includeRejected],
+  );
 
-  const {
-    signals: flatSignals,
-    pageCount,
-    loading,
-    error,
-    mutate: mutateAll,
-  } = useAggregatedSignals({
-    activityId,
-    statuses,
-    signalTypes: ACTIVITY_FLAT_TYPES,
-    ordering: sortKey,
-    page,
-    pageSize: 20,
-  });
+  const displayableSignals = useMemo(
+    () => [...qualificationSignals, ...techStackSignals, ...blockerSignals],
+    [qualificationSignals, techStackSignals, blockerSignals],
+  );
+
+  const filteredQualification = useMemo(
+    () => qualificationSignals.filter(filterFn),
+    [qualificationSignals, filterFn],
+  );
+  const filteredTechStack = useMemo(
+    () => techStackSignals.filter(filterFn),
+    [techStackSignals, filterFn],
+  );
+  const filteredBlockers = useMemo(
+    () => blockerSignals.filter(filterFn),
+    [blockerSignals, filterFn],
+  );
 
   // Handlers
   const handleSelect = useCallback((signal, signalType) => {
@@ -171,30 +172,37 @@ export default function ActivitySignalsTab({
     mutateCounts?.();
   }, [mutateAll, mutateCounts]);
 
-  // Reset to page 1 whenever a control changes the result set.
-  const onStatusChange = (v) => {
-    setStatusFilter(v);
-    setPage(1);
-  };
-  const onToggleRejected = (v) => {
-    setIncludeRejected(v);
-    setPage(1);
-  };
-  const onSortChange = (v) => {
-    setSortKey(v);
-    setPage(1);
-  };
+  // Loading
+  if (loading) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="300px"
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
-  // A page fetch can fail while a previous page is still shown (SWR keeps the
-  // last data). Keep the list and surface the transient failure via the
-  // standard error snackbar instead of blanking the view.
-  useEffect(() => {
-    if (error && flatSignals.length) displayErrorSnackbar(error);
-  }, [error, flatSignals.length]);
+  // Technical failure → standard error surface.
+  if (error) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="300px"
+      >
+        <Typography color="error">Failed to load signals</Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box>
-      {/* Toolbar: status filter + sort (all server-driven) */}
+      {/* Toolbar: status filter (with counts) */}
       <Stack
         direction="row"
         justifyContent="space-between"
@@ -203,41 +211,23 @@ export default function ActivitySignalsTab({
       >
         <SignalsFilterBar
           activeFilter={statusFilter}
-          onChange={onStatusChange}
+          onChange={setStatusFilter}
           includeRejected={includeRejected}
-          onToggleRejected={onToggleRejected}
-          hideCounts
+          onToggleRejected={setIncludeRejected}
+          signals={displayableSignals}
         />
-        <SignalsSortSelect value={sortKey} onChange={onSortChange} />
       </Stack>
 
-      {/* Technical failure with nothing to show → standard error surface. */}
-      {error && !flatSignals.length ? (
-        <Box
-          display="flex"
-          justifyContent="center"
-          alignItems="center"
-          minHeight="300px"
-        >
-          <Typography color="error">Failed to load signals</Typography>
-        </Box>
-      ) : (
-        <SignalsFlatView
-          signals={flatSignals}
-          serverPaginated
-          page={page}
-          pageCount={pageCount}
-          onPageChange={setPage}
-          loading={loading}
-          onSelect={handleSelect}
-          onValidate={handleValidate}
-          onReject={handleReject}
-          onEdit={handleEdit}
-          onReopen={handleReopen}
-          isLocked={isLocked}
-          emptyMessage="No signals for this activity"
-        />
-      )}
+      {/* Grouped content */}
+      <SignalsGroupedView
+        qualificationSignals={filteredQualification}
+        techStackSignals={filteredTechStack}
+        blockerSignals={filteredBlockers}
+        onSelect={handleSelect}
+        onValidate={handleValidate}
+        onReject={handleReject}
+        isLocked={isLocked}
+      />
 
       {/* Quick Drawer */}
       <SignalQuickDrawer
@@ -248,6 +238,7 @@ export default function ActivitySignalsTab({
         onValidate={handleValidate}
         onReject={handleReject}
         onEdit={handleEdit}
+        onReopen={handleReopen}
         isLocked={isLocked}
       />
 
@@ -266,7 +257,7 @@ export default function ActivitySignalsTab({
   );
 }
 
-ActivitySignalsTab.propTypes = {
+ActivityQualificationTab.propTypes = {
   activity: PropTypes.shape({
     id: PropTypes.string,
     account: PropTypes.string,

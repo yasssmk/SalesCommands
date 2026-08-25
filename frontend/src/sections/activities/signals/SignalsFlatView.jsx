@@ -191,15 +191,17 @@ export default function SignalsFlatView({
       ))}
 
       {totalPages > 1 && (
-        <Stack direction="row" justifyContent="center" sx={{ mt: 2 }}>
+        <Stack spacing={2} sx={{ p: 2.5 }} alignItems="flex-end">
           <Pagination
+            sx={{ "& .MuiPaginationItem-root": { my: 0.5 } }}
             count={totalPages}
+            size="medium"
             page={currentPage}
-            onChange={handlePageChange}
             showFirstButton
             showLastButton
+            variant="combined"
             color="primary"
-            size="small"
+            onChange={handlePageChange}
           />
         </Stack>
       )}
