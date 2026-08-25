@@ -9,6 +9,7 @@ from .next_step_signal_views import NextStepSignalViewSet
 from .people_signal_views import PeopleSignalViewSet
 from .constraint_signal_views import ConstraintSignalViewSet
 from .signal_counts_view import SignalCountsByActivityView
+from .aggregated_signal_view import AggregatedSignalListView
 
 
 __all__ = [
@@ -35,4 +36,6 @@ __all__ = [
     'SignalClusterUnarchiveView',
     # Counts
     'SignalCountsByActivityView',
+    # Aggregated (all types, one scope, paginated)
+    'AggregatedSignalListView',
 ]
