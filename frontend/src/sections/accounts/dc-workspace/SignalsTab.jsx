@@ -3,7 +3,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
@@ -215,8 +215,15 @@ export default function SignalsTab({ cycleId, accountId }) {
   const onTypeChange = (v) => { setTypeFilter(v); setPage(1); };
   const onSortChange = (v) => { setSortKey(v); setPage(1); };
 
-  // Technical failure → standard error surface.
-  if (error) {
+  // A page fetch can fail while a previous page is still shown (SWR keeps the
+  // last data). Keep the list and surface the transient failure through the
+  // standard error snackbar instead of blanking the view.
+  useEffect(() => {
+    if (error && filteredSignals.length) displayErrorSnackbar(error);
+  }, [error, filteredSignals.length]);
+
+  // Technical failure with nothing to show → standard error surface.
+  if (error && !filteredSignals.length) {
     return (
       <Box
         display="flex"

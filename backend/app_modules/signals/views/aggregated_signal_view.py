@@ -38,6 +38,8 @@ Response envelope matches the per-type list endpoints:
   { "count": N, "next": ..., "previous": ..., "results": [ { ...signal, "signal_type": "pain" }, ... ] }
 """
 
+import uuid
+
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
 
@@ -162,6 +164,18 @@ class AggregatedSignalListView(BaseAPIView):
             raise StandardizedValidationError(
                 "Provide exactly one of 'account_id', 'decision_cycle_id' "
                 "or 'activity_id'."
+            )
+
+        # Validate the scope id is a well-formed UUID up front. A malformed
+        # value would otherwise raise a ValueError inside the ORM filter and
+        # surface as a raw 500; this keeps it a clean business 400 through the
+        # standard exception handler.
+        scope_value = account_id or decision_cycle_id or activity_id
+        try:
+            uuid.UUID(str(scope_value))
+        except (ValueError, TypeError, AttributeError):
+            raise StandardizedValidationError(
+                "The scope id must be a valid UUID."
             )
 
         # Optionally narrow to a subset of types (the Account toggle / DC

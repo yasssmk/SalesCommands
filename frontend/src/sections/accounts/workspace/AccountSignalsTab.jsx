@@ -26,7 +26,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 // material-ui
 import Box from "@mui/material/Box";
@@ -134,6 +134,13 @@ export default function AccountSignalsTab({ accountId, account }) {
   });
 
   const { choices, choicesLoading } = useGetSignalChoices();
+
+  // A page fetch can fail while a previous page is still shown (SWR keeps the
+  // last data). Don't blank the list — keep it and surface the transient
+  // failure through the standard error snackbar instead.
+  useEffect(() => {
+    if (error && flatSignals.length) displayErrorSnackbar(error);
+  }, [error, flatSignals.length]);
 
   // ==============================|| FILTER HANDLERS ||============================== //
 
@@ -290,7 +297,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         the aggregated endpoint with true server pagination (20/page). Clicking
         a line opens the signal drawer. There is no delete on this surface.
       */}
-      {error ? (
+      {error && !flatSignals.length ? (
         <Box
           display="flex"
           justifyContent="center"

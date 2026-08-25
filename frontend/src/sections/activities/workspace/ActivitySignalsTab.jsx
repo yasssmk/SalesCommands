@@ -3,7 +3,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
@@ -241,6 +241,14 @@ export default function ActivitySignalsTab({
     setPage(1);
   };
 
+  // Flat page fetch failed but a previous page is still shown → keep the list
+  // and surface the transient failure through the standard error snackbar.
+  useEffect(() => {
+    if (view === "flat" && flatError && flatSignals.length) {
+      displayErrorSnackbar(flatError);
+    }
+  }, [view, flatError, flatSignals.length]);
+
   // Loading state — grouped view only (flat view has its own inline spinner).
   if (view === "grouped" && groupedLoading) {
     return (
@@ -255,8 +263,14 @@ export default function ActivitySignalsTab({
     );
   }
 
-  // Error state — technical failure of whichever view is active.
-  if ((view === "grouped" && groupedError) || (view === "flat" && flatError)) {
+  // Error state — technical failure of whichever view is active. In flat view
+  // a failed page fetch keeps the previous page (SWR keepPreviousData), so
+  // only blank to the error surface when there is nothing to show; otherwise
+  // the transient failure is surfaced via the snackbar below.
+  if (
+    (view === "grouped" && groupedError) ||
+    (view === "flat" && flatError && !flatSignals.length)
+  ) {
     return (
       <Box
         display="flex"

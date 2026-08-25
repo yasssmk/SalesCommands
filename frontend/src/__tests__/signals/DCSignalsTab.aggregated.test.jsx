@@ -38,6 +38,7 @@ vi.mock("utils/displayError", () => ({
 import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
 import { reopenSignal } from "api/signals/signals";
+import { displayErrorSnackbar } from "utils/displayError";
 
 const CYCLE_ID = "cycle-1";
 const ACCOUNT_ID = "acc-1";
@@ -162,5 +163,24 @@ describe("DC SignalsTab — aggregated flat list", () => {
       fireEvent.click(screen.getByRole("button", { name: /reopen/i }));
     });
     expect(reopenSignal).toHaveBeenCalledWith("pain", "r1");
+  });
+
+  it("blanks to the red error surface only when there is nothing to show", () => {
+    useAggregatedSignals.mockImplementation(() =>
+      aggReturn({ signals: [], count: 0, error: new Error("boom") }),
+    );
+    render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    expect(screen.getByText("Failed to load signals")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
+  });
+
+  it("keeps the list on a transient page-fetch error and snackbars it (no blank)", () => {
+    useAggregatedSignals.mockImplementation(() =>
+      aggReturn({ error: new Error("boom") }),
+    );
+    render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    expect(screen.queryByText("Failed to load signals")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
+    expect(displayErrorSnackbar).toHaveBeenCalled();
   });
 });

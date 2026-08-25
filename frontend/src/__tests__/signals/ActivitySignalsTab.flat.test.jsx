@@ -52,6 +52,7 @@ vi.mock("utils/displayError", () => ({
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
 import { reopenSignal } from "api/signals/signals";
+import { displayErrorSnackbar } from "utils/displayError";
 
 const MOCK_ACTIVITY = { id: "act-flat", account: "acc-1" };
 
@@ -181,5 +182,26 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
     expect(screen.queryByLabelText("Sort")).not.toBeInTheDocument();
     switchToFlat();
     expect(screen.getByLabelText("Sort")).toBeInTheDocument();
+  });
+
+  it("blanks to the red error surface only when the flat list is empty", () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({ signals: [], count: 0, error: new Error("boom") }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    switchToFlat();
+    expect(screen.getByText("Failed to load signals")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
+  });
+
+  it("keeps the flat list on a transient page-fetch error and snackbars it", () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({ error: new Error("boom") }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    switchToFlat();
+    expect(screen.queryByText("Failed to load signals")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
+    expect(displayErrorSnackbar).toHaveBeenCalled();
   });
 });

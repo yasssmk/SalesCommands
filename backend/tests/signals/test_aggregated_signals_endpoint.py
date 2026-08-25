@@ -241,6 +241,21 @@ class TestAggregatedSignalsEndpoint:
         )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_malformed_uuid_returns_clean_400_not_500(self, authed_api_a):
+        # A malformed scope id must be a clean business 400 through the
+        # standard handler — never a raw 500 leaking the ORM ValueError.
+        resp = authed_api_a.get(_url(), {'account_id': 'not-a-uuid'})
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert 'error' in resp.json()
+
+    def test_nonexistent_but_valid_uuid_returns_empty_200(self, authed_api_a):
+        # A well-formed id that matches nothing is business-normal: an empty
+        # list, not a 404/500.
+        import uuid as _uuid
+        resp = authed_api_a.get(_url(), {'account_id': str(_uuid.uuid4())})
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.json()['count'] == 0
+
     def test_scope_activity(self, authed_api_a, account, activity, user_a):
         # Signal on this activity + one on a different activity (same account).
         from app_modules.activities.models import Activity
