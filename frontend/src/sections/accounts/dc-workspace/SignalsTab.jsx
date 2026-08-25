@@ -17,7 +17,7 @@ import { InboxOutlined } from "@ant-design/icons";
 // Project imports
 import useDCAllSignals from "hooks/useDCAllSignals";
 import { useGetSignalChoices } from "api/signals/signals";
-import { validateSignal, rejectSignal } from "api/signals/signals";
+import { validateSignal, rejectSignal, reopenSignal } from "api/signals/signals";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -176,6 +176,19 @@ export default function SignalsTab({ cycleId, accountId }) {
     [mutateAll],
   );
 
+  const handleReopen = useCallback(
+    async (signal, signalType) => {
+      const result = await reopenSignal(signalType, signal.id);
+      if (result.success) {
+        displaySuccessSnackbar("Signal reopened — now pending");
+        mutateAll();
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutateAll],
+  );
+
   const handleEdit = useCallback((signal, signalType) => {
     if (!EDITABLE_TYPES.has(signalType)) return;
     setEditSignal(signal);
@@ -286,10 +299,13 @@ export default function SignalsTab({ cycleId, accountId }) {
       <SignalsFlatView
         signals={filteredSignals}
         sortKey={sortKey}
+        onSelect={handleSelect}
         onValidate={handleValidate}
         onReject={handleReject}
         onEdit={handleEdit}
+        onReopen={handleReopen}
         isLocked={false}
+        emptyMessage="No signals for this decision cycle"
       />
 
       {/* Quick Drawer */}

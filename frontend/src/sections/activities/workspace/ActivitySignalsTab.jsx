@@ -17,6 +17,7 @@ import { useGetSignalChoices } from "api/signals/signals";
 import {
   validateSignal,
   rejectSignal,
+  reopenSignal,
 } from "api/signals/signals";
 import {
   displaySuccessSnackbar,
@@ -150,6 +151,20 @@ export default function ActivitySignalsTab({
     [mutateAll, mutateCounts],
   );
 
+  const handleReopen = useCallback(
+    async (signal, signalType) => {
+      const result = await reopenSignal(signalType, signal.id);
+      if (result.success) {
+        displaySuccessSnackbar("Signal reopened — now pending");
+        mutateAll();
+        mutateCounts?.();
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutateAll, mutateCounts],
+  );
+
   const handleEdit = useCallback((signal, signalType) => {
     setEditSignal(signal);
     setEditType(signalType);
@@ -238,9 +253,11 @@ export default function ActivitySignalsTab({
         <SignalsFlatView
           signals={[...filteredQualification, ...filteredTechStack, ...filteredBlockers]}
           sortKey={sortKey}
+          onSelect={handleSelect}
           onValidate={handleValidate}
           onReject={handleReject}
           onEdit={handleEdit}
+          onReopen={handleReopen}
           isLocked={isLocked}
         />
       )}
