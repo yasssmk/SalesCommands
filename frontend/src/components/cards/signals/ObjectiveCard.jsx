@@ -51,12 +51,14 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // ant-design icons
-import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import EditOutlined from "@ant-design/icons/EditOutlined";
 import MoreOutlined from "@ant-design/icons/MoreOutlined";
+
+// Shared per-type detail block — single rendering of objective-specific fields
+import ObjectiveDetailBlock from "components/signals/detail/ObjectiveDetailBlock";
 
 // ==============================|| STATUS CONFIG ||============================== //
 
@@ -80,51 +82,6 @@ const SCOPE_LEVEL_CONFIG = {
   DEPARTMENT: { color: "info", label: "Department" },
   PERSONAL: { color: "error", label: "Personal" },
 };
-
-// ==============================|| TARGET DATE URGENCY ||============================== //
-
-/** Days threshold — matches backend OBJECTIVE_TARGET_DATE_SOON_DAYS */
-const TARGET_DATE_SOON_DAYS = 90;
-
-/**
- * Classify a target_date into an urgency bucket.
- *
- * Returns { label, color, tone } where tone is a descriptive word used
- * in the tooltip.
- */
-function classifyTargetDate(isoDate) {
-  if (!isoDate) return null;
-
-  const target = new Date(isoDate);
-  if (Number.isNaN(target.getTime())) return null;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  target.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.round(
-    (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
-  );
-
-  if (diffDays < 0) {
-    return { label: "Overdue", color: "error", tone: "overdue" };
-  }
-  if (diffDays === 0) {
-    return { label: "Due today", color: "error", tone: "today" };
-  }
-  if (diffDays <= TARGET_DATE_SOON_DAYS) {
-    return {
-      label: `In ${diffDays}d`,
-      color: "warning",
-      tone: `due in ${diffDays} day${diffDays === 1 ? "" : "s"}`,
-    };
-  }
-  return {
-    label: `In ${diffDays}d`,
-    color: "default",
-    tone: `due in ${diffDays} days`,
-  };
-}
 
 // ==============================|| HELPERS ||============================== //
 
@@ -152,10 +109,6 @@ function resolveLabel(options, value) {
   return options.find((o) => o.value === value)?.label ?? value;
 }
 
-function truncate(str, max = 120) {
-  if (!str) return null;
-  return str.length > max ? `${str.slice(0, max)}…` : str;
-}
 
 // ==============================|| CONFIRM DIALOG ||============================== //
 
@@ -260,38 +213,6 @@ export default function ObjectiveCard({
     if (!cfg) return null;
     return cfg;
   }, [objective.scope_level]);
-
-  /** Target-date classification (null, overdue, soon, later) */
-  const targetDateClass = useMemo(
-    () => classifyTargetDate(objective.target_date),
-    [objective.target_date],
-  );
-
-  /** Target-date human label — "2026-06-30" */
-  const targetDateLabel = useMemo(
-    () => formatShortDate(objective.target_date),
-    [objective.target_date],
-  );
-
-  /**
-   * Target line — "Owned by Marie Durand" (PERSONAL) or
-   * "Department: Sales" (DEPARTMENT). BUSINESS has no owner line.
-   */
-  const ownerLine = useMemo(() => {
-    if (objective.scope_level === "PERSONAL") {
-      const name = formatContact(objective.target_contact);
-      return name ? `Owned by ${name}` : null;
-    }
-    if (objective.scope_level === "DEPARTMENT") {
-      const deptName = objective.target_department?.name;
-      return deptName ? `Department: ${deptName}` : null;
-    }
-    return null;
-  }, [
-    objective.scope_level,
-    objective.target_contact,
-    objective.target_department,
-  ]);
 
   /** Source line — "Set by Nicky Larson · 2026-04-15" */
   const sourceLine = useMemo(() => {
@@ -496,66 +417,14 @@ export default function ObjectiveCard({
         </Typography>
       )}
 
-      {/* ==================== TARGET DATE ==================== */}
-      {targetDateLabel && (
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          sx={{ mt: 1.25 }}
-          flexWrap="wrap"
-          useFlexGap
-        >
-          <Tooltip title={targetDateClass?.tone ?? "target date"}>
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <CalendarOutlined style={{ fontSize: 13, color: "#8c8c8c" }} />
-              <Typography variant="caption" color="text.secondary">
-                Target: {targetDateLabel}
-              </Typography>
-            </Stack>
-          </Tooltip>
-          {targetDateClass && targetDateClass.color !== "default" && (
-            <Chip
-              label={targetDateClass.label}
-              size="small"
-              color={targetDateClass.color}
-              variant="outlined"
-              sx={{ fontSize: "0.62rem", height: 18 }}
-            />
-          )}
-        </Stack>
-      )}
-
-      {/* ==================== SUCCESS CRITERIA ==================== */}
-      {objective.success_criteria && (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{
-            display: "block",
-            mt: 1,
-            fontStyle: "italic",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={objective.success_criteria}
-        >
-          ✓ {truncate(objective.success_criteria, 140)}
-        </Typography>
-      )}
-
-      {/* ==================== OWNER LINE ==================== */}
-      {ownerLine && (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          display="block"
-          sx={{ mt: 0.75, fontWeight: 500 }}
-        >
-          {ownerLine}
-        </Typography>
-      )}
+      {/* ==================== TYPE-SPECIFIC DETAIL (shared block) ==================== */}
+      {/*
+        target date + urgency, success criteria and owner are rendered by the
+        shared ObjectiveDetailBlock so the drawer and this card match.
+      */}
+      <Box sx={{ mt: 1.25 }}>
+        <ObjectiveDetailBlock signal={objective} />
+      </Box>
 
       {/* ==================== SOURCE LINE ==================== */}
       {sourceLine && (

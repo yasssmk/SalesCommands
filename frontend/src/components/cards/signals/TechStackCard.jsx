@@ -59,13 +59,14 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // ant-design icons
-import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import EditOutlined from "@ant-design/icons/EditOutlined";
 import MoreOutlined from "@ant-design/icons/MoreOutlined";
-import StopOutlined from "@ant-design/icons/StopOutlined";
+
+// Shared per-type detail block — single rendering of tech-specific fields
+import TechDetailBlock from "components/signals/detail/TechDetailBlock";
 
 // ==============================|| STATUS CONFIG ||============================== //
 
@@ -73,28 +74,6 @@ const STATUS_CONFIG = {
   PENDING: { color: "warning", label: "Pending" },
   VALIDATED: { color: "success", label: "Validated" },
   REJECTED: { color: "error", label: "Rejected" },
-};
-
-// ==============================|| USAGE SCOPE CONFIG ||============================== //
-
-/**
- * Visual tag per UsageScope — distinct from Pain's ScopeLevel palette.
- *
- * Rationale: ScopeLevel (BUSINESS / DEPARTMENT / PERSONAL) is about
- * the LEVEL of evidence; UsageScope (TEAM / DEPARTMENT / COMPANY /
- * UNKNOWN) is about the BREADTH of tool usage. Different concept,
- * different palette to avoid visual confusion when a card mixes both.
- *
- *   TEAM       → secondary (purple) — narrow, granular
- *   DEPARTMENT → info      (blue)   — clearly delimited
- *   COMPANY    → success   (green)  — broad reach, strong signal
- *   UNKNOWN    → default   (grey)   — neutral, missing data
- */
-const USAGE_SCOPE_CONFIG = {
-  TEAM: { color: "secondary", label: "Team" },
-  DEPARTMENT: { color: "info", label: "Department" },
-  COMPANY: { color: "success", label: "Company-wide" },
-  UNKNOWN: { color: "default", label: "Unknown scope" },
 };
 
 // ==============================|| HELPERS ||============================== //
@@ -110,11 +89,6 @@ function formatShortDate(iso) {
   } catch {
     return null;
   }
-}
-
-function truncate(str, max = 120) {
-  if (!str) return null;
-  return str.length > max ? `${str.slice(0, max)}…` : str;
 }
 
 /**
@@ -231,57 +205,6 @@ export default function TechStackCard({
   const isCompetitor = Boolean(techStack.is_competitor);
   const isIntegration = Boolean(techStack.is_integration);
   const isToReplace = Boolean(techStack.is_to_replace);
-
-  /** Usage scope chip config */
-  const scopeCfg = useMemo(() => {
-    if (!techStack.usage_scope) return null;
-    return USAGE_SCOPE_CONFIG[techStack.usage_scope] ?? null;
-  }, [techStack.usage_scope]);
-
-  /** Department display name (when scope=DEPARTMENT) */
-  const departmentName = useMemo(() => {
-    const dept = techStack.usage_department;
-    if (!dept) return null;
-    if (typeof dept === "string") return dept;
-    return dept.name ?? null;
-  }, [techStack.usage_department]);
-
-  /**
-   * Lifecycle compact line — "Used since 2019 · Renewal Sep 2025 · ~80k€/year"
-   * Each segment is included only when its source field is set, so a
-   * tool with just a renewal date reads cleanly as "Renewal Sep 2025".
-   */
-  const lifecycleLine = useMemo(() => {
-    const parts = [];
-
-    if (techStack.usage_start_year) {
-      parts.push(`Used since ${techStack.usage_start_year}`);
-    }
-
-    if (techStack.renewal_date) {
-      const renewalLabel = formatShortDate(techStack.renewal_date);
-      if (renewalLabel) parts.push(`Renewal ${renewalLabel}`);
-    }
-
-    if (techStack.cost_description?.trim()) {
-      // Cost is free-text and may be long — truncate aggressively for
-      // the inline line; full text is on the detail drawer.
-      parts.push(truncate(techStack.cost_description.trim(), 50));
-    }
-
-    return parts.length > 0 ? parts.join(" · ") : null;
-  }, [
-    techStack.usage_start_year,
-    techStack.renewal_date,
-    techStack.cost_description,
-  ]);
-
-  /** Discontinuation display */
-  const discontinuationLine = useMemo(() => {
-    if (!techStack.is_discontinued) return null;
-    const dateLabel = formatShortDate(techStack.discontinued_date);
-    return dateLabel ? `Discontinued ${dateLabel}` : "Discontinued";
-  }, [techStack.is_discontinued, techStack.discontinued_date]);
 
   /** Source line — "From Activity #abc12345" */
   const sourceLine = useMemo(() => {
@@ -416,43 +339,10 @@ export default function TechStackCard({
             sx={{ fontSize: "0.68rem", height: 20, fontWeight: 500 }}
           />
 
-          {/* Qualification flags — competitor / integration / to replace.
-              Independent: a tool can carry several at once, or none (a
-              tool the account simply uses). Each earns its own chip (not
-              just the border) because the rep needs to spot them
-              mid-list, not only when focusing on the card. */}
-          {isCompetitor && (
-            <Tooltip title="This tool competes with what we sell">
-              <Chip
-                label="Competitor"
-                color="error"
-                size="small"
-                sx={{ fontSize: "0.62rem", height: 18 }}
-              />
-            </Tooltip>
-          )}
-          {isIntegration && (
-            <Tooltip title="Our product integrates with this tool">
-              <Chip
-                label="Integration"
-                color="info"
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.62rem", height: 18 }}
-              />
-            </Tooltip>
-          )}
-          {isToReplace && (
-            <Tooltip title="The account intends to replace this tool">
-              <Chip
-                label="To replace"
-                color="warning"
-                size="small"
-                variant="outlined"
-                sx={{ fontSize: "0.62rem", height: 18 }}
-              />
-            </Tooltip>
-          )}
+          {/* Qualification flags (competitor / integration / to replace),
+              usage, lifecycle and discontinuation are rendered by the shared
+              TechDetailBlock below. The flags still drive this card's border
+              emphasis via isCompetitor/isIntegration/isToReplace. */}
 
           {createdDate && (
             <Typography variant="caption" color="text.disabled">
@@ -530,79 +420,15 @@ export default function TechStackCard({
         </Stack>
       </Stack>
 
-      {/* ==================== USAGE SCOPE ROW ==================== */}
-      {(scopeCfg || departmentName) && (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
-          sx={{ mt: 1.25 }}
-        >
-          {scopeCfg && (
-            <Chip
-              label={scopeCfg.label}
-              size="small"
-              color={scopeCfg.color}
-              variant="outlined"
-              sx={{ fontSize: "0.65rem", height: 20 }}
-            />
-          )}
-          {departmentName && techStack.usage_scope === "DEPARTMENT" && (
-            <Typography variant="caption" color="text.secondary">
-              {departmentName}
-            </Typography>
-          )}
-        </Stack>
-      )}
-
-      {/* ==================== LIFECYCLE LINE ==================== */}
-      {lifecycleLine && (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          alignItems="center"
-          sx={{ mt: 1 }}
-        >
-          <CalendarOutlined style={{ fontSize: 13, color: "#8c8c8c" }} />
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            title={
-              // Tooltip-on-hover surfaces full cost_description if it
-              // got truncated in the inline label.
-              techStack.cost_description?.trim() || undefined
-            }
-          >
-            {lifecycleLine}
-          </Typography>
-        </Stack>
-      )}
-
-      {/* ==================== DISCONTINUATION BADGE ==================== */}
-      {discontinuationLine && (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          alignItems="center"
-          sx={{
-            mt: 1,
-            py: 0.5,
-            px: 1,
-            bgcolor: "error.lighter",
-            borderRadius: 0.75,
-            border: "1px dashed",
-            borderColor: "error.light",
-            width: "fit-content",
-          }}
-        >
-          <StopOutlined style={{ fontSize: 12, color: "#cf1322" }} />
-          <Typography variant="caption" color="error.dark" fontWeight={500}>
-            {discontinuationLine}
-          </Typography>
-        </Stack>
-      )}
+      {/* ==================== TYPE-SPECIFIC DETAIL (shared block) ==================== */}
+      {/*
+        Qualification flags, usage (scope + department), lifecycle and
+        discontinuation are rendered by the shared TechDetailBlock so the
+        drawer and this card match.
+      */}
+      <Box sx={{ mt: 1.25 }}>
+        <TechDetailBlock signal={techStack} />
+      </Box>
 
       {/* ==================== NOTES ==================== */}
       {techStack.notes && (

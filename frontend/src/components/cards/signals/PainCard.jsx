@@ -52,6 +52,9 @@ import PlusOutlined from "@ant-design/icons/PlusOutlined";
 // project imports
 import { resolveImpactLevel } from "sections/accounts/signals/signalClusters";
 
+// Shared per-type detail block — single rendering of pain-specific fields
+import PainDetailBlock from "components/signals/detail/PainDetailBlock";
+
 // ==============================|| STATUS CONFIG ||============================== //
 
 const STATUS_CONFIG = {
@@ -377,21 +380,6 @@ export default function PainCard({
     return null;
   }, [pain.source_contact, pain.source_activity]);
 
-  /**
-   * Cross-reference — TechStack
-   *
-   * Two independent fields on the backend; the UI prefers the structured
-   * FK and falls back to the textual mention. Both can co-exist in a
-   * progressive-enrichment scenario; we still show only one chip in
-   * that case (FK wins) to avoid visual redundancy.
-   *
-   * Returns null when neither field is set so the section is suppressed
-   * entirely rather than rendered with a placeholder.
-   */
-  const relatedTech = useMemo(
-    () => pain.related_techstack_mention?.trim() || null,
-    [pain.related_techstack_mention],
-  );
 
   /** Nested impacts — always an array, default empty */
   const impacts = useMemo(
@@ -599,42 +587,15 @@ export default function PainCard({
         </Typography>
       )}
 
-      {/* ==================== RELATED TOOL  ==================== */}
+      {/* ==================== TYPE-SPECIFIC DETAIL (shared block) ==================== */}
       {/*
-        Optional free-text cross-reference (related_techstack_mention).
-        S10 removed the structured `related_techstack` FK along with the
-        tech catalogue, so there is one representation left and one chip
-        style to render it.
-
-        Visible regardless of `pain.what` — the model is permissive
-        (a non-TECH pain may legitimately reference a tool); the
-        InlinePainForm UI only restricts the capture surface.
+        related_techstack_mention is rendered by the shared PainDetailBlock so
+        the drawer and this card match. The manual pain→impact section above is
+        intentionally left untouched (removed in B3).
       */}
-      {relatedTech && (
-        <Stack
-          direction="row"
-          spacing={0.5}
-          alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
-          sx={{ mt: 1 }}
-        >
-          <Typography variant="caption" color="text.disabled">
-            Related tool:
-          </Typography>
-          <Chip
-            label={relatedTech}
-            size="small"
-            variant="outlined"
-            sx={{
-              fontSize: "0.65rem",
-              height: 20,
-              fontStyle: "italic",
-              color: "text.secondary",
-            }}
-          />
-        </Stack>
-      )}
+      <Box sx={{ mt: 1 }}>
+        <PainDetailBlock signal={pain} />
+      </Box>
 
       {/* ==================== SOURCE LINE ==================== */}
       {sourceLine && (
