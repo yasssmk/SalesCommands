@@ -99,20 +99,12 @@ describe("SignalsFlatView", () => {
     );
   });
 
-  it("shows Reopen on a REJECTED row and calls onReopen", () => {
-    const onReopen = vi.fn();
+  it("renders no lifecycle action buttons on any row (actions live in the drawer)", () => {
     const rejected = [{ ...SIGNALS[0], id: "r1", status: "REJECTED", summary: "Rejected pain" }];
-    render(<SignalsFlatView signals={rejected} sortKey="date-desc" onReopen={onReopen} />);
-    const btn = screen.getByRole("button", { name: /reopen/i });
-    fireEvent.click(btn);
-    expect(onReopen).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "r1" }),
-      "pain",
-    );
-  });
-
-  it("passes isLocked — hides action buttons", () => {
-    render(<SignalsFlatView signals={SIGNALS} sortKey="date-desc" isLocked />);
+    render(<SignalsFlatView signals={rejected} sortKey="date-desc" onReopen={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /edit/i })).not.toBeInTheDocument();
   });
 

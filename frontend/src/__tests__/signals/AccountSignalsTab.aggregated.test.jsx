@@ -219,7 +219,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
     expect(screen.getByLabelText("Close drawer")).toBeInTheDocument();
   });
 
-  it("shows Reopen on a rejected row and calls reopenSignal", async () => {
+  it("opens the drawer on a rejected row and reopens from there", async () => {
     useAggregatedSignals.mockImplementation(() =>
       aggReturn({
         signals: [
@@ -229,6 +229,11 @@ describe("AccountSignalsTab — aggregated flat list", () => {
     );
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
 
+    // Row carries no action button — click it to open the drawer.
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("signal-line"));
+
+    // Reopen lives in the drawer.
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /reopen/i }));
     });

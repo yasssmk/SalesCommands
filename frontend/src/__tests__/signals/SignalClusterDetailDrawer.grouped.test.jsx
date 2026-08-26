@@ -122,8 +122,12 @@ describe("SignalClusterDetailDrawer — grouped member rendering", () => {
     expect(screen.getByRole("button", { name: /View origin activity/i })).toBeInTheDocument();
   });
 
-  it("shows Reopen on a rejected member and calls reopenSignal", async () => {
+  it("reopens a rejected member from its quick-drawer (no action on the row)", async () => {
     renderDrawer();
+    // The member row carries no action button.
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+    // Click the rejected member row to open its quick-drawer, then reopen there.
+    fireEvent.click(screen.getByText("Rejected pain member"));
     const reopenBtn = screen.getByRole("button", { name: /reopen/i });
     await act(async () => {
       fireEvent.click(reopenBtn);

@@ -498,4 +498,78 @@ describe("SignalQuickDrawer", () => {
     expect(screen.queryByText("Qualification")).not.toBeInTheDocument();
     expect(screen.queryByText("Not in catalog")).not.toBeInTheDocument();
   });
+
+  // === C2: all four actions live here (rows are now informational) ===
+
+  it("shows Reopen only for a REJECTED signal, and fires onReopen", () => {
+    const onReopen = vi.fn();
+    const rejected = { ...MOCK_PAIN, status: "REJECTED" };
+    render(
+      <SignalQuickDrawer
+        open
+        signal={rejected}
+        signalType="pain"
+        onClose={vi.fn()}
+        onReopen={onReopen}
+        onEdit={vi.fn()}
+      />,
+    );
+    // Reopen present; validate/reject absent for a rejected signal.
+    const reopen = screen.getByRole("button", { name: /reopen/i });
+    expect(reopen).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+
+    fireEvent.click(reopen);
+    expect(onReopen).toHaveBeenCalledWith(rejected, "pain");
+  });
+
+  it("does NOT show Reopen for PENDING or VALIDATED signals", () => {
+    const { rerender } = render(
+      <SignalQuickDrawer open signal={MOCK_PAIN} signalType="pain" onClose={vi.fn()} onReopen={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+
+    rerender(
+      <SignalQuickDrawer open signal={{ ...MOCK_PAIN, status: "VALIDATED" }} signalType="pain" onClose={vi.fn()} onReopen={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+  });
+
+  it("hides Reopen when locked", () => {
+    render(
+      <SignalQuickDrawer
+        open
+        signal={{ ...MOCK_PAIN, status: "REJECTED" }}
+        signalType="pain"
+        onClose={vi.fn()}
+        onReopen={vi.fn()}
+        isLocked
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+  });
+
+  it("disables Validate when required fields are missing (rule reused from the rows)", () => {
+    // PENDING objective missing scope_level → getMissingFields reports a gap.
+    const incompleteObjective = {
+      id: "o-inc",
+      status: "PENDING",
+      summary: "Cut reporting time",
+      what: "OPS",
+      dimension: "TIME",
+      // scope_level intentionally absent
+      source_context: { contacts: [] },
+    };
+    render(
+      <SignalQuickDrawer
+        open
+        signal={incompleteObjective}
+        signalType="objective"
+        onClose={vi.fn()}
+        onValidate={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /validate/i })).toBeDisabled();
+  });
 });

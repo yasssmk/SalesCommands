@@ -129,7 +129,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
     expect(screen.getByLabelText("Close drawer")).toBeInTheDocument();
   });
 
-  it("shows Reopen on a rejected row and calls reopenSignal", async () => {
+  it("opens the drawer on a rejected row and reopens from there", async () => {
     useAggregatedSignals.mockImplementation(() =>
       flatReturn({
         signals: [
@@ -139,9 +139,12 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
     );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
 
-    const reopenBtn = screen.getByRole("button", { name: /reopen/i });
+    // Row carries no action button — click it to open the drawer.
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("signal-line"));
+
     await act(async () => {
-      fireEvent.click(reopenBtn);
+      fireEvent.click(screen.getByRole("button", { name: /reopen/i }));
     });
     expect(reopenSignal).toHaveBeenCalledWith("pain", "r1");
   });
