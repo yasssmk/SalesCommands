@@ -99,6 +99,29 @@ class SignalClusterListSerializer(serializers.Serializer):
     last_confirmed_at = serializers.DateTimeField(allow_null=True)
     freshness_status  = serializers.CharField(allow_null=True)
 
+    # --- Temporal density (raw facts, NOT a composite score) ---
+    # How many signals the cluster holds and the period they cover. The UI
+    # renders these directly ("N signals · <start> → <end>"); no weighting,
+    # no opaque index.
+    #
+    # signal_count  — number of member signals (VALIDATED + PENDING)
+    # period_start  — earliest member observation (mirrors first_observed_at)
+    # period_end    — latest member observation (mirrors last_confirmed_at)
+    # span_days     — whole days between period_start and period_end; 0 for a
+    #                 single-signal / same-day cluster or when no confirmed
+    #                 observation window exists.
+    #
+    # Defensive required=False + neutral defaults so cached or older cluster
+    # dicts that predate these keys don't 500 the serializer.
+    signal_count = serializers.IntegerField(required=False, default=0)
+    period_start = serializers.DateTimeField(
+        allow_null=True, required=False, default=None,
+    )
+    period_end   = serializers.DateTimeField(
+        allow_null=True, required=False, default=None,
+    )
+    span_days    = serializers.IntegerField(required=False, default=0)
+
    # --- Objective-specific aggregation  ---
     # Always present in the payload. Empty / null / false for non-Objective
     # clusters.
