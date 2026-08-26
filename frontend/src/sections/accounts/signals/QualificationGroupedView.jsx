@@ -30,6 +30,7 @@ import { useCallback, useMemo, useState } from "react";
 // MUI
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
+import Grid from "@mui/material/Grid";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -381,38 +382,48 @@ export default function QualificationGroupedView({
 
   return (
     <Box>
-      {/* Narrative sections — each shows a neutral empty when it has no clusters. */}
-      {SECTIONS.map((section) => (
-        <NarrativeSection
-          key={section.type}
-          title={section.title}
-          clusters={bySection[section.type]}
-          surface={surface}
-          onClusterClick={handleClusterClick}
-        />
-      ))}
+      {/* Same two-column layout as the Activity reference: narrative sections
+          on the left, Tech Stack + Objections on the right. The only
+          difference vs Activity is the domain → dimension → cluster nesting
+          inside the left narrative sections. */}
+      <Grid container spacing={3}>
+        {/* Left column — narrative sections (nested by domain → dimension). */}
+        <Grid item xs={12} md={6}>
+          {SECTIONS.map((section) => (
+            <NarrativeSection
+              key={section.type}
+              title={section.title}
+              clusters={bySection[section.type]}
+              surface={surface}
+              onClusterClick={handleClusterClick}
+            />
+          ))}
+        </Grid>
 
-      {/* Tech Stack — placement + today's flat content (both surfaces). */}
-      <TypedSection
-        title="Tech Stack"
-        testId="section-tech-stack"
-        emptyLabel="No tech stack signals captured"
-        signals={tech.signals}
-        loading={tech.loading}
-        onSelect={handleSelect}
-      />
+        {/* Right column — Tech Stack + Objections (flat, today's content). */}
+        <Grid item xs={12} md={6}>
+          <TypedSection
+            title="Tech Stack"
+            testId="section-tech-stack"
+            emptyLabel="No tech stack signals captured"
+            signals={tech.signals}
+            loading={tech.loading}
+            onSelect={handleSelect}
+          />
 
-      {/* Objections — DC surface only (blockers are deal-scoped). */}
-      {isDC && (
-        <TypedSection
-          title="Objections"
-          testId="section-objections"
-          emptyLabel="No objections captured"
-          signals={blockers.signals}
-          loading={blockers.loading}
-          onSelect={handleSelect}
-        />
-      )}
+          {/* Objections — DC surface only (blockers are deal-scoped). */}
+          {isDC && (
+            <TypedSection
+              title="Objections"
+              testId="section-objections"
+              emptyLabel="No objections captured"
+              signals={blockers.signals}
+              loading={blockers.loading}
+              onSelect={handleSelect}
+            />
+          )}
+        </Grid>
+      </Grid>
 
       {/* Cluster detail drawer — self-contained member CRUD. */}
       <SignalClusterDetailDrawer
