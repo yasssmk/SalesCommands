@@ -12,8 +12,6 @@ import { render, screen, fireEvent, cleanup, act } from "@testing-library/react"
 
 vi.mock("api/signals/signalClusters", () => ({
   useGetClusterDetail: vi.fn(),
-  archiveCluster: vi.fn(() => Promise.resolve({ success: true })),
-  unarchiveCluster: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
 vi.mock("api/signals/signals", () => ({
@@ -178,5 +176,40 @@ describe("SignalClusterDetailDrawer — one drawer, replace + back (C5)", () => 
     expect(screen.getByRole("button", { name: /validate/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+  });
+});
+
+describe("SignalClusterDetailDrawer — removed residuals", () => {
+  it("has no Archive / Unarchive cluster button", () => {
+    renderDrawer();
+    expect(
+      screen.queryByRole("button", { name: /archive cluster/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /unarchive cluster/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows no 'Max level' meta on a pain cluster", () => {
+    renderDrawer();
+    expect(screen.queryByText("Max level")).not.toBeInTheDocument();
+  });
+
+  it("shows no 'Max scope' meta on an objective cluster", () => {
+    const objective = {
+      ...CLUSTER_SUMMARY,
+      canonical_key: "objective:GROWTH:SCALE",
+      signal_type: "objective",
+      max_scope_level: "BUSINESS",
+      target_dates: [],
+    };
+    useGetClusterDetail.mockReturnValue({
+      cluster: { ...objective, members: [] },
+      clusterLoading: false,
+      clusterError: null,
+      mutateCluster: vi.fn(),
+    });
+    renderDrawer({ clusterSummary: objective });
+    expect(screen.queryByText("Max scope")).not.toBeInTheDocument();
   });
 });

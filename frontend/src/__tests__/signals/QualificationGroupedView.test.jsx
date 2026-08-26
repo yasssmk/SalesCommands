@@ -321,3 +321,31 @@ describe("QualificationGroupedView — Tech + Objections placement", () => {
     expect(screen.getByText("Objections")).toBeInTheDocument();
   });
 });
+
+describe("QualificationGroupedView — member filters forwarded to the cluster fetch", () => {
+  it("forwards department (SUBJECT), contact (SOURCE), scope and statuses to the cluster endpoint", () => {
+    render(
+      <QualificationGroupedView
+        surface="account"
+        accountId={ACCOUNT_ID}
+        department="42"
+        contact="contact-9"
+        scope="DEPARTMENT"
+        statuses={["PENDING", "VALIDATED"]}
+      />,
+    );
+    const opts = useGetClustersByAccount.mock.calls.at(-1)[1];
+    expect(opts.department).toBe("42");
+    expect(opts.contact).toBe("contact-9");
+    expect(opts.scope).toBe("DEPARTMENT");
+    expect(opts.statuses).toEqual(["PENDING", "VALIDATED"]);
+  });
+
+  it("omits the member filters when none are set", () => {
+    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+    const opts = useGetClustersByAccount.mock.calls.at(-1)[1];
+    expect(opts.department).toBeUndefined();
+    expect(opts.contact).toBeUndefined();
+    expect(opts.scope).toBeUndefined();
+  });
+});
