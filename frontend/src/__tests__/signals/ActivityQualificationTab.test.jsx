@@ -65,27 +65,29 @@ describe("Activity workspace tabs", () => {
   });
 });
 
-describe("ActivityQualificationTab (grouped)", () => {
-  it("renders the grouped qualification + blocker sections, with no filter chips", () => {
+describe("ActivityQualificationTab (grouped by type, flat lists)", () => {
+  it("renders type sections (Objectives/Pains/Impacts/Objections), no filter chips", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
-    expect(screen.getByText("Qualification")).toBeInTheDocument();
-    expect(screen.getByText(/Blockers/)).toBeInTheDocument();
-    // Grouped has no filter chips (no status filter bar).
+    expect(screen.getByText("Objectives")).toBeInTheDocument();
+    expect(screen.getByText("Pains")).toBeInTheDocument();
+    expect(screen.getByText("Impacts")).toBeInTheDocument();
+    expect(screen.getByText("Objections")).toBeInTheDocument();
+    // No status filter chips on the grouped synthesis.
     expect(screen.queryByText(/Filter:/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Validated \(/ })).not.toBeInTheDocument();
   });
 
-  it("renders the theme block with signals", () => {
+  it("renders signals as flat rows under their type — NO domain×dimension accordion", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
-    expect(screen.getByText("Data × Time")).toBeInTheDocument();
     expect(screen.getByText(/Pain signal A/)).toBeInTheDocument();
     expect(screen.getByText(/Objective signal B/)).toBeInTheDocument();
+    // The old theme grouping header is gone.
+    expect(screen.queryByText("Data × Time")).not.toBeInTheDocument();
   });
 
-  it("renders the blocker card", () => {
+  it("renders the blocker under the Objections section as a flat row", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
     expect(screen.getByText("Budget frozen Q4")).toBeInTheDocument();
-    expect(screen.getByText("Pierre Dupont")).toBeInTheDocument();
   });
 
   it("always excludes REJECTED signals (never shown in the grouped synthesis)", () => {
@@ -95,24 +97,31 @@ describe("ActivityQualificationTab (grouped)", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
-  it("calls validateSignal and mutates on validate", async () => {
+  it("rows carry no action buttons (actions moved to the drawer)", () => {
+    render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
+    expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+  });
+
+  it("validates from the drawer: click a row → Validate", async () => {
     const mutateCounts = vi.fn();
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} mutateCounts={mutateCounts} />);
-    const validateButtons = screen.getAllByRole("button", { name: /validate signal|validate blocker/i });
+    // Open the pending pain's drawer, then validate there.
+    fireEvent.click(screen.getByText("Pain signal A"));
     await act(async () => {
-      fireEvent.click(validateButtons[0]);
+      fireEvent.click(screen.getByRole("button", { name: /validate/i }));
     });
     expect(validateSignal).toHaveBeenCalled();
     expect(mockMutateAll).toHaveBeenCalled();
     expect(mutateCounts).toHaveBeenCalled();
   });
 
-  it("calls rejectSignal and mutates on reject", async () => {
+  it("rejects from the drawer: click a row → Reject", async () => {
     const mutateCounts = vi.fn();
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} mutateCounts={mutateCounts} />);
-    const rejectButtons = screen.getAllByRole("button", { name: /reject signal|reject blocker/i });
+    fireEvent.click(screen.getByText("Pain signal A"));
     await act(async () => {
-      fireEvent.click(rejectButtons[0]);
+      fireEvent.click(screen.getByRole("button", { name: /reject/i }));
     });
     expect(rejectSignal).toHaveBeenCalled();
     expect(mockMutateAll).toHaveBeenCalled();

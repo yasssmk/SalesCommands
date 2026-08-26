@@ -1,22 +1,27 @@
 // frontend/src/__tests__/signals/SignalsGroupedView.layout.test.jsx
+//
+// C3: Activity Qualification groups by TYPE with flat signal lists — no
+// clusters, no domain×dimension accordion. Rows are informational; clicking
+// one opens the drawer.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import SignalsGroupedView from "sections/activities/signals/SignalsGroupedView";
 
 afterEach(() => {
   cleanup();
 });
 
-const makePain = (id, what = "OPS", dimension = "TIME") => ({
+const makeQual = (id, type, what = "OPS", dimension = "TIME") => ({
   id,
-  _signalType: "pain",
+  _signalType: type,
   status: "PENDING",
-  summary: `Pain ${id}`,
+  summary: `${type} ${id}`,
   what,
   what_display: what,
   dimension,
   dimension_display: dimension,
+  source_context: { contacts: [] },
 });
 
 const makeBlocker = (id) => ({
@@ -24,130 +29,163 @@ const makeBlocker = (id) => ({
   _signalType: "blockers",
   status: "PENDING",
   summary: `Blocker ${id}`,
-  contact: null,
   source_context: { contacts: [] },
 });
 
-const makeTechStack = (id, name = "Tool") => ({
+const makeTechStack = (id, name = "Salesforce") => ({
   id,
   _signalType: "tech-stack",
   status: "PENDING",
-  summary: name,
-  tech_name: "Salesforce",
-  metadata: { pending_tech_name: name },
+  tech_name: name,
+  source_context: { contacts: [] },
 });
 
-describe("SignalsGroupedView — 3-zone layout", () => {
-  it("renders Qualification, Blockers, and Tech Stack section headers", () => {
-    render(
-      <SignalsGroupedView
-        qualificationSignals={[makePain("p1")]}
-        techStackSignals={[makeTechStack("t1", "Salesforce")]}
-        blockerSignals={[makeBlocker("b1")]}
-        onSelect={vi.fn()}
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Qualification")).toBeInTheDocument();
-    expect(screen.getByText("Blockers / Objections")).toBeInTheDocument();
-    expect(screen.getAllByText("Tech Stack").length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("shows TechStack signals in Tech Stack section, not in Qualification", () => {
-    render(
-      <SignalsGroupedView
-        qualificationSignals={[makePain("p1")]}
-        techStackSignals={[makeTechStack("t1", "Salesforce")]}
-        blockerSignals={[]}
-        onSelect={vi.fn()}
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Salesforce")).toBeInTheDocument();
-    expect(screen.getByText("Pain p1")).toBeInTheDocument();
-  });
-
-  it("shows empty state for Qualification when no qualification signals", () => {
-    render(
-      <SignalsGroupedView
-        qualificationSignals={[]}
-        techStackSignals={[makeTechStack("t1", "Jira")]}
-        blockerSignals={[]}
-        onSelect={vi.fn()}
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("No qualification signals extracted yet")).toBeInTheDocument();
-  });
-
-  it("shows empty state for Blockers when no blockers", () => {
-    render(
-      <SignalsGroupedView
-        qualificationSignals={[makePain("p1")]}
-        techStackSignals={[]}
-        blockerSignals={[]}
-        onSelect={vi.fn()}
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("No blockers identified")).toBeInTheDocument();
-  });
-
-  it("shows empty state for Tech Stack when no tech-stack signals", () => {
-    render(
-      <SignalsGroupedView
-        qualificationSignals={[makePain("p1")]}
-        techStackSignals={[]}
-        blockerSignals={[makeBlocker("b1")]}
-        onSelect={vi.fn()}
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("No tools detected")).toBeInTheDocument();
-  });
-
-  it("shows global empty state when all zones are empty", () => {
-    render(
-      <SignalsGroupedView
-        qualificationSignals={[]}
-        techStackSignals={[]}
-        blockerSignals={[]}
-        onSelect={vi.fn()}
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("No signals found for this activity")).toBeInTheDocument();
-  });
-
-  it("groups qualification signals by theme", () => {
+describe("SignalsGroupedView — type sections (Activity)", () => {
+  it("renders the five type-section headers", () => {
     render(
       <SignalsGroupedView
         qualificationSignals={[
-          makePain("p1", "OPS", "TIME"),
-          makePain("p2", "OPS", "TIME"),
-          makePain("p3", "DATA", "COST"),
+          makeQual("o1", "objective"),
+          makeQual("p1", "pain"),
+          makeQual("i1", "impact"),
+        ]}
+        techStackSignals={[makeTechStack("t1")]}
+        blockerSignals={[makeBlocker("b1")]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Objectives")).toBeInTheDocument();
+    expect(screen.getByText("Pains")).toBeInTheDocument();
+    expect(screen.getByText("Impacts")).toBeInTheDocument();
+    // "Tech Stack" is also the type-chip label on the tech row → at least one.
+    expect(screen.getAllByText("Tech Stack").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Objections")).toBeInTheDocument();
+  });
+
+  it("shows a correct count per section", () => {
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[
+          makeQual("p1", "pain"),
+          makeQual("p2", "pain"),
+          makeQual("p3", "pain"),
+          makeQual("o1", "objective"),
+        ]}
+        techStackSignals={[makeTechStack("t1"), makeTechStack("t2")]}
+        blockerSignals={[]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    // Counts render as "(N)" next to the header.
+    expect(screen.getByText("(3)")).toBeInTheDocument(); // Pains
+    // Objectives (1) and Impacts (0) both exist; (1) appears once here.
+    expect(screen.getByText("(2)")).toBeInTheDocument(); // Tech Stack
+  });
+
+  it("renders each type as a flat list of SignalLine rows (no cluster cards)", () => {
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[makeQual("p1", "pain"), makeQual("o1", "objective")]}
+        techStackSignals={[makeTechStack("t1")]}
+        blockerSignals={[]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    // Flat rows — one signal-line per signal, no cluster card wrapper.
+    expect(screen.getAllByTestId("signal-line").length).toBe(3);
+    // The SignalClusterCard renders a "Cluster actions" menu button — its
+    // absence proves no cluster card is on the Activity view.
+    expect(
+      screen.queryByRole("button", { name: /cluster actions/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does NOT render a domain×dimension accordion / theme header", () => {
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[
+          makeQual("p1", "pain", "OPS", "TIME"),
+          makeQual("p2", "pain", "DATA", "COST"),
         ]}
         techStackSignals={[]}
         blockerSignals={[]}
         onSelect={vi.fn()}
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("OPS × TIME")).toBeInTheDocument();
-    expect(screen.getByText("DATA × COST")).toBeInTheDocument();
+    // The old theme grouping rendered "WHAT × DIMENSION" labels — gone now.
+    expect(screen.queryByText("OPS × TIME")).not.toBeInTheDocument();
+    expect(screen.queryByText("DATA × COST")).not.toBeInTheDocument();
+    // Both pains still appear, flat, under the single Pains section.
+    expect(screen.getAllByTestId("signal-line").length).toBe(2);
+  });
+
+  it("rows are informational (no action buttons) and open the drawer on click", () => {
+    const onSelect = vi.fn();
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[makeQual("p1", "pain")]}
+        techStackSignals={[]}
+        blockerSignals={[]}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("signal-line"));
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "p1" }),
+      "pain",
+    );
+  });
+
+  it("shows a neutral empty note for an empty section (not the global empty)", () => {
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[makeQual("p1", "pain")]}
+        techStackSignals={[]}
+        blockerSignals={[]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    // Objectives/Impacts/Tech/Objections are empty → neutral notes, not red,
+    // and NOT the global "no signals" state (there is a pain).
+    expect(screen.getByText("No objectives extracted yet")).toBeInTheDocument();
+    expect(screen.getByText("No tools detected")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No signals found for this activity"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the global empty state when every section is empty", () => {
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[]}
+        techStackSignals={[]}
+        blockerSignals={[]}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("No signals found for this activity"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps tech-stack out of the qualification sections", () => {
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[makeQual("p1", "pain")]}
+        techStackSignals={[makeTechStack("t1", "Salesforce")]}
+        blockerSignals={[]}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Salesforce")).toBeInTheDocument();
+    expect(screen.getByText("pain p1")).toBeInTheDocument();
   });
 });
