@@ -7,6 +7,24 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import AccordionOverride from "themes/overrides/Accordion";
+import AccordionSummaryOverride from "themes/overrides/AccordionSummary";
+import AccordionDetailsOverride from "themes/overrides/AccordionDetails";
+
+// A theme carrying the project's Accordion overrides (tinted summary +
+// RightOutlined expand chevron), so the themed accordion renders in tests.
+// Only the Accordion overrides are wired (avoids the font-loading chain in
+// the full theme index).
+const themed = createTheme({
+  palette: { secondary: { lighter: "#f4f6f8", light: "#d9d9d9", main: "#8c8c8c" } },
+});
+themed.components = {
+  ...AccordionOverride(themed),
+  ...AccordionSummaryOverride(themed),
+  ...AccordionDetailsOverride(themed),
+};
+const renderThemed = (ui) => render(<ThemeProvider theme={themed}>{ui}</ThemeProvider>);
 
 // ==============================|| MOCKS ||============================== //
 
@@ -190,6 +208,21 @@ describe("QualificationGroupedView — two-column layout (same as Activity)", ()
     expect(cols).toHaveLength(2);
     expect(cols[1]).toHaveTextContent("Tech Stack");
     expect(cols[1]).not.toHaveTextContent("Objections");
+  });
+});
+
+describe("QualificationGroupedView — themed MUI Accordion", () => {
+  it("renders sections as MUI Accordions with the themed expand chevron", () => {
+    const { container } = renderThemed(
+      <QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />,
+    );
+    // Themed MUI Accordion markup — not a hand-rolled bordered box.
+    expect(container.querySelectorAll(".MuiAccordion-root").length).toBeGreaterThan(0);
+    expect(container.querySelectorAll(".MuiAccordionSummary-root").length).toBeGreaterThan(0);
+    // The theme supplies the expand-icon (chevron) wrapper.
+    expect(
+      container.querySelectorAll(".MuiAccordionSummary-expandIconWrapper").length,
+    ).toBeGreaterThan(0);
   });
 });
 

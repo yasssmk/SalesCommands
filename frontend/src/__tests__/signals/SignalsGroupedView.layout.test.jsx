@@ -6,7 +6,23 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import AccordionOverride from "themes/overrides/Accordion";
+import AccordionSummaryOverride from "themes/overrides/AccordionSummary";
+import AccordionDetailsOverride from "themes/overrides/AccordionDetails";
 import SignalsGroupedView from "sections/activities/signals/SignalsGroupedView";
+
+// Theme carrying the project's Accordion overrides (tinted summary +
+// RightOutlined expand chevron), so the themed accordion renders in tests.
+const themed = createTheme({
+  palette: { secondary: { lighter: "#f4f6f8", light: "#d9d9d9", main: "#8c8c8c" } },
+});
+themed.components = {
+  ...AccordionOverride(themed),
+  ...AccordionSummaryOverride(themed),
+  ...AccordionDetailsOverride(themed),
+};
+const renderThemed = (ui) => render(<ThemeProvider theme={themed}>{ui}</ThemeProvider>);
 
 afterEach(() => {
   cleanup();
@@ -195,6 +211,22 @@ describe("SignalsGroupedView — type sections (Activity)", () => {
     expect(right).toHaveTextContent("Objections");
     // Activity is flat — no domain×dimension header inside the left sections.
     expect(left).not.toHaveTextContent("OPS × TIME");
+  });
+
+  it("renders sections as themed MUI Accordions (not hand-rolled boxes)", () => {
+    const { container } = renderThemed(
+      <SignalsGroupedView
+        qualificationSignals={[makeQual("p1", "pain")]}
+        techStackSignals={[makeTechStack("t1")]}
+        blockerSignals={[]}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(container.querySelectorAll(".MuiAccordion-root").length).toBeGreaterThan(0);
+    expect(container.querySelectorAll(".MuiAccordionSummary-root").length).toBeGreaterThan(0);
+    expect(
+      container.querySelectorAll(".MuiAccordionSummary-expandIconWrapper").length,
+    ).toBeGreaterThan(0);
   });
 
   it("type sections are collapsible and open by default", () => {
