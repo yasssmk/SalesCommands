@@ -176,6 +176,23 @@ describe("SignalsGroupedView — type sections (Activity)", () => {
     ).toBeInTheDocument();
   });
 
+  it("type sections are collapsible and open by default", () => {
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[makeQual("p1", "pain")]}
+        techStackSignals={[]}
+        blockerSignals={[]}
+        onSelect={vi.fn()}
+      />,
+    );
+    const header = screen.getByRole("button", { name: /Pains/i });
+    expect(header).toHaveAttribute("aria-expanded", "true"); // open by default
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "false"); // collapses
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("keeps tech-stack out of the qualification sections", () => {
     render(
       <SignalsGroupedView

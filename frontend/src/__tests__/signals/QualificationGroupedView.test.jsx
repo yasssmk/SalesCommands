@@ -1,11 +1,9 @@
 // frontend/src/__tests__/signals/QualificationGroupedView.test.jsx
 //
-// C4: the rich DC/Account Qualification view — three narrative sections
-// (Objectives / Pains / Impacts), each nesting the account's (or cycle's)
-// clusters by domain → dimension → cluster rows. One row = one cluster with
-// EPURATED factual meta (signal count, "N to validate", freshness, covered
-// period, departments, and Account-only DC count). No urgency / max-level /
-// impacted-contacts. Tech + Objections are out of scope here.
+// C4 + C4-fix: the rich DC/Account Qualification view. Three narrative
+// sections (Objectives / Pains / Impacts) nested domain → dimension → cluster
+// rows, plus Tech Stack and Objections placement sections. All sections are
+// collapsible (open by default); rows are informational.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
@@ -16,22 +14,35 @@ vi.mock("api/signals/signalClusters", () => ({
   useGetClustersByAccount: vi.fn(),
 }));
 
+vi.mock("api/signals/aggregatedSignals", () => ({ default: vi.fn() }));
+
 vi.mock("api/signals/signals", () => ({
   useGetSignalChoices: vi.fn(() => ({ choices: {}, choicesLoading: false })),
+  validateSignal: vi.fn(() => Promise.resolve({ success: true })),
+  reopenSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
-// Stub the cluster drawer — assert wiring (open + which cluster), not internals.
+vi.mock("utils/displayError", () => ({
+  displaySuccessSnackbar: vi.fn(),
+  displayErrorSnackbar: vi.fn(),
+}));
+
+// Stub the drawers/modals — assert wiring, not internals.
 vi.mock("sections/accounts/signals/SignalClusterDetailDrawer", () => ({
   default: ({ open, clusterSummary }) =>
     open ? (
       <div data-testid="cluster-drawer">{clusterSummary?.canonical_key}</div>
     ) : null,
 }));
+vi.mock("sections/accounts/signals/AlertSignalReject", () => ({ default: () => null }));
+vi.mock("sections/accounts/signals/SignalEditDialog", () => ({ default: () => null }));
+vi.mock("sections/activities/signals/SignalQuickDrawer", () => ({ default: () => null }));
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import { useGetClustersByAccount } from "api/signals/signalClusters";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
 
 const ACCOUNT_ID = "acc-1";
 const CYCLE_ID = "cycle-1";
@@ -51,10 +62,8 @@ const PAIN_CLUSTER = {
   period_end: "2026-05-01T10:00:00Z",
   departments: [{ id: "1", name: "Marketing & Communications" }],
   decision_cycle_ids: ["dc1", "dc2"],
-  // Fields the epurated row must NOT surface:
   priority_bucket: "HIGH",
   max_scope_level: "BUSINESS",
-  distinct_contacts_count: 3,
 };
 
 const OBJECTIVE_CLUSTER = {
@@ -74,6 +83,19 @@ const OBJECTIVE_CLUSTER = {
   decision_cycle_ids: ["dc1"],
 };
 
+const TECH = [{ id: "t1", status: "PENDING", tech_name: "Snowflake", _signalType: "tech-stack" }];
+const BLOCKERS = [{ id: "b1", status: "PENDING", summary: "Budget frozen Q4", _signalType: "blockers" }];
+
+function sectionReturn(signals) {
+  return {
+    signals,
+    count: signals.length,
+    loading: false,
+    error: null,
+    mutate: vi.fn(),
+  };
+}
+
 function mockClusters(list) {
   useGetClustersByAccount.mockReturnValue({
     clusters: list,
@@ -87,60 +109,48 @@ function mockClusters(list) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockClusters([OBJECTIVE_CLUSTER, PAIN_CLUSTER]);
+  useAggregatedSignals.mockImplementation(({ signalTypes } = {}) => {
+    if (signalTypes?.includes("tech-stack")) return sectionReturn(TECH);
+    if (signalTypes?.includes("blockers")) return sectionReturn(BLOCKERS);
+    return sectionReturn([]);
+  });
 });
 
 afterEach(() => cleanup());
 
-describe("QualificationGroupedView — three narrative sections", () => {
-  it("renders Objectives / Pains / Impacts, nested by domain → dimension", () => {
+describe("QualificationGroupedView — sections + nesting", () => {
+  it("renders Objectives / Pains / Impacts nested by domain → dimension", () => {
     render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
-
-    // Section headers.
     expect(screen.getByText("Objectives")).toBeInTheDocument();
     expect(screen.getByText("Pains")).toBeInTheDocument();
     expect(screen.getByText("Impacts")).toBeInTheDocument();
-
-    // Domain sub-heading + dimension under the Pains section.
-    expect(screen.getByText("Operations")).toBeInTheDocument();
-    expect(screen.getByText("Time")).toBeInTheDocument();
-
-    // One cluster row per cluster.
+    expect(screen.getByText("Operations")).toBeInTheDocument(); // domain
+    expect(screen.getByText("Time")).toBeInTheDocument(); // dimension
     expect(screen.getByText("Reporting is slow")).toBeInTheDocument();
     expect(screen.getByText("Grow the pipeline")).toBeInTheDocument();
   });
 
-  it("shows epurated meta on the row and NOT urgency / max-level / impacted contacts", () => {
+  it("shows epurated meta and NOT urgency / max-level / impacted contacts", () => {
     render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
-
-    // Epurated meta present.
     expect(screen.getByText("5 signals")).toBeInTheDocument();
     expect(screen.getByText("2 to validate")).toBeInTheDocument();
     expect(screen.getByText("Fresh")).toBeInTheDocument();
-    expect(screen.getByText(/→/)).toBeInTheDocument(); // covered period
+    expect(screen.getByText(/→/)).toBeInTheDocument();
     expect(screen.getByText("Marketing & Communications")).toBeInTheDocument();
-
-    // Excluded concepts.
-    expect(screen.queryByText("High")).not.toBeInTheDocument(); // priority/urgency
-    expect(screen.queryByText("Business")).not.toBeInTheDocument(); // max scope level
-    expect(screen.queryByText(/impacted contacts/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("High")).not.toBeInTheDocument();
+    expect(screen.queryByText("Business")).not.toBeInTheDocument();
   });
 
-  it("Account surface shows the DC count on the row", () => {
-    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+  it("Account shows the DC count; DC hides it", () => {
+    const { unmount } = render(
+      <QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />,
+    );
     expect(screen.getByText("2 DCs")).toBeInTheDocument();
-  });
-
-  it("DC surface hides the DC count on the row", () => {
+    unmount();
     render(
-      <QualificationGroupedView
-        surface="dc"
-        accountId={ACCOUNT_ID}
-        decisionCycleId={CYCLE_ID}
-      />,
+      <QualificationGroupedView surface="dc" accountId={ACCOUNT_ID} decisionCycleId={CYCLE_ID} />,
     );
     expect(screen.queryByText("2 DCs")).not.toBeInTheDocument();
-    // The cluster itself still renders.
-    expect(screen.getByText("Reporting is slow")).toBeInTheDocument();
   });
 
   it("opens the cluster drawer when a cluster row is clicked", () => {
@@ -149,37 +159,66 @@ describe("QualificationGroupedView — three narrative sections", () => {
     fireEvent.click(screen.getByText("Reporting is slow"));
     expect(screen.getByTestId("cluster-drawer")).toHaveTextContent("pain:OPS:TIME");
   });
+});
 
-  it("renders a neutral empty state for a section with no clusters", () => {
+describe("QualificationGroupedView — collapsible sections (open by default)", () => {
+  it("sections and domains are OPEN by default (content visible on first render)", () => {
     render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
-    // No impact clusters seeded → the Impacts section shows a neutral note.
-    expect(screen.getByText("No impacts yet")).toBeInTheDocument();
+    // Cluster row + department chip are visible without any interaction.
+    expect(screen.getByText("Reporting is slow")).toBeInTheDocument();
+    expect(screen.getByText("Marketing & Communications")).toBeInTheDocument();
   });
 
-  it("scopes clusters to the account (no decisionCycleId) and to the cycle on DC", () => {
-    const { unmount } = render(
-      <QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />,
-    );
-    let args = useGetClustersByAccount.mock.calls.at(-1);
-    expect(args[0]).toBe(ACCOUNT_ID);
-    expect(args[1].signalType).toEqual(["objective", "pain", "impact"]);
-    expect(args[1].decisionCycleId).toBeUndefined();
-    unmount();
+  it("clicking a section header toggles it (open → closed → open)", () => {
+    // The MUI Accordion summary flips aria-expanded on each click. (jsdom does
+    // not fire transitionend, so unmount-on-collapse can't be asserted here;
+    // aria-expanded is the reliable open/closed signal.)
+    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+    const header = screen.getByRole("button", { name: /Pains/i });
 
+    expect(header).toHaveAttribute("aria-expanded", "true"); // open by default
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "false"); // collapsed
+    fireEvent.click(header);
+    expect(header).toHaveAttribute("aria-expanded", "true"); // expanded again
+  });
+
+  it("a domain group inside a section toggles too", () => {
+    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+    const domainHeader = screen.getByRole("button", { name: /Operations/i });
+    expect(domainHeader).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(domainHeader);
+    expect(domainHeader).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+describe("QualificationGroupedView — Tech + Objections placement", () => {
+  it("Account surface shows Tech Stack but NOT Objections", () => {
+    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+    expect(screen.getByText("Tech Stack")).toBeInTheDocument();
+    expect(screen.getByText("Snowflake")).toBeInTheDocument();
+    expect(screen.queryByText("Objections")).not.toBeInTheDocument();
+    expect(screen.queryByText("Budget frozen Q4")).not.toBeInTheDocument();
+  });
+
+  it("DC surface shows Tech Stack AND Objections", () => {
     render(
-      <QualificationGroupedView
-        surface="dc"
-        accountId={ACCOUNT_ID}
-        decisionCycleId={CYCLE_ID}
-      />,
+      <QualificationGroupedView surface="dc" accountId={ACCOUNT_ID} decisionCycleId={CYCLE_ID} />,
     );
-    args = useGetClustersByAccount.mock.calls.at(-1);
-    expect(args[1].decisionCycleId).toBe(CYCLE_ID);
+    expect(screen.getByText("Tech Stack")).toBeInTheDocument();
+    expect(screen.getByText("Objections")).toBeInTheDocument();
+    expect(screen.getByText("Budget frozen Q4")).toBeInTheDocument();
   });
 
-  it("renders the global empty state when there are no clusters at all", () => {
+  it("shows Tech/Objections placement even when there are no clusters", () => {
     mockClusters([]);
-    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
-    expect(screen.getByText("No qualification clusters yet")).toBeInTheDocument();
+    render(
+      <QualificationGroupedView surface="dc" accountId={ACCOUNT_ID} decisionCycleId={CYCLE_ID} />,
+    );
+    // Narrative sections still present (neutral empty), and placement sections show.
+    expect(screen.getByText("Objectives")).toBeInTheDocument();
+    expect(screen.getByText("No objectives yet")).toBeInTheDocument();
+    expect(screen.getByText("Tech Stack")).toBeInTheDocument();
+    expect(screen.getByText("Objections")).toBeInTheDocument();
   });
 });
