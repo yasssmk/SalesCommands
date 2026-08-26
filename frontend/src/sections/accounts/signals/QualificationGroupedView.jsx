@@ -237,6 +237,10 @@ export default function QualificationGroupedView({
   accountId,
   decisionCycleId,
   signalTypes = [],
+  department = undefined,
+  contact = undefined,
+  scope = undefined,
+  statuses = undefined,
 }) {
   const isDC = surface === "dc";
 
@@ -251,18 +255,34 @@ export default function QualificationGroupedView({
   const showObjections =
     isDC && (!hasTypeFilter || signalTypes.includes("blockers"));
 
+  // Member filters (department = SUBJECT / target_department, contact = SOURCE,
+  // scope, status) are honored by the cluster endpoint on the filtered members;
+  // the cluster then forms and its meta recomputes on that filtered set.
   const { clusters, clustersLoading, clustersError, mutateClusters } =
     useGetClustersByAccount(accountId, {
       signalType: clusterTypes.length ? clusterTypes : CLUSTER_TYPES,
       decisionCycleId: isDC ? decisionCycleId : undefined,
+      department,
+      contact,
+      scope,
+      statuses,
     });
+
+  // Tech / Objections are non-clustered sections fed by the aggregated endpoint;
+  // pass the same filters so the whole grouped surface stays coherent. A
+  // department/scope filter naturally excludes tech/blockers (no such field),
+  // matching the flat view. Falls back to the grouped default statuses.
+  const sectionStatuses = statuses && statuses.length ? statuses : GROUPED_STATUSES;
 
   // Tech: scoped to the account (Account) or the decision cycle (DC).
   const tech = useAggregatedSignals({
     accountId: isDC ? undefined : accountId,
     decisionCycleId: isDC ? decisionCycleId : undefined,
     signalTypes: ["tech-stack"],
-    statuses: GROUPED_STATUSES,
+    statuses: sectionStatuses,
+    department,
+    contact,
+    scope,
     pageSize: SECTION_PAGE_SIZE,
   });
 
@@ -270,7 +290,10 @@ export default function QualificationGroupedView({
   const blockers = useAggregatedSignals({
     decisionCycleId: isDC ? decisionCycleId : undefined,
     signalTypes: ["blockers"],
-    statuses: GROUPED_STATUSES,
+    statuses: sectionStatuses,
+    department,
+    contact,
+    scope,
     pageSize: SECTION_PAGE_SIZE,
   });
 
@@ -496,4 +519,12 @@ QualificationGroupedView.propTypes = {
   decisionCycleId: PropTypes.string,
   /** Type filter (frontend slugs) from the shared drawer; [] = show all. */
   signalTypes: PropTypes.arrayOf(PropTypes.string),
+  /** SUBJECT filter — StandardDepartment id (target_department). */
+  department: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  /** SOURCE filter — Contact id (source_activity.contacts). */
+  contact: PropTypes.string,
+  /** scope_level filter (BUSINESS | DEPARTMENT). */
+  scope: PropTypes.string,
+  /** Status filter values; empty/undefined = grouped default (pending+validated). */
+  statuses: PropTypes.arrayOf(PropTypes.string),
 };

@@ -70,11 +70,16 @@ export default function SignalsFilterPanel({
   onClear,
   hasPendingChanges,
   mode = "flat",
+  groupedFilters = false,
 }) {
-  // The Grouped (cluster) view only honors the Type filter on the backend;
-  // status / department / contact / scope have no cluster param, so they are
-  // hidden there rather than shown as dead controls.
+  // Status / department / contact / scope are shown on the Flat view, and on
+  // the Grouped view WHEN that grouped surface honors them (groupedFilters) —
+  // true for the cluster-backed Qualification view (Account / DC), whose
+  // endpoint now filters members by department/contact/scope/status. It stays
+  // false for grouped surfaces that cannot honor them, so no dead controls are
+  // ever rendered (the C6 no-dead-filter rule). Type always renders on both.
   const isGrouped = mode === "grouped";
+  const showSecondaryFilters = !isGrouped || groupedFilters;
 
   const typeOptions = SIGNAL_TYPE_OPTIONS.filter((o) =>
     availableTypes.includes(o.value),
@@ -139,10 +144,10 @@ export default function SignalsFilterPanel({
           ))}
         </FormGroup>
 
-        {/* Status / Department / Contact / Scope — Flat view only. The Grouped
-            (cluster) view has no backend param for these, so they are hidden
-            there (no dead filters). Type above applies to both views. */}
-        {!isGrouped && (
+        {/* Status / Department / Contact / Scope — shown on Flat, and on
+            Grouped when that surface honors them (groupedFilters). Type above
+            applies to both views. */}
+        {showSecondaryFilters && (
           <>
             {/* Status */}
             <Typography variant="subtitle2" sx={{ mb: 1 }}>
@@ -263,4 +268,8 @@ SignalsFilterPanel.propTypes = {
   hasPendingChanges: PropTypes.bool,
   /** "flat" (default) shows all controls; "grouped" shows only Type. */
   mode: PropTypes.oneOf(["flat", "grouped"]),
+  /** When true, the secondary filters (status/department/contact/scope) also
+      render in Grouped mode — set by cluster-backed grouped surfaces that
+      honor them (Account / DC). */
+  groupedFilters: PropTypes.bool,
 };

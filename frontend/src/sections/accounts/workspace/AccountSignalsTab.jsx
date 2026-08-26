@@ -307,6 +307,10 @@ export default function AccountSignalsTab({ accountId, account }) {
           surface="account"
           accountId={accountId}
           signalTypes={activeTypes}
+          department={department}
+          contact={contactId}
+          scope={scope}
+          statuses={statuses}
         />
       ) : error && !flatSignals.length ? (
         <Box
@@ -334,7 +338,9 @@ export default function AccountSignalsTab({ accountId, account }) {
         />
       )}
 
-      {/* Filter drawer — gated by mode (Grouped shows only Type). */}
+      {/* Filter drawer. On the cluster-backed grouped view the full filter set
+          is honored by the cluster endpoint (groupedFilters), so it renders on
+          both Flat and Grouped here. */}
       <SignalsFilterPanel
         open={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
@@ -347,6 +353,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         onClear={handleClearFilters}
         hasPendingChanges={hasPendingChanges}
         mode={view}
+        groupedFilters
       />
 
       {/* ==================== MODALS ==================== */}

@@ -109,7 +109,16 @@ function normaliseSignalType(input) {
  * @returns {string}
  */
 function buildListUrl(baseUrl, params = {}) {
-  const { accountId, signalType, decisionCycleId, includeArchived } = params;
+  const {
+    accountId,
+    signalType,
+    decisionCycleId,
+    includeArchived,
+    department,
+    contact,
+    scope,
+    statuses,
+  } = params;
 
   const query = new URLSearchParams();
 
@@ -131,6 +140,27 @@ function buildListUrl(baseUrl, params = {}) {
   if (includeArchived) {
     query.append("include_archived", "true");
   }
+
+  // Member filters (mirror the aggregated endpoint's semantics on the backend
+  // cluster endpoint). `department` is a repeatable param — accept a single id
+  // (the flat drawer's single-select) or an array; `status` is repeatable too.
+  const departmentList = Array.isArray(department)
+    ? department
+    : department
+      ? [department]
+      : [];
+  departmentList.forEach((d) => {
+    if (d != null && d !== "") query.append("department", d);
+  });
+  if (contact) {
+    query.append("contact", contact);
+  }
+  if (scope) {
+    query.append("scope", scope);
+  }
+  (statuses || []).forEach((s) => {
+    if (s) query.append("status", s);
+  });
 
   const qs = query.toString();
   return qs ? `${baseUrl}?${qs}` : baseUrl;
@@ -214,9 +244,20 @@ export function useGetClustersByAccount(accountId, options = {}) {
     signalType = "pain",
     decisionCycleId = null,
     includeArchived = false,
+    department = null,
+    contact = null,
+    scope = null,
+    statuses = null,
   } = options;
 
   const enabled = Boolean(accountId && isValidUUID(accountId));
+
+  // Stable CSV keys for the array/scalar member filters so a fresh array
+  // instance per render does not thrash the SWR cache key.
+  const departmentKey = Array.isArray(department)
+    ? department.join(",")
+    : department || "";
+  const statusesKey = (statuses || []).join(",");
 
   // Normalise signalType to a stable CSV string.
   //
@@ -242,14 +283,25 @@ export function useGetClustersByAccount(accountId, options = {}) {
             signalType: normalisedSignalType,
             decisionCycleId,
             includeArchived,
+            department,
+            contact,
+            scope,
+            statuses,
           })
         : null,
+    // department/statuses use their stable CSV keys as deps (the array
+    // instances themselves are referentially unstable across renders).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       enabled,
       accountId,
       normalisedSignalType,
       decisionCycleId,
       includeArchived,
+      departmentKey,
+      contact,
+      scope,
+      statusesKey,
     ],
   );
 

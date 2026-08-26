@@ -264,6 +264,10 @@ export default function SignalsTab({ cycleId, accountId }) {
           accountId={accountId}
           decisionCycleId={cycleId}
           signalTypes={activeTypes}
+          department={department}
+          contact={contactId}
+          scope={scope}
+          statuses={statuses}
         />
       ) : (
         <SignalsFlatView
@@ -296,6 +300,7 @@ export default function SignalsTab({ cycleId, accountId }) {
         onClear={handleClearFilters}
         hasPendingChanges={hasPendingChanges}
         mode={view}
+        groupedFilters
       />
 
       {/* Quick Drawer */}
