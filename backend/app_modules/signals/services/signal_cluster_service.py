@@ -124,6 +124,7 @@ from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
 from ..constants import (
+    DEFAULT_LIST_STATUSES,
     FreshnessStatus,
     FRESHNESS_FRESH_DAYS,
     FRESHNESS_DORMANT_DAYS,
@@ -636,11 +637,13 @@ class SignalClusterService:
     def _member_statuses(member_filters):
         """
         Resolve the status set for a member queryset: the caller-supplied
-        `statuses` (from the status filter) or the default VALIDATED+PENDING.
-        Mirrors the flat default (pending+validated; rejected only when asked).
+        `statuses` (from the status filter) or the shared default
+        (VALIDATED+PENDING). The default is DEFAULT_LIST_STATUSES — the SAME
+        constant the aggregated (flat) endpoint applies when `status` is
+        omitted, so the grouped and flat paths cannot drift on it.
         """
         statuses = (member_filters or {}).get('statuses')
-        return statuses or (SignalStatus.VALIDATED, SignalStatus.PENDING)
+        return statuses or DEFAULT_LIST_STATUSES
 
     @classmethod
     def _apply_member_filters(cls, qs, member_filters):

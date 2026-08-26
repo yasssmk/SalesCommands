@@ -28,7 +28,8 @@ Query params:
   - activity_id       (UUID) — signals whose source_activity is that activity
   Exactly ONE scope is required; none or several → 400 business error.
   - status (optional, repeatable) — restrict to these statuses
-    (e.g. ?status=PENDING&status=VALIDATED). Empty = all.
+    (e.g. ?status=PENDING&status=VALIDATED). Omitted = the actionable default
+    (PENDING + VALIDATED); REJECTED is returned only when explicitly requested.
   - signal_type (optional, repeatable) — restrict to these frontend type
     slugs (e.g. ?signal_type=pain&signal_type=impact). Empty = all types.
   - ordering (optional)     — one of the frontend sort keys: date-desc
@@ -56,7 +57,7 @@ from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
 from core.exceptions import StandardizedValidationError
 from permissions.mixins import ScopedPermission
-from app_modules.signals.constants import ScopeLevel
+from app_modules.signals.constants import DEFAULT_LIST_STATUSES, ScopeLevel
 
 from app_modules.signals.serializers import (
     PainSignalListSerializer,
@@ -171,8 +172,14 @@ class AggregatedSignalListView(BaseAPIView):
         account_id        = request.query_params.get('account_id')
         decision_cycle_id = request.query_params.get('decision_cycle_id')
         activity_id       = request.query_params.get('activity_id')
-        # Multi-valued (repeatable): restrict to these statuses (empty = all).
-        status_filters    = request.query_params.getlist('status')
+        # Multi-valued (repeatable): restrict to these statuses. When OMITTED,
+        # default to the actionable set (PENDING + VALIDATED) — REJECTED is
+        # excluded unless explicitly requested. Same default the cluster
+        # (grouped) path uses via SignalClusterService._member_statuses, sourced
+        # from the shared DEFAULT_LIST_STATUSES so the two cannot drift.
+        status_filters    = (
+            request.query_params.getlist('status') or list(DEFAULT_LIST_STATUSES)
+        )
         # Multi-valued: restrict to these frontend type slugs (empty = all).
         requested_types   = request.query_params.getlist('signal_type')
         ordering          = request.query_params.get('ordering') or 'date-desc'

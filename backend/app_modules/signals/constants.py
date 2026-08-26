@@ -93,6 +93,14 @@ class SignalStatus(models.TextChoices):
     REJECTED  = 'REJECTED',  _('Rejected')
 
 
+# Default status set applied by every user-facing signal LIST surface when the
+# caller does not request an explicit status: the actionable signals only —
+# PENDING (awaiting validation) + VALIDATED (approved). REJECTED is excluded
+# unless explicitly asked for. Single source of truth so the aggregated (flat)
+# endpoint and the cluster (grouped) service cannot drift on the default.
+DEFAULT_LIST_STATUSES = (SignalStatus.VALIDATED, SignalStatus.PENDING)
+
+
 # =============================================================================
 # SIGNAL SOURCE
 # =============================================================================

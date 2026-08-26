@@ -305,6 +305,65 @@ class TestAggregatedSignalsEndpoint:
         assert body['count'] == 2
         assert {row['id'] for row in body['results']} == {str(p.id), str(v.id)}
 
+    def test_status_omitted_defaults_to_pending_and_validated(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        # No `status` param → server default is PENDING + VALIDATED, exactly
+        # like the cluster endpoint. A REJECTED signal must be ABSENT unless
+        # explicitly requested (aligns the flat path with the grouped path).
+        from app_modules.signals.constants import SignalStatus
+        p = _mk_pain(account, activity, user_a)      # → PENDING
+        v = _mk_impact(account, activity, user_a)    # → VALIDATED
+        r = _mk_blocker(account, activity, user_a)   # → REJECTED
+        PainSignal.objects.filter(id=p.id).update(status=SignalStatus.PENDING)
+        ImpactSignal.objects.filter(id=v.id).update(status=SignalStatus.VALIDATED)
+        BlockerSignal.objects.filter(id=r.id).update(status=SignalStatus.REJECTED)
+
+        resp = authed_api_a.get(_url(), {'account_id': str(account.id)})
+        assert resp.status_code == status.HTTP_200_OK
+        body = resp.json()
+        ids = {row['id'] for row in body['results']}
+        assert str(p.id) in ids       # PENDING present
+        assert str(v.id) in ids       # VALIDATED present
+        assert str(r.id) not in ids   # REJECTED excluded by default
+        assert body['count'] == 2
+
+    def test_status_rejected_explicit_is_honored(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        # Explicit status=REJECTED overrides the default and returns the
+        # rejected row (the default only applies when `status` is omitted).
+        from app_modules.signals.constants import SignalStatus
+        p = _mk_pain(account, activity, user_a)
+        r = _mk_blocker(account, activity, user_a)
+        PainSignal.objects.filter(id=p.id).update(status=SignalStatus.PENDING)
+        BlockerSignal.objects.filter(id=r.id).update(status=SignalStatus.REJECTED)
+
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'status': 'REJECTED'},
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        body = resp.json()
+        assert body['count'] == 1
+        assert body['results'][0]['id'] == str(r.id)
+
+    def test_status_pending_explicit_returns_only_pending(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        from app_modules.signals.constants import SignalStatus
+        p = _mk_pain(account, activity, user_a)
+        v = _mk_impact(account, activity, user_a)
+        PainSignal.objects.filter(id=p.id).update(status=SignalStatus.PENDING)
+        ImpactSignal.objects.filter(id=v.id).update(status=SignalStatus.VALIDATED)
+
+        resp = authed_api_a.get(
+            _url(), {'account_id': str(account.id), 'status': 'PENDING'},
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        body = resp.json()
+        assert body['count'] == 1
+        assert body['results'][0]['id'] == str(p.id)
+
     def test_ordering_status(self, authed_api_a, account, activity, user_a):
         # A VALIDATED pain (created newest) and a PENDING blocker (older).
         from app_modules.signals.constants import SignalStatus
