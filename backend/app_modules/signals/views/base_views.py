@@ -181,6 +181,14 @@ class BaseSignalViewSet(
         qs = super().get_queryset()
         qs = self.apply_owner_scope_filter(qs)
 
+        # Data-quality gate: never surface a signal whose `what` (domain) fell
+        # outside the controlled SignalWhat vocabulary. Such rows are persisted
+        # flagged (is_domain_valid=False) for traceability/reprocessing but must
+        # not appear in any list, detail, count or lifecycle action. Applied to
+        # every action so an excluded row is unreachable through the API — the
+        # aggregated list reuses this queryset, so it inherits the exclusion.
+        qs = qs.filter(is_domain_valid=True)
+
         if self.action == 'list':
             # Universal FKs only — concrete ViewSets add type-specific
             # select_related on top via super().get_queryset() chaining.

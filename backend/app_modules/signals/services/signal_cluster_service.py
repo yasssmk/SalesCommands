@@ -607,6 +607,9 @@ class SignalClusterService:
             .filter(
                 account_id=account_id,
                 status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard):
+                # kept in DB for reprocessing, never shown in clusters.
+                is_domain_valid=True,
             )
             .select_related(
                 'source_activity',
@@ -645,6 +648,9 @@ class SignalClusterService:
             .filter(
                 account_id=account_id,
                 status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard):
+                # kept in DB for reprocessing, never shown in clusters.
+                is_domain_valid=True,
             )
             .select_related(
                 # source_activity is the join path for
@@ -698,6 +704,9 @@ class SignalClusterService:
             .filter(
                 account_id=account_id,
                 status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard):
+                # kept in DB for reprocessing, never shown in clusters.
+                is_domain_valid=True,
             )
             .select_related(
                 'source_activity',

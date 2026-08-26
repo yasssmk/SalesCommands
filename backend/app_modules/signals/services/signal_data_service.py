@@ -185,6 +185,9 @@ class SignalDataService:
             qs = (
                 model_class.objects
                 .filter(account_id=account_id)
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard): a
+                # flagged signal must not feed downstream (incl. LLM context).
+                .filter(is_domain_valid=True)
                 .select_related(*related)
             )
             if status:
@@ -256,6 +259,8 @@ class SignalDataService:
             qs = (
                 model_class.objects
                 .filter(source_activity__contacts__id=contact_id)
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard).
+                .filter(is_domain_valid=True)
                 .select_related(*related)
                 .distinct()
             )
