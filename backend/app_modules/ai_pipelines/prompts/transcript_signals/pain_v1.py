@@ -148,6 +148,21 @@ Return a single JSON object with this exact shape:
   ]
 }}
 
+DOMAIN vs DIMENSION (`what` is NEVER a dimension word)
+- `what` is the DOMAIN: the business AREA the pain concerns. It MUST be EXACTLY
+  one code from the `what` list in the CANONICAL TAXONOMY
+  (OPS / TECH / DATA / PEOPLE / GROWTH). Never invent a value, and never put a
+  dimension word (cost / time / quality / scale / risk) in `what`.
+- `dimension` is the MEASURE AXIS: Cost, Time, Quality, Scale, Risk. A word like
+  "cost / coût", "time / temps" or "quality" is ALWAYS a dimension, NEVER a `what`.
+- When a pain is about operations and mentions a cost, `what`="OPS" and the cost
+  goes into `dimension`="COST" -- never `what`="COST".
+
+WHAT x DIMENSION EXAMPLES (domain code first, measure axis second)
+- "operational costs keep climbing"  -> what="OPS"    (Operations / Process), dimension="COST"    (Cost / Budget)
+- "the sales cycle drags on"          -> what="GROWTH" (Growth / Revenue),     dimension="TIME"    (Time / Speed)
+- "the reporting data is inaccurate"  -> what="DATA"   (Data / Visibility),    dimension="QUALITY" (Quality / Accuracy)
+
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of a pain.
   Apply the EVIDENCE RULES and EPISTEMIC FILTER from the system prompt:

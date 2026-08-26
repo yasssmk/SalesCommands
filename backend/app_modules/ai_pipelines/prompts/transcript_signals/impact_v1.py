@@ -241,6 +241,23 @@ Pick the SINGLE most-fitting category. If a quote could plausibly fit
 multiple categories, prefer the most specific one (HUMAN over METRIC,
 FINANCIAL over METRIC, etc.).
 
+DOMAIN vs DIMENSION (`what` is NEVER a dimension word)
+- `what` is the DOMAIN: the business AREA the impact concerns. It MUST be EXACTLY
+  one code from the `what` list in the CANONICAL TAXONOMY
+  (OPS / TECH / DATA / PEOPLE / GROWTH). Never invent a value, and never put a
+  dimension word (cost / time / quality / scale / risk) in `what`.
+- `dimension` is the MEASURE AXIS: Cost, Time, Quality, Scale, Risk. A word like
+  "cost / coût", "time / temps" or "quality" is ALWAYS a dimension, NEVER a `what`.
+  (`dimension` is the canonical axis; `impact_type` above is a separate,
+  finer-grained flavour of the consequence -- do not confuse the two.)
+- When an impact is about operations and quantifies a cost, `what`="OPS" and the
+  cost goes into `dimension`="COST" -- never `what`="COST".
+
+WHAT x DIMENSION EXAMPLES (domain code first, measure axis second)
+- "operational overruns cost 40k/quarter" -> what="OPS"    (Operations / Process), dimension="COST"    (Cost / Budget)
+- "deals slip a month on average"          -> what="GROWTH" (Growth / Revenue),     dimension="TIME"    (Time / Speed)
+- "the reports are wrong 1 time in 5"      -> what="DATA"   (Data / Visibility),    dimension="QUALITY" (Quality / Accuracy)
+
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of a
   consequence ALREADY OBSERVED by the prospect. Apply the EVIDENCE

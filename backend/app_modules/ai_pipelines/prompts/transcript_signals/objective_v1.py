@@ -170,6 +170,21 @@ Return a single JSON object with this exact shape:
   ]
 }}
 
+DOMAIN vs DIMENSION (`what` is NEVER a dimension word)
+- `what` is the DOMAIN: the business AREA the objective concerns. It MUST be
+  EXACTLY one code from the `what` list in the CANONICAL TAXONOMY
+  (OPS / TECH / DATA / PEOPLE / GROWTH). Never invent a value, and never put a
+  dimension word (cost / time / quality / scale / risk) in `what`.
+- `dimension` is the MEASURE AXIS: Cost, Time, Quality, Scale, Risk. A word like
+  "cost / coût", "time / temps" or "quality" is ALWAYS a dimension, NEVER a `what`.
+- When an objective is about operations and mentions a cost, `what`="OPS" and the
+  cost goes into `dimension`="COST" -- never `what`="COST".
+
+WHAT x DIMENSION EXAMPLES (domain code first, measure axis second)
+- "reduce operational costs by 15%"  -> what="OPS"    (Operations / Process), dimension="COST"    (Cost / Budget)
+- "shorten the sales cycle"          -> what="GROWTH" (Growth / Revenue),     dimension="TIME"    (Time / Speed)
+- "improve data accuracy"            -> what="DATA"   (Data / Visibility),    dimension="QUALITY" (Quality / Accuracy)
+
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence that the
   prospect WANTS to achieve a specific outcome. Apply the EVIDENCE RULES

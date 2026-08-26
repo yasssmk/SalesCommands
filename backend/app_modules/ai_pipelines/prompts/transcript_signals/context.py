@@ -306,14 +306,7 @@ def _build_taxonomy_block(target_stage):
         # impact axes. `what` / `dimension` apply to both; `impact_type`
         # applies to IMPACT signals only; the scope block applies to both
         # (each signal resolves its own scope independently).
-        lines.append(
-            '- what (area of the business affected): '
-            + _enum_json_array(SignalWhat)
-        )
-        lines.append(
-            '- dimension (friction or outcome experienced): '
-            + _enum_json_array(SignalDimension)
-        )
+        lines.extend(_what_dimension_lines())
         lines.append(
             '- impact_type (nature of the observed consequence -- '
             'IMPACT signals only): '
@@ -322,36 +315,15 @@ def _build_taxonomy_block(target_stage):
         lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'pain':
-        lines.append(
-            '- what (area of the business affected): '
-            + _enum_json_array(SignalWhat)
-        )
-        lines.append(
-            '- dimension (friction or outcome experienced): '
-            + _enum_json_array(SignalDimension)
-        )
+        lines.extend(_what_dimension_lines())
         lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'objective':
-        lines.append(
-            '- what (area of the business targeted): '
-            + _enum_json_array(SignalWhat)
-        )
-        lines.append(
-            '- dimension (outcome sought): '
-            + _enum_json_array(SignalDimension)
-        )
+        lines.extend(_what_dimension_lines())
         lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'impact':
-        lines.append(
-            '- what (area of the business affected): '
-            + _enum_json_array(SignalWhat)
-        )
-        lines.append(
-            '- dimension (friction or outcome experienced): '
-            + _enum_json_array(SignalDimension)
-        )
+        lines.extend(_what_dimension_lines())
         lines.append(
             '- impact_type (nature of the observed consequence): '
             + _enum_json_array(ImpactType)
@@ -378,6 +350,45 @@ def _enum_json_array(enum_cls):
     must emit back to us -- no translation step needed on read.
     """
     return '[' + ', '.join(f'"{v}"' for v in enum_cls.values) + ']'
+
+
+def _enum_coded_list(enum_cls):
+    """
+    Render a Django TextChoices enum as a code+label list:
+
+        "OPS" (Operations / Process), "TECH" (Technology / System), ...
+
+    The model must EMIT the code (the DB value) -- that is what the
+    persistence layer stores. The parenthetical label is a gloss so the
+    model can map a business AREA it reads in the transcript
+    ("operational", "reporting", "hiring") to the right code, instead of
+    grabbing a surface word. Codes are the contract; labels are the hint.
+    """
+    return ', '.join(f'"{v}" ({label})' for v, label in enum_cls.choices)
+
+
+def _what_dimension_lines():
+    """
+    Render the shared `what` (DOMAIN) / `dimension` (MEASURE AXIS) block
+    for the pain / objective / impact / pain_impact stages.
+
+    The distinction is stated hard because the LLM has been observed to
+    pull a DIMENSION word ("cost") into the DOMAIN slot -- e.g. "reduce
+    operational costs by 15%" stored as what=COST instead of what=OPS.
+    `what` is the business AREA; `dimension` is the MEASURE. A dimension
+    word is NEVER a valid `what`.
+    """
+    return [
+        '- what = DOMAIN (the business AREA concerned). Pick EXACTLY ONE '
+        'code from: ' + _enum_coded_list(SignalWhat),
+        '- dimension = MEASURE AXIS (the kind of friction / outcome). Pick '
+        'EXACTLY ONE code from: ' + _enum_coded_list(SignalDimension),
+        '- DOMAIN vs DIMENSION: `what` is the AREA, `dimension` is the '
+        'MEASURE. A word like "cost / coût", "time / temps" or "quality" is '
+        'ALWAYS a dimension, NEVER a `what`. If an observation is about '
+        'operations, `what`="OPS" and the cost belongs in dimension="COST" -- '
+        'never the reverse. Never invent a `what` value outside the list above.',
+    ]
 
 
 def _scope_taxonomy_lines():

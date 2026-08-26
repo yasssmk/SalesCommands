@@ -173,6 +173,21 @@ Return a single JSON object with this exact shape:
 If NO pain evidence AND NO impact evidence is present anywhere in the transcript,
 return exactly: {{"pains": [], "impacts": []}}
 
+DOMAIN vs DIMENSION (applies to every pain AND every impact -- `what` is NEVER a dimension word)
+- `what` is the DOMAIN: the business AREA concerned. It MUST be EXACTLY one code
+  from the `what` list in the CANONICAL TAXONOMY (OPS / TECH / DATA / PEOPLE /
+  GROWTH). Never invent a value, and never put a dimension word (cost / time /
+  quality / scale / risk) in `what`.
+- `dimension` is the MEASURE AXIS: Cost, Time, Quality, Scale, Risk. A word like
+  "cost / coût", "time / temps" or "quality" is ALWAYS a dimension, NEVER a `what`.
+- When an observation is about operations and mentions a cost, `what`="OPS" and the
+  cost goes into `dimension`="COST" -- never `what`="COST".
+
+WHAT x DIMENSION EXAMPLES (domain code first, measure axis second)
+- "operational costs keep climbing"        -> what="OPS"    (Operations / Process), dimension="COST"    (Cost / Budget)
+- "the sales cycle drags on"                -> what="GROWTH" (Growth / Revenue),     dimension="TIME"    (Time / Speed)
+- "the reporting data is inaccurate"        -> what="DATA"   (Data / Visibility),    dimension="QUALITY" (Quality / Accuracy)
+
 EMISSION RULES
 - Apply the EVIDENCE RULES and EPISTEMIC FILTER from the system prompt to BOTH
   arrays: drop weak inferences and NEVER fabricate.
