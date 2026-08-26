@@ -31,6 +31,8 @@ import {
 import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
 import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
+import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
+import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 
@@ -63,6 +65,8 @@ export default function SignalsTab({ cycleId, accountId }) {
 
   // Filter state (standard filter drawer)
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  // Flat / Grouped toggle — Grouped (synthesis) default. React state only.
+  const [view, setView] = useState("grouped");
   const {
     pending,
     updatePending,
@@ -213,8 +217,9 @@ export default function SignalsTab({ cycleId, accountId }) {
     if (error && filteredSignals.length) displayErrorSnackbar(error);
   }, [error, filteredSignals.length]);
 
-  // Technical failure with nothing to show → standard error surface.
-  if (error && !filteredSignals.length) {
+  // Technical failure with nothing to show → standard error surface. Only in
+  // Flat view — a flat-list fetch error must not blank the Grouped synthesis.
+  if (view === "flat" && error && !filteredSignals.length) {
     return (
       <Box
         display="flex"
@@ -229,42 +234,56 @@ export default function SignalsTab({ cycleId, accountId }) {
 
   return (
     <Box>
-      {/* Toolbar: sort + filter icon (drawer) */}
+      {/* Toolbar: view toggle · sort (flat only) · filter icon */}
       <Stack
         direction="row"
-        justifyContent="flex-end"
+        justifyContent="space-between"
         alignItems="center"
         gap={1}
         sx={{ mb: 2.5 }}
       >
-        <SignalsSortSelect value={sortKey} onChange={onSortChange} />
-        <Tooltip title="Filters">
-          <IconButton onClick={handleOpenFilters} aria-label="Open filters">
-            <Badge badgeContent={activeCount} color="primary">
-              <FilterOutlined />
-            </Badge>
-          </IconButton>
-        </Tooltip>
+        <SignalsViewToggle view={view} onChange={setView} />
+        <Stack direction="row" alignItems="center" gap={1}>
+          {view === "flat" && (
+            <SignalsSortSelect value={sortKey} onChange={onSortChange} />
+          )}
+          <Tooltip title="Filters">
+            <IconButton onClick={handleOpenFilters} aria-label="Open filters">
+              <Badge badgeContent={activeCount} color="primary">
+                <FilterOutlined />
+              </Badge>
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Stack>
 
-      {/* Signal list — flat view only (grouped view = Strategic/Themes tab) */}
-      <SignalsFlatView
-        signals={filteredSignals}
-        serverPaginated
-        page={page}
-        pageCount={pageCount}
-        onPageChange={setPage}
-        loading={loading}
-        onSelect={handleSelect}
-        onValidate={handleValidate}
-        onReject={handleReject}
-        onEdit={handleEdit}
-        onReopen={handleReopen}
-        isLocked={false}
-        emptyMessage="No signals match these filters"
-      />
+      {/* Grouped (default) = the Qualification synthesis; Flat = the list. */}
+      {view === "grouped" ? (
+        <QualificationGroupedView
+          surface="dc"
+          accountId={accountId}
+          decisionCycleId={cycleId}
+          signalTypes={activeTypes}
+        />
+      ) : (
+        <SignalsFlatView
+          signals={filteredSignals}
+          serverPaginated
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          loading={loading}
+          onSelect={handleSelect}
+          onValidate={handleValidate}
+          onReject={handleReject}
+          onEdit={handleEdit}
+          onReopen={handleReopen}
+          isLocked={false}
+          emptyMessage="No signals match these filters"
+        />
+      )}
 
-      {/* Filter drawer */}
+      {/* Filter drawer — gated by mode (Grouped shows only Type). */}
       <SignalsFilterPanel
         open={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
@@ -276,6 +295,7 @@ export default function SignalsTab({ cycleId, accountId }) {
         onApply={handleApplyFilters}
         onClear={handleClearFilters}
         hasPendingChanges={hasPendingChanges}
+        mode={view}
       />
 
       {/* Quick Drawer */}

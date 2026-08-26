@@ -17,8 +17,7 @@ export const WORKSPACE_TABS = [
   { id: 'decision-cycle', label: 'Decision Cycle' },
   { id: 'activities', label: 'Activities' },
   { id: 'contacts', label: 'Contacts' },
-  { id: 'signals', label: 'Signals' },
-  { id: 'qualification', label: 'Qualification' }
+  { id: 'signals', label: 'Signals' }
 ];
 
 export const DEFAULT_TAB = 'overview';
@@ -43,9 +42,9 @@ function AccountTabsSkeleton() {
  * - Buying Process: Steps and stakeholders
  * - Activities: Account activities history
  * - Contacts: Account contacts
- * - Signals: Alerts and signals (flat, exhaustive list)
- * - Qualification: Grouped synthesis (clusters + tech stack)
- * 
+ * - Signals: one tab with a Flat / Grouped toggle (flat list or the
+ *   grouped Qualification synthesis)
+ *
  * @param {Object} props
  * @param {string} props.activeTab - Currently active tab ID
  * @param {Function} props.onTabChange - Callback when tab changes (receives new tab ID)

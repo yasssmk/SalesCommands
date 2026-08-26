@@ -9,7 +9,6 @@ export const DC_WORKSPACE_TABS = [
   { id: "products", label: "Products & Financial" },
   { id: "strategic", label: "Strategic" },
   { id: "signals", label: "Signals" },
-  { id: "qualification", label: "Qualification" },
 ];
 
 export const DEFAULT_TAB = "timeline";

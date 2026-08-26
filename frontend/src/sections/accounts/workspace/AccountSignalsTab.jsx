@@ -43,6 +43,8 @@ import FilterOutlined from "@ant-design/icons/FilterOutlined";
 // project imports
 import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
 import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
+import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
+import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
@@ -80,6 +82,9 @@ export default function AccountSignalsTab({ accountId, account }) {
 
   const [page, setPage] = useState(1);
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  // Flat / Grouped view toggle — Grouped (the synthesis) is the default. React
+  // state only, no browser storage.
+  const [view, setView] = useState("grouped");
   const {
     pending,
     updatePending,
@@ -275,10 +280,11 @@ export default function AccountSignalsTab({ accountId, account }) {
       */}
       <Stack
         direction="row"
-        justifyContent="flex-end"
+        justifyContent="space-between"
         alignItems="center"
         sx={{ mb: 2 }}
       >
+        <SignalsViewToggle view={view} onChange={setView} />
         <Tooltip title="Filters">
           <IconButton onClick={handleOpenFilters} aria-label="Open filters">
             <Badge badgeContent={activeCount} color="primary">
@@ -292,12 +298,17 @@ export default function AccountSignalsTab({ accountId, account }) {
 
       {/* ==================== ACTIVE SECTION ==================== */}
       {/*
-        The active type's signals render as compact SignalLine rows via the
-        shared SignalsFlatView (same component as Activity / DC flat), fed by
-        the aggregated endpoint with true server pagination (20/page). Clicking
-        a line opens the signal drawer. There is no delete on this surface.
+        Grouped (default) = the Qualification synthesis (clusters). Flat = the
+        SignalLine list with server pagination. Both honor the Type filter;
+        Flat additionally honors status/department/contact/scope.
       */}
-      {error && !flatSignals.length ? (
+      {view === "grouped" ? (
+        <QualificationGroupedView
+          surface="account"
+          accountId={accountId}
+          signalTypes={activeTypes}
+        />
+      ) : error && !flatSignals.length ? (
         <Box
           display="flex"
           justifyContent="center"
@@ -323,7 +334,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         />
       )}
 
-      {/* Filter drawer */}
+      {/* Filter drawer — gated by mode (Grouped shows only Type). */}
       <SignalsFilterPanel
         open={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
@@ -335,6 +346,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         onApply={handleApplyFilters}
         onClear={handleClearFilters}
         hasPendingChanges={hasPendingChanges}
+        mode={view}
       />
 
       {/* ==================== MODALS ==================== */}

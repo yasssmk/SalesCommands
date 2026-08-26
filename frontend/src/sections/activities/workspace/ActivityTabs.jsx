@@ -11,7 +11,6 @@ export const ACTIVITY_TABS = [
   { id: "preparation", label: "Preparation", eligibleTypes: PREP_ELIGIBLE_TYPES },
   { id: "notes", label: "Notes" },
   { id: "signals", label: "Signals" },
-  { id: "qualification", label: "Qualification" },
   { id: "next-steps", label: "Next Steps" },
 ];
 

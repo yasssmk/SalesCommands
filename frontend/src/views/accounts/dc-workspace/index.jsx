@@ -22,7 +22,6 @@ import {
 } from "sections/accounts/dc-workspace/DCWorkspaceTabs";
 import TimelineTab from "sections/accounts/dc-workspace/TimelineTab";
 import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
-import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import ProductsTab from "sections/accounts/dc-workspace/ProductsTab";
 import PeopleTab from "sections/accounts/dc-workspace/PeopleTab";
 import StrategicTab from "sections/accounts/dc-workspace/StrategicTab";
@@ -74,14 +73,6 @@ export default function DCWorkspacePage() {
         );
       case "signals":
         return <SignalsTab cycleId={cycleId} accountId={accountId} />;
-      case "qualification":
-        return (
-          <QualificationGroupedView
-            surface="dc"
-            accountId={accountId}
-            decisionCycleId={cycleId}
-          />
-        );
       case "products":
         return <ProductsTab cycleId={cycleId} cycle={cycle} />;
       case "people":

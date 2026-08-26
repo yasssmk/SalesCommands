@@ -38,6 +38,8 @@ import {
 
 // Section imports
 import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
+import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
+import ActivityQualificationTab from "sections/activities/workspace/ActivityQualificationTab";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
@@ -68,6 +70,8 @@ export default function ActivitySignalsTab({
 
   // Filter / sort / pagination state
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  // Flat / Grouped toggle — Grouped (synthesis) default. React state only.
+  const [view, setView] = useState("grouped");
   const {
     pending,
     updatePending,
@@ -233,25 +237,38 @@ export default function ActivitySignalsTab({
 
   return (
     <Box>
-      {/* Toolbar: sort + filter icon (drawer) */}
+      {/* Toolbar: view toggle · sort (flat only) · filter icon */}
       <Stack
         direction="row"
-        justifyContent="flex-end"
+        justifyContent="space-between"
         alignItems="center"
         sx={{ mb: 2.5, flexWrap: "wrap", gap: 1 }}
       >
-        <SignalsSortSelect value={sortKey} onChange={onSortChange} />
-        <Tooltip title="Filters">
-          <IconButton onClick={handleOpenFilters} aria-label="Open filters">
-            <Badge badgeContent={activeCount} color="primary">
-              <FilterOutlined />
-            </Badge>
-          </IconButton>
-        </Tooltip>
+        <SignalsViewToggle view={view} onChange={setView} />
+        <Stack direction="row" alignItems="center" gap={1}>
+          {view === "flat" && (
+            <SignalsSortSelect value={sortKey} onChange={onSortChange} />
+          )}
+          <Tooltip title="Filters">
+            <IconButton onClick={handleOpenFilters} aria-label="Open filters">
+              <Badge badgeContent={activeCount} color="primary">
+                <FilterOutlined />
+              </Badge>
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Stack>
 
-      {/* Technical failure with nothing to show → standard error surface. */}
-      {error && !flatSignals.length ? (
+      {/* Grouped (default) = the Activity Qualification synthesis (flat lists
+          by type); Flat = the SignalLine list. Both honor the Type filter. */}
+      {view === "grouped" ? (
+        <ActivityQualificationTab
+          activity={activity}
+          isLocked={isLocked}
+          mutateCounts={mutateCounts}
+          signalTypes={activeTypes}
+        />
+      ) : error && !flatSignals.length ? (
         <Box
           display="flex"
           justifyContent="center"
@@ -278,7 +295,7 @@ export default function ActivitySignalsTab({
         />
       )}
 
-      {/* Filter drawer */}
+      {/* Filter drawer — gated by mode (Grouped shows only Type). */}
       <SignalsFilterPanel
         open={filterPanelOpen}
         onClose={() => setFilterPanelOpen(false)}
@@ -290,6 +307,7 @@ export default function ActivitySignalsTab({
         onApply={handleApplyFilters}
         onClear={handleClearFilters}
         hasPendingChanges={hasPendingChanges}
+        mode={view}
       />
 
       {/* Quick Drawer */}
