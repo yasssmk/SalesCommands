@@ -3,30 +3,19 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  EditOutlined,
-  ReloadOutlined,
-  UserOutlined,
-  CalendarOutlined,
-} from "@ant-design/icons";
+import { UserOutlined, CalendarOutlined } from "@ant-design/icons";
 
 // Project imports
 import SignalStatusChip from "components/chips/SignalStatusChip";
 import SignalTypeChip from "components/chips/SignalTypeChip";
-import { getMissingFields } from "sections/activities/signals/signalValidationRules";
 import { getTechSummary } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS ||============================== //
@@ -101,34 +90,17 @@ function formatOriginContact(contact) {
  * Account). Renders every signal type from the raw list payload, which the
  * flat hooks tag with `_signalType` (passed here as `signalType`).
  *
- * Clicking the row (outside the action buttons) calls `onSelect` — the parent
- * owns the signal drawer and opens it. Action buttons stop propagation so they
- * never trigger the drawer.
- *
- * Actions follow the existing lifecycle contracts:
- *   - Validate / Reject : PENDING only (Validate disabled on missing fields)
- *   - Edit              : any status (parent opens SignalEditDialog)
- *   - Reopen            : REJECTED only (parent calls reopenSignal)
- * There is no Delete action on this line by design.
+ * The row is informational only — status + message + meta. It carries NO
+ * lifecycle action buttons: every action (validate / reject / edit / reopen)
+ * lives in the signal drawer. Clicking the row calls `onSelect` and the parent
+ * opens that drawer, where the actions are performed.
  */
 export default function SignalLine({
   signal,
   signalType,
   onSelect,
-  onValidate,
-  onReject,
-  onEdit,
-  onReopen,
-  isLocked,
 }) {
-  const isPending = signal.status === "PENDING";
   const isRejected = signal.status === "REJECTED";
-
-  const missingFields = useMemo(
-    () => (isPending ? getMissingFields(signal, signalType) : []),
-    [signal, signalType, isPending],
-  );
-  const validateDisabled = missingFields.length > 0;
 
   const message = getMessage(signal, signalType);
   const scopeLabel = getScopeLabel(signal, signalType);
@@ -137,12 +109,6 @@ export default function SignalLine({
   const contacts = signal.source_context?.contacts ?? [];
   const originContact = formatOriginContact(contacts[0]);
   const extraContacts = contacts.length > 1 ? contacts.length - 1 : 0;
-
-  // Keep the action-button clicks from bubbling up to the row's onSelect.
-  const stop = (handler) => (event) => {
-    event.stopPropagation();
-    handler?.(signal, signalType);
-  };
 
   return (
     <Box
@@ -244,74 +210,6 @@ export default function SignalLine({
           </Stack>
         )}
 
-        {/* Spacer pushes the actions to the right edge */}
-        <Box sx={{ flexGrow: 1 }} />
-
-        {/* Actions */}
-        {!isLocked && (
-          <Stack
-            direction="row"
-            spacing={0.75}
-            sx={{ flexShrink: 0 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<EditOutlined style={{ fontSize: 13 }} />}
-              onClick={stop(onEdit)}
-            >
-              Edit
-            </Button>
-
-            {isPending && (
-              <>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  color="error"
-                  startIcon={<CloseCircleOutlined style={{ fontSize: 13 }} />}
-                  onClick={stop(onReject)}
-                >
-                  Reject
-                </Button>
-                <Tooltip
-                  title={
-                    validateDisabled
-                      ? "Complete missing fields before validating"
-                      : ""
-                  }
-                >
-                  <span>
-                    <Button
-                      variant="contained"
-                      size="small"
-                      color="success"
-                      disabled={validateDisabled}
-                      startIcon={
-                        <CheckCircleOutlined style={{ fontSize: 13 }} />
-                      }
-                      onClick={stop(onValidate)}
-                    >
-                      Validate
-                    </Button>
-                  </span>
-                </Tooltip>
-              </>
-            )}
-
-            {isRejected && (
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<ReloadOutlined style={{ fontSize: 13 }} />}
-                onClick={stop(onReopen)}
-              >
-                Reopen
-              </Button>
-            )}
-          </Stack>
-        )}
       </Stack>
     </Box>
   );
@@ -347,9 +245,4 @@ SignalLine.propTypes = {
     "constraints",
   ]).isRequired,
   onSelect: PropTypes.func,
-  onValidate: PropTypes.func,
-  onReject: PropTypes.func,
-  onEdit: PropTypes.func,
-  onReopen: PropTypes.func,
-  isLocked: PropTypes.bool,
 };
