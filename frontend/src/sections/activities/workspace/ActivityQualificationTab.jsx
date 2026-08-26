@@ -40,6 +40,7 @@ export default function ActivityQualificationTab({
   activity,
   isLocked,
   mutateCounts,
+  signalTypes = [],
 }) {
   const activityId = activity?.id;
   const accountId = activity?.account;
@@ -193,6 +194,7 @@ export default function ActivityQualificationTab({
         onValidate={handleValidate}
         onReject={handleReject}
         isLocked={isLocked}
+        signalTypes={signalTypes}
       />
 
       {/* Quick Drawer */}
@@ -230,4 +232,6 @@ ActivityQualificationTab.propTypes = {
   }),
   isLocked: PropTypes.bool,
   mutateCounts: PropTypes.func,
+  /** Type filter (frontend slugs) from the shared drawer; [] = show all. */
+  signalTypes: PropTypes.arrayOf(PropTypes.string),
 };

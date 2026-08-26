@@ -236,12 +236,24 @@ export default function QualificationGroupedView({
   surface,
   accountId,
   decisionCycleId,
+  signalTypes = [],
 }) {
   const isDC = surface === "dc";
 
+  // Type filter (from the shared filter drawer). Empty = show everything.
+  // Clusters honor only the type filter; the clusterable subset drives which
+  // narrative sections show, and the flags gate the Tech / Objections sections.
+  const hasTypeFilter = Array.isArray(signalTypes) && signalTypes.length > 0;
+  const clusterTypes = hasTypeFilter
+    ? CLUSTER_TYPES.filter((t) => signalTypes.includes(t))
+    : CLUSTER_TYPES;
+  const showTech = !hasTypeFilter || signalTypes.includes("tech-stack");
+  const showObjections =
+    isDC && (!hasTypeFilter || signalTypes.includes("blockers"));
+
   const { clusters, clustersLoading, clustersError, mutateClusters } =
     useGetClustersByAccount(accountId, {
-      signalType: CLUSTER_TYPES,
+      signalType: clusterTypes.length ? clusterTypes : CLUSTER_TYPES,
       decisionCycleId: isDC ? decisionCycleId : undefined,
     });
 
@@ -387,9 +399,12 @@ export default function QualificationGroupedView({
           difference vs Activity is the domain → dimension → cluster nesting
           inside the left narrative sections. */}
       <Grid container spacing={3}>
-        {/* Left column — narrative sections (nested by domain → dimension). */}
+        {/* Left column — narrative sections (nested by domain → dimension).
+            The Type filter narrows which narrative sections show. */}
         <Grid item xs={12} md={6}>
-          {SECTIONS.map((section) => (
+          {SECTIONS.filter(
+            (section) => !hasTypeFilter || clusterTypes.includes(section.type),
+          ).map((section) => (
             <NarrativeSection
               key={section.type}
               title={section.title}
@@ -402,17 +417,19 @@ export default function QualificationGroupedView({
 
         {/* Right column — Tech Stack + Objections (flat, today's content). */}
         <Grid item xs={12} md={6}>
-          <TypedSection
-            title="Tech Stack"
-            testId="section-tech-stack"
-            emptyLabel="No tech stack signals captured"
-            signals={tech.signals}
-            loading={tech.loading}
-            onSelect={handleSelect}
-          />
+          {showTech && (
+            <TypedSection
+              title="Tech Stack"
+              testId="section-tech-stack"
+              emptyLabel="No tech stack signals captured"
+              signals={tech.signals}
+              loading={tech.loading}
+              onSelect={handleSelect}
+            />
+          )}
 
           {/* Objections — DC surface only (blockers are deal-scoped). */}
-          {isDC && (
+          {showObjections && (
             <TypedSection
               title="Objections"
               testId="section-objections"
@@ -477,4 +494,6 @@ QualificationGroupedView.propTypes = {
   accountId: PropTypes.string.isRequired,
   /** Decision-cycle UUID — required on the DC surface. */
   decisionCycleId: PropTypes.string,
+  /** Type filter (frontend slugs) from the shared drawer; [] = show all. */
+  signalTypes: PropTypes.arrayOf(PropTypes.string),
 };

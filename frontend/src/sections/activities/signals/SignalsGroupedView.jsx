@@ -98,7 +98,11 @@ export default function SignalsGroupedView({
   techStackSignals,
   blockerSignals,
   onSelect,
+  signalTypes = [],
 }) {
+  // Type filter (from the shared drawer). Empty = show every section.
+  const hasTypeFilter = Array.isArray(signalTypes) && signalTypes.length > 0;
+  const showType = (t) => !hasTypeFilter || signalTypes.includes(t);
   // Split the mixed qualification list into its three types. Each signal is
   // tagged with _signalType by the activity hook.
   const objectives = useMemo(
@@ -139,47 +143,57 @@ export default function SignalsGroupedView({
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — qualification types */}
+      {/* Left column — qualification types (gated by the Type filter) */}
       <Grid item xs={12} md={6}>
-        <TypeSection
-          title="Objectives"
-          signalType="objective"
-          signals={objectives}
-          onSelect={onSelect}
-          emptyLabel="No objectives extracted yet"
-        />
-        <TypeSection
-          title="Pains"
-          signalType="pain"
-          signals={pains}
-          onSelect={onSelect}
-          emptyLabel="No pains extracted yet"
-        />
-        <TypeSection
-          title="Impacts"
-          signalType="impact"
-          signals={impacts}
-          onSelect={onSelect}
-          emptyLabel="No impacts extracted yet"
-        />
+        {showType("objective") && (
+          <TypeSection
+            title="Objectives"
+            signalType="objective"
+            signals={objectives}
+            onSelect={onSelect}
+            emptyLabel="No objectives extracted yet"
+          />
+        )}
+        {showType("pain") && (
+          <TypeSection
+            title="Pains"
+            signalType="pain"
+            signals={pains}
+            onSelect={onSelect}
+            emptyLabel="No pains extracted yet"
+          />
+        )}
+        {showType("impact") && (
+          <TypeSection
+            title="Impacts"
+            signalType="impact"
+            signals={impacts}
+            onSelect={onSelect}
+            emptyLabel="No impacts extracted yet"
+          />
+        )}
       </Grid>
 
-      {/* Right column — tech stack + objections */}
+      {/* Right column — tech stack + objections (gated by the Type filter) */}
       <Grid item xs={12} md={6}>
-        <TypeSection
-          title="Tech Stack"
-          signalType="tech-stack"
-          signals={techStackSignals}
-          onSelect={onSelect}
-          emptyLabel="No tools detected"
-        />
-        <TypeSection
-          title="Objections"
-          signalType="blockers"
-          signals={blockerSignals}
-          onSelect={onSelect}
-          emptyLabel="No objections identified"
-        />
+        {showType("tech-stack") && (
+          <TypeSection
+            title="Tech Stack"
+            signalType="tech-stack"
+            signals={techStackSignals}
+            onSelect={onSelect}
+            emptyLabel="No tools detected"
+          />
+        )}
+        {showType("blockers") && (
+          <TypeSection
+            title="Objections"
+            signalType="blockers"
+            signals={blockerSignals}
+            onSelect={onSelect}
+            emptyLabel="No objections identified"
+          />
+        )}
       </Grid>
     </Grid>
   );
@@ -200,4 +214,6 @@ SignalsGroupedView.propTypes = {
     PropTypes.shape({ id: PropTypes.string.isRequired }),
   ).isRequired,
   onSelect: PropTypes.func,
+  /** Type filter (frontend slugs) from the shared drawer; [] = show all. */
+  signalTypes: PropTypes.arrayOf(PropTypes.string),
 };
