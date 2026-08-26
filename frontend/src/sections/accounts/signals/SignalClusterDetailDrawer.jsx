@@ -36,7 +36,8 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 // material-ui
 import Accordion from "@mui/material/Accordion";
@@ -60,13 +61,14 @@ import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import DownOutlined from "@ant-design/icons/DownOutlined";
 import InboxOutlined from "@ant-design/icons/InboxOutlined";
+import LeftOutlined from "@ant-design/icons/LeftOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
 import UndoOutlined from "@ant-design/icons/UndoOutlined";
 import UserOutlined from "@ant-design/icons/UserOutlined";
 
 // project imports
 import SignalLine from "components/signals/SignalLine";
-import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
+import SignalDetailContent from "components/signals/SignalDetailContent";
 import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDialog from "./SignalEditDialog";
 
@@ -607,6 +609,8 @@ export default function SignalClusterDetailDrawer({
 
   const typeVisuals = resolveSignalTypeVisuals(signalType);
 
+  const router = useRouter();
+
   // ==============================|| DETAIL FETCH ||============================== //
 
   const canonicalKey = clusterSummary?.canonical_key ?? null;
@@ -723,14 +727,18 @@ export default function SignalClusterDetailDrawer({
     signalType: null,
   });
 
-  // Per-member detail quick-drawer — opened by clicking a member line.
-  // Reuses the same SignalQuickDrawer as the flat views so members show
-  // their source quote + origin-activity link + shared per-type block.
-  const [memberDrawer, setMemberDrawer] = useState({
-    open: false,
-    signal: null,
-    signalType: null,
-  });
+  // One drawer, two views: the cluster overview and a member's signal detail.
+  // Clicking a member REPLACES the drawer content with its detail (no second
+  // stacked drawer); a Back affordance returns to the cluster view.
+  const [view, setView] = useState("cluster"); // "cluster" | "signal"
+  const [activeMember, setActiveMember] = useState(null); // { signal, signalType }
+
+  // Whenever the cluster changes (or the drawer is (re)opened on a new
+  // cluster), reset to the cluster view.
+  useEffect(() => {
+    setView("cluster");
+    setActiveMember(null);
+  }, [canonicalKey]);
 
   const [archivalSubmitting, setArchivalSubmitting] = useState(false);
 
@@ -836,14 +844,27 @@ export default function SignalClusterDetailDrawer({
     [notifyChange],
   );
 
-  // Member detail quick-drawer open/close.
+  // Clicking a member replaces the drawer content with its signal detail.
   const handleMemberSelect = useCallback((signal, type) => {
-    setMemberDrawer({ open: true, signal, signalType: type });
+    setActiveMember({ signal, signalType: type });
+    setView("signal");
   }, []);
 
-  const handleMemberDrawerClose = useCallback(() => {
-    setMemberDrawer({ open: false, signal: null, signalType: null });
+  // Back from the signal detail returns to the cluster view (same drawer).
+  const handleBackToCluster = useCallback(() => {
+    setView("cluster");
+    setActiveMember(null);
   }, []);
+
+  // Origin activity opens the canonical /activities/{id} route; close the
+  // whole drawer first (matches SignalQuickDrawer's behaviour).
+  const openOriginActivity = useCallback(
+    (activityId) => {
+      onClose?.();
+      router.push(`/activities/${activityId}`);
+    },
+    [onClose, router],
+  );
 
   // ==============================|| RENDER: HEADER ||============================== //
 
@@ -1255,10 +1276,11 @@ export default function SignalClusterDetailDrawer({
 
       {/*
         Members render as the shared SignalLine (same component as the flat
-        views), typed from the cluster's signal_type. Clicking a line opens
-        the shared SignalQuickDrawer (source quote + origin-activity link +
-        shared per-type block). Inline lifecycle actions — validate / reject
-        / edit / reopen — route through the shared handlers to signals.js.
+        views), typed from the cluster's signal_type. Clicking a line REPLACES
+        this cluster view with the member's SignalDetailContent in the same
+        drawer (a Back affordance returns here) — no second stacked drawer.
+        Lifecycle actions — validate / reject / edit / reopen — live on that
+        signal detail and route through the shared handlers to signals.js.
       */}
       {members.length > 0 && (
         <Stack spacing={0.5}>
@@ -1297,6 +1319,44 @@ export default function SignalClusterDetailDrawer({
           <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
             <CircularProgress size={24} />
           </Stack>
+        ) : view === "signal" && activeMember ? (
+          // Signal detail — REPLACES the cluster content in the same drawer.
+          // A Back affordance returns to the cluster view; the shared
+          // SignalDetailContent carries the actions (validate/reject/edit/reopen).
+          <SignalDetailContent
+            signal={activeMember.signal}
+            signalType={activeMember.signalType}
+            onValidate={handleValidate}
+            onReject={handleRejectOpen}
+            onEdit={handleEdit}
+            onReopen={handleReopen}
+            onOpenActivity={openOriginActivity}
+            leadingAction={
+              <Button
+                size="small"
+                variant="text"
+                color="inherit"
+                aria-label="Back to cluster"
+                startIcon={<LeftOutlined style={{ fontSize: 12 }} />}
+                onClick={handleBackToCluster}
+                sx={{ px: 0.5, minWidth: 0, maxWidth: 220 }}
+              >
+                <Typography variant="caption" noWrap>
+                  {canonicalText || typeVisuals.label}
+                </Typography>
+              </Button>
+            }
+            trailingAction={
+              <IconButton
+                size="small"
+                onClick={onClose}
+                aria-label="Close drawer"
+                sx={{ flexShrink: 0 }}
+              >
+                <CloseOutlined style={{ fontSize: 14 }} />
+              </IconButton>
+            }
+          />
         ) : (
           <>
             {renderHeader()}
@@ -1340,18 +1400,6 @@ export default function SignalClusterDetailDrawer({
         onSuccess={handleRejectSuccess}
         signal={rejectModal.signal}
         signalType={rejectModal.signalType}
-      />
-
-      {/* Member detail — shared quick-drawer (source quote + origin link) */}
-      <SignalQuickDrawer
-        open={memberDrawer.open}
-        signal={memberDrawer.signal}
-        signalType={memberDrawer.signalType}
-        onClose={handleMemberDrawerClose}
-        onValidate={handleValidate}
-        onReject={handleRejectOpen}
-        onEdit={handleEdit}
-        onReopen={handleReopen}
       />
     </>
   );
