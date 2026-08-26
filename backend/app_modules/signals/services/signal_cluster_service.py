@@ -612,6 +612,9 @@ class SignalClusterService:
                 'source_activity',
                 'decision_cycle',
                 'campaign',
+                # Join path for the cluster `departments` aggregate — avoids
+                # one query per member when reading member.target_department.
+                'target_department',
             )
             .prefetch_related(
                 'source_activity__contacts',
@@ -700,6 +703,8 @@ class SignalClusterService:
                 'source_activity',
                 'decision_cycle',
                 'campaign',
+                # Join path for the cluster `departments` aggregate.
+                'target_department',
             )
             .prefetch_related(
                 'source_activity__contacts',
@@ -867,6 +872,10 @@ class SignalClusterService:
                 first_observed_at, last_confirmed_at,
             ),
 
+            # Departments involved — distinct target_department across members
+            # (factual list of {id, name}; empty when all members are BUSINESS).
+            'departments':   cls._compute_departments(members),
+
             # Scope (shared shape with Objective and Impact via
             # max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -1009,6 +1018,10 @@ class SignalClusterService:
             'span_days':     cls._compute_span_days(
                 first_observed_at, last_confirmed_at,
             ),
+
+            # Departments involved — distinct target_department across members
+            # (factual list of {id, name}; empty when all members are BUSINESS).
+            'departments':   cls._compute_departments(members),
 
             # Scope (shared shape with Pain and Impact via max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -1162,6 +1175,10 @@ class SignalClusterService:
                 first_observed_at, last_confirmed_at,
             ),
 
+            # Departments involved — distinct target_department across members
+            # (factual list of {id, name}; empty when all members are BUSINESS).
+            'departments':   cls._compute_departments(members),
+
             # Scope (shared shape with Pain and Objective via
             # max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -1233,6 +1250,34 @@ class SignalClusterService:
             freshness = FreshnessStatus.DORMANT
 
         return first, last, freshness
+
+    @staticmethod
+    def _compute_departments(members: list) -> list:
+        """
+        Distinct target_department values across the cluster's members, as a
+        factual list of compact {id, name} dicts (NOT a score). Members with
+        no department (BUSINESS scope) do not contribute. Order is stable and
+        deterministic: departments appear in order of first appearance
+        (oldest member first), independent of the fetch ordering.
+
+        Reuses the compact target_department shape used by the signal
+        serializers ({id: str, name: display}). N+1-safe: target_department is
+        select_related in every cluster fetch, so no extra query per member.
+        """
+        seen = set()
+        departments = []
+        for member in sorted(members, key=lambda m: m.created_at):
+            dept = member.target_department
+            if dept is None:
+                continue
+            if dept.id in seen:
+                continue
+            seen.add(dept.id)
+            departments.append({
+                'id':   str(dept.id),
+                'name': dept.get_name_display(),
+            })
+        return departments
 
     @staticmethod
     def _compute_span_days(period_start, period_end) -> int:
