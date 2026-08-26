@@ -857,6 +857,16 @@ class SignalClusterService:
             'last_confirmed_at': last_confirmed_at,
             'freshness_status':  freshness,
 
+            # Temporal density — raw facts (count + covered period), NOT a
+            # composite score. period_start/period_end mirror the lifecycle
+            # window; span_days is the whole-day difference between them.
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
             # Scope (shared shape with Objective and Impact via
             # max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -989,6 +999,16 @@ class SignalClusterService:
             'first_observed_at': first_observed_at,
             'last_confirmed_at': last_confirmed_at,
             'freshness_status':  freshness,
+
+            # Temporal density — raw facts (count + covered period), NOT a
+            # composite score. period_start/period_end mirror the lifecycle
+            # window; span_days is the whole-day difference between them.
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
 
             # Scope (shared shape with Pain and Impact via max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -1132,6 +1152,16 @@ class SignalClusterService:
             'last_confirmed_at': last_confirmed_at,
             'freshness_status':  freshness,
 
+            # Temporal density — raw facts (count + covered period), NOT a
+            # composite score. period_start/period_end mirror the lifecycle
+            # window; span_days is the whole-day difference between them.
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
             # Scope (shared shape with Pain and Objective via
             # max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -1203,6 +1233,25 @@ class SignalClusterService:
             freshness = FreshnessStatus.DORMANT
 
         return first, last, freshness
+
+    @staticmethod
+    def _compute_span_days(period_start, period_end) -> int:
+        """
+        Factual number of days covered by the cluster: the whole-day
+        difference between the earliest and the latest observation.
+
+        This is a raw fact (period_end - period_start), NOT a weighted
+        score. It is 0 for a single-signal cluster, for a same-day
+        cluster, and whenever either endpoint is missing (no VALIDATED
+        member, so no confirmed observation window to measure).
+
+        Reuses the period endpoints already produced by
+        _compute_lifecycle — no extra query, no re-derivation from the
+        members.
+        """
+        if period_start is None or period_end is None:
+            return 0
+        return (period_end - period_start).days
 
     # =========================================================================
     # SCOPE / TARGET-DATE HELPERS
