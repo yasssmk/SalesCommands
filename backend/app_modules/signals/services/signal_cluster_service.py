@@ -116,7 +116,7 @@ Each cluster dict contains:
 from collections import defaultdict
 from datetime import timedelta
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 
 from app_modules.decision_cycles.constants import CycleOutcome, TERMINAL_OUTCOMES
@@ -176,6 +176,11 @@ class SignalClusterService:
         contact=None,
         scope=None,
         statuses=None,
+        perimeter_business: bool = False,
+        perimeter_departments=None,
+        whats=None,
+        dimensions=None,
+        contacts=None,
     ) -> list:
         """
         Return all clusters for an account, grouped by canonical_key.
@@ -220,10 +225,22 @@ class SignalClusterService:
         requested_types = cls._assert_signal_types_supported(signal_type)
 
         member_filters = {
+            # Legacy separate department/scope (AND) — kept for back-compat; the
+            # grouped FE now sends `perimeter` instead.
             'departments': departments or None,
             'contact': contact or None,
             'scope': scope or None,
             'statuses': tuple(statuses) if statuses else None,
+            # Unified perimeter (OR): scope=BUSINESS OR target_department in list.
+            'perimeter_business': bool(perimeter_business),
+            'perimeter_departments': (
+                tuple(perimeter_departments) if perimeter_departments else None
+            ),
+            # Subject axes.
+            'whats': tuple(whats) if whats else None,
+            'dimensions': tuple(dimensions) if dimensions else None,
+            # SOURCE — multi contact (who reported it).
+            'contacts': tuple(contacts) if contacts else None,
         }
 
         clusters: list = []
@@ -628,34 +645,69 @@ class SignalClusterService:
     @classmethod
     def _apply_member_filters(cls, qs, member_filters):
         """
-        Apply the department / contact / scope member filters (AND-combined) to
-        a cluster member queryset. Status is applied by the caller via
-        _member_statuses (it replaces the default status__in). department and
-        scope filter on the signal's SUBJECT / axis; contact filters on its
-        SOURCE.
+        Apply the member filters to a cluster member queryset before clustering.
+        Status is applied by the caller via _member_statuses (it replaces the
+        default status__in). Cross-family filters combine as AND; OR is used
+        ONLY within the perimeter clause.
 
-          - departments (list of ids) → target_department_id IN the list.
-            Members with no target_department (Business) are EXCLUDED.
-          - contact → source_activity.contacts contains the id (the SOURCE who
-            reported it — a different field from target_department).
-          - scope → scope_level == scope.
+          - perimeter (the unified OR): scope=BUSINESS OR target_department in
+            perimeter_departments. "Business" = scope_level=BUSINESS (PO
+            decision). Replaces the separate department+scope AND on the grouped
+            path.
+          - whats / dimensions (SUBJECT axes) → what__in / dimension__in.
+          - contacts (SOURCE, multi) → source_activity.contacts IN the list
+            (distinct() guards m2m duplicates); `contact` is the single-value
+            back-compat form.
+          - departments / scope: legacy separate AND filters, kept for
+            back-compat (the aggregated endpoint and older tests still use
+            them); the grouped FE sends `perimeter` instead.
 
-        N+1-safe: the department/contact joins are part of the single member
-        query; the existing prefetch on source_activity.contacts is untouched.
+        N+1-safe: the joins are part of the single member query; the existing
+        prefetch on source_activity.contacts is untouched.
         """
         if not member_filters:
             return qs
+
+        # --- Unified PERIMETER (OR): scope=BUSINESS OR target_department in list.
+        # Cluster members are only pain/objective/impact, which all carry both
+        # scope_level and target_department, so both halves apply uniformly.
+        perimeter_business = member_filters.get('perimeter_business')
+        perimeter_departments = member_filters.get('perimeter_departments')
+        if perimeter_business or perimeter_departments:
+            perimeter_q = Q()
+            if perimeter_business:
+                perimeter_q |= Q(scope_level=ScopeLevel.BUSINESS)
+            if perimeter_departments:
+                perimeter_q |= Q(target_department_id__in=perimeter_departments)
+            qs = qs.filter(perimeter_q)
+
+        # --- Legacy separate department / scope (AND) — back-compat only.
         departments = member_filters.get('departments')
         if departments:
             qs = qs.filter(target_department_id__in=departments)
-        contact = member_filters.get('contact')
-        if contact:
-            # SOURCE axis: a single contact id matches each signal at most once
-            # (a contact appears once per activity), so no duplicate rows.
-            qs = qs.filter(source_activity__contacts=contact)
         scope = member_filters.get('scope')
         if scope:
             qs = qs.filter(scope_level=scope)
+
+        # --- Subject axes (AND): what / dimension.
+        whats = member_filters.get('whats')
+        if whats:
+            qs = qs.filter(what__in=whats)
+        dimensions = member_filters.get('dimensions')
+        if dimensions:
+            qs = qs.filter(dimension__in=dimensions)
+
+        # --- SOURCE (AND): contact(s) who reported it.
+        contacts = member_filters.get('contacts')
+        if contacts:
+            # `__in` on the m2m can join a signal once per matching contact, so
+            # distinct() guards against duplicate member rows.
+            qs = qs.filter(source_activity__contacts__in=contacts).distinct()
+        else:
+            contact = member_filters.get('contact')
+            if contact:
+                # Single-value back-compat: matches each signal at most once.
+                qs = qs.filter(source_activity__contacts=contact)
         return qs
 
     @classmethod
