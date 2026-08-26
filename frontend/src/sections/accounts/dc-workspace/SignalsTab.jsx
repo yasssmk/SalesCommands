@@ -33,6 +33,7 @@ import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
 import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
+import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 
@@ -47,6 +48,16 @@ const DC_TYPES = [
   "people",
   "constraints",
 ];
+
+// Grouped (cluster) default status set — pending + validated.
+const GROUPED_DEFAULT_STATUSES = ["PENDING", "VALIDATED"];
+const emptyGroupedFilters = () => ({
+  perimeter: [],
+  contacts: [], // contact objects (Autocomplete value); ids derived for fetch
+  whats: [],
+  dimensions: [],
+  statuses: GROUPED_DEFAULT_STATUSES,
+});
 
 // Types supported by SignalEditDialog (inline forms exist only for these)
 const EDITABLE_TYPES = new Set([
@@ -93,6 +104,33 @@ export default function SignalsTab({ cycleId, accountId }) {
     [standardDepartments],
   );
   const contactFilters = useMemo(() => ({ account_id: accountId }), [accountId]);
+
+  // ---- Grouped (cluster) filter state — the unified perimeter model. Kept
+  // separate from the flat filters so the flat view stays untouched.
+  const [groupedFilters, setGroupedFilters] = useState(emptyGroupedFilters);
+  const handleGroupedChange = useCallback(
+    (field, newValue) =>
+      setGroupedFilters((prev) => ({ ...prev, [field]: newValue })),
+    [],
+  );
+  const handleGroupedClear = useCallback(
+    () => setGroupedFilters(emptyGroupedFilters()),
+    [],
+  );
+  const perimeterOptions = useMemo(
+    () => [{ value: "BUSINESS", label: "Business" }, ...departmentOptions],
+    [departmentOptions],
+  );
+  const groupedContactIds = useMemo(
+    () => groupedFilters.contacts.map((c) => c.id),
+    [groupedFilters.contacts],
+  );
+  const groupedActiveCount =
+    groupedFilters.perimeter.length +
+    groupedFilters.contacts.length +
+    groupedFilters.whats.length +
+    groupedFilters.dimensions.length +
+    (groupedFilters.statuses.includes("REJECTED") ? 1 : 0);
 
   // Sort state
   const [sortKey, setSortKey] = useState("date-desc");
@@ -249,7 +287,10 @@ export default function SignalsTab({ cycleId, accountId }) {
           )}
           <Tooltip title="Filters">
             <IconButton onClick={handleOpenFilters} aria-label="Open filters">
-              <Badge badgeContent={activeCount} color="primary">
+              <Badge
+                badgeContent={view === "grouped" ? groupedActiveCount : activeCount}
+                color="primary"
+              >
                 <FilterOutlined />
               </Badge>
             </IconButton>
@@ -263,11 +304,11 @@ export default function SignalsTab({ cycleId, accountId }) {
           surface="dc"
           accountId={accountId}
           decisionCycleId={cycleId}
-          signalTypes={activeTypes}
-          department={department}
-          contact={contactId}
-          scope={scope}
-          statuses={statuses}
+          perimeter={groupedFilters.perimeter}
+          whats={groupedFilters.whats}
+          dimensions={groupedFilters.dimensions}
+          contacts={groupedContactIds}
+          statuses={groupedFilters.statuses}
         />
       ) : (
         <SignalsFlatView
@@ -287,21 +328,34 @@ export default function SignalsTab({ cycleId, accountId }) {
         />
       )}
 
-      {/* Filter drawer — gated by mode (Grouped shows only Type). */}
-      <SignalsFilterPanel
-        open={filterPanelOpen}
-        onClose={() => setFilterPanelOpen(false)}
-        availableTypes={DC_TYPES}
-        departmentOptions={departmentOptions}
-        contactFilters={contactFilters}
-        pendingFilters={pending}
-        onFilterChange={updatePending}
-        onApply={handleApplyFilters}
-        onClear={handleClearFilters}
-        hasPendingChanges={hasPendingChanges}
-        mode={view}
-        groupedFilters
-      />
+      {/* Filter drawer. Grouped = accordion-sectioned panel (cluster endpoint);
+          Flat keeps its own unchanged SignalsFilterPanel. */}
+      {view === "grouped" ? (
+        <SignalsGroupedFilterPanel
+          open={filterPanelOpen}
+          onClose={() => setFilterPanelOpen(false)}
+          perimeterOptions={perimeterOptions}
+          contactFilters={contactFilters}
+          value={groupedFilters}
+          onChange={handleGroupedChange}
+          onClear={handleGroupedClear}
+          activeCount={groupedActiveCount}
+        />
+      ) : (
+        <SignalsFilterPanel
+          open={filterPanelOpen}
+          onClose={() => setFilterPanelOpen(false)}
+          availableTypes={DC_TYPES}
+          departmentOptions={departmentOptions}
+          contactFilters={contactFilters}
+          pendingFilters={pending}
+          onFilterChange={updatePending}
+          onApply={handleApplyFilters}
+          onClear={handleClearFilters}
+          hasPendingChanges={hasPendingChanges}
+          mode="flat"
+        />
+      )}
 
       {/* Quick Drawer */}
       <SignalQuickDrawer
