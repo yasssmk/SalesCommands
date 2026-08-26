@@ -122,6 +122,15 @@ class SignalClusterListSerializer(serializers.Serializer):
     )
     span_days    = serializers.IntegerField(required=False, default=0)
 
+    # --- Departments involved (factual, distinct) ---
+    # Distinct target_department values across the cluster's members, as
+    # compact {id, name} dicts. Empty when every member is BUSINESS-scoped.
+    # Passed through unchanged from the service; required=False for tolerance
+    # to cached/older dicts that predate the key.
+    departments = serializers.ListField(
+        child=serializers.DictField(), required=False, default=list,
+    )
+
    # --- Objective-specific aggregation  ---
     # Always present in the payload. Empty / null / false for non-Objective
     # clusters.
