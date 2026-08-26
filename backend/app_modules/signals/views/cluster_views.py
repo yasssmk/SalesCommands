@@ -30,6 +30,8 @@ any cached cluster listing becomes instantly stale. Follows the pattern
 used by BaseSignalViewSet.
 """
 
+import uuid
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -53,7 +55,9 @@ from ..serializers import (
     SignalClusterListSerializer,
 )
 from ..constants import (
+    ScopeLevel,
     SignalClusterType,
+    SignalStatus,
     SIGNALS_CACHE_TAG,
     SIGNAL_CLUSTERS_CACHE_TAG,
 )
@@ -192,6 +196,72 @@ def _parse_bool(value, *, default=False):
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
+def _parse_member_filters(request):
+    """
+    Parse the cluster member filters from the query string, validating each so
+    a bad value is a clean business 400 (never a raw 500 from the ORM). Mirrors
+    the aggregated endpoint's validation.
+
+      department (repeatable) → list of ints  (SUBJECT = target_department)
+      contact                 → UUID string   (SOURCE = source_activity.contacts)
+      scope                   → ScopeLevel value
+      status (repeatable)     → list of SignalStatus values (default handled
+                                downstream: pending+validated)
+
+    Returns a dict with keys departments / contact / scope / statuses (each None
+    or empty when not provided) — ready to splat into
+    SignalClusterService.list_clusters_for_account.
+    """
+    # department — multi-select, each a StandardDepartment integer id.
+    departments = []
+    for raw in request.query_params.getlist('department'):
+        if raw == '':
+            continue
+        try:
+            departments.append(int(raw))
+        except (ValueError, TypeError):
+            raise StandardizedValidationError(
+                "The 'department' filter must be a valid department id."
+            )
+
+    # contact — a single Contact UUID.
+    contact = request.query_params.get('contact') or None
+    if contact:
+        try:
+            contact = str(uuid.UUID(str(contact)))
+        except (ValueError, TypeError, AttributeError):
+            raise StandardizedValidationError(
+                "The 'contact' filter must be a valid UUID."
+            )
+
+    # scope — a single ScopeLevel value.
+    scope = request.query_params.get('scope') or None
+    if scope and scope not in ScopeLevel.values:
+        raise StandardizedValidationError(
+            "The 'scope' filter must be one of: "
+            + ", ".join(ScopeLevel.values) + "."
+        )
+
+    # status — multi-select SignalStatus values (empty = default downstream).
+    statuses = []
+    for raw in request.query_params.getlist('status'):
+        if raw == '':
+            continue
+        if raw not in SignalStatus.values:
+            raise StandardizedValidationError(
+                "The 'status' filter must be one of: "
+                + ", ".join(SignalStatus.values) + "."
+            )
+        statuses.append(raw)
+
+    return {
+        'departments': departments or None,
+        'contact': contact,
+        'scope': scope,
+        'statuses': statuses or None,
+    }
+
+
 # =============================================================================
 # LIST
 # =============================================================================
@@ -205,6 +275,16 @@ class SignalClusterListView(BaseAPIView):
       signal_type       (optional, default 'pain')
       decision_cycle    (UUID, optional — filter to clusters touching this DC)
       include_archived  (bool, optional, default false)
+      department        (int, repeatable — SUBJECT = target_department; Business
+                         members excluded when set)
+      contact           (UUID, optional — SOURCE = who reported it, via
+                         source_activity.contacts)
+      scope             (ScopeLevel, optional — scope_level)
+      status            (repeatable — SignalStatus; default pending+validated)
+
+    The member filters are applied BEFORE clustering, so each cluster forms and
+    its meta recomputes on the filtered members; a cluster with zero matching
+    members is not returned.
 
     Response:
       200 { success: true, data: [ cluster, cluster, ... ] }
@@ -232,12 +312,17 @@ class SignalClusterListView(BaseAPIView):
             request.query_params.get('include_archived'),
             default=False,
         )
+        # Member filters (department / contact / scope / status) — applied to
+        # the member queryset before clustering. Invalid values raise a clean
+        # 400 here, never a 500 from the ORM.
+        member_filters     = _parse_member_filters(request)
 
         clusters = SignalClusterService.list_clusters_for_account(
             account_id=account_id,
             signal_type=signal_type,
             decision_cycle_id=decision_cycle_id,
             include_archived=include_archived,
+            **member_filters,
         )
 
         serializer = SignalClusterListSerializer(clusters, many=True)
