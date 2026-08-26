@@ -6,10 +6,9 @@
  * Pain and Objective clusters. Branching is driven by
  * `clusterSummary.signal_type`:
  *
- *   Pain      → max_impact_level chip, human_impacts + metrics
- *               aggregation, member cards are PainCard.
- *   Objective → max_scope_level chip, target_dates section, member cards
- *               are ObjectiveCard.
+ *   Pain      → human_impacts + metrics aggregation, member cards
+ *               are PainCard.
+ *   Objective → target_dates section, member cards are ObjectiveCard.
  *
  * Self-contained modal state
  * --------------------------
@@ -60,10 +59,8 @@ import AlertOutlined from "@ant-design/icons/AlertOutlined";
 import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import DownOutlined from "@ant-design/icons/DownOutlined";
-import InboxOutlined from "@ant-design/icons/InboxOutlined";
 import LeftOutlined from "@ant-design/icons/LeftOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
-import UndoOutlined from "@ant-design/icons/UndoOutlined";
 import UserOutlined from "@ant-design/icons/UserOutlined";
 
 // project imports
@@ -72,11 +69,7 @@ import SignalDetailContent from "components/signals/SignalDetailContent";
 import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDialog from "./SignalEditDialog";
 
-import {
-  useGetClusterDetail,
-  archiveCluster,
-  unarchiveCluster,
-} from "api/signals/signalClusters";
+import { useGetClusterDetail } from "api/signals/signalClusters";
 import { validateSignal, reopenSignal } from "api/signals/signals";
 import {
   displayErrorSnackbar,
@@ -86,9 +79,7 @@ import {
 import {
   resolveFreshness,
   resolveHumanImpact,
-  resolveImpactLevel,
   resolvePriority,
-  resolveScopeLevel,
   resolveSignalTypeVisuals,
   resolveTargetDateUrgency,
 } from "sections/accounts/signals/signalClusters";
@@ -624,15 +615,10 @@ export default function SignalClusterDetailDrawer({
   // summary payload to render the header so the drawer doesn't flash empty.
   const display = cluster ?? clusterSummary ?? null;
 
-  const isArchived = Boolean(display?.is_archived);
   const freshness = resolveFreshness(display?.freshness_status);
   const priority = resolvePriority(display?.priority_bucket);
 
-  // Pain-specific
-  const maxImpactLevel = resolveImpactLevel(display?.max_impact_level);
-
   // Objective-specific
-  const maxScopeLevel = resolveScopeLevel(display?.max_scope_level);
   const targetUrgency = useMemo(
     () =>
       resolveTargetDateUrgency(
@@ -740,8 +726,6 @@ export default function SignalClusterDetailDrawer({
     setActiveMember(null);
   }, [canonicalKey]);
 
-  const [archivalSubmitting, setArchivalSubmitting] = useState(false);
-
   // ==============================|| REVALIDATION ||============================== //
 
   /**
@@ -753,42 +737,6 @@ export default function SignalClusterDetailDrawer({
     mutateCluster?.();
     onClusterChange?.();
   }, [mutateCluster, onClusterChange]);
-
-  // ==============================|| ARCHIVE / UNARCHIVE ||============================== //
-
-  const handleArchive = useCallback(async () => {
-    if (!canonicalKey || !accountId) return;
-    setArchivalSubmitting(true);
-    const result = await archiveCluster({
-      account: accountId,
-      canonicalKey,
-      signalType,
-    });
-    setArchivalSubmitting(false);
-    if (result.success) {
-      displaySuccessSnackbar("Cluster archived");
-      notifyChange();
-    } else {
-      displayErrorSnackbar(result);
-    }
-  }, [accountId, canonicalKey, signalType, notifyChange]);
-
-  const handleUnarchive = useCallback(async () => {
-    if (!canonicalKey || !accountId) return;
-    setArchivalSubmitting(true);
-    const result = await unarchiveCluster({
-      account: accountId,
-      canonicalKey,
-      signalType,
-    });
-    setArchivalSubmitting(false);
-    if (result.success) {
-      displaySuccessSnackbar("Cluster unarchived");
-      notifyChange();
-    } else {
-      displayErrorSnackbar(result);
-    }
-  }, [accountId, canonicalKey, signalType, notifyChange]);
 
   // ==============================|| MEMBER LIFECYCLE HANDLERS ||============================== //
 
@@ -920,15 +868,6 @@ export default function SignalClusterDetailDrawer({
               />
             </Tooltip>
           )}
-
-          {isArchived && (
-            <Chip
-              icon={<InboxOutlined style={{ fontSize: 11 }} />}
-              label="Archived"
-              size="small"
-              sx={{ fontSize: "0.68rem", height: 20 }}
-            />
-          )}
         </Stack>
 
         <IconButton
@@ -983,33 +922,6 @@ export default function SignalClusterDetailDrawer({
           </Typography>
         </Stack>
       )}
-
-      {/* Archive / unarchive actions */}
-      <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-        {!isArchived ? (
-          <Button
-            size="small"
-            variant="outlined"
-            color="inherit"
-            startIcon={<InboxOutlined />}
-            onClick={handleArchive}
-            disabled={archivalSubmitting || !canonicalKey}
-          >
-            Archive cluster
-          </Button>
-        ) : (
-          <Button
-            size="small"
-            variant="outlined"
-            color="primary"
-            startIcon={<UndoOutlined />}
-            onClick={handleUnarchive}
-            disabled={archivalSubmitting || !canonicalKey}
-          >
-            Unarchive cluster
-          </Button>
-        )}
-      </Stack>
     </Box>
   );
 
@@ -1020,13 +932,13 @@ export default function SignalClusterDetailDrawer({
    * shared so the visual rhythm of the drawer body stays uniform.
    *
    * Pain stats:
-   *   - Max level chip + Impacted contacts + Decision cycles
+   *   - Impacted contacts + Decision cycles
    *   - First observed / Last confirmed
    *   - Human impacts chips
    *   - Metrics list
    *
    * Objective stats:
-   *   - Max scope chip + Distinct contacts + Decision cycles
+   *   - Distinct contacts + Decision cycles
    *   - First observed / Last confirmed
    *   - Target dates section with urgency badge (if applicable)
    */
@@ -1052,24 +964,6 @@ export default function SignalClusterDetailDrawer({
         {isPain && (
           <>
             <StatCell
-              label="Max level"
-              value={
-                display?.max_impact_level ? (
-                  <Chip
-                    label={maxImpactLevel.label}
-                    color={maxImpactLevel.color}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.68rem", height: 20 }}
-                  />
-                ) : (
-                  <Typography variant="body2" color="text.disabled">
-                    —
-                  </Typography>
-                )
-              }
-            />
-            <StatCell
               label="Impacted contacts"
               value={display?.impacted_contacts_count ?? 0}
             />
@@ -1079,24 +973,6 @@ export default function SignalClusterDetailDrawer({
 
         {isObjective && (
           <>
-            <StatCell
-              label="Max scope"
-              value={
-                display?.max_scope_level ? (
-                  <Chip
-                    label={maxScopeLevel.label}
-                    color={maxScopeLevel.color}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.68rem", height: 20 }}
-                  />
-                ) : (
-                  <Typography variant="body2" color="text.disabled">
-                    —
-                  </Typography>
-                )
-              }
-            />
             <StatCell
               label="Distinct contacts"
               value={display?.distinct_contacts_count ?? 0}
