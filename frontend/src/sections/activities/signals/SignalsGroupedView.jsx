@@ -33,33 +33,23 @@ import { ThunderboltOutlined } from "@ant-design/icons";
 
 // Project imports
 import SignalLine from "components/signals/SignalLine";
+import CollapsibleSection from "components/signals/CollapsibleSection";
 
 // ==============================|| SECTION ||============================== //
 
 /**
- * One type section: an uppercase header with a count, then a flat list of
- * that type's signals as informational SignalLine rows. An empty section is
- * neutral information ("None yet"), never an error surface.
+ * One collapsible type section (open by default): a header with a count, then
+ * a flat list of that type's signals as informational SignalLine rows. An
+ * empty section is neutral information ("None yet"), never an error surface.
  */
 function TypeSection({ title, signalType, signals, onSelect, emptyLabel }) {
   return (
-    <Box sx={{ mb: 3 }}>
-      <Typography
-        variant="overline"
-        color="text.secondary"
-        sx={{ mb: 1, display: "block", letterSpacing: 1.5 }}
-      >
-        {title}
-        <Typography
-          component="span"
-          variant="caption"
-          color="text.disabled"
-          sx={{ ml: 1, letterSpacing: 0 }}
-        >
-          ({signals.length})
-        </Typography>
-      </Typography>
-
+    <CollapsibleSection
+      title={title}
+      count={signals.length}
+      level="section"
+      testId={`section-${signalType}`}
+    >
       {signals.length === 0 ? (
         <Box
           sx={{
@@ -89,7 +79,7 @@ function TypeSection({ title, signalType, signals, onSelect, emptyLabel }) {
           ))}
         </Stack>
       )}
-    </Box>
+    </CollapsibleSection>
   );
 }
 
