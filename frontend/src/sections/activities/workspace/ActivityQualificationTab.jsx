@@ -18,6 +18,7 @@ import Typography from "@mui/material/Typography";
 
 // Project imports
 import useActivityAllSignals from "hooks/useActivityAllSignals";
+import { applyGroupedFilters } from "utils/groupedSignalFilter";
 import { useGetSignalChoices } from "api/signals/signals";
 import {
   validateSignal,
@@ -40,7 +41,7 @@ export default function ActivityQualificationTab({
   activity,
   isLocked,
   mutateCounts,
-  signalTypes = [],
+  groupedFilters = {},
 }) {
   const activityId = activity?.id;
   const accountId = activity?.account;
@@ -66,21 +67,23 @@ export default function ActivityQualificationTab({
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // Grouped shows only live signals (pending + validated) — rejected signals
-  // never appear in the synthesis view.
-  const notRejected = useCallback((s) => s.status !== "REJECTED", []);
-
+  // Apply the Qualification filters CLIENT-SIDE (single-activity view, no
+  // cluster endpoint) before grouping — same perimeter/what/dimension/contact/
+  // status model Account/DC apply server-side. Status defaults to pending +
+  // validated inside applyGroupedFilters, so REJECTED never shows unless
+  // explicitly selected. A tech-stack / blocker signal (no what/dimension/scope)
+  // is excluded when a Qualification-only filter is active — mirrors backend.
   const filteredQualification = useMemo(
-    () => qualificationSignals.filter(notRejected),
-    [qualificationSignals, notRejected],
+    () => applyGroupedFilters(qualificationSignals, groupedFilters),
+    [qualificationSignals, groupedFilters],
   );
   const filteredTechStack = useMemo(
-    () => techStackSignals.filter(notRejected),
-    [techStackSignals, notRejected],
+    () => applyGroupedFilters(techStackSignals, groupedFilters),
+    [techStackSignals, groupedFilters],
   );
   const filteredBlockers = useMemo(
-    () => blockerSignals.filter(notRejected),
-    [blockerSignals, notRejected],
+    () => applyGroupedFilters(blockerSignals, groupedFilters),
+    [blockerSignals, groupedFilters],
   );
 
   // Handlers
@@ -194,7 +197,6 @@ export default function ActivityQualificationTab({
         onValidate={handleValidate}
         onReject={handleReject}
         isLocked={isLocked}
-        signalTypes={signalTypes}
       />
 
       {/* Quick Drawer */}
@@ -232,6 +234,7 @@ ActivityQualificationTab.propTypes = {
   }),
   isLocked: PropTypes.bool,
   mutateCounts: PropTypes.func,
-  /** Type filter (frontend slugs) from the shared drawer; [] = show all. */
-  signalTypes: PropTypes.arrayOf(PropTypes.string),
+  /** Qualification filters (client-side): { perimeter, whats, dimensions,
+      contacts, statuses }. Empty object = no filter (default statuses apply). */
+  groupedFilters: PropTypes.object,
 };
