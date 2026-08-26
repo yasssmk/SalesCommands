@@ -179,6 +179,40 @@ describe("QualificationGroupedView — sections + nesting", () => {
   });
 });
 
+describe("QualificationGroupedView — Type filter (grouped honors it)", () => {
+  it("narrows the cluster fetch and the sections to the selected type", () => {
+    render(
+      <QualificationGroupedView
+        surface="dc"
+        accountId={ACCOUNT_ID}
+        decisionCycleId={CYCLE_ID}
+        signalTypes={["pain"]}
+      />,
+    );
+    // Cluster fetch scoped to the selected clusterable type.
+    const args = useGetClustersByAccount.mock.calls.at(-1);
+    expect(args[1].signalType).toEqual(["pain"]);
+    // Only the Pains narrative section shows; Tech/Objections hidden.
+    expect(screen.getByText("Pains")).toBeInTheDocument();
+    expect(screen.queryByText("Objectives")).not.toBeInTheDocument();
+    expect(screen.queryByText("Impacts")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tech Stack")).not.toBeInTheDocument();
+    expect(screen.queryByText("Objections")).not.toBeInTheDocument();
+  });
+
+  it("shows only Tech Stack when the type filter is tech-stack", () => {
+    render(
+      <QualificationGroupedView
+        surface="account"
+        accountId={ACCOUNT_ID}
+        signalTypes={["tech-stack"]}
+      />,
+    );
+    expect(screen.getByText("Tech Stack")).toBeInTheDocument();
+    expect(screen.queryByText("Pains")).not.toBeInTheDocument();
+  });
+});
+
 describe("QualificationGroupedView — two-column layout (same as Activity)", () => {
   it("renders narrative sections LEFT and Tech/Objections RIGHT", () => {
     const { container } = render(

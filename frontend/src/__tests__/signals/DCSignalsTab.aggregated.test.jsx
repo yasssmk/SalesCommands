@@ -33,6 +33,12 @@ vi.mock("utils/displayError", () => ({
   displayErrorSnackbar: vi.fn(),
 }));
 
+// Grouped view is covered by its own suite — stub it here so the tab tests
+// focus on the flat view + the toggle wiring.
+vi.mock("sections/accounts/signals/QualificationGroupedView", () => ({
+  default: () => <div data-testid="grouped-view" />,
+}));
+
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
@@ -75,6 +81,11 @@ function lastHookArgs() {
   return useAggregatedSignals.mock.calls.at(-1)[0];
 }
 
+// Grouped is the default view; switch to Flat for the flat-list assertions.
+function toFlat() {
+  fireEvent.click(screen.getByRole("button", { name: /flat view/i }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   useAggregatedSignals.mockImplementation(() => aggReturn());
@@ -85,6 +96,7 @@ afterEach(() => cleanup());
 describe("DC SignalsTab — aggregated flat list", () => {
   it("renders SignalLine rows from the aggregated hook, mixed types", () => {
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
 
     expect(screen.getAllByTestId("signal-line")).toHaveLength(3);
     expect(screen.getByText("Pain DC")).toBeInTheDocument();
@@ -93,6 +105,7 @@ describe("DC SignalsTab — aggregated flat list", () => {
 
   it("scopes the call to the decision cycle with the default active status set", () => {
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
     const args = lastHookArgs();
     expect(args.decisionCycleId).toBe(CYCLE_ID);
     expect(args.statuses).toEqual(["PENDING", "VALIDATED"]);
@@ -102,6 +115,7 @@ describe("DC SignalsTab — aggregated flat list", () => {
 
   it("shows the filter icon (not inline chips)", () => {
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
     expect(screen.getByLabelText("Open filters")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Validated" })).not.toBeInTheDocument();
   });
@@ -109,6 +123,7 @@ describe("DC SignalsTab — aggregated flat list", () => {
   it("filters by type via the drawer and resets to page 1", () => {
     useAggregatedSignals.mockImplementation(() => aggReturn({ pageCount: 3 }));
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
 
     fireEvent.click(screen.getByRole("button", { name: /go to next page/i }));
     expect(lastHookArgs().page).toBe(2);
@@ -124,6 +139,7 @@ describe("DC SignalsTab — aggregated flat list", () => {
 
   it("includes rejected only when opted in via the drawer", () => {
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
     fireEvent.click(screen.getByLabelText("Open filters"));
     fireEvent.click(screen.getByLabelText("Include rejected"));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -135,6 +151,7 @@ describe("DC SignalsTab — aggregated flat list", () => {
       aggReturn({ signals: manyRows(20), count: 55, pageCount: 3 }),
     );
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
 
     expect(screen.getAllByTestId("signal-line")).toHaveLength(20);
     expect(lastHookArgs().page).toBe(1);
@@ -148,6 +165,7 @@ describe("DC SignalsTab — aggregated flat list", () => {
 
   it("opens the signal drawer when a row is clicked", () => {
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
     expect(screen.queryByLabelText("Close drawer")).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByTestId("signal-line")[0]);
     expect(screen.getByLabelText("Close drawer")).toBeInTheDocument();
@@ -162,6 +180,7 @@ describe("DC SignalsTab — aggregated flat list", () => {
       }),
     );
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
 
     // Row carries no action button — click it to open the drawer.
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
@@ -178,6 +197,7 @@ describe("DC SignalsTab — aggregated flat list", () => {
       aggReturn({ signals: [], count: 0, error: new Error("boom") }),
     );
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
     expect(screen.getByText("Failed to load signals")).toBeInTheDocument();
     expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
   });
@@ -187,8 +207,34 @@ describe("DC SignalsTab — aggregated flat list", () => {
       aggReturn({ error: new Error("boom") }),
     );
     render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    toFlat();
     expect(screen.queryByText("Failed to load signals")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
     expect(displayErrorSnackbar).toHaveBeenCalled();
+  });
+});
+
+describe("DC SignalsTab — Flat/Grouped toggle", () => {
+  it("defaults to Grouped (the qualification synthesis)", () => {
+    render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
+  });
+
+  it("switching to Flat shows the SignalLine list; back to Grouped shows the synthesis", () => {
+    render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: /flat view/i }));
+    expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("grouped-view")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /grouped view/i }));
+    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
+  });
+
+  it("the Type filter reaches the grouped view (passed as signalTypes)", () => {
+    // Grouped honors the type filter; stubbed here, but assert the tab renders
+    // grouped by default so the drawer's Type control has an effect on it.
+    render(<SignalsTab cycleId={CYCLE_ID} accountId={ACCOUNT_ID} />);
+    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
   });
 });

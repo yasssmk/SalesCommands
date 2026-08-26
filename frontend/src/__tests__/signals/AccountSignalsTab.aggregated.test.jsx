@@ -35,6 +35,10 @@ vi.mock("utils/displayError", () => ({
 
 // Controlled department list for the drawer; useGetContacts feeds the
 // AsyncContactSelect (empty options are fine for these tests).
+vi.mock("sections/accounts/signals/QualificationGroupedView", () => ({
+  default: () => <div data-testid="grouped-view" />,
+}));
+
 vi.mock("api/businessData/contacts", () => ({
   useGetContactChoices: vi.fn(() => ({
     standardDepartments: [
@@ -85,6 +89,11 @@ function lastHookArgs() {
   return useAggregatedSignals.mock.calls.at(-1)[0];
 }
 
+// Grouped is the default view; switch to Flat for the flat-list assertions.
+function toFlat() {
+  fireEvent.click(screen.getByRole("button", { name: /flat view/i }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   useAggregatedSignals.mockImplementation(() => aggReturn());
@@ -95,6 +104,7 @@ afterEach(() => cleanup());
 describe("AccountSignalsTab — aggregated flat list", () => {
   it("renders SignalLine rows from the aggregated hook, each typed from signal_type", () => {
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
 
     const rows = screen.getAllByTestId("signal-line");
     expect(rows).toHaveLength(2);
@@ -104,6 +114,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
 
   it("scopes to the account and all account types by default, pending+validated only", () => {
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
     const args = lastHookArgs();
     expect(args.accountId).toBe(ACCOUNT_ID);
     // No type filter selected → all four account types.
@@ -116,6 +127,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
 
   it("shows the filter icon (not inline chips)", () => {
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
     expect(screen.getByLabelText("Open filters")).toBeInTheDocument();
     // The old inline status chip is gone.
     expect(screen.queryByRole("button", { name: "Validated" })).not.toBeInTheDocument();
@@ -124,6 +136,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
   it("filters by type via the drawer and resets to page 1", () => {
     useAggregatedSignals.mockImplementation(() => aggReturn({ pageCount: 3 }));
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
 
     // advance to page 2 first
     fireEvent.click(screen.getByRole("button", { name: /go to next page/i }));
@@ -142,6 +155,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
   it("filters by department via the drawer (passes the StandardDepartment id) and resets to page 1", () => {
     useAggregatedSignals.mockImplementation(() => aggReturn({ pageCount: 3 }));
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
 
     // No department by default.
     expect(lastHookArgs().department).toBeUndefined();
@@ -163,6 +177,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
 
   it("filters by scope via the drawer (BUSINESS | DEPARTMENT)", () => {
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
     expect(lastHookArgs().scope).toBeUndefined();
 
     fireEvent.click(screen.getByLabelText("Open filters"));
@@ -175,6 +190,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
 
   it("combines type + status + department into one aggregated call", () => {
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
     fireEvent.click(screen.getByLabelText("Open filters"));
     fireEvent.click(screen.getByLabelText("Tech Stack"));
     fireEvent.click(screen.getByLabelText("Include rejected"));
@@ -190,6 +206,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
 
   it("includes rejected only when opted in via the drawer", () => {
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
     fireEvent.click(screen.getByLabelText("Open filters"));
     fireEvent.click(screen.getByLabelText("Include rejected"));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -201,6 +218,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
       aggReturn({ signals: manyRows(20), count: 55, pageCount: 3 }),
     );
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
 
     expect(screen.getAllByTestId("signal-line")).toHaveLength(20);
     expect(lastHookArgs().page).toBe(1);
@@ -214,6 +232,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
 
   it("opens the signal drawer when a row is clicked", () => {
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
     expect(screen.queryByLabelText("Close drawer")).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByTestId("signal-line")[0]);
     expect(screen.getByLabelText("Close drawer")).toBeInTheDocument();
@@ -228,6 +247,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
       }),
     );
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
 
     // Row carries no action button — click it to open the drawer.
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
@@ -245,6 +265,7 @@ describe("AccountSignalsTab — aggregated flat list", () => {
       aggReturn({ signals: [], count: 0, error: new Error("boom") }),
     );
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
     expect(screen.getByText("Failed to load signals")).toBeInTheDocument();
     expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
   });
@@ -254,10 +275,29 @@ describe("AccountSignalsTab — aggregated flat list", () => {
       aggReturn({ error: new Error("boom") }),
     );
     render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    toFlat();
     // Previous page still shown — not replaced by the red surface.
     expect(screen.queryByText("Failed to load signals")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
     // Transient failure surfaced through the standard snackbar.
     expect(displayErrorSnackbar).toHaveBeenCalled();
+  });
+});
+
+describe("AccountSignalsTab — Flat/Grouped toggle", () => {
+  it("defaults to Grouped (the qualification synthesis)", () => {
+    render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
+  });
+
+  it("switching to Flat shows the SignalLine list; back to Grouped shows the synthesis", () => {
+    render(<AccountSignalsTab accountId={ACCOUNT_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: /flat view/i }));
+    expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("grouped-view")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /grouped view/i }));
+    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
   });
 });

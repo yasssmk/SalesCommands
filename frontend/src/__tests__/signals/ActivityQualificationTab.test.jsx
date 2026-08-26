@@ -58,10 +58,11 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Activity workspace tabs", () => {
-  it("exposes both a Signals (flat) and a Qualification (grouped) tab", () => {
+  it("exposes ONE Signals tab and no separate Qualification tab (C6)", () => {
     const ids = ACTIVITY_TABS.map((t) => t.id);
     expect(ids).toContain("signals");
-    expect(ids).toContain("qualification");
+    // The Qualification tab is gone — its view is the Grouped toggle inside Signals.
+    expect(ids).not.toContain("qualification");
   });
 });
 

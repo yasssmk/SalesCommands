@@ -31,6 +31,12 @@ vi.mock("utils/displayError", () => ({
   displayErrorSnackbar: vi.fn(),
 }));
 
+// Grouped view has its own suite — stub it so these tests focus on the flat
+// view + the toggle wiring.
+vi.mock("sections/activities/workspace/ActivityQualificationTab", () => ({
+  default: () => <div data-testid="grouped-view" />,
+}));
+
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
@@ -63,6 +69,11 @@ function lastHookArgs() {
   return useAggregatedSignals.mock.calls.at(-1)[0];
 }
 
+// Grouped is the default view; switch to Flat for the flat-list assertions.
+function toFlat() {
+  fireEvent.click(screen.getByRole("button", { name: /flat view/i }));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
@@ -74,6 +85,7 @@ afterEach(() => cleanup());
 describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
   it("renders SignalLine rows from the aggregated hook, mixed types", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
 
     expect(screen.getAllByTestId("signal-line")).toHaveLength(3);
     expect(screen.getByText("Pain signal flat")).toBeInTheDocument();
@@ -83,6 +95,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
   it("scopes the aggregated call to this activity and the qualification+blocker types", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
 
     const args = lastHookArgs();
     expect(args.activityId).toBe("act-flat");
@@ -101,12 +114,14 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
   it("shows the filter icon (not inline chips)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
     expect(screen.getByLabelText("Open filters")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Validated" })).not.toBeInTheDocument();
   });
 
   it("filters by type via the drawer", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
     fireEvent.click(screen.getByLabelText("Open filters"));
     fireEvent.click(screen.getByLabelText("Objective"));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -115,6 +130,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
   it("adds REJECTED to the statuses arg only when opted in via the drawer", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
     fireEvent.click(screen.getByLabelText("Open filters"));
     fireEvent.click(screen.getByLabelText("Include rejected"));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -123,6 +139,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
   it("opens the signal drawer when a row is clicked", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
 
     expect(screen.queryByLabelText("Close drawer")).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByTestId("signal-line")[0]);
@@ -138,6 +155,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
       }),
     );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
 
     // Row carries no action button — click it to open the drawer.
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
@@ -152,6 +170,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
   it("advances and rewinds the server page via the pager", () => {
     useAggregatedSignals.mockImplementation(() => flatReturn({ pageCount: 3 }));
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
 
     expect(lastHookArgs().page).toBe(1);
 
@@ -164,6 +183,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
   it("shows the sort select", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
     expect(screen.getByLabelText("Sort")).toBeInTheDocument();
   });
 
@@ -172,6 +192,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
       flatReturn({ signals: [], count: 0, error: new Error("boom") }),
     );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
     expect(screen.getByText("Failed to load signals")).toBeInTheDocument();
     expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
   });
@@ -181,8 +202,27 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
       flatReturn({ error: new Error("boom") }),
     );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    toFlat();
     expect(screen.queryByText("Failed to load signals")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
     expect(displayErrorSnackbar).toHaveBeenCalled();
+  });
+});
+
+describe("ActivitySignalsTab — Flat/Grouped toggle", () => {
+  it("defaults to Grouped (the qualification synthesis)", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
+  });
+
+  it("switching to Flat shows the SignalLine list; back to Grouped shows the synthesis", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(screen.getByRole("button", { name: /flat view/i }));
+    expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("grouped-view")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /grouped view/i }));
+    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
   });
 });
