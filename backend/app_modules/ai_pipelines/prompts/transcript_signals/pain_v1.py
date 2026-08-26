@@ -138,6 +138,8 @@ Return a single JSON object with this exact shape:
     {{
       "what":         "<one value from the `what` list in the CANONICAL TAXONOMY of the context>",
       "dimension":    "<one value from the `dimension` list in the CANONICAL TAXONOMY of the context>",
+      "scope_level":  "<one value from the `scope_level` list in the context: BUSINESS or DEPARTMENT>",
+      "target_department": "<one value from the `target_department` list when scope_level is DEPARTMENT, otherwise null>",
       "summary":      "<one short sentence rephrasing the pain in your own words, around 200 chars or less>",
       "source_quote": "<verbatim excerpt from the transcript supporting this pain>",
       "confidence":   <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
@@ -145,6 +147,21 @@ Return a single JSON object with this exact shape:
     }}
   ]
 }}
+
+DOMAIN vs DIMENSION (`what` is NEVER a dimension word)
+- `what` is the DOMAIN: the business AREA the pain concerns. It MUST be EXACTLY
+  one code from the `what` list in the CANONICAL TAXONOMY
+  (OPS / TECH / DATA / PEOPLE / GROWTH). Never invent a value, and never put a
+  dimension word (cost / time / quality / scale / risk) in `what`.
+- `dimension` is the MEASURE AXIS: Cost, Time, Quality, Scale, Risk. A word like
+  "cost / coût", "time / temps" or "quality" is ALWAYS a dimension, NEVER a `what`.
+- When a pain is about operations and mentions a cost, `what`="OPS" and the cost
+  goes into `dimension`="COST" -- never `what`="COST".
+
+WHAT x DIMENSION EXAMPLES (domain code first, measure axis second)
+- "operational costs keep climbing"  -> what="OPS"    (Operations / Process), dimension="COST"    (Cost / Budget)
+- "the sales cycle drags on"          -> what="GROWTH" (Growth / Revenue),     dimension="TIME"    (Time / Speed)
+- "the reporting data is inaccurate"  -> what="DATA"   (Data / Visibility),    dimension="QUALITY" (Quality / Accuracy)
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of a pain.
@@ -157,8 +174,28 @@ EMISSION RULES
   source_quote into the summary.
 - `source_quote` must be a verbatim excerpt from the transcript, preserving
   the original language, punctuation, and casing. Never translate.
+- `scope_level` MUST be exactly BUSINESS or DEPARTMENT, decided ONLY by the
+  SUBJECT of the pain -- which perimeter it concerns -- never by who is
+  speaking. DEPARTMENT = the pain names or clearly identifies one specific
+  department (use that department verbatim, no interpretation), even if the
+  speaker belongs to another department and even if the consequence hits the
+  whole company. BUSINESS = no specific department is named; the pain is
+  company-wide or cross-departmental. A senior person (CEO, GM, C-level)
+  describing one department's pain is still DEPARTMENT. Never emit PERSONAL or
+  any other value.
+- `target_department` is REQUIRED when scope_level is DEPARTMENT: pick exactly
+  one value from the `target_department` list in the context. It MUST be null
+  when scope_level is BUSINESS.
 - If NO pain evidence is present anywhere in the transcript, return exactly:
   {{"signals": []}}
+
+SCOPE EXAMPLES (the SUBJECT decides the scope, never the speaker)
+- The CEO says "our marketing team can't trust its campaign data"
+  -> scope_level = "DEPARTMENT", target_department = "Marketing"
+     (a department is named; the CEO speaking does not make it BUSINESS)
+- Someone says "company-wide, our consolidated reporting takes three weeks"
+  -> scope_level = "BUSINESS", target_department = null
+     (no single department is the subject)
 
 TRANSCRIPT
 <<<TRANSCRIPT_START>>>

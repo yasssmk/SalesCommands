@@ -7,9 +7,9 @@
  *
  * Responsibilities:
  *   - Render Impact header (type chip, status chip, canonical axes,
- *     scope chip, impact_type chip, creation date, actions)
- *   - Render Impact body (summary, metric_text in callout, human_impact
- *     chip, source provenance line)
+ *     scope chip, creation date, actions)
+ *   - Render Impact body (summary, the shared ImpactDetailBlock for
+ *     impact_type / metric_text / human_impact, source provenance line)
  *   - Surface lifecycle actions (validate, reject, edit, delete) aligned
  *     with PainCard / ObjectiveCard / TechStackCard conventions
  *   - Confirm destructive delete via inline dialog
@@ -29,8 +29,8 @@
  *   - No `target_*` fields — Impact does not propagate ownership
  *     (contrary to Objective). All evidence is captured directly via
  *     impact_type / human_impact / metric_text fields.
- *   - metric_text is rendered in a callout box (similar to canonical
- *     preview in inline forms) to emphasise quantitative evidence.
+ *   - impact_type / metric_text / human_impact are rendered by the
+ *     shared ImpactDetailBlock (one visual truth across drawer + card).
  */
 
 "use client";
@@ -59,9 +59,10 @@ import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
 import DeleteOutlined from "@ant-design/icons/DeleteOutlined";
 import EditOutlined from "@ant-design/icons/EditOutlined";
-import LineChartOutlined from "@ant-design/icons/LineChartOutlined";
 import MoreOutlined from "@ant-design/icons/MoreOutlined";
-import UserOutlined from "@ant-design/icons/UserOutlined";
+
+// Shared per-type detail block — single rendering of impact-specific fields
+import ImpactDetailBlock from "components/signals/detail/ImpactDetailBlock";
 
 // ==============================|| STATUS CONFIG ||============================== //
 
@@ -215,18 +216,6 @@ export default function ImpactCard({
     [impact.scope_level],
   );
 
-  /** Impact type chip label */
-  const impactTypeLabel = useMemo(
-    () => resolveLabel(choices?.impact_types, impact.impact_type),
-    [choices, impact.impact_type],
-  );
-
-  /** Human impact chip label — optional */
-  const humanImpactLabel = useMemo(
-    () => resolveLabel(choices?.human_impacts, impact.human_impact),
-    [choices, impact.human_impact],
-  );
-
   /** Source line — "From [contact] · 2026-04-15" derived from source_activity */
   const sourceLine = useMemo(() => {
     const activity = impact.source_activity;
@@ -346,14 +335,6 @@ export default function ImpactCard({
               sx={{ fontSize: "0.68rem", height: 20 }}
             />
           )}
-          {impactTypeLabel && (
-            <Chip
-              label={impactTypeLabel}
-              size="small"
-              color="secondary"
-              sx={{ fontSize: "0.62rem", height: 18 }}
-            />
-          )}
           {createdDate && (
             <Typography variant="caption" color="text.disabled">
               {createdDate}
@@ -447,55 +428,14 @@ export default function ImpactCard({
         </Typography>
       )}
 
-      {/* ==================== METRIC TEXT (callout) ==================== */}
+      {/* ==================== TYPE-SPECIFIC DETAIL (shared block) ==================== */}
       {/*
-        metric_text is rendered as a callout box rather than a chip
-        because it's free-text quantitative evidence ("3h/week lost",
-        "120k$/year") — usually too long for a chip and benefits from
-        the visual emphasis to surface the proof point at a glance.
+        impact_type, metric_text and human_impact are rendered by the shared
+        ImpactDetailBlock so the drawer and this card show them identically.
       */}
-      {impact.metric_text?.trim() && (
-        <Box
-          sx={{
-            mt: 1.25,
-            px: 1.5,
-            py: 1,
-            bgcolor: "action.hover",
-            borderRadius: 1,
-            borderLeft: "3px solid",
-            borderLeftColor: "secondary.main",
-          }}
-        >
-          <Stack direction="row" spacing={0.75} alignItems="center">
-            <LineChartOutlined style={{ fontSize: 13, color: "#8c8c8c" }} />
-            <Typography variant="body2" color="text.primary" fontWeight={500}>
-              {impact.metric_text}
-            </Typography>
-          </Stack>
-        </Box>
-      )}
-
-      {/* ==================== HUMAN IMPACT ==================== */}
-      {humanImpactLabel && (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          alignItems="center"
-          sx={{ mt: 1.25 }}
-        >
-          <UserOutlined style={{ fontSize: 13, color: "#8c8c8c" }} />
-          <Typography variant="caption" color="text.secondary">
-            Human impact:
-          </Typography>
-          <Chip
-            label={humanImpactLabel}
-            size="small"
-            color="error"
-            variant="outlined"
-            sx={{ fontSize: "0.62rem", height: 18 }}
-          />
-        </Stack>
-      )}
+      <Box sx={{ mt: 1.25 }}>
+        <ImpactDetailBlock signal={impact} />
+      </Box>
 
       {/* ==================== SOURCE LINE ==================== */}
       {sourceLine && (

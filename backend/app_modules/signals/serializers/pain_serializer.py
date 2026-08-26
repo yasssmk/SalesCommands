@@ -72,6 +72,17 @@ class _PainDisplayMixin:
     def get_scope_level_display(self, obj):
         return obj.get_scope_level_display() if obj.scope_level else None
 
+    def get_target_department(self, obj):
+        # Compact FK shape — mirrors _ObjectiveDisplayMixin.get_target_department.
+        # Null when scope is BUSINESS (no department). id + human name.
+        d = obj.target_department
+        if not d:
+            return None
+        return {
+            'id':   str(d.id),
+            'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
+        }
+
 # =============================================================================
 # LIST
 # =============================================================================
@@ -98,6 +109,7 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
 
     # Scope axis
     scope_level_display = serializers.SerializerMethodField()
+    target_department   = serializers.SerializerMethodField()
 
     # Cross-reference — free-text tool mention
 
@@ -109,6 +121,7 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
             'dimension', 'dimension_display',
             # Scope
             'scope_level', 'scope_level_display',
+            'target_department',
             # Narrative
             'summary',
             # Cross-reference — TechStack
@@ -134,6 +147,7 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
     what_display        = serializers.SerializerMethodField()
     dimension_display   = serializers.SerializerMethodField()
     scope_level_display = serializers.SerializerMethodField()
+    target_department   = serializers.SerializerMethodField()
 
     # Cross-reference — free-text tool mention
 
@@ -143,6 +157,7 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
             'what', 'what_display',
             'dimension', 'dimension_display',
             'scope_level', 'scope_level_display',
+            'target_department',
             'summary',
             'notes',
             # Cross-reference — TechStack

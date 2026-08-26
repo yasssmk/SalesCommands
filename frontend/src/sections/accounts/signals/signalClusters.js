@@ -192,6 +192,10 @@ export const SIGNAL_TYPE_VISUALS = {
     color: "info",
     label: "Objective",
   },
+  impact: {
+    color: "warning",
+    label: "Impact",
+  },
 };
 
 // ==============================|| TARGET DATE URGENCY ||============================== //

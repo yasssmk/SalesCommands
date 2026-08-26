@@ -4,7 +4,7 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 // MUI
 import Badge from "@mui/material/Badge";
@@ -29,9 +29,11 @@ import {
 // Section imports
 import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
 import {
+  ACTIVITY_TABS,
   DEFAULT_TAB,
   getVisibleTabs,
 } from "sections/activities/workspace/ActivityTabs";
+import { resolveWorkspaceTab } from "utils/workspaceTabs";
 import ActivityOverviewTab from "sections/activities/workspace/ActivityOverviewTab";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
@@ -46,7 +48,24 @@ export default function ActivityWorkspacePage() {
   const searchParams = useSearchParams();
 
   const activityId = params?.id;
-  const currentTab = searchParams.get("tab") || DEFAULT_TAB;
+  // Map a legacy/removed `?tab=` id to a live tab so the MUI Tabs never gets an
+  // invalid value (e.g. a stale "qualification" link → the Signals tab, whose
+  // Grouped mode is the old qualification synthesis).
+  const rawTab = searchParams.get("tab");
+  const currentTab = resolveWorkspaceTab(
+    rawTab,
+    ACTIVITY_TABS.map((t) => t.id),
+    DEFAULT_TAB,
+  );
+
+  // Rewrite a stale `?tab=` so the resolved value doesn't linger in the URL.
+  useEffect(() => {
+    if (rawTab && rawTab !== currentTab) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("tab", currentTab);
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [rawTab, currentTab, router, searchParams]);
 
   const { activity, activityLoading, activityError, mutateActivity } =
     useGetActivity(activityId);

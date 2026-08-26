@@ -344,9 +344,10 @@ class TestPartialStatus:
         fake_provider.replies = {
             'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY,
         }
-        # Auth error on first qualif stage → fatal abort → LLM_ERROR
+        # Auth error on first qualif stage (merged pain_impact) → fatal abort
+        # → LLM_ERROR
         fake_provider.raise_per_stage = {
-            'pain': LLMAuthError('auth failed'),
+            'pain_impact': LLMAuthError('auth failed'),
         }
 
         with _apply_patches(_bypass_redis):
@@ -376,9 +377,8 @@ class TestBothFailed:
         from app_modules.ai_pipelines.providers.base import LLMTimeoutError
 
         fake_provider.raise_per_stage = {
-            'pain': LLMTimeoutError('timeout'),
+            'pain_impact': LLMTimeoutError('timeout'),
             'objective': LLMTimeoutError('timeout'),
-            'impact': LLMTimeoutError('timeout'),
             'techstack': LLMTimeoutError('timeout'),
             'blocker': LLMTimeoutError('timeout'),
             'next_steps': LLMTimeoutError('timeout'),

@@ -25,11 +25,11 @@ import {
   useGetAccountChoices,
   updateAccount,
 } from "api/admin/accounts";
+import { resolveWorkspaceTab } from "utils/workspaceTabs";
 import AccountContactsTab from "sections/accounts/contacts/AccountContactsTab";
 import DecisionCycleTab from "sections/accounts/workspace/DecisionCycleTab";
 import AccountActivitiesTab from "sections/accounts/activities/AccountActivitiesTab";
 import AccountSignalsTab from "sections/accounts/workspace/AccountSignalsTab";
-import AccountQualificationTab from "sections/accounts/workspace/AccountQualificationTab";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -52,8 +52,27 @@ export default function AccountWorkspacePage() {
   const searchParams = useSearchParams();
 
   const accountId = params?.id;
-  const currentTab = searchParams.get("tab") || DEFAULT_TAB;
+  // Resolve the raw `?tab=` value to a live tab: a legacy/removed id (e.g. the
+  // retired "qualification" tab, now the Grouped mode of Signals) maps to its
+  // new home instead of feeding the MUI Tabs an invalid value.
+  const rawTab = searchParams.get("tab");
+  const currentTab = resolveWorkspaceTab(
+    rawTab,
+    WORKSPACE_TABS.map((t) => t.id),
+    DEFAULT_TAB,
+  );
   const currentCycleId = searchParams.get("cycle") || null;
+
+  // Rewrite a stale `?tab=` so the resolved value doesn't linger in the URL.
+  useEffect(() => {
+    if (rawTab && rawTab !== currentTab) {
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", currentTab);
+      router.replace(`/accounts/${accountId}?${p.toString()}`, {
+        scroll: false,
+      });
+    }
+  }, [rawTab, currentTab, accountId, router, searchParams]);
 
   // ==============================|| DATA FETCHING ||============================== //
 
@@ -240,7 +259,6 @@ function TabContent({
         "activities",
         "contacts",
         "signals",
-        "qualification",
       ].includes(tab)
     ) {
       setMountedTabs((prev) => {
@@ -255,11 +273,6 @@ function TabContent({
   return (
     <>
       {/* KeepAlive tabs: mounted once, hidden with CSS when inactive */}
-      {mountedTabs.has("qualification") && (
-        <Box sx={{ display: tab === "qualification" ? "block" : "none" }}>
-          <AccountQualificationTab accountId={accountId} />
-        </Box>
-      )}
       {mountedTabs.has("decision-cycle") && (
         <Box sx={{ display: tab === "decision-cycle" ? "block" : "none" }}>
           <DecisionCycleTab

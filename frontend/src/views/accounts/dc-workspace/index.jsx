@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 // MUI
@@ -20,6 +21,7 @@ import {
   DC_WORKSPACE_TABS,
   DEFAULT_TAB,
 } from "sections/accounts/dc-workspace/DCWorkspaceTabs";
+import { resolveWorkspaceTab } from "utils/workspaceTabs";
 import TimelineTab from "sections/accounts/dc-workspace/TimelineTab";
 import SignalsTab from "sections/accounts/dc-workspace/SignalsTab";
 import ProductsTab from "sections/accounts/dc-workspace/ProductsTab";
@@ -36,7 +38,23 @@ export default function DCWorkspacePage() {
 
   const accountId = params?.id;
   const cycleId = params?.cycleId;
-  const currentTab = searchParams.get("tab") || DEFAULT_TAB;
+  // Map a legacy/removed `?tab=` id to a live tab so the MUI Tabs never gets an
+  // invalid value (e.g. a stale "qualification" link → the Signals tab).
+  const rawTab = searchParams.get("tab");
+  const currentTab = resolveWorkspaceTab(
+    rawTab,
+    DC_WORKSPACE_TABS.map((t) => t.id),
+    DEFAULT_TAB,
+  );
+
+  // Rewrite a stale `?tab=` so the resolved value doesn't linger in the URL.
+  useEffect(() => {
+    if (rawTab && rawTab !== currentTab) {
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", currentTab);
+      router.replace(`?${p.toString()}`, { scroll: false });
+    }
+  }, [rawTab, currentTab, router, searchParams]);
 
   const { cycles, cyclesLoading, cyclesError, mutateCycles } =
     useGetDecisionCyclesByAccount(accountId);

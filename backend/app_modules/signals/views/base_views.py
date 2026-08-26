@@ -168,16 +168,26 @@ class BaseSignalViewSet(
 
         Standardised provenance prefetch
         --------------------------------
-        Both list and detail actions prefetch `source_activity__contacts`
-        because the standardised `source_context` block exposed by
+        Both list and detail actions prefetch
+        `source_activity__contacts__standard_department` because the
+        standardised `source_context` block exposed by
         BaseSignalListSerializer / BaseSignalDetailSerializer (introduced
-        by the standardisation refactor) reads activity.contacts to
-        derive the participating-contacts list. Without this prefetch,
-        every rendered signal would issue an extra query, yielding
-        O(N) DB roundtrips on list responses.
+        by the standardisation refactor) reads activity.contacts — and
+        each contact's standard_department — to derive the
+        participating-contacts list. Without this prefetch, every
+        rendered signal (and every contact on it) would issue an extra
+        query, yielding O(N) DB roundtrips on list responses.
         """
         qs = super().get_queryset()
         qs = self.apply_owner_scope_filter(qs)
+
+        # Data-quality gate: never surface a signal whose `what` (domain) fell
+        # outside the controlled SignalWhat vocabulary. Such rows are persisted
+        # flagged (is_domain_valid=False) for traceability/reprocessing but must
+        # not appear in any list, detail, count or lifecycle action. Applied to
+        # every action so an excluded row is unreachable through the API — the
+        # aggregated list reuses this queryset, so it inherits the exclusion.
+        qs = qs.filter(is_domain_valid=True)
 
         if self.action == 'list':
             # Universal FKs only — concrete ViewSets add type-specific
@@ -188,9 +198,10 @@ class BaseSignalViewSet(
             ).prefetch_related(
                 # The standardised `source_context` block exposed by
                 # BaseSignalListSerializer reads source_activity.contacts
-                # (m2m). Prefetch keeps the list at a bounded query count
+                # (m2m) and each contact's standard_department. Prefetch
+                # both levels to keep the list at a bounded query count
                 # regardless of result size.
-                'source_activity__contacts',
+                'source_activity__contacts__standard_department',
             )
         else:
             qs = qs.select_related(
@@ -199,11 +210,12 @@ class BaseSignalViewSet(
                 'validated_by',
                 'requested_by',
             ).prefetch_related(
-                # source_activity exposes its linked contacts through the
-                # enriched compact serializer and the standardised
-                # `source_context` block — prefetch keeps detail reads at
-                # a bounded number of queries.
-                'source_activity__contacts',
+                # source_activity exposes its linked contacts (and each
+                # contact's standard_department) through the enriched
+                # compact serializer and the standardised `source_context`
+                # block — prefetch both levels to keep detail reads at a
+                # bounded number of queries.
+                'source_activity__contacts__standard_department',
             )
 
         return qs

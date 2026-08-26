@@ -14,7 +14,6 @@ import Skeleton from '@mui/material/Skeleton';
 
 export const WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'qualification', label: 'Qualification' },
   { id: 'decision-cycle', label: 'Decision Cycle' },
   { id: 'activities', label: 'Activities' },
   { id: 'contacts', label: 'Contacts' },
@@ -40,12 +39,12 @@ function AccountTabsSkeleton() {
  * 
  * Navigation tabs for the Account Workspace:
  * - Summary: Overview and key information
- * - Qualification: Qualification data and signals
  * - Buying Process: Steps and stakeholders
  * - Activities: Account activities history
  * - Contacts: Account contacts
- * - Signals: Alerts and signals
- * 
+ * - Signals: one tab with a Flat / Grouped toggle (flat list or the
+ *   grouped Qualification synthesis)
+ *
  * @param {Object} props
  * @param {string} props.activeTab - Currently active tab ID
  * @param {Function} props.onTabChange - Callback when tab changes (receives new tab ID)

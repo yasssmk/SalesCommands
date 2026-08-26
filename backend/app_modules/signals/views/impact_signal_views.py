@@ -68,20 +68,24 @@ class ImpactSignalViewSet(BaseSignalViewSet):
         source_activity, audit users on detail, source_activity.contacts
         for the standardised source_context block).
 
-        ImpactSignal carries no Impact-specific FK (no equivalent to
-        Objective's target_contact / target_department).
-        Lifecycle data is captured directly on the model
-        (impact_type, scope_level, metric_text, human_impact) — all
-        scalar fields requiring no relational preload.
+        ImpactSignal carries no target_contact (unlike ObjectiveSignal),
+        but it does carry target_department. Lifecycle data (impact_type,
+        scope_level, metric_text, human_impact) is scalar and needs no
+        relational preload.
 
         FKs preloaded here:
-          - decision_cycle : exposed inside the source_context block
-                              on detail responses.
-          - campaign       : same.
+          - decision_cycle    : exposed inside the source_context block
+                                on detail responses.
+          - campaign          : same.
+          - target_department : serialized (id + name) on the Impact List
+                                and Detail serializers on every row —
+                                select_related keeps it off the per-row
+                                query path (A1.4).
         """
         qs = super().get_queryset()
         qs = qs.select_related(
             'decision_cycle',
             'campaign',
+            'target_department',
         )
         return qs

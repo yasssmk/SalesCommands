@@ -674,6 +674,91 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / Qualification ✅ — Signaux agrégés, qualification groupée & garde COST (branche `feat/signals-qualif-scope`)
+- **Objectif** : faire de la **Qualification** une lecture UNIQUE et cohérente à
+  travers les trois surfaces (Compte / Decision Cycle / Activité) — un scope et
+  un département de rattachement portés par le signal, un endpoint agrégé qui
+  fusionne les 8 types en une liste, des vues groupées/plates réunies dans un
+  seul onglet, un jeu de filtres identique partout — et **fermer la fuite de
+  qualité** sur la classification IA (domaine `what` / dimension `dimension`).
+- **Livré** :
+  - **Scope & ciblage portés par le signal (A1, A1.4, B0)** : `scope_level`
+    (BUSINESS / DEPARTMENT) + `target_department` (FK `StandardDepartment`)
+    résolus à l'extraction avec gardes, exposés sur les serializers de
+    qualification en restant **N+1-safe** (annotation / prefetch, pas de requête
+    par ligne) ; `department` propagé sur les contacts de `source_context`. Le
+    signal sait désormais DE QUI et DE QUEL PÉRIMÈTRE il parle.
+  - **Fusion pain / impact (A2)** : `pain` et `impact` fondus en un signal unique
+    `pain_impact_v1` — une seule extraction, une seule ligne de vérité, plus de
+    double comptage.
+  - **Endpoint agrégé `GET /module-signals/all/` (B1)** : fusionne en Python les
+    **8 types de signaux** (modèles abstraits) en une liste unique, dispatch
+    polymorphe du serializer par type, **400 métier** lisibles sur paramètre
+    invalide, et **nombre de requêtes borné** (pas de N+1 par type). Une seule
+    porte pour toute lecture de signaux mixtes.
+  - **Vues signaux refondues (B1, B1.2, B2)** : `SignalLine` (ligne
+    informationnelle status + message + méta) + `SignalQuickDrawer` (le drawer où
+    vivent les actions) + blocs de détail partagés PAR TYPE ; les vues PLATES
+    rebranchées sur l'endpoint agrégé.
+  - **Nettoyages (B3, B4)** : retrait du **linkage manuel pain↔impact** devenu
+    mort (TD-112) ; retrait de **l'ancien onglet Qualification** legacy.
+  - **Pertinence temporelle factuelle sur les clusters (C1)** : `signal_count` +
+    `period_start` / `period_end` + `span_days` — des FAITS datés, pas un score
+    interprété.
+  - **Actions déplacées dans les drawers (C2)** ; **Qualification Activité = listes
+    plates par type, sans clusters (C3)** (une activité est un point de
+    provenance unique — clusteriser n'y a pas de sens).
+  - **Vue riche DC / Compte (C4, C4-fix)** : 3 sections narratives → domaine →
+    dimension → lignes de cluster, disposition **deux colonnes** (Tech / Objections
+    en second), accordéons MUI thémés.
+  - **Drawer unique (C5)** : navigation cluster↔signal avec un **Back** qui ne
+    s'empile pas (pas de pile de drawers).
+  - **Onglet Signals unifié (C6)** : bascule **Grouped / Flat** dans un onglet
+    unique.
+  - **Garde COST — classification IA (deux volets)** :
+    - **Volet 1 (prompt)** : cadrage du prompt domaine-vs-dimension + few-shots
+      pour cesser de confondre l'axe COST (dimension) avec un domaine.
+    - **Volet 2 (persistance)** : `what` **validé à l'écriture** contre
+      `SignalWhat` ; une valeur hors liste est **journalisée**, marquée
+      `is_domain_valid=False` et **exclue de TOUTES les surfaces utilisateur**
+      (jamais affichée, jamais comptée) — champ ajouté par la **migration
+      `0025_signals_is_domain_valid`**.
+  - **Filtres Qualification groupés (identiques sur les trois surfaces groupées)** :
+    **Périmètre** unifié en OR (`scope_level=BUSINESS` OU `target_department ∈
+    liste` ; « Business » = `scope=BUSINESS`), **domaine** (`what`), **dimension**,
+    **multi-contact**, **statut** (défaut PENDING+VALIDATED, REJECTED seulement si
+    demandé). AND entre familles, OR dans le périmètre. Appliqués **côté serveur**
+    sur Compte/DC (endpoint cluster `_apply_member_filters` /
+    `_parse_member_filters`) et **côté client** sur Activité (`applyGroupedFilters`,
+    sémantique miroir exacte du backend). Panneau de filtres en **accordéon par
+    famille** (`SignalsGroupedFilterPanel`) : Qualification REMPLIE ; **Tech Stack +
+    Objection en placeholders** (à remplir avec leur partie de bloc).
+- **Migration** : `module_signals/0025_signals_is_domain_valid` (ajout du booléen
+  `is_domain_valid`, schema-only). **À APPLIQUER au déploiement.**
+- **Validation** : suites backend signaux/clusters vertes ; front vitest vert
+  (dont `ActivitySignalsTab.flat`, `ActivityGroupedFilters` — filtres client-side
+  Activité, périmètre OR / what / dimension / contact / statut). Chaque garde
+  N+1-safe épinglée par un test de nombre de requêtes.
+- **Dette ajoutée** : **TD-186 → TD-192** (voir TECH_DEBT.md) — architecture
+  onglet Flat/Grouped à reconsidérer, nettoyage `ScopeLevel.PERSONAL`, passe UI de
+  fin de bloc, filtres Tech Stack / Objection, clustering tech à construire,
+  symétrie de validation `dimension`, narratif IA logé en Overview. **Dette
+  fermée** : **TD-112** (linkage manuel pain↔impact, devenu mort et retiré).
+- **⏸️ REPORTÉ — à NE PAS considérer comme livré** :
+  - **Familles Tech Stack & Objection** des filtres groupés — sections présentes
+    mais VIDES (placeholders), livrées avec leur partie de bloc (TD-189).
+  - **Clustering des signaux tech** — les signaux tech ne clusterisent pas (dédup
+    par `tech_name_normalized` uniquement) ; à construire quand l'étape Tech sera
+    traitée (TD-190).
+  - **Passe UI esthétique de fin de bloc** (bordures de section, polish des cartes,
+    multi-select département, drawer) — reportée au Sprint UI (TD-188).
+  - **Narratif IA en Overview** — fonctionnalité IA codée dans le bloc mais logée
+    dans la surface Overview, en fin de bloc (TD-192).
+- **Prochain jalon** (ordre cible) : suite du **Bloc « Commandes IA » (#4)** —
+  Tech Stack (prompt + affichage) et Objection.
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à

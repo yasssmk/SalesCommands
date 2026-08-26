@@ -116,7 +116,7 @@ Each cluster dict contains:
 from collections import defaultdict
 from datetime import timedelta
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 
 from app_modules.decision_cycles.constants import CycleOutcome, TERMINAL_OUTCOMES
@@ -124,6 +124,7 @@ from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
 from ..constants import (
+    DEFAULT_LIST_STATUSES,
     FreshnessStatus,
     FRESHNESS_FRESH_DAYS,
     FRESHNESS_DORMANT_DAYS,
@@ -172,6 +173,15 @@ class SignalClusterService:
         *,
         decision_cycle_id=None,
         include_archived: bool = False,
+        departments=None,
+        contact=None,
+        scope=None,
+        statuses=None,
+        perimeter_business: bool = False,
+        perimeter_departments=None,
+        whats=None,
+        dimensions=None,
+        contacts=None,
     ) -> list:
         """
         Return all clusters for an account, grouped by canonical_key.
@@ -190,6 +200,20 @@ class SignalClusterService:
                                 archived clusters are returned with
                                 is_archived=True.
 
+        Member filters (applied to the member queryset BEFORE clustering, so
+        each cluster forms — and its meta recomputes — on the filtered set; a
+        cluster with zero matching members is not returned):
+            departments:  Optional list of StandardDepartment ids. Filters on
+                          the SUBJECT (target_department) — which department the
+                          signal is ABOUT. Members without a target_department
+                          (Business scope) are EXCLUDED when this is set.
+            contact:      Optional Contact id. Filters on the SOURCE
+                          (source_activity.contacts) — who reported the signal —
+                          a DIFFERENT axis from department.
+            scope:        Optional ScopeLevel value. Filters on scope_level.
+            statuses:     Optional list of SignalStatus values. Defaults to
+                          (VALIDATED, PENDING) when None/empty.
+
         Returns:
             List of cluster dicts, sorted by priority_score DESC. Ties
             are broken by the most recent confirmation so equally-scored
@@ -201,6 +225,25 @@ class SignalClusterService:
         """
         requested_types = cls._assert_signal_types_supported(signal_type)
 
+        member_filters = {
+            # Legacy separate department/scope (AND) — kept for back-compat; the
+            # grouped FE now sends `perimeter` instead.
+            'departments': departments or None,
+            'contact': contact or None,
+            'scope': scope or None,
+            'statuses': tuple(statuses) if statuses else None,
+            # Unified perimeter (OR): scope=BUSINESS OR target_department in list.
+            'perimeter_business': bool(perimeter_business),
+            'perimeter_departments': (
+                tuple(perimeter_departments) if perimeter_departments else None
+            ),
+            # Subject axes.
+            'whats': tuple(whats) if whats else None,
+            'dimensions': tuple(dimensions) if dimensions else None,
+            # SOURCE — multi contact (who reported it).
+            'contacts': tuple(contacts) if contacts else None,
+        }
+
         clusters: list = []
 
         for stype in requested_types:
@@ -210,6 +253,7 @@ class SignalClusterService:
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
+                        member_filters=member_filters,
                     )
                 )
                 continue
@@ -219,6 +263,7 @@ class SignalClusterService:
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
+                        member_filters=member_filters,
                     )
                 )
                 continue
@@ -228,6 +273,7 @@ class SignalClusterService:
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
+                        member_filters=member_filters,
                     )
                 )
                 continue
@@ -257,6 +303,7 @@ class SignalClusterService:
         account_id,
         decision_cycle_id=None,
         include_archived: bool = False,
+        member_filters=None,
     ) -> list:
         """
         Pain-specific cluster computation for list_clusters_for_account.
@@ -269,6 +316,7 @@ class SignalClusterService:
         signals = cls._fetch_pain_signals(
             account_id=account_id,
             decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
         )
         grouped = cls._group_by_canonical_key(signals)
 
@@ -306,6 +354,7 @@ class SignalClusterService:
         account_id,
         decision_cycle_id=None,
         include_archived: bool = False,
+        member_filters=None,
     ) -> list:
         """
         Objective-specific cluster computation for list_clusters_for_account.
@@ -318,6 +367,7 @@ class SignalClusterService:
         signals = cls._fetch_objective_signals(
             account_id=account_id,
             decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
         )
         grouped = cls._group_by_canonical_key(signals)
 
@@ -356,6 +406,7 @@ class SignalClusterService:
         account_id,
         decision_cycle_id=None,
         include_archived: bool = False,
+        member_filters=None,
     ) -> list:
         """
         Impact-specific cluster computation for list_clusters_for_account.
@@ -370,6 +421,7 @@ class SignalClusterService:
         signals = cls._fetch_impact_signals(
             account_id=account_id,
             decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
         )
         grouped = cls._group_by_canonical_key(signals)
 
@@ -581,8 +633,89 @@ class SignalClusterService:
     # FETCH
     # =========================================================================
 
+    @staticmethod
+    def _member_statuses(member_filters):
+        """
+        Resolve the status set for a member queryset: the caller-supplied
+        `statuses` (from the status filter) or the shared default
+        (VALIDATED+PENDING). The default is DEFAULT_LIST_STATUSES — the SAME
+        constant the aggregated (flat) endpoint applies when `status` is
+        omitted, so the grouped and flat paths cannot drift on it.
+        """
+        statuses = (member_filters or {}).get('statuses')
+        return statuses or DEFAULT_LIST_STATUSES
+
     @classmethod
-    def _fetch_pain_signals(cls, *, account_id, decision_cycle_id=None):
+    def _apply_member_filters(cls, qs, member_filters):
+        """
+        Apply the member filters to a cluster member queryset before clustering.
+        Status is applied by the caller via _member_statuses (it replaces the
+        default status__in). Cross-family filters combine as AND; OR is used
+        ONLY within the perimeter clause.
+
+          - perimeter (the unified OR): scope=BUSINESS OR target_department in
+            perimeter_departments. "Business" = scope_level=BUSINESS (PO
+            decision). Replaces the separate department+scope AND on the grouped
+            path.
+          - whats / dimensions (SUBJECT axes) → what__in / dimension__in.
+          - contacts (SOURCE, multi) → source_activity.contacts IN the list
+            (distinct() guards m2m duplicates); `contact` is the single-value
+            back-compat form.
+          - departments / scope: legacy separate AND filters, kept for
+            back-compat (the aggregated endpoint and older tests still use
+            them); the grouped FE sends `perimeter` instead.
+
+        N+1-safe: the joins are part of the single member query; the existing
+        prefetch on source_activity.contacts is untouched.
+        """
+        if not member_filters:
+            return qs
+
+        # --- Unified PERIMETER (OR): scope=BUSINESS OR target_department in list.
+        # Cluster members are only pain/objective/impact, which all carry both
+        # scope_level and target_department, so both halves apply uniformly.
+        perimeter_business = member_filters.get('perimeter_business')
+        perimeter_departments = member_filters.get('perimeter_departments')
+        if perimeter_business or perimeter_departments:
+            perimeter_q = Q()
+            if perimeter_business:
+                perimeter_q |= Q(scope_level=ScopeLevel.BUSINESS)
+            if perimeter_departments:
+                perimeter_q |= Q(target_department_id__in=perimeter_departments)
+            qs = qs.filter(perimeter_q)
+
+        # --- Legacy separate department / scope (AND) — back-compat only.
+        departments = member_filters.get('departments')
+        if departments:
+            qs = qs.filter(target_department_id__in=departments)
+        scope = member_filters.get('scope')
+        if scope:
+            qs = qs.filter(scope_level=scope)
+
+        # --- Subject axes (AND): what / dimension.
+        whats = member_filters.get('whats')
+        if whats:
+            qs = qs.filter(what__in=whats)
+        dimensions = member_filters.get('dimensions')
+        if dimensions:
+            qs = qs.filter(dimension__in=dimensions)
+
+        # --- SOURCE (AND): contact(s) who reported it.
+        contacts = member_filters.get('contacts')
+        if contacts:
+            # `__in` on the m2m can join a signal once per matching contact, so
+            # distinct() guards against duplicate member rows.
+            qs = qs.filter(source_activity__contacts__in=contacts).distinct()
+        else:
+            contact = member_filters.get('contact')
+            if contact:
+                # Single-value back-compat: matches each signal at most once.
+                qs = qs.filter(source_activity__contacts=contact)
+        return qs
+
+    @classmethod
+    def _fetch_pain_signals(cls, *, account_id, decision_cycle_id=None,
+                            member_filters=None):
         """
         Base queryset for Pain cluster aggregation.
 
@@ -606,12 +739,18 @@ class SignalClusterService:
             PainSignal.objects
             .filter(
                 account_id=account_id,
-                status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                status__in=cls._member_statuses(member_filters),
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard):
+                # kept in DB for reprocessing, never shown in clusters.
+                is_domain_valid=True,
             )
             .select_related(
                 'source_activity',
                 'decision_cycle',
                 'campaign',
+                # Join path for the cluster `departments` aggregate — avoids
+                # one query per member when reading member.target_department.
+                'target_department',
             )
             .prefetch_related(
                 'source_activity__contacts',
@@ -621,10 +760,13 @@ class SignalClusterService:
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
 
+        qs = cls._apply_member_filters(qs, member_filters)
+
         return qs
 
     @classmethod
-    def _fetch_objective_signals(cls, *, account_id, decision_cycle_id=None):
+    def _fetch_objective_signals(cls, *, account_id, decision_cycle_id=None,
+                                 member_filters=None):
         """
         Base queryset for Objective cluster aggregation.
 
@@ -641,7 +783,10 @@ class SignalClusterService:
             ObjectiveSignal.objects
             .filter(
                 account_id=account_id,
-                status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                status__in=cls._member_statuses(member_filters),
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard):
+                # kept in DB for reprocessing, never shown in clusters.
+                is_domain_valid=True,
             )
             .select_related(
                 # source_activity is the join path for
@@ -662,10 +807,13 @@ class SignalClusterService:
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
 
+        qs = cls._apply_member_filters(qs, member_filters)
+
         return qs
 
     @classmethod
-    def _fetch_impact_signals(cls, *, account_id, decision_cycle_id=None):
+    def _fetch_impact_signals(cls, *, account_id, decision_cycle_id=None,
+                              member_filters=None):
         """
         Base queryset for Impact cluster aggregation.
 
@@ -694,12 +842,17 @@ class SignalClusterService:
             ImpactSignal.objects
             .filter(
                 account_id=account_id,
-                status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                status__in=cls._member_statuses(member_filters),
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard):
+                # kept in DB for reprocessing, never shown in clusters.
+                is_domain_valid=True,
             )
             .select_related(
                 'source_activity',
                 'decision_cycle',
                 'campaign',
+                # Join path for the cluster `departments` aggregate.
+                'target_department',
             )
             .prefetch_related(
                 'source_activity__contacts',
@@ -708,6 +861,8 @@ class SignalClusterService:
 
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
+
+        qs = cls._apply_member_filters(qs, member_filters)
 
         return qs
 
@@ -857,6 +1012,20 @@ class SignalClusterService:
             'last_confirmed_at': last_confirmed_at,
             'freshness_status':  freshness,
 
+            # Temporal density — raw facts (count + covered period), NOT a
+            # composite score. period_start/period_end mirror the lifecycle
+            # window; span_days is the whole-day difference between them.
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
+            # Departments involved — distinct target_department across members
+            # (factual list of {id, name}; empty when all members are BUSINESS).
+            'departments':   cls._compute_departments(members),
+
             # Scope (shared shape with Objective and Impact via
             # max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -989,6 +1158,20 @@ class SignalClusterService:
             'first_observed_at': first_observed_at,
             'last_confirmed_at': last_confirmed_at,
             'freshness_status':  freshness,
+
+            # Temporal density — raw facts (count + covered period), NOT a
+            # composite score. period_start/period_end mirror the lifecycle
+            # window; span_days is the whole-day difference between them.
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
+            # Departments involved — distinct target_department across members
+            # (factual list of {id, name}; empty when all members are BUSINESS).
+            'departments':   cls._compute_departments(members),
 
             # Scope (shared shape with Pain and Impact via max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -1132,6 +1315,20 @@ class SignalClusterService:
             'last_confirmed_at': last_confirmed_at,
             'freshness_status':  freshness,
 
+            # Temporal density — raw facts (count + covered period), NOT a
+            # composite score. period_start/period_end mirror the lifecycle
+            # window; span_days is the whole-day difference between them.
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
+            # Departments involved — distinct target_department across members
+            # (factual list of {id, name}; empty when all members are BUSINESS).
+            'departments':   cls._compute_departments(members),
+
             # Scope (shared shape with Pain and Objective via
             # max_scope_level key)
             'max_scope_level': max_scope_level,
@@ -1203,6 +1400,53 @@ class SignalClusterService:
             freshness = FreshnessStatus.DORMANT
 
         return first, last, freshness
+
+    @staticmethod
+    def _compute_departments(members: list) -> list:
+        """
+        Distinct target_department values across the cluster's members, as a
+        factual list of compact {id, name} dicts (NOT a score). Members with
+        no department (BUSINESS scope) do not contribute. Order is stable and
+        deterministic: departments appear in order of first appearance
+        (oldest member first), independent of the fetch ordering.
+
+        Reuses the compact target_department shape used by the signal
+        serializers ({id: str, name: display}). N+1-safe: target_department is
+        select_related in every cluster fetch, so no extra query per member.
+        """
+        seen = set()
+        departments = []
+        for member in sorted(members, key=lambda m: m.created_at):
+            dept = member.target_department
+            if dept is None:
+                continue
+            if dept.id in seen:
+                continue
+            seen.add(dept.id)
+            departments.append({
+                'id':   str(dept.id),
+                'name': dept.get_name_display(),
+            })
+        return departments
+
+    @staticmethod
+    def _compute_span_days(period_start, period_end) -> int:
+        """
+        Factual number of days covered by the cluster: the whole-day
+        difference between the earliest and the latest observation.
+
+        This is a raw fact (period_end - period_start), NOT a weighted
+        score. It is 0 for a single-signal cluster, for a same-day
+        cluster, and whenever either endpoint is missing (no VALIDATED
+        member, so no confirmed observation window to measure).
+
+        Reuses the period endpoints already produced by
+        _compute_lifecycle — no extra query, no re-derivation from the
+        members.
+        """
+        if period_start is None or period_end is None:
+            return 0
+        return (period_end - period_start).days
 
     # =========================================================================
     # SCOPE / TARGET-DATE HELPERS

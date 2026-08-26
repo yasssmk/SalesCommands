@@ -76,7 +76,9 @@ logger = logging.getLogger(__name__)
 
 CONTEXT_VERSION = 'v1'
 
-_SUPPORTED_STAGES = ('pain', 'objective', 'impact', 'techstack', 'blocker')
+_SUPPORTED_STAGES = (
+    'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
+)
 
 
 # =============================================================================
@@ -91,8 +93,10 @@ def build_context_layer(activity, target_stage):
     Args:
         activity: app_modules.activities.models.Activity. Anchor for all
             session grounding (tenant, account, contacts).
-        target_stage: One of 'pain', 'objective', 'impact', 'techstack',
-            'blocker'. Drives which canonical enums are exposed.
+        target_stage: One of 'pain_impact', 'pain', 'objective', 'impact',
+            'techstack', 'blocker'. Drives which canonical enums are
+            exposed. 'pain_impact' is the merged stage (A2) and exposes the
+            union of the pain and impact axes.
 
     Returns:
         str: A ready-to-concatenate context block. Will be combined
@@ -297,46 +301,34 @@ def _build_taxonomy_block(target_stage):
         '(pick exactly one value from each list, or OMIT the signal)'
     ]
 
-    if target_stage == 'pain':
+    if target_stage == 'pain_impact':
+        # Merged pain + impact stage: the union of the pain axes and the
+        # impact axes. `what` / `dimension` apply to both; `impact_type`
+        # applies to IMPACT signals only; the scope block applies to both
+        # (each signal resolves its own scope independently).
+        lines.extend(_what_dimension_lines())
         lines.append(
-            '- what (area of the business affected): '
-            + _enum_json_array(SignalWhat)
+            '- impact_type (nature of the observed consequence -- '
+            'IMPACT signals only): '
+            + _enum_json_array(ImpactType)
         )
-        lines.append(
-            '- dimension (friction or outcome experienced): '
-            + _enum_json_array(SignalDimension)
-        )
+        lines.extend(_scope_taxonomy_lines())
+
+    elif target_stage == 'pain':
+        lines.extend(_what_dimension_lines())
+        lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'objective':
-        # v1: scope_level is forced to BUSINESS by the persistence service
-        # (rep refines scope and target during validation).
-        lines.append(
-            '- what (area of the business targeted): '
-            + _enum_json_array(SignalWhat)
-        )
-        lines.append(
-            '- dimension (outcome sought): '
-            + _enum_json_array(SignalDimension)
-        )
+        lines.extend(_what_dimension_lines())
+        lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'impact':
-        # v1: scope_level is forced to BUSINESS by the persistence
-        # service (rep refines scope during validation). metric_text
-        # and human_impact are NOT extracted in v1 -- the rep adds
-        # them during validation when relevant. See impact_v1.py
-        # docstring for the rationale.
-        lines.append(
-            '- what (area of the business affected): '
-            + _enum_json_array(SignalWhat)
-        )
-        lines.append(
-            '- dimension (friction or outcome experienced): '
-            + _enum_json_array(SignalDimension)
-        )
+        lines.extend(_what_dimension_lines())
         lines.append(
             '- impact_type (nature of the observed consequence): '
             + _enum_json_array(ImpactType)
         )
+        lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'techstack':
         lines.append(
@@ -358,3 +350,88 @@ def _enum_json_array(enum_cls):
     must emit back to us -- no translation step needed on read.
     """
     return '[' + ', '.join(f'"{v}"' for v in enum_cls.values) + ']'
+
+
+def _enum_coded_list(enum_cls):
+    """
+    Render a Django TextChoices enum as a code+label list:
+
+        "OPS" (Operations / Process), "TECH" (Technology / System), ...
+
+    The model must EMIT the code (the DB value) -- that is what the
+    persistence layer stores. The parenthetical label is a gloss so the
+    model can map a business AREA it reads in the transcript
+    ("operational", "reporting", "hiring") to the right code, instead of
+    grabbing a surface word. Codes are the contract; labels are the hint.
+    """
+    return ', '.join(f'"{v}" ({label})' for v, label in enum_cls.choices)
+
+
+def _what_dimension_lines():
+    """
+    Render the shared `what` (DOMAIN) / `dimension` (MEASURE AXIS) block
+    for the pain / objective / impact / pain_impact stages.
+
+    The distinction is stated hard because the LLM has been observed to
+    pull a DIMENSION word ("cost") into the DOMAIN slot -- e.g. "reduce
+    operational costs by 15%" stored as what=COST instead of what=OPS.
+    `what` is the business AREA; `dimension` is the MEASURE. A dimension
+    word is NEVER a valid `what`.
+    """
+    return [
+        '- what = DOMAIN (the business AREA concerned). Pick EXACTLY ONE '
+        'code from: ' + _enum_coded_list(SignalWhat),
+        '- dimension = MEASURE AXIS (the kind of friction / outcome). Pick '
+        'EXACTLY ONE code from: ' + _enum_coded_list(SignalDimension),
+        '- DOMAIN vs DIMENSION: `what` is the AREA, `dimension` is the '
+        'MEASURE. A word like "cost / coût", "time / temps" or "quality" is '
+        'ALWAYS a dimension, NEVER a `what`. If an observation is about '
+        'operations, `what`="OPS" and the cost belongs in dimension="COST" -- '
+        'never the reverse. Never invent a `what` value outside the list above.',
+    ]
+
+
+def _scope_taxonomy_lines():
+    """
+    Render the scope_level + target_department taxonomy shared by the
+    pain / objective / impact stages.
+
+    scope_level is deliberately restricted to BUSINESS | DEPARTMENT --
+    PERSONAL is NOT offered to the model. Scope is decided by the SUBJECT
+    of the observation (which department it concerns), never by the
+    seniority or department of the speaker: an observation naming one
+    department is DEPARTMENT, a company-wide / cross-departmental one is
+    BUSINESS. target_department is drawn from the controlled
+    StandardDepartment vocabulary (DB values), so whatever the model
+    emits resolves by an exact name lookup in the extractor -- no fuzzy
+    matching. It is REQUIRED when scope_level is DEPARTMENT and null
+    otherwise.
+
+    The backend applies the same restriction as a safety net (any value
+    other than DEPARTMENT folds to BUSINESS; an unresolved department
+    folds to BUSINESS), so a drifting model emission never produces an
+    invalid row.
+    """
+    # Lazy import: StandardDepartment lives in core_modules; importing it
+    # at module load would couple the prompt package to that app's load
+    # order for no benefit (this builder runs at request time only).
+    from app_modules.core_modules.models import StandardDepartment
+
+    return [
+        '- scope_level (organisational scope of the observation): '
+        '["BUSINESS", "DEPARTMENT"] '
+        '-- the scope is determined by the SUBJECT of the observation '
+        '(which perimeter the pain/objective/impact concerns), NOT by who '
+        'is speaking. DEPARTMENT = the observation names or clearly '
+        'identifies one specific department; use that department verbatim '
+        'as stated, even if a person from another department says it, and '
+        'even if the financial consequence hits the whole company. '
+        'BUSINESS = no specific department is named; the observation is '
+        'company-wide or cross-departmental. The seniority, role, or '
+        'department of the SPEAKER never determines scope -- a senior '
+        'person describing one department is DEPARTMENT. Never emit any '
+        'other value.',
+        '- target_department (REQUIRED when scope_level is "DEPARTMENT", '
+        'null when "BUSINESS"; pick exactly one value from this list): '
+        + _enum_json_array(StandardDepartment.DepartmentChoices),
+    ]

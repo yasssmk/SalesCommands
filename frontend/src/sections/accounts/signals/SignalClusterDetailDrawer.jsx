@@ -6,27 +6,28 @@
  * Pain and Objective clusters. Branching is driven by
  * `clusterSummary.signal_type`:
  *
- *   Pain      → impact CRUD via AddPainImpactDialog, max_impact_level
- *               chip, human_impacts + metrics aggregation, member cards
+ *   Pain      → human_impacts + metrics aggregation, member cards
  *               are PainCard.
- *   Objective → no impact CRUD, max_scope_level chip, target_dates
- *               section, member cards are ObjectiveCard.
+ *   Objective → target_dates section, member cards are ObjectiveCard.
  *
  * Self-contained modal state
  * --------------------------
- * The drawer owns its own dialogs (SignalEditDialog, AlertSignalReject,
- * and AddPainImpactDialog for Pain only) and routes the member cards'
- * callbacks to them. This keeps the parent (AccountQualificationTab /
- * AccountSignalsTab during transition) thin — it only needs to provide
+ * The drawer owns its own dialogs (SignalEditDialog, AlertSignalReject)
+ * and routes the member cards' callbacks to them. This keeps the parent
+ * (the grouped cluster surface) thin — it only needs to provide
  * accountId, choices, and a callback when something happens so it can
  * revalidate its own cluster list.
  *
+ * NOTE: this drawer and SignalClusterCard are retained for the grouped
+ * cluster view (B5). The Account Qualification tab that previously mounted
+ * them was removed in B4; they currently have no live entry point.
+ *
  * Cache flow
  * ----------
- * Any signal/impact mutation from the members revalidates the shared
- * caches (handled by painImpacts.js / signals.js). Since the cluster
- * endpoint shares the same backend cache tag, the drawer's own cluster
- * detail fetch automatically refreshes on next focus or next mutation.
+ * Any signal mutation from the members revalidates the shared caches
+ * (handled by signals.js). Since the cluster endpoint shares the same
+ * backend cache tag, the drawer's own cluster detail fetch automatically
+ * refreshes on next focus or next mutation.
  * We also call mutateCluster() explicitly for immediate UI feedback
  * after each action.
  */
@@ -34,7 +35,8 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 // material-ui
 import Accordion from "@mui/material/Accordion";
@@ -57,25 +59,18 @@ import AlertOutlined from "@ant-design/icons/AlertOutlined";
 import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import DownOutlined from "@ant-design/icons/DownOutlined";
-import InboxOutlined from "@ant-design/icons/InboxOutlined";
+import LeftOutlined from "@ant-design/icons/LeftOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
-import UndoOutlined from "@ant-design/icons/UndoOutlined";
 import UserOutlined from "@ant-design/icons/UserOutlined";
 
 // project imports
-import ObjectiveCard from "components/cards/signals/ObjectiveCard";
-import PainCard from "components/cards/signals/PainCard";
-import AddPainImpactDialog from "./pain/AddPainImpactDialog";
+import SignalLine from "components/signals/SignalLine";
+import SignalDetailContent from "components/signals/SignalDetailContent";
 import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDialog from "./SignalEditDialog";
 
-import {
-  useGetClusterDetail,
-  archiveCluster,
-  unarchiveCluster,
-} from "api/signals/signalClusters";
-import { validateSignal, deleteSignal } from "api/signals/signals";
-import { deletePainImpact } from "api/signals/painImpacts";
+import { useGetClusterDetail } from "api/signals/signalClusters";
+import { validateSignal, reopenSignal } from "api/signals/signals";
 import {
   displayErrorSnackbar,
   displaySuccessSnackbar,
@@ -84,9 +79,7 @@ import {
 import {
   resolveFreshness,
   resolveHumanImpact,
-  resolveImpactLevel,
   resolvePriority,
-  resolveScopeLevel,
   resolveSignalTypeVisuals,
   resolveTargetDateUrgency,
 } from "sections/accounts/signals/signalClusters";
@@ -607,6 +600,8 @@ export default function SignalClusterDetailDrawer({
 
   const typeVisuals = resolveSignalTypeVisuals(signalType);
 
+  const router = useRouter();
+
   // ==============================|| DETAIL FETCH ||============================== //
 
   const canonicalKey = clusterSummary?.canonical_key ?? null;
@@ -620,15 +615,10 @@ export default function SignalClusterDetailDrawer({
   // summary payload to render the header so the drawer doesn't flash empty.
   const display = cluster ?? clusterSummary ?? null;
 
-  const isArchived = Boolean(display?.is_archived);
   const freshness = resolveFreshness(display?.freshness_status);
   const priority = resolvePriority(display?.priority_bucket);
 
-  // Pain-specific
-  const maxImpactLevel = resolveImpactLevel(display?.max_impact_level);
-
   // Objective-specific
-  const maxScopeLevel = resolveScopeLevel(display?.max_scope_level);
   const targetUrgency = useMemo(
     () =>
       resolveTargetDateUrgency(
@@ -723,14 +713,18 @@ export default function SignalClusterDetailDrawer({
     signalType: null,
   });
 
-  const [impactDialog, setImpactDialog] = useState({
-    open: false,
-    mode: null,
-    painSignalId: null,
-    initialImpact: null,
-  });
+  // One drawer, two views: the cluster overview and a member's signal detail.
+  // Clicking a member REPLACES the drawer content with its detail (no second
+  // stacked drawer); a Back affordance returns to the cluster view.
+  const [view, setView] = useState("cluster"); // "cluster" | "signal"
+  const [activeMember, setActiveMember] = useState(null); // { signal, signalType }
 
-  const [archivalSubmitting, setArchivalSubmitting] = useState(false);
+  // Whenever the cluster changes (or the drawer is (re)opened on a new
+  // cluster), reset to the cluster view.
+  useEffect(() => {
+    setView("cluster");
+    setActiveMember(null);
+  }, [canonicalKey]);
 
   // ==============================|| REVALIDATION ||============================== //
 
@@ -743,42 +737,6 @@ export default function SignalClusterDetailDrawer({
     mutateCluster?.();
     onClusterChange?.();
   }, [mutateCluster, onClusterChange]);
-
-  // ==============================|| ARCHIVE / UNARCHIVE ||============================== //
-
-  const handleArchive = useCallback(async () => {
-    if (!canonicalKey || !accountId) return;
-    setArchivalSubmitting(true);
-    const result = await archiveCluster({
-      account: accountId,
-      canonicalKey,
-      signalType,
-    });
-    setArchivalSubmitting(false);
-    if (result.success) {
-      displaySuccessSnackbar("Cluster archived");
-      notifyChange();
-    } else {
-      displayErrorSnackbar(result);
-    }
-  }, [accountId, canonicalKey, signalType, notifyChange]);
-
-  const handleUnarchive = useCallback(async () => {
-    if (!canonicalKey || !accountId) return;
-    setArchivalSubmitting(true);
-    const result = await unarchiveCluster({
-      account: accountId,
-      canonicalKey,
-      signalType,
-    });
-    setArchivalSubmitting(false);
-    if (result.success) {
-      displaySuccessSnackbar("Cluster unarchived");
-      notifyChange();
-    } else {
-      displayErrorSnackbar(result);
-    }
-  }, [accountId, canonicalKey, signalType, notifyChange]);
 
   // ==============================|| MEMBER LIFECYCLE HANDLERS ||============================== //
 
@@ -821,12 +779,12 @@ export default function SignalClusterDetailDrawer({
     notifyChange();
   }, [notifyChange]);
 
-  const handleDelete = useCallback(
+  const handleReopen = useCallback(
     async (signal, type) => {
-      const result = await deleteSignal(type, signal.id);
+      const result = await reopenSignal(type, signal.id);
       if (result.success) {
         notifyChange();
-        displaySuccessSnackbar("Signal deleted");
+        displaySuccessSnackbar("Signal reopened — now pending");
       } else {
         displayErrorSnackbar(result);
       }
@@ -834,57 +792,26 @@ export default function SignalClusterDetailDrawer({
     [notifyChange],
   );
 
-  // ==============================|| IMPACT HANDLERS — PAIN ONLY ||============================== //
-  //
-  // These handlers are bound to PainCard's onAddImpact / onEditImpact /
-  // onDeleteImpact props. They never run for Objective members because
-  // ObjectiveCard does not have impact-related callbacks. The dialog
-  // they drive (AddPainImpactDialog) is also rendered conditionally
-  // (isPain &&) so it never mounts for Objective clusters.
-
-  const handleAddImpact = useCallback((painSignalId) => {
-    setImpactDialog({
-      open: true,
-      mode: "create",
-      painSignalId,
-      initialImpact: null,
-    });
+  // Clicking a member replaces the drawer content with its signal detail.
+  const handleMemberSelect = useCallback((signal, type) => {
+    setActiveMember({ signal, signalType: type });
+    setView("signal");
   }, []);
 
-  const handleEditImpact = useCallback((impact) => {
-    setImpactDialog({
-      open: true,
-      mode: "edit",
-      painSignalId: null,
-      initialImpact: impact,
-    });
+  // Back from the signal detail returns to the cluster view (same drawer).
+  const handleBackToCluster = useCallback(() => {
+    setView("cluster");
+    setActiveMember(null);
   }, []);
 
-  const handleImpactDialogClose = useCallback(() => {
-    setImpactDialog({
-      open: false,
-      mode: null,
-      painSignalId: null,
-      initialImpact: null,
-    });
-  }, []);
-
-  const handleImpactDialogSuccess = useCallback(() => {
-    notifyChange();
-    displaySuccessSnackbar("Impact saved");
-  }, [notifyChange]);
-
-  const handleDeleteImpact = useCallback(
-    async (impact) => {
-      const result = await deletePainImpact(impact.id);
-      if (result.success) {
-        notifyChange();
-        displaySuccessSnackbar("Impact deleted");
-      } else {
-        displayErrorSnackbar(result);
-      }
+  // Origin activity opens the canonical /activities/{id} route; close the
+  // whole drawer first (matches SignalQuickDrawer's behaviour).
+  const openOriginActivity = useCallback(
+    (activityId) => {
+      onClose?.();
+      router.push(`/activities/${activityId}`);
     },
-    [notifyChange],
+    [onClose, router],
   );
 
   // ==============================|| RENDER: HEADER ||============================== //
@@ -941,15 +868,6 @@ export default function SignalClusterDetailDrawer({
               />
             </Tooltip>
           )}
-
-          {isArchived && (
-            <Chip
-              icon={<InboxOutlined style={{ fontSize: 11 }} />}
-              label="Archived"
-              size="small"
-              sx={{ fontSize: "0.68rem", height: 20 }}
-            />
-          )}
         </Stack>
 
         <IconButton
@@ -1004,33 +922,6 @@ export default function SignalClusterDetailDrawer({
           </Typography>
         </Stack>
       )}
-
-      {/* Archive / unarchive actions */}
-      <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-        {!isArchived ? (
-          <Button
-            size="small"
-            variant="outlined"
-            color="inherit"
-            startIcon={<InboxOutlined />}
-            onClick={handleArchive}
-            disabled={archivalSubmitting || !canonicalKey}
-          >
-            Archive cluster
-          </Button>
-        ) : (
-          <Button
-            size="small"
-            variant="outlined"
-            color="primary"
-            startIcon={<UndoOutlined />}
-            onClick={handleUnarchive}
-            disabled={archivalSubmitting || !canonicalKey}
-          >
-            Unarchive cluster
-          </Button>
-        )}
-      </Stack>
     </Box>
   );
 
@@ -1041,13 +932,13 @@ export default function SignalClusterDetailDrawer({
    * shared so the visual rhythm of the drawer body stays uniform.
    *
    * Pain stats:
-   *   - Max level chip + Impacted contacts + Decision cycles
+   *   - Impacted contacts + Decision cycles
    *   - First observed / Last confirmed
    *   - Human impacts chips
    *   - Metrics list
    *
    * Objective stats:
-   *   - Max scope chip + Distinct contacts + Decision cycles
+   *   - Distinct contacts + Decision cycles
    *   - First observed / Last confirmed
    *   - Target dates section with urgency badge (if applicable)
    */
@@ -1073,24 +964,6 @@ export default function SignalClusterDetailDrawer({
         {isPain && (
           <>
             <StatCell
-              label="Max level"
-              value={
-                display?.max_impact_level ? (
-                  <Chip
-                    label={maxImpactLevel.label}
-                    color={maxImpactLevel.color}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.68rem", height: 20 }}
-                  />
-                ) : (
-                  <Typography variant="body2" color="text.disabled">
-                    —
-                  </Typography>
-                )
-              }
-            />
-            <StatCell
               label="Impacted contacts"
               value={display?.impacted_contacts_count ?? 0}
             />
@@ -1100,24 +973,6 @@ export default function SignalClusterDetailDrawer({
 
         {isObjective && (
           <>
-            <StatCell
-              label="Max scope"
-              value={
-                display?.max_scope_level ? (
-                  <Chip
-                    label={maxScopeLevel.label}
-                    color={maxScopeLevel.color}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: "0.68rem", height: 20 }}
-                  />
-                ) : (
-                  <Typography variant="body2" color="text.disabled">
-                    —
-                  </Typography>
-                )
-              }
-            />
             <StatCell
               label="Distinct contacts"
               value={display?.distinct_contacts_count ?? 0}
@@ -1296,41 +1151,24 @@ export default function SignalClusterDetailDrawer({
       )}
 
       {/*
-        Member rendering branches on signal_type. The lifecycle handlers
-        (validate / reject / edit / delete) are shared — they accept the
-        signalType parameter and route to the right backend endpoint via
-        signals.js. Impact handlers are bound only on PainCard.
+        Members render as the shared SignalLine (same component as the flat
+        views), typed from the cluster's signal_type. Clicking a line REPLACES
+        this cluster view with the member's SignalDetailContent in the same
+        drawer (a Back affordance returns here) — no second stacked drawer.
+        Lifecycle actions — validate / reject / edit / reopen — live on that
+        signal detail and route through the shared handlers to signals.js.
       */}
       {members.length > 0 && (
-        <Stack spacing={1.5}>
-          {isPain &&
-            members.map((member) => (
-              <PainCard
-                key={member.id}
-                pain={member}
-                choices={choices}
-                onValidate={handleValidate}
-                onReject={handleRejectOpen}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-                onAddImpact={handleAddImpact}
-                onEditImpact={handleEditImpact}
-                onDeleteImpact={handleDeleteImpact}
-              />
-            ))}
-
-          {isObjective &&
-            members.map((member) => (
-              <ObjectiveCard
-                key={member.id}
-                objective={member}
-                choices={choices}
-                onValidate={handleValidate}
-                onReject={handleRejectOpen}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-            ))}
+        <Stack spacing={0.5}>
+          {members.map((member) => (
+            <SignalLine
+              key={member.id}
+              signal={member}
+              signalType={signalType}
+              onSelect={handleMemberSelect}
+              showTypeChip={false}
+            />
+          ))}
         </Stack>
       )}
     </Box>
@@ -1357,6 +1195,44 @@ export default function SignalClusterDetailDrawer({
           <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
             <CircularProgress size={24} />
           </Stack>
+        ) : view === "signal" && activeMember ? (
+          // Signal detail — REPLACES the cluster content in the same drawer.
+          // A Back affordance returns to the cluster view; the shared
+          // SignalDetailContent carries the actions (validate/reject/edit/reopen).
+          <SignalDetailContent
+            signal={activeMember.signal}
+            signalType={activeMember.signalType}
+            onValidate={handleValidate}
+            onReject={handleRejectOpen}
+            onEdit={handleEdit}
+            onReopen={handleReopen}
+            onOpenActivity={openOriginActivity}
+            leadingAction={
+              <Button
+                size="small"
+                variant="text"
+                color="inherit"
+                aria-label="Back to cluster"
+                startIcon={<LeftOutlined style={{ fontSize: 12 }} />}
+                onClick={handleBackToCluster}
+                sx={{ px: 0.5, minWidth: 0, maxWidth: 220 }}
+              >
+                <Typography variant="caption" noWrap>
+                  {canonicalText || typeVisuals.label}
+                </Typography>
+              </Button>
+            }
+            trailingAction={
+              <IconButton
+                size="small"
+                onClick={onClose}
+                aria-label="Close drawer"
+                sx={{ flexShrink: 0 }}
+              >
+                <CloseOutlined style={{ fontSize: 14 }} />
+              </IconButton>
+            }
+          />
         ) : (
           <>
             {renderHeader()}
@@ -1401,24 +1277,6 @@ export default function SignalClusterDetailDrawer({
         signal={rejectModal.signal}
         signalType={rejectModal.signalType}
       />
-
-      {/* ==================== IMPACT DIALOG — Pain only ==================== */}
-      {/*
-        Conditional mount: AddPainImpactDialog never mounts for Objective
-        clusters. The handlers above are equally guarded by the fact that
-        ObjectiveCard simply does not have onAddImpact / onEditImpact /
-        onDeleteImpact in its prop surface — they cannot be triggered.
-      */}
-      {isPain && (
-        <AddPainImpactDialog
-          open={impactDialog.open}
-          onClose={handleImpactDialogClose}
-          onSuccess={handleImpactDialogSuccess}
-          painSignalId={impactDialog.painSignalId}
-          accountId={accountId}
-          initialImpact={impactDialog.initialImpact}
-        />
-      )}
     </>
   );
 }

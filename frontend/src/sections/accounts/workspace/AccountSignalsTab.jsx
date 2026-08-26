@@ -4,7 +4,7 @@
  *
  * Renders all 4 signal types (Pain, Objective, Impact, Tech Stack) as
  * uniform flat lists of cards with full CRUD: validate / reject / edit
- * / delete, plus type-specific extras (Pain has nested impacts CRUD).
+ * / delete.
  *
  * Strict separation of concerns
  * -----------------------------
@@ -15,50 +15,50 @@
  * Responsibilities
  * ----------------
  *   - Fetch all 4 signal types for the account (4 SWR calls)
- *   - Own all modal/drawer states (wizard add, edit, reject, impact CRUD)
- *   - Dispatch validate / reject / delete to the API layer
- *   - Render one SignalList at a time based on the active section
+ *   - Own modal/drawer states (edit, reject, signal detail drawer)
+ *   - Dispatch validate / reject / reopen to the API layer
+ *   - Render the active type's signals as compact SignalLine rows via
+ *     the shared SignalsFlatView (20/page), same component as Activity/DC
  *   - Status filter applied server-side via SWR filters — universal
  *     across all 4 types
- *
- * Pain-specific add-on
- * --------------------
- * PainCard exposes 3 impact callbacks (onAddImpact / onEditImpact /
- * onDeleteImpact). They are wired to AddPainImpactDialog mounted at
- * tab level so impacts can be created, edited, or deleted directly
- * from the flat Pain list — same UX as when impacts were nested
- * inside the cluster drawer.
  */
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 
 // material-ui
+import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
+
+// icons
+import FilterOutlined from "@ant-design/icons/FilterOutlined";
 
 // project imports
-import SignalList from "../signals/SignalList";
+import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
+import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
+import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
+import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
+import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
+import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
-import AddPainImpactDialog from "../signals/pain/AddPainImpactDialog";
 
 import {
-  useGetSignalsByAccount,
   useGetSignalChoices,
   validateSignal,
+  reopenSignal,
   deleteSignal,
 } from "api/signals/signals";
-import { deletePainImpact } from "api/signals/painImpacts";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
+import useSignalFilters from "hooks/useSignalFilters";
+import { useGetContactChoices } from "api/businessData/contacts";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -66,21 +66,19 @@ import {
 
 // ==============================|| CONSTANTS ||============================== //
 
-/** Section toggle options — 4 signal types */
-/** Section toggle options — 4 signal types */
-const TYPE_OPTIONS = [
-  { value: "pain", label: "Pain" },
-  { value: "objective", label: "Objective" },
-  { value: "impact", label: "Impact" },
-  { value: "tech-stack", label: "Tech Stack" },
-];
+// The Account flat list covers the four durable, account-level signal types
+// (blockers / next-steps / people / constraints are deal- or cycle-scoped).
+const ACCOUNT_TYPES = ["pain", "objective", "impact", "tech-stack"];
 
-const STATUS_OPTIONS = [
-  { value: "", label: "All statuses" },
-  { value: "PENDING", label: "Pending" },
-  { value: "VALIDATED", label: "Validated" },
-  { value: "REJECTED", label: "Rejected" },
-];
+// Grouped (cluster) default status set — pending + validated.
+const GROUPED_DEFAULT_STATUSES = ["PENDING", "VALIDATED"];
+const emptyGroupedFilters = () => ({
+  perimeter: [],
+  contacts: [], // contact objects (Autocomplete value); ids derived for fetch
+  whats: [],
+  dimensions: [],
+  statuses: GROUPED_DEFAULT_STATUSES,
+});
 
 // ==============================|| ACCOUNT SIGNALS TAB ||============================== //
 
@@ -93,8 +91,65 @@ const STATUS_OPTIONS = [
 export default function AccountSignalsTab({ accountId, account }) {
   // ==============================|| FILTER STATE ||============================== //
 
-  const [activeType, setActiveType] = useState("pain");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
+  // Flat / Grouped view toggle — Grouped (the synthesis) is the default. React
+  // state only, no browser storage.
+  const [view, setView] = useState("grouped");
+  const {
+    pending,
+    updatePending,
+    apply,
+    clear,
+    syncPending,
+    statuses,
+    activeTypes,
+    department,
+    contactId,
+    scope,
+    activeCount,
+    hasPendingChanges,
+  } = useSignalFilters();
+
+  // Controlled department list + contact-search scope for the filter drawer.
+  const { standardDepartments } = useGetContactChoices();
+  const departmentOptions = useMemo(
+    () =>
+      (standardDepartments ?? []).map((d) => ({
+        value: d.value ?? d.id,
+        label: d.label ?? d.name,
+      })),
+    [standardDepartments],
+  );
+  const contactFilters = useMemo(() => ({ account_id: accountId }), [accountId]);
+
+  // ---- Grouped (cluster) filter state — the unified perimeter model. Kept
+  // separate from the flat filters (useSignalFilters) so the flat view stays
+  // untouched. Applied on change (the grouped sections have no pending/Apply).
+  const [groupedFilters, setGroupedFilters] = useState(emptyGroupedFilters);
+  const handleGroupedChange = useCallback(
+    (field, newValue) =>
+      setGroupedFilters((prev) => ({ ...prev, [field]: newValue })),
+    [],
+  );
+  const handleGroupedClear = useCallback(
+    () => setGroupedFilters(emptyGroupedFilters()),
+    [],
+  );
+  const perimeterOptions = useMemo(
+    () => [{ value: "BUSINESS", label: "Business" }, ...departmentOptions],
+    [departmentOptions],
+  );
+  const groupedContactIds = useMemo(
+    () => groupedFilters.contacts.map((c) => c.id),
+    [groupedFilters.contacts],
+  );
+  const groupedActiveCount =
+    groupedFilters.perimeter.length +
+    groupedFilters.contacts.length +
+    groupedFilters.whats.length +
+    groupedFilters.dimensions.length +
+    (groupedFilters.statuses.includes("REJECTED") ? 1 : 0);
 
   // ==============================|| MODAL STATE ||============================== //
 
@@ -110,146 +165,65 @@ export default function AccountSignalsTab({ accountId, account }) {
     signalType: null,
   });
 
-  /**
-   * Pain impact dialog state. Mounted at tab level (not gated on
-   * activeType) so it stays available even if the user has briefly
-   * switched type while the dialog is open.
-   */
-  const [impactDialog, setImpactDialog] = useState({
-    open: false,
-    mode: null,
-    painSignalId: null,
-    initialImpact: null,
-  });
+  // Signal detail drawer (opened by clicking a signal line).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedSignal, setSelectedSignal] = useState(null);
+  const [selectedType, setSelectedType] = useState(null);
 
   // ==============================|| DATA FETCHING ||============================== //
 
-  const sharedFilters = useMemo(
-    () => ({ status: statusFilter || undefined }),
-    [statusFilter],
+  // One aggregated call, server-paginated (20/page). The filter drawer drives
+  // signal_type (a subset of the account types; none selected = all four) and
+  // status (default pending+validated, +rejected when opted in).
+  const signalTypes = useMemo(
+    () => (activeTypes.length ? activeTypes : ACCOUNT_TYPES),
+    [activeTypes],
   );
 
-  const sharedOptions = useMemo(
-    () => ({ ordering: "-created_at", filters: sharedFilters }),
-    [sharedFilters],
-  );
-
   const {
-    signals: painSignals,
-    signalsLoading: painLoading,
-    signalsError: painError,
-    mutateSignals: mutatePain,
-  } = useGetSignalsByAccount(accountId, "pain", sharedOptions);
-
-  const {
-    signals: objectiveSignals,
-    signalsLoading: objectiveLoading,
-    signalsError: objectiveError,
-    mutateSignals: mutateObjective,
-  } = useGetSignalsByAccount(accountId, "objective", sharedOptions);
-
-  const {
-    signals: impactSignals,
-    signalsLoading: impactLoading,
-    signalsError: impactError,
-    mutateSignals: mutateImpact,
-  } = useGetSignalsByAccount(accountId, "impact", sharedOptions);
-
-  const {
-    signals: techSignals,
-    signalsLoading: techLoading,
-    signalsError: techError,
-    mutateSignals: mutateTech,
-  } = useGetSignalsByAccount(accountId, "tech-stack", sharedOptions);
+    signals: flatSignals,
+    pageCount,
+    loading,
+    error,
+    mutate: mutateAll,
+  } = useAggregatedSignals({
+    accountId,
+    signalTypes,
+    statuses,
+    department,
+    contact: contactId,
+    scope,
+    ordering: "date-desc",
+    page,
+    pageSize: 20,
+  });
 
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // ==============================|| DERIVED ||============================== //
-
-  /**
-   * Revalidate all 4 sections — called after any signal-level write.
-   * Pain mutations also implicitly invalidate the cluster cache via
-   * the API layer's revalidateMultiple — that's the Qualification tab's
-   * responsibility, not ours.
-   */
-  const mutateAll = useCallback(() => {
-    mutatePain();
-    mutateObjective();
-    mutateImpact();
-    mutateTech();
-  }, [mutatePain, mutateObjective, mutateImpact, mutateTech]);
-
-  /**
-   * Counts per type — shown as badges in the section toggle.
-   * All 4 types share the same flat-list semantics, so each count
-   * is the number of individual signals in the current view (after
-   * status filter).
-   */
-  const counts = useMemo(
-    () => ({
-      pain: painSignals.length,
-      objective: objectiveSignals.length,
-      impact: impactSignals.length,
-      "tech-stack": techSignals.length,
-    }),
-    [painSignals, objectiveSignals, impactSignals, techSignals],
-  );
-
-  /** Active section data — uniform shape across all 4 types. */
-  const activeData = useMemo(() => {
-    switch (activeType) {
-      case "pain":
-        return {
-          signals: painSignals,
-          loading: painLoading,
-          error: painError,
-        };
-      case "objective":
-        return {
-          signals: objectiveSignals,
-          loading: objectiveLoading,
-          error: objectiveError,
-        };
-      case "impact":
-        return {
-          signals: impactSignals,
-          loading: impactLoading,
-          error: impactError,
-        };
-      case "tech-stack":
-        return {
-          signals: techSignals,
-          loading: techLoading,
-          error: techError,
-        };
-      default:
-        return { signals: [], loading: false, error: null };
-    }
-  }, [
-    activeType,
-    painSignals,
-    painLoading,
-    painError,
-    objectiveSignals,
-    objectiveLoading,
-    objectiveError,
-    impactSignals,
-    impactLoading,
-    impactError,
-    techSignals,
-    techLoading,
-    techError,
-  ]);
+  // A page fetch can fail while a previous page is still shown (SWR keeps the
+  // last data). Don't blank the list — keep it and surface the transient
+  // failure through the standard error snackbar instead.
+  useEffect(() => {
+    if (error && flatSignals.length) displayErrorSnackbar(error);
+  }, [error, flatSignals.length]);
 
   // ==============================|| FILTER HANDLERS ||============================== //
 
-  const handleTypeChange = useCallback((_e, newValue) => {
-    if (newValue !== null) setActiveType(newValue);
-  }, []);
+  const handleOpenFilters = useCallback(() => {
+    syncPending();
+    setFilterPanelOpen(true);
+  }, [syncPending]);
 
-  const handleStatusChange = useCallback((e) => {
-    setStatusFilter(e.target.value);
-  }, []);
+  // Applying filters narrows the result set → reset to page 1.
+  const handleApplyFilters = useCallback(() => {
+    apply();
+    setPage(1);
+  }, [apply]);
+
+  const handleClearFilters = useCallback(() => {
+    clear();
+    setPage(1);
+  }, [clear]);
 
   // ==============================|| LIFECYCLE HANDLERS (universal) ||============================== //
 
@@ -265,6 +239,32 @@ export default function AccountSignalsTab({ accountId, account }) {
     },
     [mutateAll],
   );
+
+  const handleReopen = useCallback(
+    async (signal, signalType) => {
+      const result = await reopenSignal(signalType, signal.id);
+      if (result.success) {
+        mutateAll();
+        displaySuccessSnackbar("Signal reopened — now pending");
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutateAll],
+  );
+
+  // Drawer open/close — clicking a signal line shows its detail.
+  const handleSelect = useCallback((signal, signalType) => {
+    setSelectedSignal(signal);
+    setSelectedType(signalType);
+    setDrawerOpen(true);
+  }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    setDrawerOpen(false);
+    setSelectedSignal(null);
+    setSelectedType(null);
+  }, []);
 
   const handleRejectOpen = useCallback((signal, signalType) => {
     setRejectModal({ open: true, signal, signalType });
@@ -306,60 +306,6 @@ export default function AccountSignalsTab({ accountId, account }) {
     [mutateAll],
   );
 
-  // ==============================|| IMPACT HANDLERS — Pain-only ||============================== //
-  //
-  // PainCard exposes 3 impact callbacks. They are passed down through
-  // SignalList to PainCard only when activeType === 'pain' (SignalList
-  // ignores them otherwise). The dialog itself is mounted at tab level.
-
-  const handleAddImpact = useCallback((painSignalId) => {
-    setImpactDialog({
-      open: true,
-      mode: "create",
-      painSignalId,
-      initialImpact: null,
-    });
-  }, []);
-
-  const handleEditImpact = useCallback((impact) => {
-    setImpactDialog({
-      open: true,
-      mode: "edit",
-      painSignalId: null,
-      initialImpact: impact,
-    });
-  }, []);
-
-  const handleImpactDialogClose = useCallback(() => {
-    setImpactDialog({
-      open: false,
-      mode: null,
-      painSignalId: null,
-      initialImpact: null,
-    });
-  }, []);
-
-  const handleImpactDialogSuccess = useCallback(() => {
-    // Pain list needs refresh because impacts are nested inline in
-    // PainSignalListSerializer. The cluster cache also gets bust by
-    // the API layer — that's transparent to this tab.
-    mutatePain();
-    displaySuccessSnackbar("Impact saved");
-  }, [mutatePain]);
-
-  const handleDeleteImpact = useCallback(
-    async (impact) => {
-      const result = await deletePainImpact(impact.id);
-      if (result.success) {
-        mutatePain();
-        displaySuccessSnackbar("Impact deleted");
-      } else {
-        displayErrorSnackbar(result);
-      }
-    },
-    [mutatePain],
-  );
-
   // ==============================|| RENDER ||============================== //
 
   return (
@@ -369,96 +315,114 @@ export default function AccountSignalsTab({ accountId, account }) {
         Read-only operational view: signal creation now happens exclusively
         from the Activity Workspace (ActivitySignalsTab), where the source
         activity context is available for auto-propagation. This tab keeps
-        full lifecycle control (validate / reject / edit / delete) plus
-        Pain impact CRUD via PainCard.
+        full lifecycle control (validate / reject / edit / delete).
       */}
       <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={1.5}
+        direction="row"
+        justifyContent="space-between"
         alignItems="center"
         sx={{ mb: 2 }}
       >
-        <ToggleButtonGroup
-          value={activeType}
-          exclusive
-          onChange={handleTypeChange}
-          size="small"
-          aria-label="Signal section"
-        >
-          {TYPE_OPTIONS.map((opt) => (
-            <ToggleButton
-              key={opt.value}
-              value={opt.value}
-              sx={{ textTransform: "none", px: 1.5, fontSize: "0.78rem" }}
+        <SignalsViewToggle view={view} onChange={setView} />
+        <Tooltip title="Filters">
+          <IconButton onClick={handleOpenFilters} aria-label="Open filters">
+            <Badge
+              badgeContent={view === "grouped" ? groupedActiveCount : activeCount}
+              color="primary"
             >
-              {opt.label}
-              {counts[opt.value] > 0 && (
-                <Chip
-                  label={counts[opt.value]}
-                  size="small"
-                  sx={{
-                    ml: 0.75,
-                    height: 18,
-                    fontSize: "0.62rem",
-                    pointerEvents: "none",
-                  }}
-                />
-              )}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-
-        <Select
-          value={statusFilter}
-          onChange={handleStatusChange}
-          size="small"
-          displayEmpty
-          sx={{ minWidth: 140, fontSize: "0.82rem" }}
-        >
-          {STATUS_OPTIONS.map((opt) => (
-            <MenuItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </MenuItem>
-          ))}
-        </Select>
+              <FilterOutlined />
+            </Badge>
+          </IconButton>
+        </Tooltip>
       </Stack>
 
       <Divider sx={{ mb: 2 }} />
 
       {/* ==================== ACTIVE SECTION ==================== */}
       {/*
-        SignalList routes signalType='pain' to PainCard internally and
-        forwards the impact callbacks (onAddImpact / onEditImpact /
-        onDeleteImpact) only to PainCard. The other 3 types ignore them.
-        `choices` is needed by PainCard (impact labels) and by
-        ObjectiveCard (canonical axis + scope labels).
+        Grouped (default) = the Qualification synthesis (clusters). Flat = the
+        SignalLine list with server pagination. Both honor the Type filter;
+        Flat additionally honors status/department/contact/scope.
       */}
-      <SignalList
-        signals={activeData.signals}
-        signalType={activeType}
-        loading={activeData.loading}
-        error={activeData.error}
-        choices={choices}
+      {view === "grouped" ? (
+        <QualificationGroupedView
+          surface="account"
+          accountId={accountId}
+          perimeter={groupedFilters.perimeter}
+          whats={groupedFilters.whats}
+          dimensions={groupedFilters.dimensions}
+          contacts={groupedContactIds}
+          statuses={groupedFilters.statuses}
+        />
+      ) : error && !flatSignals.length ? (
+        <Box
+          display="flex"
+          justifyContent="center"
+          alignItems="center"
+          minHeight="200px"
+        >
+          <Typography color="error">Failed to load signals</Typography>
+        </Box>
+      ) : (
+        <SignalsFlatView
+          signals={flatSignals}
+          serverPaginated
+          page={page}
+          pageCount={pageCount}
+          onPageChange={setPage}
+          loading={loading}
+          onSelect={handleSelect}
+          onValidate={handleValidate}
+          onReject={handleRejectOpen}
+          onEdit={handleEdit}
+          onReopen={handleReopen}
+          emptyMessage="No signals match these filters"
+        />
+      )}
+
+      {/* Filter drawer. Grouped uses the accordion-sectioned panel (perimeter /
+          contact / domain / dimension / status on the cluster endpoint); Flat
+          keeps its own unchanged SignalsFilterPanel. */}
+      {view === "grouped" ? (
+        <SignalsGroupedFilterPanel
+          open={filterPanelOpen}
+          onClose={() => setFilterPanelOpen(false)}
+          perimeterOptions={perimeterOptions}
+          contactFilters={contactFilters}
+          value={groupedFilters}
+          onChange={handleGroupedChange}
+          onClear={handleGroupedClear}
+          activeCount={groupedActiveCount}
+        />
+      ) : (
+        <SignalsFilterPanel
+          open={filterPanelOpen}
+          onClose={() => setFilterPanelOpen(false)}
+          availableTypes={ACCOUNT_TYPES}
+          departmentOptions={departmentOptions}
+          contactFilters={contactFilters}
+          pendingFilters={pending}
+          onFilterChange={updatePending}
+          onApply={handleApplyFilters}
+          onClear={handleClearFilters}
+          hasPendingChanges={hasPendingChanges}
+          mode="flat"
+        />
+      )}
+
+      {/* ==================== MODALS ==================== */}
+
+      {/* Signal detail drawer (opened by clicking a line) */}
+      <SignalQuickDrawer
+        open={drawerOpen}
+        signal={selectedSignal}
+        signalType={selectedType}
+        onClose={handleCloseDrawer}
         onValidate={handleValidate}
         onReject={handleRejectOpen}
         onEdit={handleEdit}
-        onDelete={handleDelete}
-        onAddImpact={handleAddImpact}
-        onEditImpact={handleEditImpact}
-        onDeleteImpact={handleDeleteImpact}
-        emptyMessage={
-          statusFilter
-            ? `No ${activeType} signals match this status`
-            : `No ${activeType} signals yet for this account`
-        }
-        emptyDescription={
-          !statusFilter
-            ? "Open the wizard to capture signals from a conversation"
-            : undefined
-        }
+        onReopen={handleReopen}
       />
-
-      {/* ==================== MODALS ==================== */}
 
       {/* Reject confirmation */}
       <AlertSignalReject
@@ -479,17 +443,6 @@ export default function AccountSignalsTab({ accountId, account }) {
         accountId={accountId}
         choices={choices}
         choicesLoading={choicesLoading}
-      />
-
-      {/* Pain impact dialog — Pain-only by nature; mounted always so it
-          can be opened from any PainCard regardless of pending tab switch */}
-      <AddPainImpactDialog
-        open={impactDialog.open}
-        onClose={handleImpactDialogClose}
-        onSuccess={handleImpactDialogSuccess}
-        painSignalId={impactDialog.painSignalId}
-        accountId={accountId}
-        initialImpact={impactDialog.initialImpact}
       />
     </Box>
   );

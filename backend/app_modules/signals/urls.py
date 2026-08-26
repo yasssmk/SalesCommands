@@ -32,9 +32,21 @@ def get_urlpatterns():
         SignalClusterArchiveView,
         SignalClusterUnarchiveView,
         SignalCountsByActivityView,
+        AggregatedSignalListView,
     )
 
     return [
+
+        # =====================================================================
+        # AGGREGATED — all signal types for one scope, paginated + sorted
+        # (before CRUD to avoid conflict with {pk})
+        # =====================================================================
+
+        path(
+            'all/',
+            AggregatedSignalListView.as_view(),
+            name='signal-all',
+        ),
 
         # =====================================================================
         # COUNTS — aggregated signal counts by activity

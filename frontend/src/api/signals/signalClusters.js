@@ -14,17 +14,16 @@
  * signalType is parameterized end-to-end so any supported cluster signal
  * type (pain / objective / impact) works without refactor.
  *
- * Follows the pattern established by api/signals/painImpacts.js (the
- * most recent module) for URL building, revalidation, and mutation
- * return shape.
+ * Follows the URL-building, revalidation, and mutation-return-shape
+ * pattern shared by the other api/signals modules.
  *
  * Cache invalidation strategy
  * ---------------------------
  * Writes on a cluster's archival state do NOT change the underlying
- * signals or impacts — they only change which archival rows are "active".
- * However, writes on signals or impacts DO change the cluster payload
- * (confirmation_count, freshness, etc.), so painImpacts.js already
- * revalidates the pain cache tag. We complete the picture here by also
+ * signals — they only change which archival rows are "active".
+ * However, writes on signals DO change the cluster payload
+ * (confirmation_count, freshness, etc.), so the per-type signal modules
+ * already revalidate their cache tag. We complete the picture here by also
  * revalidating the clusters cache whenever an archive/unarchive happens.
  */
 
@@ -53,7 +52,6 @@ const endpoints = {
   // self-documenting. Any write that changes cluster data must revalidate
   // these prefixes as well.
   painList: "/module-signals/pain/",
-  painImpactList: "/module-signals/pain-impacts/",
 };
 
 // ==============================|| URL BUILDER ||============================== //
@@ -111,7 +109,20 @@ function normaliseSignalType(input) {
  * @returns {string}
  */
 function buildListUrl(baseUrl, params = {}) {
-  const { accountId, signalType, decisionCycleId, includeArchived } = params;
+  const {
+    accountId,
+    signalType,
+    decisionCycleId,
+    includeArchived,
+    department,
+    contact,
+    scope,
+    statuses,
+    perimeter,
+    whats,
+    dimensions,
+    contacts,
+  } = params;
 
   const query = new URLSearchParams();
 
@@ -133,6 +144,42 @@ function buildListUrl(baseUrl, params = {}) {
   if (includeArchived) {
     query.append("include_archived", "true");
   }
+
+  // Member filters (mirror the aggregated endpoint's semantics on the backend
+  // cluster endpoint). `department` is a repeatable param — accept a single id
+  // (the flat drawer's single-select) or an array; `status` is repeatable too.
+  const departmentList = Array.isArray(department)
+    ? department
+    : department
+      ? [department]
+      : [];
+  departmentList.forEach((d) => {
+    if (d != null && d !== "") query.append("department", d);
+  });
+  if (contact) {
+    query.append("contact", contact);
+  }
+  if (scope) {
+    query.append("scope", scope);
+  }
+  (statuses || []).forEach((s) => {
+    if (s) query.append("status", s);
+  });
+
+  // Grouped (unified) filters — perimeter (OR: 'BUSINESS' sentinel + dept ids),
+  // domain (`what`), dimension, and multi-contact. Each is a repeatable param.
+  (perimeter || []).forEach((p) => {
+    if (p != null && p !== "") query.append("perimeter", p);
+  });
+  (whats || []).forEach((w) => {
+    if (w) query.append("what", w);
+  });
+  (dimensions || []).forEach((d) => {
+    if (d) query.append("dimension", d);
+  });
+  (contacts || []).forEach((c) => {
+    if (c) query.append("contact", c);
+  });
 
   const qs = query.toString();
   return qs ? `${baseUrl}?${qs}` : baseUrl;
@@ -161,15 +208,14 @@ function buildDetailUrl(canonicalKey, accountId, signalType = "pain") {
  *
  * The cluster payload is derived from Pain signals + Impact signals + the
  * archival table. Writes on any of those should bust the cluster cache,
- * and writes on the cluster archival table should bust the Pain/Impact
- * caches to keep their detail views consistent (same cache tag on the
- * backend — 'signals').
+ * and writes on the cluster archival table should bust the Pain cache to
+ * keep its detail views consistent (same cache tag on the backend —
+ * 'signals').
  */
 function revalidateClusterCaches() {
   revalidateMultiple([
     endpoints.list,
     endpoints.painList,
-    endpoints.painImpactList,
   ]);
 }
 
@@ -217,9 +263,28 @@ export function useGetClustersByAccount(accountId, options = {}) {
     signalType = "pain",
     decisionCycleId = null,
     includeArchived = false,
+    department = null,
+    contact = null,
+    scope = null,
+    statuses = null,
+    perimeter = null,
+    whats = null,
+    dimensions = null,
+    contacts = null,
   } = options;
 
   const enabled = Boolean(accountId && isValidUUID(accountId));
+
+  // Stable CSV keys for the array/scalar member filters so a fresh array
+  // instance per render does not thrash the SWR cache key.
+  const departmentKey = Array.isArray(department)
+    ? department.join(",")
+    : department || "";
+  const statusesKey = (statuses || []).join(",");
+  const perimeterKey = (perimeter || []).join(",");
+  const whatsKey = (whats || []).join(",");
+  const dimensionsKey = (dimensions || []).join(",");
+  const contactsKey = (contacts || []).join(",");
 
   // Normalise signalType to a stable CSV string.
   //
@@ -245,14 +310,33 @@ export function useGetClustersByAccount(accountId, options = {}) {
             signalType: normalisedSignalType,
             decisionCycleId,
             includeArchived,
+            department,
+            contact,
+            scope,
+            statuses,
+            perimeter,
+            whats,
+            dimensions,
+            contacts,
           })
         : null,
+    // The array filters use their stable CSV keys as deps (the array
+    // instances themselves are referentially unstable across renders).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       enabled,
       accountId,
       normalisedSignalType,
       decisionCycleId,
       includeArchived,
+      departmentKey,
+      contact,
+      scope,
+      statusesKey,
+      perimeterKey,
+      whatsKey,
+      dimensionsKey,
+      contactsKey,
     ],
   );
 

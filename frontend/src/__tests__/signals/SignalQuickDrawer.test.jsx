@@ -2,10 +2,12 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { useRouter } from "next/navigation";
 import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
 
 afterEach(() => {
   cleanup();
+  vi.clearAllMocks();
 });
 
 const MOCK_PAIN = {
@@ -25,10 +27,7 @@ const MOCK_PAIN = {
   source_context: {
     contacts: [{ id: "c1", first_name: "Pierre", last_name: "Dupont" }],
   },
-  related_techstack: {
-    product_name: "Excel",
-    company_name: "Microsoft",
-  },
+  related_techstack_mention: "Excel",
 };
 
 const MOCK_TECHSTACK = {
@@ -59,6 +58,7 @@ const MOCK_OBJECTIVE = {
   summary: "Reduce reporting time by 50%",
   what_display: "Operations",
   dimension_display: "Time",
+  scope_level: "DEPARTMENT",
   scope_level_display: "Department",
   success_criteria: "Monthly reports done in 2 hours",
   target_date: "2026-12-31",
@@ -269,11 +269,13 @@ describe("SignalQuickDrawer", () => {
     expect(screen.getByText("CLASSIFICATION")).toBeInTheDocument();
     expect(screen.getByText("Data × Time")).toBeInTheDocument();
     expect(screen.getByText("Business")).toBeInTheDocument();
+    // related_techstack_mention now rendered via the shared PainDetailBlock
     expect(screen.getByText("RELATED TOOL")).toBeInTheDocument();
     expect(screen.getByText("Excel")).toBeInTheDocument();
-    expect(screen.getByText("Microsoft")).toBeInTheDocument();
     expect(screen.getByText("Critical for Q3")).toBeInTheDocument();
-    expect(screen.getByText("Pierre Dupont")).toBeInTheDocument();
+    // Pierre Dupont now appears both as the per-type Contact row and in the
+    // ORIGIN provenance contact list.
+    expect(screen.getAllByText("Pierre Dupont").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
@@ -288,12 +290,12 @@ describe("SignalQuickDrawer", () => {
 
     expect(screen.getByText("IDENTITY")).toBeInTheDocument();
     expect(screen.getAllByText("Salesforce").length).toBeGreaterThanOrEqual(1);
+    // Qualification + usage + lifecycle now rendered via the shared TechDetailBlock
     expect(screen.getByText("Qualification")).toBeInTheDocument();
     expect(screen.getAllByText("Competitor").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("USAGE")).toBeInTheDocument();
+    expect(screen.getByText("TOOL USAGE")).toBeInTheDocument();
     expect(screen.getByText("Company-wide")).toBeInTheDocument();
     expect(screen.getByText("2022")).toBeInTheDocument();
-    expect(screen.getByText("COST & STATUS")).toBeInTheDocument();
     expect(screen.getByText("~50k/year")).toBeInTheDocument();
     expect(screen.getByText("Main CRM tool")).toBeInTheDocument();
   });
@@ -308,10 +310,12 @@ describe("SignalQuickDrawer", () => {
       />,
     );
 
-    expect(screen.getByText("DETAILS")).toBeInTheDocument();
+    // Objective specifics now rendered via the shared ObjectiveDetailBlock.
+    // Owner line follows the card's single-truth logic: DEPARTMENT scope
+    // shows "Department: {name}" (not the target contact).
+    expect(screen.getByText("OBJECTIVE")).toBeInTheDocument();
     expect(screen.getByText("Monthly reports done in 2 hours")).toBeInTheDocument();
-    expect(screen.getByText("Marc Leblanc")).toBeInTheDocument();
-    expect(screen.getByText("Finance")).toBeInTheDocument();
+    expect(screen.getByText("Department: Finance")).toBeInTheDocument();
   });
 
   it("shows validated_by info for validated signals", () => {
@@ -391,6 +395,80 @@ describe("SignalQuickDrawer", () => {
     expect(screen.queryByText("RELATED TOOL")).not.toBeInTheDocument();
   });
 
+  // === Shared-block composition (B1.2.1) ===
+
+  it("composes the shared ImpactDetailBlock (IMPACT EVIDENCE section)", () => {
+    // The 'IMPACT EVIDENCE' section heading is produced ONLY by the shared
+    // ImpactDetailBlock — its presence proves the drawer composes the block
+    // rather than keeping its own per-type copy.
+    render(
+      <SignalQuickDrawer open signal={MOCK_IMPACT} signalType="impact" onClose={vi.fn()} />,
+    );
+    expect(screen.getByText("IMPACT EVIDENCE")).toBeInTheDocument();
+    expect(screen.getByText("Time impact")).toBeInTheDocument();
+  });
+
+  // === ORIGIN provenance (B1) ===
+
+  it("renders the full contact list with job_title + department in ORIGIN", () => {
+    const signal = {
+      id: "pd1",
+      status: "PENDING",
+      summary: "Dept-scoped pain",
+      source_quote: "quote",
+      source_context: {
+        activity: { id: "act-1", subject: "Discovery call" },
+        contacts: [
+          { id: "c1", first_name: "Dana", last_name: "Lee", job_title: "CMO", department: { id: "d1", name: "Marketing" } },
+          { id: "c2", first_name: "Sam", last_name: "Roe" },
+        ],
+      },
+    };
+    render(
+      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={vi.fn()} />,
+    );
+    expect(screen.getByText("ORIGIN")).toBeInTheDocument();
+    expect(screen.getByText("Dana Lee · CMO · Marketing")).toBeInTheDocument();
+    expect(screen.getByText("Sam Roe")).toBeInTheDocument();
+  });
+
+  it("navigates to the origin activity on 'View origin activity' click", () => {
+    const push = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({ push });
+    const onClose = vi.fn();
+    const signal = {
+      id: "pd2",
+      status: "PENDING",
+      summary: "Dept-scoped pain",
+      source_context: {
+        activity: { id: "act-42" },
+        contacts: [{ id: "c1", first_name: "Dana", last_name: "Lee" }],
+      },
+    };
+    render(
+      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /view origin activity/i }));
+    expect(push).toHaveBeenCalledWith("/activities/act-42");
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("omits ORIGIN when there is no activity id and no contacts", () => {
+    const signal = {
+      id: "pd3",
+      status: "PENDING",
+      summary: "bare",
+      source_context: { contacts: [] },
+    };
+    render(
+      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={vi.fn()} />,
+    );
+    expect(screen.queryByText("ORIGIN")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /view origin activity/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows no qualification row when all three booleans are false", () => {
     // A tool the account simply uses — the row is omitted entirely
     // rather than rendered empty. The old "Not in catalog" chip this
@@ -419,5 +497,79 @@ describe("SignalQuickDrawer", () => {
     expect(screen.getAllByText("CustomTool").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("Qualification")).not.toBeInTheDocument();
     expect(screen.queryByText("Not in catalog")).not.toBeInTheDocument();
+  });
+
+  // === C2: all four actions live here (rows are now informational) ===
+
+  it("shows Reopen only for a REJECTED signal, and fires onReopen", () => {
+    const onReopen = vi.fn();
+    const rejected = { ...MOCK_PAIN, status: "REJECTED" };
+    render(
+      <SignalQuickDrawer
+        open
+        signal={rejected}
+        signalType="pain"
+        onClose={vi.fn()}
+        onReopen={onReopen}
+        onEdit={vi.fn()}
+      />,
+    );
+    // Reopen present; validate/reject absent for a rejected signal.
+    const reopen = screen.getByRole("button", { name: /reopen/i });
+    expect(reopen).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+
+    fireEvent.click(reopen);
+    expect(onReopen).toHaveBeenCalledWith(rejected, "pain");
+  });
+
+  it("does NOT show Reopen for PENDING or VALIDATED signals", () => {
+    const { rerender } = render(
+      <SignalQuickDrawer open signal={MOCK_PAIN} signalType="pain" onClose={vi.fn()} onReopen={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+
+    rerender(
+      <SignalQuickDrawer open signal={{ ...MOCK_PAIN, status: "VALIDATED" }} signalType="pain" onClose={vi.fn()} onReopen={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+  });
+
+  it("hides Reopen when locked", () => {
+    render(
+      <SignalQuickDrawer
+        open
+        signal={{ ...MOCK_PAIN, status: "REJECTED" }}
+        signalType="pain"
+        onClose={vi.fn()}
+        onReopen={vi.fn()}
+        isLocked
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+  });
+
+  it("disables Validate when required fields are missing (rule reused from the rows)", () => {
+    // PENDING objective missing scope_level → getMissingFields reports a gap.
+    const incompleteObjective = {
+      id: "o-inc",
+      status: "PENDING",
+      summary: "Cut reporting time",
+      what: "OPS",
+      dimension: "TIME",
+      // scope_level intentionally absent
+      source_context: { contacts: [] },
+    };
+    render(
+      <SignalQuickDrawer
+        open
+        signal={incompleteObjective}
+        signalType="objective"
+        onClose={vi.fn()}
+        onValidate={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /validate/i })).toBeDisabled();
   });
 });

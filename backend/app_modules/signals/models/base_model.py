@@ -244,6 +244,26 @@ class BaseSignal(ModuleBaseModel, ClientScopeManager.ModelMixin):
         )
     )
 
+    # =========================================================================
+    # DATA-QUALITY EXCLUSION (orthogonal to the review lifecycle above)
+    # =========================================================================
+
+    is_domain_valid = models.BooleanField(
+        default=True,
+        verbose_name=_('Domain valid'),
+        help_text=_(
+            'False when the LLM emitted a `what` (domain) value outside the '
+            'controlled SignalWhat vocabulary — e.g. a dimension word like '
+            '"COST" placed in the domain slot. Such a signal is PERSISTED '
+            '(not dropped) so it stays recoverable for reprocessing, but it '
+            'is EXCLUDED from every user-facing list, cluster and count. '
+            'Always True for signal types that have no `what` axis and for '
+            'manually created signals (serializer-validated). This flag is '
+            'orthogonal to `status`: it is a data-quality gate, not a review '
+            'state.'
+        )
+    )
+
     validated_by = models.ForeignKey(
         'end_users.User',
         on_delete=models.SET_NULL,

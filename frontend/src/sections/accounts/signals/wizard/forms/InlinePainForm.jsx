@@ -3,9 +3,8 @@
  * InlinePainForm — inline form for staging a single PainSignal.
  *
  * Pain = the DIAGNOSIS (qualitative, narrative).
- * Metrics, departments, humans, and impact-related data all live on
- * PainImpact and are captured separately via AddPainImpactDialog in the
- * Account Workspace — NOT here.
+ * Metrics, departments, humans, and impact-related data are captured
+ * separately as first-class Impact signals — NOT here.
  *
  * This form captures strictly:
  *   - What × Dimension          → canonical axes (drive canonical_key)

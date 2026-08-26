@@ -104,7 +104,9 @@ function AsyncContactSelect({
 }
 
 AsyncContactSelect.propTypes = {
-  value: PropTypes.object,
+  // A single contact object, or an array of them when `multiple` is passed
+  // through to the underlying MUI Autocomplete (via AsyncSelect).
+  value: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
   onChange: PropTypes.func.isRequired,
   label: PropTypes.string,
   placeholder: PropTypes.string,

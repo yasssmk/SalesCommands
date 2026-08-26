@@ -1,4 +1,21 @@
 // frontend/src/sections/activities/signals/SignalsGroupedView.jsx
+//
+// Activity "Qualification" grouped view.
+//
+// An activity is a single provenance point, so clustering (which groups
+// repetitions ACROSS activities) makes no sense here. This view therefore
+// groups signals by TYPE only and renders each type as a FLAT list — no
+// cluster cards, no domain×dimension accordion. Domain × dimension, scope,
+// quote and contact live in the signal drawer (opened by clicking a row).
+//
+// Sections:
+//   Left column  — Objectives / Pains / Impacts (the qualification types)
+//   Right column — Tech Stack / Objections (blockers)
+//
+// The two-column container is the shared reference layout; only the inner
+// grouping changed from (theme / cluster) to (type-section / flat list).
+// Rows are the informational SignalLine (status + message + meta); clicking a
+// row calls onSelect and the parent opens the drawer where the actions live.
 
 "use client";
 
@@ -12,60 +29,98 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import {
-  StopOutlined,
-  ThunderboltOutlined,
-  ToolOutlined,
-} from "@ant-design/icons";
+import { ThunderboltOutlined } from "@ant-design/icons";
 
 // Project imports
-import SignalThemeBlock from "./SignalThemeBlock";
-import BlockerCompactCard from "./BlockerCompactCard";
-import SignalCompactLine from "./SignalCompactLine";
+import SignalLine from "components/signals/SignalLine";
+import CollapsibleSection from "components/signals/CollapsibleSection";
 
-function buildThemeKey(signal) {
-  const w = signal.what || "unknown";
-  const d = signal.dimension || "unknown";
-  return `${w}:${d}`;
+// ==============================|| SECTION ||============================== //
+
+/**
+ * One collapsible type section (open by default): a header with a count, then
+ * a flat list of that type's signals as informational SignalLine rows. An
+ * empty section is neutral information ("None yet"), never an error surface.
+ */
+function TypeSection({ title, signalType, signals, onSelect, emptyLabel }) {
+  return (
+    <CollapsibleSection
+      title={title}
+      count={signals.length}
+      level="section"
+      testId={`section-${signalType}`}
+    >
+      {signals.length === 0 ? (
+        <Box
+          sx={{
+            py: 2.5,
+            px: 2,
+            textAlign: "center",
+            border: 1,
+            borderColor: "divider",
+            borderStyle: "dashed",
+            borderRadius: 1.5,
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            {emptyLabel}
+          </Typography>
+        </Box>
+      ) : (
+        <Stack spacing={0}>
+          {signals.map((signal) => (
+            <SignalLine
+              key={signal.id}
+              signal={signal}
+              signalType={signal._signalType || signalType}
+              onSelect={onSelect}
+              showTypeChip={false}
+            />
+          ))}
+        </Stack>
+      )}
+    </CollapsibleSection>
+  );
 }
 
-function buildThemeLabel(signal) {
-  const w = signal.what_display || signal.what || "Unknown";
-  const d = signal.dimension_display || signal.dimension || "Unknown";
-  return `${w} × ${d}`;
-}
+TypeSection.propTypes = {
+  title: PropTypes.string.isRequired,
+  signalType: PropTypes.string.isRequired,
+  signals: PropTypes.array.isRequired,
+  onSelect: PropTypes.func,
+  emptyLabel: PropTypes.string.isRequired,
+};
 
-// ==============================|| SIGNALS GROUPED VIEW ||============================== //
+// ==============================|| SIGNALS GROUPED VIEW (ACTIVITY) ||============================== //
 
 export default function SignalsGroupedView({
   qualificationSignals,
   techStackSignals,
   blockerSignals,
   onSelect,
-  onValidate,
-  onReject,
-  isLocked,
 }) {
-  const themes = useMemo(() => {
-    const map = new Map();
-    for (const signal of qualificationSignals) {
-      const key = buildThemeKey(signal);
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          label: buildThemeLabel(signal),
-          signals: [],
-        });
-      }
-      map.get(key).signals.push(signal);
-    }
-    return Array.from(map.values());
-  }, [qualificationSignals]);
+  // No type filter in the grouped view — the structure IS by type section, so
+  // every section always renders (mirrors Account/DC grouped). The signals are
+  // already filtered client-side by the caller.
+  // Split the mixed qualification list into its three types. Each signal is
+  // tagged with _signalType by the activity hook.
+  const objectives = useMemo(
+    () => qualificationSignals.filter((s) => s._signalType === "objective"),
+    [qualificationSignals],
+  );
+  const pains = useMemo(
+    () => qualificationSignals.filter((s) => s._signalType === "pain"),
+    [qualificationSignals],
+  );
+  const impacts = useMemo(
+    () => qualificationSignals.filter((s) => s._signalType === "impact"),
+    [qualificationSignals],
+  );
 
-  const hasQualification = themes.length > 0;
-  const hasBlockers = blockerSignals.length > 0;
-  const hasTechStack = techStackSignals.length > 0;
-  const isEmpty = !hasQualification && !hasBlockers && !hasTechStack;
+  const isEmpty =
+    qualificationSignals.length === 0 &&
+    techStackSignals.length === 0 &&
+    blockerSignals.length === 0;
 
   if (isEmpty) {
     return (
@@ -87,150 +142,65 @@ export default function SignalsGroupedView({
 
   return (
     <Grid container spacing={3}>
-      {/* Left column — Qualification */}
+      {/* Left column — qualification types (every section always renders). */}
       <Grid item xs={12} md={6}>
-        <Typography
-          variant="overline"
-          color="text.secondary"
-          sx={{ mb: 1.5, display: "block", letterSpacing: 1.5 }}
-        >
-          Qualification
-        </Typography>
-        {hasQualification ? (
-          themes.map((theme) => (
-            <SignalThemeBlock
-              key={theme.key}
-              themeKey={theme.key}
-              themeLabel={theme.label}
-              signals={theme.signals}
-              onSelect={onSelect}
-              onValidate={onValidate}
-              onReject={onReject}
-              isLocked={isLocked}
-            />
-          ))
-        ) : (
-          <EmptyZone text="No qualification signals extracted yet" />
-        )}
+        <TypeSection
+          title="Objectives"
+          signalType="objective"
+          signals={objectives}
+          onSelect={onSelect}
+          emptyLabel="No objectives extracted yet"
+        />
+        <TypeSection
+          title="Pains"
+          signalType="pain"
+          signals={pains}
+          onSelect={onSelect}
+          emptyLabel="No pains extracted yet"
+        />
+        <TypeSection
+          title="Impacts"
+          signalType="impact"
+          signals={impacts}
+          onSelect={onSelect}
+          emptyLabel="No impacts extracted yet"
+        />
       </Grid>
 
-      {/* Right column — Blockers + TechStack stacked */}
+      {/* Right column — tech stack + objections. */}
       <Grid item xs={12} md={6}>
-        {/* Blockers section */}
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          sx={{ mb: 1.5 }}
-        >
-          <StopOutlined style={{ fontSize: 16, color: "#8c8c8c" }} />
-          <Typography
-            variant="overline"
-            color="text.secondary"
-            sx={{ letterSpacing: 1.5 }}
-          >
-            Blockers / Objections
-          </Typography>
-        </Stack>
-        {hasBlockers ? (
-          blockerSignals.map((signal) => (
-            <BlockerCompactCard
-              key={signal.id}
-              signal={signal}
-              onSelect={onSelect}
-              onValidate={onValidate}
-              onReject={onReject}
-              isLocked={isLocked}
-            />
-          ))
-        ) : (
-          <EmptyZone text="No blockers identified" />
-        )}
-
-        {/* TechStack section */}
-        <Stack
-          direction="row"
-          spacing={1}
-          alignItems="center"
-          sx={{ mt: 3, mb: 1.5 }}
-        >
-          <ToolOutlined style={{ fontSize: 16, color: "#8c8c8c" }} />
-          <Typography
-            variant="overline"
-            color="text.secondary"
-            sx={{ letterSpacing: 1.5 }}
-          >
-            Tech Stack
-          </Typography>
-        </Stack>
-        {hasTechStack ? (
-          <Stack spacing={0}>
-            {techStackSignals.map((signal) => (
-              <SignalCompactLine
-                key={signal.id}
-                signal={signal}
-                signalType="tech-stack"
-                onSelect={onSelect}
-                onValidate={onValidate}
-                onReject={onReject}
-                isLocked={isLocked}
-              />
-            ))}
-          </Stack>
-        ) : (
-          <EmptyZone text="No tools detected" />
-        )}
+        <TypeSection
+          title="Tech Stack"
+          signalType="tech-stack"
+          signals={techStackSignals}
+          onSelect={onSelect}
+          emptyLabel="No tools detected"
+        />
+        <TypeSection
+          title="Objections"
+          signalType="blockers"
+          signals={blockerSignals}
+          onSelect={onSelect}
+          emptyLabel="No objections identified"
+        />
       </Grid>
     </Grid>
   );
 }
 
-function EmptyZone({ text }) {
-  return (
-    <Box
-      sx={{
-        py: 3,
-        px: 2,
-        textAlign: "center",
-        bgcolor: "grey.50",
-        borderRadius: 1,
-        mb: 1.5,
-      }}
-    >
-      <Typography variant="body2" color="text.secondary">
-        {text}
-      </Typography>
-    </Box>
-  );
-}
-
-EmptyZone.propTypes = {
-  text: PropTypes.string.isRequired,
-};
-
 SignalsGroupedView.propTypes = {
+  /** pain + objective + impact, each tagged with _signalType. */
   qualificationSignals: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.string.isRequired,
       _signalType: PropTypes.string.isRequired,
-      what: PropTypes.string,
-      what_display: PropTypes.string,
-      dimension: PropTypes.string,
-      dimension_display: PropTypes.string,
     }),
   ).isRequired,
   techStackSignals: PropTypes.arrayOf(
-    PropTypes.shape({
-      id: PropTypes.string.isRequired,
-    }),
+    PropTypes.shape({ id: PropTypes.string.isRequired }),
   ).isRequired,
   blockerSignals: PropTypes.arrayOf(
-    PropTypes.shape({
-      id: PropTypes.string.isRequired,
-    }),
+    PropTypes.shape({ id: PropTypes.string.isRequired }),
   ).isRequired,
   onSelect: PropTypes.func,
-  onValidate: PropTypes.func,
-  onReject: PropTypes.func,
-  isLocked: PropTypes.bool,
 };

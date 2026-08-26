@@ -85,6 +85,9 @@ class SignalCountsByActivityView(BaseAPIView):
             row = (
                 model_cls.objects
                 .filter(client_id=client_id, source_activity=activity)
+                # Exclude out-of-taxonomy-domain signals (COST-bug guard) so a
+                # flagged, hidden signal never inflates the pending badge.
+                .filter(is_domain_valid=True)
                 .aggregate(**STATUS_ANNOTATIONS)
             )
             counts = {

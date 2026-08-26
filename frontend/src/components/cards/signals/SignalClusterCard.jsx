@@ -59,9 +59,7 @@ import WarningOutlined from "@ant-design/icons/WarningOutlined";
 import {
   resolveFreshness,
   resolveHumanImpact,
-  resolveImpactLevel,
   resolvePriority,
-  resolveScopeLevel,
   resolveSignalTypeVisuals,
   resolveTargetDateUrgency,
 } from "sections/accounts/signals/signalClusters";
@@ -139,11 +137,7 @@ export default function SignalClusterCard({
   const FreshnessIcon = freshness.icon;
   const PriorityIcon = priority.icon;
 
-  // Pain-specific resolutions
-  const maxImpactLevel = resolveImpactLevel(cluster.max_impact_level);
-
   // Objective-specific resolutions
-  const maxScopeLevel = resolveScopeLevel(cluster.max_scope_level);
   const targetUrgency = useMemo(
     () =>
       resolveTargetDateUrgency(
@@ -509,31 +503,6 @@ export default function SignalClusterCard({
           </Tooltip>
         )}
 
-        {/* PAIN: max impact level */}
-        {isPain && cluster.max_impact_level && (
-          <Tooltip title="Highest observed impact level">
-            <Chip
-              label={maxImpactLevel.label}
-              color={maxImpactLevel.color}
-              size="small"
-              variant="outlined"
-              sx={{ fontSize: "0.62rem", height: 18 }}
-            />
-          </Tooltip>
-        )}
-
-        {/* OBJECTIVE: max scope level */}
-        {isObjective && cluster.max_scope_level && (
-          <Tooltip title="Highest observed scope level">
-            <Chip
-              label={maxScopeLevel.label}
-              color={maxScopeLevel.color}
-              size="small"
-              variant="outlined"
-              sx={{ fontSize: "0.62rem", height: 18 }}
-            />
-          </Tooltip>
-        )}
 
         {/* OBJECTIVE: target date urgency badge */}
         {isObjective && targetUrgency && (

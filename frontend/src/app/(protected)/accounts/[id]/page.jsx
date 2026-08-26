@@ -8,13 +8,12 @@ import AccountWorkspacePage from 'views/accounts/workspace';
  * Next.js App Router page component for Account Workspace
  * 
  * Dynamic route that displays account details with tabs:
- * - Summary
- * - Qualification
- * - Buying Process
+ * - Overview
+ * - Decision Cycle
  * - Activities
  * - Contacts
- * - Signals
- * 
+ * - Signals (flat list + the grouped Qualification synthesis via a toggle)
+ *
  * Protected by AuthGuard (via layout)
  */
 export default function AccountWorkspaceRoute() {
