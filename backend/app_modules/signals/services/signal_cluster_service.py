@@ -172,6 +172,10 @@ class SignalClusterService:
         *,
         decision_cycle_id=None,
         include_archived: bool = False,
+        departments=None,
+        contact=None,
+        scope=None,
+        statuses=None,
     ) -> list:
         """
         Return all clusters for an account, grouped by canonical_key.
@@ -190,6 +194,20 @@ class SignalClusterService:
                                 archived clusters are returned with
                                 is_archived=True.
 
+        Member filters (applied to the member queryset BEFORE clustering, so
+        each cluster forms — and its meta recomputes — on the filtered set; a
+        cluster with zero matching members is not returned):
+            departments:  Optional list of StandardDepartment ids. Filters on
+                          the SUBJECT (target_department) — which department the
+                          signal is ABOUT. Members without a target_department
+                          (Business scope) are EXCLUDED when this is set.
+            contact:      Optional Contact id. Filters on the SOURCE
+                          (source_activity.contacts) — who reported the signal —
+                          a DIFFERENT axis from department.
+            scope:        Optional ScopeLevel value. Filters on scope_level.
+            statuses:     Optional list of SignalStatus values. Defaults to
+                          (VALIDATED, PENDING) when None/empty.
+
         Returns:
             List of cluster dicts, sorted by priority_score DESC. Ties
             are broken by the most recent confirmation so equally-scored
@@ -201,6 +219,13 @@ class SignalClusterService:
         """
         requested_types = cls._assert_signal_types_supported(signal_type)
 
+        member_filters = {
+            'departments': departments or None,
+            'contact': contact or None,
+            'scope': scope or None,
+            'statuses': tuple(statuses) if statuses else None,
+        }
+
         clusters: list = []
 
         for stype in requested_types:
@@ -210,6 +235,7 @@ class SignalClusterService:
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
+                        member_filters=member_filters,
                     )
                 )
                 continue
@@ -219,6 +245,7 @@ class SignalClusterService:
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
+                        member_filters=member_filters,
                     )
                 )
                 continue
@@ -228,6 +255,7 @@ class SignalClusterService:
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
+                        member_filters=member_filters,
                     )
                 )
                 continue
@@ -257,6 +285,7 @@ class SignalClusterService:
         account_id,
         decision_cycle_id=None,
         include_archived: bool = False,
+        member_filters=None,
     ) -> list:
         """
         Pain-specific cluster computation for list_clusters_for_account.
@@ -269,6 +298,7 @@ class SignalClusterService:
         signals = cls._fetch_pain_signals(
             account_id=account_id,
             decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
         )
         grouped = cls._group_by_canonical_key(signals)
 
@@ -306,6 +336,7 @@ class SignalClusterService:
         account_id,
         decision_cycle_id=None,
         include_archived: bool = False,
+        member_filters=None,
     ) -> list:
         """
         Objective-specific cluster computation for list_clusters_for_account.
@@ -318,6 +349,7 @@ class SignalClusterService:
         signals = cls._fetch_objective_signals(
             account_id=account_id,
             decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
         )
         grouped = cls._group_by_canonical_key(signals)
 
@@ -356,6 +388,7 @@ class SignalClusterService:
         account_id,
         decision_cycle_id=None,
         include_archived: bool = False,
+        member_filters=None,
     ) -> list:
         """
         Impact-specific cluster computation for list_clusters_for_account.
@@ -370,6 +403,7 @@ class SignalClusterService:
         signals = cls._fetch_impact_signals(
             account_id=account_id,
             decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
         )
         grouped = cls._group_by_canonical_key(signals)
 
@@ -581,8 +615,52 @@ class SignalClusterService:
     # FETCH
     # =========================================================================
 
+    @staticmethod
+    def _member_statuses(member_filters):
+        """
+        Resolve the status set for a member queryset: the caller-supplied
+        `statuses` (from the status filter) or the default VALIDATED+PENDING.
+        Mirrors the flat default (pending+validated; rejected only when asked).
+        """
+        statuses = (member_filters or {}).get('statuses')
+        return statuses or (SignalStatus.VALIDATED, SignalStatus.PENDING)
+
     @classmethod
-    def _fetch_pain_signals(cls, *, account_id, decision_cycle_id=None):
+    def _apply_member_filters(cls, qs, member_filters):
+        """
+        Apply the department / contact / scope member filters (AND-combined) to
+        a cluster member queryset. Status is applied by the caller via
+        _member_statuses (it replaces the default status__in). department and
+        scope filter on the signal's SUBJECT / axis; contact filters on its
+        SOURCE.
+
+          - departments (list of ids) → target_department_id IN the list.
+            Members with no target_department (Business) are EXCLUDED.
+          - contact → source_activity.contacts contains the id (the SOURCE who
+            reported it — a different field from target_department).
+          - scope → scope_level == scope.
+
+        N+1-safe: the department/contact joins are part of the single member
+        query; the existing prefetch on source_activity.contacts is untouched.
+        """
+        if not member_filters:
+            return qs
+        departments = member_filters.get('departments')
+        if departments:
+            qs = qs.filter(target_department_id__in=departments)
+        contact = member_filters.get('contact')
+        if contact:
+            # SOURCE axis: a single contact id matches each signal at most once
+            # (a contact appears once per activity), so no duplicate rows.
+            qs = qs.filter(source_activity__contacts=contact)
+        scope = member_filters.get('scope')
+        if scope:
+            qs = qs.filter(scope_level=scope)
+        return qs
+
+    @classmethod
+    def _fetch_pain_signals(cls, *, account_id, decision_cycle_id=None,
+                            member_filters=None):
         """
         Base queryset for Pain cluster aggregation.
 
@@ -606,7 +684,7 @@ class SignalClusterService:
             PainSignal.objects
             .filter(
                 account_id=account_id,
-                status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                status__in=cls._member_statuses(member_filters),
                 # Exclude out-of-taxonomy-domain signals (COST-bug guard):
                 # kept in DB for reprocessing, never shown in clusters.
                 is_domain_valid=True,
@@ -627,10 +705,13 @@ class SignalClusterService:
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
 
+        qs = cls._apply_member_filters(qs, member_filters)
+
         return qs
 
     @classmethod
-    def _fetch_objective_signals(cls, *, account_id, decision_cycle_id=None):
+    def _fetch_objective_signals(cls, *, account_id, decision_cycle_id=None,
+                                 member_filters=None):
         """
         Base queryset for Objective cluster aggregation.
 
@@ -647,7 +728,7 @@ class SignalClusterService:
             ObjectiveSignal.objects
             .filter(
                 account_id=account_id,
-                status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                status__in=cls._member_statuses(member_filters),
                 # Exclude out-of-taxonomy-domain signals (COST-bug guard):
                 # kept in DB for reprocessing, never shown in clusters.
                 is_domain_valid=True,
@@ -671,10 +752,13 @@ class SignalClusterService:
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
 
+        qs = cls._apply_member_filters(qs, member_filters)
+
         return qs
 
     @classmethod
-    def _fetch_impact_signals(cls, *, account_id, decision_cycle_id=None):
+    def _fetch_impact_signals(cls, *, account_id, decision_cycle_id=None,
+                              member_filters=None):
         """
         Base queryset for Impact cluster aggregation.
 
@@ -703,7 +787,7 @@ class SignalClusterService:
             ImpactSignal.objects
             .filter(
                 account_id=account_id,
-                status__in=(SignalStatus.VALIDATED, SignalStatus.PENDING),
+                status__in=cls._member_statuses(member_filters),
                 # Exclude out-of-taxonomy-domain signals (COST-bug guard):
                 # kept in DB for reprocessing, never shown in clusters.
                 is_domain_valid=True,
@@ -722,6 +806,8 @@ class SignalClusterService:
 
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
+
+        qs = cls._apply_member_filters(qs, member_filters)
 
         return qs
 
