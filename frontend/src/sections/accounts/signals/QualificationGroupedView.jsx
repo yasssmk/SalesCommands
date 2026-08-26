@@ -4,22 +4,22 @@
  *
  * Three narrative sections — Objectives / Pains / Impacts — each nesting the
  * account's (or cycle's) clusters by DOMAIN (what) → DIMENSION → CLUSTER. One
- * row = one cluster (clusters already exist in the DB, identified
- * type:what:dimension); the flat cluster list from the service is nested
- * client-side here.
+ * row = one cluster (flat cluster list from the service, nested client-side).
+ * Below them, the Tech Stack and Objections sections show their PLACEMENT with
+ * today's simple flat content (future tech clustering is a later step).
  *
- * Each cluster row is informational (no action buttons) and shows epurated,
- * factual meta only — signal count, "N to validate", freshness, covered
- * period, departments involved, and (Account only) the number of decision
- * cycles it spans. Clicking a row opens the existing cluster drawer, where the
- * members and their actions live.
+ * All sections — and the domain groups inside the narrative sections — are
+ * collapsible (CollapsibleSection / MUI Accordion), open by default; open state
+ * is component state only (no browser storage).
  *
  * Surface:
- *   account → clusters scoped to the account; DC count shown on rows.
- *   dc      → clusters scoped to the decision cycle; DC count hidden.
+ *   account → clusters scoped to the account; DC count shown on rows; Tech only.
+ *   dc      → clusters scoped to the decision cycle; DC count hidden; Tech +
+ *             Objections (blockers are deal-scoped).
  *
- * Tech Stack and Objections are intentionally NOT rendered here — they are a
- * separate, later step (tech clustering to build).
+ * Cluster rows are informational — clicking opens the cluster drawer. Tech /
+ * objection rows are informational too — clicking opens the shared signal
+ * drawer where their actions live.
  */
 
 "use client";
@@ -33,14 +33,26 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-// Icons
-import { InboxOutlined } from "@ant-design/icons";
-
 // project imports
 import ClusterRow from "./ClusterRow";
 import SignalClusterDetailDrawer from "./SignalClusterDetailDrawer";
+import AlertSignalReject from "./AlertSignalReject";
+import SignalEditDialog from "./SignalEditDialog";
+import CollapsibleSection from "components/signals/CollapsibleSection";
+import SignalLine from "components/signals/SignalLine";
+import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
+
 import { useGetClustersByAccount } from "api/signals/signalClusters";
-import { useGetSignalChoices } from "api/signals/signals";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
+import {
+  useGetSignalChoices,
+  validateSignal,
+  reopenSignal,
+} from "api/signals/signals";
+import {
+  displaySuccessSnackbar,
+  displayErrorSnackbar,
+} from "utils/displayError";
 
 // The three narrative sections, in reading order.
 const SECTIONS = [
@@ -49,13 +61,14 @@ const SECTIONS = [
   { type: "impact", title: "Impacts" },
 ];
 const CLUSTER_TYPES = SECTIONS.map((s) => s.type);
+const GROUPED_STATUSES = ["PENDING", "VALIDATED"];
+const SECTION_PAGE_SIZE = 100;
 
 // ==============================|| NESTING ||============================== //
 
 /**
  * Nest a flat, priority-sorted cluster list into domain → dimension groups.
- * Insertion order is preserved (clusters arrive priority-sorted), so the
- * strongest domains/dimensions surface first.
+ * Insertion order is preserved (clusters arrive priority-sorted).
  */
 function nestByDomainDimension(clusters) {
   const domains = new Map();
@@ -85,31 +98,6 @@ function nestByDomainDimension(clusters) {
 
 // ==============================|| PRESENTATION HELPERS ||============================== //
 
-function SectionHeader({ title, count }) {
-  return (
-    <Typography
-      variant="overline"
-      color="text.secondary"
-      sx={{ mb: 1.5, display: "block", letterSpacing: 1.5 }}
-    >
-      {title}
-      <Typography
-        component="span"
-        variant="caption"
-        color="text.disabled"
-        sx={{ ml: 1, letterSpacing: 0 }}
-      >
-        ({count})
-      </Typography>
-    </Typography>
-  );
-}
-
-SectionHeader.propTypes = {
-  title: PropTypes.string.isRequired,
-  count: PropTypes.number.isRequired,
-};
-
 function NeutralEmpty({ label }) {
   return (
     <Box
@@ -121,7 +109,7 @@ function NeutralEmpty({ label }) {
         borderColor: "divider",
         borderStyle: "dashed",
         borderRadius: 1.5,
-        mb: 2,
+        mb: 1,
       }}
     >
       <Typography variant="caption" color="text.secondary">
@@ -134,50 +122,59 @@ function NeutralEmpty({ label }) {
 NeutralEmpty.propTypes = { label: PropTypes.string.isRequired };
 
 /**
- * One narrative section (Objectives / Pains / Impacts): its clusters nested by
- * domain → dimension → cluster rows.
+ * One narrative section (collapsible), its clusters nested by domain
+ * (collapsible) → dimension → cluster rows.
  */
 function NarrativeSection({ title, clusters, surface, onClusterClick }) {
   const domains = useMemo(() => nestByDomainDimension(clusters), [clusters]);
 
   return (
-    <Box sx={{ mb: 4 }} data-testid={`section-${title.toLowerCase()}`}>
-      <SectionHeader title={title} count={clusters.length} />
-
+    <CollapsibleSection
+      title={title}
+      count={clusters.length}
+      level="section"
+      testId={`section-${title.toLowerCase()}`}
+    >
       {domains.length === 0 ? (
         <NeutralEmpty label={`No ${title.toLowerCase()} yet`} />
       ) : (
-        domains.map((dom) => (
-          <Box key={dom.what} sx={{ mb: 2 }}>
-            {/* Domain sub-heading */}
-            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
-              {dom.whatLabel}
-            </Typography>
-
-            {dom.dims.map((dim) => (
-              <Box key={dim.dimension} sx={{ pl: 1.5, mb: 1.5 }}>
-                {/* Dimension label */}
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  sx={{ display: "block", mb: 0.75, fontWeight: 600 }}
-                >
-                  {dim.dimLabel}
-                </Typography>
-                {dim.clusters.map((cluster) => (
-                  <ClusterRow
-                    key={`${cluster.signal_type}:${cluster.canonical_key}`}
-                    cluster={cluster}
-                    surface={surface}
-                    onClick={onClusterClick}
-                  />
-                ))}
-              </Box>
-            ))}
-          </Box>
-        ))
+        domains.map((dom) => {
+          const domainCount = dom.dims.reduce(
+            (n, d) => n + d.clusters.length,
+            0,
+          );
+          return (
+            <CollapsibleSection
+              key={dom.what}
+              title={dom.whatLabel}
+              count={domainCount}
+              level="domain"
+              testId={`domain-${dom.what}`}
+            >
+              {dom.dims.map((dim) => (
+                <Box key={dim.dimension} sx={{ mb: 1.5 }}>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mb: 0.75, fontWeight: 600 }}
+                  >
+                    {dim.dimLabel}
+                  </Typography>
+                  {dim.clusters.map((cluster) => (
+                    <ClusterRow
+                      key={`${cluster.signal_type}:${cluster.canonical_key}`}
+                      cluster={cluster}
+                      surface={surface}
+                      onClick={onClusterClick}
+                    />
+                  ))}
+                </Box>
+              ))}
+            </CollapsibleSection>
+          );
+        })
       )}
-    </Box>
+    </CollapsibleSection>
   );
 }
 
@@ -186,6 +183,50 @@ NarrativeSection.propTypes = {
   clusters: PropTypes.array.isRequired,
   surface: PropTypes.oneOf(["account", "dc"]).isRequired,
   onClusterClick: PropTypes.func.isRequired,
+};
+
+/**
+ * A typed (non-clustered) section — Tech Stack / Objections — shown with
+ * today's flat content. Collapsible, open by default. Rows are informational.
+ */
+function TypedSection({ title, testId, emptyLabel, signals, loading, onSelect }) {
+  return (
+    <CollapsibleSection
+      title={title}
+      count={signals.length}
+      level="section"
+      testId={testId}
+    >
+      {loading && signals.length === 0 ? (
+        <Stack alignItems="center" py={2}>
+          <CircularProgress size={18} />
+        </Stack>
+      ) : signals.length === 0 ? (
+        <NeutralEmpty label={emptyLabel} />
+      ) : (
+        <Stack spacing={0}>
+          {signals.map((signal) => (
+            <SignalLine
+              key={signal.id}
+              signal={signal}
+              signalType={signal._signalType}
+              onSelect={onSelect}
+              showTypeChip={false}
+            />
+          ))}
+        </Stack>
+      )}
+    </CollapsibleSection>
+  );
+}
+
+TypedSection.propTypes = {
+  title: PropTypes.string.isRequired,
+  testId: PropTypes.string.isRequired,
+  emptyLabel: PropTypes.string.isRequired,
+  signals: PropTypes.array.isRequired,
+  loading: PropTypes.bool,
+  onSelect: PropTypes.func,
 };
 
 // ==============================|| QUALIFICATION GROUPED VIEW ||============================== //
@@ -203,7 +244,29 @@ export default function QualificationGroupedView({
       decisionCycleId: isDC ? decisionCycleId : undefined,
     });
 
+  // Tech: scoped to the account (Account) or the decision cycle (DC).
+  const tech = useAggregatedSignals({
+    accountId: isDC ? undefined : accountId,
+    decisionCycleId: isDC ? decisionCycleId : undefined,
+    signalTypes: ["tech-stack"],
+    statuses: GROUPED_STATUSES,
+    pageSize: SECTION_PAGE_SIZE,
+  });
+
+  // Objections (blockers): DC surface only.
+  const blockers = useAggregatedSignals({
+    decisionCycleId: isDC ? decisionCycleId : undefined,
+    signalTypes: ["blockers"],
+    statuses: GROUPED_STATUSES,
+    pageSize: SECTION_PAGE_SIZE,
+  });
+
   const { choices, choicesLoading } = useGetSignalChoices();
+
+  const mutateSections = useCallback(() => {
+    tech.mutate();
+    blockers.mutate();
+  }, [tech, blockers]);
 
   // Split the flat cluster list into the three narrative sections.
   const bySection = useMemo(() => {
@@ -219,14 +282,81 @@ export default function QualificationGroupedView({
     open: false,
     summary: null,
   });
-
   const handleClusterClick = useCallback((cluster) => {
     setClusterDrawer({ open: true, summary: cluster });
   }, []);
-
   const handleClusterDrawerClose = useCallback(() => {
     setClusterDrawer({ open: false, summary: null });
   }, []);
+
+  // ---- Typed-section member drawer + modals ----
+  const [memberDrawer, setMemberDrawer] = useState({
+    open: false,
+    signal: null,
+    signalType: null,
+  });
+  const [rejectModal, setRejectModal] = useState({
+    open: false,
+    signal: null,
+    signalType: null,
+  });
+  const [editModal, setEditModal] = useState({
+    open: false,
+    signal: null,
+    signalType: null,
+  });
+
+  const handleSelect = useCallback((signal, signalType) => {
+    setMemberDrawer({ open: true, signal, signalType });
+  }, []);
+  const handleDrawerClose = useCallback(() => {
+    setMemberDrawer({ open: false, signal: null, signalType: null });
+  }, []);
+
+  const handleValidate = useCallback(
+    async (signal, signalType) => {
+      const result = await validateSignal(signalType, signal.id);
+      if (result.success) {
+        displaySuccessSnackbar("Signal validated");
+        mutateSections();
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutateSections],
+  );
+  const handleReopen = useCallback(
+    async (signal, signalType) => {
+      const result = await reopenSignal(signalType, signal.id);
+      if (result.success) {
+        displaySuccessSnackbar("Signal reopened — now pending");
+        mutateSections();
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutateSections],
+  );
+  const handleRejectOpen = useCallback((signal, signalType) => {
+    setRejectModal({ open: true, signal, signalType });
+  }, []);
+  const handleRejectClose = useCallback(() => {
+    setRejectModal({ open: false, signal: null, signalType: null });
+  }, []);
+  const handleRejectSuccess = useCallback(() => {
+    setRejectModal({ open: false, signal: null, signalType: null });
+    displaySuccessSnackbar("Signal rejected");
+    mutateSections();
+  }, [mutateSections]);
+  const handleEditOpen = useCallback((signal, signalType) => {
+    setEditModal({ open: true, signal, signalType });
+  }, []);
+  const handleEditClose = useCallback(() => {
+    setEditModal({ open: false, signal: null, signalType: null });
+  }, []);
+  const handleEditSuccess = useCallback(() => {
+    mutateSections();
+  }, [mutateSections]);
 
   if (clustersError) {
     return (
@@ -249,42 +379,39 @@ export default function QualificationGroupedView({
     );
   }
 
-  const totalClusters = (clusters ?? []).length;
-
   return (
     <Box>
-      {totalClusters === 0 ? (
-        <Box
-          display="flex"
-          flexDirection="column"
-          alignItems="center"
-          gap={1}
-          sx={{
-            py: 5,
-            border: 1,
-            borderColor: "divider",
-            borderRadius: 1.5,
-            borderStyle: "dashed",
-          }}
-        >
-          <InboxOutlined style={{ fontSize: 32, color: "#bfbfbf" }} />
-          <Typography variant="body2" color="text.secondary">
-            No qualification clusters yet
-          </Typography>
-          <Typography variant="caption" color="text.disabled">
-            Objective, Pain and Impact signals group automatically here.
-          </Typography>
-        </Box>
-      ) : (
-        SECTIONS.map((section) => (
-          <NarrativeSection
-            key={section.type}
-            title={section.title}
-            clusters={bySection[section.type]}
-            surface={surface}
-            onClusterClick={handleClusterClick}
-          />
-        ))
+      {/* Narrative sections — each shows a neutral empty when it has no clusters. */}
+      {SECTIONS.map((section) => (
+        <NarrativeSection
+          key={section.type}
+          title={section.title}
+          clusters={bySection[section.type]}
+          surface={surface}
+          onClusterClick={handleClusterClick}
+        />
+      ))}
+
+      {/* Tech Stack — placement + today's flat content (both surfaces). */}
+      <TypedSection
+        title="Tech Stack"
+        testId="section-tech-stack"
+        emptyLabel="No tech stack signals captured"
+        signals={tech.signals}
+        loading={tech.loading}
+        onSelect={handleSelect}
+      />
+
+      {/* Objections — DC surface only (blockers are deal-scoped). */}
+      {isDC && (
+        <TypedSection
+          title="Objections"
+          testId="section-objections"
+          emptyLabel="No objections captured"
+          signals={blockers.signals}
+          loading={blockers.loading}
+          onSelect={handleSelect}
+        />
       )}
 
       {/* Cluster detail drawer — self-contained member CRUD. */}
@@ -297,12 +424,43 @@ export default function QualificationGroupedView({
         choicesLoading={choicesLoading}
         onClusterChange={mutateClusters}
       />
+
+      {/* Typed-section member drawer + modals. */}
+      <SignalQuickDrawer
+        open={memberDrawer.open}
+        signal={memberDrawer.signal}
+        signalType={memberDrawer.signalType}
+        onClose={handleDrawerClose}
+        onValidate={handleValidate}
+        onReject={handleRejectOpen}
+        onEdit={handleEditOpen}
+        onReopen={handleReopen}
+      />
+
+      <AlertSignalReject
+        open={rejectModal.open}
+        onClose={handleRejectClose}
+        onSuccess={handleRejectSuccess}
+        signal={rejectModal.signal}
+        signalType={rejectModal.signalType}
+      />
+
+      <SignalEditDialog
+        open={editModal.open}
+        onClose={handleEditClose}
+        onSuccess={handleEditSuccess}
+        signal={editModal.signal}
+        signalType={editModal.signalType}
+        accountId={accountId}
+        choices={choices}
+        choicesLoading={choicesLoading}
+      />
     </Box>
   );
 }
 
 QualificationGroupedView.propTypes = {
-  /** "account" → account-scoped clusters + DC count; "dc" → cycle-scoped. */
+  /** "account" → account-scoped clusters + DC count + Tech; "dc" → adds Objections. */
   surface: PropTypes.oneOf(["account", "dc"]).isRequired,
   /** Account UUID — required on both surfaces (clusters are account-scoped). */
   accountId: PropTypes.string.isRequired,
