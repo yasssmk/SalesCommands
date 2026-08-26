@@ -176,6 +176,27 @@ describe("SignalsGroupedView — type sections (Activity)", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders the two-column reference layout: narrative LEFT, Tech/Objections RIGHT (flat)", () => {
+    const { container } = render(
+      <SignalsGroupedView
+        qualificationSignals={[makeQual("p1", "pain"), makeQual("o1", "objective")]}
+        techStackSignals={[makeTechStack("t1")]}
+        blockerSignals={[makeBlocker("b1")]}
+        onSelect={vi.fn()}
+      />,
+    );
+    const cols = container.querySelectorAll(".MuiGrid-container > .MuiGrid-item");
+    expect(cols).toHaveLength(2);
+    const [left, right] = cols;
+    expect(left).toHaveTextContent("Objectives");
+    expect(left).toHaveTextContent("Pains");
+    expect(left).toHaveTextContent("Impacts");
+    expect(right).toHaveTextContent("Tech Stack");
+    expect(right).toHaveTextContent("Objections");
+    // Activity is flat — no domain×dimension header inside the left sections.
+    expect(left).not.toHaveTextContent("OPS × TIME");
+  });
+
   it("type sections are collapsible and open by default", () => {
     render(
       <SignalsGroupedView

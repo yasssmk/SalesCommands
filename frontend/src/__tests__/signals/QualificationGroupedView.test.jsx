@@ -161,6 +161,38 @@ describe("QualificationGroupedView — sections + nesting", () => {
   });
 });
 
+describe("QualificationGroupedView — two-column layout (same as Activity)", () => {
+  it("renders narrative sections LEFT and Tech/Objections RIGHT", () => {
+    const { container } = render(
+      <QualificationGroupedView surface="dc" accountId={ACCOUNT_ID} decisionCycleId={CYCLE_ID} />,
+    );
+    const cols = container.querySelectorAll(".MuiGrid-container > .MuiGrid-item");
+    expect(cols).toHaveLength(2);
+    const [left, right] = cols;
+
+    // Left = narrative sections, with domain → dimension → cluster nesting.
+    expect(left).toHaveTextContent("Objectives");
+    expect(left).toHaveTextContent("Pains");
+    expect(left).toHaveTextContent("Impacts");
+    expect(left).toHaveTextContent("Operations"); // domain sub-heading
+    expect(left).toHaveTextContent("Reporting is slow"); // cluster row
+
+    // Right = Tech Stack + Objections (flat).
+    expect(right).toHaveTextContent("Tech Stack");
+    expect(right).toHaveTextContent("Objections");
+  });
+
+  it("Account keeps the two columns but has no Objections on the right", () => {
+    const { container } = render(
+      <QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />,
+    );
+    const cols = container.querySelectorAll(".MuiGrid-container > .MuiGrid-item");
+    expect(cols).toHaveLength(2);
+    expect(cols[1]).toHaveTextContent("Tech Stack");
+    expect(cols[1]).not.toHaveTextContent("Objections");
+  });
+});
+
 describe("QualificationGroupedView — collapsible sections (open by default)", () => {
   it("sections and domains are OPEN by default (content visible on first render)", () => {
     render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
