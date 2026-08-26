@@ -11,12 +11,28 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import { UserOutlined, CalendarOutlined } from "@ant-design/icons";
+import {
+  UserOutlined,
+  CalendarOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  StopOutlined,
+} from "@ant-design/icons";
 
 // Project imports
-import SignalStatusChip from "components/chips/SignalStatusChip";
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import { getTechSummary } from "sections/activities/signals/utils/signalDisplay";
+
+// Light status treatment — reuses the design-system `light` Chip variant
+// (tinted background + light border, see themes/overrides/Chip.js) with a
+// small status icon. Semantic tints: pending = warning, validated = success,
+// rejected = neutral/muted (rejection is a routine outcome, not an error —
+// red is reserved for technical failures elsewhere in the app).
+const STATUS_LIGHT = {
+  PENDING: { label: "Pending", color: "warning", Icon: ClockCircleOutlined },
+  VALIDATED: { label: "Validated", color: "success", Icon: CheckCircleOutlined },
+  REJECTED: { label: "Rejected", color: "default", Icon: StopOutlined },
+};
 
 // ==============================|| HELPERS ||============================== //
 
@@ -94,17 +110,26 @@ function formatOriginContact(contact) {
  * lifecycle action buttons: every action (validate / reject / edit / reopen)
  * lives in the signal drawer. Clicking the row calls `onSelect` and the parent
  * opens that drawer, where the actions are performed.
+ *
+ * Layout:
+ *   Line 1 — [type chip, when showTypeChip] + full message (wraps, no clamp).
+ *   Line 2 — meta: date · contact · scope · light status chip.
+ *
+ * `showTypeChip` lets a caller hide the type chip when the surrounding section
+ * already names the type (grouped views); flat views keep it (only type cue).
  */
 export default function SignalLine({
   signal,
   signalType,
   onSelect,
+  showTypeChip = true,
 }) {
   const isRejected = signal.status === "REJECTED";
 
   const message = getMessage(signal, signalType);
   const scopeLabel = getScopeLabel(signal, signalType);
   const dateLabel = formatShortDate(signal.created_at);
+  const statusConfig = STATUS_LIGHT[signal.status] ?? null;
 
   const contacts = signal.source_context?.contacts ?? [];
   const originContact = formatOriginContact(contacts[0]);
@@ -140,31 +165,35 @@ export default function SignalLine({
         "&:hover": { bgcolor: "action.hover" },
       }}
     >
-      {/* Row 1: type chip · status chip · scope chip · message */}
+      {/* Line 1: [type chip] · full message (wraps, no truncation) */}
       <Stack
         direction="row"
-        alignItems="center"
+        alignItems="flex-start"
         gap={1}
         sx={{ width: "100%", minWidth: 0 }}
       >
-        <SignalTypeChip signalType={signalType} size="small" />
-        <SignalStatusChip status={signal.status} size="small" />
-        {scopeLabel && (
-          <Chip label={scopeLabel} size="small" variant="outlined" />
+        {showTypeChip && (
+          <Box sx={{ flexShrink: 0, mt: 0.25 }}>
+            <SignalTypeChip signalType={signalType} size="small" />
+          </Box>
         )}
 
-        {/* Message — takes the remaining width, truncates with ellipsis */}
+        {/* Message — full text, wraps to as many lines as needed. */}
         <Typography
           variant="body2"
-          noWrap
-          title={message}
-          sx={{ flexGrow: 1, minWidth: 0, fontWeight: 500 }}
+          sx={{
+            flexGrow: 1,
+            minWidth: 0,
+            fontWeight: 500,
+            whiteSpace: "normal",
+            overflowWrap: "anywhere",
+          }}
         >
           {message}
         </Typography>
       </Stack>
 
-      {/* Row 2: date · origin contact · actions (pushed right) */}
+      {/* Line 2 (meta): date · contact · scope · light status */}
       <Stack
         direction="row"
         alignItems="center"
@@ -210,6 +239,30 @@ export default function SignalLine({
           </Stack>
         )}
 
+        {/* Scope — moved here from the message line, where it was cramped. */}
+        {scopeLabel && (
+          <Chip
+            label={scopeLabel}
+            size="small"
+            variant="outlined"
+            sx={{ height: 20, fontSize: "0.68rem", flexShrink: 0 }}
+          />
+        )}
+
+        {/* Spacer pushes the status to the right edge of the meta line. */}
+        <Box sx={{ flexGrow: 1 }} />
+
+        {/* Light status treatment (DS `light` Chip variant + icon). */}
+        {statusConfig && (
+          <Chip
+            label={statusConfig.label}
+            color={statusConfig.color}
+            variant="light"
+            size="small"
+            icon={<statusConfig.Icon style={{ fontSize: 12 }} />}
+            sx={{ height: 20, fontSize: "0.68rem", flexShrink: 0 }}
+          />
+        )}
       </Stack>
     </Box>
   );
@@ -245,4 +298,6 @@ SignalLine.propTypes = {
     "constraints",
   ]).isRequired,
   onSelect: PropTypes.func,
+  /** Hide the type chip when the surrounding section already names the type. */
+  showTypeChip: PropTypes.bool,
 };
