@@ -43,7 +43,7 @@ from django.utils import timezone
 from core.exceptions import StandardizedValidationError
 from core.error_messages import SignalErrorMessages
 
-from ..constants import SignalStatus, SignalSource
+from ..constants import SignalStatus, SignalSource, SignalWhat
 from ..models import (
     PainSignal,
     ObjectiveSignal,
@@ -140,6 +140,19 @@ class SignalManager:
         # Mutates `data` in place — non-destructive (only fills None / missing keys).
         cls._propagate_activity_context(model_class, data)
 
+        # Domain (`what`) validation — the COST-classification guard.
+        #
+        # The LLM can emit a `what` outside the controlled SignalWhat
+        # vocabulary (e.g. the dimension word "COST" in the domain slot,
+        # despite the tightened prompt). Mirror the exact-match discipline
+        # target_department already uses at persistence: if `what` is present
+        # and not a valid domain code, keep the signal (traceability >
+        # cleanliness) but FLAG it so it never surfaces in user-facing lists /
+        # clusters / counts, and LOG it with enough context to reprocess.
+        # Signal types without a `what` axis and manually created signals
+        # (serializer-validated) never trip this.
+        cls._flag_invalid_domain(data, signal_type, client_id)
+
         # M2M kwargs cannot be passed to model.__init__() — Django raises
         # TypeError "invalid keyword argument". Pop them out, instantiate
         # + save the row, then apply each M2M via .set() once the
@@ -159,6 +172,49 @@ class SignalManager:
     # -------------------------------------------------------------------------
     # CREATE — helpers
     # -------------------------------------------------------------------------
+
+    @classmethod
+    def _flag_invalid_domain(cls, data: dict, signal_type: str, client_id) -> None:
+        """
+        Flag an out-of-taxonomy `what` (domain) so the signal is kept but
+        excluded from user-facing surfaces.
+
+        Mirrors target_department's exact-match discipline: `what` must be a
+        member of the controlled SignalWhat vocabulary. When the LLM emits a
+        value outside it (typically a dimension word like "COST" in the domain
+        slot), we do NOT drop the signal — traceability > cleanliness. Instead
+        we set `is_domain_valid=False` (the read path excludes such rows from
+        every list / cluster / count) and log the anomaly with enough context
+        to reprocess it later. The raw `what` is left untouched on `data` so
+        nothing is lost.
+
+        No-op when `what` is absent (types with no domain axis) or already a
+        valid code (the overwhelming majority of signals). Mutates `data` in
+        place.
+        """
+        raw_what = data.get('what')
+        if raw_what is None or raw_what in SignalWhat.values:
+            return
+
+        data['is_domain_valid'] = False
+
+        source_activity = data.get('source_activity')
+        logger.warning(
+            'signal_what_out_of_taxonomy',
+            extra={
+                'event': 'signal_persist',
+                'raw_what': raw_what,
+                'signal_type': signal_type,
+                'summary': data.get('summary'),
+                'source_quote': data.get('source_quote'),
+                'source_activity_id': str(
+                    getattr(source_activity, 'id', None)
+                    or data.get('source_activity_id')
+                    or ''
+                ),
+                'client_id': str(client_id),
+            },
+        )
 
     @classmethod
     def _pop_m2m_values(cls, model_class, data: dict) -> dict:
