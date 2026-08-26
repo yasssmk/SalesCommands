@@ -69,7 +69,13 @@ export default function SignalsFilterPanel({
   onApply,
   onClear,
   hasPendingChanges,
+  mode = "flat",
 }) {
+  // The Grouped (cluster) view only honors the Type filter on the backend;
+  // status / department / contact / scope have no cluster param, so they are
+  // hidden there rather than shown as dead controls.
+  const isGrouped = mode === "grouped";
+
   const typeOptions = SIGNAL_TYPE_OPTIONS.filter((o) =>
     availableTypes.includes(o.value),
   );
@@ -133,71 +139,78 @@ export default function SignalsFilterPanel({
           ))}
         </FormGroup>
 
-        {/* Status */}
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-          Status
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-          Pending and validated signals are shown by default.
-        </Typography>
-        <FormControlLabel
-          control={
-            <Checkbox
-              size="small"
-              checked={Boolean(pendingFilters?.includeRejected)}
-              onChange={(e) => onFilterChange("includeRejected", e.target.checked)}
+        {/* Status / Department / Contact / Scope — Flat view only. The Grouped
+            (cluster) view has no backend param for these, so they are hidden
+            there (no dead filters). Type above applies to both views. */}
+        {!isGrouped && (
+          <>
+            {/* Status */}
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Status
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+              Pending and validated signals are shown by default.
+            </Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  size="small"
+                  checked={Boolean(pendingFilters?.includeRejected)}
+                  onChange={(e) => onFilterChange("includeRejected", e.target.checked)}
+                />
+              }
+              label="Include rejected"
             />
-          }
-          label="Include rejected"
-        />
 
-        {/* Department — only pain/objective/impact/people/constraints carry
-            target_department; other types are excluded when this is set. */}
-        <FormControl fullWidth size="small" sx={{ mt: 3 }}>
-          <InputLabel id="signal-department-label">Department</InputLabel>
-          <Select
-            labelId="signal-department-label"
-            label="Department"
-            value={pendingFilters?.department ?? ""}
-            onChange={(e) => onFilterChange("department", e.target.value)}
-          >
-            <MenuItem value="">Any department</MenuItem>
-            {departmentOptions.map((o) => (
-              <MenuItem key={o.value} value={o.value}>
-                {o.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            {/* Department — only pain/objective/impact/people/constraints carry
+                target_department; other types are excluded when this is set. */}
+            <FormControl fullWidth size="small" sx={{ mt: 3 }}>
+              <InputLabel id="signal-department-label">Department</InputLabel>
+              <Select
+                labelId="signal-department-label"
+                label="Department"
+                value={pendingFilters?.department ?? ""}
+                onChange={(e) => onFilterChange("department", e.target.value)}
+              >
+                <MenuItem value="">Any department</MenuItem>
+                {departmentOptions.map((o) => (
+                  <MenuItem key={o.value} value={o.value}>
+                    {o.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-        {/* Contact — signals whose origin activity includes this contact. */}
-        <Box sx={{ mt: 2.5 }}>
-          <AsyncContactSelect
-            value={pendingFilters?.contact ?? null}
-            onChange={(_e, c) => onFilterChange("contact", c || null)}
-            label="Contact"
-            placeholder="Any contact"
-            filters={contactFilters}
-            size="small"
-          />
-        </Box>
+            {/* Contact — signals whose origin activity includes this contact. */}
+            <Box sx={{ mt: 2.5 }}>
+              <AsyncContactSelect
+                value={pendingFilters?.contact ?? null}
+                onChange={(_e, c) => onFilterChange("contact", c || null)}
+                label="Contact"
+                placeholder="Any contact"
+                filters={contactFilters}
+                size="small"
+              />
+            </Box>
 
-        {/* Scope — only pain/objective/impact carry scope_level. */}
-        <FormControl fullWidth size="small" sx={{ mt: 2.5 }}>
-          <InputLabel id="signal-scope-label">Scope</InputLabel>
-          <Select
-            labelId="signal-scope-label"
-            label="Scope"
-            value={pendingFilters?.scope ?? ""}
-            onChange={(e) => onFilterChange("scope", e.target.value)}
-          >
-            {SCOPE_OPTIONS.map((o) => (
-              <MenuItem key={o.value || "any"} value={o.value}>
-                {o.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            {/* Scope — only pain/objective/impact carry scope_level. */}
+            <FormControl fullWidth size="small" sx={{ mt: 2.5 }}>
+              <InputLabel id="signal-scope-label">Scope</InputLabel>
+              <Select
+                labelId="signal-scope-label"
+                label="Scope"
+                value={pendingFilters?.scope ?? ""}
+                onChange={(e) => onFilterChange("scope", e.target.value)}
+              >
+                {SCOPE_OPTIONS.map((o) => (
+                  <MenuItem key={o.value || "any"} value={o.value}>
+                    {o.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </>
+        )}
       </Box>
 
       {/* Footer */}
@@ -248,4 +261,6 @@ SignalsFilterPanel.propTypes = {
   onApply: PropTypes.func.isRequired,
   onClear: PropTypes.func.isRequired,
   hasPendingChanges: PropTypes.bool,
+  /** "flat" (default) shows all controls; "grouped" shows only Type. */
+  mode: PropTypes.oneOf(["flat", "grouped"]),
 };
