@@ -57,7 +57,9 @@ from ..serializers import (
 from ..constants import (
     ScopeLevel,
     SignalClusterType,
+    SignalDimension,
     SignalStatus,
+    SignalWhat,
     SIGNALS_CACHE_TAG,
     SIGNAL_CLUSTERS_CACHE_TAG,
 )
@@ -208,11 +210,78 @@ def _parse_member_filters(request):
       status (repeatable)     → list of SignalStatus values (default handled
                                 downstream: pending+validated)
 
-    Returns a dict with keys departments / contact / scope / statuses (each None
-    or empty when not provided) — ready to splat into
-    SignalClusterService.list_clusters_for_account.
+    Grouped path (unified perimeter — the OR):
+      perimeter (repeatable) → the sentinel 'BUSINESS' and/or department ids.
+        Split into perimeter_business (bool) + perimeter_departments (ints);
+        the service ORs scope=BUSINESS with target_department IN the ids.
+      what (repeatable)      → validated ∈ SignalWhat  (SUBJECT domain)
+      dimension (repeatable) → validated ∈ SignalDimension
+      contact (repeatable)   → list of Contact UUIDs (SOURCE, multi)
+
+    Legacy separate params (kept for back-compat; the grouped FE sends
+    perimeter instead):
+      department (repeatable) → ints, ANDed target_department
+      scope                   → single ScopeLevel value, ANDed
+
+      status (repeatable)     → SignalStatus values (default pending+validated)
+
+    Returns a dict ready to splat into
+    SignalClusterService.list_clusters_for_account. Every invalid value raises a
+    clean 400, never a raw 500.
     """
-    # department — multi-select, each a StandardDepartment integer id.
+    # perimeter — the sentinel 'BUSINESS' and/or StandardDepartment int ids.
+    perimeter_business = False
+    perimeter_departments = []
+    for raw in request.query_params.getlist('perimeter'):
+        if raw == '':
+            continue
+        if raw == 'BUSINESS':
+            perimeter_business = True
+            continue
+        try:
+            perimeter_departments.append(int(raw))
+        except (ValueError, TypeError):
+            raise StandardizedValidationError(
+                "The 'perimeter' filter accepts 'BUSINESS' or valid department "
+                "ids."
+            )
+
+    # what / dimension — multi, validated against the controlled enums.
+    whats = []
+    for raw in request.query_params.getlist('what'):
+        if raw == '':
+            continue
+        if raw not in SignalWhat.values:
+            raise StandardizedValidationError(
+                "The 'what' filter must be one of: "
+                + ", ".join(SignalWhat.values) + "."
+            )
+        whats.append(raw)
+
+    dimensions = []
+    for raw in request.query_params.getlist('dimension'):
+        if raw == '':
+            continue
+        if raw not in SignalDimension.values:
+            raise StandardizedValidationError(
+                "The 'dimension' filter must be one of: "
+                + ", ".join(SignalDimension.values) + "."
+            )
+        dimensions.append(raw)
+
+    # contact — multi-select Contact UUIDs (SOURCE who reported it).
+    contacts = []
+    for raw in request.query_params.getlist('contact'):
+        if raw == '':
+            continue
+        try:
+            contacts.append(str(uuid.UUID(str(raw))))
+        except (ValueError, TypeError, AttributeError):
+            raise StandardizedValidationError(
+                "The 'contact' filter must be a valid UUID."
+            )
+
+    # department (legacy) — multi-select StandardDepartment integer ids.
     departments = []
     for raw in request.query_params.getlist('department'):
         if raw == '':
@@ -224,17 +293,7 @@ def _parse_member_filters(request):
                 "The 'department' filter must be a valid department id."
             )
 
-    # contact — a single Contact UUID.
-    contact = request.query_params.get('contact') or None
-    if contact:
-        try:
-            contact = str(uuid.UUID(str(contact)))
-        except (ValueError, TypeError, AttributeError):
-            raise StandardizedValidationError(
-                "The 'contact' filter must be a valid UUID."
-            )
-
-    # scope — a single ScopeLevel value.
+    # scope (legacy) — a single ScopeLevel value.
     scope = request.query_params.get('scope') or None
     if scope and scope not in ScopeLevel.values:
         raise StandardizedValidationError(
@@ -255,8 +314,12 @@ def _parse_member_filters(request):
         statuses.append(raw)
 
     return {
+        'perimeter_business': perimeter_business,
+        'perimeter_departments': perimeter_departments or None,
+        'whats': whats or None,
+        'dimensions': dimensions or None,
+        'contacts': contacts or None,
         'departments': departments or None,
-        'contact': contact,
         'scope': scope,
         'statuses': statuses or None,
     }
@@ -275,16 +338,23 @@ class SignalClusterListView(BaseAPIView):
       signal_type       (optional, default 'pain')
       decision_cycle    (UUID, optional — filter to clusters touching this DC)
       include_archived  (bool, optional, default false)
-      department        (int, repeatable — SUBJECT = target_department; Business
-                         members excluded when set)
-      contact           (UUID, optional — SOURCE = who reported it, via
-                         source_activity.contacts)
-      scope             (ScopeLevel, optional — scope_level)
+
+      Grouped member filters (unified perimeter — the OR):
+      perimeter         (repeatable — 'BUSINESS' and/or department ids; ORed as
+                         scope=BUSINESS OR target_department IN ids)
+      what              (repeatable — SignalWhat; SUBJECT domain)
+      dimension         (repeatable — SignalDimension)
+      contact           (repeatable — Contact UUIDs; SOURCE, multi)
       status            (repeatable — SignalStatus; default pending+validated)
 
-    The member filters are applied BEFORE clustering, so each cluster forms and
-    its meta recomputes on the filtered members; a cluster with zero matching
-    members is not returned.
+      Legacy (back-compat; the grouped FE sends `perimeter` instead):
+      department        (int, repeatable — ANDed target_department)
+      scope             (ScopeLevel — ANDed scope_level)
+
+    Cross-family filters combine as AND; OR is used ONLY within the perimeter
+    clause. The member filters are applied BEFORE clustering, so each cluster
+    forms and its meta recomputes on the filtered members; a cluster with zero
+    matching members is not returned.
 
     Response:
       200 { success: true, data: [ cluster, cluster, ... ] }
