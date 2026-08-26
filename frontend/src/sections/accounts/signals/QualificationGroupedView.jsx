@@ -489,6 +489,7 @@ export default function QualificationGroupedView({
         onValidate={handleValidate}
         onReject={handleRejectOpen}
         onEdit={handleEditOpen}
+        onReopen={handleReopen}
       />
 
       <AlertSignalReject

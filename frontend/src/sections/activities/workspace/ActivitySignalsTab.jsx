@@ -301,6 +301,7 @@ export default function ActivitySignalsTab({
         onValidate={handleValidate}
         onReject={handleReject}
         onEdit={handleEdit}
+        onReopen={handleReopen}
         isLocked={isLocked}
       />
 

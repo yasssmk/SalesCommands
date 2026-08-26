@@ -348,6 +348,7 @@ export default function AccountSignalsTab({ accountId, account }) {
         onValidate={handleValidate}
         onReject={handleRejectOpen}
         onEdit={handleEdit}
+        onReopen={handleReopen}
       />
 
       {/* Reject confirmation */}

@@ -1354,6 +1354,7 @@ export default function SignalClusterDetailDrawer({
         onValidate={handleValidate}
         onReject={handleRejectOpen}
         onEdit={handleEdit}
+        onReopen={handleReopen}
       />
     </>
   );

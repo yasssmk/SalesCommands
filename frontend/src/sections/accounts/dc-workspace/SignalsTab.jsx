@@ -287,6 +287,7 @@ export default function SignalsTab({ cycleId, accountId }) {
         onValidate={handleValidate}
         onReject={handleReject}
         onEdit={handleEdit}
+        onReopen={handleReopen}
         isLocked={false}
       />
 
