@@ -225,4 +225,18 @@ describe("ActivitySignalsTab — Flat/Grouped toggle", () => {
     fireEvent.click(screen.getByRole("button", { name: /grouped view/i }));
     expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
   });
+
+  it("grouped mode opens the accordion Qualification filter panel", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(screen.getByLabelText("Open filters"));
+    // Accordion family sections.
+    expect(screen.getByText("Qualification")).toBeInTheDocument();
+    expect(screen.getByText("Tech Stack")).toBeInTheDocument();
+    expect(screen.getByText("Objection")).toBeInTheDocument();
+    // Qualification controls (same as Account/DC grouped).
+    expect(screen.getByLabelText("Perimeter")).toBeInTheDocument();
+    expect(screen.getByLabelText("Domain")).toBeInTheDocument();
+    expect(screen.getByLabelText("Dimension")).toBeInTheDocument();
+    expect(screen.getByLabelText("Status")).toBeInTheDocument();
+  });
 });
