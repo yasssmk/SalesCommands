@@ -179,37 +179,24 @@ describe("QualificationGroupedView — sections + nesting", () => {
   });
 });
 
-describe("QualificationGroupedView — Type filter (grouped honors it)", () => {
-  it("narrows the cluster fetch and the sections to the selected type", () => {
+describe("QualificationGroupedView — no Type filter in grouped", () => {
+  it("always fetches the full clusterable set and shows every section", () => {
     render(
       <QualificationGroupedView
         surface="dc"
         accountId={ACCOUNT_ID}
         decisionCycleId={CYCLE_ID}
-        signalTypes={["pain"]}
       />,
     );
-    // Cluster fetch scoped to the selected clusterable type.
+    // Cluster fetch covers all clusterable types (no type narrowing).
     const args = useGetClustersByAccount.mock.calls.at(-1);
-    expect(args[1].signalType).toEqual(["pain"]);
-    // Only the Pains narrative section shows; Tech/Objections hidden.
+    expect(args[1].signalType).toEqual(["objective", "pain", "impact"]);
+    // All narrative sections + Tech/Objections render.
+    expect(screen.getByText("Objectives")).toBeInTheDocument();
     expect(screen.getByText("Pains")).toBeInTheDocument();
-    expect(screen.queryByText("Objectives")).not.toBeInTheDocument();
-    expect(screen.queryByText("Impacts")).not.toBeInTheDocument();
-    expect(screen.queryByText("Tech Stack")).not.toBeInTheDocument();
-    expect(screen.queryByText("Objections")).not.toBeInTheDocument();
-  });
-
-  it("shows only Tech Stack when the type filter is tech-stack", () => {
-    render(
-      <QualificationGroupedView
-        surface="account"
-        accountId={ACCOUNT_ID}
-        signalTypes={["tech-stack"]}
-      />,
-    );
+    expect(screen.getByText("Impacts")).toBeInTheDocument();
     expect(screen.getByText("Tech Stack")).toBeInTheDocument();
-    expect(screen.queryByText("Pains")).not.toBeInTheDocument();
+    expect(screen.getByText("Objections")).toBeInTheDocument();
   });
 });
 
@@ -322,30 +309,33 @@ describe("QualificationGroupedView — Tech + Objections placement", () => {
   });
 });
 
-describe("QualificationGroupedView — member filters forwarded to the cluster fetch", () => {
-  it("forwards department (SUBJECT), contact (SOURCE), scope and statuses to the cluster endpoint", () => {
+describe("QualificationGroupedView — Qualification filters forwarded to the cluster fetch", () => {
+  it("forwards perimeter, what, dimension, contacts and statuses to the cluster endpoint", () => {
     render(
       <QualificationGroupedView
         surface="account"
         accountId={ACCOUNT_ID}
-        department="42"
-        contact="contact-9"
-        scope="DEPARTMENT"
+        perimeter={["BUSINESS", "42"]}
+        whats={["DATA"]}
+        dimensions={["QUALITY"]}
+        contacts={["contact-9"]}
         statuses={["PENDING", "VALIDATED"]}
       />,
     );
     const opts = useGetClustersByAccount.mock.calls.at(-1)[1];
-    expect(opts.department).toBe("42");
-    expect(opts.contact).toBe("contact-9");
-    expect(opts.scope).toBe("DEPARTMENT");
+    expect(opts.perimeter).toEqual(["BUSINESS", "42"]);
+    expect(opts.whats).toEqual(["DATA"]);
+    expect(opts.dimensions).toEqual(["QUALITY"]);
+    expect(opts.contacts).toEqual(["contact-9"]);
     expect(opts.statuses).toEqual(["PENDING", "VALIDATED"]);
   });
 
-  it("omits the member filters when none are set", () => {
+  it("omits the Qualification filters when none are set", () => {
     render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
     const opts = useGetClustersByAccount.mock.calls.at(-1)[1];
-    expect(opts.department).toBeUndefined();
-    expect(opts.contact).toBeUndefined();
-    expect(opts.scope).toBeUndefined();
+    expect(opts.perimeter).toBeUndefined();
+    expect(opts.whats).toBeUndefined();
+    expect(opts.dimensions).toBeUndefined();
+    expect(opts.contacts).toBeUndefined();
   });
 });
