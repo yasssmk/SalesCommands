@@ -22,6 +22,7 @@ import {
   CloseCircleOutlined,
   EditOutlined,
   LinkOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 
 // Project imports
@@ -355,6 +356,7 @@ export default function SignalQuickDrawer({
   onValidate,
   onReject,
   onEdit,
+  onReopen,
   isLocked,
 }) {
   const router = useRouter();
@@ -362,6 +364,7 @@ export default function SignalQuickDrawer({
   if (!signal) return null;
 
   const isPending = signal.status === "PENDING";
+  const isRejected = signal.status === "REJECTED";
   const missingFields = isPending
     ? getMissingFields(signal, signalType)
     : [];
@@ -494,6 +497,16 @@ export default function SignalQuickDrawer({
               </Tooltip>
             </>
           )}
+          {isRejected && !isLocked && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<ReloadOutlined style={{ fontSize: 14 }} />}
+              onClick={() => onReopen?.(signal, signalType)}
+            >
+              Reopen
+            </Button>
+          )}
         </Stack>
       </Box>
     </Drawer>
@@ -527,5 +540,6 @@ SignalQuickDrawer.propTypes = {
   onValidate: PropTypes.func,
   onReject: PropTypes.func,
   onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
   isLocked: PropTypes.bool,
 };
