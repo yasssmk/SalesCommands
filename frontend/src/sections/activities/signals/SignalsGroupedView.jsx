@@ -84,6 +84,7 @@ function TypeSection({ title, signalType, signals, onSelect, emptyLabel }) {
               signal={signal}
               signalType={signal._signalType || signalType}
               onSelect={onSelect}
+              showTypeChip={false}
             />
           ))}
         </Stack>

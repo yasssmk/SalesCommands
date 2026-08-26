@@ -183,10 +183,7 @@ function TypedSignalSection({
               signal={signal}
               signalType={signal._signalType}
               onSelect={onSelect}
-              onValidate={onValidate}
-              onReject={onReject}
-              onEdit={onEdit}
-              onReopen={onReopen}
+              showTypeChip={false}
             />
           ))}
         </Stack>

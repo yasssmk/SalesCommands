@@ -1268,10 +1268,7 @@ export default function SignalClusterDetailDrawer({
               signal={member}
               signalType={signalType}
               onSelect={handleMemberSelect}
-              onValidate={handleValidate}
-              onReject={handleRejectOpen}
-              onEdit={handleEdit}
-              onReopen={handleReopen}
+              showTypeChip={false}
             />
           ))}
         </Stack>
