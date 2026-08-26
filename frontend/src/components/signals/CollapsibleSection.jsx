@@ -1,14 +1,14 @@
 // frontend/src/components/signals/CollapsibleSection.jsx
 //
-// A collapsible section built on the design-system MUI Accordion (the same
-// primitive used by SignalClusterDetailDrawer's ByLevelAccordion). Open by
-// default; the user collapses to reduce noise. Open/close is component state
-// (MUI Accordion) — no browser storage. Collapsed content is unmounted so the
-// section truly hides (and stays cheap).
+// A collapsible section using the PROJECT-THEMED MUI Accordion — the same
+// Accordion / AccordionSummary / AccordionDetails the rest of the app uses
+// (see themes/overrides/Accordion*.{js,jsx}: tinted summary background,
+// secondary.light border, the RightOutlined rotating chevron, themed
+// spacing). No ad-hoc chrome — the theme owns the look, so these sections
+// match the app's other accordions.
 //
-// Two visual levels:
-//   "section" — a narrative/type section header (overline, letter-spaced).
-//   "domain"  — a nested domain grouping (bolder subtitle), lighter chrome.
+// Open by default; the user collapses to reduce noise. Open/close is component
+// state (MUI Accordion) — no browser storage. Collapsed content is unmounted.
 
 "use client";
 
@@ -17,11 +17,8 @@ import PropTypes from "prop-types";
 import Accordion from "@mui/material/Accordion";
 import AccordionSummary from "@mui/material/AccordionSummary";
 import AccordionDetails from "@mui/material/AccordionDetails";
-import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-
-import DownOutlined from "@ant-design/icons/DownOutlined";
 
 export default function CollapsibleSection({
   title,
@@ -36,50 +33,28 @@ export default function CollapsibleSection({
   return (
     <Accordion
       defaultExpanded={defaultExpanded}
-      disableGutters
-      elevation={0}
-      square
       // Unmount collapsed content so the section genuinely hides.
       TransitionProps={{ unmountOnExit: true }}
       data-testid={testId}
-      sx={{
-        bgcolor: "transparent",
-        "&:before": { display: "none" },
-        mb: isSection ? 2 : 1,
-      }}
+      // Small gap between stacked sections; all other chrome comes from the theme.
+      sx={{ mb: isSection ? 2 : 1 }}
     >
-      <AccordionSummary
-        expandIcon={<DownOutlined style={{ fontSize: isSection ? 13 : 11 }} />}
-        sx={{
-          px: isSection ? 0 : 1,
-          minHeight: 0,
-          "& .MuiAccordionSummary-content": { my: isSection ? 0.5 : 0.25 },
-        }}
-      >
+      <AccordionSummary>
         <Stack direction="row" spacing={1} alignItems="baseline">
-          {isSection ? (
-            <Typography
-              variant="overline"
-              color="text.secondary"
-              sx={{ letterSpacing: 1.5, lineHeight: 1.6 }}
-            >
-              {title}
-            </Typography>
-          ) : (
-            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-              {title}
-            </Typography>
-          )}
+          <Typography
+            variant={isSection ? "subtitle1" : "subtitle2"}
+            sx={{ fontWeight: 600 }}
+          >
+            {title}
+          </Typography>
           {typeof count === "number" && (
-            <Typography variant="caption" color="text.disabled">
+            <Typography variant="caption" color="text.secondary">
               ({count})
             </Typography>
           )}
         </Stack>
       </AccordionSummary>
-      <AccordionDetails sx={{ px: isSection ? 0 : 1, pt: 0, pb: 1 }}>
-        <Box sx={{ width: "100%" }}>{children}</Box>
-      </AccordionDetails>
+      <AccordionDetails>{children}</AccordionDetails>
     </Accordion>
   );
 }
