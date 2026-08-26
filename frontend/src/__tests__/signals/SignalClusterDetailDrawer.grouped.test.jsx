@@ -135,3 +135,48 @@ describe("SignalClusterDetailDrawer — grouped member rendering", () => {
     expect(reopenSignal).toHaveBeenCalledWith("pain", "m2");
   });
 });
+
+describe("SignalClusterDetailDrawer — one drawer, replace + back (C5)", () => {
+  it("opening a cluster shows the cluster view (members list)", () => {
+    renderDrawer();
+    expect(screen.getByText("Signals in this cluster")).toBeInTheDocument();
+    expect(screen.getAllByTestId("signal-line")).toHaveLength(2);
+    // No signal-detail markers yet.
+    expect(screen.queryByRole("button", { name: /back to cluster/i })).not.toBeInTheDocument();
+  });
+
+  it("clicking a member REPLACES the content with its signal detail (one drawer, not stacked)", () => {
+    renderDrawer();
+    fireEvent.click(screen.getByText("Pending pain member"));
+
+    // Signal detail present ...
+    expect(screen.getByText(/we lose five hours every week/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /back to cluster/i })).toBeInTheDocument();
+    // ... and the cluster view is GONE (replaced, not stacked underneath).
+    expect(screen.queryByText("Signals in this cluster")).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
+    // Exactly one drawer (one Close affordance).
+    expect(screen.getAllByLabelText("Close drawer")).toHaveLength(1);
+  });
+
+  it("the Back affordance returns to the cluster view", () => {
+    renderDrawer();
+    fireEvent.click(screen.getByText("Pending pain member"));
+    expect(screen.queryByText("Signals in this cluster")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /back to cluster/i }));
+
+    // Back on the cluster view; signal detail gone.
+    expect(screen.getByText("Signals in this cluster")).toBeInTheDocument();
+    expect(screen.getAllByTestId("signal-line")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /back to cluster/i })).not.toBeInTheDocument();
+  });
+
+  it("the in-drawer signal detail carries the actions (validate/reject/edit)", () => {
+    renderDrawer();
+    fireEvent.click(screen.getByText("Pending pain member"));
+    expect(screen.getByRole("button", { name: /validate/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+  });
+});
