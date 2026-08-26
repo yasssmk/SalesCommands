@@ -236,53 +236,43 @@ export default function QualificationGroupedView({
   surface,
   accountId,
   decisionCycleId,
-  signalTypes = [],
-  department = undefined,
-  contact = undefined,
-  scope = undefined,
+  perimeter = undefined,
+  whats = undefined,
+  dimensions = undefined,
+  contacts = undefined,
   statuses = undefined,
 }) {
   const isDC = surface === "dc";
 
-  // Type filter (from the shared filter drawer). Empty = show everything.
-  // Clusters honor only the type filter; the clusterable subset drives which
-  // narrative sections show, and the flags gate the Tech / Objections sections.
-  const hasTypeFilter = Array.isArray(signalTypes) && signalTypes.length > 0;
-  const clusterTypes = hasTypeFilter
-    ? CLUSTER_TYPES.filter((t) => signalTypes.includes(t))
-    : CLUSTER_TYPES;
-  const showTech = !hasTypeFilter || signalTypes.includes("tech-stack");
-  const showObjections =
-    isDC && (!hasTypeFilter || signalTypes.includes("blockers"));
+  // There is NO type filter in the grouped view — the structure IS by type
+  // section. Clusters always cover the full clusterable set; Tech / Objections
+  // sections always render.
+  const showTech = true;
+  const showObjections = isDC;
 
-  // Member filters (department = SUBJECT / target_department, contact = SOURCE,
-  // scope, status) are honored by the cluster endpoint on the filtered members;
-  // the cluster then forms and its meta recomputes on that filtered set.
+  // The QUALIFICATION-family filters (perimeter = scope=BUSINESS OR
+  // target_department; what / dimension = subject; contact = source; status)
+  // are honored by the cluster endpoint on the filtered members; the cluster
+  // then forms and its meta recomputes on that filtered set.
   const { clusters, clustersLoading, clustersError, mutateClusters } =
     useGetClustersByAccount(accountId, {
-      signalType: clusterTypes.length ? clusterTypes : CLUSTER_TYPES,
+      signalType: CLUSTER_TYPES,
       decisionCycleId: isDC ? decisionCycleId : undefined,
-      department,
-      contact,
-      scope,
+      perimeter,
+      whats,
+      dimensions,
+      contacts,
       statuses,
     });
 
-  // Tech / Objections are non-clustered sections fed by the aggregated endpoint;
-  // pass the same filters so the whole grouped surface stays coherent. A
-  // department/scope filter naturally excludes tech/blockers (no such field),
-  // matching the flat view. Falls back to the grouped default statuses.
-  const sectionStatuses = statuses && statuses.length ? statuses : GROUPED_STATUSES;
-
-  // Tech: scoped to the account (Account) or the decision cycle (DC).
+  // Tech / Objections are non-clustered placeholder sections — they have no
+  // filters yet (their families come in a later step), so they show the full
+  // grouped default set regardless of the Qualification filters.
   const tech = useAggregatedSignals({
     accountId: isDC ? undefined : accountId,
     decisionCycleId: isDC ? decisionCycleId : undefined,
     signalTypes: ["tech-stack"],
-    statuses: sectionStatuses,
-    department,
-    contact,
-    scope,
+    statuses: GROUPED_STATUSES,
     pageSize: SECTION_PAGE_SIZE,
   });
 
@@ -290,10 +280,7 @@ export default function QualificationGroupedView({
   const blockers = useAggregatedSignals({
     decisionCycleId: isDC ? decisionCycleId : undefined,
     signalTypes: ["blockers"],
-    statuses: sectionStatuses,
-    department,
-    contact,
-    scope,
+    statuses: GROUPED_STATUSES,
     pageSize: SECTION_PAGE_SIZE,
   });
 
@@ -423,11 +410,9 @@ export default function QualificationGroupedView({
           inside the left narrative sections. */}
       <Grid container spacing={3}>
         {/* Left column — narrative sections (nested by domain → dimension).
-            The Type filter narrows which narrative sections show. */}
+            No Type filter in grouped — every narrative section always shows. */}
         <Grid item xs={12} md={6}>
-          {SECTIONS.filter(
-            (section) => !hasTypeFilter || clusterTypes.includes(section.type),
-          ).map((section) => (
+          {SECTIONS.map((section) => (
             <NarrativeSection
               key={section.type}
               title={section.title}
@@ -517,14 +502,16 @@ QualificationGroupedView.propTypes = {
   accountId: PropTypes.string.isRequired,
   /** Decision-cycle UUID — required on the DC surface. */
   decisionCycleId: PropTypes.string,
-  /** Type filter (frontend slugs) from the shared drawer; [] = show all. */
-  signalTypes: PropTypes.arrayOf(PropTypes.string),
-  /** SUBJECT filter — StandardDepartment id (target_department). */
-  department: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  /** SOURCE filter — Contact id (source_activity.contacts). */
-  contact: PropTypes.string,
-  /** scope_level filter (BUSINESS | DEPARTMENT). */
-  scope: PropTypes.string,
+  /** Unified PERIMETER (OR) — 'BUSINESS' sentinel and/or department ids. */
+  perimeter: PropTypes.arrayOf(
+    PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  ),
+  /** Domain (`what`) filter values (SignalWhat). */
+  whats: PropTypes.arrayOf(PropTypes.string),
+  /** Dimension filter values (SignalDimension). */
+  dimensions: PropTypes.arrayOf(PropTypes.string),
+  /** SOURCE filter — Contact ids (source_activity.contacts), multi. */
+  contacts: PropTypes.arrayOf(PropTypes.string),
   /** Status filter values; empty/undefined = grouped default (pending+validated). */
   statuses: PropTypes.arrayOf(PropTypes.string),
 };

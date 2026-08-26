@@ -118,6 +118,10 @@ function buildListUrl(baseUrl, params = {}) {
     contact,
     scope,
     statuses,
+    perimeter,
+    whats,
+    dimensions,
+    contacts,
   } = params;
 
   const query = new URLSearchParams();
@@ -160,6 +164,21 @@ function buildListUrl(baseUrl, params = {}) {
   }
   (statuses || []).forEach((s) => {
     if (s) query.append("status", s);
+  });
+
+  // Grouped (unified) filters — perimeter (OR: 'BUSINESS' sentinel + dept ids),
+  // domain (`what`), dimension, and multi-contact. Each is a repeatable param.
+  (perimeter || []).forEach((p) => {
+    if (p != null && p !== "") query.append("perimeter", p);
+  });
+  (whats || []).forEach((w) => {
+    if (w) query.append("what", w);
+  });
+  (dimensions || []).forEach((d) => {
+    if (d) query.append("dimension", d);
+  });
+  (contacts || []).forEach((c) => {
+    if (c) query.append("contact", c);
   });
 
   const qs = query.toString();
@@ -248,6 +267,10 @@ export function useGetClustersByAccount(accountId, options = {}) {
     contact = null,
     scope = null,
     statuses = null,
+    perimeter = null,
+    whats = null,
+    dimensions = null,
+    contacts = null,
   } = options;
 
   const enabled = Boolean(accountId && isValidUUID(accountId));
@@ -258,6 +281,10 @@ export function useGetClustersByAccount(accountId, options = {}) {
     ? department.join(",")
     : department || "";
   const statusesKey = (statuses || []).join(",");
+  const perimeterKey = (perimeter || []).join(",");
+  const whatsKey = (whats || []).join(",");
+  const dimensionsKey = (dimensions || []).join(",");
+  const contactsKey = (contacts || []).join(",");
 
   // Normalise signalType to a stable CSV string.
   //
@@ -287,9 +314,13 @@ export function useGetClustersByAccount(accountId, options = {}) {
             contact,
             scope,
             statuses,
+            perimeter,
+            whats,
+            dimensions,
+            contacts,
           })
         : null,
-    // department/statuses use their stable CSV keys as deps (the array
+    // The array filters use their stable CSV keys as deps (the array
     // instances themselves are referentially unstable across renders).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -302,6 +333,10 @@ export function useGetClustersByAccount(accountId, options = {}) {
       contact,
       scope,
       statusesKey,
+      perimeterKey,
+      whatsKey,
+      dimensionsKey,
+      contactsKey,
     ],
   );
 
