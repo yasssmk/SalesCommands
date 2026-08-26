@@ -138,6 +138,48 @@ describe("SignalLine — no action buttons (actions live in the drawer)", () => 
   });
 });
 
+describe("SignalLine — visual polish (C-polish)", () => {
+  it("shows the type chip by default (flat views: the only type cue)", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    // DEPT_PAIN's message has no "Pain" text, so this matches the type chip.
+    expect(screen.getByText("Pain")).toBeInTheDocument();
+  });
+
+  it("hides the type chip when showTypeChip=false (grouped, type in header)", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" showTypeChip={false} />);
+    expect(screen.queryByText("Pain")).not.toBeInTheDocument();
+  });
+
+  it("renders the full message with no truncation (no noWrap clamp)", () => {
+    const long = {
+      ...BUSINESS_PAIN,
+      summary:
+        "Consolidating the weekly report across five spreadsheets takes the ops team about five hours every single week and delays the Monday review.",
+    };
+    render(<SignalLine signal={long} signalType="pain" />);
+    const msg = screen.getByText(long.summary);
+    expect(msg).toBeInTheDocument();
+    // The old ellipsis clamp added the MuiTypography-noWrap class — gone now.
+    expect(msg.className).not.toMatch(/noWrap/);
+  });
+
+  it("puts the scope on the meta line (line 2), not before the message (line 1)", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    const row = screen.getByTestId("signal-line");
+    const [line1, line2] = row.children;
+    expect(line1).not.toHaveTextContent(/Department · Marketing/);
+    expect(line2).toHaveTextContent(/Department · Marketing/);
+  });
+
+  it("renders the status with the light DS treatment (not the old solid chip)", () => {
+    const { container } = render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    // The DS light variant adds the MuiChip-light class.
+    const lightChips = container.querySelectorAll(".MuiChip-light");
+    expect(lightChips.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+  });
+});
+
 describe("SignalLine — click opens the drawer", () => {
   it("calls onSelect with (signal, type) when the row is clicked", () => {
     const onSelect = vi.fn();
