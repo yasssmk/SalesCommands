@@ -101,7 +101,27 @@ const OBJECTIVE_CLUSTER = {
   decision_cycle_ids: ["dc1"],
 };
 
-const TECH = [{ id: "t1", status: "PENDING", tech_name: "Snowflake", _signalType: "tech-stack" }];
+// Tech is now a CLUSTER (right column, cluster pipeline), not a flat signal.
+const TECH_CLUSTER = {
+  canonical_key: "hubspot",
+  signal_type: "tech_stack",
+  what: null,
+  what_display: null,
+  dimension: null,
+  dimension_display: null,
+  summary: "HubSpot",
+  signal_count: 3,
+  pending_count: 0,
+  freshness_status: "FRESH",
+  period_start: "2026-04-01T10:00:00Z",
+  period_end: "2026-05-01T10:00:00Z",
+  last_confirmed_at: "2026-05-01T10:00:00Z",
+  departments: [],
+  decision_cycle_ids: [],
+  priority_bucket: "LOW",
+};
+
+// Objections are still flat (out of scope for the tech-cluster sprint).
 const BLOCKERS = [{ id: "b1", status: "PENDING", summary: "Budget frozen Q4", _signalType: "blockers" }];
 
 function sectionReturn(signals) {
@@ -126,9 +146,10 @@ function mockClusters(list) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockClusters([OBJECTIVE_CLUSTER, PAIN_CLUSTER]);
+  // The tech cluster rides in the SAME cluster list as the narrative types.
+  mockClusters([OBJECTIVE_CLUSTER, PAIN_CLUSTER, TECH_CLUSTER]);
+  // Only Objections still uses the flat aggregated path now.
   useAggregatedSignals.mockImplementation(({ signalTypes } = {}) => {
-    if (signalTypes?.includes("tech-stack")) return sectionReturn(TECH);
     if (signalTypes?.includes("blockers")) return sectionReturn(BLOCKERS);
     return sectionReturn([]);
   });
@@ -188,9 +209,14 @@ describe("QualificationGroupedView — no Type filter in grouped", () => {
         decisionCycleId={CYCLE_ID}
       />,
     );
-    // Cluster fetch covers all clusterable types (no type narrowing).
+    // Cluster fetch covers all clusterable types, tech included (one fetch).
     const args = useGetClustersByAccount.mock.calls.at(-1);
-    expect(args[1].signalType).toEqual(["objective", "pain", "impact"]);
+    expect(args[1].signalType).toEqual([
+      "objective",
+      "pain",
+      "impact",
+      "tech_stack",
+    ]);
     // All narrative sections + Tech/Objections render.
     expect(screen.getByText("Objectives")).toBeInTheDocument();
     expect(screen.getByText("Pains")).toBeInTheDocument();
@@ -282,7 +308,8 @@ describe("QualificationGroupedView — Tech + Objections placement", () => {
   it("Account surface shows Tech Stack but NOT Objections", () => {
     render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
     expect(screen.getByText("Tech Stack")).toBeInTheDocument();
-    expect(screen.getByText("Snowflake")).toBeInTheDocument();
+    // Tech renders as a cluster row (one techno = one line), not a flat signal.
+    expect(screen.getByText("HubSpot")).toBeInTheDocument();
     expect(screen.queryByText("Objections")).not.toBeInTheDocument();
     expect(screen.queryByText("Budget frozen Q4")).not.toBeInTheDocument();
   });
@@ -292,6 +319,7 @@ describe("QualificationGroupedView — Tech + Objections placement", () => {
       <QualificationGroupedView surface="dc" accountId={ACCOUNT_ID} decisionCycleId={CYCLE_ID} />,
     );
     expect(screen.getByText("Tech Stack")).toBeInTheDocument();
+    expect(screen.getByText("HubSpot")).toBeInTheDocument();
     expect(screen.getByText("Objections")).toBeInTheDocument();
     expect(screen.getByText("Budget frozen Q4")).toBeInTheDocument();
   });
@@ -305,7 +333,43 @@ describe("QualificationGroupedView — Tech + Objections placement", () => {
     expect(screen.getByText("Objectives")).toBeInTheDocument();
     expect(screen.getByText("No objectives yet")).toBeInTheDocument();
     expect(screen.getByText("Tech Stack")).toBeInTheDocument();
+    expect(screen.getByText("No tech stack signals captured")).toBeInTheDocument();
     expect(screen.getByText("Objections")).toBeInTheDocument();
+  });
+});
+
+describe("QualificationGroupedView — Tech Stack clustered right column", () => {
+  it("renders the tech cluster as a ClusterRow (one techno = one row) on Account", () => {
+    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+    // NON-VACUITY TARGET: bucketing tech on a non-matching signal_type empties
+    // the section and this assertion fails.
+    expect(screen.getByText("HubSpot")).toBeInTheDocument();
+    // Epurated tech row: count + last confirmation (ClusterRow tech branch).
+    expect(screen.getByText("3 signals")).toBeInTheDocument();
+    expect(screen.getByText(/Last confirmed/)).toBeInTheDocument();
+  });
+
+  it("renders the tech cluster on the DC surface too", () => {
+    render(
+      <QualificationGroupedView surface="dc" accountId={ACCOUNT_ID} decisionCycleId={CYCLE_ID} />,
+    );
+    expect(screen.getByText("HubSpot")).toBeInTheDocument();
+  });
+
+  it("clicking a tech cluster row opens the CLUSTER drawer (not the flat quick-drawer)", () => {
+    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+    expect(screen.queryByTestId("cluster-drawer")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("HubSpot"));
+    // The stubbed cluster drawer echoes the cluster's canonical_key.
+    expect(screen.getByTestId("cluster-drawer")).toHaveTextContent("hubspot");
+  });
+
+  it("tech goes through the cluster pipeline — no flat 'tech-stack' aggregated fetch", () => {
+    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+    const techStackFetches = useAggregatedSignals.mock.calls.filter(
+      ([opts]) => opts?.signalTypes?.includes("tech-stack"),
+    );
+    expect(techStackFetches).toHaveLength(0);
   });
 });
 

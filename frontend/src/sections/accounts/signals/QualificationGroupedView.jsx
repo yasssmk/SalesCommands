@@ -62,6 +62,12 @@ const SECTIONS = [
   { type: "impact", title: "Impacts" },
 ];
 const CLUSTER_TYPES = SECTIONS.map((s) => s.type);
+// Tech is clustered too (read-time, on tech_name_normalized) — fetched through
+// the SAME cluster pipeline as the narrative sections, in the backend cluster
+// vocabulary (underscore). It is NOT a narrative SECTION (no domain/dimension
+// nesting); it renders as a flat list of cluster rows in the right column.
+const TECH_CLUSTER_TYPE = "tech_stack";
+const CLUSTER_TYPES_WITH_TECH = [...CLUSTER_TYPES, TECH_CLUSTER_TYPE];
 const GROUPED_STATUSES = ["PENDING", "VALIDATED"];
 const SECTION_PAGE_SIZE = 100;
 
@@ -230,6 +236,66 @@ TypedSection.propTypes = {
   onSelect: PropTypes.func,
 };
 
+/**
+ * TechCluster section — Tech Stack rendered through the CLUSTER pipeline (one
+ * techno = one aggregated ClusterRow), NOT the flat signal list. Same themed
+ * section shell (CollapsibleSection) and same row component (ClusterRow) as the
+ * left narrative sections, minus the domain → dimension nesting (tech has no
+ * canonical axes). Clicking a row opens the shared SignalClusterDetailDrawer.
+ *
+ * Staying in the cluster vocabulary end-to-end (cluster.signal_type ===
+ * "tech_stack") is deliberate: the tech slug is only ever translated inside the
+ * drawer. A tech cluster is never handed to a flat-vocabulary component
+ * (SignalLine / SignalTypeChip) here.
+ */
+function TechClusterSection({
+  title,
+  testId,
+  emptyLabel,
+  clusters,
+  loading,
+  surface,
+  onClusterClick,
+}) {
+  return (
+    <CollapsibleSection
+      title={title}
+      count={clusters.length}
+      level="section"
+      testId={testId}
+    >
+      {loading && clusters.length === 0 ? (
+        <Stack alignItems="center" py={2}>
+          <CircularProgress size={18} />
+        </Stack>
+      ) : clusters.length === 0 ? (
+        <NeutralEmpty label={emptyLabel} />
+      ) : (
+        <Stack spacing={0}>
+          {clusters.map((cluster) => (
+            <ClusterRow
+              key={`${cluster.signal_type}:${cluster.canonical_key}`}
+              cluster={cluster}
+              surface={surface}
+              onClick={onClusterClick}
+            />
+          ))}
+        </Stack>
+      )}
+    </CollapsibleSection>
+  );
+}
+
+TechClusterSection.propTypes = {
+  title: PropTypes.string.isRequired,
+  testId: PropTypes.string.isRequired,
+  emptyLabel: PropTypes.string.isRequired,
+  clusters: PropTypes.array.isRequired,
+  loading: PropTypes.bool,
+  surface: PropTypes.oneOf(["account", "dc"]).isRequired,
+  onClusterClick: PropTypes.func.isRequired,
+};
+
 // ==============================|| QUALIFICATION GROUPED VIEW ||============================== //
 
 export default function QualificationGroupedView({
@@ -254,9 +320,14 @@ export default function QualificationGroupedView({
   // target_department; what / dimension = subject; contact = source; status)
   // are honored by the cluster endpoint on the filtered members; the cluster
   // then forms and its meta recomputes on that filtered set.
+  // ONE cluster fetch for both columns. Tech is requested alongside the
+  // narrative types (same hook, same scope: account vs DC via decisionCycleId).
+  // The backend ignores the subject filters (perimeter / what / dimension) for
+  // tech — it has no such axes — so the tech rows are unaffected by the
+  // Qualification filters, while pain/objective/impact honour them.
   const { clusters, clustersLoading, clustersError, mutateClusters } =
     useGetClustersByAccount(accountId, {
-      signalType: CLUSTER_TYPES,
+      signalType: CLUSTER_TYPES_WITH_TECH,
       decisionCycleId: isDC ? decisionCycleId : undefined,
       perimeter,
       whats,
@@ -265,18 +336,8 @@ export default function QualificationGroupedView({
       statuses,
     });
 
-  // Tech / Objections are non-clustered placeholder sections — they have no
-  // filters yet (their families come in a later step), so they show the full
-  // grouped default set regardless of the Qualification filters.
-  const tech = useAggregatedSignals({
-    accountId: isDC ? undefined : accountId,
-    decisionCycleId: isDC ? decisionCycleId : undefined,
-    signalTypes: ["tech-stack"],
-    statuses: GROUPED_STATUSES,
-    pageSize: SECTION_PAGE_SIZE,
-  });
-
-  // Objections (blockers): DC surface only.
+  // Objections (blockers): DC surface only. Still the flat aggregated path —
+  // the Objection family is not clustered (out of scope for this sprint).
   const blockers = useAggregatedSignals({
     decisionCycleId: isDC ? decisionCycleId : undefined,
     signalTypes: ["blockers"],
@@ -287,11 +348,13 @@ export default function QualificationGroupedView({
   const { choices, choicesLoading } = useGetSignalChoices();
 
   const mutateSections = useCallback(() => {
-    tech.mutate();
     blockers.mutate();
-  }, [tech, blockers]);
+  }, [blockers]);
 
-  // Split the flat cluster list into the three narrative sections.
+  // Split the flat cluster list into the three narrative sections. Tech is
+  // bucketed separately (same list, same signal_type bucketing as the left) —
+  // the narrative map intentionally ignores tech_stack so the left column is
+  // byte-identical to before.
   const bySection = useMemo(() => {
     const map = { objective: [], pain: [], impact: [] };
     for (const c of clusters ?? []) {
@@ -299,6 +362,12 @@ export default function QualificationGroupedView({
     }
     return map;
   }, [clusters]);
+
+  // Right column: the tech clusters from the SAME fetch (one techno = one row).
+  const techClusters = useMemo(
+    () => (clusters ?? []).filter((c) => c.signal_type === TECH_CLUSTER_TYPE),
+    [clusters],
+  );
 
   // ---- Cluster drawer state ----
   const [clusterDrawer, setClusterDrawer] = useState({
@@ -423,16 +492,17 @@ export default function QualificationGroupedView({
           ))}
         </Grid>
 
-        {/* Right column — Tech Stack + Objections (flat, today's content). */}
+        {/* Right column — Tech Stack (clustered) + Objections (flat). */}
         <Grid item xs={12} md={6}>
           {showTech && (
-            <TypedSection
+            <TechClusterSection
               title="Tech Stack"
               testId="section-tech-stack"
               emptyLabel="No tech stack signals captured"
-              signals={tech.signals}
-              loading={tech.loading}
-              onSelect={handleSelect}
+              clusters={techClusters}
+              loading={clustersLoading}
+              surface={surface}
+              onClusterClick={handleClusterClick}
             />
           )}
 
