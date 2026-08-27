@@ -22,6 +22,7 @@ member is selected based on the cluster's signal_type:
   pain        → PainSignalDetailSerializer
   objective   → ObjectiveSignalListSerializer
   impact      → ImpactSignalListSerializer
+  tech_stack  → TechStackSignalListSerializer
 
 The dispatch lives inside `get_members` as a SerializerMethodField so
 the cluster payload stays a plain dict and the routing is centralised
@@ -48,6 +49,7 @@ from rest_framework import serializers
 from .pain_serializer import PainSignalDetailSerializer
 from .objective_serializer import ObjectiveSignalListSerializer
 from .impact_serializer import ImpactSignalListSerializer
+from .tech_stack_serializer import TechStackSignalListSerializer
 
 
 # =============================================================================
@@ -215,6 +217,11 @@ class SignalClusterDetailSerializer(SignalClusterListSerializer):
             return ObjectiveSignalListSerializer
         if signal_type == 'impact':
             return ImpactSignalListSerializer
+        if signal_type == 'tech_stack':
+            # TechStack cluster members reuse the existing tech list
+            # serializer (tech_name + qualification booleans + usage/lifecycle
+            # fields). No dedicated member serializer is created.
+            return TechStackSignalListSerializer
         # Unknown type — fall back to Pain Detail to mirror the prior
         # implicit default. The shape mismatch will surface at
         # serialisation time as an AttributeError, with a clear stack

@@ -176,12 +176,15 @@ export const HUMAN_IMPACT_CONFIG = {
  *
  * If a future signal type joins the cluster service (people, etc.),
  * add an entry here to keep the cluster surface consistent. TechStack
- * is intentionally absent — it is not clusterable (product decision).
+ * clusters on tech_name_normalized (no canonical axes), so it carries a
+ * label but no "WHAT × DIMENSION" canonical chip.
  *
  * Canonical chip rendering note
  * -----------------------------
  * For pain / objective, the canonical chip displays "WHAT × DIMENSION"
  * derived from cluster.what_display + cluster.dimension_display.
+ * TechStack has null what/dimension, so no canonical chip is rendered —
+ * the tool name is the cluster headline instead.
  */
 export const SIGNAL_TYPE_VISUALS = {
   pain: {
@@ -195,6 +198,10 @@ export const SIGNAL_TYPE_VISUALS = {
   impact: {
     color: "warning",
     label: "Impact",
+  },
+  tech_stack: {
+    color: "secondary",
+    label: "Tech",
   },
 };
 

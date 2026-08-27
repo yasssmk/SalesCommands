@@ -22,8 +22,13 @@ tests/ai_pipelines/test_pipeline_extractor_blocker.py:194-249 — the real
 safety filter and builder chained, no LLM provider involved.
 """
 
+import json
+
 import pytest
 
+from app_modules.ai_pipelines.prompts.transcript_signals.techstack_v1 import (
+    build_techstack_request,
+)
 from app_modules.ai_pipelines.services.transcript_signal_extractor import (
     TranscriptSignalExtractor,
 )
@@ -397,3 +402,181 @@ class TestSignalDataServiceLabel:
         sig.save(user=user_a, client_id=account.client_id)
 
         assert SignalDataService._extract_summary(sig, is_tech_stack=True) == ''
+
+
+# =============================================================================
+# F — CANONICAL TECH NAME (Cluster Tech Stack, sub-step 1: prompt)
+# =============================================================================
+#
+# The prompt now instructs the LLM to emit a CANONICAL, STABLE tech_name so
+# the same tool named two ways in one transcript ("HubSpot" / "Hubspot CRM",
+# "SFDC" / "Salesforce") comes out under one spelling and collapses to a
+# single signal on the activity.
+#
+# What these tests prove (mirrors the COST-bug precedent in
+# test_pipeline_domain_dimension.py):
+#   * PROMPT-CONTENT (TestCanonicalNamePromptContent) asserts the tightened
+#     instruction the LLM actually reads — the canonical rule + the few-shot.
+#     This is the real sub-step-1 proof and the non-vacuity target: mutate
+#     the instruction in techstack_v1.py and this class goes red.
+#   * The PIPELINE ROUND-TRIP (TestCanonicalNameCollapsesToOneSignal) drives
+#     the REAL extraction path (QualificationSignalsPipeline.run through the
+#     FakeProvider) with two emissions the hardened prompt would produce —
+#     both already canonical to "HubSpot" — and proves the activity ends with
+#     exactly ONE tech signal. FakeProvider returns a CANNED reply, so this
+#     exercises the extraction/dedup path, NOT the live LLM's naming choice.
+#     The live behaviour (the model actually canonicalising) is PO smoke.
+
+
+class TestCanonicalNamePromptContent:
+    """
+    The techstack request prompt carries the canonical-name rule + few-shot.
+
+    Non-vacuity: this is the class that must re-red when the canonical
+    instruction is mutated out of techstack_v1.py.
+    """
+
+    def _prompt(self):
+        return build_techstack_request('SOME TRANSCRIPT')
+
+    def test_prompt_instructs_a_canonical_stable_name(self):
+        prompt = self._prompt()
+        assert 'CANONICAL name' in prompt
+        assert 'official product name' in prompt
+        # The stable-spelling intent is stated, not just implied.
+        assert 'official, stable casing' in prompt
+
+    def test_prompt_drops_speaker_appended_descriptors(self):
+        prompt = self._prompt()
+        # The "descriptor is not part of the product name" rule + its example.
+        assert '"HubSpot CRM" -> "HubSpot"' in prompt
+        assert '"Salesforce CRM" ->' in prompt
+
+    def test_prompt_resolves_unambiguous_acronyms(self):
+        prompt = self._prompt()
+        assert '"SFDC" -> "Salesforce"' in prompt
+
+    def test_prompt_ties_two_spellings_to_one_name(self):
+        prompt = self._prompt()
+        # The core cluster guarantee: same tool named twice -> same tech_name.
+        assert 'the SAME tool is named several ways' in prompt
+        assert 'the SAME canonical' in prompt
+
+    def test_prompt_keeps_verbatim_when_ambiguous_or_unknown(self):
+        prompt = self._prompt()
+        # The prudence rule: no invented mapping.
+        assert 'Stay verbatim when unsure' in prompt
+        assert 'inventing a mapping' in prompt
+        # The in-house / unknown few-shot keeps the raw name.
+        assert 'Pyramid' in prompt
+
+    def test_prompt_no_longer_teaches_the_old_verbatim_rule(self):
+        """The old 'name as it appears / do not expand abbreviations' rule
+        is gone — it directly contradicts canonicalisation."""
+        prompt = self._prompt()
+        assert 'do not expand abbreviations' not in prompt
+        assert 'Emit the tool name as it appears in the transcript' not in prompt
+
+
+@pytest.mark.django_db
+class TestCanonicalNameCollapsesToOneSignal:
+    """
+    Real extraction path: when the model emits the SAME canonical tech_name
+    for two mentions of one tool, the activity ends with ONE tech signal.
+
+    Drives QualificationSignalsPipeline.run through the FakeProvider (the
+    same harness the orchestration tests use), so persist_stage + the
+    normalised-name dedup run exactly as in production.
+    """
+
+    def _techstack_reply(self, emissions):
+        return json.dumps({'signals': emissions})
+
+    def _run(self, account, activity, user_a, fake_provider, emissions):
+        from app_modules.ai_pipelines.pipelines.transcript_signals import (
+            QualificationSignalsPipeline,
+        )
+        fake_provider.replies = {
+            'techstack': self._techstack_reply(emissions),
+        }
+        result = QualificationSignalsPipeline().run(
+            transcript=(
+                'We run everything on Hubspot. Honestly our HubSpot CRM '
+                'is a bit of a mess right now.'
+            ),
+            activity=activity,
+            user=user_a,
+            client_id=account.client_id,
+        )
+        return result['signals_by_stage']['techstack']
+
+    def test_two_canonical_emissions_of_one_tool_make_one_signal(
+        self, account, activity, user_a, fake_provider, patch_active_provider,
+    ):
+        # What the hardened prompt is expected to produce: both mentions
+        # already canonicalised to "HubSpot", each with its own quote.
+        tech_signals = self._run(
+            account, activity, user_a, fake_provider,
+            [
+                {
+                    'tech_name': 'HubSpot',
+                    'is_competitor': False,
+                    'is_integration': False,
+                    'is_to_replace': False,
+                    'usage_scope': 'COMPANY',
+                    'source_quote': 'We run everything on Hubspot',
+                    'confidence': 0.9,
+                    'is_inferred': False,
+                },
+                {
+                    'tech_name': 'HubSpot',
+                    'is_competitor': False,
+                    'is_integration': False,
+                    'is_to_replace': False,
+                    'usage_scope': 'COMPANY',
+                    'source_quote': 'our HubSpot CRM is a bit of a mess',
+                    'confidence': 0.9,
+                    'is_inferred': False,
+                },
+            ],
+        )
+
+        # One tool -> one signal on the activity.
+        assert len(tech_signals) == 1
+        sig = tech_signals[0]
+        assert sig.tech_name == 'HubSpot'
+        assert sig.tech_name_normalized == 'hubspot'
+        assert sig.source_activity_id == activity.id
+        # The corroborating second quote is preserved, not lost.
+        assert sig.metadata['additional_quotes'] == [
+            'our HubSpot CRM is a bit of a mess'
+        ]
+
+    def test_two_distinct_tools_stay_two_signals(
+        self, account, activity, user_a, fake_provider, patch_active_provider,
+    ):
+        """Guard: canonicalisation must not over-collapse distinct tools."""
+        tech_signals = self._run(
+            account, activity, user_a, fake_provider,
+            [
+                {
+                    'tech_name': 'HubSpot',
+                    'usage_scope': 'COMPANY',
+                    'source_quote': 'We run everything on Hubspot',
+                    'confidence': 0.9,
+                    'is_inferred': False,
+                },
+                {
+                    'tech_name': 'Salesforce',
+                    'usage_scope': 'COMPANY',
+                    'source_quote': 'Sales lives in Salesforce',
+                    'confidence': 0.9,
+                    'is_inferred': False,
+                },
+            ],
+        )
+
+        assert len(tech_signals) == 2
+        assert sorted(s.tech_name for s in tech_signals) == [
+            'HubSpot', 'Salesforce',
+        ]

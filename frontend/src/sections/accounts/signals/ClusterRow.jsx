@@ -49,15 +49,22 @@ function formatShortDate(iso) {
 
 export default function ClusterRow({ cluster, surface, onClick }) {
   const {
+    signal_type: clusterSignalType,
     summary,
     signal_count: signalCount = 0,
     pending_count: pendingCount = 0,
     freshness_status: freshnessStatus,
     period_start: periodStart,
     period_end: periodEnd,
+    last_confirmed_at: lastConfirmedAt,
     departments = [],
     decision_cycle_ids: decisionCycleIds = [],
   } = cluster;
+
+  // TechStack cluster rows are deliberately barer than the axis-based ones
+  // (PO decision): tool name + "N signals" + last confirmation only — no
+  // priority (there is none), no freshness/period/departments/DC noise.
+  const isTech = clusterSignalType === "tech_stack";
 
   const freshness = resolveFreshness(freshnessStatus);
   const FreshnessIcon = freshness.icon;
@@ -65,6 +72,8 @@ export default function ClusterRow({ cluster, surface, onClick }) {
   const start = formatShortDate(periodStart);
   const end = formatShortDate(periodEnd);
   const period = start && end ? (start === end ? start : `${start} → ${end}`) : null;
+
+  const lastConfirmed = formatShortDate(lastConfirmedAt);
 
   const dcCount = Array.isArray(decisionCycleIds) ? decisionCycleIds.length : 0;
 
@@ -119,70 +128,89 @@ export default function ClusterRow({ cluster, surface, onClick }) {
           {signalCount} signal{signalCount === 1 ? "" : "s"}
         </Typography>
 
-        {/* pending — "N to validate" */}
-        {pendingCount > 0 && (
-          <Chip
-            label={`${pendingCount} to validate`}
-            color="warning"
-            variant="light"
-            size="small"
-            sx={{ height: 20, fontSize: "0.68rem" }}
-          />
-        )}
-
-        {/* freshness */}
-        {freshnessStatus && (
-          <Chip
-            icon={<FreshnessIcon style={{ fontSize: 12 }} />}
-            label={freshness.label}
-            color={freshness.color}
-            variant="light"
-            size="small"
-            sx={{ height: 20, fontSize: "0.68rem" }}
-          />
-        )}
-
-        {/* temporal pertinence — covered period */}
-        {period && (
+        {/* TechStack — last confirmation only (epurated tech row) */}
+        {isTech && lastConfirmed && (
           <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
             <ClockCircleOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
             <Typography variant="caption" color="text.secondary" noWrap>
-              {period}
+              Last confirmed {lastConfirmed}
             </Typography>
           </Stack>
         )}
 
-        {/* departments involved */}
-        {departments.length > 0 && (
-          <Stack
-            direction="row"
-            spacing={0.5}
-            alignItems="center"
-            flexWrap="wrap"
-            useFlexGap
-            sx={{ minWidth: 0 }}
-          >
-            <TeamOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
-            {departments.map((d) => (
+        {/*
+          Axis-based cluster meta (pain / objective / impact) — unchanged.
+          Gated off for TechStack, whose row shows only the count + last
+          confirmation above.
+        */}
+        {!isTech && (
+          <>
+            {/* pending — "N to validate" */}
+            {pendingCount > 0 && (
               <Chip
-                key={d.id}
-                label={d.name}
+                label={`${pendingCount} to validate`}
+                color="warning"
+                variant="light"
                 size="small"
-                variant="outlined"
-                sx={{ height: 18, fontSize: "0.62rem" }}
+                sx={{ height: 20, fontSize: "0.68rem" }}
               />
-            ))}
-          </Stack>
-        )}
+            )}
 
-        {/* Account only: number of decision cycles this cluster spans */}
-        {surface === "account" && dcCount > 0 && (
-          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
-            <BranchesOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {dcCount} DC{dcCount === 1 ? "" : "s"}
-            </Typography>
-          </Stack>
+            {/* freshness */}
+            {freshnessStatus && (
+              <Chip
+                icon={<FreshnessIcon style={{ fontSize: 12 }} />}
+                label={freshness.label}
+                color={freshness.color}
+                variant="light"
+                size="small"
+                sx={{ height: 20, fontSize: "0.68rem" }}
+              />
+            )}
+
+            {/* temporal pertinence — covered period */}
+            {period && (
+              <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+                <ClockCircleOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  {period}
+                </Typography>
+              </Stack>
+            )}
+
+            {/* departments involved */}
+            {departments.length > 0 && (
+              <Stack
+                direction="row"
+                spacing={0.5}
+                alignItems="center"
+                flexWrap="wrap"
+                useFlexGap
+                sx={{ minWidth: 0 }}
+              >
+                <TeamOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+                {departments.map((d) => (
+                  <Chip
+                    key={d.id}
+                    label={d.name}
+                    size="small"
+                    variant="outlined"
+                    sx={{ height: 18, fontSize: "0.62rem" }}
+                  />
+                ))}
+              </Stack>
+            )}
+
+            {/* Account only: number of decision cycles this cluster spans */}
+            {surface === "account" && dcCount > 0 && (
+              <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0 }}>
+                <BranchesOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  {dcCount} DC{dcCount === 1 ? "" : "s"}
+                </Typography>
+              </Stack>
+            )}
+          </>
         )}
       </Stack>
     </Box>
@@ -199,6 +227,7 @@ ClusterRow.propTypes = {
     freshness_status: PropTypes.string,
     period_start: PropTypes.string,
     period_end: PropTypes.string,
+    last_confirmed_at: PropTypes.string,
     departments: PropTypes.arrayOf(
       PropTypes.shape({ id: PropTypes.string, name: PropTypes.string }),
     ),

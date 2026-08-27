@@ -14,9 +14,11 @@ regardless of which contact reported it or when. The same logic
 applies to Objective and Impact on their respective canonical
 identities.
 
-TechStack is NOT clustered (product decision) — it is not handled by
-this service; TechStack observations are read as a flat, catalog-
-grouped list elsewhere.
+TechStack is clustered too, but on a different key: it has no canonical_key
+and no what × dimension axes, so it groups on `tech_name_normalized` (the
+derived tool name) instead. That grouping is 100% read-time — nothing about
+membership is stored — so editing a signal's tech_name re-derives its key on
+save and regroups it on the next fetch with no other action.
 
 Pain, Objective, and Impact share the same canonical-axes mechanism
 (what × dimension). A cluster identified by (what, dimension) on an
@@ -29,9 +31,9 @@ at OPS × TIME") is a frontend concern, not a service one.
 Supported signal types
 ----------------------
 list_clusters_for_account accepts either a single signal_type string
-or a list. Pain, Objective, and Impact produce real clusters. Any
-other signal_type value (including tech_stack — not clusterable) is
-rejected by the guard as "not supported".
+or a list. Pain, Objective, Impact (on canonical_key) and TechStack (on
+tech_name_normalized) produce real clusters. Any other signal_type value
+is rejected by the guard as "not supported".
 
 What the service does
 ---------------------
@@ -114,7 +116,7 @@ Each cluster dict contains:
 """
 
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.db.models import Prefetch, Q
 from django.utils import timezone
@@ -132,7 +134,13 @@ from ..constants import (
     SignalClusterType,
     SignalStatus,
 )
-from ..models import ImpactSignal, ObjectiveSignal, PainSignal, SignalClusterArchival
+from ..models import (
+    ImpactSignal,
+    ObjectiveSignal,
+    PainSignal,
+    SignalClusterArchival,
+    TechStackSignal,
+)
 from .signal_priority_service import (
     OBJECTIVE_TARGET_DATE_SOON_DAYS,
     bucket_from_score,
@@ -140,6 +148,16 @@ from .signal_priority_service import (
     compute_objective_priority_score,
     compute_pain_priority_score,
 )
+
+# Timezone-aware minimum used as the fallback in date sort keys. The cluster
+# list sorts by (priority_score, last_confirmed_at); last_confirmed_at is
+# timezone-AWARE (derived from BaseSignal.created_at under USE_TZ=True), so a
+# naive datetime.min sentinel raises "can't compare offset-naive and
+# offset-aware datetimes" the moment the secondary key is compared on a
+# priority_score tie. UTC-aware mirrors the project's timezone idiom
+# (core/idempotency.py: `datetime.now(timezone.utc)` with stdlib timezone —
+# django.utils.timezone.utc was removed in Django 5).
+_AWARE_DATETIME_MIN = datetime.min.replace(tzinfo=dt_timezone.utc)
 
 # Ordering used to determine the "max observed" scope level on a cluster.
 # BUSINESS > DEPARTMENT > PERSONAL — the strongest evidence wins.
@@ -277,6 +295,16 @@ class SignalClusterService:
                     )
                 )
                 continue
+            if stype == SignalClusterType.TECH_STACK:
+                clusters.extend(
+                    cls._list_tech_clusters_for_account(
+                        account_id=account_id,
+                        decision_cycle_id=decision_cycle_id,
+                        include_archived=include_archived,
+                        member_filters=member_filters,
+                    )
+                )
+                continue
             # _assert_signal_types_supported guarantees no other type
             # reaches this loop — the guard is the single source of truth.
 
@@ -286,7 +314,7 @@ class SignalClusterService:
         clusters.sort(
             key=lambda c: (
                 c['priority_score'],
-                c['last_confirmed_at'] or timezone.datetime.min,
+                c['last_confirmed_at'] or _AWARE_DATETIME_MIN,
             ),
             reverse=True,
         )
@@ -448,6 +476,66 @@ class SignalClusterService:
 
         return clusters
 
+    # -------------------------------------------------------------------------
+    # INTERNAL — TechStack-specific listing
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def _list_tech_clusters_for_account(
+        cls,
+        *,
+        account_id,
+        decision_cycle_id=None,
+        include_archived: bool = False,
+        member_filters=None,
+    ) -> list:
+        """
+        TechStack-specific cluster computation for list_clusters_for_account.
+
+        Unlike Pain / Objective / Impact, TechStack has no canonical_key and
+        no what × dimension axes. It clusters on `tech_name_normalized` — the
+        lower/trim/collapse of `tech_name` that TechStackSignal.save()
+        recomputes on every write. The grouping is therefore 100% derived at
+        read time: nothing about cluster membership is stored, so editing a
+        signal's tech_name (which re-derives its normalised key on save)
+        moves it into the matching cluster on the very next fetch with no
+        other action.
+        """
+        signals = cls._fetch_tech_signals(
+            account_id=account_id,
+            decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
+        )
+        # Same grouping primitive as the axis-based types, pointed at the
+        # normalised tool name instead of canonical_key.
+        grouped = cls._group_by_canonical_key(
+            signals, key=lambda s: s.tech_name_normalized,
+        )
+
+        archived_keys = cls._get_archived_keys(
+            account_id,
+            SignalClusterType.TECH_STACK,
+        )
+
+        clusters: list = []
+        for tech_name_normalized, members in grouped.items():
+            if not tech_name_normalized:
+                # A blank normalised name carries no tool identity — it cannot
+                # form a cluster. tech_name is required at create/extraction,
+                # so this is a defensive skip (mirrors the None-key skip on the
+                # axis-based types).
+                continue
+
+            cluster = cls._build_tech_cluster(tech_name_normalized, members)
+            cluster['is_archived'] = tech_name_normalized in archived_keys
+
+            if cluster['is_archived'] and not include_archived:
+                continue
+
+            clusters.append(cluster)
+
+        return clusters
+
     # =========================================================================
     # PUBLIC — DETAIL
     # =========================================================================
@@ -558,6 +646,29 @@ class SignalClusterService:
 
             return cluster
 
+        if resolved_type == SignalClusterType.TECH_STACK:
+            # TechStack detail: the `canonical_key` path segment carries the
+            # tech_name_normalized grouping key (not a stored canonical_key —
+            # TechStack has none). Members are the signals whose derived
+            # normalised name matches it.
+            members = list(
+                cls._fetch_tech_signals(account_id=account_id)
+                .filter(tech_name_normalized=canonical_key)
+            )
+
+            if not members:
+                raise StandardizedValidationError(
+                    SignalErrorMessages.CLUSTER_NOT_FOUND
+                )
+
+            cluster = cls._build_tech_cluster(canonical_key, members)
+
+            archived_keys = cls._get_archived_keys(account_id, resolved_type)
+            cluster['is_archived'] = canonical_key in archived_keys
+            cluster['members'] = members
+
+            return cluster
+
         # _assert_signal_types_supported guarantees we never reach here.
 
     # =========================================================================
@@ -566,13 +677,15 @@ class SignalClusterService:
 
     # Signal types the cluster service accepts at its API surface. Pain,
     # Objective, and Impact share the same canonical-axes mechanism
-    # (what × dimension). TechStack is intentionally NOT here: it is not
-    # clusterable (product decision), so any request for tech_stack
-    # clusters is rejected by _assert_signal_types_supported.
+    # (what × dimension) and cluster on their stored canonical_key.
+    # TechStack has no canonical axes: it clusters on tech_name_normalized
+    # (the derived tool name), computed entirely at read time. All four are
+    # accepted here; _assert_signal_types_supported rejects everything else.
     _SUPPORTED_CLUSTER_TYPES = frozenset({
         SignalClusterType.PAIN.value,
         SignalClusterType.OBJECTIVE.value,
         SignalClusterType.IMPACT.value,
+        SignalClusterType.TECH_STACK.value,
     })
 
     @classmethod
@@ -866,16 +979,97 @@ class SignalClusterService:
 
         return qs
 
+    @classmethod
+    def _fetch_tech_signals(cls, *, account_id, decision_cycle_id=None,
+                            member_filters=None):
+        """
+        Base queryset for TechStack cluster aggregation.
+
+        Includes VALIDATED and PENDING signals (REJECTED excluded — same
+        product rule as the axis-based types), on the shared default status
+        set via _member_statuses.
+
+        Why NOT _apply_member_filters here
+        ----------------------------------
+        The shared member-filter helper filters on scope_level, what,
+        dimension, and target_department — none of which exist on
+        TechStackSignal. The only member filter that maps onto a tech signal
+        is the SOURCE contact filter (who mentioned the tool), applied
+        directly below through source_activity.contacts. The subject filters
+        (perimeter / what / dimension / department / scope) are silently
+        inapplicable to tech — the same stance the aggregated flat endpoint
+        takes when it excludes tech from the department / scope filters.
+
+        N+1 safety
+        ----------
+        select_related('source_activity', 'decision_cycle') covers both the
+        member payload's source block and _cluster_has_active_dc (which reads
+        decision_cycle.outcome). prefetch_related('source_activity__contacts')
+        covers distinct_contacts_count and the member serializer's source
+        block. The query count is constant regardless of the number of
+        signals or clusters.
+        """
+        qs = (
+            TechStackSignal.objects
+            .filter(
+                account_id=account_id,
+                status__in=cls._member_statuses(member_filters),
+                # is_domain_valid is always True for TechStack (no `what`
+                # axis to fall out of taxonomy), but the filter is kept for
+                # symmetry with the axis-based fetchers and is harmless.
+                is_domain_valid=True,
+            )
+            .select_related(
+                'source_activity',
+                'decision_cycle',
+            )
+            .prefetch_related(
+                'source_activity__contacts',
+            )
+        )
+
+        if decision_cycle_id:
+            qs = qs.filter(decision_cycle_id=decision_cycle_id)
+
+        # SOURCE contact filter — the only member filter that maps onto a
+        # TechStack signal (via source_activity.contacts). Mirrors the
+        # contacts clause of _apply_member_filters without the subject-axis
+        # filters that TechStack cannot honour.
+        if member_filters:
+            contacts = member_filters.get('contacts')
+            if contacts:
+                qs = qs.filter(
+                    source_activity__contacts__in=contacts
+                ).distinct()
+            else:
+                contact = member_filters.get('contact')
+                if contact:
+                    qs = qs.filter(source_activity__contacts=contact)
+
+        return qs
+
     # =========================================================================
     # GROUP
     # =========================================================================
 
     @staticmethod
-    def _group_by_canonical_key(signals) -> dict:
-        """Group signals by canonical_key. Iterates once."""
+    def _group_by_canonical_key(signals, key=None) -> dict:
+        """
+        Group signals by their canonical_key, or by a custom key callable.
+
+        Iterates once. `key` defaults to reading `signal.canonical_key`, so
+        the Pain / Objective / Impact callers keep their exact behaviour
+        (they call this with no `key`). TechStack has NO canonical_key column
+        (it is not axis-based); it passes `key=lambda s: s.tech_name_normalized`
+        so the SAME grouping primitive clusters tech observations on the
+        normalised tool name — the read-time grouping identity that is
+        recomputed on every fetch and never stored.
+        """
+        if key is None:
+            key = lambda s: s.canonical_key  # noqa: E731 — trivial default
         buckets: dict = defaultdict(list)
         for signal in signals:
-            buckets[signal.canonical_key].append(signal)
+            buckets[key(signal)].append(signal)
         return dict(buckets)
 
     # =========================================================================
@@ -1342,6 +1536,144 @@ class SignalClusterService:
             # Priority
             'priority_score':  score,
             'priority_bucket': bucket,
+
+            # Linking
+            'decision_cycle_ids': decision_cycle_ids,
+            'campaign_ids':       campaign_ids,
+
+            # Archival — default False, overridden by caller if applicable
+            'is_archived': False,
+        }
+
+    # =========================================================================
+    # BUILD — per TechStack cluster
+    # =========================================================================
+
+    @classmethod
+    def _build_tech_cluster(cls, tech_name_normalized: str, members: list) -> dict:
+        """
+        Build the TechStack cluster dict from a list of TechStackSignal
+        members that share the same tech_name_normalized on the account.
+
+        `members` includes VALIDATED and PENDING signals (REJECTED excluded).
+        They arrive in the fetch default ordering ('-created_at'), so the
+        reference (most recent VALIDATED, else most recent member) is the
+        first match — the SAME reference rule the axis-based builders use.
+
+        Output shape — the SAME unified cluster contract as Pain / Objective /
+        Impact, so the cluster serializer and the frontend consume it with no
+        new branch. The keys that describe canonical axes (what, what_display,
+        dimension, dimension_display) and the scope / target-date aggregations
+        carry NEUTRAL values, because TechStack has none of those fields:
+
+          * what / what_display / dimension / dimension_display -> None
+            (the serializer declares these allow_null; TechStack has no axes).
+          * summary -> the tool's display name (reference.tech_name), which is
+            the natural headline for a tech cluster.
+          * max_scope_level -> None (no scope_level on TechStack).
+          * departments -> [] (no target_department subject axis; usage
+            department is a distinct concept, deferred to the member drawer).
+          * target_dates / has_target_date_soon -> [] / False.
+          * priority_score / priority_bucket -> 0 / LOW. TechStack has NO
+            priority model (product decision — no scorer added). The contract
+            requires both keys non-null, so the neutral floor is emitted and
+            the list is ordered by recency (last_confirmed_at) via the shared
+            sort. See the DÉCISION PRODUIT note raised for sub-step 3: whether
+            the priority badge should be suppressed for tech clusters in the UI.
+          * campaign_ids -> [] (campaign is shadow-overridden to None on
+            TechStackSignal — there is no campaign FK to read).
+
+        The factual meta (confirmation_count, distinct_contacts_count,
+        lifecycle, signal_count, period, span_days) reuses the exact helpers
+        and computations the axis-based builders use — none of them depend on
+        a field TechStack lacks.
+        """
+        validated = [m for m in members if m.status == SignalStatus.VALIDATED]
+        pending   = [m for m in members if m.status == SignalStatus.PENDING]
+
+        # Reference: most recent VALIDATED, else most recent member.
+        reference = validated[0] if validated else members[0]
+
+        # --- Corroboration & breadth (same computation as the axis types) ---
+        confirmation_count = len(validated)
+
+        distinct_contacts: set = set()
+        for signal in validated:
+            if signal.source_activity_id and signal.source_activity:
+                for contact in signal.source_activity.contacts.all():
+                    distinct_contacts.add(contact.id)
+        distinct_contacts_count = len(distinct_contacts)
+
+        # --- Lifecycle (reuse the shared helper; created_at-anchored) ---
+        has_active_dc = cls._cluster_has_active_dc(members)
+        first_observed_at, last_confirmed_at, freshness = (
+            cls._compute_lifecycle(validated, has_active_dc)
+        )
+
+        # --- Cluster status ---
+        status_value = SignalStatus.VALIDATED if validated else SignalStatus.PENDING
+        has_pending = bool(pending)
+        pending_count = len(pending)
+
+        # --- Linking (decision_cycle is a real FK on TechStack; campaign is
+        # shadow-overridden to None so there is no campaign to link) ---
+        decision_cycle_ids = sorted({
+            str(m.decision_cycle_id) for m in members if m.decision_cycle_id
+        })
+        campaign_ids: list = []
+
+        # --- Priority: TechStack has no scorer. Neutral floor (0 -> LOW). ---
+        priority_score = 0
+        priority_bucket = bucket_from_score(priority_score)
+
+        return {
+            # Identity — the normalised tool name IS the read-time cluster key.
+            'canonical_key':     tech_name_normalized,
+            'signal_type':       SignalClusterType.TECH_STACK.value,
+
+            # Canonical axes — no meaning for TechStack. Neutral (allow_null).
+            'what':              None,
+            'what_display':      None,
+            'dimension':         None,
+            'dimension_display': None,
+            # The tool name is the cluster headline.
+            'summary':           reference.tech_name,
+
+            # Corroboration & breadth
+            'confirmation_count':      confirmation_count,
+            'distinct_contacts_count': distinct_contacts_count,
+
+            # Status
+            'status':              status_value,
+            'has_pending_signals': has_pending,
+            'pending_count':       pending_count,
+
+            # Lifecycle
+            'first_observed_at': first_observed_at,
+            'last_confirmed_at': last_confirmed_at,
+            'freshness_status':  freshness,
+
+            # Temporal density — raw facts (count + covered period).
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
+            # Departments — no target_department subject axis on TechStack.
+            'departments':   [],
+
+            # Scope — no scope_level on TechStack.
+            'max_scope_level': None,
+
+            # Objective-compat keys — TechStack has no target-date concept.
+            'target_dates':          [],
+            'has_target_date_soon':  False,
+
+            # Priority — neutral floor (no TechStack scorer). See docstring.
+            'priority_score':  priority_score,
+            'priority_bucket': priority_bucket,
 
             # Linking
             'decision_cycle_ids': decision_cycle_ids,
