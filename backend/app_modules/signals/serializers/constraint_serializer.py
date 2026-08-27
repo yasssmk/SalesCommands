@@ -17,9 +17,10 @@ Notes:
     requires filtering — same pattern as PainSignalSerializer (for
     non-category types).
 
-  - ConstraintSignal participates in the cluster model via canonical
-    axes (what × dimension). canonical_key is auto-computed in save()
-    as "constraint:<what>:<dimension>".
+  - ConstraintSignal is classified on `nature` (ConstraintNature). It is
+    detached from the business what × dimension axes: `what` / `dimension`
+    are legacy-nullable (still exposed read-only for historical rows, no
+    longer authored on Create/Update) and canonical_key stays None.
 
   - `target_department` (FK StandardDepartment) identifies the
     department that owns or enforces the constraint.
@@ -52,6 +53,9 @@ from .base_serializer import (
 
 class _ConstraintDisplayMixin:
     """Shared SerializerMethodField implementations for Constraint serializers."""
+
+    def get_nature_display(self, obj):
+        return obj.get_nature_display() if obj.nature else None
 
     def get_what_display(self, obj):
         return obj.get_what_display() if obj.what else None
@@ -107,13 +111,15 @@ class ConstraintSignalListSerializer(_ConstraintDisplayMixin, BaseSignalListSeri
     """
     Lightweight serializer for ConstraintSignal list endpoints.
 
-    Exposes the canonical axes (what × dimension), the narrative summary,
-    rigidity, and target department (compact payload).
+    Exposes the classification axis (nature), the narrative summary,
+    rigidity, and target department (compact payload). Legacy what /
+    dimension are exposed read-only for historical rows.
 
     signal_category / signal_category_display are stripped from
     inherited fields (model shadow-overrides signal_category to None).
     """
 
+    nature_display      = serializers.SerializerMethodField()
     what_display        = serializers.SerializerMethodField()
     dimension_display   = serializers.SerializerMethodField()
     rigidity_display    = serializers.SerializerMethodField()
@@ -125,11 +131,13 @@ class ConstraintSignalListSerializer(_ConstraintDisplayMixin, BaseSignalListSeri
         _base_fields = _strip_shadow_fields(BaseSignalListSerializer.Meta.fields)
 
         fields = _base_fields + [
-            'what', 'what_display',
-            'dimension', 'dimension_display',
+            'nature', 'nature_display',
             'summary',
             'rigidity', 'rigidity_display',
             'target_department',
+            # Legacy axes — read-only, present for historical rows.
+            'what', 'what_display',
+            'dimension', 'dimension_display',
         ]
         read_only_fields = fields
 
@@ -149,6 +157,7 @@ class ConstraintSignalDetailSerializer(_ConstraintDisplayMixin, BaseSignalDetail
     inherited fields (model shadow-overrides signal_category to None).
     """
 
+    nature_display      = serializers.SerializerMethodField()
     what_display        = serializers.SerializerMethodField()
     dimension_display   = serializers.SerializerMethodField()
     rigidity_display    = serializers.SerializerMethodField()
@@ -160,12 +169,14 @@ class ConstraintSignalDetailSerializer(_ConstraintDisplayMixin, BaseSignalDetail
         _base_fields = _strip_shadow_fields(BaseSignalDetailSerializer.Meta.fields)
 
         fields = _base_fields + [
-            'what', 'what_display',
-            'dimension', 'dimension_display',
+            'nature', 'nature_display',
             'summary',
             'notes',
             'rigidity', 'rigidity_display',
             'target_department',
+            # Legacy axes — read-only, present for historical rows.
+            'what', 'what_display',
+            'dimension', 'dimension_display',
         ]
         read_only_fields = fields
 
@@ -184,8 +195,7 @@ class ConstraintSignalCreateSerializer(BaseSignalCreateSerializer):
     Required:
       - account            (inherited)
       - source_activity    — every constraint must be tied to a conversation
-      - what               — domain axis (SignalWhat enum)
-      - dimension          — friction axis (SignalDimension enum)
+      - nature             — constraint taxonomy (ConstraintNature enum)
       - summary            — free-text description
       - rigidity           — FIRM or FLEXIBLE
 
@@ -194,6 +204,10 @@ class ConstraintSignalCreateSerializer(BaseSignalCreateSerializer):
       - notes              — additional context
       - source_quote, language_original, source, confidence,
         is_inferred, metadata (inherited)
+
+    Not authored here (detached): what / dimension. They are legacy
+    nullable columns kept for historical rows; the Create path no longer
+    accepts them (constraints are classified on `nature`).
 
     Stripped from BaseSignalCreateSerializer.Meta.fields:
       signal_category — the model shadow-overrides it to None.
@@ -211,8 +225,7 @@ class ConstraintSignalCreateSerializer(BaseSignalCreateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalCreateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
-            'what',
-            'dimension',
+            'nature',
             'summary',
             'rigidity',
             'target_department',
@@ -220,8 +233,7 @@ class ConstraintSignalCreateSerializer(BaseSignalCreateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
-            'what':              {'required': True},
-            'dimension':         {'required': True},
+            'nature':            {'required': True},
             'summary':           {'required': True},
             'rigidity':          {'required': True},
             'target_department': {'required': False, 'allow_null': True},
@@ -252,11 +264,13 @@ class ConstraintSignalUpdateSerializer(BaseSignalUpdateSerializer):
     Restricted PATCH serializer for ConstraintSignal.
 
     Allowed beyond base fields (source_quote, metadata):
-      - what, dimension    — canonical axes (canonical_key recomputed
-                              by model.save())
+      - nature             — constraint taxonomy may be reclassified
       - summary, notes
       - rigidity           — constraint firmness may be reclassified
       - target_department  — department may be corrected
+
+    Not authored here (detached): what / dimension — legacy nullable
+    columns, no longer writable.
 
     signal_category / signal_category_display are stripped from
     inherited fields (model shadow-overrides signal_category to None).
@@ -273,8 +287,7 @@ class ConstraintSignalUpdateSerializer(BaseSignalUpdateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalUpdateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
-            'what',
-            'dimension',
+            'nature',
             'summary',
             'rigidity',
             'target_department',
@@ -282,8 +295,7 @@ class ConstraintSignalUpdateSerializer(BaseSignalUpdateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
-            'what':              {'required': False},
-            'dimension':         {'required': False},
+            'nature':            {'required': False},
             'summary':           {'required': False},
             'rigidity':          {'required': False},
             'target_department': {'required': False, 'allow_null': True},

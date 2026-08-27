@@ -4,7 +4,8 @@ Model-level invariants for ConstraintSignal.
 
 Covers:
   * Shadow-overrides (signal_category)
-  * canonical_key computation ("constraint:<what>:<dimension>")
+  * nature (ConstraintNature) classification axis
+  * canonical_key detached — always None (mirror of BlockerSignal)
   * clean() requires source_activity
   * Rigidity field (FIRM / FLEXIBLE)
   * MANUAL → VALIDATED auto, LLM_EXTRACTED → PENDING auto
@@ -15,6 +16,7 @@ import pytest
 from django.core.exceptions import FieldDoesNotExist, ValidationError
 
 from app_modules.signals.constants import (
+    ConstraintNature,
     Rigidity,
     SIGNAL_CLUSTERS_CACHE_TAG,
     SIGNALS_CACHE_TAG,
@@ -55,15 +57,44 @@ class TestConstraintSignalShadowOverride:
 
 
 # =============================================================================
-# CANONICAL KEY
+# NATURE — classification axis
 # =============================================================================
 
-class TestConstraintSignalCanonicalKey:
+class TestConstraintSignalNature:
 
-    def test_canonical_key_computed_on_save(self, account, activity, user_a):
+    def test_nature_persisted(self, account, activity, user_a):
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
+            nature=ConstraintNature.TECHNICAL,
+            summary='Must integrate with SAP',
+            rigidity=Rigidity.FIRM,
+            source=SignalSource.MANUAL,
+        )
+        s.save(user=user_a, client_id=account.client_id)
+        s.refresh_from_db()
+        assert s.nature == ConstraintNature.TECHNICAL
+
+    def test_nature_choices_cover_expected_kinds(self):
+        assert set(ConstraintNature.values) == {
+            'FUNCTIONAL', 'TECHNICAL', 'FINANCIAL',
+            'CONTRACTUAL', 'OPERATIONAL', 'SECURITY',
+        }
+
+
+# =============================================================================
+# CANONICAL KEY — detached (always None)
+# =============================================================================
+
+class TestConstraintSignalCanonicalKeyDetached:
+
+    def test_canonical_key_none_even_with_legacy_axes(self, account, activity, user_a):
+        # Even if legacy what/dimension are supplied, constraint no longer
+        # computes a canonical_key — it is detached from the axes.
+        s = ConstraintSignal(
+            account=account,
+            source_activity=activity,
+            nature=ConstraintNature.FINANCIAL,
             what=SignalWhat.GROWTH,
             dimension=SignalDimension.COST,
             summary='ROI > 20% under 18 months',
@@ -72,14 +103,13 @@ class TestConstraintSignalCanonicalKey:
         )
         s.save(user=user_a, client_id=account.client_id)
         s.refresh_from_db()
-        assert s.canonical_key == 'constraint:GROWTH:COST'
+        assert s.canonical_key is None
 
-    def test_canonical_key_none_when_axes_missing(self, account, activity, user_a):
+    def test_canonical_key_none_without_legacy_axes(self, account, activity, user_a):
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what='',
-            dimension=SignalDimension.TIME,
+            nature=ConstraintNature.OPERATIONAL,
             summary='Deployment before Q3',
             rigidity=Rigidity.FLEXIBLE,
             source=SignalSource.MANUAL,
@@ -87,24 +117,25 @@ class TestConstraintSignalCanonicalKey:
         s.save(user=user_a, client_id=account.client_id)
         s.refresh_from_db()
         assert s.canonical_key is None
+        assert s.what is None
+        assert s.dimension is None
 
-    def test_canonical_key_updates_on_resave(self, account, activity, user_a):
+    def test_canonical_key_stays_none_on_resave(self, account, activity, user_a):
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.OPS,
-            dimension=SignalDimension.TIME,
+            nature=ConstraintNature.OPERATIONAL,
             summary='Process must complete in under 2 weeks',
             rigidity=Rigidity.FIRM,
             source=SignalSource.MANUAL,
         )
         s.save(user=user_a, client_id=account.client_id)
-        assert s.canonical_key == 'constraint:OPS:TIME'
+        assert s.canonical_key is None
 
-        s.what = SignalWhat.TECH
+        s.nature = ConstraintNature.TECHNICAL
         s.save(user=user_a, client_id=account.client_id)
         s.refresh_from_db()
-        assert s.canonical_key == 'constraint:TECH:TIME'
+        assert s.canonical_key is None
 
 
 # =============================================================================
@@ -116,8 +147,7 @@ class TestConstraintSignalClean:
     def test_clean_raises_without_source_activity(self, account):
         s = ConstraintSignal(
             account=account,
-            what=SignalWhat.GROWTH,
-            dimension=SignalDimension.COST,
+            nature=ConstraintNature.FINANCIAL,
             summary='ROI > 20%',
             rigidity=Rigidity.FIRM,
         )
@@ -129,8 +159,7 @@ class TestConstraintSignalClean:
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.GROWTH,
-            dimension=SignalDimension.COST,
+            nature=ConstraintNature.FINANCIAL,
             summary='ROI > 20%',
             rigidity=Rigidity.FIRM,
         )
@@ -147,8 +176,7 @@ class TestConstraintRigidity:
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.GROWTH,
-            dimension=SignalDimension.COST,
+            nature=ConstraintNature.FINANCIAL,
             summary='ROI > 20%',
             rigidity=Rigidity.FIRM,
             source=SignalSource.MANUAL,
@@ -161,8 +189,7 @@ class TestConstraintRigidity:
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.OPS,
-            dimension=SignalDimension.TIME,
+            nature=ConstraintNature.OPERATIONAL,
             summary='Ideally before Q3',
             rigidity=Rigidity.FLEXIBLE,
             source=SignalSource.MANUAL,
@@ -173,7 +200,7 @@ class TestConstraintRigidity:
 
 
 # =============================================================================
-# TARGET DEPARTMENT — optional FK
+# TARGET DEPARTMENT — optional FK (the scope axis)
 # =============================================================================
 
 class TestConstraintTargetDepartment:
@@ -182,8 +209,7 @@ class TestConstraintTargetDepartment:
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.GROWTH,
-            dimension=SignalDimension.COST,
+            nature=ConstraintNature.FINANCIAL,
             summary='ROI validated by Finance',
             rigidity=Rigidity.FIRM,
             target_department=department,
@@ -197,8 +223,7 @@ class TestConstraintTargetDepartment:
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.TECH,
-            dimension=SignalDimension.RISK,
+            nature=ConstraintNature.SECURITY,
             summary='Security audit required',
             rigidity=Rigidity.FIRM,
             source=SignalSource.MANUAL,
@@ -218,8 +243,7 @@ class TestConstraintSignalLifecycle:
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.GROWTH,
-            dimension=SignalDimension.COST,
+            nature=ConstraintNature.FINANCIAL,
             summary='ROI > 20%',
             rigidity=Rigidity.FIRM,
             source=SignalSource.MANUAL,
@@ -232,8 +256,7 @@ class TestConstraintSignalLifecycle:
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.OPS,
-            dimension=SignalDimension.TIME,
+            nature=ConstraintNature.OPERATIONAL,
             summary='Deployment before Q3',
             rigidity=Rigidity.FLEXIBLE,
             source=SignalSource.LLM_EXTRACTED,
@@ -241,6 +264,34 @@ class TestConstraintSignalLifecycle:
         )
         s.save(user=user_a, client_id=account.client_id)
         assert s.status == SignalStatus.PENDING
+
+
+# =============================================================================
+# DOMAIN VALIDITY — a constraint without `what` is NOT invalidated
+# =============================================================================
+
+class TestConstraintDomainValidity:
+
+    def test_constraint_without_what_is_domain_valid(self, account, activity, user_a):
+        from app_modules.signals.services.signal_manager import SignalManager
+        signal = SignalManager.create(
+            data={
+                'signal_type':     'constraint',
+                'account':         account,
+                'source_activity': activity,
+                'source':          SignalSource.MANUAL,
+                'nature':          ConstraintNature.CONTRACTUAL,
+                'summary':         'GDPR compliance required',
+                'rigidity':        Rigidity.FIRM,
+            },
+            user=user_a,
+            client_id=account.client_id,
+        )
+        signal.refresh_from_db()
+        # No `what` supplied → _flag_invalid_domain early-returns, stays valid.
+        assert signal.is_domain_valid is True
+        assert signal.what is None
+        assert signal.canonical_key is None
 
 
 # =============================================================================
@@ -257,8 +308,7 @@ class TestConstraintSignalCacheInvalidation:
         s = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.GROWTH,
-            dimension=SignalDimension.COST,
+            nature=ConstraintNature.FINANCIAL,
             summary='ROI > 20%',
             rigidity=Rigidity.FIRM,
             source=SignalSource.MANUAL,
