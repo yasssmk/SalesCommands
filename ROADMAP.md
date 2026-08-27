@@ -759,6 +759,94 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / Tech Stack ✅ — Cluster tech (stack actuelle) : prompt canonique, agrégation read-time & UI (branche `feat/techstack-cluster`)
+- **Objectif** : traiter l'étape **Tech Stack** du Bloc « Commandes IA » — faire
+  d'une techno mentionnée plusieurs fois **UNE ligne agrégée** (Compte + DC),
+  lisible et cliquable, **sans rien stocker de l'appartenance**.
+- **Livré** (sous-étapes 1→4, chacune validée reproduction ROUGE d'abord puis
+  sonde de NON-VACUITÉ) :
+  - **Prompt d'extraction canonique (sous-étape 1)** : le prompt tech
+    (`prompts/transcript_signals/techstack_v1.py`) durcit la sortie `tech_name`
+    vers une graphie **canonique et stable** — fusion des variantes lexicales
+    (« HubSpot » / « Hubspot CRM » → « HubSpot ») et résolution des acronymes
+    non ambigus (« SFDC » → « Salesforce »), avec **repli verbatim** si l'outil
+    est inconnu/ambigu (pas de mapping inventé). **Les 3 booléens
+    `is_competitor` / `is_integration` / `is_to_replace` NE sont PAS touchés** —
+    leur sous-remplissage reste le mode d'échec ASSUMÉ (ancres
+    `TODO(S10→AI-sprint)` conservées) ; leur ROUTAGE est reporté aux
+    sous-sprints Objection / Competitors.
+  - **Clustering tech READ-TIME (sous-étape 2)** : `SignalClusterService`
+    agrège les `TechStackSignal` en clusters **par `tech_name_normalized`** —
+    une techno = **une ligne unique** (Compte + DC). **100 % dérivé à la
+    lecture** : **aucune appartenance stockée** (ni champ, ni table de liaison,
+    ni `canonical_key` persisté) ; éditer un `tech_name` (qui recalcule
+    `tech_name_normalized` au `save()`) **recolle** les doublons au refetch
+    suivant, sans autre action. Chemin d'agrégation **parallèle** (le tech n'a
+    ni `canonical_key` ni `what`/`dimension`) : `_fetch_tech_signals` +
+    groupement par nom normalisé + `_build_tech_cluster`, **au format cluster
+    unifié** (clés `what`/`dimension` **neutres** = null, valeurs neutres sur
+    les axes absents). Membre = `TechStackSignalListSerializer` **réutilisé**
+    (pas de nouveau serializer).
+  - **Drawer & ligne cluster tech (sous-étape 3)** : le drawer cluster tech
+    affiche **d'abord** les champs de la techno représentative (`TechDetailBlock`
+    **réutilisé**) **puis** la liste des signaux sources, avec la navigation
+    **cluster↔signal existante** (Back sans pile). Ligne de cluster tech
+    **épurée** : nom + N signaux + dernière confirmation ; **BADGE PRIORITÉ
+    MASQUÉ pour le tech** (décision produit : le tech n'a **pas** de priorité —
+    `priority_bucket` neutre `LOW`), le masquage restant **conditionnel par
+    type** (pain / impact / objectif gardent leur badge).
+  - **Colonne droite branchée sur le PIPELINE CLUSTER (sous-étape 4)** : la
+    colonne droite Qualification (**Compte ET DC**) rend le tech via le **même
+    pipeline cluster** que la colonne gauche (`useGetClustersByAccount` + bucket
+    par `signal_type` + `ClusterRow` + drawer), **PAS** le chemin flat. Le
+    vocabulaire cluster (`tech_stack`) reste **interne au pipeline** ; un cluster
+    tech ne traverse jamais un composant du vocabulaire flat (traduction locale
+    au seul drawer — voir TD-197).
+  - **Fix bug 500 (sentinel de tri)** : `signal_cluster_service.py:307`, le
+    sentinel du tri secondaire (`last_confirmed_at or timezone.datetime.min`)
+    était **timezone-NAÏF** sous `USE_TZ=True` → `TypeError: can't compare
+    offset-naive and offset-aware datetimes` dès que le tri secondaire
+    s'exécute. **Bug LATENT (tous types)** **révélé par le tech**
+    (`priority_score=0` en dur → égalités de score systématiques → comparaison
+    aware/naïf forcée). Corrigé au **point central unique** : sentinel rendu
+    **aware** (`datetime.min` en UTC, idiome projet `core/idempotency.py`).
+- **Migrations** : **AUCUNE** — tout le clustering tech est **dérivé à la
+  lecture** ; aucune colonne, aucune table.
+- **Validation** : suites backend signaux/clusters **vertes** ; front **vitest
+  vert** ; **`next build` clean** (aucun import non résolu). Chaque sous-étape
+  validée par une **reproduction ROUGE d'abord** puis une **sonde de
+  NON-VACUITÉ** (mutation ciblée du code → le test re-échoue → restauration par
+  édition ciblée, **jamais `git checkout`**). **Smoke PO de bout en bout
+  validé** : agrégation (une techno = une ligne), drawer (champs techno puis
+  signaux sources), **édition read-time** (renommer recolle les doublons),
+  **Compte ET DC**.
+- **Dette fermée** : **TD-190** (clustering tech à construire → **livré,
+  read-time**).
+- **Dette ajoutée** : **TD-196 → TD-200** (voir TECH_DEBT.md) — filtre tech
+  fantôme, double vocabulaire de slug `tech_stack`/`tech-stack`, docs backend
+  périmées, passe cluster « infos par cluster » (fin bloc Signaux), filtres DC
+  « inclure les signaux du compte ». **TD-189** reste OPEN (filtres
+  Tech/Objection en placeholders) — se ferme en **deux temps** (Objection au
+  sprint Objection, Tech au sprint Competitors).
+- **⏸️ REPORTÉ — à NE PAS considérer comme livré** :
+  - **Routage des 3 booléens de rôle** — `is_integration` → signal `constraint`
+    (**l'extraction `constraint` N'EXISTE PAS aujourd'hui — à CONSTRUIRE**, pas
+    un simple routage) au **sprint Objection** ; `is_competitor` (routage au
+    point central `SignalManager.create`) + **SUPPRESSION du champ
+    `is_to_replace`** au **sprint Competitors**. Les booléens restent
+    sous-remplis et non routés à ce stade.
+  - **Filtres de la famille Tech** (UI + backend) — arrivent avec le **sprint
+    Competitors** (TD-189 partie Tech, TD-196).
+  - **Info cluster « remplacement envisagé »** (l'account utilise une techno
+    mais songe à en changer — info de **NIVEAU CLUSTER dérivée des signaux, non
+    actée**, remplaçant l'ancien booléen `is_to_replace`) — à la **passe
+    cluster** de fin de bloc Signaux (TD-199).
+- **Prochain jalon** (ordre cible) : suite du **Bloc « Commandes IA » (#4)** —
+  **Objection** (inclut `is_integration` → signal `constraint` « must
+  integrate » — extraction constraint à CONSTRUIRE).
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -865,6 +953,33 @@ possibles) :
 - **Recherche produit / commandes IA pour MANAGER** : **à définir** — pas de
   besoin précis pour l'instant ; lié aux « vues selon le tier » ; à réfléchir
   avec le PO.
+
+**Séquence CONFIRMÉE PO (2026-08-27) — sous-étapes du bloc, dans l'ordre :**
+- **0. Tech Stack (cluster stack actuelle)** — **✅ LIVRÉ** (branche
+  `feat/techstack-cluster`) : prompt canonique `tech_name`, clustering tech
+  **read-time**, drawer + ligne épurée, colonne droite branchée sur le pipeline
+  cluster, fix 500 sentinel de tri. Voir la fiche « Sprint Bloc IA / Tech Stack
+  ✅ » ci-dessus. **Ferme TD-190.**
+- **1. Objection** — inclut le routage `is_integration` → signal `constraint`
+  « must integrate ». **NB : l'extraction `constraint` N'EXISTE PAS aujourd'hui
+  — à CONSTRUIRE (nouvelle émission d'extraction), PAS un simple routage de
+  booléen.**
+- **2. Competitors** — conception UX (où le signal competitor apparaît en
+  **Activité ET DC**) ; routage `is_competitor` au **point central
+  `SignalManager.create`** ; **SUPPRESSION du champ `is_to_replace`** du signal
+  tech ; câblage des **filtres de la famille Tech** (ferme TD-189 partie Tech +
+  TD-196).
+- **3. Passe cluster — fin du bloc Signaux** : reprendre **TOUS** les clusters
+  (pain / impact / objectif / tech) et décider les infos pertinentes/faciles à
+  afficher par cluster ; pour le tech, piste **« remplacement envisagé »**
+  (l'account utilise une techno mais songe à en changer, **non acté**, info de
+  **NIVEAU CLUSTER dérivée des signaux, PAS un booléen** — remplace l'ancien
+  `is_to_replace`). TD-199.
+- **4. Prep call** (prompt + UI) — le bloc Signaux est alors **entièrement
+  fermé, prod-ready**.
+- **Note de cadrage (sprints finaux)** : chaque fermeture de sprint =
+  **PRODUCTION READY** (comportement + UX prêts) ; seul le **vernis UI** (thème,
+  composants) est reporté au **paufinage UI final**.
 
 ### Nouveaux sprints
 
