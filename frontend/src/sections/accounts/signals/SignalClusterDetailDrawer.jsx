@@ -66,6 +66,7 @@ import UserOutlined from "@ant-design/icons/UserOutlined";
 // project imports
 import SignalLine from "components/signals/SignalLine";
 import SignalDetailContent from "components/signals/SignalDetailContent";
+import TechDetailBlock from "components/signals/detail/TechDetailBlock";
 import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDialog from "./SignalEditDialog";
 
@@ -597,6 +598,11 @@ export default function SignalClusterDetailDrawer({
   const signalType = clusterSummary?.signal_type ?? "pain";
   const isPain = signalType === "pain";
   const isObjective = signalType === "objective";
+  // TechStack clusters key on the backend value 'tech_stack'. The shared
+  // member components (SignalLine / SignalDetailContent) key on the frontend
+  // slug 'tech-stack', so member rendering is passed the mapped slug.
+  const isTech = signalType === "tech_stack";
+  const memberSlug = isTech ? "tech-stack" : signalType;
 
   const typeVisuals = resolveSignalTypeVisuals(signalType);
 
@@ -642,6 +648,18 @@ export default function SignalClusterDetailDrawer({
     () => (Array.isArray(cluster?.members) ? cluster.members : []),
     [cluster?.members],
   );
+
+  /**
+   * TechStack-only — the representative member whose tool fields are shown
+   * at the top of the drawer (via the shared TechDetailBlock) before the
+   * source-signal list. Same rule as the backend cluster reference: the most
+   * recent VALIDATED member, else the first member (members arrive ordered
+   * '-created_at'). null for the axis-based cluster types.
+   */
+  const techRepresentative = useMemo(() => {
+    if (!isTech || members.length === 0) return null;
+    return members.find((m) => m.status === "VALIDATED") ?? members[0];
+  }, [isTech, members]);
 
   /** Pain-only — metrics free-text list from VALIDATED impacts. */
   const metrics = useMemo(
@@ -841,7 +859,14 @@ export default function SignalClusterDetailDrawer({
             sx={{ fontSize: "0.68rem", height: 20 }}
           />
 
-          {display?.priority_bucket && (
+          {/*
+            Priority chip — hidden for TechStack clusters. Their
+            priority_bucket is a neutral floor ('LOW') the backend emits only
+            to satisfy the shared cluster contract; TechStack has no priority
+            model, so surfacing a "Low" badge would display a priority that
+            does not exist. Pain / Objective / Impact keep their real badge.
+          */}
+          {display?.priority_bucket && !isTech && (
             <Tooltip
               title={`Priority score: ${display?.priority_score ?? "—"}`}
             >
@@ -1164,7 +1189,7 @@ export default function SignalClusterDetailDrawer({
             <SignalLine
               key={member.id}
               signal={member}
-              signalType={signalType}
+              signalType={memberSlug}
               onSelect={handleMemberSelect}
               showTypeChip={false}
             />
@@ -1218,7 +1243,10 @@ export default function SignalClusterDetailDrawer({
                 sx={{ px: 0.5, minWidth: 0, maxWidth: 220 }}
               >
                 <Typography variant="caption" noWrap>
-                  {canonicalText || typeVisuals.label}
+                  {/* Back label: the tool name for tech (no canonical axes),
+                      the "WHAT × DIMENSION" title otherwise. */}
+                  {(isTech ? display?.summary : canonicalText) ||
+                    typeVisuals.label}
                 </Typography>
               </Button>
             }
@@ -1249,6 +1277,18 @@ export default function SignalClusterDetailDrawer({
             */}
             {isPain && cluster?.by_level && (
               <ByLevelAccordion byLevel={cluster.by_level} />
+            )}
+
+            {/*
+              TechStack — the representative tool's fields FIRST (shared
+              TechDetailBlock: qualification / usage / renewal / cost /
+              discontinuation), THEN the source-signal list below. The tool
+              name is the cluster headline in renderHeader (display.summary).
+            */}
+            {isTech && techRepresentative && (
+              <Box sx={{ px: 2.5, mb: 1 }}>
+                <TechDetailBlock signal={techRepresentative} />
+              </Box>
             )}
 
             <Divider sx={{ mx: 2.5 }} />
