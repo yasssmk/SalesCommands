@@ -15,8 +15,12 @@ Schema (v1 — S10 revision)
 The LLM emits one JSON object with a single key `signals` containing an
 array of tech-stack observations. Each observation has exactly 8 fields:
 
-    tech_name              string       -- tool name verbatim from the
-                                            transcript. REQUIRED.
+    tech_name              string       -- the tool's CANONICAL product
+                                            name (official, stable
+                                            spelling; verbatim when the
+                                            tool is unknown or ambiguous).
+                                            REQUIRED. See the TOOL NAME
+                                            section of the request below.
     is_competitor          boolean      -- overlaps with what the seller sells.
     is_integration         boolean      -- the seller's product connects to it.
     is_to_replace          boolean      -- the prospect intends to move off it.
@@ -35,10 +39,12 @@ What replaced the catalogue match (S10)
 Until S10 the schema was a XOR: `tech_catalog_entry_id` (a UUID from the
 tenant's TechCatalog, injected into the context layer) OR
 `tech_name_raw` when nothing matched. The catalogue has been removed, so
-identity is carried by free text: the model reports the name it
-heard, and the backend derives a normalised grouping key from it in
-TechStackSignal.save(). Nothing in this prompt needs to know about
-tenant reference data anymore.
+identity is carried by free text: the model reports the tool's canonical
+name (official, stable spelling -- see the TOOL NAME rules below), and
+the backend derives a normalised grouping key from it in
+TechStackSignal.save(). Canonicity comes from a PROMPT instruction, not a
+tenant reference table: nothing in this prompt needs tenant reference
+data anymore.
 
 Empty result is represented by {"signals": []}.
 
@@ -191,10 +197,49 @@ DO NOT emit:
   they currently use them.
 
 TOOL NAME
-Emit the tool name as it appears in the transcript, in `tech_name`.
-Do not normalise casing or spacing, do not expand abbreviations, do not
-map it onto a reference list -- the backend handles all of that.
+Emit each tool under its CANONICAL name in `tech_name` -- the tool's
+official product name, spelled the standard way, so the SAME tool always
+comes out identical no matter how the speakers phrased it. Downstream the
+backend groups every mention of one tool on that name, so a stable
+spelling is what lets two mentions of the same tool land together.
+
+Canonical rules:
+- Use the official product name with its official, stable casing
+  (e.g. "HubSpot", "Salesforce", "GitHub" -- never "hubspot",
+  "SALESFORCE", "salesforce crm").
+- Drop a descriptive word the speaker appended that is NOT part of the
+  product's own name: "HubSpot CRM" -> "HubSpot", "Salesforce CRM" ->
+  "Salesforce", "Slack messaging" -> "Slack". Keep such a word ONLY when
+  it is genuinely part of the official name (e.g. "Google Analytics",
+  "Microsoft Teams", "Jira Service Management").
+- Resolve a common, UNAMBIGUOUS acronym or nickname to the canonical
+  name: "SFDC" -> "Salesforce", "GSheets" -> "Google Sheets".
+- When the SAME tool is named several ways in one transcript ("HubSpot"
+  then "Hubspot CRM"; "Salesforce" then "SFDC"), emit the SAME canonical
+  `tech_name` on every one of its signals.
+
+Stay verbatim when unsure. If you do not recognise the tool, or the
+mapping is at all ambiguous (an acronym that could stand for several
+products, an in-house or unnamed tool), keep the name exactly as spoken
+rather than inventing a mapping. A faithful raw name is always better
+than a wrong canonical one. No reference list is provided -- rely only on
+well-known, unambiguous product knowledge, never on a guess.
+
 `tech_name` is REQUIRED on every signal; a signal without it is dropped.
+
+CANONICAL NAME EXAMPLES
+- "we run everything on Hubspot" ... later "our HubSpot CRM is a mess"
+      -> both signals emit  "tech_name": "HubSpot"
+         (one tool, one canonical spelling, descriptor "CRM" dropped).
+- "we're a SFDC shop" ... "Salesforce is our source of truth"
+      -> both emit  "tech_name": "Salesforce"
+         (unambiguous acronym resolved to the same canonical name).
+- "the team lives in Salesforce CRM"
+      -> emit  "tech_name": "Salesforce"  ("CRM" is a descriptor here,
+         not part of the product name).
+- "we built an in-house tool we call Pyramid"
+      -> emit  "tech_name": "Pyramid"  (unknown / in-house: keep verbatim,
+         do NOT map it to the BI product "Pyramid Analytics").
 
 QUALIFICATION
 Each signal carries three INDEPENDENT booleans. Any combination is
@@ -235,7 +280,7 @@ Return a single JSON object with this exact shape:
 {{
   "signals": [
     {{
-      "tech_name":       "<tool name exactly as mentioned in the transcript>",
+      "tech_name":       "<canonical product name -- see TOOL NAME: official stable spelling, verbatim when the tool is unknown or ambiguous>",
       "is_competitor":   <boolean, see QUALIFICATION>,
       "is_integration":  <boolean, see QUALIFICATION>,
       "is_to_replace":   <boolean, see QUALIFICATION>,
