@@ -339,3 +339,73 @@ class TestAxisTypesUnaffected:
         tech_cluster = next(c for c in clusters if c['signal_type'] == 'tech_stack')
         assert pain_cluster['canonical_key'] == 'pain:OPS:TIME'
         assert tech_cluster['canonical_key'] == 'salesforce'
+
+
+# =============================================================================
+# SORT SENTINEL — timezone-aware (regression for the 500 at :304-308)
+# =============================================================================
+#
+# list_clusters_for_account sorts by (priority_score, last_confirmed_at). On a
+# priority_score TIE the secondary key is compared; the None fallback used a
+# NAIVE datetime sentinel while last_confirmed_at is timezone-AWARE (derived
+# from created_at under USE_TZ=True) -> TypeError: can't compare offset-naive
+# and offset-aware datetimes -> HTTP 500.
+#
+# TechStack forces the tie (priority_score is a hardcoded 0 for every tech
+# cluster), so any account with a validated tech cluster AND a pending-only
+# tech cluster reproduces it. The defect is in the SORT SENTINEL, shared by
+# every signal_type — not in tech; tech is only the minimal trigger. Forcing
+# the same aware/None + equal-score pair on pain/objective/impact is not
+# feasible: a VALIDATED member always adds corroboration/freshness weight, so a
+# validated cluster never ties with a pending-only sibling of the same type.
+# The fix at the sentinel line covers those types by construction.
+
+
+class TestSortSentinelTimezone:
+
+    def test_tied_score_validated_plus_pending_only_tech_sorts_without_500(
+        self, account, activity, user_a,
+    ):
+        """
+        Two tech clusters, same priority_score (0):
+          - 'Alpha' has a VALIDATED member  -> last_confirmed_at is AWARE.
+          - 'Beta'  is PENDING-only          -> last_confirmed_at is None
+                                                (falls back to the sentinel).
+        The score tie forces the secondary datetime comparison. Before the fix
+        (naive sentinel) this raised TypeError inside clusters.sort(); after the
+        fix it sorts deterministically and returns both clusters.
+        """
+        # 'Alpha' — VALIDATED (MANUAL): aware last_confirmed_at.
+        _mk_tech(account, activity, user_a, 'Alpha')
+        # 'Beta' — PENDING-only (LLM_EXTRACTED): last_confirmed_at is None.
+        _mk_tech(account, activity, user_a, 'Beta',
+                 source=SignalSource.LLM_EXTRACTED)
+
+        # The real entry point the view calls — must NOT raise.
+        clusters = _list_tech(account)
+
+        assert len(clusters) == 2
+        keys = sorted(c['canonical_key'] for c in clusters)
+        assert keys == ['alpha', 'beta']
+        # Both carry the neutral tech priority floor (the tie that triggers the
+        # secondary comparison).
+        assert all(c['priority_score'] == 0 for c in clusters)
+
+    def test_two_pending_only_tech_clusters_also_sort_without_500(
+        self, account, activity, user_a,
+    ):
+        """
+        Both clusters PENDING-only: both last_confirmed_at None -> both hit the
+        sentinel, which is then compared to itself. A naive sentinel compares
+        fine against a naive sentinel, so this case did NOT crash before the
+        fix — it is kept as a guard that the aware sentinel is self-consistent
+        and the ordering stays stable.
+        """
+        _mk_tech(account, activity, user_a, 'Gamma',
+                 source=SignalSource.LLM_EXTRACTED)
+        _mk_tech(account, activity, user_a, 'Delta',
+                 source=SignalSource.LLM_EXTRACTED)
+
+        clusters = _list_tech(account)
+        assert len(clusters) == 2
+        assert sorted(c['canonical_key'] for c in clusters) == ['delta', 'gamma']

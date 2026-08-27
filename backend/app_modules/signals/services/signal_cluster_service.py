@@ -116,7 +116,7 @@ Each cluster dict contains:
 """
 
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 from django.db.models import Prefetch, Q
 from django.utils import timezone
@@ -148,6 +148,16 @@ from .signal_priority_service import (
     compute_objective_priority_score,
     compute_pain_priority_score,
 )
+
+# Timezone-aware minimum used as the fallback in date sort keys. The cluster
+# list sorts by (priority_score, last_confirmed_at); last_confirmed_at is
+# timezone-AWARE (derived from BaseSignal.created_at under USE_TZ=True), so a
+# naive datetime.min sentinel raises "can't compare offset-naive and
+# offset-aware datetimes" the moment the secondary key is compared on a
+# priority_score tie. UTC-aware mirrors the project's timezone idiom
+# (core/idempotency.py: `datetime.now(timezone.utc)` with stdlib timezone —
+# django.utils.timezone.utc was removed in Django 5).
+_AWARE_DATETIME_MIN = datetime.min.replace(tzinfo=dt_timezone.utc)
 
 # Ordering used to determine the "max observed" scope level on a cluster.
 # BUSINESS > DEPARTMENT > PERSONAL — the strongest evidence wins.
@@ -304,7 +314,7 @@ class SignalClusterService:
         clusters.sort(
             key=lambda c: (
                 c['priority_score'],
-                c['last_confirmed_at'] or timezone.datetime.min,
+                c['last_confirmed_at'] or _AWARE_DATETIME_MIN,
             ),
             reverse=True,
         )
