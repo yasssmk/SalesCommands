@@ -460,10 +460,11 @@ class SignalClusterType(models.TextChoices):
     """
     Signal types recognised by the cluster archival table.
 
-    PAIN, OBJECTIVE, and IMPACT produce real clusters. TECH_STACK is
-    NOT clusterable (product decision) — see the member comment below.
-    The enum stays open-ended so that future signal types can plug into
-    the same SignalClusterArchival table without a schema change.
+    PAIN, OBJECTIVE, and IMPACT produce clusters keyed on canonical_key;
+    TECH_STACK produces clusters keyed on tech_name_normalized (read-time,
+    no stored membership) — see the member comment below. The enum stays
+    open-ended so that future signal types can plug into the same
+    SignalClusterArchival table without a schema change.
 
     The string values intentionally match the keys used in
     SignalDataService._SIGNAL_TYPE_MAP (pain / objective / tech_stack /
@@ -476,12 +477,12 @@ class SignalClusterType(models.TextChoices):
     """
     PAIN       = 'pain',       _('Pain')
     OBJECTIVE  = 'objective',  _('Objective')
-    # TECH_STACK is retained ONLY so historical SignalClusterArchival
-    # rows (signal_type='tech_stack') remain valid against the field's
-    # choices — dropping the member would force a migration. TechStack
-    # is NOT clusterable: it is absent from
-    # SignalClusterService._SUPPORTED_CLUSTER_TYPES and the service
-    # rejects it. Do not treat this member as an active cluster type.
+    # TECH_STACK clusters on tech_name_normalized (the derived tool name),
+    # NOT on a canonical_key — TechStack has none. It is an active cluster
+    # type in SignalClusterService._SUPPORTED_CLUSTER_TYPES; the grouping is
+    # computed entirely at read time (no stored membership). The same value
+    # also namespaces historical SignalClusterArchival rows
+    # (signal_type='tech_stack').
     TECH_STACK = 'tech_stack', _('Tech Stack')
     IMPACT     = 'impact',     _('Impact')
 

@@ -1,16 +1,21 @@
 # backend/tests/signals/test_cluster_service_techstack_removed.py
 """
-Tests for the removal of TechStack from the clustering mechanism.
+History of TechStack in the clustering mechanism.
 
-Product decision: TechStack is NOT clusterable. These tests lock in
-that:
-  * SignalClusterService rejects 'tech_stack' at its API surface (list
-    and detail), including inside a mixed signal_type list.
+S10 removed TechStack from clustering entirely. The Cluster Tech Stack
+sprint (sub-step 2) re-added it — but keyed on `tech_name_normalized`
+computed at read time, NOT on a stored canonical_key. This file keeps the
+two invariants that survived that reversal:
+
   * Pain / Objective / Impact remain accepted (regression guard).
-  * TechStackSignal.save() no longer computes a canonical_key.
+  * TechStackSignal.save() still does NOT compute a canonical_key — the
+    read-time grouping key is tech_name_normalized, and storing a
+    canonical_key would reintroduce stored membership. THIS is why the edit
+    scenario works; see test_cluster_service_techstack.py for the read-time
+    grouping behaviour itself.
 
-The cluster service has no dedicated test suite prior to this change;
-this file is the first.
+The obsolete "tech_stack is rejected" guard has been flipped to assert the
+type is now accepted (empty list when no signals are seeded).
 """
 
 import uuid
@@ -31,34 +36,42 @@ pytestmark = pytest.mark.django_db
 # =============================================================================
 
 # =============================================================================
-# GUARD — tech_stack rejected at the service surface
+# GUARD — tech_stack now ACCEPTED at the service surface (was rejected in S10)
 # =============================================================================
 
-class TestTechStackClusterTypeRejected:
+class TestTechStackClusterTypeAccepted:
 
-    def test_list_rejects_tech_stack(self, account):
-        with pytest.raises(StandardizedValidationError):
-            SignalClusterService.list_clusters_for_account(
-                account_id=account.id,
-                signal_type='tech_stack',
-            )
+    def test_list_accepts_tech_stack(self, account):
+        # No signals seeded -> empty list, no raise. The point is the guard
+        # accepts the type now (S10 rejected it).
+        result = SignalClusterService.list_clusters_for_account(
+            account_id=account.id,
+            signal_type='tech_stack',
+        )
+        assert result == []
 
-    def test_detail_rejects_tech_stack(self, account):
+    def test_detail_unknown_tech_key_raises_not_found_not_unsupported(
+        self, account,
+    ):
+        # tech_stack is a supported type, so a missing cluster raises the
+        # NOT_FOUND business error (empty members), not a "type unsupported"
+        # rejection. Either way it raises StandardizedValidationError; the
+        # distinction is asserted in test_cluster_service_techstack.py.
         with pytest.raises(StandardizedValidationError):
             SignalClusterService.get_cluster_detail(
                 account_id=account.id,
-                canonical_key='techstack:%s' % uuid.uuid4(),
+                canonical_key='no-such-tool-%s' % uuid.uuid4(),
                 signal_type='tech_stack',
             )
 
-    def test_mixed_list_containing_tech_stack_rejected(self, account):
-        # A CSV/list request that mixes a supported type with tech_stack
-        # must still be rejected — the guard is strict, no silent drop.
-        with pytest.raises(StandardizedValidationError):
-            SignalClusterService.list_clusters_for_account(
-                account_id=account.id,
-                signal_type=['pain', 'tech_stack'],
-            )
+    def test_mixed_list_with_tech_stack_is_accepted(self, account):
+        # A CSV/list request mixing a supported axis type with tech_stack is
+        # now honoured (both are supported); no signals -> empty list.
+        result = SignalClusterService.list_clusters_for_account(
+            account_id=account.id,
+            signal_type=['pain', 'tech_stack'],
+        )
+        assert result == []
 
 
 # =============================================================================
