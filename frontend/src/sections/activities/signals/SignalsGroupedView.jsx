@@ -97,6 +97,7 @@ export default function SignalsGroupedView({
   qualificationSignals,
   techStackSignals,
   blockerSignals,
+  constraintSignals = [],
   onSelect,
 }) {
   // No type filter in the grouped view — the structure IS by type section, so
@@ -120,7 +121,8 @@ export default function SignalsGroupedView({
   const isEmpty =
     qualificationSignals.length === 0 &&
     techStackSignals.length === 0 &&
-    blockerSignals.length === 0;
+    blockerSignals.length === 0 &&
+    constraintSignals.length === 0;
 
   if (isEmpty) {
     return (
@@ -183,6 +185,13 @@ export default function SignalsGroupedView({
           onSelect={onSelect}
           emptyLabel="No objections identified"
         />
+        <TypeSection
+          title="Constraints"
+          signalType="constraints"
+          signals={constraintSignals}
+          onSelect={onSelect}
+          emptyLabel="No constraints identified"
+        />
       </Grid>
     </Grid>
   );
@@ -202,5 +211,8 @@ SignalsGroupedView.propTypes = {
   blockerSignals: PropTypes.arrayOf(
     PropTypes.shape({ id: PropTypes.string.isRequired }),
   ).isRequired,
+  constraintSignals: PropTypes.arrayOf(
+    PropTypes.shape({ id: PropTypes.string.isRequired }),
+  ),
   onSelect: PropTypes.func,
 };

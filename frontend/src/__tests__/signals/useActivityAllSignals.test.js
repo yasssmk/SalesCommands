@@ -40,6 +40,15 @@ const mockBlockerResult = {
   mutateSignals: vi.fn(),
 };
 
+const mockConstraintResult = {
+  signals: [
+    { id: "c1", status: "PENDING", summary: "Must integrate with SAP", nature: "TECHNICAL" },
+  ],
+  signalsLoading: false,
+  signalsError: null,
+  mutateSignals: vi.fn(),
+};
+
 const mockNextStepResult = {
   signals: [{ id: "ns1", status: "PENDING", suggested_title: "NS 1" }],
   signalsLoading: false,
@@ -60,6 +69,8 @@ vi.mock("api/signals/signals", () => ({
         return mockTechStackResult;
       case "blockers":
         return mockBlockerResult;
+      case "constraints":
+        return mockConstraintResult;
       case "next-steps":
         return mockNextStepResult;
       default:
@@ -116,6 +127,14 @@ describe("useActivityAllSignals", () => {
     expect(result.current.blockerSignals[0]._signalType).toBe("blockers");
   });
 
+  it("returns constraintSignals with _signalType tag", () => {
+    const { result } = renderHook(() => useActivityAllSignals("act-1"));
+
+    expect(result.current.constraintSignals).toHaveLength(1);
+    expect(result.current.constraintSignals[0]._signalType).toBe("constraints");
+    expect(result.current.signalsByType.constraints).toHaveLength(1);
+  });
+
   it("returns nextStepSignals with _signalType tag", () => {
     const { result } = renderHook(() => useActivityAllSignals("act-1"));
 
@@ -126,7 +145,9 @@ describe("useActivityAllSignals", () => {
   it("returns allSignals as union of all types", () => {
     const { result } = renderHook(() => useActivityAllSignals("act-1"));
 
-    expect(result.current.allSignals).toHaveLength(5);
+    // pain(1) + objective(1) + impact(0) + tech(1) + blocker(1) + constraint(1)
+    // + next-step(1) = 6.
+    expect(result.current.allSignals).toHaveLength(6);
   });
 
   it("reports loading=false when all hooks are loaded", () => {

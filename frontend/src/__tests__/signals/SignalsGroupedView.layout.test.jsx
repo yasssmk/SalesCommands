@@ -56,6 +56,17 @@ const makeTechStack = (id, name = "Salesforce") => ({
   source_context: { contacts: [] },
 });
 
+const makeConstraint = (id, summary = "Must integrate with SAP") => ({
+  id,
+  _signalType: "constraints",
+  status: "PENDING",
+  summary,
+  nature: "TECHNICAL",
+  nature_display: "Technical",
+  target_department: null,
+  source_context: { contacts: [] },
+});
+
 describe("SignalsGroupedView — type sections (Activity)", () => {
   it("renders the five type-section headers", () => {
     render(
@@ -77,6 +88,45 @@ describe("SignalsGroupedView — type sections (Activity)", () => {
     // "Tech Stack" is also the type-chip label on the tech row → at least one.
     expect(screen.getAllByText("Tech Stack").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Objections")).toBeInTheDocument();
+  });
+
+  it("renders the Constraints section as a flat list (text + nature + scope)", () => {
+    // NON-VACUITY: drop constraintSignals from SignalsGroupedView and the
+    // "Constraints" section + its row disappear, reddening this test.
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[]}
+        techStackSignals={[]}
+        blockerSignals={[]}
+        constraintSignals={[makeConstraint("c1")]}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Constraints")).toBeInTheDocument();
+    // The constraint text (flat provenance, not clustered).
+    expect(screen.getByText("Must integrate with SAP")).toBeInTheDocument();
+    // Nature chip + BUSINESS scope (no target_department).
+    expect(screen.getByText("Technical")).toBeInTheDocument();
+    expect(screen.getByText("Business")).toBeInTheDocument();
+  });
+
+  it("renders a constraint's department scope when target_department is set", () => {
+    render(
+      <SignalsGroupedView
+        qualificationSignals={[]}
+        techStackSignals={[]}
+        blockerSignals={[]}
+        constraintSignals={[
+          {
+            ...makeConstraint("c2", "On-premise deployment required"),
+            target_department: { id: "d1", name: "IT" },
+          },
+        ]}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Department · IT")).toBeInTheDocument();
   });
 
   it("shows a correct count per section", () => {

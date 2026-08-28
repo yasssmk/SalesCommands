@@ -80,7 +80,15 @@ function getMessage(signal, signalType) {
 // department-scoped signal. Returns null when the type carries no scope
 // or the scope has not been set yet.
 function getScopeLabel(signal, signalType) {
-  if (!SCOPE_TYPES.has(signalType) || !signal.scope_level) return null;
+  if (!SCOPE_TYPES.has(signalType)) return null;
+  // Constraint has NO scope_level column (detached from the axes) — its scope
+  // is carried by target_department alone: DEPARTMENT when set, else BUSINESS.
+  if (signalType === "constraints") {
+    return signal.target_department?.name
+      ? `Department · ${signal.target_department.name}`
+      : "Business";
+  }
+  if (!signal.scope_level) return null;
   if (signal.scope_level === "DEPARTMENT") {
     return `Department · ${signal.target_department?.name ?? "—"}`;
   }
@@ -239,6 +247,16 @@ export default function SignalLine({
           </Stack>
         )}
 
+        {/* Nature — constraint classification axis (Constraint only). */}
+        {signalType === "constraints" && signal.nature_display && (
+          <Chip
+            label={signal.nature_display}
+            size="small"
+            variant="outlined"
+            sx={{ height: 20, fontSize: "0.68rem", flexShrink: 0 }}
+          />
+        )}
+
         {/* Scope — moved here from the message line, where it was cramped. */}
         {scopeLabel && (
           <Chip
@@ -277,6 +295,7 @@ SignalLine.propTypes = {
     suggested_title: PropTypes.string,
     tech_name: PropTypes.string,
     scope_level: PropTypes.string,
+    nature_display: PropTypes.string,
     target_department: PropTypes.shape({
       id: PropTypes.string,
       name: PropTypes.string,
