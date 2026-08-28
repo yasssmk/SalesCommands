@@ -406,18 +406,29 @@ def _what_dimension_lines():
 def _scope_taxonomy_lines():
     """
     Render the scope_level + target_department taxonomy shared by the
-    pain / objective / impact stages.
+    pain / objective / impact / constraint stages.
 
     scope_level is deliberately restricted to BUSINESS | DEPARTMENT --
     PERSONAL is NOT offered to the model. Scope is decided by the SUBJECT
     of the observation (which department it concerns), never by the
-    seniority or department of the speaker: an observation naming one
-    department is DEPARTMENT, a company-wide / cross-departmental one is
-    BUSINESS. target_department is drawn from the controlled
-    StandardDepartment vocabulary (DB values), so whatever the model
-    emits resolves by an exact name lookup in the extractor -- no fuzzy
-    matching. It is REQUIRED when scope_level is DEPARTMENT and null
-    otherwise.
+    seniority or department of the speaker. target_department is drawn
+    from the controlled StandardDepartment vocabulary (DB values), so
+    whatever the model emits resolves by an exact name lookup in the
+    extractor -- no fuzzy matching. It is REQUIRED when scope_level is
+    DEPARTMENT and null otherwise.
+
+    Emission threshold (over-attribution guard)
+    -------------------------------------------
+    The model was observed to OVER-ATTRIBUTE a department: it tagged a
+    company-wide requirement to a department off a technical theme-word
+    ("encryption" -> IT) or off the speaker's own department, with no
+    department actually designated as the subject. The rule below raises
+    the emission threshold: DEPARTMENT is emitted ONLY when a department
+    is explicitly named or unambiguously designated as the owning
+    subject; WHEN IN DOUBT, BUSINESS. An explicit anti-over-correction
+    clause keeps a genuinely designated department from being folded back
+    to BUSINESS -- the guard raises the threshold, it does not forbid
+    DEPARTMENT.
 
     The backend applies the same restriction as a safety net (any value
     other than DEPARTMENT folds to BUSINESS; an unresolved department
@@ -433,16 +444,37 @@ def _scope_taxonomy_lines():
         '- scope_level (organisational scope of the observation): '
         '["BUSINESS", "DEPARTMENT"] '
         '-- the scope is determined by the SUBJECT of the observation '
-        '(which perimeter the pain/objective/impact concerns), NOT by who '
-        'is speaking. DEPARTMENT = the observation names or clearly '
-        'identifies one specific department; use that department verbatim '
-        'as stated, even if a person from another department says it, and '
-        'even if the financial consequence hits the whole company. '
-        'BUSINESS = no specific department is named; the observation is '
-        'company-wide or cross-departmental. The seniority, role, or '
-        'department of the SPEAKER never determines scope -- a senior '
-        'person describing one department is DEPARTMENT. Never emit any '
-        'other value.',
+        '(which perimeter the pain/objective/impact/constraint concerns), '
+        'NOT by who is speaking. Emit DEPARTMENT ONLY when one specific '
+        'department is EXPLICITLY NAMED or unambiguously DESIGNATED as the '
+        'subject that owns the observation ("the IT department requires", '
+        '"our DSI mandates", "the Marketing team owns this", "Finance '
+        'imposes"); use that department verbatim from the list below, even '
+        'if a person from another department says it, and even if the '
+        'financial consequence hits the whole company. Otherwise emit '
+        'BUSINESS: no department is named, or the observation is '
+        'company-wide or cross-departmental. WHEN IN DOUBT, emit BUSINESS '
+        'with target_department = null -- BUSINESS is the safe default. '
+        'A technical theme-word alone (SSO, ERP, encryption, chiffrement, '
+        'cloud, API) does NOT designate a department: "we need end-to-end '
+        'encryption" with no department named is company-wide -> BUSINESS, '
+        'never IT. The seniority, role, or department of the SPEAKER never '
+        'determines scope, in EITHER direction -- an IT lead stating a '
+        'company-wide need is still BUSINESS, and a CEO describing one '
+        'explicitly named department is still DEPARTMENT. '
+        'ANTI-OVER-CORRECTION: a department that IS explicitly named or '
+        'clearly designated as the subject MUST stay that department -- do '
+        'NOT fold a legitimately designated department back to BUSINESS; '
+        'fold to BUSINESS only what is genuinely undesignated. Never emit '
+        'any other value.',
+        '- SCOPE EXAMPLES (designation decides -- not the speaker, not a '
+        'technical word): '
+        '"the IT department requires integration with their SAP instance" '
+        '-> scope_level="DEPARTMENT", target_department="IT" (IT is '
+        'explicitly designated as the owner); '
+        '"we need end-to-end encryption" (no department named) '
+        '-> scope_level="BUSINESS", target_department=null (a technical '
+        'need alone does not designate a department).',
         '- target_department (REQUIRED when scope_level is "DEPARTMENT", '
         'null when "BUSINESS"; pick exactly one value from this list): '
         + _enum_json_array(StandardDepartment.DepartmentChoices),
