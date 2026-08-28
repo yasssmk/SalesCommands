@@ -135,6 +135,7 @@ from ..constants import (
     SignalStatus,
 )
 from ..models import (
+    ConstraintSignal,
     ImpactSignal,
     ObjectiveSignal,
     PainSignal,
@@ -298,6 +299,16 @@ class SignalClusterService:
             if stype == SignalClusterType.TECH_STACK:
                 clusters.extend(
                     cls._list_tech_clusters_for_account(
+                        account_id=account_id,
+                        decision_cycle_id=decision_cycle_id,
+                        include_archived=include_archived,
+                        member_filters=member_filters,
+                    )
+                )
+                continue
+            if stype == SignalClusterType.CONSTRAINT:
+                clusters.extend(
+                    cls._list_constraint_clusters_for_account(
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
@@ -536,6 +547,69 @@ class SignalClusterService:
 
         return clusters
 
+    # -------------------------------------------------------------------------
+    # INTERNAL — Constraint-specific listing (clusters on `nature`, DC-scoped)
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def _list_constraint_clusters_for_account(
+        cls,
+        *,
+        account_id,
+        decision_cycle_id=None,
+        include_archived: bool = False,
+        member_filters=None,
+    ) -> list:
+        """
+        Constraint-specific cluster computation.
+
+        Constraint is DETACHED from the what × dimension axes (canonical_key is
+        always None) and is DC-SCOPED ONLY: it is never surfaced at the account
+        level. When no decision_cycle_id is provided, this returns an empty list
+        (constraints do not aggregate across the whole account).
+
+        Like TechStack, the grouping is 100% read-time — here on `nature`
+        (ConstraintNature), via the shared _group_by_canonical_key(key=...).
+        `nature` is required at create/extraction, so there is no null bucket
+        to skip (unlike a department key). Editing a constraint's nature moves
+        it to the matching cluster on the next fetch, no stored membership.
+        """
+        # DC-only: no decision cycle → no constraint clusters (never account-wide).
+        if not decision_cycle_id:
+            return []
+
+        signals = cls._fetch_constraint_signals(
+            account_id=account_id,
+            decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
+        )
+        grouped = cls._group_by_canonical_key(
+            signals, key=lambda s: s.nature,
+        )
+
+        archived_keys = cls._get_archived_keys(
+            account_id,
+            SignalClusterType.CONSTRAINT,
+        )
+
+        clusters: list = []
+        for nature, members in grouped.items():
+            if not nature:
+                # `nature` is required — a blank value cannot form a cluster.
+                # Defensive skip (mirrors the None/blank-key skip on the other
+                # read-time types).
+                continue
+
+            cluster = cls._build_constraint_cluster(nature, members)
+            cluster['is_archived'] = nature in archived_keys
+
+            if cluster['is_archived'] and not include_archived:
+                continue
+
+            clusters.append(cluster)
+
+        return clusters
+
     # =========================================================================
     # PUBLIC — DETAIL
     # =========================================================================
@@ -546,6 +620,8 @@ class SignalClusterService:
         account_id,
         canonical_key: str,
         signal_type: str = SignalClusterType.PAIN,
+        *,
+        decision_cycle_id=None,
     ) -> dict:
         """
         Return a single cluster with its member signals.
@@ -669,6 +745,32 @@ class SignalClusterService:
 
             return cluster
 
+        if resolved_type == SignalClusterType.CONSTRAINT:
+            # Constraint detail: the `canonical_key` path segment carries the
+            # `nature` grouping key (constraint has no stored canonical_key).
+            # DC-scoped: filter members by decision_cycle_id so two DCs' clusters
+            # of the same nature never merge.
+            members = list(
+                cls._fetch_constraint_signals(
+                    account_id=account_id,
+                    decision_cycle_id=decision_cycle_id,
+                )
+                .filter(nature=canonical_key)
+            )
+
+            if not members:
+                raise StandardizedValidationError(
+                    SignalErrorMessages.CLUSTER_NOT_FOUND
+                )
+
+            cluster = cls._build_constraint_cluster(canonical_key, members)
+
+            archived_keys = cls._get_archived_keys(account_id, resolved_type)
+            cluster['is_archived'] = canonical_key in archived_keys
+            cluster['members'] = members
+
+            return cluster
+
         # _assert_signal_types_supported guarantees we never reach here.
 
     # =========================================================================
@@ -686,6 +788,8 @@ class SignalClusterService:
         SignalClusterType.OBJECTIVE.value,
         SignalClusterType.IMPACT.value,
         SignalClusterType.TECH_STACK.value,
+        # Constraint clusters on `nature` (read-time), DC-scoped only.
+        SignalClusterType.CONSTRAINT.value,
     })
 
     @classmethod
@@ -1035,6 +1139,64 @@ class SignalClusterService:
         # TechStack signal (via source_activity.contacts). Mirrors the
         # contacts clause of _apply_member_filters without the subject-axis
         # filters that TechStack cannot honour.
+        if member_filters:
+            contacts = member_filters.get('contacts')
+            if contacts:
+                qs = qs.filter(
+                    source_activity__contacts__in=contacts
+                ).distinct()
+            else:
+                contact = member_filters.get('contact')
+                if contact:
+                    qs = qs.filter(source_activity__contacts=contact)
+
+        return qs
+
+    @classmethod
+    def _fetch_constraint_signals(cls, *, account_id, decision_cycle_id=None,
+                                  member_filters=None):
+        """
+        Base queryset for Constraint cluster aggregation (grouped on `nature`).
+
+        DC-scoped: constraints are aggregated per decision cycle, so
+        decision_cycle_id is applied whenever provided (the list path guards
+        that it is always present; the detail path passes it from the view).
+
+        Includes VALIDATED and PENDING (REJECTED excluded), on the shared
+        default status set via _member_statuses.
+
+        N+1 safety
+        ----------
+        select_related('source_activity', 'decision_cycle', 'target_department')
+        covers the member payload's source block, _cluster_has_active_dc
+        (decision_cycle.outcome) and _compute_departments (target_department).
+        prefetch_related('source_activity__contacts') covers
+        distinct_contacts_count and the member serializer's source block. The
+        query count is constant regardless of the number of signals/clusters.
+        """
+        qs = (
+            ConstraintSignal.objects
+            .filter(
+                account_id=account_id,
+                status__in=cls._member_statuses(member_filters),
+                # Always True for constraint (no `what` axis), kept for symmetry.
+                is_domain_valid=True,
+            )
+            .select_related(
+                'source_activity',
+                'decision_cycle',
+                'target_department',
+            )
+            .prefetch_related(
+                'source_activity__contacts',
+            )
+        )
+
+        if decision_cycle_id:
+            qs = qs.filter(decision_cycle_id=decision_cycle_id)
+
+        # SOURCE contact filter (who raised the requirement), via
+        # source_activity.contacts. Same clause as the other read-time type.
         if member_filters:
             contacts = member_filters.get('contacts')
             if contacts:
@@ -1678,6 +1840,130 @@ class SignalClusterService:
             # Linking
             'decision_cycle_ids': decision_cycle_ids,
             'campaign_ids':       campaign_ids,
+
+            # Archival — default False, overridden by caller if applicable
+            'is_archived': False,
+        }
+
+    # =========================================================================
+    # BUILD — per Constraint cluster (grouped on `nature`)
+    # =========================================================================
+
+    @classmethod
+    def _build_constraint_cluster(cls, nature: str, members: list) -> dict:
+        """
+        Build the Constraint cluster dict from a list of ConstraintSignal
+        members sharing the same `nature` within one decision cycle.
+
+        Same unified cluster contract as the other types (so the serializer and
+        the frontend consume it with no new branch). Constraint has no canonical
+        axes and no scorer, so those keys carry NEUTRAL values (mirror of the
+        TechStack cluster):
+
+          * canonical_key -> the `nature` value (the read-time cluster key).
+          * what / what_display / dimension / dimension_display -> None
+            (constraint is detached from the axes; allow_null on the serializer).
+          * summary -> the reference constraint's own text (the natural headline).
+          * departments -> the DISTINCT target_department across members
+            (reused _compute_departments): a nature cluster may span several
+            departments; each member also carries its own department in the
+            drawer. BUSINESS-scoped members contribute none.
+          * max_scope_level -> None (constraint has no scope_level column).
+          * target_dates / has_target_date_soon -> [] / False.
+          * priority_score / priority_bucket -> 0 / LOW (no constraint scorer,
+            same product stance as TechStack; the UI hides the priority badge).
+          * campaign_ids -> [] (campaign is auto-propagated but not a cluster axis
+            here; kept empty to mirror the neutral read-time contract).
+
+        The factual meta (confirmation_count, distinct_contacts_count, lifecycle,
+        signal_count, period, span_days) reuses the exact shared helpers.
+        """
+        validated = [m for m in members if m.status == SignalStatus.VALIDATED]
+        pending   = [m for m in members if m.status == SignalStatus.PENDING]
+
+        # Reference: most recent VALIDATED, else most recent member (fetch is
+        # ordered '-created_at').
+        reference = validated[0] if validated else members[0]
+
+        confirmation_count = len(validated)
+
+        distinct_contacts: set = set()
+        for signal in validated:
+            if signal.source_activity_id and signal.source_activity:
+                for contact in signal.source_activity.contacts.all():
+                    distinct_contacts.add(contact.id)
+        distinct_contacts_count = len(distinct_contacts)
+
+        has_active_dc = cls._cluster_has_active_dc(members)
+        first_observed_at, last_confirmed_at, freshness = (
+            cls._compute_lifecycle(validated, has_active_dc)
+        )
+
+        status_value = SignalStatus.VALIDATED if validated else SignalStatus.PENDING
+        has_pending = bool(pending)
+        pending_count = len(pending)
+
+        decision_cycle_ids = sorted({
+            str(m.decision_cycle_id) for m in members if m.decision_cycle_id
+        })
+
+        # No constraint scorer — neutral floor (0 -> LOW).
+        priority_score = 0
+        priority_bucket = bucket_from_score(priority_score)
+
+        return {
+            # Identity — the `nature` value IS the read-time cluster key.
+            'canonical_key':     nature,
+            'signal_type':       SignalClusterType.CONSTRAINT.value,
+
+            # Canonical axes — no meaning for Constraint. Neutral (allow_null).
+            'what':              None,
+            'what_display':      None,
+            'dimension':         None,
+            'dimension_display': None,
+            # The representative constraint text is the cluster headline.
+            'summary':           reference.summary,
+
+            # Corroboration & breadth
+            'confirmation_count':      confirmation_count,
+            'distinct_contacts_count': distinct_contacts_count,
+
+            # Status
+            'status':              status_value,
+            'has_pending_signals': has_pending,
+            'pending_count':       pending_count,
+
+            # Lifecycle
+            'first_observed_at': first_observed_at,
+            'last_confirmed_at': last_confirmed_at,
+            'freshness_status':  freshness,
+
+            # Temporal density
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
+            # Departments — distinct target_department across members (a nature
+            # cluster may span several departments).
+            'departments':   cls._compute_departments(members),
+
+            # Scope — no scope_level on Constraint.
+            'max_scope_level': None,
+
+            # Objective-compat keys — Constraint has no target-date concept.
+            'target_dates':          [],
+            'has_target_date_soon':  False,
+
+            # Priority — neutral floor (no Constraint scorer). See docstring.
+            'priority_score':  priority_score,
+            'priority_bucket': priority_bucket,
+
+            # Linking
+            'decision_cycle_ids': decision_cycle_ids,
+            'campaign_ids':       [],
 
             # Archival — default False, overridden by caller if applicable
             'is_archived': False,

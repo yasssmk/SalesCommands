@@ -13,6 +13,7 @@ from app_modules.ai_pipelines.services.deal_health_evidence_builder import (
     DealHealthEvidenceBuilder,
 )
 from app_modules.signals.constants import (
+    ConstraintNature,
     PeopleRole,
     Rigidity,
     SignalSource,
@@ -119,8 +120,7 @@ def _create_constraint(dc, user, client_id):
         decision_cycle=dc,
         source=SignalSource.MANUAL,
         status=SignalStatus.VALIDATED,
-        what=SignalWhat.DATA,
-        dimension=SignalDimension.COST,
+        nature=ConstraintNature.FINANCIAL,
         summary='ROI must exceed 20% within 18 months',
         source_quote='We need at least 20% ROI in 18 months',
         rigidity=Rigidity.FIRM,
@@ -218,7 +218,11 @@ class TestEvidenceBuilderWithSignals:
         assert len(pack['signals']['constraint']) == 1
         constraint = pack['signals']['constraint'][0]
         assert constraint['rigidity'] == Rigidity.FIRM
-        assert constraint['canonical_key'] == 'constraint:DATA:COST'
+        assert constraint['nature'] == ConstraintNature.FINANCIAL
+        # Detached: canonical_key / what / dimension are no longer in the payload.
+        assert 'canonical_key' not in constraint
+        assert 'what' not in constraint
+        assert 'dimension' not in constraint
 
     def test_people_signal_included(self, builder, cycle, user_a, contact):
         _create_people_signal(cycle, user_a, cycle.client_id, contact=contact)

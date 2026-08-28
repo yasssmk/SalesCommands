@@ -13,7 +13,7 @@ The full assembly is performed by PromptBuilder.assemble() in base.py.
 Schema (v1 — S10 revision)
 --------------------------
 The LLM emits one JSON object with a single key `signals` containing an
-array of tech-stack observations. Each observation has exactly 8 fields:
+array of tech-stack observations. Each observation has exactly 7 fields:
 
     tech_name              string       -- the tool's CANONICAL product
                                             name (official, stable
@@ -22,7 +22,6 @@ array of tech-stack observations. Each observation has exactly 8 fields:
                                             REQUIRED. See the TOOL NAME
                                             section of the request below.
     is_competitor          boolean      -- overlaps with what the seller sells.
-    is_integration         boolean      -- the seller's product connects to it.
     is_to_replace          boolean      -- the prospect intends to move off it.
     usage_scope            string|null  -- "TEAM" | "COMPANY" | "UNKNOWN",
                                             or null when not discussed.
@@ -31,8 +30,12 @@ array of tech-stack observations. Each observation has exactly 8 fields:
     is_inferred            boolean      -- LLM self-declared, true when not
                                             directly stated.
 
-The three booleans are INDEPENDENT: any combination is valid, and
+The two booleans are INDEPENDENT: any combination is valid, and
 all-false is the common case ("the prospect uses this tool", no angle).
+
+is_integration was RETIRED from this stage: a required integration is a
+buyer REQUIREMENT, so it is now captured as a ConstraintSignal of
+nature=TECHNICAL by the constraint stage, not as a boolean here.
 
 What replaced the catalogue match (S10)
 ---------------------------------------
@@ -106,7 +109,6 @@ mapped to a new TechStackSignal row:
     -------------------------------    --------------------------------
     tech_name                     ->  tech_name (verbatim)
     is_competitor                 ->  is_competitor
-    is_integration                ->  is_integration
     is_to_replace                 ->  is_to_replace
     usage_scope                   ->  usage_scope (NULL when null/missing)
     source_quote                  ->  source_quote (declared on BaseSignal)
@@ -242,26 +244,27 @@ CANONICAL NAME EXAMPLES
          do NOT map it to the BI product "Pyramid Analytics").
 
 QUALIFICATION
-Each signal carries three INDEPENDENT booleans. Any combination is
-valid, including all three false, which simply means the prospect uses
+Each signal carries two INDEPENDENT booleans. Any combination is
+valid, including both false, which simply means the prospect uses
 the tool with no further commercial angle.
 
 - "is_competitor"  -- the tool overlaps with what the SELLER sells.
-- "is_integration" -- the tool is one the SELLER's product connects to.
 - "is_to_replace"  -- the prospect intends to move off this tool.
 
 Set a flag ONLY when the transcript supports it; default to false.
 
-# TODO(S10 -> AI-sprint): the three definitions above are deliberately
+Do NOT emit an integration flag here: whether the SELLER's product must
+connect to a tool is a buyer REQUIREMENT, captured as a TECHNICAL
+constraint by the constraint stage, not as a boolean on the tool.
+
+# TODO(Competitors sprint): the two definitions above are deliberately
 # one line each. This is the anchor point for the full qualification
-# wording, which is NOT written in S10:
+# wording, which is NOT written yet:
 #   * is_competitor  -- how to decide overlap without knowing the
 #     seller's catalogue in the prompt (today the model only sees the
 #     seller NAME via the SESSION CONTEXT block). Decide whether to
 #     inject the seller's product catalogue (app_modules.product_catalog)
 #     into the context layer, and how to phrase "overlaps with".
-#   * is_integration -- same question: the model cannot know the
-#     seller's integration surface from the transcript alone.
 #   * is_to_replace  -- needs the PAST vs FUTURE distinction that
 #     `is_discontinued` extraction was deferred for (see the
 #     "Why is_discontinued ... NOT extracted" section above):
@@ -269,7 +272,7 @@ Set a flag ONLY when the transcript supports it; default to false.
 #     replace X" (future intent, to-replace) vs "we are unhappy with X"
 #     (dissatisfaction, not yet intent). Add worked examples.
 #   * Add few-shot examples covering the combinations that matter
-#     (competitor + to_replace, integration only, all-false).
+#     (competitor + to_replace, competitor only, all-false).
 # Until that sprint lands, expect the model to under-set these flags.
 # Under-setting is the safe failure mode: a rep can tick a box, whereas
 # a wrong competitor tag misleads the deal strategy.
@@ -282,7 +285,6 @@ Return a single JSON object with this exact shape:
     {{
       "tech_name":       "<canonical product name -- see TOOL NAME: official stable spelling, verbatim when the tool is unknown or ambiguous>",
       "is_competitor":   <boolean, see QUALIFICATION>,
-      "is_integration":  <boolean, see QUALIFICATION>,
       "is_to_replace":   <boolean, see QUALIFICATION>,
       "usage_scope":     "<TEAM | COMPANY | UNKNOWN, or null when scope was not discussed>",
       "source_quote":    "<verbatim excerpt from the transcript supporting this tool observation>",

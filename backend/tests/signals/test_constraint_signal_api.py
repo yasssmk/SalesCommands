@@ -10,10 +10,9 @@ import pytest
 from rest_framework import status
 
 from app_modules.signals.constants import (
+    ConstraintNature,
     SignalSource,
     SignalStatus,
-    SignalWhat,
-    SignalDimension,
     Rigidity,
 )
 from app_modules.signals.models import ConstraintSignal
@@ -43,8 +42,7 @@ class TestConstraintSignalCreate:
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
-            'what': SignalWhat.OPS,
-            'dimension': SignalDimension.COST,
+            'nature': ConstraintNature.FINANCIAL,
             'summary': 'ROI > 20% within 18 months',
             'rigidity': Rigidity.FIRM,
         }
@@ -60,8 +58,7 @@ class TestConstraintSignalCreate:
             'source': 'LLM_EXTRACTED',
             'account': str(account.id),
             'source_activity': str(activity.id),
-            'what': SignalWhat.DATA,
-            'dimension': SignalDimension.TIME,
+            'nature': ConstraintNature.OPERATIONAL,
             'summary': 'Deployment before Q3 close',
             'rigidity': Rigidity.FLEXIBLE,
         }
@@ -69,13 +66,50 @@ class TestConstraintSignalCreate:
         assert resp.status_code == status.HTTP_201_CREATED
         assert resp.json()['data']['status'] == SignalStatus.PENDING
 
-    def test_create_requires_what_and_dimension(self, authed_api_a, account, activity):
+    def test_create_requires_nature(self, authed_api_a, account, activity):
         payload = {
             'signal_type': 'constraint',
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
-            'summary': 'Missing what/dimension',
+            'summary': 'Missing nature',
+            'rigidity': Rigidity.FIRM,
+        }
+        resp = authed_api_a.post(CONSTRAINT_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_create_succeeds_without_what_dimension(self, authed_api_a, account, activity):
+        # Constraint is detached from what × dimension: a constraint creates
+        # with nature only (no what/dimension), stays domain-valid, no canonical_key.
+        payload = {
+            'signal_type': 'constraint',
+            'source': 'MANUAL',
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'nature': ConstraintNature.CONTRACTUAL,
+            'summary': 'GDPR compliance required',
+            'rigidity': Rigidity.FIRM,
+        }
+        resp = authed_api_a.post(CONSTRAINT_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_201_CREATED
+        data = resp.json()['data']
+        assert data['nature'] == ConstraintNature.CONTRACTUAL
+
+        from app_modules.signals.models import ConstraintSignal
+        obj = ConstraintSignal.objects.get(id=data['id'])
+        assert obj.is_domain_valid is True
+        assert obj.canonical_key is None
+        assert obj.what is None
+        assert obj.dimension is None
+
+    def test_create_rejects_invalid_nature(self, authed_api_a, account, activity):
+        payload = {
+            'signal_type': 'constraint',
+            'source': 'MANUAL',
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'nature': 'NOT_A_REAL_NATURE',
+            'summary': 'Bad nature value',
             'rigidity': Rigidity.FIRM,
         }
         resp = authed_api_a.post(CONSTRAINT_URL, payload, format='json')
@@ -87,8 +121,7 @@ class TestConstraintSignalCreate:
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
-            'what': SignalWhat.OPS,
-            'dimension': SignalDimension.COST,
+            'nature': ConstraintNature.FINANCIAL,
             'summary': 'Missing rigidity',
         }
         resp = authed_api_a.post(CONSTRAINT_URL, payload, format='json')
@@ -109,8 +142,7 @@ class TestConstraintSignalRead:
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
-            'what': SignalWhat.TECH,
-            'dimension': SignalDimension.QUALITY,
+            'nature': ConstraintNature.TECHNICAL,
             'summary': 'Must integrate with SAP',
             'rigidity': Rigidity.FIRM,
         }, format='json')
@@ -129,8 +161,7 @@ class TestConstraintSignalRead:
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
-            'what': SignalWhat.OPS,
-            'dimension': SignalDimension.TIME,
+            'nature': ConstraintNature.OPERATIONAL,
             'summary': 'Budget cycle ends in June',
             'rigidity': Rigidity.FIRM,
         }, format='json')
@@ -156,8 +187,7 @@ class TestConstraintSignalLifecycle:
             'source': 'LLM_EXTRACTED',
             'account': str(account.id),
             'source_activity': str(activity.id),
-            'what': SignalWhat.GROWTH,
-            'dimension': SignalDimension.SCALE,
+            'nature': ConstraintNature.FUNCTIONAL,
             'summary': 'Must support 500+ users',
             'rigidity': Rigidity.FIRM,
         }, format='json')
@@ -204,8 +234,7 @@ class TestConstraintCacheInvalidation:
             'source': 'MANUAL',
             'account': str(account.id),
             'source_activity': str(activity.id),
-            'what': SignalWhat.OPS,
-            'dimension': SignalDimension.COST,
+            'nature': ConstraintNature.FINANCIAL,
             'summary': 'Cache test',
             'rigidity': Rigidity.FLEXIBLE,
         }, format='json')
@@ -229,8 +258,7 @@ class TestConstraintSignalIsolation:
         signal = ConstraintSignal(
             account=account,
             source_activity=activity,
-            what=SignalWhat.OPS,
-            dimension=SignalDimension.COST,
+            nature=ConstraintNature.FINANCIAL,
             summary='Tenant A only',
             rigidity=Rigidity.FIRM,
             source=SignalSource.MANUAL,

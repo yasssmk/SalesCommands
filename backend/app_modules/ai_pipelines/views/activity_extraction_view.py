@@ -43,7 +43,8 @@ Response shape (200 OK)
                 "objective":  [...],
                 "impact":     [...],
                 "tech-stack": [...],
-                "blocker":    [...]
+                "blocker":    [...],
+                "constraint": [...]
             },
             "next_step_signals": [...]
         }
@@ -102,6 +103,9 @@ from app_modules.signals.serializers.tech_stack_serializer import (
 )
 from app_modules.signals.serializers.blocker_serializer import (
     BlockerSignalDetailSerializer,
+)
+from app_modules.signals.serializers.constraint_serializer import (
+    ConstraintSignalDetailSerializer,
 )
 from app_modules.signals.serializers.next_step_serializer import (
     NextStepSignalDetailSerializer,
@@ -544,6 +548,10 @@ class ActivityExtractionView(BaseAPIView):
                 signals_by_stage.get('blocker', []),
                 many=True, context=ser_ctx,
             ).data,
+            'constraint': ConstraintSignalDetailSerializer(
+                signals_by_stage.get('constraint', []),
+                many=True, context=ser_ctx,
+            ).data,
         }
 
     @staticmethod
@@ -555,12 +563,13 @@ class ActivityExtractionView(BaseAPIView):
             ImpactSignal,
             TechStackSignal,
             BlockerSignal,
+            ConstraintSignal,
         )
         activity = run.source_activity
         if activity is None:
             return {
                 'pain': [], 'objective': [], 'impact': [],
-                'tech-stack': [], 'blocker': [],
+                'tech-stack': [], 'blocker': [], 'constraint': [],
             }
 
         pain = PainSignal.objects.filter(source_activity=activity, source_run=run)
@@ -568,6 +577,7 @@ class ActivityExtractionView(BaseAPIView):
         impact = ImpactSignal.objects.filter(source_activity=activity, source_run=run)
         techstack = TechStackSignal.objects.filter(source_activity=activity, source_run=run)
         blocker = BlockerSignal.objects.filter(source_activity=activity, source_run=run)
+        constraint = ConstraintSignal.objects.filter(source_activity=activity, source_run=run)
 
         return {
             'pain':       PainSignalDetailSerializer(
@@ -584,6 +594,9 @@ class ActivityExtractionView(BaseAPIView):
             ).data,
             'blocker':    BlockerSignalDetailSerializer(
                 blocker, many=True, context=ser_ctx,
+            ).data,
+            'constraint': ConstraintSignalDetailSerializer(
+                constraint, many=True, context=ser_ctx,
             ).data,
         }
 
@@ -603,7 +616,7 @@ class ActivityExtractionView(BaseAPIView):
     def _empty_qualif_signals():
         return {
             'pain': [], 'objective': [], 'impact': [],
-            'tech-stack': [], 'blocker': [],
+            'tech-stack': [], 'blocker': [], 'constraint': [],
         }
 
     # =========================================================================

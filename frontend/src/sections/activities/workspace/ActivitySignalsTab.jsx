@@ -47,13 +47,16 @@ import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
-// tech-stack and blockers — next-steps live in their own tab and are excluded.
+// tech-stack, blockers and constraints — next-steps live in their own tab and
+// are excluded. Constraints are activity-scoped provenance here (the DC groups
+// them by nature; the account excludes them — deal-scoped).
 const ACTIVITY_FLAT_TYPES = [
   "pain",
   "objective",
   "impact",
   "tech-stack",
   "blockers",
+  "constraints",
 ];
 
 // Grouped (client-side) default status set — pending + validated.

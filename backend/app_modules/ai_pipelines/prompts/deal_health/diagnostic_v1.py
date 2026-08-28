@@ -181,6 +181,13 @@ def _format_signal(signal_type, sig):
             lines.append(f"    Actor: {actor}")
 
     if signal_type == 'constraint':
+        # Nature is the constraint's classification axis (FUNCTIONAL /
+        # TECHNICAL / FINANCIAL / ...). A required integration now arrives
+        # here as a TECHNICAL constraint (it is no longer a tech is_integration
+        # flag), so surfacing the nature keeps that signal visible.
+        nature = sig.get('nature')
+        if nature:
+            lines.append(f"    Nature: {nature}")
         rigidity = sig.get('rigidity')
         if rigidity:
             lines.append(f"    Rigidity: {rigidity}")

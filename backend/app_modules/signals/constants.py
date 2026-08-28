@@ -209,6 +209,34 @@ class Rigidity(models.TextChoices):
     FLEXIBLE = 'FLEXIBLE', _('Flexible')
 
 
+class ConstraintNature(models.TextChoices):
+    """
+    Nature (kind) of a decision constraint — the axis on which
+    ConstraintSignal is classified and clustered.
+
+    Replaces the business what × dimension axes (SignalWhat /
+    SignalDimension) for constraints: those axes are a pain/objective
+    vocabulary and do not describe a decision criterion cleanly (a legal
+    or financial constraint has no natural `what`). ConstraintNature is a
+    constraint-specific taxonomy, kept deliberately short.
+
+    FUNCTIONAL  — feature / capability the solution must provide.
+    TECHNICAL   — technical / integration / architecture requirement
+                  (e.g. "must integrate with SAP", "on-premise only").
+    FINANCIAL   — budget, pricing, ROI, cost criterion.
+    CONTRACTUAL — contractual & legal terms, compliance, regulation
+                  (e.g. GDPR, procurement clauses).
+    OPERATIONAL — process, timeline, rollout, training, support.
+    SECURITY    — security, data protection, audit requirement.
+    """
+    FUNCTIONAL  = 'FUNCTIONAL',  _('Functional')
+    TECHNICAL   = 'TECHNICAL',   _('Technical')
+    FINANCIAL   = 'FINANCIAL',   _('Financial')
+    CONTRACTUAL = 'CONTRACTUAL', _('Contractual & Legal')
+    OPERATIONAL = 'OPERATIONAL', _('Operational')
+    SECURITY    = 'SECURITY',    _('Security')
+
+
 # =============================================================================
 # SIGNAL CANONICAL AXES — enums  (shared by Pain, Objective and Impact)
 # =============================================================================
@@ -485,6 +513,12 @@ class SignalClusterType(models.TextChoices):
     # (signal_type='tech_stack').
     TECH_STACK = 'tech_stack', _('Tech Stack')
     IMPACT     = 'impact',     _('Impact')
+    # CONSTRAINT clusters on `nature` (ConstraintNature), NOT on a canonical_key
+    # — constraint is detached from the what × dimension axes (canonical_key is
+    # always None). Like TECH_STACK, the grouping is computed at read time via
+    # _group_by_canonical_key(key=lambda s: s.nature); nature is required so
+    # there is no null bucket. Constraint is DC-scoped only (not account-level).
+    CONSTRAINT = 'constraint', _('Constraint')
 
 
 class FreshnessStatus(models.TextChoices):

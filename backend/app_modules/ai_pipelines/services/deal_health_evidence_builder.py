@@ -278,18 +278,20 @@ class DealHealthEvidenceBuilder:
 
     @staticmethod
     def _serialize_constraint_signals(qs):
+        # Constraints are detached from the what × dimension canonical axes:
+        # canonical_key is always None and what/dimension are legacy. The
+        # deal-health prompt consumes only summary + rigidity, so the payload
+        # carries the classification axis (nature) and scope instead.
         return [
             {
                 'summary': s.summary,
                 'source_quote': s.source_quote or '',
-                'canonical_key': s.canonical_key,
+                'nature': s.nature,
                 'target_department': (
                     s.target_department.get_name_display()
                     if s.target_department else None
                 ),
                 'rigidity': s.rigidity,
-                'what': s.what,
-                'dimension': s.dimension,
             }
             for s in qs
         ]

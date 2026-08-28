@@ -297,11 +297,14 @@ class PrepInputPackAssembler:
 
         `is_to_replace` is new here — the catalogue had no equivalent.
         """
+        # is_integration is intentionally NOT surfaced here: it was never
+        # consumed by _build_competitive_context (which reads is_competitor /
+        # is_to_replace only), and integration requirements are now TECHNICAL
+        # constraints (surfaced through the constraint signals, not the tech row).
         return [
             {
                 'tech_name': s.tech_name or '',
                 'is_competitor': s.is_competitor,
-                'is_integration': s.is_integration,
                 'is_to_replace': s.is_to_replace,
             }
             for s in qs

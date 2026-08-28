@@ -203,6 +203,13 @@ export const SIGNAL_TYPE_VISUALS = {
     color: "secondary",
     label: "Tech",
   },
+  // Constraint clusters key on the backend value 'constraint' (singular);
+  // the flat member vocabulary uses 'constraints' (plural) — mapped in the
+  // drawer, same as tech_stack → tech-stack.
+  constraint: {
+    color: "primary",
+    label: "Constraint",
+  },
 };
 
 // ==============================|| TARGET DATE URGENCY ||============================== //

@@ -121,6 +121,27 @@ const TECH_CLUSTER = {
   priority_bucket: "LOW",
 };
 
+// Constraint is a CLUSTER too (right column, DC-scoped), grouped by nature —
+// canonical_key IS the nature code.
+const CONSTRAINT_CLUSTER = {
+  canonical_key: "CONTRACTUAL",
+  signal_type: "constraint",
+  what: null,
+  what_display: null,
+  dimension: null,
+  dimension_display: null,
+  summary: "GDPR compliance is mandatory",
+  signal_count: 2,
+  pending_count: 0,
+  freshness_status: "FRESH",
+  period_start: "2026-04-01T10:00:00Z",
+  period_end: "2026-05-01T10:00:00Z",
+  last_confirmed_at: "2026-05-01T10:00:00Z",
+  departments: [],
+  decision_cycle_ids: ["dc1"],
+  priority_bucket: "LOW",
+};
+
 // Objections are still flat (out of scope for the tech-cluster sprint).
 const BLOCKERS = [{ id: "b1", status: "PENDING", summary: "Budget frozen Q4", _signalType: "blockers" }];
 
@@ -209,13 +230,15 @@ describe("QualificationGroupedView — no Type filter in grouped", () => {
         decisionCycleId={CYCLE_ID}
       />,
     );
-    // Cluster fetch covers all clusterable types, tech included (one fetch).
+    // Cluster fetch covers all clusterable types, tech + constraint included
+    // (one fetch). Constraint is added on the DC surface (DC-scoped type).
     const args = useGetClustersByAccount.mock.calls.at(-1);
     expect(args[1].signalType).toEqual([
       "objective",
       "pain",
       "impact",
       "tech_stack",
+      "constraint",
     ]);
     // All narrative sections + Tech/Objections render.
     expect(screen.getByText("Objectives")).toBeInTheDocument();
@@ -255,6 +278,38 @@ describe("QualificationGroupedView — two-column layout (same as Activity)", ()
     expect(cols).toHaveLength(2);
     expect(cols[1]).toHaveTextContent("Tech Stack");
     expect(cols[1]).not.toHaveTextContent("Objections");
+  });
+});
+
+describe("QualificationGroupedView — Constraints section (DC only, by nature)", () => {
+  it("renders the Constraints section grouped by nature in DC", () => {
+    mockClusters([OBJECTIVE_CLUSTER, PAIN_CLUSTER, TECH_CLUSTER, CONSTRAINT_CLUSTER]);
+    render(
+      <QualificationGroupedView surface="dc" accountId={ACCOUNT_ID} decisionCycleId={CYCLE_ID} />,
+    );
+    expect(screen.getByText("Constraints")).toBeInTheDocument();
+    // Nature group header (CONTRACTUAL -> "Contractual & Legal") + the cluster row.
+    expect(screen.getByText("Contractual & Legal")).toBeInTheDocument();
+    expect(screen.getByText("GDPR compliance is mandatory")).toBeInTheDocument();
+  });
+
+  it("does NOT render Constraints on the account surface", () => {
+    mockClusters([OBJECTIVE_CLUSTER, PAIN_CLUSTER, TECH_CLUSTER]);
+    render(<QualificationGroupedView surface="account" accountId={ACCOUNT_ID} />);
+    expect(screen.queryByText("Constraints")).not.toBeInTheDocument();
+    // And the fetch did NOT request constraint at account level.
+    const args = useGetClustersByAccount.mock.calls.at(-1);
+    expect(args[1].signalType).not.toContain("constraint");
+  });
+
+  it("opens the cluster drawer when a constraint row is clicked", () => {
+    mockClusters([CONSTRAINT_CLUSTER]);
+    render(
+      <QualificationGroupedView surface="dc" accountId={ACCOUNT_ID} decisionCycleId={CYCLE_ID} />,
+    );
+    expect(screen.queryByTestId("cluster-drawer")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("GDPR compliance is mandatory"));
+    expect(screen.getByTestId("cluster-drawer")).toBeInTheDocument();
   });
 });
 

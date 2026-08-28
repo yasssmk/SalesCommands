@@ -134,6 +134,7 @@ class FakeProvider:
         ('Extract IMPACT signals',     'impact'),
         ('Extract TECH STACK signals', 'techstack'),
         ('Extract BLOCKER signals',    'blocker'),
+        ('Extract CONSTRAINT signals', 'constraint'),
         ('Extract NEXT-STEP signals',  'next_steps'),
     )
 
@@ -324,7 +325,6 @@ CANNED_REPLIES_HAPPY = {
         '{"signals": [{'
         '"tech_name": "Salesforce", '
         '"is_competitor": true, '
-        '"is_integration": false, '
         '"is_to_replace": false, '
         '"usage_scope": "COMPANY", '
         '"source_quote": "We use Salesforce across the company", '

@@ -436,11 +436,16 @@ class SignalClusterDetailView(BaseAPIView):
 
         account_id  = _parse_account_id(request, source='query')
         signal_type = _parse_signal_type(request, source='query')
+        # Optional DC scope — only the constraint cluster (DC-scoped) uses it;
+        # the other types ignore it. Lets a nature cluster stay bounded to its
+        # decision cycle so two DCs' same-nature clusters never merge.
+        decision_cycle_id = request.query_params.get('decision_cycle') or None
 
         cluster = SignalClusterService.get_cluster_detail(
             account_id=account_id,
             canonical_key=canonical_key,
             signal_type=signal_type,
+            decision_cycle_id=decision_cycle_id,
         )
 
         serializer = SignalClusterDetailSerializer(cluster)

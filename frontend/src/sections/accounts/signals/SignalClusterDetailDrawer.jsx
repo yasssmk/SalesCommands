@@ -584,6 +584,7 @@ export default function SignalClusterDetailDrawer({
   onClose,
   clusterSummary,
   accountId,
+  decisionCycleId,
   choices,
   choicesLoading,
   onClusterChange,
@@ -602,7 +603,15 @@ export default function SignalClusterDetailDrawer({
   // member components (SignalLine / SignalDetailContent) key on the frontend
   // slug 'tech-stack', so member rendering is passed the mapped slug.
   const isTech = signalType === "tech_stack";
-  const memberSlug = isTech ? "tech-stack" : signalType;
+  // Constraint clusters key on the backend value 'constraint' (singular); the
+  // shared member components key on the flat slug 'constraints' (plural) —
+  // same mapping story as tech_stack → tech-stack.
+  const isConstraint = signalType === "constraint";
+  const memberSlug = isTech
+    ? "tech-stack"
+    : isConstraint
+      ? "constraints"
+      : signalType;
 
   const typeVisuals = resolveSignalTypeVisuals(signalType);
 
@@ -613,7 +622,12 @@ export default function SignalClusterDetailDrawer({
   const canonicalKey = clusterSummary?.canonical_key ?? null;
 
   const { cluster, clusterLoading, clusterError, mutateCluster } =
-    useGetClusterDetail(accountId, canonicalKey, { signalType });
+    useGetClusterDetail(accountId, canonicalKey, {
+      signalType,
+      // DC-scope the constraint detail so two cycles' same-nature clusters
+      // never merge. Ignored server-side for the other types.
+      decisionCycleId: isConstraint ? decisionCycleId : undefined,
+    });
 
   // ==============================|| DERIVED ||============================== //
 
@@ -866,7 +880,7 @@ export default function SignalClusterDetailDrawer({
             model, so surfacing a "Low" badge would display a priority that
             does not exist. Pain / Objective / Impact keep their real badge.
           */}
-          {display?.priority_bucket && !isTech && (
+          {display?.priority_bucket && !isTech && !isConstraint && (
             <Tooltip
               title={`Priority score: ${display?.priority_score ?? "—"}`}
             >
@@ -1243,9 +1257,9 @@ export default function SignalClusterDetailDrawer({
                 sx={{ px: 0.5, minWidth: 0, maxWidth: 220 }}
               >
                 <Typography variant="caption" noWrap>
-                  {/* Back label: the tool name for tech (no canonical axes),
-                      the "WHAT × DIMENSION" title otherwise. */}
-                  {(isTech ? display?.summary : canonicalText) ||
+                  {/* Back label: the representative text for tech / constraint
+                      (no canonical axes), the "WHAT × DIMENSION" title otherwise. */}
+                  {((isTech || isConstraint) ? display?.summary : canonicalText) ||
                     typeVisuals.label}
                 </Typography>
               </Button>
@@ -1355,6 +1369,8 @@ SignalClusterDetailDrawer.propTypes = {
     // Other fields optional — the drawer fetches full detail.
   }),
   accountId: PropTypes.string.isRequired,
+  /** DC scope for the constraint cluster detail (ignored for other types). */
+  decisionCycleId: PropTypes.string,
   choices: PropTypes.object,
   choicesLoading: PropTypes.bool,
   onClusterChange: PropTypes.func,

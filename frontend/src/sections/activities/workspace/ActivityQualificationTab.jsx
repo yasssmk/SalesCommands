@@ -50,6 +50,7 @@ export default function ActivityQualificationTab({
     qualificationSignals,
     techStackSignals,
     blockerSignals,
+    constraintSignals,
     loading,
     error,
     mutateAll,
@@ -84,6 +85,10 @@ export default function ActivityQualificationTab({
   const filteredBlockers = useMemo(
     () => applyGroupedFilters(blockerSignals, groupedFilters),
     [blockerSignals, groupedFilters],
+  );
+  const filteredConstraints = useMemo(
+    () => applyGroupedFilters(constraintSignals, groupedFilters),
+    [constraintSignals, groupedFilters],
   );
 
   // Handlers
@@ -193,6 +198,7 @@ export default function ActivityQualificationTab({
         qualificationSignals={filteredQualification}
         techStackSignals={filteredTechStack}
         blockerSignals={filteredBlockers}
+        constraintSignals={filteredConstraints}
         onSelect={handleSelect}
         onValidate={handleValidate}
         onReject={handleReject}

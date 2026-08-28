@@ -43,6 +43,8 @@ class TestCacheReplayIsolation:
         ), patch(
             'app_modules.ai_pipelines.views.activity_extraction_view.BlockerSignalDetailSerializer'
         ), patch(
+            'app_modules.ai_pipelines.views.activity_extraction_view.ConstraintSignalDetailSerializer'
+        ), patch(
             'app_modules.signals.models.PainSignal.objects', mock_qs,
         ), patch(
             'app_modules.signals.models.ObjectiveSignal.objects', mock_qs,
@@ -52,6 +54,8 @@ class TestCacheReplayIsolation:
             'app_modules.signals.models.TechStackSignal.objects', mock_qs,
         ), patch(
             'app_modules.signals.models.BlockerSignal.objects', mock_qs,
+        ), patch(
+            'app_modules.signals.models.ConstraintSignal.objects', mock_qs,
         ):
             ActivityExtractionView._serialize_cached_qualif_signals(run, ser_ctx)
 

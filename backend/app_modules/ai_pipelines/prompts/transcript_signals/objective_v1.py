@@ -152,6 +152,33 @@ Objective vs. Pain (important distinction)
   (other sub-call) AND an objective (here), each anchored on its own
   quote -- they are not duplicates.
 
+Objective vs. Constraint (important distinction -- do NOT over-exclude)
+- An OBJECTIVE is a business or department GOAL the CLIENT wants to reach --
+  a METRIC or outcome on THEIR OWN activity (grow revenue 20%, reduce their
+  costs 15%, gain efficiency). It is about the CLIENT and what they want to
+  ACCOMPLISH. Emit these here.
+- A CONSTRAINT is an OBLIGATION imposed on OUR PRODUCT -- a line of the
+  buyer's requirements sheet (cahier des charges): a criterion the solution
+  MUST satisfy ("must integrate with SAP", "budget capped at 80k for this
+  purchase", "GDPR-compliant", "end-to-end encryption"). It is about the
+  PRODUCT and what it must RESPECT. Captured in a SEPARATE sub-call -- do
+  NOT emit it here.
+- THE LINE: an OBJECTIVE is what the CLIENT wants to accomplish (a metric /
+  goal); a CONSTRAINT is what the PRODUCT must satisfy (an obligation / a
+  spec-sheet line). A metric the client wants to MOVE = an objective; a
+  BOUND or OBLIGATION the product must RESPECT = a constraint.
+- Examples:
+    "we want to grow revenue 20% this year"  -> OBJECTIVE (a client metric/goal)
+    "we want to reduce our costs by 15%"      -> OBJECTIVE (a client metric/goal,
+                                                 NOT a product obligation)
+    "our budget is capped at 80k for this"    -> CONSTRAINT (a spend obligation
+                                                 on the purchase) -- do NOT emit here
+    "we need real-time reporting"             -> CONSTRAINT (a required feature)
+                                                 -- do NOT emit here
+    "it has to integrate with our ERP"        -> CONSTRAINT -- do NOT emit here
+- When in doubt whether a phrase is a client goal or a product obligation,
+  keep it as an OBJECTIVE here (do not silently drop a genuine goal).
+
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
 
