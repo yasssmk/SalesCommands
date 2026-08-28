@@ -91,6 +91,27 @@ class _TechStackDisplayMixin:
             'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
         }
 
+    def get_usage_departments(self, obj):
+        """
+        Compact list of the departments that USE this tool (multi-department).
+
+        Returns a list of {id, name} payloads — the same compact FK shape
+        `get_usage_department` returns for the single-FK, one entry per
+        linked StandardDepartment. Empty list when none are designated.
+
+        N+1-safe: reads obj.usage_departments.all(), which the ViewSet
+        prefetches (prefetch_related('usage_departments')), so iterating
+        the manager here fires no per-row query. `.all()` (not a filtered
+        queryset) is required to hit the prefetched cache.
+        """
+        return [
+            {
+                'id':   str(d.id),
+                'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
+            }
+            for d in obj.usage_departments.all()
+        ]
+
 
 def _validate_scope_consistency(usage_scope, usage_department):
     """
@@ -218,6 +239,8 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
     # Scope + dept compact payloads
     usage_scope_display = serializers.SerializerMethodField()
     usage_department    = serializers.SerializerMethodField()
+    # Multi-department usage (who USES the tool) — compact list payload.
+    usage_departments   = serializers.SerializerMethodField()
 
     class Meta(BaseSignalListSerializer.Meta):
         model = TechStackSignal
@@ -236,6 +259,8 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
             # Scope axis (conditional dept)
             'usage_scope', 'usage_scope_display',
             'usage_department',
+            # Multi-department usage (who USES the tool)
+            'usage_departments',
             # Lifecycle stats
             'usage_start_year',
             'renewal_date',
@@ -280,6 +305,8 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
 
     usage_scope_display = serializers.SerializerMethodField()
     usage_department    = serializers.SerializerMethodField()
+    # Multi-department usage (who USES the tool) — compact list payload.
+    usage_departments   = serializers.SerializerMethodField()
 
     class Meta(BaseSignalDetailSerializer.Meta):
         model = TechStackSignal
@@ -297,6 +324,8 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
             # Scope axis
             'usage_scope', 'usage_scope_display',
             'usage_department',
+            # Multi-department usage (who USES the tool)
+            'usage_departments',
             # Lifecycle stats
             'usage_start_year',
             'renewal_date',

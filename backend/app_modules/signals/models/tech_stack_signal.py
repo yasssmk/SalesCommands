@@ -281,6 +281,56 @@ class TechStackSignal(BaseSignal):
     )
 
     # =========================================================================
+    # USAGE DEPARTMENTS (multi-department — WHO uses the tool)
+    # =========================================================================
+    #
+    # A tool can legitimately be used by SEVERAL departments at once
+    # ("Sales AND Marketing both live in HubSpot"). The single-FK
+    # `usage_department` above cannot express that: it holds at most one
+    # department and is gated behind usage_scope=DEPARTMENT. This M2M is
+    # the multi-department carrier — the SET of departments that use the
+    # tool, an attribute of the tool observation (displayed / filterable),
+    # independent of the usage_scope TEAM/COMPANY/UNKNOWN axis.
+    #
+    #   * blank=True — a tool may have NO designated usage department
+    #     (the common case: the transcript never says who uses it).
+    #   * Direct M2M (no `through`) to the shared StandardDepartment
+    #     controlled list — same shape as Campaign.target_departments and
+    #     DecisionStep.departments elsewhere in the codebase. A plain
+    #     link table (module_signals_tech_stack_usage_departments) is
+    #     enough: the relation carries no extra attributes.
+    #   * StandardDepartment is GLOBAL reference data (no client_id of its
+    #     own — see core_modules/models/standar_dept.py), exactly like the
+    #     `usage_department` FK above, so the link never crosses tenants:
+    #     the tenant boundary lives on THIS signal (client_id), the
+    #     department rows are shared vocabulary.
+    #
+    # Extraction contract: this field is POPULATED BY EXTRACTION (sub-step
+    # 2), not by manual entry — it is exposed read-only on the serializers.
+    # It is deliberately NOT coupled to usage_scope / usage_department: no
+    # clean() rule ties the three together, so the multi-department
+    # attribute is free of the DEPARTMENT-scope gate.
+    #
+    # Reusability note: this is the first M2M-to-StandardDepartment on a
+    # signal. Should a later sprint converge the other signals' single
+    # scope FKs onto a multi-department model, THIS field is the pattern
+    # to calque — but that consolidation is explicitly out of scope here
+    # (this sprint touches TechStack only).
+    usage_departments = models.ManyToManyField(
+        'core_modules.StandardDepartment',
+        related_name='tech_stack_signals_used_by',
+        blank=True,
+        verbose_name=_('Usage Departments'),
+        help_text=_(
+            'The set of departments that USE this tool (multi-department: '
+            'a tool can be used by Sales and Marketing at once). An '
+            'attribute of the observation, populated by extraction and '
+            'independent of the usage_scope TEAM/COMPANY/UNKNOWN axis. '
+            'Empty when no department is designated.'
+        ),
+    )
+
+    # =========================================================================
     # LIFECYCLE STATS (optional — feed cluster all_observations)
     # =========================================================================
 
