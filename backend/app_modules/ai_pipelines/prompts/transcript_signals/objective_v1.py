@@ -152,6 +152,28 @@ Objective vs. Pain (important distinction)
   (other sub-call) AND an objective (here), each anchored on its own
   quote -- they are not duplicates.
 
+Objective vs. Constraint (important distinction -- do NOT over-exclude)
+- An OBJECTIVE is a goal the prospect wants to reach in THEIR OWN business
+  or operations (grow revenue, cut cycle time, reduce their costs, improve
+  quality). These ARE objectives -- emit them here.
+- A CONSTRAINT is a REQUIREMENT the prospect imposes ON THE SOLUTION / the
+  purchase -- a criterion the product MUST meet to be acceptable: a required
+  feature, a required integration, a budget cap on the deal, a legal /
+  security / contractual obligation. It is captured in a SEPARATE sub-call
+  -- do NOT emit it here.
+- The test: does it describe what the PROSPECT wants to achieve in their own
+  business (-> OBJECTIVE, emit here), or a criterion OUR product / this deal
+  must satisfy (-> constraint, do NOT emit here)?
+- Examples:
+    "we want to grow revenue 20% this year"  -> OBJECTIVE (a business goal)
+    "we want to reduce our operating costs"   -> OBJECTIVE (a business goal)
+    "we need real-time reporting"             -> NOT an objective (a required
+                                                 feature = constraint)
+    "it has to integrate with our ERP"        -> NOT an objective (constraint)
+    "our budget is capped at 80k"             -> NOT an objective (constraint)
+- When in doubt whether a phrase is a business goal or a purchase criterion,
+  keep it as an OBJECTIVE here (do not silently drop a genuine goal).
+
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
 

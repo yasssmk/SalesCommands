@@ -125,6 +125,29 @@ PARTIAL EMISSION (be honest, never invent)
 - An impact stated without its cause -> emit the impact alone.
 - NEVER invent a missing figure or a missing cause. Extraction is factual.
 
+Pain / Impact vs. Constraint (important distinction -- do NOT over-exclude)
+- A PAIN is a lived difficulty in the prospect's CURRENT state; an IMPACT is
+  a measured CONSEQUENCE of it. Both describe what the prospect experiences
+  TODAY.
+- A CONSTRAINT is a REQUIREMENT the prospect imposes on the solution / the
+  purchase -- a criterion the product MUST meet: a required capability, a
+  required integration, a budget cap on the deal, a legal / security /
+  contractual obligation. It describes what the product must satisfy, not
+  what is experienced. It is captured in a SEPARATE sub-call -- do NOT emit
+  it here (neither as a pain nor as an impact).
+- The line: a lived CONSEQUENCE or DIFFICULTY stays a PAIN or an IMPACT; a
+  criterion imposed on the PURCHASE / SOLUTION belongs to the constraint
+  sub-call.
+- Examples:
+    "we lose 40k a quarter because of X"  -> IMPACT (a lived, measured cost)
+    "our teams are overwhelmed"            -> PAIN (a lived difficulty)
+    "the budget is capped at 80k"          -> NOT a pain/impact (constraint)
+    "we need change-management support"    -> NOT a pain (a requirement =
+                                              constraint)
+    "GDPR compliance is mandatory"         -> NOT a pain/impact (constraint)
+- When in doubt, a real lived pain or a real measured impact MUST still be
+  emitted here (do not silently drop it).
+
 SCOPE (decided independently for each signal)
 - `scope_level` MUST be exactly BUSINESS or DEPARTMENT, decided ONLY by the SUBJECT
   of that signal -- which perimeter it concerns -- NEVER by who is speaking. The
