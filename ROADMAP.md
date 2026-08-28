@@ -908,6 +908,69 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / Tech scope ✅ — Département d'usage MULTI (M2M), résolution de nom robuste & bascule mono→multi complète (branche `feat/techstack-usage-scope`)
+- **Objectif** : traiter l'étape **Tech scope (usage)** du Bloc « Commandes IA »
+  — capter **QUI utilise l'outil** (le **département d'usage**), en
+  **MULTI-DÉPARTEMENT** (« Sales + Marketing sur HubSpot » est légitime), et
+  faire une bascule **complète** de l'ancien FK unique vers un M2M.
+- **Livré** (chaque sous-étape validée reproduction ROUGE d'abord puis sonde de
+  NON-VACUITÉ — mutation ciblée → le test re-échoue → restauration par **édition
+  ciblée, jamais `git checkout`**) :
+  - **Le signal tech capte QUI utilise l'outil, en MULTI-DÉPARTEMENT** : nouveau
+    **M2M `usage_departments` → `StandardDepartment`** (plusieurs départements
+    par techno), qui **REMPLACE** l'ancien **FK singulier `usage_department`**
+    (retiré). Attribut de l'observation, affiché et filtrable.
+  - **Extraction — désignation EXPLICITE** : le LLM identifie le(s)
+    département(s) **utilisateur(s)**, **même règle de DÉSIGNATION EXPLICITE que
+    le scope contrainte** — un département n'est capté **que s'il est nommé**
+    comme utilisateur (« l'équipe marketing est sur HubSpot » → Marketing ;
+    « Sales et Marketing » → les deux) ; **aucun désigné → LISTE VIDE** (jamais
+    d'invention) ; **ni le locuteur ni un mot technique** ne suffisent.
+  - **Résolution de nom ROBUSTE** : un **mot fonctionnel** émis par le LLM est
+    résolu vers le **libellé exact du référentiel** (« support » → « Customer
+    Support ») — **match exact insensible à la casse** puis **mot-unique NON
+    ambigu** (un mot présent dans **un seul** libellé) ; un mot **ambigu**
+    (« management ») **ne résout rien** (garde anti-sur-correction). Réutilise le
+    même référentiel `StandardDepartment` que le scope partagé, pas de moteur
+    fuzzy inventé.
+  - **`usage_scope` (TEAM / COMPANY / UNKNOWN) CONSERVÉ = ÉCHELLE**,
+    **complémentaire** du M2M (le **QUI** est orthogonal à l'**à quelle
+    échelle**) — plus aucun couplage conditionnel entre les deux.
+  - **Bascule mono→multi COMPLÈTE** : **extraction, prep_call, deal_health,
+    affichage ET saisie manuelle** (serializer Create/Update + wizard
+    activities/accounts) tous repointés sur le M2M ; **FK singulier droppé**
+    (migration). Le serializer accepte une **liste d'ids** de département ; le
+    wizard passe d'un select unique conditionnel à un **multi-select** toujours
+    disponible.
+  - **Affichage — UNE seule ligne d'usage** : **départements si présents** (en
+    **texte simple**, séparés par virgule), **sinon l'échelle** (Company-wide /
+    Team / Unknown). Plus de **chip**, plus de **doublon** « Company-wide » +
+    « Marketing » côte à côte (le département **PRIME** sur l'échelle).
+  - **Cluster tech INCHANGÉ** (toujours par **nom** — `tech_name_normalized`,
+    pas de `canonical_key`).
+- **Migrations** : **0027** (ajout du M2M `usage_departments` + table de
+  liaison, sans backfill), **0028** (drop du FK `usage_department`, réversible),
+  **0029** (merge des deux feuilles 0028 — le drop et le drift pré-existant
+  `signalclusterarchival` — no-op de schéma, réconciliation de graphe).
+- **Validation** : suites **backend / front vertes** (Postgres ; `next build`
+  clean). **Smoke PO de bout en bout** : **HubSpot → Marketing**, **Zendesk →
+  Customer Support** (mot fonctionnel « support » résolu), **outil non désigné →
+  vide** (+ `usage_scope` cohérent) ; création/édition manuelle écrivant bien le
+  M2M ; une seule ligne d'usage, sans doublon.
+- **Dette fermée** : **TD-201** (scope tech faux — le département d'usage est
+  désormais capté, multi-département, avec résolution robuste).
+- **Dette ajoutée** : **aucune nouvelle entrée** — le resserrement prompt tech
+  (techno UTILISÉE vs ENVISAGÉE ; incohérence `usage_scope=COMPANY` + département
+  désigné) et le test multi-département au smoke A→Z sont tracés en TECH_DEBT (à
+  la suite de TD-206) et rattachés au sprint Competitors / au smoke ; les
+  docstrings `usage_scope`/`UsageScope` résiduelles après le drop sont rattachées
+  à **TD-206** (nettoyage code mort).
+- **Prochain jalon** (ordre cible) : suite du **Bloc « Commandes IA » (#4)** —
+  **Competitors** (prompt + pipeline + UX) puis **M2M scope transverse** (voir la
+  **séquence PO réordonnée 2026-08-28 post Tech scope** ci-dessous).
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -1042,7 +1105,7 @@ possibles) :
   **PRODUCTION READY** (comportement + UX prêts) ; seul le **vernis UI** (thème,
   composants) est reporté au **paufinage UI final**.
 
-**Séquence CONFIRMÉE PO (2026-08-28) — réordonnancement du RESTE du bloc Signaux, post-Contrainte (SUPERSEDES la séquence 2026-08-27 ci-dessus) :**
+**Séquence CONFIRMÉE PO (2026-08-28) — réordonnancement du RESTE du bloc Signaux, post-Contrainte (SUPERSEDES la séquence 2026-08-27 ci-dessus) :** _(⤷ SUPERSEDÉE par la « Séquence CONFIRMÉE PO (2026-08-28, post Tech scope) » plus bas — réordonnancement post-Tech scope ; conservée pour l'historique.)_
 - **✅ LIVRÉ** : **0. Tech Stack** (`feat/techstack-cluster`) ; **Contrainte**
   (`feat/constraint-signal` + `feat/constraint-scope-guard`) — voir les fiches
   « Sprint Bloc IA / Tech Stack ✅ » et « Sprint Bloc IA / Contrainte ✅ »
@@ -1070,6 +1133,45 @@ possibles) :
   cf. TD-196 / TD-199.
 - **Note de cadrage (sprints finaux)** : chaque fermeture = **PRODUCTION READY**
   (comportement + UX) ; seul le **vernis UI** va au **paufinage UI final**.
+
+**Séquence CONFIRMÉE PO (2026-08-28, post Tech scope) — réordonnancement du RESTE du bloc Signaux (SUPERSEDES la séquence 2026-08-28 ci-dessus) :**
+- **✅ LIVRÉ** : **0. Tech Stack** (`feat/techstack-cluster`) ; **Contrainte**
+  (`feat/constraint-signal` + `feat/constraint-scope-guard`) ; **Tech scope
+  (usage)** (`feat/techstack-usage-scope`) — voir les fiches « Sprint Bloc IA /
+  Tech Stack ✅ », « Sprint Bloc IA / Contrainte ✅ » et « Sprint Bloc IA / Tech
+  scope ✅ » ci-dessus. **Ferme TD-201.**
+- **Reste du bloc Signaux (ordre confirmé PO)** :
+  1. **Competitors — prompt + pipeline + UX** : **conception UX D'ABORD** (où le
+     signal competitor apparaît en **Activité ET DC** pour servir la stratégie
+     commerciale) ; **routage `is_competitor`** ensuite ; **SUPPRESSION du champ
+     `is_to_replace`** ; **drop de la colonne `is_integration`** (neutralisée au
+     sprint Contrainte). Ce sprint fait le **FONCTIONNEL** (extraction juste +
+     affichage au bon endroit) ; l'**UI fine** (vernis visuel) est **distincte**
+     → **paufinage UI**. Cf. TD-196 / TD-199.
+  2. **M2M scope transverse** — passer le scope de **TOUS** les signaux
+     (**pain / impact / objective / constraint**) de **FK unique
+     (`target_department`) à M2M multi-département**, sur le **modèle du tech**.
+     **NOTE : refonte sur types VALIDÉS + migration de données existantes** (FK
+     remplis → M2M) — à **cadrer avec audit + précaution** ; le **tech M2M
+     `usage_departments` est le précédent réutilisable**. C'est un **SPRINT**,
+     pas une simple dette.
+  3. **Blocker (Objection)** — **scope + cluster + affichage**.
+  4. **Next steps**.
+  5. **Filtres transverse** — **TOUS** les filtres d'un coup, **regroupables** ;
+     **ferme TD-189** (et TD-202 — filtres non exhaustifs).
+  6. **Passe cluster** — infos pertinentes par cluster ; pour le tech, piste
+     **« remplacement envisagé »** (l'account utilise une techno mais songe à en
+     changer, **non acté**, info de **NIVEAU CLUSTER dérivée des signaux, PAS un
+     booléen** — remplace l'ancien `is_to_replace`) — TD-199.
+  7. **UX Signals** — décider onglet **Flat / Grouped partagé ou non**
+     (**TD-186**) ; **homogénéisation UI Activity / DC** (TD-204) ; **modaux
+     Edit** des signaux (TD-205).
+  8. **Nettoyage code mort AI / Signals** (clean code — **TD-206**).
+  9. **Smoke Signals A→Z** — transcript d'un **cycle de vente COMPLET**, étape
+     par étape ; **inclut le test tech MULTI-DÉPARTEMENT + company-wide**.
+  10. **Clôture du bloc Signaux** → puis **Prep call** (prompt + UI).
+- **Note de cadrage (sprints finaux)** : chaque fermeture = **PRODUCTION READY**
+  (fonctionnel + UX) ; seul le **vernis** va au **paufinage UI final**.
 
 ### Nouveaux sprints
 
