@@ -208,7 +208,7 @@ function buildImpactInitialValues(signal) {
  * This builder mirrors exactly the 5-section InlineTechStackForm:
  *
  *   S1 — tech_name + qualification booleans
- *   S2 — usage_scope, usage_department (conditional)
+ *   S2 — usage_scope (scale) + usage_departments (multi-department ids)
  *   S3 — usage_start_year, renewal_date, cost_description
  *   S4 — is_discontinued, discontinued_date (conditional)
  *   S5 — source_quote, notes           (narrative)
@@ -219,7 +219,7 @@ function buildImpactInitialValues(signal) {
  *     The List/Detail serializers expose it as a compact dict
  *     ({ id, company_name, product_name, is_competitor,
  *        is_integration_target }) — directly usable by the picker.
- *   - usage_department extracted to its id for MUI Select binding.
+ *   - usage_departments extracted to a list of ids for the MUI multi-Select.
  *   - usage_start_year kept as raw number or '' (Yup transform handles
  *     the empty-string → null coercion at submit time).
  *   - renewal_date / discontinued_date kept as ISO yyyy-mm-dd strings
@@ -240,9 +240,11 @@ function buildTechStackInitialValues(signal) {
     is_integration: Boolean(signal.is_integration),
     is_to_replace: Boolean(signal.is_to_replace),
 
-    // S2 — Scope axis
+    // S2 — Usage scale + who (multi-department ids for the MUI multi-Select)
     usage_scope: signal.usage_scope ?? "",
-    usage_department: signal.usage_department?.id ?? "",
+    usage_departments: Array.isArray(signal.usage_departments)
+      ? signal.usage_departments.map((d) => d.id)
+      : [],
 
     // S3 — Lifecycle stats
     usage_start_year:

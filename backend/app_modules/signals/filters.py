@@ -24,7 +24,7 @@ Filter inventory by signal type
   Pain:       what, dimension, scope_level
   Objective:  what, dimension, scope_level
   Impact:     what, dimension, scope_level, impact_type, human_impact
-  TechStack:  tech_name_normalized, usage_scope, usage_department,
+  TechStack:  tech_name_normalized, usage_scope, usage_departments,
               is_discontinued, renewal_date_*, is_competitor,
               is_integration_target
 

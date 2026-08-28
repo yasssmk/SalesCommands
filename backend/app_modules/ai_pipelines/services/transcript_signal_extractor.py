@@ -26,12 +26,14 @@ this service:
         - TechStack   -> raw `tech_name` passthrough (normalised by
                           TechStackSignal.save(), not here) + the
                           qualification booleans (is_competitor /
-                          is_to_replace); usage_scope filtered to
-                          TEAM / COMPANY / UNKNOWN (DEPARTMENT and unknown
-                          values demoted to null). `is_integration` is NO
-                          LONGER extracted -- a required integration is now
-                          a ConstraintSignal of nature=TECHNICAL. No
-                          catalogue lookup -- see below.
+                          is_to_replace); usage_scope (SCALE) filtered to
+                          TEAM / COMPANY / UNKNOWN; usage_departments (WHO)
+                          resolved to a multi-department M2M via
+                          resolve_tech_usage_departments. `is_integration`
+                          is NO LONGER extracted -- a required integration is
+                          now a ConstraintSignal of nature=TECHNICAL. No
+                          catalogue lookup -- see below. The legacy single-FK
+                          usage_department is no longer filled (retired).
         - Blocker     -> 1:1 passthrough on summary / source_quote /
                           confidence / is_inferred. `contact` (FK
                           Contact, optional) is NOT extracted in v1
@@ -92,6 +94,7 @@ a different filter strategy could subclass).
 """
 
 import logging
+import re
 
 from django.db import transaction
 from django.utils import timezone
@@ -113,11 +116,138 @@ from .safety_filter import passes_safety_filter, safe_float
 logger = logging.getLogger(__name__)
 
 
-# Allowed values for TechStack usage_scope at v1. Defines which strings
-# the LLM may emit and have them propagate to the model. Any other value
-# (including "DEPARTMENT", which would require a usage_department FK we
-# don't extract) is demoted to None.
+# Allowed values for TechStack usage_scope. usage_scope is the SCALE axis
+# (how widely the tool is used) and is kept as-is by the mono->multi
+# department migration. Any other value (including "DEPARTMENT", which the
+# prompt no longer asks for -- the WHO is carried by usage_departments now)
+# is demoted to None.
 _TECHSTACK_USAGE_SCOPE_ALLOWED = {'TEAM', 'COMPANY', 'UNKNOWN'}
+
+
+def _build_department_resolution_index():
+    """
+    Build the name -> StandardDepartment resolution index over the whole
+    (global) StandardDepartment vocabulary.
+
+    Two lookup layers, both keyed on lowercased strings so resolution is
+    case-insensitive:
+
+      by_value: the full department name ("customer support" ->
+                Customer Support). This is the exact contract the prompt
+                asks for -- the grounding list injected in the context
+                layer -- made case-tolerant.
+
+      by_word:  a SINGLE word that appears in EXACTLY ONE department name
+                ("support" -> Customer Support, "engineering" ->
+                Engineering). Words shared by several departments
+                ("management" is in General / Product / Security & Risk
+                Management; "operations" is in Operations and Retail
+                Operations) are AMBIGUOUS and deliberately LEFT OUT -- an
+                ambiguous role-word must not resolve to an arbitrary
+                department (the "do not over-correct" rule). This is what
+                lets the model's transcript-echoed function word ("support"
+                for "Customer Support") resolve without a fuzzy match that
+                could bind the wrong row.
+
+    Returns (by_value, by_word) -- two dicts of lowercased-key ->
+    StandardDepartment.
+    """
+    from app_modules.core_modules.models import StandardDepartment
+
+    departments = list(StandardDepartment.objects.all())
+
+    by_value = {}
+    word_hits = {}  # word -> set of dept ids that contain it (ambiguity check)
+    word_dept = {}  # word -> a dept carrying it
+
+    for dept in departments:
+        value_lc = dept.name.strip().lower()
+        by_value[value_lc] = dept
+        for word in re.findall(r'[a-z0-9]+', value_lc):
+            word_hits.setdefault(word, set()).add(dept.id)
+            word_dept[word] = dept
+
+    # Keep only UNAMBIGUOUS words (present in exactly one department) and
+    # never a word that is itself a full department value (avoid shadowing
+    # the exact layer with a weaker one).
+    by_word = {
+        word: word_dept[word]
+        for word, ids in word_hits.items()
+        if len(ids) == 1 and word not in by_value
+    }
+
+    return by_value, by_word
+
+
+def resolve_tech_usage_departments(raw):
+    """
+    Resolve the list of departments that USE a tool from the LLM payload.
+
+    The techstack stage emits `usage_departments`: an array of department
+    names (from the StandardDepartment vocabulary injected in the context
+    layer) explicitly designated as USERS of the tool. This resolves each
+    name to a StandardDepartment row and returns the deduplicated list to
+    assign to the M2M TechStackSignal.usage_departments.
+
+    Resolution against the SAME controlled vocabulary the shared scope
+    resolver (resolve_scope_and_department, above) uses, but made robust to
+    the model echoing the transcript's function word instead of the exact
+    list label ("support" for "Customer Support", the smoke-proven bug):
+
+      1. case-insensitive EXACT match on the department name
+         ("customer support" -> Customer Support);
+      2. else a case-insensitive UNAMBIGUOUS single-word match
+         ("support" -> Customer Support, because "support" appears in only
+         one department name). A word shared by several departments is
+         ambiguous and NEVER resolves -- no over-correction.
+
+    StandardDepartment is global reference data (no client_id of its own),
+    so the lookup is tenant-safe exactly as for pain/objective/impact/
+    constraint -- the tenant boundary lives on the signal, not on the
+    shared department rows.
+
+    Guards:
+      * a name that resolves to nothing is dropped (never invented);
+      * "General Management" is dropped -- a company-wide / executive owner
+        is NOT a using department (the company-wide reading is carried by
+        usage_scope=COMPANY);
+      * duplicates collapse (order-preserving) so ["Sales", "Sales"] -> one.
+
+    A missing / non-list / empty `usage_departments`, or one that resolves
+    to nothing, yields [] -- a valid "nobody designated" state.
+
+    Returns:
+        list[StandardDepartment] -- possibly empty, deduplicated, in the
+        order the model emitted the names.
+    """
+    from app_modules.core_modules.models import StandardDepartment
+
+    names = raw.get('usage_departments')
+    if not isinstance(names, list):
+        return []
+
+    by_value, by_word = _build_department_resolution_index()
+
+    resolved = []
+    seen_ids = set()
+    for name in names:
+        if not name or not isinstance(name, str):
+            continue
+        key = name.strip().lower()
+        if not key:
+            continue
+        # Layer 1: exact (case-insensitive). Layer 2: unambiguous word.
+        dept = by_value.get(key) or by_word.get(key)
+        if dept is None:
+            continue
+        if dept.name == StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT:
+            continue
+        if dept.id in seen_ids:
+            continue
+        seen_ids.add(dept.id)
+        resolved.append(dept)
+
+    return resolved
 
 
 def resolve_scope_and_department(raw):
@@ -575,12 +705,23 @@ class TranscriptSignalExtractor:
             "a tool the account simply uses". (is_integration was retired
             from this path -- now a TECHNICAL constraint.)
 
-        usage_scope filtering:
+        usage_scope filtering (SCALE axis -- how widely, kept as-is):
             * "TEAM" / "COMPANY" / "UNKNOWN"  -> propagate to model.
-            * Anything else (incl. "DEPARTMENT", which the v1 prompt
-              forbids but the LLM may emit anyway) or missing
-              -> demote to None. usage_department stays unset,
-              satisfying TechStackSignal.clean() rule 3.
+            * Anything else (incl. "DEPARTMENT", no longer asked for) or
+              missing -> demote to None. Model field is nullable.
+
+        usage_departments (WHO uses the tool -- multi-department M2M):
+            The LLM emits `usage_departments`, an array of department names
+            explicitly designated as USERS of the tool. resolve_tech_usage_
+            departments maps them to StandardDepartment rows (exact-name,
+            deduped, dropping unresolved / General Management). The list is
+            passed in the data dict; SignalManager.create applies it via
+            .set() after the row is saved (M2M can't be set pre-save).
+            An empty list ("nobody designated") is valid and assigned as-is.
+
+            The legacy single-FK `usage_department` is intentionally NOT set
+            here anymore -- the WHO is carried by the M2M. The FK is being
+            retired; while it still exists it stays null on extracted rows.
 
         Drops:
             * missing / blank source_quote -> drop (schema).
@@ -622,11 +763,17 @@ class TranscriptSignalExtractor:
             'is_to_replace':   bool(raw.get('is_to_replace')),
         }
 
-        # --- usage_scope filtering ---
+        # --- usage_scope filtering (SCALE axis, kept as-is) ---
         usage_scope_raw = raw.get('usage_scope')
         if usage_scope_raw in _TECHSTACK_USAGE_SCOPE_ALLOWED:
             data['usage_scope'] = usage_scope_raw
         # else: leave unset (None) -- model field is nullable.
+
+        # --- usage_departments (WHO -- multi-department M2M) ---
+        # Always assign the resolved list (possibly empty). SignalManager
+        # .create pops M2M values and applies them with .set() post-save.
+        # The legacy single-FK usage_department is deliberately left unset.
+        data['usage_departments'] = resolve_tech_usage_departments(raw)
 
         return data
 

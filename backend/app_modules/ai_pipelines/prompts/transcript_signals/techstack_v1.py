@@ -13,7 +13,7 @@ The full assembly is performed by PromptBuilder.assemble() in base.py.
 Schema (v1 — S10 revision)
 --------------------------
 The LLM emits one JSON object with a single key `signals` containing an
-array of tech-stack observations. Each observation has exactly 7 fields:
+array of tech-stack observations. Each observation has exactly 8 fields:
 
     tech_name              string       -- the tool's CANONICAL product
                                             name (official, stable
@@ -23,8 +23,19 @@ array of tech-stack observations. Each observation has exactly 7 fields:
                                             section of the request below.
     is_competitor          boolean      -- overlaps with what the seller sells.
     is_to_replace          boolean      -- the prospect intends to move off it.
-    usage_scope            string|null  -- "TEAM" | "COMPANY" | "UNKNOWN",
-                                            or null when not discussed.
+    usage_scope            string|null  -- SCALE: "TEAM" | "COMPANY" |
+                                            "UNKNOWN", or null when not
+                                            discussed. HOW WIDELY the tool
+                                            is used.
+    usage_departments      string[]     -- WHO: the department(s) that USE
+                                            the tool, drawn from the
+                                            StandardDepartment vocabulary in
+                                            the context layer. Multi-valued
+                                            (a tool used by Sales AND
+                                            Marketing lists both). EMPTY []
+                                            when no department is explicitly
+                                            designated as a user. See the
+                                            USAGE DEPARTMENTS section below.
     source_quote           string       -- verbatim excerpt from the transcript.
     confidence             float        -- LLM self-declared, in [0.0, 1.0].
     is_inferred            boolean      -- LLM self-declared, true when not
@@ -51,14 +62,35 @@ data anymore.
 
 Empty result is represented by {"signals": []}.
 
-Why scope_level DEPARTMENT is excluded from v1
-----------------------------------------------
-UsageScope.DEPARTMENT triggers TechStackSignal.clean() rule 1 requiring
-`usage_department` (FK to StandardDepartment). Resolving a department
-reference from free text would require either an LLM second-pass or
-fuzzy text matching, neither of which is MVP material. We instruct the
-LLM to emit "UNKNOWN" for any department-scoped mention -- the rep
-promotes the scope and attaches the department FK during validation.
+Two orthogonal axes: SCALE (usage_scope) and WHO (usage_departments)
+-------------------------------------------------------------------
+`usage_scope` answers HOW WIDELY the tool is used (TEAM / COMPANY /
+UNKNOWN) -- a scale, unchanged by this revision. `usage_departments`
+answers WHO uses it: the specific department(s), multi-valued. The two
+are independent and both are emitted per tool:
+
+  * "everyone here is on Slack"          -> usage_scope="COMPANY",
+                                            usage_departments=[]
+                                            (company-wide, no single dept
+                                            designated).
+  * "the marketing team lives in HubSpot"-> usage_scope="TEAM",
+                                            usage_departments=["Marketing"].
+  * "Sales and Marketing both use X"      -> usage_scope="TEAM",
+                                            usage_departments=["Sales",
+                                            "Marketing"].
+
+Department names are drawn from the StandardDepartment vocabulary injected
+in the context layer; the backend resolves each by EXACT name match (no
+fuzzy matching) to a StandardDepartment row and assigns them to the
+multi-department M2M TechStackSignal.usage_departments. An unresolved or
+"General Management" name is dropped by the backend, never invented.
+
+Why usage_scope="DEPARTMENT" is still NOT emitted
+-------------------------------------------------
+The scale axis keeps only TEAM / COMPANY / UNKNOWN. "which department"
+is no longer a scale value -- it moved to the dedicated multi-valued
+`usage_departments` field above. So the model never emits
+usage_scope="DEPARTMENT".
 
 Why is_discontinued / cost_description / renewal_date are NOT extracted
 ----------------------------------------------------------------------
@@ -111,6 +143,12 @@ mapped to a new TechStackSignal row:
     is_competitor                 ->  is_competitor
     is_to_replace                 ->  is_to_replace
     usage_scope                   ->  usage_scope (NULL when null/missing)
+    usage_departments             ->  usage_departments (M2M; each name
+                                       resolved by exact match to a
+                                       StandardDepartment row via
+                                       resolve_tech_usage_departments,
+                                       deduped, unresolved / General
+                                       Management dropped; [] when none)
     source_quote                  ->  source_quote (declared on BaseSignal)
     confidence                    ->  confidence   (declared on BaseSignal)
     is_inferred                   ->  is_inferred  (declared on BaseSignal)
@@ -128,7 +166,8 @@ Hardcoded defaults at create:
 
     is_discontinued     =  False
     discontinued_date   =  None
-    usage_department    =  None    (DEPARTMENT scope excluded in v1)
+    usage_department    =  None    (legacy single-FK; being retired --
+                                    the WHO is carried by usage_departments)
     usage_start_year    =  None
     renewal_date        =  None
     cost_description    =  ''
@@ -287,6 +326,7 @@ Return a single JSON object with this exact shape:
       "is_competitor":   <boolean, see QUALIFICATION>,
       "is_to_replace":   <boolean, see QUALIFICATION>,
       "usage_scope":     "<TEAM | COMPANY | UNKNOWN, or null when scope was not discussed>",
+      "usage_departments": ["<zero or more department names from the CANONICAL TAXONOMY usage_departments list -- see USAGE DEPARTMENTS; [] when none is explicitly designated>"],
       "source_quote":    "<verbatim excerpt from the transcript supporting this tool observation>",
       "confidence":      <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
       "is_inferred":     <boolean, true when the signal is inferred rather than directly stated>
@@ -294,7 +334,7 @@ Return a single JSON object with this exact shape:
   ]
 }}
 
-USAGE SCOPE GUIDANCE
+USAGE SCOPE GUIDANCE (SCALE -- how widely, one value)
 - "TEAM"     -- the tool is used by a single team inside a department
                 (e.g. "the SDR team uses Outreach").
 - "COMPANY"  -- the tool is used company-wide across multiple departments
@@ -302,10 +342,50 @@ USAGE SCOPE GUIDANCE
 - "UNKNOWN"  -- usage scope was discussed but not clarified.
 - null       -- usage scope was not discussed at all.
 
-Do NOT emit "DEPARTMENT" in v1. Department-scoped tooling requires
-resolving the specific department, which is performed downstream by
-the rep during validation. Treat any "department X uses tool Y"
-mention as "UNKNOWN" -- the rep will refine.
+Never emit "DEPARTMENT" for usage_scope -- it is a SCALE, not a WHO.
+"which department uses it" is captured separately and multi-valued in
+`usage_departments` (next section). usage_scope stays the scale even when
+one or more departments are named (e.g. "the marketing team is on HubSpot"
+-> usage_scope="TEAM", usage_departments=["Marketing"]).
+
+USAGE DEPARTMENTS (WHO -- which department(s) USE the tool; multi-valued)
+Emit in `usage_departments` every department that is EXPLICITLY DESIGNATED
+as a USER of this tool, drawn EXACTLY from the usage_departments list in
+the CANONICAL TAXONOMY block above. Several departments are allowed on one
+tool.
+
+DESIGNATION RULE (the bar for adding a department -- calqued on the
+constraint scope guard):
+- Add a department ONLY when the transcript explicitly designates it as
+  USING the tool: "the marketing team is on HubSpot", "Sales and Marketing
+  both live in the CRM", "our finance department runs everything in SAP".
+- A technical theme-word, the tool's category, or the SPEAKER's own
+  department do NOT designate a user. "we need SSO" names no user; an IT
+  lead saying "everyone uses Slack" does not make it an IT tool.
+- When NO department is explicitly designated as a user, emit an EMPTY
+  list []. NEVER invent or guess a department. A company-wide tool with no
+  single owner is []  (with usage_scope="COMPANY").
+- Use the exact StandardDepartment strings from the taxonomy list; a name
+  not in that list, or a company-wide / "General Management" catch-all, is
+  dropped downstream -- so prefer [] over a non-listed guess.
+
+USAGE DEPARTMENTS EXAMPLES (designation decides -- not the speaker, not a
+technical word):
+- "the marketing team has been on HubSpot for three years"
+      -> usage_scope="TEAM", usage_departments=["Marketing"]
+         (one department explicitly designated as the user).
+- "both Sales and Marketing run their pipeline in the CRM"
+      -> usage_scope="TEAM", usage_departments=["Sales", "Marketing"]
+         (two departments explicitly designated -- multi-valued).
+- "honestly everyone in the company is on Slack"
+      -> usage_scope="COMPANY", usage_departments=[]
+         (company-wide, no single department designated -- empty, not a guess).
+- "we use Zendesk for support tickets"
+      -> usage_scope="TEAM", usage_departments=["Customer Support"]
+         (the support function is designated as the user).
+- "our CTO mentioned we run Datadog"
+      -> usage_departments=[]  (the SPEAKER's role does not designate a
+         using department; nobody is named as the user).
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of

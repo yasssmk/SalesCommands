@@ -29,7 +29,8 @@ function formatDate(isoDate) {
 /**
  * TechDetailBlock — shared rendering of a TechStackSignal's type-specific
  * fields: qualification flags (competitor / integration / to-replace),
- * usage (scope + department), lifecycle (used since / renewal / cost),
+ * usage (ONE line — the using departments if any, else the scale),
+ * lifecycle (used since / renewal / cost),
  * and discontinuation. Reads booleans and *_display off the signal.
  * The tool name is the signal's identity (rendered by the shell/header),
  * not part of this block.
@@ -42,7 +43,32 @@ export default function TechDetailBlock({ signal }) {
   ].filter(Boolean);
 
   const usageScope = signal.usage_scope_display;
-  const department = signal.usage_department?.name;
+  // WHO uses the tool — multi-department (M2M). Every write path
+  // (extraction and manual entry) fills usage_departments; the legacy
+  // single usage_department FK was dropped. Each entry is a compact
+  // { id, name } payload.
+  const departments = Array.isArray(signal.usage_departments)
+    ? signal.usage_departments
+    : [];
+
+  // ONE usage line (PO rule). The department is the WHO and PRIMES over the
+  // usage_scope SCALE: when at least one department is designated, show the
+  // department list and NOT the scale (they contradict — "Company-wide" +
+  // "Marketing" side by side made no sense). Otherwise fall back to the
+  // scale. Never both. Plain text (comma-separated), same DrawerFieldRow
+  // text style as "Used since" / "Cost" below — no chips.
+  const departmentNames = departments.map((d) => d && d.name).filter(Boolean);
+  const usageValue =
+    departmentNames.length > 0
+      ? departmentNames.join(", ")
+      : usageScope || null;
+  const usageLabel =
+    departmentNames.length > 1
+      ? "Departments"
+      : departmentNames.length === 1
+        ? "Department"
+        : "Usage scope";
+
   const usedSince = signal.usage_start_year ? String(signal.usage_start_year) : null;
   const renewal = formatDate(signal.renewal_date);
   const cost = signal.cost_description;
@@ -52,8 +78,7 @@ export default function TechDetailBlock({ signal }) {
 
   const hasContent =
     qualifications.length > 0 ||
-    usageScope ||
-    department ||
+    usageValue ||
     usedSince ||
     renewal ||
     cost ||
@@ -79,8 +104,7 @@ export default function TechDetailBlock({ signal }) {
           </Stack>
         </DrawerFieldRow>
       )}
-      <DrawerFieldRow label="Usage scope" value={usageScope} />
-      <DrawerFieldRow label="Department" value={department} />
+      <DrawerFieldRow label={usageLabel} value={usageValue} />
       <DrawerFieldRow label="Used since" value={usedSince} />
       <DrawerFieldRow label="Renewal date" value={renewal} />
       <DrawerFieldRow label="Cost" value={cost} />
@@ -101,7 +125,9 @@ TechDetailBlock.propTypes = {
     is_integration: PropTypes.bool,
     is_to_replace: PropTypes.bool,
     usage_scope_display: PropTypes.string,
-    usage_department: PropTypes.shape({ name: PropTypes.string }),
+    usage_departments: PropTypes.arrayOf(
+      PropTypes.shape({ id: PropTypes.string, name: PropTypes.string })
+    ),
     usage_start_year: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     renewal_date: PropTypes.string,
     cost_description: PropTypes.string,

@@ -16,7 +16,7 @@
  * The staged payload follows the TechStackSignal model:
  *   tech_name           : free-text tool name (+ 3 qualification booleans)
  *   usage_scope         : 'TEAM' | 'DEPARTMENT' | 'COMPANY' | 'UNKNOWN' | null
- *   usage_department    : department object | null (DEPARTMENT scope only)
+ *   usage_departments   : array of { id, name } | [] (WHO uses the tool)
  *   usage_start_year    : number | null
  *   renewal_date        : ISO yyyy-mm-dd | null
  *   cost_description    : string ('' allowed)
@@ -117,7 +117,7 @@ const USAGE_SCOPE_LABELS = {
  *
  * Layout (top to bottom):
  *   1. Header line   : "{vendor} {product}" + Competitor / Integration badges
- *   2. Scope row     : usage_scope chip + usage_department (when scope=DEPARTMENT)
+ *   2. Scope row     : usage_scope chip + usage_departments (joined names)
  *   3. Lifecycle row : "Used since 2019 · Renewal Sep 2025 · ~80k€/year"
  *                      (each segment included only when set; null fields collapse)
  *   4. Discontinuation badge : when is_discontinued=true
@@ -159,16 +159,18 @@ function StagedTechStackCard({
     : null;
 
   /**
-   * usage_department arrives from the staged payload as an object whole
-   * (AsyncSelect compatibility) — we extract its name for display.
-   * Defensive: if a UUID string ever lands here, render that as-is.
+   * usage_departments — WHO uses the tool (multi-department). Entries are
+   * { id, name } payloads on read; join their names for the compact
+   * staging line. Empty → null (nothing to show).
    */
   const departmentName = useMemo(() => {
-    const dept = signal.usage_department;
-    if (!dept) return null;
-    if (typeof dept === "string") return dept;
-    return dept.name ?? null;
-  }, [signal.usage_department]);
+    const depts = signal.usage_departments;
+    if (!Array.isArray(depts) || depts.length === 0) return null;
+    return depts
+      .map((d) => (typeof d === "string" ? d : d?.name))
+      .filter(Boolean)
+      .join(", ");
+  }, [signal.usage_departments]);
 
   // ----- Lifecycle compact line -----
   const lifecycleLine = useMemo(() => {
@@ -297,7 +299,7 @@ function StagedTechStackCard({
                   }}
                 />
               )}
-              {departmentName && signal.usage_scope === "DEPARTMENT" && (
+              {departmentName && (
                 <Typography
                   variant="caption"
                   color={isRejected ? "text.disabled" : "text.secondary"}
@@ -426,10 +428,9 @@ StagedTechStackCard.propTypes = {
     is_to_replace: PropTypes.bool,
     // Scope axis
     usage_scope: PropTypes.oneOf(["TEAM", "DEPARTMENT", "COMPANY", "UNKNOWN"]),
-    usage_department: PropTypes.oneOfType([
-      PropTypes.string,
+    usage_departments: PropTypes.arrayOf(
       PropTypes.shape({ id: PropTypes.string, name: PropTypes.string }),
-    ]),
+    ),
     // Lifecycle
     usage_start_year: PropTypes.number,
     renewal_date: PropTypes.string,
@@ -657,10 +658,7 @@ TechStackSection.propTypes = {
       // Staged shape — see file docstring.
       tech_name: PropTypes.string,
       usage_scope: PropTypes.string,
-      usage_department: PropTypes.oneOfType([
-        PropTypes.string,
-        PropTypes.object,
-      ]),
+      usage_departments: PropTypes.arrayOf(PropTypes.object),
       usage_start_year: PropTypes.number,
       renewal_date: PropTypes.string,
       cost_description: PropTypes.string,
