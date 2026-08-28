@@ -14,6 +14,7 @@ Mirrors tests/signals/test_cluster_service_techstack.py.
 
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 
 import pytest
 
@@ -328,3 +329,152 @@ class TestOtherTypesUnaffected:
         types = {c['signal_type'] for c in clusters}
         assert 'pain' in types
         assert 'constraint' in types
+
+
+# =============================================================================
+# NATURE FILTER — the constraint-family filter (OR within, AND across families)
+# =============================================================================
+
+class TestConstraintNatureFilter:
+    """
+    The `nature` member filter narrows ONLY the constraint clusters: a
+    multi-value list is an OR within the family (nature__in), and the other
+    families ignore it (AND across families). Mirrors the what/dimension
+    SUBJECT axes, which narrow pain/objective/impact and are ignored by tech.
+    Real path: SignalClusterService.list_clusters_for_account (the same call
+    the view makes) plus the view endpoint end-to-end.
+    """
+
+    def _seed_three_natures(self, account, activity, decision_cycle, user_a):
+        _mk_constraint(account, activity, decision_cycle, user_a,
+                       ConstraintNature.TECHNICAL)
+        _mk_constraint(account, activity, decision_cycle, user_a,
+                       ConstraintNature.FINANCIAL)
+        _mk_constraint(account, activity, decision_cycle, user_a,
+                       ConstraintNature.SECURITY)
+
+    def test_single_nature_returns_only_that_nature(
+        self, account, activity, decision_cycle, user_a,
+    ):
+        self._seed_three_natures(account, activity, decision_cycle, user_a)
+
+        clusters = _list_constraint(
+            account, decision_cycle, natures=['TECHNICAL'],
+        )
+
+        assert [c['canonical_key'] for c in clusters] == ['TECHNICAL']
+
+    def test_multi_nature_is_or(
+        self, account, activity, decision_cycle, user_a,
+    ):
+        self._seed_three_natures(account, activity, decision_cycle, user_a)
+
+        clusters = _list_constraint(
+            account, decision_cycle, natures=['TECHNICAL', 'FINANCIAL'],
+        )
+
+        assert sorted(c['canonical_key'] for c in clusters) == [
+            'FINANCIAL', 'TECHNICAL',
+        ]
+        # NON-VACUITY: SECURITY exists but is not in the filter -> excluded.
+        # Drop the nature__in clause in _fetch_constraint_signals and this
+        # returns all three, reddening the assertion.
+        assert 'SECURITY' not in {c['canonical_key'] for c in clusters}
+
+    def test_no_nature_filter_returns_all(
+        self, account, activity, decision_cycle, user_a,
+    ):
+        # Baseline: without the filter, every nature forms its cluster.
+        self._seed_three_natures(account, activity, decision_cycle, user_a)
+        clusters = _list_constraint(account, decision_cycle)
+        assert len(clusters) == 3
+
+    def test_nature_filter_narrows_constraints_but_not_other_families(
+        self, account, activity, decision_cycle, user_a,
+    ):
+        # AND across families: filtering nature narrows constraint clusters
+        # only; the pain cluster (a different family) is untouched.
+        from app_modules.signals.models import PainSignal
+        from app_modules.signals.constants import (
+            SignalWhat, SignalDimension, ScopeLevel,
+        )
+        pain = PainSignal(
+            account=account, source_activity=activity,
+            decision_cycle=decision_cycle,
+            what=SignalWhat.OPS, dimension=SignalDimension.TIME,
+            scope_level=ScopeLevel.BUSINESS,
+            summary='Slow reporting', source=SignalSource.MANUAL,
+        )
+        pain.save(user=user_a, client_id=account.client_id)
+        _mk_constraint(account, activity, decision_cycle, user_a,
+                       ConstraintNature.TECHNICAL)
+        _mk_constraint(account, activity, decision_cycle, user_a,
+                       ConstraintNature.FINANCIAL)
+
+        clusters = SignalClusterService.list_clusters_for_account(
+            account_id=account.id,
+            signal_type=['pain', 'constraint'],
+            decision_cycle_id=decision_cycle.id,
+            natures=['TECHNICAL'],
+        )
+        constraint_keys = [
+            c['canonical_key'] for c in clusters
+            if c['signal_type'] == 'constraint'
+        ]
+        pain_present = any(c['signal_type'] == 'pain' for c in clusters)
+
+        # Only the TECHNICAL constraint survives; FINANCIAL is filtered out.
+        assert constraint_keys == ['TECHNICAL']
+        # The pain family is unaffected by the constraint-only nature filter.
+        assert pain_present is True
+
+    def test_nature_filter_adds_no_queries(
+        self, account, activity, decision_cycle, user_a,
+    ):
+        # The filter is a single WHERE clause on the existing member query —
+        # no N+1. Query count with the filter == without it.
+        self._seed_three_natures(account, activity, decision_cycle, user_a)
+
+        with CaptureQueriesContext(connection) as unfiltered:
+            _list_constraint(account, decision_cycle)
+        with CaptureQueriesContext(connection) as filtered:
+            _list_constraint(account, decision_cycle, natures=['TECHNICAL'])
+
+        assert len(filtered) == len(unfiltered)
+
+
+class TestConstraintNatureFilterView:
+    """Endpoint end-to-end: the `nature` query param reaches the filter."""
+
+    def _url(self):
+        return reverse('module_signals:cluster-list')
+
+    def test_nature_param_filters_constraint_clusters(
+        self, authed_api_a, account, activity, decision_cycle, user_a,
+    ):
+        _mk_constraint(account, activity, decision_cycle, user_a,
+                       ConstraintNature.TECHNICAL)
+        _mk_constraint(account, activity, decision_cycle, user_a,
+                       ConstraintNature.FINANCIAL)
+
+        resp = authed_api_a.get(self._url(), {
+            'account': str(account.id),
+            'signal_type': 'constraint',
+            'decision_cycle': str(decision_cycle.id),
+            'nature': 'TECHNICAL',
+        })
+
+        assert resp.status_code == 200
+        data = resp.json()['data']
+        assert [c['canonical_key'] for c in data] == ['TECHNICAL']
+
+    def test_invalid_nature_is_400_not_500(
+        self, authed_api_a, account, activity, decision_cycle, user_a,
+    ):
+        resp = authed_api_a.get(self._url(), {
+            'account': str(account.id),
+            'signal_type': 'constraint',
+            'decision_cycle': str(decision_cycle.id),
+            'nature': 'NONSENSE',
+        })
+        assert resp.status_code == 400

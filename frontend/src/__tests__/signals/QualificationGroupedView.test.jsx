@@ -311,6 +311,33 @@ describe("QualificationGroupedView — Constraints section (DC only, by nature)"
     fireEvent.click(screen.getByText("GDPR compliance is mandatory"));
     expect(screen.getByTestId("cluster-drawer")).toBeInTheDocument();
   });
+
+  it("passes the nature filter to the cluster fetch on the DC surface", () => {
+    mockClusters([CONSTRAINT_CLUSTER]);
+    render(
+      <QualificationGroupedView
+        surface="dc"
+        accountId={ACCOUNT_ID}
+        decisionCycleId={CYCLE_ID}
+        natures={["TECHNICAL"]}
+      />,
+    );
+    const opts = useGetClustersByAccount.mock.calls.at(-1)[1];
+    expect(opts.natures).toEqual(["TECHNICAL"]);
+  });
+
+  it("does NOT send the nature filter on the account surface (constraints are DC-only)", () => {
+    mockClusters([OBJECTIVE_CLUSTER, PAIN_CLUSTER, TECH_CLUSTER]);
+    render(
+      <QualificationGroupedView
+        surface="account"
+        accountId={ACCOUNT_ID}
+        natures={["TECHNICAL"]}
+      />,
+    );
+    const opts = useGetClustersByAccount.mock.calls.at(-1)[1];
+    expect(opts.natures).toBeUndefined();
+  });
 });
 
 describe("QualificationGroupedView — themed MUI Accordion", () => {

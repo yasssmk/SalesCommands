@@ -55,6 +55,7 @@ from ..serializers import (
     SignalClusterListSerializer,
 )
 from ..constants import (
+    ConstraintNature,
     ScopeLevel,
     SignalClusterType,
     SignalDimension,
@@ -216,6 +217,8 @@ def _parse_member_filters(request):
         the service ORs scope=BUSINESS with target_department IN the ids.
       what (repeatable)      → validated ∈ SignalWhat  (SUBJECT domain)
       dimension (repeatable) → validated ∈ SignalDimension
+      nature (repeatable)    → validated ∈ ConstraintNature (CONSTRAINT family;
+                               narrows only the constraint clusters)
       contact (repeatable)   → list of Contact UUIDs (SOURCE, multi)
 
     Legacy separate params (kept for back-compat; the grouped FE sends
@@ -269,6 +272,21 @@ def _parse_member_filters(request):
             )
         dimensions.append(raw)
 
+    # nature — multi, validated against ConstraintNature. Constraint-family
+    # filter: it narrows ONLY the constraint clusters (nature__in = OR within
+    # the family), and the other families ignore it, exactly like what /
+    # dimension narrow only pain/objective/impact and are ignored by tech.
+    natures = []
+    for raw in request.query_params.getlist('nature'):
+        if raw == '':
+            continue
+        if raw not in ConstraintNature.values:
+            raise StandardizedValidationError(
+                "The 'nature' filter must be one of: "
+                + ", ".join(ConstraintNature.values) + "."
+            )
+        natures.append(raw)
+
     # contact — multi-select Contact UUIDs (SOURCE who reported it).
     contacts = []
     for raw in request.query_params.getlist('contact'):
@@ -318,6 +336,7 @@ def _parse_member_filters(request):
         'perimeter_departments': perimeter_departments or None,
         'whats': whats or None,
         'dimensions': dimensions or None,
+        'natures': natures or None,
         'contacts': contacts or None,
         'departments': departments or None,
         'scope': scope,

@@ -121,6 +121,7 @@ function buildListUrl(baseUrl, params = {}) {
     perimeter,
     whats,
     dimensions,
+    natures,
     contacts,
   } = params;
 
@@ -176,6 +177,11 @@ function buildListUrl(baseUrl, params = {}) {
   });
   (dimensions || []).forEach((d) => {
     if (d) query.append("dimension", d);
+  });
+  // nature — CONSTRAINT-family filter (repeatable). Narrows only the
+  // constraint clusters server-side; the other families ignore it.
+  (natures || []).forEach((n) => {
+    if (n) query.append("nature", n);
   });
   (contacts || []).forEach((c) => {
     if (c) query.append("contact", c);
@@ -280,6 +286,7 @@ export function useGetClustersByAccount(accountId, options = {}) {
     perimeter = null,
     whats = null,
     dimensions = null,
+    natures = null,
     contacts = null,
   } = options;
 
@@ -294,6 +301,7 @@ export function useGetClustersByAccount(accountId, options = {}) {
   const perimeterKey = (perimeter || []).join(",");
   const whatsKey = (whats || []).join(",");
   const dimensionsKey = (dimensions || []).join(",");
+  const naturesKey = (natures || []).join(",");
   const contactsKey = (contacts || []).join(",");
 
   // Normalise signalType to a stable CSV string.
@@ -327,6 +335,7 @@ export function useGetClustersByAccount(accountId, options = {}) {
             perimeter,
             whats,
             dimensions,
+            natures,
             contacts,
           })
         : null,
@@ -346,6 +355,7 @@ export function useGetClustersByAccount(accountId, options = {}) {
       perimeterKey,
       whatsKey,
       dimensionsKey,
+      naturesKey,
       contactsKey,
     ],
   );

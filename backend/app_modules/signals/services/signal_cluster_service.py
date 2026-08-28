@@ -200,6 +200,7 @@ class SignalClusterService:
         perimeter_departments=None,
         whats=None,
         dimensions=None,
+        natures=None,
         contacts=None,
     ) -> list:
         """
@@ -259,6 +260,10 @@ class SignalClusterService:
             # Subject axes.
             'whats': tuple(whats) if whats else None,
             'dimensions': tuple(dimensions) if dimensions else None,
+            # CONSTRAINT-family axis (nature). Read ONLY by the constraint
+            # fetch; the other families ignore it, so it narrows constraint
+            # clusters without touching pain/objective/impact/tech.
+            'natures': tuple(natures) if natures else None,
             # SOURCE — multi contact (who reported it).
             'contacts': tuple(contacts) if contacts else None,
         }
@@ -1194,6 +1199,17 @@ class SignalClusterService:
 
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
+
+        # NATURE filter (CONSTRAINT-family): nature__in = OR within the family.
+        # This is the constraint analogue of the what/dimension SUBJECT axes on
+        # pain/objective/impact -- applied here, in the constraint-specific
+        # fetch, because ConstraintNature is a constraint-only vocabulary and
+        # _apply_member_filters (used by the axis-based types) has no nature
+        # clause. Part of the single member query -> N+1-safe.
+        if member_filters:
+            natures = member_filters.get('natures')
+            if natures:
+                qs = qs.filter(nature__in=natures)
 
         # SOURCE contact filter (who raised the requirement), via
         # source_activity.contacts. Same clause as the other read-time type.

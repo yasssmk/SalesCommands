@@ -56,6 +56,7 @@ const emptyGroupedFilters = () => ({
   contacts: [], // contact objects (Autocomplete value); ids derived for fetch
   whats: [],
   dimensions: [],
+  natures: [], // CONSTRAINT-family filter (ConstraintNature codes)
   statuses: GROUPED_DEFAULT_STATUSES,
 });
 
@@ -130,6 +131,7 @@ export default function SignalsTab({ cycleId, accountId }) {
     groupedFilters.contacts.length +
     groupedFilters.whats.length +
     groupedFilters.dimensions.length +
+    groupedFilters.natures.length +
     (groupedFilters.statuses.includes("REJECTED") ? 1 : 0);
 
   // Sort state
@@ -307,6 +309,7 @@ export default function SignalsTab({ cycleId, accountId }) {
           perimeter={groupedFilters.perimeter}
           whats={groupedFilters.whats}
           dimensions={groupedFilters.dimensions}
+          natures={groupedFilters.natures}
           contacts={groupedContactIds}
           statuses={groupedFilters.statuses}
         />
@@ -340,6 +343,7 @@ export default function SignalsTab({ cycleId, accountId }) {
           onChange={handleGroupedChange}
           onClear={handleGroupedClear}
           activeCount={groupedActiveCount}
+          showConstraint
         />
       ) : (
         <SignalsFilterPanel
