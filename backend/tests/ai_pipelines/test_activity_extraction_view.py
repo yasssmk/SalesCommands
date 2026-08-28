@@ -142,6 +142,7 @@ class TestHappyPath:
         assert 'impact' in qs
         assert 'tech-stack' in qs
         assert 'blocker' in qs
+        assert 'constraint' in qs
 
         # Next step signals present
         assert len(data['next_step_signals']) >= 1
@@ -154,6 +155,69 @@ class TestHappyPath:
             AIPipelineType.TRANSCRIPT_SIGNALS,
             AIPipelineType.NEXT_STEPS,
         }
+
+
+# =============================================================================
+# CONSTRAINT SIGNALS SURFACED IN THE RESPONSE
+# =============================================================================
+
+@pytest.mark.django_db
+class TestConstraintSignalsSurfaced:
+    """
+    A run that extracts a ConstraintSignal must return it in the view's
+    `qualification_signals.constraint` list (regression guard for the
+    surfacing bug: the view used to omit the constraint type entirely).
+    """
+
+    def test_extracted_constraint_is_in_the_response(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        fake_provider.replies = {
+            'constraint': (
+                '{"signals": [{'
+                '"summary": "The solution must integrate with SAP", '
+                '"nature": "TECHNICAL", '
+                '"rigidity": "FIRM", '
+                '"scope_level": "BUSINESS", '
+                '"target_department": null, '
+                '"source_quote": "it has to plug into our SAP instance", '
+                '"confidence": 0.9, "is_inferred": false}]}'
+            ),
+            'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY,
+        }
+
+        with _apply_patches(_bypass_redis):
+            resp = authed_api_a.post(
+                URL,
+                {'activity_id': str(activity.id), 'transcript': TRANSCRIPT},
+                format='json',
+            )
+
+        assert resp.status_code == 200
+        qs = resp.json()['data']['qualification_signals']
+
+        # The constraint key exists AND carries the extracted signal.
+        assert 'constraint' in qs
+        assert len(qs['constraint']) == 1
+        assert qs['constraint'][0]['nature'] == 'TECHNICAL'
+        assert qs['constraint'][0]['rigidity'] == 'FIRM'
+
+    def test_empty_when_no_constraint_extracted(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        # No constraint reply -> the key is present but empty (never missing).
+        fake_provider.replies = {'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY}
+
+        with _apply_patches(_bypass_redis):
+            resp = authed_api_a.post(
+                URL,
+                {'activity_id': str(activity.id), 'transcript': TRANSCRIPT},
+                format='json',
+            )
+
+        assert resp.status_code == 200
+        qs = resp.json()['data']['qualification_signals']
+        assert qs['constraint'] == []
 
 
 # =============================================================================
