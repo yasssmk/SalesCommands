@@ -43,22 +43,13 @@ export default function TechDetailBlock({ signal }) {
   ].filter(Boolean);
 
   const usageScope = signal.usage_scope_display;
-  // WHO uses the tool — multi-department (M2M). Primary source, each entry a
-  // compact { id, name } payload. TRANSITION SHIM: the manual-entry wizard
-  // still writes the legacy single usage_department (its migration to the
-  // M2M is the next sub-step). Until then, fall back to that single FK so a
-  // hand-entered signal does not lose its department in this view. Remove
-  // the fallback once the wizard writes usage_departments.
-  const departmentsM2M = Array.isArray(signal.usage_departments)
+  // WHO uses the tool — multi-department (M2M). Every write path
+  // (extraction and manual entry) fills usage_departments; the legacy
+  // single usage_department FK was dropped. Each entry is a compact
+  // { id, name } payload.
+  const departments = Array.isArray(signal.usage_departments)
     ? signal.usage_departments
     : [];
-  const legacySingle = signal.usage_department;
-  const departments =
-    departmentsM2M.length > 0
-      ? departmentsM2M
-      : legacySingle
-        ? [legacySingle]
-        : [];
 
   // ONE usage line (PO rule). The department is the WHO and PRIMES over the
   // usage_scope SCALE: when at least one department is designated, show the
@@ -137,8 +128,6 @@ TechDetailBlock.propTypes = {
     usage_departments: PropTypes.arrayOf(
       PropTypes.shape({ id: PropTypes.string, name: PropTypes.string })
     ),
-    // Legacy single FK — transitional fallback only (see component body).
-    usage_department: PropTypes.shape({ name: PropTypes.string }),
     usage_start_year: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     renewal_date: PropTypes.string,
     cost_description: PropTypes.string,

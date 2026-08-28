@@ -303,7 +303,7 @@ class SignalDataService:
                                             # (shadow-overridden)
             "summary":    "...",            # type-appropriate text excerpt
             "contact":    "Jane Doe",       # first contact of source_activity, or None
-            "department": "IT",             # usage_department for TechStack only,
+            "department": "IT",             # usage_departments (joined) for TechStack only,
                                             # None for Pain / Objective / Impact
             "confirmed":  1,                # always 1 in MVP
             "date":       "2025-03-15"      # validated_at date or None
@@ -323,7 +323,7 @@ class SignalDataService:
                             (Pain / Objective via source_contact FK)
                             is gone — the field was retired from the
                             model.
-        - department      : TechStack-only (usage_department, "the
+        - department      : TechStack-only (usage_departments, "the
                             department USING the tool"). None for
                             Pain / Objective — source_department was
                             retired from BaseSignal and no

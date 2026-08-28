@@ -556,8 +556,8 @@ class SignalLLMSerializer(serializers.Serializer):
          from source_activity.contacts. Empty list when no activity.
       - `department` removed. source_department was the previous
          basis; with that field gone, no uniform department surface
-         remains. TechStack carries usage_department (who USES the
-         tool, distinct concept) — exposed elsewhere if needed.
+         remains. TechStack carries usage_departments (who USES the
+         tool, distinct concept — multi-department) — exposed elsewhere.
       - `confirmed` retained as a static 1; CorroborationService was
          deprecated and the cluster confirmation_count is the
          replacement metric, but it is not derivable per-signal here.

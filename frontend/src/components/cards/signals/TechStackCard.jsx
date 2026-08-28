@@ -487,12 +487,11 @@ TechStackCard.propTypes = {
     is_integration: PropTypes.bool,
     is_to_replace: PropTypes.bool,
 
-    // Scope axis
+    // Usage scale + who (multi-department)
     usage_scope: PropTypes.oneOf(["TEAM", "DEPARTMENT", "COMPANY", "UNKNOWN"]),
-    usage_department: PropTypes.oneOfType([
-      PropTypes.string,
+    usage_departments: PropTypes.arrayOf(
       PropTypes.shape({ id: PropTypes.string, name: PropTypes.string }),
-    ]),
+    ),
 
     // Lifecycle
     usage_start_year: PropTypes.number,

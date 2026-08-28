@@ -110,8 +110,6 @@ class TestExtractionFillsMultiDepartment:
         assert dropped == 0
         sig = persisted[0]
         assert _dept_names(sig) == {'Marketing'}
-        # The legacy single FK is NOT filled by extraction anymore.
-        assert sig.usage_department_id is None
 
     def test_multiple_designated_departments_all_land(
         self, account, activity, user_a, dept_sales, dept_marketing,
@@ -124,7 +122,6 @@ class TestExtractionFillsMultiDepartment:
 
         sig = persisted[0]
         assert _dept_names(sig) == {'Sales', 'Marketing'}
-        assert sig.usage_department_id is None
 
     def test_no_designated_department_yields_empty(
         self, account, activity, user_a,
@@ -138,7 +135,6 @@ class TestExtractionFillsMultiDepartment:
         sig = persisted[0]
         assert _dept_names(sig) == set()
         assert sig.usage_scope == 'COMPANY'  # SCALE preserved, complementary
-        assert sig.usage_department_id is None
 
     def test_zendesk_support_smoke(
         self, account, activity, user_a, dept_support,

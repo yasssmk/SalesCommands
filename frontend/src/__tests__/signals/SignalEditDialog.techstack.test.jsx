@@ -54,7 +54,7 @@ const VALIDATED_TECHSTACK = {
   is_integration: false,
   is_to_replace: false,
   usage_scope: null,
-  usage_department: null,
+  usage_departments: [],
   usage_start_year: null,
   renewal_date: null,
   cost_description: "",

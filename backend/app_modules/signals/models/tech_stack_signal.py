@@ -71,15 +71,13 @@ Validation rules (enforced in clean() AND in Create/Update serializers)
      a clean ValidationError on the API surface rather than an
      IntegrityError.
 
-  2. usage_scope = DEPARTMENT  →  usage_department REQUIRED.
-     usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}  →  usage_department
-                                                       FORBIDDEN.
-
-  3. is_discontinued = True  →  discontinued_date REQUIRED.
+  2. is_discontinued = True  →  discontinued_date REQUIRED.
      is_discontinued = False (default)  →  discontinued_date FORBIDDEN.
 
-The (2) and (3) pairs use the merged-state validation pattern in their
-matching serializers — see TechStackSignalUpdateSerializer.
+Rule (2) uses the merged-state validation pattern in the matching
+serializer — see TechStackSignalUpdateSerializer. WHO uses the tool is the
+multi-department usage_departments M2M, independent of usage_scope and with
+no conditional rule (the former single-FK usage_department was dropped).
 
 Status creation rule
 --------------------
@@ -135,18 +133,18 @@ class TechStackSignal(BaseSignal):
         - tech_name (the tool's identity; blank names carry no meaning)
 
     Conditional:
-        - usage_department  (required iff usage_scope == DEPARTMENT)
         - discontinued_date (required iff is_discontinued is True)
 
     Optional:
-        - usage_scope, usage_start_year, renewal_date, cost_description, notes
+        - usage_scope, usage_departments (multi-department M2M — WHO uses
+          the tool), usage_start_year, renewal_date, cost_description, notes
 
     Source contacts:
         Contacts who participated in `source_activity` are derived at
         read time from `source_activity.contacts` and exposed through
         the standardised `source` block in serializers. The signal does
         not carry a dedicated source_contact FK — see BaseSignal class
-        docstring for the rationale. usage_department is a distinct
+        docstring for the rationale. usage_departments is a distinct
         concept that captures who USES the tool, not who reported it.
 
     Inherited from BaseSignal (kept):
@@ -249,7 +247,7 @@ class TechStackSignal(BaseSignal):
     )
 
     # =========================================================================
-    # USAGE SCOPE (optional — drives conditional usage_department)
+    # USAGE SCOPE (optional — the SCALE at which the tool is used)
     # =========================================================================
 
     usage_scope = models.CharField(
@@ -259,24 +257,9 @@ class TechStackSignal(BaseSignal):
         blank=True,
         verbose_name=_('Usage Scope'),
         help_text=_(
-            'Organisational scope of the tool usage at this account. '
-            'When DEPARTMENT, usage_department must be set. '
-            'When TEAM / COMPANY / UNKNOWN, usage_department must be null.'
-        ),
-    )
-
-    usage_department = models.ForeignKey(
-        'core_modules.StandardDepartment',
-        on_delete=models.SET_NULL,
-        related_name='tech_stack_signals_using',
-        null=True,
-        blank=True,
-        verbose_name=_('Usage Department'),
-        help_text=_(
-            'Department using this tool — required when usage_scope=DEPARTMENT, '
-            'forbidden otherwise. Distinct from any inherited "source" '
-            'department (which describes who mentioned the tool, not who '
-            'uses it — and is shadow-overridden away on this signal).'
+            'Organisational SCALE of the tool usage at this account '
+            '(TEAM / COMPANY / UNKNOWN). Independent of WHO uses the tool — '
+            'that is the multi-department usage_departments M2M below.'
         ),
     )
 
@@ -285,12 +268,13 @@ class TechStackSignal(BaseSignal):
     # =========================================================================
     #
     # A tool can legitimately be used by SEVERAL departments at once
-    # ("Sales AND Marketing both live in HubSpot"). The single-FK
-    # `usage_department` above cannot express that: it holds at most one
-    # department and is gated behind usage_scope=DEPARTMENT. This M2M is
-    # the multi-department carrier — the SET of departments that use the
-    # tool, an attribute of the tool observation (displayed / filterable),
-    # independent of the usage_scope TEAM/COMPANY/UNKNOWN axis.
+    # ("Sales AND Marketing both live in HubSpot"). This M2M is the
+    # multi-department carrier — the SET of departments that use the tool,
+    # an attribute of the tool observation (displayed / filterable),
+    # independent of the usage_scope TEAM/COMPANY/UNKNOWN scale. It REPLACED
+    # the former single-FK `usage_department` (dropped once every consumer —
+    # extraction, prep_call, deal_health, display and manual entry — moved
+    # onto this M2M).
     #
     #   * blank=True — a tool may have NO designated usage department
     #     (the common case: the transcript never says who uses it).
@@ -300,22 +284,14 @@ class TechStackSignal(BaseSignal):
     #     link table (module_signals_tech_stack_usage_departments) is
     #     enough: the relation carries no extra attributes.
     #   * StandardDepartment is GLOBAL reference data (no client_id of its
-    #     own — see core_modules/models/standar_dept.py), exactly like the
-    #     `usage_department` FK above, so the link never crosses tenants:
-    #     the tenant boundary lives on THIS signal (client_id), the
-    #     department rows are shared vocabulary.
+    #     own — see core_modules/models/standar_dept.py), so the link never
+    #     crosses tenants: the tenant boundary lives on THIS signal
+    #     (client_id), the department rows are shared vocabulary.
     #
-    # Extraction contract: this field is POPULATED BY EXTRACTION (sub-step
-    # 2), not by manual entry — it is exposed read-only on the serializers.
-    # It is deliberately NOT coupled to usage_scope / usage_department: no
-    # clean() rule ties the three together, so the multi-department
-    # attribute is free of the DEPARTMENT-scope gate.
-    #
-    # Reusability note: this is the first M2M-to-StandardDepartment on a
-    # signal. Should a later sprint converge the other signals' single
-    # scope FKs onto a multi-department model, THIS field is the pattern
-    # to calque — but that consolidation is explicitly out of scope here
-    # (this sprint touches TechStack only).
+    # Populated by extraction (resolve_tech_usage_departments) AND by manual
+    # entry (the Create/Update serializer accepts a list of department ids).
+    # NOT coupled to usage_scope: no clean() rule ties them, so the
+    # multi-department attribute is free of any scope gate.
     usage_departments = models.ManyToManyField(
         'core_modules.StandardDepartment',
         related_name='tech_stack_signals_used_by',
@@ -514,15 +490,18 @@ class TechStackSignal(BaseSignal):
              NOT NULL. Raising in clean() yields a clean error payload
              on the API surface rather than an IntegrityError on save.
 
-          2. usage_scope = DEPARTMENT
-                → usage_department REQUIRED.
-             usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}
-                → usage_department FORBIDDEN.
-
-          3. is_discontinued = True
+          2. is_discontinued = True
                 → discontinued_date REQUIRED.
              is_discontinued = False (default)
                 → discontinued_date FORBIDDEN.
+
+        Note on WHO uses the tool:
+          There is NO scope↔department rule. WHO is the multi-department
+          usage_departments M2M, independent of the usage_scope SCALE and
+          validated at the DB level (FK to the controlled vocabulary), not
+          here — an M2M cannot be inspected in clean() before the row has a
+          PK anyway. The former single-FK usage_department and its
+          DEPARTMENT-scope conditional were dropped in this sprint.
 
         Note on `tech_name`:
           Identity is NOT enforced here. An LLM-extracted signal is
@@ -531,12 +510,6 @@ class TechStackSignal(BaseSignal):
           Create serializer requires it on the API path. Adding a
           model-level rule would break the historical rows the S10
           migration leaves with an empty name.
-
-        Note on rule 2 with usage_scope = None:
-          A null usage_scope is interpreted as "scope not yet
-          documented". Setting usage_department in that state would
-          create an inconsistent record (a department is set but no
-          scope justifies it). Forbidden.
         """
         super().clean()
 
@@ -548,20 +521,7 @@ class TechStackSignal(BaseSignal):
                 SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
             )
 
-        # --- Rule 2: usage_scope ↔ usage_department coherence ---
-        if self.usage_scope == UsageScope.DEPARTMENT:
-            if not self.usage_department_id:
-                errors['usage_department'] = (
-                    SignalErrorMessages.TECHSTACK_DEPT_REQUIRES_DEPT
-                )
-        else:
-            # Covers TEAM, COMPANY, UNKNOWN, and None.
-            if self.usage_department_id:
-                errors['usage_department'] = (
-                    SignalErrorMessages.TECHSTACK_DEPT_OUTSIDE_SCOPE
-                )
-
-        # --- Rule 3: is_discontinued ↔ discontinued_date coherence ---
+        # --- Rule 2: is_discontinued ↔ discontinued_date coherence ---
         if self.is_discontinued:
             if not self.discontinued_date:
                 errors['discontinued_date'] = (

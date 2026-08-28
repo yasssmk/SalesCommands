@@ -178,13 +178,12 @@ class TestSerializerExposesUsageDepartments:
         }
         assert got == expected
 
-    def test_single_fk_usage_department_is_independent(
+    def test_legacy_single_fk_is_gone_from_the_read_shape(
         self, authed_api_a, account, activity, user_a, dept_sales, dept_marketing,
     ):
         """
-        The M2M (who uses) does not disturb the legacy single-FK
-        usage_department: a signal with only usage_departments set still
-        reports usage_department = null.
+        The legacy single-FK usage_department was dropped: it is no longer
+        exposed on the read payload — only the multi-department list is.
         """
         sig = _make_signal(account, activity, user_a)
         sig.usage_departments.add(dept_sales, dept_marketing)
@@ -193,7 +192,7 @@ class TestSerializerExposesUsageDepartments:
             _url_list(), {'source_activity': str(activity.id)},
         )
         row = _row(resp, sig.id)
-        assert row['usage_department'] is None
+        assert 'usage_department' not in row
         assert len(row['usage_departments']) == 2
 
 

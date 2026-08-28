@@ -21,9 +21,9 @@ Model-specific:
   ScopeLevel       — organisational scope of the evidence
                      (BUSINESS / DEPARTMENT / PERSONAL). Used by
                      PainSignal, ObjectiveSignal, and ImpactSignal.
-  UsageScope       — organisational usage scope of a tool for TechStackSignal
-                     (TEAM / DEPARTMENT / COMPANY / UNKNOWN). Drives the
-                     conditional usage_department requirement.
+  UsageScope       — organisational SCALE of a tool for TechStackSignal
+                     (TEAM / DEPARTMENT / COMPANY / UNKNOWN). WHO uses the
+                     tool is the separate usage_departments M2M.
   ImpactType       — nature of an Impact observation (FINANCIAL, TIME,
                      PRODUCTIVITY, REVENUE, RISK, CUSTOMER, HUMAN,
                      STRATEGIC, METRIC). Used by ImpactSignal.
@@ -445,18 +445,15 @@ class ScopeLevel(models.TextChoices):
 
 class UsageScope(models.TextChoices):
     """
-    Organisational usage scope of a tool observed at an account.
+    Organisational SCALE at which a tool is used at an account.
 
-    Drives the conditional usage_department requirement on TechStackSignal:
-      usage_scope = DEPARTMENT → usage_department REQUIRED
-      usage_scope ∈ {TEAM, COMPANY, UNKNOWN} → usage_department FORBIDDEN
+    This is the SCALE axis only. WHO uses the tool is a separate, orthogonal
+    concept — the multi-department TechStackSignal.usage_departments M2M —
+    with no coupling to this scale (the former single-FK usage_department
+    and its DEPARTMENT-scope conditional were dropped).
 
     TEAM       — used by a single team within a department
-                 (granularity finer than department; usage_department
-                 not specified because the team is not a first-class
-                 entity in the platform)
-    DEPARTMENT — used by a specific department; usage_department FK
-                 must be set (StandardDepartment)
+    DEPARTMENT — used at the level of one department
     COMPANY    — used company-wide across multiple departments
     UNKNOWN    — scope was discussed but not clarified, or not yet known.
                  Safe default for early-stage observations.

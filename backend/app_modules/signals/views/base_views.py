@@ -157,7 +157,7 @@ class BaseSignalViewSet(
                                     related_techstack_mention
           ObjectiveSignalViewSet → decision_cycle, campaign,
                                     target_contact, target_department
-          TechStackSignalViewSet → usage_department
+          TechStackSignalViewSet → usage_departments (M2M, prefetched)
                                     (decision_cycle and campaign are
                                      shadow-overridden to None on the
                                      model — derived via source_activity

@@ -77,9 +77,6 @@ class TechStackSignalViewSet(BaseSignalViewSet):
         """
         Extend base queryset with TechStackSignal-specific joins.
 
-        usage_department (single FK) is often null but is exposed compactly
-        when set; select_related avoids N+1 on list views.
-
         usage_departments (M2M — who USES the tool) is exposed as a compact
         list. prefetch_related loads every signal's departments in ONE extra
         query for the whole page, so the serializer's obj.usage_departments
@@ -89,6 +86,5 @@ class TechStackSignalViewSet(BaseSignalViewSet):
         The tool name lives on the row itself, so nothing else needs joining.
         """
         qs = super().get_queryset()
-        qs = qs.select_related('usage_department')
         qs = qs.prefetch_related('usage_departments')
         return qs

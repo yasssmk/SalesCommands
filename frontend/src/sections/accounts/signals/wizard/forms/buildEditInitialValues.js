@@ -160,7 +160,7 @@ function buildObjectiveInitialValues(signal) {
  * This builder mirrors exactly the 5-section InlineTechStackForm:
  *
  *   S1 — tech_name + qualification booleans
- *   S2 — usage_scope, usage_department (conditional)
+ *   S2 — usage_scope (scale) + usage_departments (multi-department ids)
  *   S3 — usage_start_year, renewal_date, cost_description
  *   S4 — is_discontinued, discontinued_date (conditional)
  *   S5 — source_activity, source_quote, notes
@@ -171,7 +171,7 @@ function buildObjectiveInitialValues(signal) {
  *     The List/Detail serializers expose it as a compact dict
  *     ({ id, company_name, product_name, is_competitor,
  *        is_integration_target }) — directly usable by the picker.
- *   - usage_department extracted to its id for MUI Select binding.
+ *   - usage_departments extracted to a list of ids for the MUI multi-Select.
  *   - source_activity passed whole — AsyncActivitySelect same pattern.
  *   - usage_start_year kept as raw number or '' (Yup transform handles
  *     the empty-string → null coercion at submit time).
@@ -195,7 +195,9 @@ function buildTechStackInitialValues(signal) {
 
     // S2 — Scope axis
     usage_scope: signal.usage_scope ?? "",
-    usage_department: signal.usage_department?.id ?? "",
+    usage_departments: Array.isArray(signal.usage_departments)
+      ? signal.usage_departments.map((d) => d.id)
+      : [],
 
     // S3 — Lifecycle stats
     usage_start_year:

@@ -7,27 +7,28 @@
  * 5-section product spec:
  *
  *   S1 — Which tool?      tech_name (REQUIRED) + 3 qualification toggles
- *   S2 — How is it used?  usage_scope + usage_department (conditional)
+ *   S2 — How is it used?  usage_scope (scale) + usage_departments (WHO,
+ *                         multi-department, independent of scope)
  *   S3 — Lifecycle        usage_start_year, renewal_date, cost_description
  *   S4 — State            is_discontinued + discontinued_date (conditional)
  *   S5 — Source           source_activity, source_quote, notes
  *
- * Conditional rules — strict mirror of TechStackSignal.clean() and the
+ * Conditional rule — mirror of TechStackSignal.clean() and the
  * Create / Update serializers:
  *
- *   - usage_scope = DEPARTMENT
- *       → usage_department REQUIRED
- *   - usage_scope ∈ {TEAM, COMPANY, UNKNOWN, null}
- *       → usage_department FORBIDDEN
  *   - is_discontinued = true
  *       → discontinued_date REQUIRED
  *   - is_discontinued = false (default)
  *       → discontinued_date FORBIDDEN
  *
+ * usage_departments carries NO conditional rule — a multi-select of
+ * StandardDepartment ids, independent of usage_scope. The legacy single
+ * usage_department FK was dropped.
+ *
  * The form does NOT call createSignal directly. It calls onAdd(payload)
  * with a ready-to-dispatch payload — the wizard injects account + source
- * + extraPayload at dispatch time and extracts UUIDs from object refs
- * (usage_department, source_activity).
+ * + extraPayload at dispatch time. usage_departments is emitted as a list
+ * of department ids.
  *
  * Edit mode is supported via initialValues + submitLabel — when set, the
  * form reinitializes from the prefilled values and the submit button
@@ -133,19 +134,15 @@ const validationSchema = Yup.object({
       "Invalid scope",
     ),
 
-  // Conditional: DEPARTMENT requires usage_department, others forbid it.
-  usage_department: Yup.string()
-    .nullable()
-    .when("usage_scope", {
-      is: "DEPARTMENT",
-      then: (schema) => schema.required("Pick the department using this tool"),
-      otherwise: (schema) =>
-        schema.test(
-          "no-department-outside-scope",
-          "Department can only be set when scope is Department",
-          (val) => !val,
-        ),
-    }),
+  // WHO uses the tool — multi-department, independent of usage_scope.
+  // A list of StandardDepartment ids (may be empty: nobody designated).
+  usage_departments: Yup.array().of(
+    Yup.mixed().test(
+      "dept-id",
+      "Invalid department",
+      (v) => v !== null && v !== undefined && v !== "",
+    ),
+  ),
 
   // S3 — Lifecycle
   usage_start_year: Yup.number()
@@ -194,7 +191,7 @@ function buildInitialValues() {
     is_to_replace: false,
     // S2
     usage_scope: "",
-    usage_department: "",
+    usage_departments: [],
     // S3
     usage_start_year: "",
     renewal_date: "",
@@ -322,10 +319,9 @@ export default function InlineTechStackForm({
 
         // S2 — scope axis (always emit both for clean clear-on-change)
         usage_scope: values.usage_scope || null,
-        usage_department:
-          values.usage_scope === "DEPARTMENT" && values.usage_department
-            ? values.usage_department
-            : null,
+        usage_departments: Array.isArray(values.usage_departments)
+          ? values.usage_departments
+          : [],
 
         // S3 — lifecycle (omit empty strings → null / undefined)
         usage_start_year:
@@ -360,20 +356,10 @@ export default function InlineTechStackForm({
   });
 
   // ==============================|| CLEAR CONDITIONAL FIELDS ON SCOPE CHANGE ||============================== //
-
-  /**
-   * When usage_scope leaves DEPARTMENT, clear usage_department so a
-   * stale value doesn't get submitted. Mirrors InlineObjectiveForm.
-   */
-  useEffect(() => {
-    if (
-      formik.values.usage_scope !== "DEPARTMENT" &&
-      formik.values.usage_department
-    ) {
-      formik.setFieldValue("usage_department", "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formik.values.usage_scope]);
+  //
+  // usage_departments is independent of usage_scope (the WHO is orthogonal
+  // to the SCALE), so there is no scope-driven clearing — the former
+  // usage_department clear-on-leave-DEPARTMENT effect is gone.
 
   /**
    * When is_discontinued is toggled OFF, clear discontinued_date.
@@ -585,42 +571,56 @@ export default function InlineTechStackForm({
             )}
           </FormControl>
 
-          {/* Conditional: DEPARTMENT → usage_department */}
-          {formik.values.usage_scope === "DEPARTMENT" && (
-            <FormControl
-              fullWidth
-              size="small"
-              error={
-                formik.touched.usage_department &&
-                Boolean(formik.errors.usage_department)
-              }
+          {/* WHO uses the tool — multi-department, independent of scope.
+              Always available; empty means nobody designated. */}
+          <FormControl
+            fullWidth
+            size="small"
+            error={
+              formik.touched.usage_departments &&
+              Boolean(formik.errors.usage_departments)
+            }
+          >
+            <InputLabel id="ts-usage-depts-label">
+              Which department(s) use this tool?
+            </InputLabel>
+            <Select
+              multiple
+              labelId="ts-usage-depts-label"
+              id="ts-usage-departments"
+              name="usage_departments"
+              value={formik.values.usage_departments}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
+              label="Which department(s) use this tool?"
+              renderValue={(selected) => (
+                <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                  {selected.map((val) => {
+                    const opt = departmentOptions.find((o) => o.value === val);
+                    return (
+                      <Chip
+                        key={val}
+                        size="small"
+                        label={opt ? opt.label : val}
+                      />
+                    );
+                  })}
+                </Stack>
+              )}
             >
-              <InputLabel id="ts-usage-dept-label">
-                Usage Department *
-              </InputLabel>
-              <Select
-                labelId="ts-usage-dept-label"
-                id="ts-usage-department"
-                name="usage_department"
-                value={formik.values.usage_department}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                label="Usage Department *"
-              >
-                {departmentOptions.map((opt) => (
-                  <MenuItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </MenuItem>
-                ))}
-              </Select>
-              {formik.touched.usage_department &&
-                formik.errors.usage_department && (
-                  <FormHelperText>
-                    {formik.errors.usage_department}
-                  </FormHelperText>
-                )}
-            </FormControl>
-          )}
+              {departmentOptions.map((opt) => (
+                <MenuItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </Select>
+            {formik.touched.usage_departments &&
+              formik.errors.usage_departments && (
+                <FormHelperText>
+                  {formik.errors.usage_departments}
+                </FormHelperText>
+              )}
+          </FormControl>
         </Stack>
 
         <Divider />

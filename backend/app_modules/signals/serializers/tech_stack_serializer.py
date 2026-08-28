@@ -36,14 +36,15 @@ Notes:
     three independent booleans, default False, writable on both Create
     and Update.
 
-  - Conditional rules (mirror of TechStackSignal.clean()):
-      usage_scope = DEPARTMENT  → usage_department REQUIRED
-      usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}
-                                → usage_department FORBIDDEN
+  - Usage: usage_scope is the SCALE (TEAM/COMPANY/UNKNOWN); the WHO is the
+    multi-department M2M usage_departments, written as a list of
+    StandardDepartment ids and independent of usage_scope. The legacy
+    single FK usage_department has been dropped.
+
+  - Conditional rule (mirror of TechStackSignal.clean()):
       is_discontinued = True    → discontinued_date REQUIRED
       is_discontinued = False   → discontinued_date FORBIDDEN
-    Enforced strict in Create. Enforced merged-state in Update — same
-    pattern as ObjectiveSignal scope and ImpactSignal level.
+    Enforced strict in Create, merged-state in Update.
 """
 
 from rest_framework import serializers
@@ -51,7 +52,8 @@ from rest_framework import serializers
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
-from ..constants import UsageScope
+from app_modules.core_modules.models import StandardDepartment
+
 from ..models import TechStackSignal
 from .base_serializer import (
     BaseSignalCreateSerializer,
@@ -65,8 +67,8 @@ from .base_serializer import (
 # HELPERS — display methods + conditional validation
 # =============================================================================
 #
-# List and Detail share the read shape for usage_scope and
-# usage_department. A small mixin keeps both serializers aligned when
+# List and Detail share the read shape for usage_scope and the
+# usage_departments list. A small mixin keeps both serializers aligned when
 # the schema evolves. tech_name / tech_name_normalized and the three
 # qualification booleans are plain model fields — no method needed.
 #
@@ -81,23 +83,12 @@ class _TechStackDisplayMixin:
     def get_usage_scope_display(self, obj):
         return obj.get_usage_scope_display() if obj.usage_scope else None
 
-    def get_usage_department(self, obj):
-
-        d = obj.usage_department
-        if not d:
-            return None
-        return {
-            'id':   str(d.id),
-            'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
-        }
-
     def get_usage_departments(self, obj):
         """
         Compact list of the departments that USE this tool (multi-department).
 
-        Returns a list of {id, name} payloads — the same compact FK shape
-        `get_usage_department` returns for the single-FK, one entry per
-        linked StandardDepartment. Empty list when none are designated.
+        Returns a list of {id, name} payloads, one entry per linked
+        StandardDepartment. Empty list when none are designated.
 
         N+1-safe: reads obj.usage_departments.all(), which the ViewSet
         prefetches (prefetch_related('usage_departments')), so iterating
@@ -111,33 +102,6 @@ class _TechStackDisplayMixin:
             }
             for d in obj.usage_departments.all()
         ]
-
-
-def _validate_scope_consistency(usage_scope, usage_department):
-    """
-    Enforce usage_scope ↔ usage_department coherence.
-
-    Mirror of TechStackSignal.clean() rule 1. Called by Create (strict)
-    and Update (merged-state). Raises StandardizedValidationError on
-    the first offending field for a clean API error payload.
-
-    Rules:
-      usage_scope = DEPARTMENT
-        → usage_department REQUIRED (else 400)
-      usage_scope ∈ {TEAM, COMPANY, UNKNOWN, None}
-        → usage_department FORBIDDEN (else 400)
-    """
-    if usage_scope == UsageScope.DEPARTMENT:
-        if not usage_department:
-            raise StandardizedValidationError({
-                'usage_department': SignalErrorMessages.TECHSTACK_DEPT_REQUIRES_DEPT,
-            })
-    else:
-        # Covers TEAM, COMPANY, UNKNOWN, and None.
-        if usage_department:
-            raise StandardizedValidationError({
-                'usage_department': SignalErrorMessages.TECHSTACK_DEPT_OUTSIDE_SCOPE,
-            })
 
 
 def _validate_discontinuation_consistency(is_discontinued, discontinued_date):
@@ -223,7 +187,7 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
     Exposes:
       - Tech identity (tech_name + the derived normalised key)
       - Qualification booleans
-      - Usage scope + usage_department (when DEPARTMENT)
+      - Usage scope (scale) + usage_departments (multi-department list)
       - Lifecycle quick view: usage_start_year, renewal_date,
         is_discontinued, discontinued_date
       - cost_description (optional but useful at-a-glance)
@@ -236,10 +200,8 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
     source_activity.decision_cycle / .campaign.
     """
 
-    # Scope + dept compact payloads
+    # Scope (scale) + the multi-department usage list (who USES the tool).
     usage_scope_display = serializers.SerializerMethodField()
-    usage_department    = serializers.SerializerMethodField()
-    # Multi-department usage (who USES the tool) — compact list payload.
     usage_departments   = serializers.SerializerMethodField()
 
     class Meta(BaseSignalListSerializer.Meta):
@@ -256,9 +218,8 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
             'is_competitor',
             'is_integration',
             'is_to_replace',
-            # Scope axis (conditional dept)
+            # Usage scale
             'usage_scope', 'usage_scope_display',
-            'usage_department',
             # Multi-department usage (who USES the tool)
             'usage_departments',
             # Lifecycle stats
@@ -304,7 +265,6 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
     """
 
     usage_scope_display = serializers.SerializerMethodField()
-    usage_department    = serializers.SerializerMethodField()
     # Multi-department usage (who USES the tool) — compact list payload.
     usage_departments   = serializers.SerializerMethodField()
 
@@ -321,9 +281,8 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
             'is_competitor',
             'is_integration',
             'is_to_replace',
-            # Scope axis
+            # Usage scale
             'usage_scope', 'usage_scope_display',
-            'usage_department',
             # Multi-department usage (who USES the tool)
             'usage_departments',
             # Lifecycle stats
@@ -358,7 +317,7 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
       - source_activity (left optional — TechStack is not as strictly
                          conversation-anchored as Pain; an external
                          research signal may carry no activity)
-      - usage_scope, usage_department (conditional)
+      - usage_scope (scale) + usage_departments (multi-department M2M)
       - usage_start_year, renewal_date, cost_description
       - is_discontinued, discontinued_date (conditional)
       - notes
@@ -383,6 +342,18 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
 
     signal_type = serializers.HiddenField(default='tech_stack')
 
+    # WHO uses the tool — multi-department M2M, written as a list of
+    # StandardDepartment ids. PrimaryKeyRelatedField(many=True) validates
+    # each id against the vocabulary and hands SignalManager.create a list
+    # of instances, which it applies via .set() after the row is saved
+    # (M2M can't be set pre-save). Same write shape as the DecisionStep /
+    # CampaignAccount department M2M. Optional — [] means nobody designated.
+    usage_departments = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=StandardDepartment.objects.all(),
+    )
+
     class Meta(BaseSignalCreateSerializer.Meta):
         model = TechStackSignal
 
@@ -396,9 +367,9 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
             'is_competitor',
             'is_integration',
             'is_to_replace',
-            # Scope axis
+            # Usage scale + who (multi-department)
             'usage_scope',
-            'usage_department',
+            'usage_departments',
             # Lifecycle stats
             'usage_start_year',
             'renewal_date',
@@ -416,7 +387,6 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
             'is_integration':     {'required': False},
             'is_to_replace':      {'required': False},
             'usage_scope':        {'required': False, 'allow_null': True},
-            'usage_department':   {'required': False, 'allow_null': True},
             'usage_start_year':   {'required': False, 'allow_null': True},
             'renewal_date':       {'required': False, 'allow_null': True},
             'cost_description':   {'required': False, 'allow_blank': True},
@@ -434,13 +404,13 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
              it required, but the explicit check also rejects a
              whitespace-only name, which allow_blank=False alone would
              let through).
-          2. Scope ↔ usage_department coherence (strict — Create has
-             no instance state to merge against).
-          3. Discontinuation ↔ discontinued_date coherence (strict).
-          4. super().validate() — base injects client_id from JWT
-             context. The previous cross-account source_contact check
-             is gone (the field was retired from BaseSignal during
-             the standardisation refactor).
+          2. Discontinuation ↔ discontinued_date coherence (strict).
+          3. super().validate() — base injects client_id from JWT
+             context.
+
+        usage_departments carries no conditional rule: the multi-department
+        M2M is independent of usage_scope (the WHO is orthogonal to the
+        SCALE), so any combination is valid.
         """
 
         # Rule 1: tech_name presence (rejects whitespace-only too)
@@ -449,13 +419,7 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
                 'tech_name': SignalErrorMessages.TECHSTACK_NAME_REQUIRED,
             })
 
-        # Rule 2: scope ↔ department coherence (strict)
-        _validate_scope_consistency(
-            usage_scope=attrs.get('usage_scope'),
-            usage_department=attrs.get('usage_department'),
-        )
-
-        # Rule 3: discontinuation ↔ date coherence (strict)
+        # Rule 2: discontinuation ↔ date coherence (strict)
         _validate_discontinuation_consistency(
             is_discontinued=attrs.get('is_discontinued', False),
             discontinued_date=attrs.get('discontinued_date'),
@@ -476,7 +440,8 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
     Allowed beyond inherited base fields:
       - tech_name  (correcting what the LLM heard is a normal edit)
       - is_competitor, is_integration, is_to_replace
-      - usage_scope, usage_department  (conditional pair)
+      - usage_scope  (scale) + usage_departments (multi-department M2M,
+        list of StandardDepartment ids; replaces .set())
       - usage_start_year, renewal_date, cost_description
       - is_discontinued, discontinued_date  (conditional pair)
       - notes
@@ -498,18 +463,15 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
       - canonical_key (TechStack is not clustered; never set)
 
     Merged-state validation:
-      A partial PATCH that touches `usage_scope`, `usage_department`,
-      `is_discontinued`, or `discontinued_date` triggers the matching
-      consistency check against the merged (instance + payload) state.
-      Same pattern as ObjectiveSignalUpdateSerializer.
+      A partial PATCH that touches `is_discontinued` or `discontinued_date`
+      triggers the discontinuation consistency check against the merged
+      (instance + payload) state. usage_departments carries no conditional
+      rule (independent of usage_scope), so a PATCH may set it freely.
 
     Examples:
-      Switching usage_scope=DEPARTMENT to usage_scope=COMPANY:
-        PATCH { usage_scope: 'COMPANY' }
-          → rejected (current usage_department still set, violates the
-                       "outside scope = forbidden" rule).
-        PATCH { usage_scope: 'COMPANY', usage_department: null }
-          → accepted.
+      Reassigning the using departments:
+        PATCH { usage_departments: [7, 5] }  → replaces the M2M set.
+        PATCH { usage_departments: [] }      → clears it.
 
       Marking discontinued without a date:
         PATCH { is_discontinued: true }
@@ -526,6 +488,15 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
     Update fields, so no strip is needed.
     """
 
+    # WHO uses the tool — multi-department M2M, written as a list of
+    # StandardDepartment ids (same shape as Create). Applied via .set() by
+    # SignalManager.edit after the row is loaded.
+    usage_departments = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=StandardDepartment.objects.all(),
+    )
+
     class Meta(BaseSignalUpdateSerializer.Meta):
         model = TechStackSignal
 
@@ -539,9 +510,9 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'is_competitor',
             'is_integration',
             'is_to_replace',
-            # Scope axis (conditional pair)
+            # Usage scale + who (multi-department)
             'usage_scope',
-            'usage_department',
+            'usage_departments',
             # Lifecycle stats
             'usage_start_year',
             'renewal_date',
@@ -559,7 +530,6 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'is_integration':     {'required': False},
             'is_to_replace':      {'required': False},
             'usage_scope':        {'required': False, 'allow_null': True},
-            'usage_department':   {'required': False, 'allow_null': True},
             'usage_start_year':   {'required': False, 'allow_null': True},
             'renewal_date':       {'required': False, 'allow_null': True},
             'cost_description':   {'required': False, 'allow_blank': True},
@@ -579,14 +549,14 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
           check below also catches a whitespace-only value, which would
           otherwise normalise to an empty grouping key.
 
-        Two independent conditional pairs:
-          A. usage_scope ↔ usage_department
-          B. is_discontinued ↔ discontinued_date
+        One conditional pair remains:
+          is_discontinued ↔ discontinued_date
 
-        Each pair is checked only when at least one of its members is
-        in the payload — otherwise the instance is already valid and
-        nothing changed for that pair. This avoids spurious 400s on
-        unrelated PATCHes (e.g. a notes-only update).
+        It is checked only when at least one of its members is in the
+        payload — otherwise the instance is already valid and nothing
+        changed for that pair. This avoids spurious 400s on unrelated
+        PATCHes (e.g. a notes-only update). usage_departments is
+        unconditional (independent of usage_scope) and needs no check.
         """
         instance = self.instance
 
@@ -596,29 +566,7 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
                 'tech_name': SignalErrorMessages.TECHSTACK_NAME_REQUIRED,
             })
 
-        # --- Pair A: scope coherence ---
-        touched_scope_fields = any(
-            field in attrs
-            for field in ('usage_scope', 'usage_department')
-        )
-
-        if touched_scope_fields and instance is not None:
-            merged_scope = (
-                attrs['usage_scope']
-                if 'usage_scope' in attrs
-                else instance.usage_scope
-            )
-            merged_department = (
-                attrs['usage_department']
-                if 'usage_department' in attrs
-                else instance.usage_department
-            )
-            _validate_scope_consistency(
-                usage_scope=merged_scope,
-                usage_department=merged_department,
-            )
-
-        # --- Pair B: discontinuation coherence ---
+        # --- discontinuation coherence ---
         touched_disc_fields = any(
             field in attrs
             for field in ('is_discontinued', 'discontinued_date')
