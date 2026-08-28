@@ -29,7 +29,7 @@ function formatDate(isoDate) {
 /**
  * TechDetailBlock — shared rendering of a TechStackSignal's type-specific
  * fields: qualification flags (competitor / integration / to-replace),
- * usage (scope + department), lifecycle (used since / renewal / cost),
+ * usage (scope + departments), lifecycle (used since / renewal / cost),
  * and discontinuation. Reads booleans and *_display off the signal.
  * The tool name is the signal's identity (rendered by the shell/header),
  * not part of this block.
@@ -42,7 +42,22 @@ export default function TechDetailBlock({ signal }) {
   ].filter(Boolean);
 
   const usageScope = signal.usage_scope_display;
-  const department = signal.usage_department?.name;
+  // WHO uses the tool — multi-department (M2M). Primary source, each entry a
+  // compact { id, name } payload. TRANSITION SHIM: the manual-entry wizard
+  // still writes the legacy single usage_department (its migration to the
+  // M2M is the next sub-step). Until then, fall back to that single FK so a
+  // hand-entered signal does not lose its department in this view. Remove
+  // the fallback once the wizard writes usage_departments.
+  const departmentsM2M = Array.isArray(signal.usage_departments)
+    ? signal.usage_departments
+    : [];
+  const legacySingle = signal.usage_department;
+  const departments =
+    departmentsM2M.length > 0
+      ? departmentsM2M
+      : legacySingle
+        ? [legacySingle]
+        : [];
   const usedSince = signal.usage_start_year ? String(signal.usage_start_year) : null;
   const renewal = formatDate(signal.renewal_date);
   const cost = signal.cost_description;
@@ -53,7 +68,7 @@ export default function TechDetailBlock({ signal }) {
   const hasContent =
     qualifications.length > 0 ||
     usageScope ||
-    department ||
+    departments.length > 0 ||
     usedSince ||
     renewal ||
     cost ||
@@ -80,7 +95,21 @@ export default function TechDetailBlock({ signal }) {
         </DrawerFieldRow>
       )}
       <DrawerFieldRow label="Usage scope" value={usageScope} />
-      <DrawerFieldRow label="Department" value={department} />
+      {departments.length > 0 && (
+        <DrawerFieldRow label={departments.length > 1 ? "Departments" : "Department"}>
+          <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+            {departments.map((d) => (
+              <Chip
+                key={d.id ?? d.name}
+                label={d.name}
+                size="small"
+                variant="outlined"
+                sx={{ height: 20, fontSize: "0.7rem" }}
+              />
+            ))}
+          </Stack>
+        </DrawerFieldRow>
+      )}
       <DrawerFieldRow label="Used since" value={usedSince} />
       <DrawerFieldRow label="Renewal date" value={renewal} />
       <DrawerFieldRow label="Cost" value={cost} />
@@ -101,6 +130,10 @@ TechDetailBlock.propTypes = {
     is_integration: PropTypes.bool,
     is_to_replace: PropTypes.bool,
     usage_scope_display: PropTypes.string,
+    usage_departments: PropTypes.arrayOf(
+      PropTypes.shape({ id: PropTypes.string, name: PropTypes.string })
+    ),
+    // Legacy single FK — transitional fallback only (see component body).
     usage_department: PropTypes.shape({ name: PropTypes.string }),
     usage_start_year: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
     renewal_date: PropTypes.string,

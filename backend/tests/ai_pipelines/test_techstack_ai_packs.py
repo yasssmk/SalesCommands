@@ -181,13 +181,16 @@ class TestDealHealthTechEvidence:
         assert 'canonical_key' not in tech
 
     def test_unchanged_evidence_fields_are_preserved(self, cycle, user_a):
-        """source_quote / on_deal / usage_department keep working."""
+        """source_quote / on_deal / usage_departments keep working."""
         _create_tech(cycle, user_a, cycle.client_id, tech_name='Zendesk')
 
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
         assert tech['source_quote'] == 'They run everything on Zendesk'
         assert tech['on_deal'] is True
-        assert tech['usage_department'] is None
+        # WHO uses the tool is now the multi-department list (mono -> multi).
+        # The legacy single `usage_department` key is retired from the pack.
+        assert tech['usage_departments'] == []
+        assert 'usage_department' not in tech
         assert tech['summary'] == ''
 
     def test_raw_spelling_is_preserved_not_normalised(self, cycle, user_a):

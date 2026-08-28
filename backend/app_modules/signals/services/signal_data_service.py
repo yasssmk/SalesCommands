@@ -102,7 +102,18 @@ _RELATED_BY_TYPE = {
     'tech_stack': [
         'source_activity',
         'validated_by',
-        'usage_department',    # Often null but cheap to prefetch.
+        # usage_department (single FK) retired -- WHO the tool serves is now
+        # the multi-department M2M usage_departments, preloaded via
+        # _PREFETCH_BY_TYPE below (M2M can't ride select_related).
+    ],
+}
+
+# prefetch_related paths PER signal type (M2M / reverse relations, which
+# cannot ride select_related). Applied alongside _RELATED_BY_TYPE on every
+# queryset this service builds so multi-valued relations stay N+1-safe.
+_PREFETCH_BY_TYPE = {
+    'tech_stack': [
+        'usage_departments',   # WHO uses the tool (multi-department).
     ],
 }
 
@@ -182,6 +193,7 @@ class SignalDataService:
 
         def _build_qs(type_key, model_class):
             related = _RELATED_BY_TYPE.get(type_key, [])
+            prefetch = _PREFETCH_BY_TYPE.get(type_key, [])
             qs = (
                 model_class.objects
                 .filter(account_id=account_id)
@@ -189,6 +201,7 @@ class SignalDataService:
                 # flagged signal must not feed downstream (incl. LLM context).
                 .filter(is_domain_valid=True)
                 .select_related(*related)
+                .prefetch_related(*prefetch)
             )
             if status:
                 qs = qs.filter(status=status)
@@ -256,12 +269,14 @@ class SignalDataService:
         result = {}
         for key, model_class in _SIGNAL_TYPE_MAP.items():
             related = _RELATED_BY_TYPE.get(key, [])
+            prefetch = _PREFETCH_BY_TYPE.get(key, [])
             qs = (
                 model_class.objects
                 .filter(source_activity__contacts__id=contact_id)
                 # Exclude out-of-taxonomy-domain signals (COST-bug guard).
                 .filter(is_domain_valid=True)
                 .select_related(*related)
+                .prefetch_related(*prefetch)
                 .distinct()
             )
             result[key] = qs
@@ -419,9 +434,14 @@ class SignalDataService:
         """
         Resolve a department display name for the LLM payload.
 
-        TechStack:           usage_department — "department USING the
-                             tool". This is the most informative
-                             department available on TechStackSignal.
+        TechStack:           usage_departments — the department(s) USING
+                             the tool (multi-department M2M). Reads every
+                             designated department and joins their display
+                             names with ", " so the single "department"
+                             string in the payload reflects the full set
+                             (mono -> multi kept in the same key shape:
+                             "Marketing", or "Sales, Marketing", or None
+                             when no department is designated).
         Pain / Objective:    None. source_department was retired from
                              BaseSignal during the standardisation
                              refactor and no replacement is provided
@@ -430,22 +450,21 @@ class SignalDataService:
                              related ImpactSignal data or
                              target_department (Objective) at the call
                              site, not here.
+
+        Reads signal.usage_departments.all(); callers preload it via
+        _PREFETCH_BY_TYPE so this stays N+1-safe.
         """
         if not is_tech_stack:
             return None
 
-        if not signal.usage_department_id:
+        names = [
+            d.get_name_display() if hasattr(d, 'get_name_display') else str(d)
+            for d in signal.usage_departments.all()
+        ]
+        if not names:
             return None
 
-        dept = signal.usage_department
-        if not dept:
-            return None
-
-        return (
-            dept.get_name_display()
-            if hasattr(dept, 'get_name_display')
-            else str(dept)
-        )
+        return ', '.join(names)
 
     @staticmethod
     def _extract_summary(signal, is_tech_stack: bool):

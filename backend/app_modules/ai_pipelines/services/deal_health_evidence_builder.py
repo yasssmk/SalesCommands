@@ -150,7 +150,7 @@ class DealHealthEvidenceBuilder:
             'techstack': self._serialize_techstack_signals(
                 TechStackSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('usage_department')
+                ).prefetch_related('usage_departments')
             ),
             'blocker': self._serialize_blocker_signals(
                 BlockerSignal.objects.filter(
@@ -253,10 +253,12 @@ class DealHealthEvidenceBuilder:
                 'is_integration': s.is_integration,
                 'is_to_replace': s.is_to_replace,
                 'on_deal': s.decision_cycle_id is not None,
-                'usage_department': (
-                    s.usage_department.get_name_display()
-                    if s.usage_department else None
-                ),
+                # WHO uses the tool -- multi-department. The list reflects
+                # every designated using department ([] when none). Replaces
+                # the legacy single usage_department string (mono -> multi).
+                'usage_departments': [
+                    d.get_name_display() for d in s.usage_departments.all()
+                ],
             }
             for s in qs
         ]

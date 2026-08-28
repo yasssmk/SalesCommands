@@ -26,12 +26,14 @@ this service:
         - TechStack   -> raw `tech_name` passthrough (normalised by
                           TechStackSignal.save(), not here) + the
                           qualification booleans (is_competitor /
-                          is_to_replace); usage_scope filtered to
-                          TEAM / COMPANY / UNKNOWN (DEPARTMENT and unknown
-                          values demoted to null). `is_integration` is NO
-                          LONGER extracted -- a required integration is now
-                          a ConstraintSignal of nature=TECHNICAL. No
-                          catalogue lookup -- see below.
+                          is_to_replace); usage_scope (SCALE) filtered to
+                          TEAM / COMPANY / UNKNOWN; usage_departments (WHO)
+                          resolved to a multi-department M2M via
+                          resolve_tech_usage_departments. `is_integration`
+                          is NO LONGER extracted -- a required integration is
+                          now a ConstraintSignal of nature=TECHNICAL. No
+                          catalogue lookup -- see below. The legacy single-FK
+                          usage_department is no longer filled (retired).
         - Blocker     -> 1:1 passthrough on summary / source_quote /
                           confidence / is_inferred. `contact` (FK
                           Contact, optional) is NOT extracted in v1
@@ -113,11 +115,70 @@ from .safety_filter import passes_safety_filter, safe_float
 logger = logging.getLogger(__name__)
 
 
-# Allowed values for TechStack usage_scope at v1. Defines which strings
-# the LLM may emit and have them propagate to the model. Any other value
-# (including "DEPARTMENT", which would require a usage_department FK we
-# don't extract) is demoted to None.
+# Allowed values for TechStack usage_scope. usage_scope is the SCALE axis
+# (how widely the tool is used) and is kept as-is by the mono->multi
+# department migration. Any other value (including "DEPARTMENT", which the
+# prompt no longer asks for -- the WHO is carried by usage_departments now)
+# is demoted to None.
 _TECHSTACK_USAGE_SCOPE_ALLOWED = {'TEAM', 'COMPANY', 'UNKNOWN'}
+
+
+def resolve_tech_usage_departments(raw):
+    """
+    Resolve the list of departments that USE a tool from the LLM payload.
+
+    The techstack stage emits `usage_departments`: an array of department
+    names (from the StandardDepartment vocabulary) explicitly designated as
+    USERS of the tool. This resolves each name to a StandardDepartment row
+    and returns the deduplicated list to assign to the M2M
+    TechStackSignal.usage_departments.
+
+    Same resolution rule as the qualification scope resolver
+    (resolve_scope_and_department, above): exact name lookup against the
+    StandardDepartment controlled vocabulary. StandardDepartment is global
+    reference data (no client_id of its own), so the lookup is tenant-safe
+    exactly as it is for pain/objective/impact/constraint -- the tenant
+    boundary lives on the signal, not on the shared department rows.
+
+    Guards (mirror of the shared resolver, applied per name):
+      * a name that does not resolve to a StandardDepartment row is
+        dropped (never invented) -- an unresolved / hallucinated department
+        is business-normal noise, not a hard error;
+      * "General Management" is dropped -- a company-wide / executive owner
+        is NOT a using department (same stance as GUARD 2 above); the
+        company-wide reading is already carried by usage_scope=COMPANY;
+      * duplicates collapse (order-preserving) so ["Sales", "Sales"] -> one.
+
+    A missing / non-list / empty `usage_departments`, or one that resolves
+    to nothing, yields [] -- no department designated. Assigning [] to the
+    M2M is a valid "nobody designated" state and never raises.
+
+    Returns:
+        list[StandardDepartment] -- possibly empty, deduplicated, in the
+        order the model emitted the names.
+    """
+    from app_modules.core_modules.models import StandardDepartment
+
+    names = raw.get('usage_departments')
+    if not isinstance(names, list):
+        return []
+
+    resolved = []
+    seen_ids = set()
+    for name in names:
+        if not name or not isinstance(name, str):
+            continue
+        dept = StandardDepartment.objects.filter(name=name).first()
+        if dept is None:
+            continue
+        if dept.name == StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT:
+            continue
+        if dept.id in seen_ids:
+            continue
+        seen_ids.add(dept.id)
+        resolved.append(dept)
+
+    return resolved
 
 
 def resolve_scope_and_department(raw):
@@ -575,12 +636,23 @@ class TranscriptSignalExtractor:
             "a tool the account simply uses". (is_integration was retired
             from this path -- now a TECHNICAL constraint.)
 
-        usage_scope filtering:
+        usage_scope filtering (SCALE axis -- how widely, kept as-is):
             * "TEAM" / "COMPANY" / "UNKNOWN"  -> propagate to model.
-            * Anything else (incl. "DEPARTMENT", which the v1 prompt
-              forbids but the LLM may emit anyway) or missing
-              -> demote to None. usage_department stays unset,
-              satisfying TechStackSignal.clean() rule 3.
+            * Anything else (incl. "DEPARTMENT", no longer asked for) or
+              missing -> demote to None. Model field is nullable.
+
+        usage_departments (WHO uses the tool -- multi-department M2M):
+            The LLM emits `usage_departments`, an array of department names
+            explicitly designated as USERS of the tool. resolve_tech_usage_
+            departments maps them to StandardDepartment rows (exact-name,
+            deduped, dropping unresolved / General Management). The list is
+            passed in the data dict; SignalManager.create applies it via
+            .set() after the row is saved (M2M can't be set pre-save).
+            An empty list ("nobody designated") is valid and assigned as-is.
+
+            The legacy single-FK `usage_department` is intentionally NOT set
+            here anymore -- the WHO is carried by the M2M. The FK is being
+            retired; while it still exists it stays null on extracted rows.
 
         Drops:
             * missing / blank source_quote -> drop (schema).
@@ -622,11 +694,17 @@ class TranscriptSignalExtractor:
             'is_to_replace':   bool(raw.get('is_to_replace')),
         }
 
-        # --- usage_scope filtering ---
+        # --- usage_scope filtering (SCALE axis, kept as-is) ---
         usage_scope_raw = raw.get('usage_scope')
         if usage_scope_raw in _TECHSTACK_USAGE_SCOPE_ALLOWED:
             data['usage_scope'] = usage_scope_raw
         # else: leave unset (None) -- model field is nullable.
+
+        # --- usage_departments (WHO -- multi-department M2M) ---
+        # Always assign the resolved list (possibly empty). SignalManager
+        # .create pops M2M values and applies them with .set() post-save.
+        # The legacy single-FK usage_department is deliberately left unset.
+        data['usage_departments'] = resolve_tech_usage_departments(raw)
 
         return data
 

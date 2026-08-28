@@ -333,9 +333,21 @@ def _build_taxonomy_block(target_stage):
         lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'techstack':
+        # usage_scope = SCALE axis (how widely). usage_departments = WHO
+        # axis (which departments use the tool, multi-department). Both are
+        # emitted per tool; the department list is drawn from the
+        # StandardDepartment controlled vocabulary so the extractor resolves
+        # each name by exact match (no fuzzy matching), same contract as the
+        # shared scope block for pain/objective/impact/constraint.
+        from app_modules.core_modules.models import StandardDepartment
         lines.append(
-            '- usage_scope (how widely the prospect uses the tool): '
+            '- usage_scope (SCALE -- how widely the prospect uses the tool): '
             + _enum_json_array(UsageScope)
+        )
+        lines.append(
+            '- usage_departments (WHO -- the department(s) that USE the '
+            'tool; pick zero or more values from this list, exact strings): '
+            + _enum_json_array(StandardDepartment.DepartmentChoices)
         )
 
     elif target_stage == 'constraint':
