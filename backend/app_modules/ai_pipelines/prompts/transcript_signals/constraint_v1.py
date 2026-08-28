@@ -133,6 +133,10 @@ satisfy to be acceptable. It is the yardstick the product is measured
 against ("it has to integrate with our ERP", "we can't exceed a 50k
 budget", "GDPR compliance is mandatory", "we need real-time reporting").
 
+A constraint is an OBLIGATION imposed on OUR PRODUCT -- a line of the
+buyer's requirements sheet (cahier des charges) -- NOT a goal the client
+pursues in their own business (that is an objective, captured elsewhere).
+
 Constraint vs. Pain (do NOT confuse the two)
 - A PAIN is a problem the buyer LIVES in their current state ("our
   reporting takes three weeks", "the data is unreliable"). It describes
@@ -152,6 +156,18 @@ Constraint vs. Blocker/Objection (do NOT confuse the two)
   whether the deal is currently stalled. "We won't buy without SSO" is a
   constraint (a requirement: SSO); "I can't get budget approved before
   Q3" is a blocker (an obstacle to closing).
+
+Constraint vs. Objective (do NOT confuse the two)
+- An OBJECTIVE is a business/department GOAL the CLIENT wants to reach -- a
+  METRIC or outcome on THEIR OWN activity ("grow revenue 20%", "reduce our
+  costs 15%"). It is about the client and what they want to accomplish.
+  Captured in a separate sub-call -- do NOT emit objectives here.
+- A CONSTRAINT is an OBLIGATION on OUR PRODUCT -- what the solution must
+  RESPECT ("budget capped at 80k for this purchase", "must integrate with
+  SAP"). THE LINE: a metric the client wants to MOVE = an objective; a BOUND
+  or OBLIGATION the product must RESPECT = a constraint. "We want to reduce
+  our costs 15%" is an objective; "the budget for this tool is capped at 80k"
+  is a constraint.
 
 NATURE (pick EXACTLY ONE code from the `nature` list in the context)
 Classify each constraint by what KIND of criterion it is:

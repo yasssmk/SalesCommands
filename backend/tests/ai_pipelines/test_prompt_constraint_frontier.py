@@ -52,8 +52,19 @@ class TestObjectiveConstraintFrontier:
     def test_has_objective_vs_constraint_boundary(self):
         req = self._objective_prompt()
         assert 'Objective vs. Constraint' in req
-        # A requirement on the solution is NOT an objective.
-        assert 'REQUIREMENT the prospect imposes ON THE SOLUTION' in req
+        # PO wording: objective = client metric/goal; constraint = an
+        # obligation on the product (a requirements-sheet line).
+        assert 'OBLIGATION imposed on OUR PRODUCT' in req
+        assert 'requirements sheet (cahier des charges)' in req
+
+    def test_has_metric_vs_obligation_corollary(self):
+        req = self._objective_prompt()
+        # The testable corollary: a metric the client wants to move is an
+        # objective; a bound/obligation the product must respect is a constraint.
+        assert 'metric the client wants to MOVE = an objective' in req
+        assert (
+            'BOUND or OBLIGATION the product must RESPECT = a constraint' in req
+        )
 
     def test_boundary_has_requirement_examples(self):
         req = self._objective_prompt()
@@ -61,9 +72,11 @@ class TestObjectiveConstraintFrontier:
         assert 'it has to integrate with our ERP' in req
 
     def test_boundary_keeps_real_objectives(self):
-        # Non-over-exclusion: a genuine business goal stays an objective.
+        # Non-over-exclusion: a genuine client metric/goal stays an objective,
+        # including the PO's canonical grey-zone case.
         req = self._objective_prompt()
         assert 'we want to grow revenue 20% this year' in req
+        assert 'we want to reduce our costs by 15%' in req
         assert 'do not silently drop a genuine goal' in req
 
 
@@ -82,21 +95,85 @@ class TestPainImpactConstraintFrontier:
     def test_has_pain_impact_vs_constraint_boundary(self):
         req = self._pain_impact_prompt()
         assert 'Pain / Impact vs. Constraint' in req
-        assert 'REQUIREMENT the prospect imposes on the solution' in req
+        # PO wording: constraint = an obligation on the product.
+        assert 'OBLIGATION imposed on OUR PRODUCT' in req
+        assert 'requirements sheet (cahier des charges)' in req
 
     def test_boundary_distinguishes_lived_from_requirement(self):
         req = self._pain_impact_prompt()
         # Lived consequence / difficulty stays pain/impact.
         assert 'we lose 40k a quarter because of X' in req
         assert 'our teams are overwhelmed' in req
-        # Requirement -> constraint.
-        assert 'the budget is capped at 80k' in req
+        # A spend bound on the purchase / a product obligation -> constraint.
+        assert 'budget capped at 80k for the purchase' in req
         assert 'GDPR compliance is mandatory' in req
 
     def test_boundary_keeps_real_pains_and_impacts(self):
         # Non-over-exclusion guard present.
         req = self._pain_impact_prompt()
         assert 'do not silently drop it' in req
+
+
+# =============================================================================
+# PROMPT CONTENT — constraint_v1 (framing side)
+# =============================================================================
+
+class TestConstraintObjectiveFraming:
+
+    def _constraint_prompt(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.constraint_v1 import (
+            build_constraint_request,
+        )
+        return build_constraint_request('A TRANSCRIPT BODY')
+
+    def test_constraint_framed_as_product_obligation(self):
+        req = self._constraint_prompt()
+        assert 'OBLIGATION imposed on OUR PRODUCT' in req
+        assert 'requirements sheet (cahier des charges)' in req
+
+    def test_constraint_vs_objective_boundary_present(self):
+        req = self._constraint_prompt()
+        assert 'Constraint vs. Objective' in req
+        # Same corollary line as the objective prompt.
+        assert 'a metric the client wants to MOVE = an objective' in req
+
+    def test_natures_untouched(self):
+        # The 6 natures and their one-line definitions must remain intact.
+        req = self._constraint_prompt()
+        for nature in ('FUNCTIONAL', 'TECHNICAL', 'FINANCIAL',
+                       'CONTRACTUAL', 'OPERATIONAL', 'SECURITY'):
+            assert nature in req
+
+
+# =============================================================================
+# CROSS-PROMPT CONSISTENCY — the three prompts describe the SAME line
+# =============================================================================
+
+class TestCrossPromptConsistency:
+
+    def _all_three(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.objective_v1 import (
+            build_objective_request,
+        )
+        from app_modules.ai_pipelines.prompts.transcript_signals.pain_impact_v1 import (
+            build_pain_impact_request,
+        )
+        from app_modules.ai_pipelines.prompts.transcript_signals.constraint_v1 import (
+            build_constraint_request,
+        )
+        return (
+            build_objective_request('T'),
+            build_pain_impact_request('T'),
+            build_constraint_request('T'),
+        )
+
+    def test_shared_obligation_framing_in_all_three(self):
+        objective, pain_impact, constraint = self._all_three()
+        # The same "product obligation / requirements sheet" framing appears in
+        # every prompt that references the constraint boundary.
+        for req in (objective, pain_impact, constraint):
+            assert 'requirements sheet (cahier des charges)' in req
+            assert 'OBLIGATION' in req and 'PRODUCT' in req
 
 
 # =============================================================================
