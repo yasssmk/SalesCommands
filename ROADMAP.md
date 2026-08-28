@@ -847,6 +847,67 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / Contrainte ✅ — Signal Constraint (Decision Criteria) : extraction dédiée, scope durci, cluster par nature & filtre (branches `feat/constraint-signal` + `feat/constraint-scope-guard`)
+- **Objectif** : traiter l'étape **Contrainte** du Bloc « Commandes IA » — capter
+  les **exigences imposées à la solution** (les *Decision Criteria* du deal), les
+  classer par **nature**, les scoper par **département**, les agréger et les
+  afficher. ⚠️ **C'est la CONTRAINTE qui est livrée, PAS l'Objection (blocker)** —
+  l'Objection reste à faire (voir la séquence PO plus bas).
+- **Livré** (chaque sous-étape validée reproduction ROUGE d'abord puis sonde de
+  NON-VACUITÉ) :
+  - **Signal `Constraint` = Decision Criteria du deal** : nouveau signal
+    **détaché**, enum **`ConstraintNature`** (`FUNCTIONAL` / `TECHNICAL` /
+    `FINANCIAL` / `CONTRACTUAL` / `OPERATIONAL` / `SECURITY` ; **libellé
+    d'affichage « Contractual & Legal » pour `CONTRACTUAL`**) + `rigidity`
+    (FIRM / FLEXIBLE).
+  - **Extraction dédiée (stage `constraint`)** : le LLM **repère les exigences
+    imposées à la solution** et émet **`nature` + scope département + `rigidity`**.
+  - **Scope par DÉPARTEMENT (BUSINESS par défaut), garde DURCI** : un département
+    n'est attribué **que s'il est EXPLICITEMENT DÉSIGNÉ** comme concerné —
+    **jamais** par le **locuteur**, **jamais** par un **mot technique** (SSO /
+    ERP / chiffrement) ; sinon **BUSINESS**. Durcissement appliqué au **bloc
+    scope PARTAGÉ** (`constraint` + `pain` + `objective` + `impact`), avec garde
+    **anti-sur-correction** (un département réellement désigné reste ce
+    département).
+  - **Frontière objective / impact / pain ↔ constraint resserrée** : une
+    exigence sur la solution n'est plus captée comme objectif/impact —
+    `objective` = **métrique / but du client** ; `constraint` = **obligation du
+    cahier des charges**.
+  - **Détachement du `what` × `dimension`** (axes inadaptés aux contraintes) :
+    `what` / `dimension` **nullable**, `canonical_key` **non calculé**,
+    `is_domain_valid` **non déclenché** — `nature` est le **champ dédié** (jamais
+    logé dans `what`).
+  - **`is_integration` du signal tech RE-ROUTÉ en contrainte de nature
+    `TECHNICAL`** : la **colonne `is_integration` est NEUTRALISÉE** (le rôle est
+    désormais porté par une contrainte) ; **drop de la colonne reporté au sprint
+    Competitors**.
+  - **Cluster par NATURE au read-time dans le DC** (doublons collapsés) ;
+    affichage : **section Contraintes en Activity (liste plate) ET DC (cluster
+    par nature)**, **ABSENTE en Account** (la contrainte est **deal-scoped**).
+  - **Filtre des contraintes par nature** dans le panneau groupé (multi-select
+    Nature, **DC seulement**) — **NON exhaustif**, repris au **sprint Filtres
+    transverse**.
+- **Migration** : **0026** (`nature` + `what` / `dimension` nullable).
+- **Validation** : suites **backend / front vertes** ; chaque sous-étape validée
+  par une **reproduction ROUGE d'abord** puis une **sonde de NON-VACUITÉ**
+  (mutation ciblée → le test re-échoue → restauration par **édition ciblée,
+  jamais `git checkout`**). **Smoke PO de bout en bout validé** : extraction,
+  **natures correctes**, **scope BUSINESS** pour un sujet **non désigné**,
+  **cluster par nature**, **affichage sur les 3 surfaces**, **filtre par nature**.
+- **Dette fermée** : la partie **clustering / affichage contrainte** (livrée) ;
+  **TD-189** **avance** — partie **constraint** (filtre par nature) livrée
+  **partielle** ; le **reste des filtres** reste **OPEN** (→ sprint Filtres
+  transverse, cf. TD-202).
+- **Dette ajoutée** : **TD-201 → TD-206** (voir TECH_DEBT.md) — scope tech
+  (usage) faux, filtres non exhaustifs, badge « X signals » incohérent,
+  homogénéisation UI Activity/DC, modaux Edit des signaux, nettoyage code mort
+  AI/Signals.
+- **Prochain jalon** (ordre cible) : suite du **Bloc « Commandes IA » (#4)** —
+  **Tech scope (usage)** puis **Blocker (Objection)** (voir la **séquence PO
+  réordonnée 2026-08-28** ci-dessous).
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -954,7 +1015,7 @@ possibles) :
   besoin précis pour l'instant ; lié aux « vues selon le tier » ; à réfléchir
   avec le PO.
 
-**Séquence CONFIRMÉE PO (2026-08-27) — sous-étapes du bloc, dans l'ordre :**
+**Séquence CONFIRMÉE PO (2026-08-27) — sous-étapes du bloc, dans l'ordre :** _(⤷ SUPERSEDÉE par la « Séquence CONFIRMÉE PO (2026-08-28) » plus bas — réordonnancement post-Contrainte ; conservée pour l'historique.)_
 - **0. Tech Stack (cluster stack actuelle)** — **✅ LIVRÉ** (branche
   `feat/techstack-cluster`) : prompt canonique `tech_name`, clustering tech
   **read-time**, drawer + ligne épurée, colonne droite branchée sur le pipeline
@@ -980,6 +1041,35 @@ possibles) :
 - **Note de cadrage (sprints finaux)** : chaque fermeture de sprint =
   **PRODUCTION READY** (comportement + UX prêts) ; seul le **vernis UI** (thème,
   composants) est reporté au **paufinage UI final**.
+
+**Séquence CONFIRMÉE PO (2026-08-28) — réordonnancement du RESTE du bloc Signaux, post-Contrainte (SUPERSEDES la séquence 2026-08-27 ci-dessus) :**
+- **✅ LIVRÉ** : **0. Tech Stack** (`feat/techstack-cluster`) ; **Contrainte**
+  (`feat/constraint-signal` + `feat/constraint-scope-guard`) — voir les fiches
+  « Sprint Bloc IA / Tech Stack ✅ » et « Sprint Bloc IA / Contrainte ✅ »
+  ci-dessus.
+- **Reste du bloc Signaux (ordre confirmé PO)** :
+  1. **Tech scope (usage)** — capter *qui utilise quoi* (le **département
+     d'usage**) + **filtre `usage_scope`** (TD-201).
+  2. **Blocker (Objection)** — **scope + cluster + affichage**.
+  3. **Next steps**.
+  4. **Filtres transverse** — **TOUS** les filtres d'un coup, **regroupables** ;
+     **ferme TD-189** (et TD-202 — filtres non exhaustifs).
+  5. **Passe cluster** — infos pertinentes par cluster ; pour le tech, piste
+     **« remplacement envisagé »** (info de **niveau cluster**, dérivée des
+     signaux, **non actée**) — TD-199.
+  6. **UX Signals** — décider onglet **Flat / Grouped partagé ou non**
+     (**TD-186**) ; **homogénéisation UI Activity / DC** (TD-204) ; **modaux
+     Edit** des signaux (TD-205).
+  7. **Nettoyage code mort AI / Signals** (clean code — TD-206).
+  8. **Smoke Signals A→Z** — transcript d'un **cycle de vente COMPLET**, étape
+     par étape.
+  9. **Clôture du bloc Signaux** → puis **Prep call** (prompt + UI).
+- **Note de routage tech** : le **routage `is_competitor`**, la **SUPPRESSION du
+  champ `is_to_replace`** et le **drop de la colonne `is_integration`**
+  (neutralisée au sprint Contrainte) restent au **sprint Competitors** (tech) —
+  cf. TD-196 / TD-199.
+- **Note de cadrage (sprints finaux)** : chaque fermeture = **PRODUCTION READY**
+  (comportement + UX) ; seul le **vernis UI** va au **paufinage UI final**.
 
 ### Nouveaux sprints
 
