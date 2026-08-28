@@ -3,15 +3,15 @@
 Tech-stack extraction on the S10 contract: raw name + qualification booleans.
 
 The LLM no longer matches a TechCatalog UUID. It emits the tool name as
-free text plus three independent booleans, and the extractor writes them
-straight onto the sub-step-1 fields:
+free text plus two independent booleans, and the extractor writes them
+straight onto the sub-step-1 fields (is_integration was retired -- a
+required integration is now a TECHNICAL ConstraintSignal):
 
     LLM field        ->  TechStackSignal column
     ---------------      ----------------------------------------
     tech_name        ->  tech_name (raw) -> tech_name_normalized
                          (derived by TechStackSignal.save())
     is_competitor    ->  is_competitor
-    is_integration   ->  is_integration
     is_to_replace    ->  is_to_replace
 
 The tech catalogue is gone entirely: nothing on this path references it.
@@ -49,7 +49,6 @@ def _raw(tech_name, **overrides):
     payload = {
         'tech_name':      tech_name,
         'is_competitor':  False,
-        'is_integration': False,
         'is_to_replace':  False,
         'usage_scope':    'COMPANY',
         'source_quote':   f'We use {tech_name} across the company',
@@ -194,18 +193,17 @@ class TestQualificationBooleansFromLLM:
         assert sig.is_integration is False
         assert sig.is_to_replace is True
 
-    def test_all_three_true_is_legal(self, account, activity, user_a):
+    def test_both_booleans_true_is_legal(self, account, activity, user_a):
         persisted, _ = _persist(
             activity, account, user_a,
-            [_raw('Slack', is_competitor=True, is_integration=True,
-                  is_to_replace=True)],
+            [_raw('Slack', is_competitor=True, is_to_replace=True)],
         )
 
         sig = persisted[0]
         sig.refresh_from_db()
-        assert (sig.is_competitor, sig.is_integration, sig.is_to_replace) == (
-            True, True, True,
-        )
+        assert (sig.is_competitor, sig.is_to_replace) == (True, True)
+        # is_integration is no longer extracted -- stays at the model default.
+        assert sig.is_integration is False
 
     def test_truthy_non_bool_values_are_coerced(
         self, account, activity, user_a,
@@ -213,12 +211,12 @@ class TestQualificationBooleansFromLLM:
         """An LLM emitting "true"/1 must not land a non-boolean in the DB."""
         persisted, _ = _persist(
             activity, account, user_a,
-            [_raw('Jira', is_integration=1, is_competitor=None)],
+            [_raw('Jira', is_competitor=1, is_to_replace=None)],
         )
 
         sig = persisted[0]
-        assert sig.is_integration is True
-        assert sig.is_competitor is False
+        assert sig.is_competitor is True
+        assert sig.is_to_replace is False
 
 
 # =============================================================================
@@ -349,13 +347,14 @@ class TestBatchDedupOnNormalisedName:
             activity, account, user_a,
             [
                 _raw('Salesforce', is_competitor=True, source_quote='q1'),
-                _raw('salesforce', is_integration=True, source_quote='q2'),
+                _raw('salesforce', is_to_replace=True, source_quote='q2'),
             ],
         )
 
         assert len(persisted) == 1
         assert persisted[0].is_competitor is True
-        assert persisted[0].is_integration is False
+        # Winner is the first occurrence -- the second's is_to_replace does not win.
+        assert persisted[0].is_to_replace is False
 
 
 # =============================================================================

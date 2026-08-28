@@ -6,7 +6,8 @@ TranscriptSignalsPipeline.
 Responsibility
 --------------
 Given a list of raw signal dicts emitted by the LLM for ONE pipeline
-stage (pain / objective / impact / techstack), this service:
+stage (pain / objective / impact / techstack / blocker / constraint),
+this service:
 
   1. Filters out LLM-self-declared weak signals (safety filter on
      confidence + is_inferred -- thresholds passed in from the
@@ -23,16 +24,22 @@ stage (pain / objective / impact / techstack), this service:
                           fills during validation). impact_type is
                           emitted by the LLM and persisted directly.
         - TechStack   -> raw `tech_name` passthrough (normalised by
-                          TechStackSignal.save(), not here) + the three
+                          TechStackSignal.save(), not here) + the
                           qualification booleans (is_competitor /
-                          is_integration / is_to_replace); usage_scope
-                          filtered to TEAM / COMPANY / UNKNOWN
-                          (DEPARTMENT and unknown values demoted to
-                          null). No catalogue lookup -- see below.
+                          is_to_replace); usage_scope filtered to
+                          TEAM / COMPANY / UNKNOWN (DEPARTMENT and unknown
+                          values demoted to null). `is_integration` is NO
+                          LONGER extracted -- a required integration is now
+                          a ConstraintSignal of nature=TECHNICAL. No
+                          catalogue lookup -- see below.
         - Blocker     -> 1:1 passthrough on summary / source_quote /
                           confidence / is_inferred. `contact` (FK
                           Contact, optional) is NOT extracted in v1
                           -- rep attributes during validation (TD-6).
+        - Constraint  -> summary + nature (validated against
+                          ConstraintNature, out-of-list dropped) + rigidity
+                          (invalid folds to FIRM) + target_department via the
+                          shared scope resolver. NEVER what/dimension.
   3. Calls SignalManager.create() for each surviving signal.
   4. Returns the persisted list and the dropped count for audit
      logging by the pipeline.
@@ -53,9 +60,10 @@ re-validated against activity.client_id as defense in depth against a
 hallucinated or cross-tenant id.
 
 That whole mechanism is gone, along with the catalogue itself: the LLM
-emits the tool name as free text plus three qualification booleans, and
+emits the tool name as free text plus the qualification booleans, and
 the extractor writes them to `tech_name` / `is_competitor` /
-`is_integration` / `is_to_replace`.
+`is_to_replace`. (`is_integration` was retired from this path -- see the
+TechStack line above.)
 
 The cross-tenant attack surface disappeared with the UUID: no
 tenant-owned identifier is sent to the model or read back from it on
@@ -89,6 +97,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from app_modules.signals.constants import (
+    ConstraintNature,
+    Rigidity,
     ScopeLevel,
     SignalSource,
     SignalStatus,
@@ -204,7 +214,7 @@ class TranscriptSignalExtractor:
         Apply safety filter + persist surviving signals for one stage.
 
         Args:
-            stage:           'pain' | 'objective' | 'impact' | 'techstack' | 'blocker'.
+            stage:           'pain' | 'objective' | 'impact' | 'techstack' | 'blocker' | 'constraint'.
             raw_signals:     list[dict] -- the LLM's emitted signals.
             activity:        app_modules.activities.Activity -- source activity.
             user:            end_users.User -- the rep who triggered the run.
@@ -383,6 +393,8 @@ class TranscriptSignalExtractor:
             return self._build_techstack_data(raw, activity, client_id)
         if stage == 'blocker':
             return self._build_blocker_data(raw, activity)
+        if stage == 'constraint':
+            return self._build_constraint_data(raw, activity)
 
         logger.warning(
             'persist_stage_unknown_stage',
@@ -540,9 +552,11 @@ class TranscriptSignalExtractor:
 
         Schema requirements (from techstack_v1.py):
             tech_name (required, free text),
-            is_competitor / is_integration / is_to_replace (booleans),
+            is_competitor / is_to_replace (booleans),
             usage_scope (optional),
             source_quote, confidence, is_inferred.
+            (is_integration is no longer extracted -- now a TECHNICAL
+            constraint; see the constraint stage.)
 
         Tech identity (S10):
             The LLM emits the tool name as free text and the extractor
@@ -555,10 +569,11 @@ class TranscriptSignalExtractor:
             same string could only drift from it.
 
         Qualification booleans:
-            Three independent flags, coerced with bool() so a JSON
-            "true" / 1 / null from the model can never land a non-boolean
-            in the DB. All three absent -> all False, meaning "a tool the
-            account simply uses".
+            Two independent flags (is_competitor / is_to_replace), coerced
+            with bool() so a JSON "true" / 1 / null from the model can never
+            land a non-boolean in the DB. Both absent -> both False, meaning
+            "a tool the account simply uses". (is_integration was retired
+            from this path -- now a TECHNICAL constraint.)
 
         usage_scope filtering:
             * "TEAM" / "COMPANY" / "UNKNOWN"  -> propagate to model.
@@ -598,8 +613,12 @@ class TranscriptSignalExtractor:
             # normalised grouping key from it.
             'tech_name':       str(tech_name),
 
+            # is_integration is NO LONGER extracted: a required integration is
+            # now captured as a ConstraintSignal of nature=TECHNICAL (see the
+            # constraint stage). The tech column stays (neutralised, defaults
+            # False) pending a PO decision to drop it. is_competitor and
+            # is_to_replace are untouched (Competitors sprint).
             'is_competitor':   bool(raw.get('is_competitor')),
-            'is_integration':  bool(raw.get('is_integration')),
             'is_to_replace':   bool(raw.get('is_to_replace')),
         }
 
@@ -666,6 +685,84 @@ class TranscriptSignalExtractor:
 
             # v1: contact attribution deferred to validation UI -- TD-6.
             # Field stays at model default (None).
+        }
+
+    # ---------------------- Constraint ----------------------
+
+    def _build_constraint_data(self, raw, activity):
+        """
+        Build SignalManager.create() data for a Constraint signal.
+
+        Schema requirements (from constraint_v1.py):
+            summary, nature, rigidity, source_quote, confidence, is_inferred
+            (+ scope_level / target_department driving the scope resolver).
+
+        Detached from what x dimension (sub-step 1): NEVER pass what/dimension.
+        ConstraintSignal is classified on `nature` and scoped on
+        target_department only.
+
+        `nature` is validated against ConstraintNature -- an out-of-list value
+        is DROPPED (return None), never coerced, so a hallucinated kind never
+        lands a row. Mirror of the strict stance the model applies to `what`.
+
+        `rigidity` is REQUIRED on the model; an invalid / missing emission
+        folds to FIRM (the cautious default -- treat an unqualified
+        requirement as non-negotiable).
+
+        `target_department` is resolved by the SHARED
+        resolve_scope_and_department (same helper pain/objective/impact use):
+        BUSINESS or an unresolved department name -> None. ConstraintSignal has
+        no scope_level column, so only target_department is persisted.
+        """
+        required = ('summary', 'nature', 'source_quote')
+        if not all(k in raw and raw[k] is not None for k in required):
+            return None
+
+        summary = str(raw['summary']).strip()
+        source_quote = str(raw['source_quote']).strip()
+        if not summary or not source_quote:
+            return None
+
+        # nature: strict — drop (do not coerce) an out-of-vocabulary value.
+        nature = raw.get('nature')
+        if nature not in ConstraintNature.values:
+            logger.warning(
+                'constraint_nature_out_of_taxonomy',
+                extra={
+                    'event': 'ai_pipeline_persist',
+                    'raw_nature': nature,
+                    'source_activity_id': str(getattr(activity, 'id', '')),
+                },
+            )
+            return None
+
+        # rigidity: required on the model — fold an invalid/missing value to
+        # FIRM (cautious default).
+        rigidity = raw.get('rigidity')
+        if rigidity not in Rigidity.values:
+            rigidity = Rigidity.FIRM
+
+        # Scope: reuse the shared resolver. Constraint keeps only the
+        # department (department-only scoping, PO decision); the returned
+        # scope_level is intentionally discarded (no scope_level column).
+        _scope_level, target_department = resolve_scope_and_department(raw)
+
+        return {
+            'signal_type':      'constraint',
+            'account':          activity.account,
+            'source_activity':  activity,
+            'source':           SignalSource.LLM_EXTRACTED,
+            'status':           SignalStatus.PENDING,
+            'summary':          summary,
+            'nature':           nature,
+            'rigidity':         rigidity,
+            'target_department': target_department,
+            'source_quote':     source_quote,
+            'confidence':       self._safe_float(raw.get('confidence')),
+            'is_inferred':      bool(raw.get('is_inferred')),
+
+            # NEVER what/dimension (detached, sub-step 1). canonical_key is
+            # forced to None by ConstraintSignal.save().
         }
 
     # =========================================================================

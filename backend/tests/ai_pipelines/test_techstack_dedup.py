@@ -31,7 +31,6 @@ class TestTechStackDedup:
             'signal_type': 'tech_stack',
             'tech_name': tech_name,
             'is_competitor': False,
-            'is_integration': False,
             'is_to_replace': False,
             'source_quote': source_quote,
         }
@@ -111,13 +110,13 @@ class TestTechStackDedup:
         """
         candidates = [
             self._make_candidate('Salesforce', 'q1', is_competitor=True),
-            self._make_candidate('salesforce', 'q2', is_integration=True),
+            self._make_candidate('salesforce', 'q2', is_to_replace=True),
         ]
         result = TranscriptSignalExtractor._deduplicate_techstack(candidates)
 
         assert len(result) == 1
         assert result[0]['is_competitor'] is True
-        assert result[0]['is_integration'] is False
+        assert result[0]['is_to_replace'] is False
 
     def test_existing_metadata_is_not_clobbered(self):
         """additional_quotes is added alongside whatever metadata exists."""

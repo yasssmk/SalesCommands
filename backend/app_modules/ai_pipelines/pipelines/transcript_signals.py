@@ -3,7 +3,7 @@
 """
 QualificationSignalsPipeline -- the concrete pipeline that extracts
 Pain / Objective / Impact / TechStack / Blocker signals from a sales
-transcript via 4 sequential LLM sub-calls (A2: Pain and Impact are
+transcript via 5 sequential LLM sub-calls (A2: Pain and Impact are
 extracted together in a single 'pain_impact' call).
 
 Naming note (Sprint B3 rename)
@@ -41,10 +41,14 @@ Sub-call sequence
     techstack   -> TechStack signals  (free-text tech_name + booleans)
     blocker     -> Blocker signals    (no canonical taxonomy axes; contact
                                        attribution deferred to rep -- TD-6)
+    constraint  -> Constraint signals (Decision Criteria; classified on
+                                       `nature`, scoped on target_department;
+                                       detached from what x dimension)
 
 Each sub-call shares system prompt + context, varying only the request
-layer. The context layer SKIPS the taxonomy block entirely on the
-blocker stage (BlockerSignal has no canonical axes).
+layer. The context layer SKIPS the what x dimension taxonomy block on the
+blocker stage (no axes) and on the constraint stage (constraint carries a
+`nature` list + the scope taxonomy instead of what x dimension).
 
 Safety filter
 -------------
@@ -93,6 +97,7 @@ Return contract
             'impact':     list[ImpactSignal],
             'techstack':  list[TechStackSignal],
             'blocker':    list[BlockerSignal],
+            'constraint': list[ConstraintSignal],
         }
     }
 
@@ -146,6 +151,10 @@ from ..prompts.transcript_signals.blocker_v1 import (
     build_blocker_request,
     BLOCKER_PROMPT_VERSION,
 )
+from ..prompts.transcript_signals.constraint_v1 import (
+    build_constraint_request,
+    CONSTRAINT_PROMPT_VERSION,
+)
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -175,6 +184,12 @@ _STAGES = [
     ('objective', build_objective_request),
     ('techstack', build_techstack_request),
     ('blocker', build_blocker_request),
+    # Constraint is LAST, right after blocker: both are the free-text,
+    # scope-only stages with no canonical what x dimension axes. Keeping them
+    # adjacent and last mirrors the rep's mental flow -- qualify (pain /
+    # objective / impact / tech), surface what stands in the way (blocker),
+    # then capture the decision criteria the solution must meet (constraint).
+    ('constraint', build_constraint_request),
 ]
 
 
@@ -192,6 +207,7 @@ class QualificationSignalsPipeline(BasePipeline):
         'objective':   OBJECTIVE_PROMPT_VERSION,
         'techstack':   TECHSTACK_PROMPT_VERSION,
         'blocker':     BLOCKER_PROMPT_VERSION,
+        'constraint':  CONSTRAINT_PROMPT_VERSION,
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.TRANSCRIPT_SIGNALS]

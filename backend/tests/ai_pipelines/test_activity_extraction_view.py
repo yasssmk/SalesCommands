@@ -381,6 +381,7 @@ class TestBothFailed:
             'objective': LLMTimeoutError('timeout'),
             'techstack': LLMTimeoutError('timeout'),
             'blocker': LLMTimeoutError('timeout'),
+            'constraint': LLMTimeoutError('timeout'),
             'next_steps': LLMTimeoutError('timeout'),
         }
 

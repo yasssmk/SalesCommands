@@ -4,8 +4,8 @@ Orchestration-level tests for QualificationSignalsPipeline (Sprint B3).
 
 Covers everything that lives at the pipeline-runner boundary:
 
-  * 4 stages run in the canonical order
-    (pain_impact -> objective -> techstack -> blocker).
+  * 5 stages run in the canonical order
+    (pain_impact -> objective -> techstack -> blocker -> constraint).
   * Prompt structure per stage: system + context + transcript marker
     + stage-specific TASK header. Driven via FakeProvider.calls which
     captures every kwarg passed to provider.call().
@@ -77,11 +77,11 @@ class TestPromptVersionsRegistry:
         from app_modules.ai_pipelines.pipelines.transcript_signals import (
             QualificationSignalsPipeline,
         )
-        # All 6 keys must be present (system + context + 5 stage versions).
+        # All keys must be present (system + context + stage versions).
         # Use a set comparison to keep the assertion order-agnostic.
         assert set(QualificationSignalsPipeline.PROMPT_VERSIONS.keys()) == {
             'system', 'context', 'pain_impact', 'objective',
-            'techstack', 'blocker',
+            'techstack', 'blocker', 'constraint',
         }
 
 
@@ -110,7 +110,7 @@ class TestPipelineStageOrder:
         )
 
         assert fake_provider.stages_in_order() == [
-            'pain_impact', 'objective', 'techstack', 'blocker',
+            'pain_impact', 'objective', 'techstack', 'blocker', 'constraint',
         ]
         assert result['run'].status == AIPipelineStatus.SUCCESS
 
@@ -158,6 +158,7 @@ class TestPromptStructurePerStage:
             ('objective',   'Extract OBJECTIVE signals'),
             ('techstack',   'Extract TECH STACK signals'),
             ('blocker',     'Extract BLOCKER signals'),
+            ('constraint',  'Extract CONSTRAINT signals'),
         ],
     )
     def test_user_prompt_contains_stage_task_header(self, stage, expected_marker):
@@ -167,7 +168,7 @@ class TestPromptStructurePerStage:
 
     @pytest.mark.parametrize(
         'stage',
-        ['pain_impact', 'objective', 'techstack', 'blocker'],
+        ['pain_impact', 'objective', 'techstack', 'blocker', 'constraint'],
     )
     def test_user_prompt_embeds_transcript_verbatim(self, stage):
         calls = self._provider.calls_for(stage)
@@ -175,7 +176,7 @@ class TestPromptStructurePerStage:
 
     @pytest.mark.parametrize(
         'stage',
-        ['pain_impact', 'objective', 'techstack', 'blocker'],
+        ['pain_impact', 'objective', 'techstack', 'blocker', 'constraint'],
     )
     def test_system_prompt_is_non_empty(self, stage):
         calls = self._provider.calls_for(stage)
@@ -185,7 +186,7 @@ class TestPromptStructurePerStage:
 
     @pytest.mark.parametrize(
         'stage',
-        ['pain_impact', 'objective', 'techstack', 'blocker'],
+        ['pain_impact', 'objective', 'techstack', 'blocker', 'constraint'],
     )
     def test_temperature_is_zero_for_extraction(self, stage):
         calls = self._provider.calls_for(stage)
@@ -277,7 +278,7 @@ class TestAIPipelineRunAuditRow:
         )
         sub_call_stages = [c['stage'] for c in result['run'].sub_calls]
         assert sub_call_stages == [
-            'pain_impact', 'objective', 'techstack', 'blocker',
+            'pain_impact', 'objective', 'techstack', 'blocker', 'constraint',
         ]
 
 

@@ -64,6 +64,7 @@ the pipeline orchestrator (resolve once, pass three times).
 import logging
 
 from app_modules.signals.constants import (
+    ConstraintNature,
     ImpactType,
     SignalDimension,
     SignalWhat,
@@ -78,6 +79,7 @@ CONTEXT_VERSION = 'v1'
 
 _SUPPORTED_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
+    'constraint',
 )
 
 
@@ -335,6 +337,16 @@ def _build_taxonomy_block(target_stage):
             '- usage_scope (how widely the prospect uses the tool): '
             + _enum_json_array(UsageScope)
         )
+
+    elif target_stage == 'constraint':
+        # Constraint is DETACHED from the what x dimension canonical axes
+        # (sub-step 1): no _what_dimension_lines here. It is classified on
+        # `nature` and scoped on target_department (department-only).
+        lines.append(
+            '- nature (kind of decision criterion; pick EXACTLY ONE code): '
+            + _enum_coded_list(ConstraintNature)
+        )
+        lines.extend(_scope_taxonomy_lines())
 
     return '\n'.join(lines)
 
