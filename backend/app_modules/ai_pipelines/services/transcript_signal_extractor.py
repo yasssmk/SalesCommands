@@ -94,6 +94,7 @@ a different filter strategy could subclass).
 """
 
 import logging
+import re
 
 from django.db import transaction
 from django.utils import timezone
@@ -123,35 +124,97 @@ logger = logging.getLogger(__name__)
 _TECHSTACK_USAGE_SCOPE_ALLOWED = {'TEAM', 'COMPANY', 'UNKNOWN'}
 
 
+def _build_department_resolution_index():
+    """
+    Build the name -> StandardDepartment resolution index over the whole
+    (global) StandardDepartment vocabulary.
+
+    Two lookup layers, both keyed on lowercased strings so resolution is
+    case-insensitive:
+
+      by_value: the full department name ("customer support" ->
+                Customer Support). This is the exact contract the prompt
+                asks for -- the grounding list injected in the context
+                layer -- made case-tolerant.
+
+      by_word:  a SINGLE word that appears in EXACTLY ONE department name
+                ("support" -> Customer Support, "engineering" ->
+                Engineering). Words shared by several departments
+                ("management" is in General / Product / Security & Risk
+                Management; "operations" is in Operations and Retail
+                Operations) are AMBIGUOUS and deliberately LEFT OUT -- an
+                ambiguous role-word must not resolve to an arbitrary
+                department (the "do not over-correct" rule). This is what
+                lets the model's transcript-echoed function word ("support"
+                for "Customer Support") resolve without a fuzzy match that
+                could bind the wrong row.
+
+    Returns (by_value, by_word) -- two dicts of lowercased-key ->
+    StandardDepartment.
+    """
+    from app_modules.core_modules.models import StandardDepartment
+
+    departments = list(StandardDepartment.objects.all())
+
+    by_value = {}
+    word_hits = {}  # word -> set of dept ids that contain it (ambiguity check)
+    word_dept = {}  # word -> a dept carrying it
+
+    for dept in departments:
+        value_lc = dept.name.strip().lower()
+        by_value[value_lc] = dept
+        for word in re.findall(r'[a-z0-9]+', value_lc):
+            word_hits.setdefault(word, set()).add(dept.id)
+            word_dept[word] = dept
+
+    # Keep only UNAMBIGUOUS words (present in exactly one department) and
+    # never a word that is itself a full department value (avoid shadowing
+    # the exact layer with a weaker one).
+    by_word = {
+        word: word_dept[word]
+        for word, ids in word_hits.items()
+        if len(ids) == 1 and word not in by_value
+    }
+
+    return by_value, by_word
+
+
 def resolve_tech_usage_departments(raw):
     """
     Resolve the list of departments that USE a tool from the LLM payload.
 
     The techstack stage emits `usage_departments`: an array of department
-    names (from the StandardDepartment vocabulary) explicitly designated as
-    USERS of the tool. This resolves each name to a StandardDepartment row
-    and returns the deduplicated list to assign to the M2M
-    TechStackSignal.usage_departments.
+    names (from the StandardDepartment vocabulary injected in the context
+    layer) explicitly designated as USERS of the tool. This resolves each
+    name to a StandardDepartment row and returns the deduplicated list to
+    assign to the M2M TechStackSignal.usage_departments.
 
-    Same resolution rule as the qualification scope resolver
-    (resolve_scope_and_department, above): exact name lookup against the
-    StandardDepartment controlled vocabulary. StandardDepartment is global
-    reference data (no client_id of its own), so the lookup is tenant-safe
-    exactly as it is for pain/objective/impact/constraint -- the tenant
-    boundary lives on the signal, not on the shared department rows.
+    Resolution against the SAME controlled vocabulary the shared scope
+    resolver (resolve_scope_and_department, above) uses, but made robust to
+    the model echoing the transcript's function word instead of the exact
+    list label ("support" for "Customer Support", the smoke-proven bug):
 
-    Guards (mirror of the shared resolver, applied per name):
-      * a name that does not resolve to a StandardDepartment row is
-        dropped (never invented) -- an unresolved / hallucinated department
-        is business-normal noise, not a hard error;
+      1. case-insensitive EXACT match on the department name
+         ("customer support" -> Customer Support);
+      2. else a case-insensitive UNAMBIGUOUS single-word match
+         ("support" -> Customer Support, because "support" appears in only
+         one department name). A word shared by several departments is
+         ambiguous and NEVER resolves -- no over-correction.
+
+    StandardDepartment is global reference data (no client_id of its own),
+    so the lookup is tenant-safe exactly as for pain/objective/impact/
+    constraint -- the tenant boundary lives on the signal, not on the
+    shared department rows.
+
+    Guards:
+      * a name that resolves to nothing is dropped (never invented);
       * "General Management" is dropped -- a company-wide / executive owner
-        is NOT a using department (same stance as GUARD 2 above); the
-        company-wide reading is already carried by usage_scope=COMPANY;
+        is NOT a using department (the company-wide reading is carried by
+        usage_scope=COMPANY);
       * duplicates collapse (order-preserving) so ["Sales", "Sales"] -> one.
 
     A missing / non-list / empty `usage_departments`, or one that resolves
-    to nothing, yields [] -- no department designated. Assigning [] to the
-    M2M is a valid "nobody designated" state and never raises.
+    to nothing, yields [] -- a valid "nobody designated" state.
 
     Returns:
         list[StandardDepartment] -- possibly empty, deduplicated, in the
@@ -163,12 +226,18 @@ def resolve_tech_usage_departments(raw):
     if not isinstance(names, list):
         return []
 
+    by_value, by_word = _build_department_resolution_index()
+
     resolved = []
     seen_ids = set()
     for name in names:
         if not name or not isinstance(name, str):
             continue
-        dept = StandardDepartment.objects.filter(name=name).first()
+        key = name.strip().lower()
+        if not key:
+            continue
+        # Layer 1: exact (case-insensitive). Layer 2: unambiguous word.
+        dept = by_value.get(key) or by_word.get(key)
         if dept is None:
             continue
         if dept.name == StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT:

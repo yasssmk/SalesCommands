@@ -198,6 +198,68 @@ class TestResolverGuards:
 
 
 # =============================================================================
+# B2 — ROBUST RESOLUTION (the smoke bug: "support" -> "Customer Support")
+# =============================================================================
+
+class TestRobustDepartmentResolution:
+    """
+    The model echoes the transcript's function word ("support") instead of
+    the exact list label ("Customer Support"). Exact match dropped it ->
+    Zendesk came out with []. Resolution must map the unambiguous function
+    word to its department, WITHOUT over-correcting an ambiguous one.
+    """
+
+    def _names(self, emitted):
+        return [d.name for d in resolve_tech_usage_departments(
+            {'usage_departments': emitted}
+        )]
+
+    def test_support_word_resolves_to_customer_support(
+        self, db, dept_support,
+    ):
+        """The exact smoke bug: 'Support' -> Customer Support."""
+        assert self._names(['Support']) == ['Customer Support']
+
+    def test_resolution_is_case_insensitive(self, db, dept_support):
+        assert self._names(['support']) == ['Customer Support']
+        assert self._names(['customer support']) == ['Customer Support']
+
+    def test_exact_label_still_resolves(self, db, dept_support):
+        assert self._names(['Customer Support']) == ['Customer Support']
+
+    def test_ambiguous_word_is_not_over_corrected(self, db):
+        """
+        'management' appears in several departments -> it must resolve to
+        NONE, never bind an arbitrary one. This is the anti-over-correction
+        guard the fix must keep.
+        """
+        from app_modules.core_modules.models import StandardDepartment
+        for n in ('General Management', 'Product Management',
+                  'Security & Risk Management'):
+            StandardDepartment.objects.get_or_create(name=n)
+
+        assert self._names(['management']) == []
+
+    def test_unknown_word_still_yields_nothing(self, db, dept_support):
+        assert self._names(['Wizardry']) == []
+
+    def test_zendesk_support_lands_customer_support_via_real_path(
+        self, account, activity, user_a, dept_support,
+    ):
+        """
+        PO smoke, real extraction path: an emission carrying the function
+        word 'Support' (what the model produces for 'Zendesk pour le
+        support') persists usage_departments=[Customer Support].
+        """
+        persisted, dropped = _persist(
+            activity, account, user_a,
+            [_raw('Zendesk', usage_departments=['Support'])],
+        )
+        assert dropped == 0
+        assert _dept_names(persisted[0]) == {'Customer Support'}
+
+
+# =============================================================================
 # C — PROMPT CONTENT (non-vacuity target)
 # =============================================================================
 
