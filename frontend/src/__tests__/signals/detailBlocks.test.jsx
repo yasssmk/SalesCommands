@@ -75,6 +75,54 @@ describe("TechDetailBlock", () => {
     expect(screen.getByText("2022")).toBeInTheDocument();
     expect(screen.getByText("~50k/year")).toBeInTheDocument();
   });
+
+  // ONE usage line (PO rule): the department PRIMES over the scale, plain
+  // text, never both. Fixes the "Company-wide" + "Marketing" contradiction.
+  it("shows the department (plain text) and NOT the scale when a department is present", () => {
+    const { container } = render(
+      <TechDetailBlock
+        signal={{
+          usage_scope_display: "Company-wide",
+          usage_departments: [{ id: "7", name: "Marketing & Communications" }],
+        }}
+      />,
+    );
+    // Department shown as plain text (body2), no MUI chip.
+    const dept = screen.getByText("Marketing & Communications");
+    expect(dept).toBeInTheDocument();
+    expect(dept.closest(".MuiChip-root")).toBeNull();
+    // The contradictory scale line is gone.
+    expect(screen.queryByText("Company-wide")).not.toBeInTheDocument();
+    expect(container.querySelector(".MuiChip-root")).toBeNull();
+  });
+
+  it("lists several departments as comma-separated plain text", () => {
+    render(
+      <TechDetailBlock
+        signal={{
+          usage_scope_display: "Company-wide",
+          usage_departments: [
+            { id: "6", name: "Sales" },
+            { id: "5", name: "Marketing" },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("Sales, Marketing")).toBeInTheDocument();
+    expect(screen.queryByText("Company-wide")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the usage scope when no department is designated", () => {
+    render(
+      <TechDetailBlock
+        signal={{
+          usage_scope_display: "Company-wide",
+          usage_departments: [],
+        }}
+      />,
+    );
+    expect(screen.getByText("Company-wide")).toBeInTheDocument();
+  });
 });
 
 describe("PainDetailBlock", () => {
