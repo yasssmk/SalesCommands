@@ -193,11 +193,21 @@ function buildListUrl(baseUrl, params = {}) {
  * @param {string} [signalType='pain']
  * @returns {string}
  */
-function buildDetailUrl(canonicalKey, accountId, signalType = "pain") {
+function buildDetailUrl(
+  canonicalKey,
+  accountId,
+  signalType = "pain",
+  decisionCycleId = null,
+) {
   const query = new URLSearchParams({
     account: accountId,
     signal_type: signalType,
   });
+  // DC scope — only the constraint cluster (DC-scoped) passes it; the other
+  // types ignore it server-side. Keeps a nature cluster bounded to its cycle.
+  if (decisionCycleId) {
+    query.append("decision_cycle", decisionCycleId);
+  }
   return `${endpoints.detail(canonicalKey)}?${query.toString()}`;
 }
 
@@ -386,7 +396,7 @@ export function useGetClustersByAccount(accountId, options = {}) {
  */
 export function useGetClusterDetail(accountId, canonicalKey, options = {}) {
   const { tenantId } = useAuth();
-  const { signalType = "pain" } = options;
+  const { signalType = "pain", decisionCycleId = null } = options;
 
   const enabled = Boolean(
     accountId && isValidUUID(accountId) && canonicalKey && canonicalKey.trim(),
@@ -394,8 +404,10 @@ export function useGetClusterDetail(accountId, canonicalKey, options = {}) {
 
   const urlWithParams = useMemo(
     () =>
-      enabled ? buildDetailUrl(canonicalKey, accountId, signalType) : null,
-    [enabled, canonicalKey, accountId, signalType],
+      enabled
+        ? buildDetailUrl(canonicalKey, accountId, signalType, decisionCycleId)
+        : null,
+    [enabled, canonicalKey, accountId, signalType, decisionCycleId],
   );
 
   const swrKey = tenantKey(urlWithParams, tenantId);

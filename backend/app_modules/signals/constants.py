@@ -513,6 +513,12 @@ class SignalClusterType(models.TextChoices):
     # (signal_type='tech_stack').
     TECH_STACK = 'tech_stack', _('Tech Stack')
     IMPACT     = 'impact',     _('Impact')
+    # CONSTRAINT clusters on `nature` (ConstraintNature), NOT on a canonical_key
+    # — constraint is detached from the what × dimension axes (canonical_key is
+    # always None). Like TECH_STACK, the grouping is computed at read time via
+    # _group_by_canonical_key(key=lambda s: s.nature); nature is required so
+    # there is no null bucket. Constraint is DC-scoped only (not account-level).
+    CONSTRAINT = 'constraint', _('Constraint')
 
 
 class FreshnessStatus(models.TextChoices):

@@ -68,6 +68,21 @@ const CLUSTER_TYPES = SECTIONS.map((s) => s.type);
 // nesting); it renders as a flat list of cluster rows in the right column.
 const TECH_CLUSTER_TYPE = "tech_stack";
 const CLUSTER_TYPES_WITH_TECH = [...CLUSTER_TYPES, TECH_CLUSTER_TYPE];
+// Constraint is clustered too (read-time, on `nature`) but DC-SCOPED ONLY:
+// requested alongside the others on the DC surface, never at account level.
+// Same cluster pipeline / vocabulary (backend slug 'constraint', singular).
+const CONSTRAINT_CLUSTER_TYPE = "constraint";
+// nature code (ConstraintNature) → human label + stable display order. The
+// cluster payload carries the code in `canonical_key`; there is no nature_display
+// on the cluster, so the label lives here (front-only, matches the backend enum).
+const CONSTRAINT_NATURES = [
+  { code: "FUNCTIONAL", label: "Functional" },
+  { code: "TECHNICAL", label: "Technical" },
+  { code: "FINANCIAL", label: "Financial" },
+  { code: "CONTRACTUAL", label: "Contractual & Legal" },
+  { code: "OPERATIONAL", label: "Operational" },
+  { code: "SECURITY", label: "Security" },
+];
 const GROUPED_STATUSES = ["PENDING", "VALIDATED"];
 const SECTION_PAGE_SIZE = 100;
 
@@ -296,6 +311,87 @@ TechClusterSection.propTypes = {
   onClusterClick: PropTypes.func.isRequired,
 };
 
+/**
+ * ConstraintSection — the requirements (constraints) of one decision cycle,
+ * rendered through the CLUSTER pipeline (one nature = one aggregated cluster),
+ * GROUPED BY NATURE. Same themed shell (CollapsibleSection) and row component
+ * (ClusterRow) as the tech section; the constraint cluster's `canonical_key`
+ * IS its nature code, so it maps 1:1 to a nature group header. A nature with no
+ * cluster is not shown. Clicking a row opens the shared SignalClusterDetailDrawer
+ * (the 'constraint' → 'constraints' member-slug translation lives inside it).
+ */
+function ConstraintSection({
+  title,
+  testId,
+  emptyLabel,
+  clusters,
+  loading,
+  surface,
+  onClusterClick,
+}) {
+  // Bucket the constraint clusters by nature (their canonical_key), in the
+  // stable CONSTRAINT_NATURES order. One cluster per nature in practice.
+  const byNature = useMemo(() => {
+    const map = new Map();
+    for (const c of clusters) {
+      const list = map.get(c.canonical_key) || [];
+      list.push(c);
+      map.set(c.canonical_key, list);
+    }
+    return CONSTRAINT_NATURES.map((n) => ({
+      ...n,
+      clusters: map.get(n.code) || [],
+    })).filter((n) => n.clusters.length > 0);
+  }, [clusters]);
+
+  return (
+    <CollapsibleSection
+      title={title}
+      count={clusters.length}
+      level="section"
+      testId={testId}
+    >
+      {loading && clusters.length === 0 ? (
+        <Stack alignItems="center" py={2}>
+          <CircularProgress size={18} />
+        </Stack>
+      ) : byNature.length === 0 ? (
+        <NeutralEmpty label={emptyLabel} />
+      ) : (
+        byNature.map((nature) => (
+          <Box key={nature.code} sx={{ mb: 1.5 }} data-testid={`nature-${nature.code}`}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", mb: 0.75, fontWeight: 600 }}
+            >
+              {nature.label}
+            </Typography>
+            {nature.clusters.map((cluster) => (
+              <ClusterRow
+                key={`${cluster.signal_type}:${cluster.canonical_key}`}
+                cluster={cluster}
+                surface={surface}
+                onClick={onClusterClick}
+              />
+            ))}
+          </Box>
+        ))
+      )}
+    </CollapsibleSection>
+  );
+}
+
+ConstraintSection.propTypes = {
+  title: PropTypes.string.isRequired,
+  testId: PropTypes.string.isRequired,
+  emptyLabel: PropTypes.string.isRequired,
+  clusters: PropTypes.array.isRequired,
+  loading: PropTypes.bool,
+  surface: PropTypes.oneOf(["account", "dc"]).isRequired,
+  onClusterClick: PropTypes.func.isRequired,
+};
+
 // ==============================|| QUALIFICATION GROUPED VIEW ||============================== //
 
 export default function QualificationGroupedView({
@@ -315,6 +411,8 @@ export default function QualificationGroupedView({
   // sections always render.
   const showTech = true;
   const showObjections = isDC;
+  // Constraints (requirements) are DC-scoped only — never at account level.
+  const showConstraints = isDC;
 
   // The QUALIFICATION-family filters (perimeter = scope=BUSINESS OR
   // target_department; what / dimension = subject; contact = source; status)
@@ -325,9 +423,13 @@ export default function QualificationGroupedView({
   // The backend ignores the subject filters (perimeter / what / dimension) for
   // tech — it has no such axes — so the tech rows are unaffected by the
   // Qualification filters, while pain/objective/impact honour them.
+  // Constraint is added to the fetch ONLY on the DC surface (DC-scoped type).
+  const fetchSignalTypes = isDC
+    ? [...CLUSTER_TYPES_WITH_TECH, CONSTRAINT_CLUSTER_TYPE]
+    : CLUSTER_TYPES_WITH_TECH;
   const { clusters, clustersLoading, clustersError, mutateClusters } =
     useGetClustersByAccount(accountId, {
-      signalType: CLUSTER_TYPES_WITH_TECH,
+      signalType: fetchSignalTypes,
       decisionCycleId: isDC ? decisionCycleId : undefined,
       perimeter,
       whats,
@@ -366,6 +468,16 @@ export default function QualificationGroupedView({
   // Right column: the tech clusters from the SAME fetch (one techno = one row).
   const techClusters = useMemo(
     () => (clusters ?? []).filter((c) => c.signal_type === TECH_CLUSTER_TYPE),
+    [clusters],
+  );
+
+  // Right column: the constraint clusters from the SAME fetch (one nature = one
+  // cluster). DC-scoped, so this is empty on the account surface.
+  const constraintClusters = useMemo(
+    () =>
+      (clusters ?? []).filter(
+        (c) => c.signal_type === CONSTRAINT_CLUSTER_TYPE,
+      ),
     [clusters],
   );
 
@@ -517,6 +629,19 @@ export default function QualificationGroupedView({
               onSelect={handleSelect}
             />
           )}
+
+          {/* Constraints (requirements) — DC surface only, clustered by nature. */}
+          {showConstraints && (
+            <ConstraintSection
+              title="Constraints"
+              testId="section-constraints"
+              emptyLabel="No constraints captured"
+              clusters={constraintClusters}
+              loading={clustersLoading}
+              surface={surface}
+              onClusterClick={handleClusterClick}
+            />
+          )}
         </Grid>
       </Grid>
 
@@ -526,6 +651,7 @@ export default function QualificationGroupedView({
         onClose={handleClusterDrawerClose}
         clusterSummary={clusterDrawer.summary}
         accountId={accountId}
+        decisionCycleId={isDC ? decisionCycleId : undefined}
         choices={choices}
         choicesLoading={choicesLoading}
         onClusterChange={mutateClusters}
