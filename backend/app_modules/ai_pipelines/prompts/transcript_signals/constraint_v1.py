@@ -255,10 +255,17 @@ EMISSION RULES
 - If NO constraint evidence is present anywhere in the transcript, return
   exactly: {{"signals": []}}
 
-SCOPE / NATURE EXAMPLES
-- IT lead: "it has to plug into our SAP instance"
+SCOPE / NATURE EXAMPLES (designation decides the department -- never the
+speaker, never a technical theme-word)
+- "The IT department requires integration with their SAP instance"
       -> nature="TECHNICAL", scope_level="DEPARTMENT", target_department="IT",
          rigidity="FIRM"
+         (IT is EXPLICITLY DESIGNATED as the department that owns the
+          requirement -- the designation decides, not the technical word "SAP")
+- "we need end-to-end encryption" (no department named)
+      -> nature="SECURITY", scope_level="BUSINESS", target_department=null
+         (a technical need alone does NOT designate a department -- do NOT
+          tag IT just because encryption is technical)
 - "we need real-time dashboards for the whole company"
       -> nature="FUNCTIONAL", scope_level="BUSINESS", target_department=null
 - "GDPR compliance is non-negotiable"

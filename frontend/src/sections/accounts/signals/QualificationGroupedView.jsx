@@ -401,6 +401,7 @@ export default function QualificationGroupedView({
   perimeter = undefined,
   whats = undefined,
   dimensions = undefined,
+  natures = undefined,
   contacts = undefined,
   statuses = undefined,
 }) {
@@ -434,6 +435,10 @@ export default function QualificationGroupedView({
       perimeter,
       whats,
       dimensions,
+      // CONSTRAINT-family filter (nature). Sent on the DC surface only, where
+      // constraints are fetched; the backend applies it to constraint clusters
+      // and ignores it for the other families.
+      natures: isDC ? natures : undefined,
       contacts,
       statuses,
     });
@@ -706,6 +711,8 @@ QualificationGroupedView.propTypes = {
   whats: PropTypes.arrayOf(PropTypes.string),
   /** Dimension filter values (SignalDimension). */
   dimensions: PropTypes.arrayOf(PropTypes.string),
+  /** CONSTRAINT-family filter — nature codes (ConstraintNature). DC surface only. */
+  natures: PropTypes.arrayOf(PropTypes.string),
   /** SOURCE filter — Contact ids (source_activity.contacts), multi. */
   contacts: PropTypes.arrayOf(PropTypes.string),
   /** Status filter values; empty/undefined = grouped default (pending+validated). */

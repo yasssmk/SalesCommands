@@ -60,6 +60,18 @@ const STATUS_OPTIONS = [
   { value: "REJECTED", label: "Rejected" },
 ];
 
+// Mirror ConstraintNature on the backend (and the CONSTRAINT_NATURES labels in
+// QualificationGroupedView). The constraint clusters group on `nature`; this
+// multi-select filters that family (OR within, AND across families).
+const NATURE_OPTIONS = [
+  { value: "FUNCTIONAL", label: "Functional" },
+  { value: "TECHNICAL", label: "Technical" },
+  { value: "FINANCIAL", label: "Financial" },
+  { value: "CONTRACTUAL", label: "Contractual & Legal" },
+  { value: "OPERATIONAL", label: "Operational" },
+  { value: "SECURITY", label: "Security" },
+];
+
 // ==============================|| GROUPED FILTER PANEL ||============================== //
 
 export default function SignalsGroupedFilterPanel({
@@ -71,6 +83,7 @@ export default function SignalsGroupedFilterPanel({
   onChange,
   onClear,
   activeCount = 0,
+  showConstraint = false,
 }) {
   const set = (field) => (newValue) => onChange?.(field, newValue);
 
@@ -187,6 +200,30 @@ export default function SignalsGroupedFilterPanel({
             </Typography>
           </AccordionDetails>
         </Accordion>
+
+        {/* ==================== CONSTRAINT ==================== */}
+        {/* Constraints cluster on `nature` and are DC-SCOPED, so the section is
+            shown only where constraints render (the DC surface). This
+            multi-select is the constraint-family analogue of Domain/Dimension:
+            it narrows the constraint clusters only. */}
+        {showConstraint && (
+          <Accordion disableGutters>
+            <AccordionSummary expandIcon={<DownOutlined />}>
+              <Typography variant="subtitle1">Constraint</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <MultiSelectFilter
+                label="Nature"
+                placeholder="Any nature"
+                options={NATURE_OPTIONS}
+                value={value?.natures ?? []}
+                onChange={set("natures")}
+                size="small"
+                allLabel="All natures"
+              />
+            </AccordionDetails>
+          </Accordion>
+        )}
       </Box>
 
       {/* Footer */}
@@ -217,10 +254,13 @@ SignalsGroupedFilterPanel.propTypes = {
   ),
   /** Scope for the contact search (e.g. { account_id }). */
   contactFilters: PropTypes.object,
-  /** { perimeter:[], contacts:[objects], whats:[], dimensions:[], statuses:[] }. */
+  /** { perimeter:[], contacts:[objects], whats:[], dimensions:[], natures:[], statuses:[] }. */
   value: PropTypes.object.isRequired,
   /** (field, newValue) => void. */
   onChange: PropTypes.func.isRequired,
   onClear: PropTypes.func.isRequired,
   activeCount: PropTypes.number,
+  /** Show the Constraint (Nature) section — DC surface only (constraints are
+   *  DC-scoped). Off elsewhere so the Account/Activity panels are unchanged. */
+  showConstraint: PropTypes.bool,
 };

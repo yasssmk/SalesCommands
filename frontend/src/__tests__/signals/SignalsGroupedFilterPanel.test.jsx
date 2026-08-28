@@ -34,11 +34,13 @@ function renderPanel(overrides = {}) {
         contacts: [],
         whats: [],
         dimensions: [],
+        natures: [],
         statuses: ["PENDING", "VALIDATED"],
       }}
       onChange={onChange}
       onClear={onClear}
       activeCount={0}
+      showConstraint
       {...overrides}
     />,
   );
@@ -48,11 +50,12 @@ function renderPanel(overrides = {}) {
 afterEach(() => cleanup());
 
 describe("SignalsGroupedFilterPanel — accordion sections by family", () => {
-  it("renders the three family sections", () => {
+  it("renders the family sections (incl. Constraint)", () => {
     renderPanel();
     expect(screen.getByText("Qualification")).toBeInTheDocument();
     expect(screen.getByText("Tech Stack")).toBeInTheDocument();
     expect(screen.getByText("Objection")).toBeInTheDocument();
+    expect(screen.getByText("Constraint")).toBeInTheDocument();
   });
 
   it("Qualification section shows Perimeter, Contact, Domain, Dimension, Status", () => {
@@ -82,6 +85,28 @@ describe("SignalsGroupedFilterPanel — accordion sections by family", () => {
     const option = screen.getByRole("option", { name: "Business" });
     fireEvent.click(option);
     expect(onChange).toHaveBeenCalledWith("perimeter", ["BUSINESS"]);
+  });
+
+  it("Constraint section shows a Nature control", () => {
+    renderPanel();
+    expect(screen.getByLabelText("Nature")).toBeInTheDocument();
+  });
+
+  it("hides the Constraint section unless showConstraint is set (DC-only)", () => {
+    renderPanel({ showConstraint: false });
+    expect(screen.queryByText("Constraint")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Nature")).not.toBeInTheDocument();
+  });
+
+  it("selecting a Nature option fires onChange('natures', …)", () => {
+    // NON-VACUITY: remove the Nature MultiSelectFilter from the panel and this
+    // fails (no "Nature" control, no onChange('natures', …)).
+    const { onChange } = renderPanel();
+    const nature = screen.getByLabelText("Nature");
+    fireEvent.mouseDown(nature);
+    const option = screen.getByRole("option", { name: "Technical" });
+    fireEvent.click(option);
+    expect(onChange).toHaveBeenCalledWith("natures", ["TECHNICAL"]);
   });
 
   it("Clear all fires onClear (enabled only when a filter is active)", () => {
