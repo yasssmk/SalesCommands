@@ -53,6 +53,7 @@ from ..models import (
     NextStepSignal,
     PeopleSignal,
     ConstraintSignal,
+    CompetitorSignal,
 )
 
 
@@ -127,6 +128,7 @@ class SignalManager:
             'next_step':  NextStepSignal,
             'people':     PeopleSignal,
             'constraint': ConstraintSignal,
+            'competitor': CompetitorSignal,
         }
         model_class = model_map.get(signal_type)
         if not model_class:

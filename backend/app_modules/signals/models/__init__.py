@@ -7,6 +7,7 @@ from .blocker_signal import BlockerSignal
 from .next_step_signal import NextStepSignal
 from .people_signal import PeopleSignal
 from .constraint_signal import ConstraintSignal
+from .competitor_signal import CompetitorSignal
 from .signal_cluster_archival import SignalClusterArchival
 
 
@@ -20,5 +21,6 @@ __all__ = [
     'NextStepSignal',
     'PeopleSignal',
     'ConstraintSignal',
+    'CompetitorSignal',
     'SignalClusterArchival',
 ]
