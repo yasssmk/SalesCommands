@@ -99,6 +99,7 @@ export default function SignalsGroupedView({
   blockerSignals,
   constraintSignals = [],
   competitorSignals = [],
+  peopleSignals = [],
   onSelect,
 }) {
   // No type filter in the grouped view — the structure IS by type section, so
@@ -124,7 +125,8 @@ export default function SignalsGroupedView({
     techStackSignals.length === 0 &&
     blockerSignals.length === 0 &&
     constraintSignals.length === 0 &&
-    competitorSignals.length === 0;
+    competitorSignals.length === 0 &&
+    peopleSignals.length === 0;
 
   if (isEmpty) {
     return (
@@ -201,6 +203,13 @@ export default function SignalsGroupedView({
           onSelect={onSelect}
           emptyLabel="No competitors named"
         />
+        <TypeSection
+          title="People"
+          signalType="people"
+          signals={peopleSignals}
+          onSelect={onSelect}
+          emptyLabel="No people identified"
+        />
       </Grid>
     </Grid>
   );
@@ -224,6 +233,9 @@ SignalsGroupedView.propTypes = {
     PropTypes.shape({ id: PropTypes.string.isRequired }),
   ),
   competitorSignals: PropTypes.arrayOf(
+    PropTypes.shape({ id: PropTypes.string.isRequired }),
+  ),
+  peopleSignals: PropTypes.arrayOf(
     PropTypes.shape({ id: PropTypes.string.isRequired }),
   ),
   onSelect: PropTypes.func,
