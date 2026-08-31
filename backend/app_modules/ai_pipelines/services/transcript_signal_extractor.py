@@ -756,12 +756,13 @@ class TranscriptSignalExtractor:
             # normalised grouping key from it.
             'tech_name':       str(tech_name),
 
-            # is_integration is NO LONGER extracted: a required integration is
-            # now captured as a ConstraintSignal of nature=TECHNICAL (see the
-            # constraint stage). The tech column stays (neutralised, defaults
-            # False) pending a PO decision to drop it. is_competitor and
-            # is_to_replace are untouched (Competitors sprint).
-            'is_competitor':   bool(raw.get('is_competitor')),
+            # is_integration and is_competitor are NO LONGER extracted:
+            #  * a required integration is captured as a ConstraintSignal of
+            #    nature=TECHNICAL (constraint stage);
+            #  * a competitor is captured as a CompetitorSignal (competitor
+            #    stage) — sub-step 5.
+            # Both columns stay (neutralised, default False) pending their
+            # schema drop (sub-step 8). is_to_replace is untouched.
             'is_to_replace':   bool(raw.get('is_to_replace')),
         }
 
