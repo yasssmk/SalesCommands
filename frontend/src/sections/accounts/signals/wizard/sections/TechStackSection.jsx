@@ -116,7 +116,7 @@ const USAGE_SCOPE_LABELS = {
  * a VALIDATED/REJECTED toggle.
  *
  * Layout (top to bottom):
- *   1. Header line   : "{vendor} {product}" + Competitor / Integration badges
+ *   1. Header line   : "{vendor} {product}" + Integration / To replace badges
  *   2. Scope row     : usage_scope chip + usage_departments (joined names)
  *   3. Lifecycle row : "Used since 2019 · Renewal Sep 2025 · ~80k€/year"
  *                      (each segment included only when set; null fields collapse)
@@ -128,7 +128,7 @@ const USAGE_SCOPE_LABELS = {
  * Visual rules:
  *   - REJECTED state strikes through the title and dims to opacity 0.75
  *   - The container border switches to error.light / error.lighter for REJECTED
- *   - Strategic flags (Competitor / Integration) earn explicit chips IN ADDITION
+ *   - Strategic flags (Integration / To replace) earn explicit chips IN ADDITION
  *     to driving border emphasis on the live card (TechStackCard); inside the
  *     wizard staging context the border stays scoped to the include/exclude
  *     state — the staged card is not a final display surface.
@@ -149,7 +149,6 @@ function StagedTechStackCard({
 
   // ----- Tech identity + qualification -----
   const toolLabel = useMemo(() => getToolLabel(signal), [signal]);
-  const isCompetitor = Boolean(signal.is_competitor);
   const isIntegration = Boolean(signal.is_integration);
   const isToReplace = Boolean(signal.is_to_replace);
 
@@ -250,14 +249,6 @@ function StagedTechStackCard({
             >
               {toolLabel}
             </Typography>
-            {isCompetitor && !isRejected && (
-              <Chip
-                label="Competitor"
-                color="error"
-                size="small"
-                sx={{ fontSize: "0.6rem", height: 18 }}
-              />
-            )}
             {isIntegration && !isRejected && (
               <Chip
                 label="Integration"
@@ -423,7 +414,6 @@ StagedTechStackCard.propTypes = {
     _status: PropTypes.oneOf(["VALIDATED", "REJECTED"]).isRequired,
     // Catalog anchor — object whole; UUID extracted at dispatch.
     tech_name: PropTypes.string,
-    is_competitor: PropTypes.bool,
     is_integration: PropTypes.bool,
     is_to_replace: PropTypes.bool,
     // Scope axis
