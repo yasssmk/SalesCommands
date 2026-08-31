@@ -522,6 +522,11 @@ class SignalClusterType(models.TextChoices):
     # _group_by_canonical_key(key=lambda s: s.competitor_name_normalized);
     # like CONSTRAINT it is DC-scoped only (not account-level).
     COMPETITOR = 'competitor', _('Competitor')
+    # PEOPLE clusters PER PERSON, NOT on a canonical_key (canonical_key always
+    # None). Read-time grouping via a TWO-LEVEL key: target_contact_id when a
+    # contact is linked, else (full_name_normalized, target_department_id).
+    # Like CONSTRAINT / COMPETITOR it is DC-scoped only (not account-level).
+    PEOPLE     = 'people',     _('People')
 
 
 class FreshnessStatus(models.TextChoices):
