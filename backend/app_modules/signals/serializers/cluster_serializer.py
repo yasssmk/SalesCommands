@@ -52,6 +52,7 @@ from .impact_serializer import ImpactSignalListSerializer
 from .tech_stack_serializer import TechStackSignalListSerializer
 from .constraint_serializer import ConstraintSignalListSerializer
 from .competitor_serializer import CompetitorSignalListSerializer
+from .people_serializer import PeopleSignalListSerializer
 
 
 # =============================================================================
@@ -232,6 +233,10 @@ class SignalClusterDetailSerializer(SignalClusterListSerializer):
             # Competitor cluster members reuse the competitor list serializer
             # (competitor_name + summary).
             return CompetitorSignalListSerializer
+        if signal_type == 'people':
+            # People cluster members reuse the people list serializer
+            # (full_name + role + influence + target_contact/department).
+            return PeopleSignalListSerializer
         # Unknown type — fall back to Pain Detail to mirror the prior
         # implicit default. The shape mismatch will surface at
         # serialisation time as an AttributeError, with a clear stack

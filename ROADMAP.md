@@ -1027,6 +1027,52 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / People ✅ — PeopleSignal câblé E2E : full_name + cluster à deux niveaux + réconciliation contact (branche `feat/people-full-name`)
+- **Objectif** : câbler le signal People de bout en bout — identité nominale
+  (`full_name`), clustering par personne, surface Activité, et prouver la
+  réconciliation contact sur les briques EXISTANTES. People reste **éditable
+  manuel** (décision PO verrouillée) — pas d'extraction LLM.
+- **Livré** (chaque sous-étape : reproduction ROUGE d'abord par le VRAI chemin +
+  sonde de non-vacuité, restauration par édition ciblée jamais `git checkout`) :
+  - **`full_name` + `full_name_normalized`** sur PeopleSignal (dérivé en save(),
+    read-only par contrat), cloné sur tech / competitor ; **3e chemin d'identité**
+    aux côtés de `target_contact` / `target_department` (l'invariant clean()
+    reste : au moins un des trois).
+  - **Cluster à deux niveaux** (read-time, DC-only, REJECTED exclu) :
+    `contact:<id>` si contact, sinon `name:<norm>|dept:<id>` si nom, sinon
+    `signal:<id>` — un People sans nom = **entrée propre, jamais fusionnée**.
+  - **Serializers** : `full_name` writable (Create + Update), `full_name` +
+    `full_name_normalized` en lecture (List + Detail) ; invariant d'identité
+    appliqué sur **create ET update** (400 standard, jamais 500).
+  - **Surface Activité** : People rejoint la liste des signaux (flat + grouped).
+  - **Réconciliation prouvée** (test d'intégration, vrais endpoints) : suggest
+    (`GET /contacts/`) → create (`POST /contacts/`) → link / unlink
+    (`PATCH module-signals/people/{id}`) ; `POST /contacts/` renvoie désormais
+    l'objet créé (id inclus).
+- **Migrations** : **0035** (AddField `full_name` + `full_name_normalized`
+  + AddIndex `peoplesig_name_norm_idx`).
+- **Validation** : suites vertes (Postgres, en série) — `pytest tests/signals`
+  **372**, `tests/ai_pipelines` **360**, `tests/contacts` **27**, `vitest`
+  **1000** (134 fichiers) ; flux d'intégration réconciliation **8/8**. **Pas de
+  smoke UI** People — reporté au sprint **UX Activity** (rendu réel des surfaces),
+  le cluster à deux niveaux et l'invariant d'identité étant **prouvés par tests**.
+- **Dette fermée** : **aucune entrée TECH_DEBT** ouverte sur le signal People
+  lui-même (étape planifiée, pas une dette).
+- **Dette ajoutée** : **TD-211** (surface front People : modale de réconciliation
+  suggest/create/link + split `full_name` → first/last + rendu/édition manuelle),
+  **TD-212** (`POST /contacts/` renvoie l'objet créé — **RESOLVED** ce sprint),
+  **TD-213** (influence mal placée : `Contact.influence_level` vs
+  `PeopleSignal.influence` — décision produit). **MAJ** : **TD-204** (rendu
+  section People), **TD-205** (drawer edit people + champ `full_name`), **TD-206**
+  (garde morte cluster People). **Incitation à nommer** un People sans identité :
+  vit à la fois dans le **drawer d'édition manuelle** (TD-211) **ET** dans le
+  **deal health / missing elements** (TD-209) — les deux **reliés**, pas
+  contradictoires.
+- **Prochain jalon** : **Next steps** (voir la séquence PO 2026-08-31 post
+  Competitors ci-dessous).
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -1231,13 +1277,14 @@ possibles) :
 
 **Séquence CONFIRMÉE PO (2026-08-31, post Competitors) — SUPERSEDES la séquence 2026-08-28 post Tech scope ci-dessus :**
 - **✅ LIVRÉ** : **Competitors** (`claude/competitor-signal-model-migration-lzc5dh`)
-  — voir la fiche « Sprint Bloc IA / Competitors ✅ » ci-dessus.
+  — voir la fiche « Sprint Bloc IA / Competitors ✅ » ci-dessus ; **People**
+  (`feat/people-full-name`) — signal People **éditable manuellement**, voir la
+  fiche « Sprint Bloc IA / People ✅ » ci-dessus.
 - **Reste du bloc Signaux (ordre confirmé PO)** :
-  1. **People** — signal People **éditable manuellement**.
-  2. **Next steps**.
-  3. **UX Activity** — layout Activity **sans onglets** (tranche TD-186 : pas de
+  1. **Next steps**.
+  2. **UX Activity** — layout Activity **sans onglets** (tranche TD-186 : pas de
      bascule onglet).
-  4. **Blocker (Objection)**.
+  3. **Blocker (Objection)**.
   - [+ suites déjà cadrées : **M2M scope transverse**, **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]

@@ -63,6 +63,44 @@ class PeopleSignal(BaseSignal):
     signal_category = None
 
     # =========================================================================
+    # PERSON IDENTITY (raw + derived normalised key)
+    # =========================================================================
+    #
+    # `full_name` is a THIRD, OPTIONAL identity path alongside target_contact /
+    # target_department: a person can be NAMED even when not yet linked to a
+    # directory Contact. It does NOT relax the clean() invariant (at least one
+    # of target_contact / target_department stays required). `full_name` is the
+    # single source of truth; `full_name_normalized` is DERIVED from it in
+    # save() and must never be authored by a caller — see the SAVE section.
+    # Calqued on TechStackSignal.tech_name / tech_name_normalized and
+    # CompetitorSignal.competitor_name / competitor_name_normalized.
+
+    full_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_('Full Name'),
+        help_text=_(
+            'Raw display name of the stakeholder exactly as observed '
+            '(e.g. "Marc Dubois"). Optional — a role may still be attributed '
+            'via target_contact / target_department only. Never rewritten; '
+            'casing and spacing are preserved for display. Grouping and '
+            'matching use `full_name_normalized` instead.'
+        ),
+    )
+
+    full_name_normalized = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_('Full Name (normalised)'),
+        help_text=_(
+            'Derived from `full_name` on every save: lowercased, trimmed, '
+            'internal whitespace collapsed to single spaces. Empty string '
+            'when `full_name` is blank. Read-only by contract — recomputed at '
+            'save() time, so the two columns cannot desync.'
+        ),
+    )
+
+    # =========================================================================
     # ROLE & INFLUENCE
     # =========================================================================
 
@@ -145,6 +183,12 @@ class PeopleSignal(BaseSignal):
                 fields=['account', 'source_activity'],
                 name='pplsig_account_activity_idx',
             ),
+            # Grouping / matching surface for the future per-person cluster and
+            # contact reconciliation (mirror of tech / competitor name index).
+            models.Index(
+                fields=['full_name_normalized'],
+                name='peoplesig_name_norm_idx',
+            ),
         ]
 
     # =========================================================================
@@ -153,7 +197,27 @@ class PeopleSignal(BaseSignal):
 
     def save(self, *args, **kwargs):
         self.canonical_key = None
+        self.full_name_normalized = self._normalize_full_name(self.full_name)
         super().save(*args, **kwargs)
+
+    @staticmethod
+    def _normalize_full_name(value):
+        """
+        Lowercase + trim + collapse internal whitespace.
+
+        "  Marc   Dubois " -> "marc dubois"
+        None / "" / "   "   -> ""
+
+        Exact clone of TechStackSignal._normalize_tech_name /
+        CompetitorSignal._normalize_competitor_name. This is the single
+        normalisation point — every write path goes through Model.save(), so
+        the normalised key can never desync from its raw name.
+        """
+        if not value:
+            return ''
+        # str.split() with no argument splits on arbitrary runs of whitespace
+        # and drops leading/trailing runs — strip + collapse in one pass.
+        return ' '.join(str(value).lower().split())
 
     # =========================================================================
     # VALIDATION
@@ -170,10 +234,12 @@ class PeopleSignal(BaseSignal):
                     'A people signal must be linked to a source activity.'
                 )
 
-        if not self.target_contact_id and not self.target_department_id:
+        if (not self.target_contact_id
+                and not self.target_department_id
+                and not (self.full_name or '').strip()):
             errors['target_contact'] = _(
-                'At least one of target_contact or target_department '
-                'is required.'
+                'At least one of target_contact, target_department or '
+                'full_name is required.'
             )
 
         if errors:

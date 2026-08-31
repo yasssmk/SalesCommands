@@ -140,6 +140,7 @@ from ..models import (
     ImpactSignal,
     ObjectiveSignal,
     PainSignal,
+    PeopleSignal,
     SignalClusterArchival,
     TechStackSignal,
 )
@@ -325,6 +326,16 @@ class SignalClusterService:
             if stype == SignalClusterType.COMPETITOR:
                 clusters.extend(
                     cls._list_competitor_clusters_for_account(
+                        account_id=account_id,
+                        decision_cycle_id=decision_cycle_id,
+                        include_archived=include_archived,
+                        member_filters=member_filters,
+                    )
+                )
+                continue
+            if stype == SignalClusterType.PEOPLE:
+                clusters.extend(
+                    cls._list_people_clusters_for_account(
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
@@ -694,6 +705,91 @@ class SignalClusterService:
 
         return clusters
 
+    # -------------------------------------------------------------------------
+    # INTERNAL — People-specific listing (two-level per-person key)
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _people_cluster_key(signal):
+        """
+        Two-level per-person grouping key (NEW to People — no other cluster type
+        has a composite key; the others group on a single value).
+
+        Priority:
+          1. target_contact_id present → 'contact:<id>' (the most reliable
+             identity; wins over the free-text name).
+          2. else, full_name_normalized non-blank →
+             'name:<full_name_normalized>|dept:<target_department_id>'.
+          3. else (no contact AND no name) → 'signal:<id>', UNIQUE per signal.
+
+        A nameless, contact-less signal is NOT grouped on its department alone —
+        that would conflate distinct unidentified people. Instead each forms its
+        OWN "to identify" entry (the signal is never lost, and never merged).
+        Every signal therefore yields a key: no People is ever excluded from the
+        cluster listing (PO decision, sub-step 2-bis).
+        """
+        if signal.target_contact_id:
+            return f'contact:{signal.target_contact_id}'
+        name = signal.full_name_normalized or ''
+        if name:
+            return f'name:{name}|dept:{signal.target_department_id or ""}'
+        return f'signal:{signal.id}'
+
+    @classmethod
+    def _list_people_clusters_for_account(
+        cls,
+        *,
+        account_id,
+        decision_cycle_id=None,
+        include_archived: bool = False,
+        member_filters=None,
+    ) -> list:
+        """
+        People-specific cluster computation — PER PERSON, DC-SCOPED ONLY.
+
+        People is DETACHED (canonical_key always None) and never surfaced at
+        the account level: no decision_cycle_id → empty list (mirror of the
+        constraint / competitor DC-only guard).
+
+        Grouping is 100% read-time via the two-level `_people_cluster_key`
+        (contact_id else name+department), through the shared
+        `_group_by_canonical_key(key=...)`. A blank key (fully anonymous
+        signal) is skipped.
+        """
+        # DC-only: no decision cycle → no people clusters (never account-wide).
+        if not decision_cycle_id:
+            return []
+
+        signals = cls._fetch_people_signals(
+            account_id=account_id,
+            decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
+        )
+        grouped = cls._group_by_canonical_key(
+            signals, key=cls._people_cluster_key,
+        )
+
+        archived_keys = cls._get_archived_keys(
+            account_id,
+            SignalClusterType.PEOPLE,
+        )
+
+        clusters: list = []
+        for people_key, members in grouped.items():
+            if not people_key:
+                # Fully anonymous signal — no per-person identity, no cluster.
+                continue
+
+            cluster = cls._build_people_cluster(people_key, members)
+            cluster['is_archived'] = people_key in archived_keys
+
+            if cluster['is_archived'] and not include_archived:
+                continue
+
+            clusters.append(cluster)
+
+        return clusters
+
     # =========================================================================
     # PUBLIC — DETAIL
     # =========================================================================
@@ -881,6 +977,32 @@ class SignalClusterService:
 
             return cluster
 
+        if resolved_type == SignalClusterType.PEOPLE:
+            # People detail: the `canonical_key` path segment carries the
+            # two-level per-person key (contact:<id> or name:<n>|dept:<d>).
+            # DC-scoped: filter members by decision_cycle_id, then keep those
+            # whose recomputed key matches (no composite-key parsing needed).
+            members = [
+                m for m in cls._fetch_people_signals(
+                    account_id=account_id,
+                    decision_cycle_id=decision_cycle_id,
+                )
+                if cls._people_cluster_key(m) == canonical_key
+            ]
+
+            if not members:
+                raise StandardizedValidationError(
+                    SignalErrorMessages.CLUSTER_NOT_FOUND
+                )
+
+            cluster = cls._build_people_cluster(canonical_key, members)
+
+            archived_keys = cls._get_archived_keys(account_id, resolved_type)
+            cluster['is_archived'] = canonical_key in archived_keys
+            cluster['members'] = members
+
+            return cluster
+
         # _assert_signal_types_supported guarantees we never reach here.
 
     # =========================================================================
@@ -902,6 +1024,9 @@ class SignalClusterService:
         SignalClusterType.CONSTRAINT.value,
         # Competitor clusters on competitor_name_normalized (read-time), DC-only.
         SignalClusterType.COMPETITOR.value,
+        # People clusters per person (two-level key: contact_id else
+        # name+department), read-time, DC-only.
+        SignalClusterType.PEOPLE.value,
     })
 
     @classmethod
@@ -1380,6 +1505,68 @@ class SignalClusterService:
         # SOURCE contact filter (who named the competitor), via
         # source_activity.contacts. Same clause as the other read-time types.
         # Competitor has NO nature-style enum filter.
+        if member_filters:
+            contacts = member_filters.get('contacts')
+            if contacts:
+                qs = qs.filter(
+                    source_activity__contacts__in=contacts
+                ).distinct()
+            else:
+                contact = member_filters.get('contact')
+                if contact:
+                    qs = qs.filter(source_activity__contacts=contact)
+
+        return qs
+
+    @classmethod
+    def _fetch_people_signals(cls, *, account_id, decision_cycle_id=None,
+                              member_filters=None):
+        """
+        Base queryset for People cluster aggregation (grouped read-time on the
+        two-level per-person key).
+
+        DC-scoped: people are aggregated per decision cycle, so
+        decision_cycle_id is applied whenever provided (the list path guards it
+        is always present; the detail path passes it from the view).
+
+        Includes VALIDATED and PENDING (REJECTED excluded), via the shared
+        _member_statuses default.
+
+        N+1 safety
+        ----------
+        Cloned on _fetch_competitor_signals, PLUS select_related on the two
+        identity FKs the key/headline read: target_contact / target_department
+        (PeopleSignal has these; Competitor does not). select_related(
+        'source_activity', 'decision_cycle') covers the member payload's source
+        block and _cluster_has_active_dc; prefetch_related(
+        'source_activity__contacts') covers distinct_contacts_count. Query
+        count stays constant regardless of the number of signals/clusters.
+        """
+        qs = (
+            PeopleSignal.objects
+            .filter(
+                account_id=account_id,
+                status__in=cls._member_statuses(member_filters),
+                # Always True for people (no `what` axis), kept for symmetry.
+                is_domain_valid=True,
+            )
+            .select_related(
+                'source_activity',
+                'decision_cycle',
+                'target_contact',
+                'target_department',
+            )
+            .prefetch_related(
+                'source_activity__contacts',
+            )
+        )
+
+        if decision_cycle_id:
+            qs = qs.filter(decision_cycle_id=decision_cycle_id)
+
+        # SOURCE contact filter (who named the person), via
+        # source_activity.contacts — same clause as the other read-time types.
+        # People has NO nature-style enum filter.
         if member_filters:
             contacts = member_filters.get('contacts')
             if contacts:
@@ -2139,6 +2326,140 @@ class SignalClusterService:
             'has_target_date_soon':  False,
 
             # Priority — neutral floor (no Competitor scorer).
+            'priority_score':  priority_score,
+            'priority_bucket': priority_bucket,
+
+            # Linking
+            'decision_cycle_ids': decision_cycle_ids,
+            'campaign_ids':       campaign_ids,
+
+            # Archival — default False, overridden by caller if applicable
+            'is_archived': False,
+        }
+
+    # =========================================================================
+    # BUILD — per People cluster (two-level per-person key)
+    # =========================================================================
+
+    @classmethod
+    def _build_people_cluster(cls, people_key: str, members: list) -> dict:
+        """
+        Build the People cluster dict from a list of PeopleSignal members
+        sharing the same two-level per-person key within one decision cycle.
+
+        Near-verbatim clone of _build_competitor_cluster (read-time grouping on
+        a derived key, no canonical axes, no scorer). Differences:
+          * canonical_key -> the two-level per-person key (contact:<id> or
+            name:<n>|dept:<d>);
+          * summary -> the person's display name: reference.full_name, else the
+            linked contact's full_name, else the department name;
+          * a People-specific `roles` key exposes the distinct roles observed
+            for this person across the cluster.
+
+        `members` includes VALIDATED and PENDING (REJECTED excluded). The
+        reference (most recent VALIDATED, else most recent member) supplies the
+        headline — grouping keys off the stable per-person key, not the
+        headline.
+        """
+        validated = [m for m in members if m.status == SignalStatus.VALIDATED]
+        pending   = [m for m in members if m.status == SignalStatus.PENDING]
+
+        # Reference: most recent VALIDATED, else most recent member.
+        reference = validated[0] if validated else members[0]
+
+        # Person headline: full_name, else linked contact name, else department.
+        headline = reference.full_name or ''
+        if not headline and reference.target_contact_id and reference.target_contact:
+            headline = reference.target_contact.full_name
+        if not headline and reference.target_department_id and reference.target_department:
+            headline = reference.target_department.get_name_display()
+
+        # Distinct roles observed for this person across the cluster.
+        roles = sorted({m.role for m in members if m.role})
+
+        # --- Corroboration & breadth (same computation as the axis types) ---
+        confirmation_count = len(validated)
+
+        distinct_contacts: set = set()
+        for signal in validated:
+            if signal.source_activity_id and signal.source_activity:
+                for contact in signal.source_activity.contacts.all():
+                    distinct_contacts.add(contact.id)
+        distinct_contacts_count = len(distinct_contacts)
+
+        # --- Lifecycle (reuse the shared helper; created_at-anchored) ---
+        has_active_dc = cls._cluster_has_active_dc(members)
+        first_observed_at, last_confirmed_at, freshness = (
+            cls._compute_lifecycle(validated, has_active_dc)
+        )
+
+        # --- Cluster status ---
+        status_value = SignalStatus.VALIDATED if validated else SignalStatus.PENDING
+        has_pending = bool(pending)
+        pending_count = len(pending)
+
+        # --- Linking (decision_cycle and campaign are real FKs on People) ---
+        decision_cycle_ids = sorted({
+            str(m.decision_cycle_id) for m in members if m.decision_cycle_id
+        })
+        campaign_ids = sorted({
+            str(m.campaign_id) for m in members if m.campaign_id
+        })
+
+        # --- Priority: People has no scorer. Neutral floor (0 -> LOW). ---
+        priority_score = 0
+        priority_bucket = bucket_from_score(priority_score)
+
+        return {
+            # Identity — the two-level per-person key IS the read-time key.
+            'canonical_key':     people_key,
+            'signal_type':       SignalClusterType.PEOPLE.value,
+
+            # Canonical axes — no meaning for People. Neutral (allow_null).
+            'what':              None,
+            'what_display':      None,
+            'dimension':         None,
+            'dimension_display': None,
+            # The person's display name is the cluster headline.
+            'summary':           headline,
+
+            # People-specific: the roles observed for this person.
+            'roles':             roles,
+
+            # Corroboration & breadth
+            'confirmation_count':      confirmation_count,
+            'distinct_contacts_count': distinct_contacts_count,
+
+            # Status
+            'status':              status_value,
+            'has_pending_signals': has_pending,
+            'pending_count':       pending_count,
+
+            # Lifecycle
+            'first_observed_at': first_observed_at,
+            'last_confirmed_at': last_confirmed_at,
+            'freshness_status':  freshness,
+
+            # Temporal density — raw facts (count + covered period).
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
+            # Departments — the person's department is part of the identity key,
+            # not a separate subject axis to list.
+            'departments':   [],
+
+            # Scope — no scope_level on People.
+            'max_scope_level': None,
+
+            # Objective-compat keys — People has no target-date concept.
+            'target_dates':          [],
+            'has_target_date_soon':  False,
+
+            # Priority — neutral floor (no People scorer).
             'priority_score':  priority_score,
             'priority_bucket': priority_bucket,
 

@@ -146,6 +146,28 @@ class ContactViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewsets
         
         return queryset
     
+    def create(self, request, *args, **kwargs):
+        """
+        Create a contact and return the FULL created object (id + read shape).
+
+        The create action uses the write-only ContactCreateSerializer, whose
+        representation omits `id` (and the read-only fields). A REST 201 must
+        return the created resource so callers can chain (e.g. create a contact
+        then link it to a People signal) without a re-query. We re-serialise the
+        saved instance through the read serializer (ContactSerializer). Only the
+        RESPONSE shape changes — accepted fields / defaults are untouched.
+        """
+        write = self.get_serializer(data=request.data)
+        write.is_valid(raise_exception=True)
+        self.perform_create(write)
+        read = ContactSerializer(
+            write.instance, context=self.get_serializer_context()
+        )
+        headers = self.get_success_headers(read.data)
+        return Response(
+            read.data, status=status.HTTP_201_CREATED, headers=headers,
+        )
+
     def perform_create(self, serializer):
         """Create contact with audit logging."""
         user = self.request.user

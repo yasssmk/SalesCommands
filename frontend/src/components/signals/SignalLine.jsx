@@ -69,7 +69,10 @@ function getMessage(signal, signalType) {
     case "next-steps":
       return signal.suggested_title || "Untitled suggestion";
     case "people":
-      return signal.notes || "—";
+      // The person's identity is the row message: full_name first, then the
+      // summary/notes fallback. (Refined rendering — role/department chips —
+      // is deferred to the UX Activity sprint.)
+      return signal.full_name || signal.summary || signal.notes || "—";
     // pain / objective / impact / blockers / constraints
     default:
       return signal.summary || "—";

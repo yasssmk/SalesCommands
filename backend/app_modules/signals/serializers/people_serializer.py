@@ -144,6 +144,7 @@ class PeopleSignalListSerializer(_PeopleDisplayMixin, BaseSignalListSerializer):
         _base_fields = _strip_shadow_fields(BaseSignalListSerializer.Meta.fields)
 
         fields = _base_fields + [
+            'full_name', 'full_name_normalized',
             'role', 'role_display',
             'influence', 'influence_display',
             'target_contact',
@@ -179,6 +180,7 @@ class PeopleSignalDetailSerializer(_PeopleDisplayMixin, BaseSignalDetailSerializ
         _base_fields = _strip_shadow_fields(BaseSignalDetailSerializer.Meta.fields)
 
         fields = _base_fields + [
+            'full_name', 'full_name_normalized',
             'role', 'role_display',
             'influence', 'influence_display',
             'target_contact',
@@ -231,6 +233,7 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalCreateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
+            'full_name',
             'role',
             'influence',
             'target_contact',
@@ -240,6 +243,9 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
+            # full_name is the raw person identity; full_name_normalized is
+            # derived in save() and is NEVER writable (not a field here).
+            'full_name':         {'required': False, 'allow_blank': True},
             'role':              {'required': True},
             'influence':         {'required': False, 'allow_null': True},
             'target_contact':    {'required': False, 'allow_null': True},
@@ -255,7 +261,8 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
         Rules (re-surfaced from PeopleSignal.clean()):
           1. source_activity required unless source=MANUAL with a
              decision_cycle anchor (DC-level manual qualification).
-          2. At least one of target_contact / target_department required.
+          2. At least one of target_contact / target_department / full_name
+             required (a person may be identified by name alone).
         """
         if not attrs.get('source_activity'):
             source = attrs.get('source', SignalSource.MANUAL)
@@ -264,9 +271,12 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
                     SignalErrorMessages.SOURCE_ACTIVITY_REQUIRED
                 )
 
-        if not attrs.get('target_contact') and not attrs.get('target_department'):
+        if (not attrs.get('target_contact')
+                and not attrs.get('target_department')
+                and not (attrs.get('full_name') or '').strip()):
             raise StandardizedValidationError(
-                'At least one of target_contact or target_department is required.'
+                'At least one of target_contact, target_department or '
+                'full_name is required.'
             )
 
         return super().validate(attrs)
@@ -302,6 +312,7 @@ class PeopleSignalUpdateSerializer(BaseSignalUpdateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalUpdateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
+            'full_name',
             'role',
             'influence',
             'target_contact',
@@ -310,9 +321,39 @@ class PeopleSignalUpdateSerializer(BaseSignalUpdateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
+            # full_name may be corrected; full_name_normalized is derived in
+            # save() and is NEVER writable (not a field here).
+            'full_name':         {'required': False, 'allow_blank': True},
             'role':              {'required': False},
             'influence':         {'required': False, 'allow_null': True},
             'target_contact':    {'required': False, 'allow_null': True},
             'target_department': {'required': False, 'allow_null': True},
             'notes':             {'required': False, 'allow_blank': True},
         }
+
+    def validate(self, attrs):
+        """
+        Identity invariant on the MERGED state (re-surfaced from
+        PeopleSignal.clean(), applied to PATCH — the create serializer only
+        sees the incoming payload, so the update path needs its own check).
+
+        A PATCH must not strip the last identity: at least one of
+        target_contact / target_department / full_name must remain, taking the
+        incoming value when the field is in the payload, else the instance's
+        current value. Raises a standard 400 (never a 500 / bare exception).
+        """
+        inst = self.instance
+
+        contact = (attrs['target_contact'] if 'target_contact' in attrs
+                   else inst.target_contact_id)
+        dept = (attrs['target_department'] if 'target_department' in attrs
+                else inst.target_department_id)
+        name = attrs['full_name'] if 'full_name' in attrs else inst.full_name
+
+        if not contact and not dept and not (name or '').strip():
+            raise StandardizedValidationError(
+                'A people signal must keep at least one of target_contact, '
+                'target_department or full_name.'
+            )
+
+        return super().validate(attrs)
