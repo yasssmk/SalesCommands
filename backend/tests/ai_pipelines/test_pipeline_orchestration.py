@@ -81,7 +81,7 @@ class TestPromptVersionsRegistry:
         # Use a set comparison to keep the assertion order-agnostic.
         assert set(QualificationSignalsPipeline.PROMPT_VERSIONS.keys()) == {
             'system', 'context', 'pain_impact', 'objective',
-            'techstack', 'blocker', 'constraint',
+            'techstack', 'blocker', 'constraint', 'competitor',
         }
 
 
@@ -111,6 +111,7 @@ class TestPipelineStageOrder:
 
         assert fake_provider.stages_in_order() == [
             'pain_impact', 'objective', 'techstack', 'blocker', 'constraint',
+            'competitor',
         ]
         assert result['run'].status == AIPipelineStatus.SUCCESS
 
@@ -279,6 +280,7 @@ class TestAIPipelineRunAuditRow:
         sub_call_stages = [c['stage'] for c in result['run'].sub_calls]
         assert sub_call_stages == [
             'pain_impact', 'objective', 'techstack', 'blocker', 'constraint',
+            'competitor',
         ]
 
 

@@ -190,8 +190,6 @@ function buildInitialValues() {
   return {
     // S1
     tech_name: "",
-    is_competitor: false,
-    is_integration: false,
     is_to_replace: false,
     // S2
     usage_scope: "",
@@ -307,11 +305,10 @@ export default function InlineTechStackForm({
 
       const payload = {
         // S1 — tech identity + qualification (S10). Always emitted:
-        // tech_name is required on create and freely editable after,
-        // and the three booleans are plain toggles with no lock.
+        // tech_name is required on create and freely editable after, and
+        // is_to_replace is a plain toggle with no lock (is_competitor and
+        // is_integration were both retired).
         tech_name: values.tech_name?.trim() || "",
-        is_competitor: Boolean(values.is_competitor),
-        is_integration: Boolean(values.is_integration),
         is_to_replace: Boolean(values.is_to_replace),
 
         // S2 — usage scale + who (multi-department M2M, list of ids).
@@ -439,47 +436,13 @@ export default function InlineTechStackForm({
             }
           />
 
-          {/* Qualification — three INDEPENDENT toggles. Any combination
-              is valid, and all-off is the common case: a tool the
-              account simply uses. Mirrors the Switch pattern used by
-              `is_discontinued` in section 4 below. */}
+          {/* Qualification — a single toggle. Off is the common case: a tool
+              the account simply uses. Mirrors the Switch pattern used by
+              `is_discontinued` in section 4 below. The manual "Competitor" and
+              "Integration" toggles were both retired — competitors are their
+              own signal type, and an integration requirement is a TECHNICAL
+              ConstraintSignal. */}
           <Stack spacing={0.5}>
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={Boolean(formik.values.is_competitor)}
-                  onChange={(e) =>
-                    formik.setFieldValue("is_competitor", e.target.checked)
-                  }
-                  inputProps={{ "aria-label": "Tool is a competitor" }}
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  Competitor — overlaps with what we sell
-                </Typography>
-              }
-              sx={{ m: 0 }}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  size="small"
-                  checked={Boolean(formik.values.is_integration)}
-                  onChange={(e) =>
-                    formik.setFieldValue("is_integration", e.target.checked)
-                  }
-                  inputProps={{ "aria-label": "Tool is an integration" }}
-                />
-              }
-              label={
-                <Typography variant="body2">
-                  Integration — our product connects to it
-                </Typography>
-              }
-              sx={{ m: 0 }}
-            />
             <FormControlLabel
               control={
                 <Switch

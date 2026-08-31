@@ -51,6 +51,7 @@ from .objective_serializer import ObjectiveSignalListSerializer
 from .impact_serializer import ImpactSignalListSerializer
 from .tech_stack_serializer import TechStackSignalListSerializer
 from .constraint_serializer import ConstraintSignalListSerializer
+from .competitor_serializer import CompetitorSignalListSerializer
 
 
 # =============================================================================
@@ -227,6 +228,10 @@ class SignalClusterDetailSerializer(SignalClusterListSerializer):
             # Constraint cluster members reuse the existing constraint list
             # serializer (nature + rigidity + summary + target_department).
             return ConstraintSignalListSerializer
+        if signal_type == 'competitor':
+            # Competitor cluster members reuse the competitor list serializer
+            # (competitor_name + summary).
+            return CompetitorSignalListSerializer
         # Unknown type — fall back to Pain Detail to mirror the prior
         # implicit default. The shape mismatch will surface at
         # serialisation time as an AttributeError, with a clear stack

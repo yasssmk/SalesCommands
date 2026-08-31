@@ -84,6 +84,8 @@ export default function SignalsGroupedFilterPanel({
   onClear,
   activeCount = 0,
   showConstraint = false,
+  showCompetitor = false,
+  competitorNameOptions = [],
 }) {
   const set = (field) => (newValue) => onChange?.(field, newValue);
 
@@ -224,6 +226,30 @@ export default function SignalsGroupedFilterPanel({
             </AccordionDetails>
           </Accordion>
         )}
+
+        {/* ==================== COMPETITOR ==================== */}
+        {/* Competitors are DC-SCOPED and have no taxonomy axis, so the filter
+            is a multi-select of the competitor NAMES actually present on this
+            deal (built read-time from the data, NOT a fixed vocabulary). Shown
+            only where competitors render and at least one exists. */}
+        {showCompetitor && competitorNameOptions.length > 0 && (
+          <Accordion disableGutters>
+            <AccordionSummary expandIcon={<DownOutlined />}>
+              <Typography variant="subtitle1">Competitor</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <MultiSelectFilter
+                label="Name"
+                placeholder="Any competitor"
+                options={competitorNameOptions}
+                value={value?.competitorNames ?? []}
+                onChange={set("competitorNames")}
+                size="small"
+                allLabel="All competitors"
+              />
+            </AccordionDetails>
+          </Accordion>
+        )}
       </Box>
 
       {/* Footer */}
@@ -263,4 +289,11 @@ SignalsGroupedFilterPanel.propTypes = {
   /** Show the Constraint (Nature) section — DC surface only (constraints are
    *  DC-scoped). Off elsewhere so the Account/Activity panels are unchanged. */
   showConstraint: PropTypes.bool,
+  /** Show the Competitor (Name) section — DC surface only, when at least one
+   *  competitor is present. */
+  showCompetitor: PropTypes.bool,
+  /** Read-time competitor-name options: [{ value:'Salesforce', label:'Salesforce' }]. */
+  competitorNameOptions: PropTypes.arrayOf(
+    PropTypes.shape({ value: PropTypes.any, label: PropTypes.string }),
+  ),
 };

@@ -153,9 +153,10 @@ def _format_signal(signal_type, sig):
     # Type-specific fields
     if signal_type == 'techstack':
         # S10: the tool label and its qualification come from the signal
-        # itself (tech_name + the three booleans). The previous keys
-        # (catalog_name / is_integration_target) were derived from the
-        # TechCatalog FK the extractor no longer sets.
+        # itself (tech_name + is_competitor + is_to_replace). The previous
+        # keys (catalog_name / is_integration_target) were derived from the
+        # TechCatalog FK the extractor no longer sets. is_integration was
+        # retired here — an integration requirement is a TECHNICAL constraint.
         #
         # TODO(S10 -> AI-sprint): these are bare "yes" markers. Once the
         # AI sprint settles how the model is told to SET each flag (see
@@ -168,8 +169,6 @@ def _format_signal(signal_type, sig):
             lines.append(f"    Tool: {tool}")
         if sig.get('is_competitor'):
             lines.append("    Competitor: yes")
-        if sig.get('is_integration'):
-            lines.append("    Integration: yes")
         if sig.get('is_to_replace'):
             lines.append("    To replace: yes")
         if sig.get('on_deal'):

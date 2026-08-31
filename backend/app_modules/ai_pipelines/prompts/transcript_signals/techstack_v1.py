@@ -21,7 +21,6 @@ array of tech-stack observations. Each observation has exactly 8 fields:
                                             tool is unknown or ambiguous).
                                             REQUIRED. See the TOOL NAME
                                             section of the request below.
-    is_competitor          boolean      -- overlaps with what the seller sells.
     is_to_replace          boolean      -- the prospect intends to move off it.
     usage_scope            string|null  -- SCALE: "TEAM" | "COMPANY" |
                                             "UNKNOWN", or null when not
@@ -41,12 +40,15 @@ array of tech-stack observations. Each observation has exactly 8 fields:
     is_inferred            boolean      -- LLM self-declared, true when not
                                             directly stated.
 
-The two booleans are INDEPENDENT: any combination is valid, and
-all-false is the common case ("the prospect uses this tool", no angle).
+`is_to_replace` is the only qualification boolean now: false is the
+common case ("the prospect uses this tool", no angle).
 
-is_integration was RETIRED from this stage: a required integration is a
-buyer REQUIREMENT, so it is now captured as a ConstraintSignal of
-nature=TECHNICAL by the constraint stage, not as a boolean here.
+is_integration and is_competitor were RETIRED from this stage:
+  * a required integration is a buyer REQUIREMENT, now captured as a
+    ConstraintSignal of nature=TECHNICAL by the constraint stage;
+  * a competitor is now captured as a CompetitorSignal by the competitor
+    stage (sub-step 5).
+Neither is a boolean on the tool anymore.
 
 What replaced the catalogue match (S10)
 ---------------------------------------
@@ -140,7 +142,6 @@ mapped to a new TechStackSignal row:
     LLM-emitted field             ->  TechStackSignal column
     -------------------------------    --------------------------------
     tech_name                     ->  tech_name (verbatim)
-    is_competitor                 ->  is_competitor
     is_to_replace                 ->  is_to_replace
     usage_scope                   ->  usage_scope (NULL when null/missing)
     usage_departments             ->  usage_departments (M2M; each name
@@ -283,38 +284,32 @@ CANONICAL NAME EXAMPLES
          do NOT map it to the BI product "Pyramid Analytics").
 
 QUALIFICATION
-Each signal carries two INDEPENDENT booleans. Any combination is
-valid, including both false, which simply means the prospect uses
-the tool with no further commercial angle.
+Each signal carries ONE qualification boolean, `is_to_replace`. False is
+the common case: the prospect uses the tool with no further angle.
 
-- "is_competitor"  -- the tool overlaps with what the SELLER sells.
 - "is_to_replace"  -- the prospect intends to move off this tool.
 
-Set a flag ONLY when the transcript supports it; default to false.
+Set the flag ONLY when the transcript supports it; default to false.
+
+Do NOT emit a competitor flag here: whether a tool competes with what the
+SELLER sells is captured as a CompetitorSignal by the competitor stage
+(sub-step 5), not as a boolean on the tool.
 
 Do NOT emit an integration flag here: whether the SELLER's product must
 connect to a tool is a buyer REQUIREMENT, captured as a TECHNICAL
 constraint by the constraint stage, not as a boolean on the tool.
 
-# TODO(Competitors sprint): the two definitions above are deliberately
-# one line each. This is the anchor point for the full qualification
-# wording, which is NOT written yet:
-#   * is_competitor  -- how to decide overlap without knowing the
-#     seller's catalogue in the prompt (today the model only sees the
-#     seller NAME via the SESSION CONTEXT block). Decide whether to
-#     inject the seller's product catalogue (app_modules.product_catalog)
-#     into the context layer, and how to phrase "overlaps with".
+# TODO(Competitors sprint): the definition above is deliberately one
+# line. This is the anchor point for the full is_to_replace wording,
+# which is NOT written yet:
 #   * is_to_replace  -- needs the PAST vs FUTURE distinction that
 #     `is_discontinued` extraction was deferred for (see the
 #     "Why is_discontinued ... NOT extracted" section above):
 #     "we dropped X" (past, not to-replace) vs "we are looking to
 #     replace X" (future intent, to-replace) vs "we are unhappy with X"
 #     (dissatisfaction, not yet intent). Add worked examples.
-#   * Add few-shot examples covering the combinations that matter
-#     (competitor + to_replace, competitor only, all-false).
-# Until that sprint lands, expect the model to under-set these flags.
-# Under-setting is the safe failure mode: a rep can tick a box, whereas
-# a wrong competitor tag misleads the deal strategy.
+# Until that sprint lands, expect the model to under-set this flag.
+# Under-setting is the safe failure mode: a rep can tick a box.
 
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
@@ -323,7 +318,6 @@ Return a single JSON object with this exact shape:
   "signals": [
     {{
       "tech_name":       "<canonical product name -- see TOOL NAME: official stable spelling, verbatim when the tool is unknown or ambiguous>",
-      "is_competitor":   <boolean, see QUALIFICATION>,
       "is_to_replace":   <boolean, see QUALIFICATION>,
       "usage_scope":     "<TEAM | COMPANY | UNKNOWN, or null when scope was not discussed>",
       "usage_departments": ["<zero or more department names from the CANONICAL TAXONOMY usage_departments list -- see USAGE DEPARTMENTS; [] when none is explicitly designated>"],

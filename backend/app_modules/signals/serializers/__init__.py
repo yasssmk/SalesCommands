@@ -55,6 +55,12 @@ from .constraint_serializer import (
     ConstraintSignalCreateSerializer,
     ConstraintSignalUpdateSerializer,
 )
+from .competitor_serializer import (
+    CompetitorSignalListSerializer,
+    CompetitorSignalDetailSerializer,
+    CompetitorSignalCreateSerializer,
+    CompetitorSignalUpdateSerializer,
+)
 from .cluster_serializer import (
     SignalClusterListSerializer,
     SignalClusterDetailSerializer,
@@ -108,6 +114,11 @@ __all__ = [
     'ConstraintSignalDetailSerializer',
     'ConstraintSignalCreateSerializer',
     'ConstraintSignalUpdateSerializer',
+    # Competitor
+    'CompetitorSignalListSerializer',
+    'CompetitorSignalDetailSerializer',
+    'CompetitorSignalCreateSerializer',
+    'CompetitorSignalUpdateSerializer',
     # Cluster
     'SignalClusterListSerializer',
     'SignalClusterDetailSerializer',

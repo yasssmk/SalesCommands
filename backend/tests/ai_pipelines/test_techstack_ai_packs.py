@@ -84,9 +84,27 @@ def _create_tech(dc, user, client_id, tech_name='Salesforce', **flags):
         status=SignalStatus.VALIDATED,
         tech_name=tech_name,
         source_quote=f'They run everything on {tech_name}',
-        is_competitor=flags.get('is_competitor', False),
-        is_integration=flags.get('is_integration', False),
         is_to_replace=flags.get('is_to_replace', False),
+    )
+    sig.save(user=user, client_id=client_id)
+    return sig
+
+
+def _create_competitor(dc, user, client_id, competitor_name='Intercom'):
+    """
+    A VALIDATED CompetitorSignal on the cycle (the detached competitor
+    signal, sub-step 1). source=MANUAL -> save() forces VALIDATED and
+    derives competitor_name_normalized.
+    """
+    from app_modules.signals.models import CompetitorSignal
+
+    sig = CompetitorSignal(
+        account=dc.account,
+        decision_cycle=dc,
+        source=SignalSource.MANUAL,
+        status=SignalStatus.VALIDATED,
+        competitor_name=competitor_name,
+        summary=f'Prospect weighing {competitor_name} against us',
     )
     sig.save(user=user, client_id=client_id)
     return sig
@@ -124,12 +142,14 @@ class TestDealHealthTechEvidence:
         with no catalogue entry, must reach the evidence pack with its
         name and both flags.
         """
+        # Sub-step 4: the competitor marker now comes from a matching
+        # CompetitorSignal, not the techstack is_competitor flag.
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Salesforce',
-            is_competitor=True,
             is_to_replace=True,
         )
+        _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
 
         pack = DealHealthEvidenceBuilder().build(cycle)
         tech = pack['signals']['techstack']
@@ -138,23 +158,24 @@ class TestDealHealthTechEvidence:
         assert tech[0]['tech_name'] == 'Salesforce'
         assert tech[0]['is_competitor'] is True
         assert tech[0]['is_to_replace'] is True
-        assert tech[0]['is_integration'] is False
+        # is_integration is no longer surfaced in the tech evidence — an
+        # integration requirement is now a TECHNICAL ConstraintSignal.
+        assert 'is_integration' not in tech[0]
 
-    def test_all_three_flags_are_emitted_independently(self, cycle, user_a):
+    def test_the_row_flags_are_emitted_independently(self, cycle, user_a):
+        # is_competitor now reflects a matching CompetitorSignal; is_to_replace
+        # still comes off the tech row. is_integration is gone entirely (field
+        # dropped in 9c) so it is never emitted.
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Slack',
-            is_competitor=True,
-            is_integration=True,
             is_to_replace=True,
         )
+        _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Slack')
 
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
-        assert (
-            tech['is_competitor'],
-            tech['is_integration'],
-            tech['is_to_replace'],
-        ) == (True, True, True)
+        assert (tech['is_competitor'], tech['is_to_replace']) == (True, True)
+        assert 'is_integration' not in tech
 
     def test_just_used_tool_still_appears_with_all_flags_false(
         self, cycle, user_a,
@@ -165,15 +186,15 @@ class TestDealHealthTechEvidence:
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
         assert tech['tech_name'] == 'Notion'
         assert tech['is_competitor'] is False
-        assert tech['is_integration'] is False
         assert tech['is_to_replace'] is False
+        assert 'is_integration' not in tech
 
     def test_catalogue_keys_and_canonical_key_are_gone(self, cycle, user_a):
         """
         The old FK-derived keys must not survive: leaving them would keep
         feeding None / False into the diagnostic prompt.
         """
-        _create_tech(cycle, user_a, cycle.client_id, is_competitor=True)
+        _create_tech(cycle, user_a, cycle.client_id)
 
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
         assert 'catalog_name' not in tech
@@ -219,12 +240,13 @@ class TestDealHealthPromptRendering:
             _format_signal,
         )
 
+        # "Competitor: yes" now derives from a matching CompetitorSignal.
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Salesforce',
-            is_competitor=True,
             is_to_replace=True,
         )
+        _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
 
         rendered = _format_signal('techstack', tech)
@@ -248,18 +270,21 @@ class TestDealHealthPromptRendering:
         assert 'To replace: yes' not in rendered
         assert 'Integration: yes' not in rendered
 
-    def test_prompt_renders_integration_flag(self, cycle, user_a):
+    def test_prompt_never_renders_integration_flag(self, cycle, user_a):
         from app_modules.ai_pipelines.prompts.deal_health.diagnostic_v1 import (
             _format_signal,
         )
 
+        # The diagnostic no longer renders an "Integration: yes" line — the
+        # tech is_integration facet was retired (field dropped in 9c); an
+        # integration requirement surfaces via the TECHNICAL constraint path.
         _create_tech(
             cycle, user_a, cycle.client_id,
-            tech_name='HubSpot', is_integration=True,
+            tech_name='HubSpot',
         )
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
 
-        assert 'Integration: yes' in _format_signal('techstack', tech)
+        assert 'Integration: yes' not in _format_signal('techstack', tech)
 
 
 # =============================================================================
@@ -268,7 +293,7 @@ class TestDealHealthPromptRendering:
 
 class TestPrepCallTechSerialization:
 
-    def test_serialized_tech_carries_name_and_two_flags(
+    def test_serialized_tech_carries_name_and_to_replace_only(
         self, cycle, user_a,
     ):
         from app_modules.signals.models import TechStackSignal
@@ -276,7 +301,6 @@ class TestPrepCallTechSerialization:
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Salesforce',
-            is_competitor=True,
             is_to_replace=True,
         )
 
@@ -286,11 +310,12 @@ class TestPrepCallTechSerialization:
 
         assert len(rows) == 1
         assert rows[0]['tech_name'] == 'Salesforce'
-        assert rows[0]['is_competitor'] is True
         assert rows[0]['is_to_replace'] is True
-        # is_integration is NOT surfaced in the prep-call pack anymore: it was
-        # never consumed by the competitive context, and integration
-        # requirements are now TECHNICAL constraints.
+        # is_competitor is NO LONGER surfaced: the competitor facet is the
+        # CompetitorSignal now, and the manual tech flag has been retired.
+        assert 'is_competitor' not in rows[0]
+        # is_integration is NOT surfaced either (retired earlier; TECHNICAL
+        # constraint captures a required integration).
         assert 'is_integration' not in rows[0]
         assert 'catalog_name' not in rows[0]
         assert 'is_integration_target' not in rows[0]
@@ -308,14 +333,13 @@ class TestPrepCallCompetitiveContext:
     def test_competitor_lands_in_competing_on_deal(
         self, activity_with_cycle, contact, cycle, user_a,
     ):
-        _create_tech(
-            cycle, user_a, cycle.client_id,
-            tech_name='Salesforce', is_competitor=True,
-        )
+        # Sub-step 4: a competitor is a CompetitorSignal, not a techstack flag.
+        _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
 
         comp = self._pack(activity_with_cycle, contact)['competitive_context']
 
         assert [c['tool'] for c in comp['competing_on_deal']] == ['Salesforce']
+        # No TechStackSignal on the DC -> no incumbents.
         assert comp['incumbents'] == []
 
     def test_non_competitor_lands_in_incumbents(
@@ -347,9 +371,12 @@ class TestPrepCallCompetitiveContext:
     def test_a_tool_can_be_competitor_and_to_replace(
         self, activity_with_cycle, contact, cycle, user_a,
     ):
+        # The competitor facet is a CompetitorSignal; the to_replace facet
+        # stays on the techstack row. The same tool can be both.
+        _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
         _create_tech(
             cycle, user_a, cycle.client_id,
-            tech_name='Salesforce', is_competitor=True, is_to_replace=True,
+            tech_name='Salesforce', is_to_replace=True,
         )
 
         comp = self._pack(activity_with_cycle, contact)['competitive_context']
@@ -378,10 +405,8 @@ class TestPrepCallPromptRendering:
             build_context_layer,
         )
 
-        _create_tech(
-            cycle, user_a, cycle.client_id,
-            tech_name='Salesforce', is_competitor=True,
-        )
+        # Competitor facet -> CompetitorSignal; incumbents/to_replace -> techstack.
+        _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
         _create_tech(cycle, user_a, cycle.client_id, tech_name='Notion')
         _create_tech(
             cycle, user_a, cycle.client_id,
@@ -399,3 +424,63 @@ class TestPrepCallPromptRendering:
         assert 'Incumbent: Notion' in rendered
         assert 'To replace: Zendesk' in rendered
         assert 'unknown' not in rendered
+
+
+# =============================================================================
+# D — RECABLING: competitor facet reads CompetitorSignal (sub-step 4)
+# =============================================================================
+
+class TestPrepCallCompetitorFromCompetitorSignal:
+    """
+    competing_on_deal is sourced from CompetitorSignal (DC + VALIDATED),
+    NOT from TechStackSignal.is_competitor. incumbents is every VALIDATED
+    TechStackSignal on the DC, independent of the (now unused) flag.
+    """
+
+    def _pack(self, activity_with_cycle, contact):
+        return PrepInputPackAssembler().build(
+            activity=activity_with_cycle,
+            target_contact=contact,
+            brief_mode='CONVICTION',
+        )
+
+    def test_competing_on_deal_comes_from_competitor_signal(
+        self, activity_with_cycle, contact, cycle, user_a,
+    ):
+        # A competitor lives as a CompetitorSignal (not a techstack flag).
+        _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Intercom')
+        # A merely-used tool is a techstack row (is_competitor stays False).
+        _create_tech(cycle, user_a, cycle.client_id, tech_name='Zendesk')
+
+        comp = self._pack(activity_with_cycle, contact)['competitive_context']
+
+        assert [c['tool'] for c in comp['competing_on_deal']] == ['Intercom']
+        # incumbents = the account's tooling on the DC, without any is_competitor logic.
+        assert [c['tool'] for c in comp['incumbents']] == ['Zendesk']
+
+
+class TestDealHealthCompetitorFromCompetitorSignal:
+    """
+    The deal-health "Competitor: yes" marker reflects the EXISTENCE of a
+    CompetitorSignal (DC + VALIDATED) matching the tool, not the techstack
+    is_competitor flag.
+    """
+
+    def test_competitor_marker_comes_from_competitor_signal(
+        self, cycle, user_a,
+    ):
+        from app_modules.ai_pipelines.prompts.deal_health.diagnostic_v1 import (
+            _format_signal,
+        )
+        # A merely-used tool (no manual competitor flag exists anymore) ...
+        _create_tech(
+            cycle, user_a, cycle.client_id,
+            tech_name='Salesforce',
+        )
+        # ... but a CompetitorSignal names it as a competitor on this deal.
+        _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
+
+        tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
+        rendered = _format_signal('techstack', tech)
+
+        assert 'Competitor: yes' in rendered

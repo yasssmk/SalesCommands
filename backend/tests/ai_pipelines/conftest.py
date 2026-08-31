@@ -135,6 +135,7 @@ class FakeProvider:
         ('Extract TECH STACK signals', 'techstack'),
         ('Extract BLOCKER signals',    'blocker'),
         ('Extract CONSTRAINT signals', 'constraint'),
+        ('Extract COMPETITOR signals', 'competitor'),
         ('Extract NEXT-STEP signals',  'next_steps'),
     )
 

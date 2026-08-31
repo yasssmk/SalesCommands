@@ -135,7 +135,10 @@ describe("SignalClusterDetailDrawer — TechStack cluster", () => {
     expect(screen.getAllByText("HubSpot").length).toBeGreaterThanOrEqual(1);
     // Representative tool fields via the shared TechDetailBlock.
     expect(screen.getByText("TOOL USAGE")).toBeInTheDocument();
-    expect(screen.getByText("Competitor")).toBeInTheDocument();
+    expect(screen.getByText("Company-wide")).toBeInTheDocument();
+    // The manual Competitor tag was retired — no chip, even though t1 still
+    // carries a legacy is_competitor=true.
+    expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
     // Then the source-signal list.
     expect(screen.getByText("Signals in this cluster")).toBeInTheDocument();
     expect(screen.getAllByTestId("signal-line")).toHaveLength(2);

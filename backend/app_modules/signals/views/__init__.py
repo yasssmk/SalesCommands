@@ -8,6 +8,7 @@ from .blocker_signal_views import BlockerSignalViewSet
 from .next_step_signal_views import NextStepSignalViewSet
 from .people_signal_views import PeopleSignalViewSet
 from .constraint_signal_views import ConstraintSignalViewSet
+from .competitor_signal_views import CompetitorSignalViewSet
 from .signal_counts_view import SignalCountsByActivityView
 from .aggregated_signal_view import AggregatedSignalListView
 
@@ -29,6 +30,8 @@ __all__ = [
     'PeopleSignalViewSet',
     # Constraint
     'ConstraintSignalViewSet',
+    # Competitor
+    'CompetitorSignalViewSet',
     # Cluster views
     'SignalClusterListView',
     'SignalClusterDetailView',

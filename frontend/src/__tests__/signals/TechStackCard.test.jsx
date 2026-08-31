@@ -88,16 +88,16 @@ describe("TechStackCard — qualification chips", () => {
     expect(screen.queryByText("To replace")).not.toBeInTheDocument();
   });
 
-  it("renders the Competitor chip from is_competitor", () => {
+  it("no longer renders a Competitor chip (competitors are their own signal type)", () => {
     renderCard({ is_competitor: true });
-    expect(screen.getByText("Competitor")).toBeInTheDocument();
+    expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
     expect(screen.queryByText("Integration")).not.toBeInTheDocument();
     expect(screen.queryByText("To replace")).not.toBeInTheDocument();
   });
 
-  it("renders the Integration chip from is_integration", () => {
+  it("no longer renders an Integration chip (integration is a TECHNICAL constraint now)", () => {
     renderCard({ is_integration: true });
-    expect(screen.getByText("Integration")).toBeInTheDocument();
+    expect(screen.queryByText("Integration")).not.toBeInTheDocument();
     expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
     expect(screen.queryByText("To replace")).not.toBeInTheDocument();
   });
@@ -109,14 +109,14 @@ describe("TechStackCard — qualification chips", () => {
     expect(screen.queryByText("Integration")).not.toBeInTheDocument();
   });
 
-  it("renders all three at once — the booleans are independent", () => {
+  it("renders only the surviving To replace chip — competitor and integration never show", () => {
     renderCard({
       is_competitor: true,
       is_integration: true,
       is_to_replace: true,
     });
-    expect(screen.getByText("Competitor")).toBeInTheDocument();
-    expect(screen.getByText("Integration")).toBeInTheDocument();
+    expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Integration")).not.toBeInTheDocument();
     expect(screen.getByText("To replace")).toBeInTheDocument();
   });
 

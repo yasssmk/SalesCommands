@@ -971,6 +971,62 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / Competitors ✅ — Signal détaché CompetitorSignal (DC-only) + drops is_competitor / is_integration (branche `claude/competitor-signal-model-migration-lzc5dh`)
+- **Objectif** : traiter l'étape **Competitors** — faire du concurrent un **signal
+  DÉDIÉ et DÉTACHÉ** (annule l'ancien attribut booléen `is_competitor`), l'afficher
+  au bon endroit (Activité + DC), et nettoyer les booléens tech morts.
+- **Livré** (chaque sous-étape : reproduction ROUGE d'abord + sonde de NON-VACUITÉ,
+  restauration par édition ciblée jamais `git checkout`) :
+  - **CompetitorSignal, signal détaché DC-only** : modèle + migration **0030**
+    (verbatim `source_quote` + `summary` LLM + `competitor_name` / `_normalized`),
+    cloné sur `ConstraintSignal`. Trois signaux **non exclusifs** coexistent pour
+    un même outil : TechStack (utilisé) + Constraint TECHNICAL + Competitor.
+  - **Extraction dédiée** : prompt `competitor_v1` + stage competitor.
+  - **Backfill 0031** : `is_competitor=True` → CompetitorSignal (marker de
+    réversibilité) — data de test, pas de perte.
+  - **Recâblage lecteurs** : prep_call / deal_health lisent le CompetitorSignal
+    (match read-time par `competitor_name_normalized`), puis neutralisation de
+    l'écriture à l'extraction.
+  - **Affichage** : Activité (flat + grouped) + DC (flat + **cluster par
+    `competitor_name_normalized`** + **filtre par nom, DC-only**) ; **absent
+    d'Account**.
+  - **Retrait du tagging manuel** : Competitor (8-bis) puis Integration (9b —
+    + suppression du doublon deal_health « Integration: yes », le chemin
+    **Constraint TECHNICAL** couvrant déjà).
+  - **Drops de colonnes** : régularisation de la dérive `signal_type` (**0032**),
+    drop `is_competitor` (**0033**), drop `is_integration` (**0034**).
+- **Migrations** : **0030** (CompetitorSignal + index), **0031** (backfill
+  data, réversible), **0032** (AlterField `signalclusterarchival.signal_type`,
+  choices-only, régularise une dérive pré-existante depuis 6.1), **0033**
+  (RemoveField `is_competitor`, pur/réversible), **0034** (RemoveField
+  `is_integration`, pur/réversible). **Pas de backfill de perte** (décision PO).
+- **Validation** : suites backend / front vertes (Postgres ; `pytest tests/signals`
+  357, `tests/ai_pipelines` 360, `vitest` 999). **Smoke PO** : extraction prouvée
+  sur transcript réel — 3 signaux NON exclusifs sur un même outil (Salesforce =
+  TechStack utilisé + Constraint TECHNICAL + Competitor) + non-confusion
+  (Slack/Outreach) ; section Competitors présente en Activité (**présentation à
+  revoir — nom concurrent non affiché, renvoyé à l'UX Activity**) ; retrait des
+  tags manuels Competitor/Integration vérifié. **Smoke front DC (cluster par nom +
+  filtre par nom + absence Account) NON réalisé — reporté au sprint UX Activity**
+  (rendu réel des surfaces DC), le cluster et le filtre étant **prouvés par tests**
+  (cluster DC-only group-by `competitor_name_normalized` : test vert ; filtre par
+  nom : vitest vert). Cohérent avec la stratégie PO « une seule vérification sur le
+  rendu réel, pas de smoke à l'aveugle ».
+- **Dette fermée** : **aucune entrée TECH_DEBT** n'était ouverte sur le signal
+  competitor lui-même (étape planifiée, pas une dette).
+- **Dette ajoutée** : **TD-209** (chantier DC deal health : lecture directe du
+  CompetitorSignal + « Who we're up against » + reconstruction snapshot) et
+  **TD-210** (grounding extraction competitor sur catalogue produit). **MAJ** :
+  **TD-199** (`is_to_replace` **NON** supprimé au Competitors — conservé, drop
+  reporté à cette passe cluster), **TD-196** (doc filtre fantôme cite désormais
+  un champ droppé), **TD-189** (filtre-nom competitor livré ≠ filtres tech),
+  **TD-13/TD-52** (Postgres-only re-confirmé), **TD-207** (rattachement revu —
+  non livré ici), **TD-198** (docstring `source_activity` NOT NULL faux à balayer).
+- **Prochain jalon** (ordre cible) : **People** (voir la séquence PO 2026-08-31
+  post Competitors ci-dessous).
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -1134,7 +1190,7 @@ possibles) :
 - **Note de cadrage (sprints finaux)** : chaque fermeture = **PRODUCTION READY**
   (comportement + UX) ; seul le **vernis UI** va au **paufinage UI final**.
 
-**Séquence CONFIRMÉE PO (2026-08-28, post Tech scope) — réordonnancement du RESTE du bloc Signaux (SUPERSEDES la séquence 2026-08-28 ci-dessus) :**
+**Séquence CONFIRMÉE PO (2026-08-28, post Tech scope) — réordonnancement du RESTE du bloc Signaux (SUPERSEDES la séquence 2026-08-28 ci-dessus) :** _(⤷ SUPERSEDÉE par la « Séquence CONFIRMÉE PO (2026-08-31, post Competitors) » plus bas — réordonnancement post-Competitors ; conservée pour l'historique.)_
 - **✅ LIVRÉ** : **0. Tech Stack** (`feat/techstack-cluster`) ; **Contrainte**
   (`feat/constraint-signal` + `feat/constraint-scope-guard`) ; **Tech scope
   (usage)** (`feat/techstack-usage-scope`) — voir les fiches « Sprint Bloc IA /
@@ -1172,6 +1228,25 @@ possibles) :
   10. **Clôture du bloc Signaux** → puis **Prep call** (prompt + UI).
 - **Note de cadrage (sprints finaux)** : chaque fermeture = **PRODUCTION READY**
   (fonctionnel + UX) ; seul le **vernis** va au **paufinage UI final**.
+
+**Séquence CONFIRMÉE PO (2026-08-31, post Competitors) — SUPERSEDES la séquence 2026-08-28 post Tech scope ci-dessus :**
+- **✅ LIVRÉ** : **Competitors** (`claude/competitor-signal-model-migration-lzc5dh`)
+  — voir la fiche « Sprint Bloc IA / Competitors ✅ » ci-dessus.
+- **Reste du bloc Signaux (ordre confirmé PO)** :
+  1. **People** — signal People **éditable manuellement**.
+  2. **Next steps**.
+  3. **UX Activity** — layout Activity **sans onglets** (tranche TD-186 : pas de
+     bascule onglet).
+  4. **Blocker (Objection)**.
+  - [+ suites déjà cadrées : **M2M scope transverse**, **Filtres transverse**
+    (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
+    **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]
+- **Resserrement prompt tech (TD-207) à traiter AVANT la fin d'Activity** :
+  rattaché à la passe de nettoyage / resserrement prompt qui **précède la clôture
+  d'Activity** (avec **TD-206**), **PAS** à People ni Next steps.
+- **Décisions verrouillées (2026-08-31)** : **competitor = signal détaché** (annule
+  l'attribut booléen) ; **People signal éditable manuel** ; **layout Activity sans
+  onglets** ; **`is_to_replace` conservé** (drop reporté **TD-199**).
 
 ### Nouveaux sprints
 

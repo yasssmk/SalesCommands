@@ -290,9 +290,12 @@ describe("SignalQuickDrawer", () => {
 
     expect(screen.getByText("IDENTITY")).toBeInTheDocument();
     expect(screen.getAllByText("Salesforce").length).toBeGreaterThanOrEqual(1);
-    // Qualification + usage + lifecycle now rendered via the shared TechDetailBlock
-    expect(screen.getByText("Qualification")).toBeInTheDocument();
-    expect(screen.getAllByText("Competitor").length).toBeGreaterThanOrEqual(1);
+    // Usage + lifecycle rendered via the shared TechDetailBlock. The manual
+    // "Competitor" tag was retired (competitors are their own signal type),
+    // so a legacy is_competitor=true renders no chip and — with the other two
+    // flags false — no Qualification row at all.
+    expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Qualification")).not.toBeInTheDocument();
     expect(screen.getByText("TOOL USAGE")).toBeInTheDocument();
     expect(screen.getByText("Company-wide")).toBeInTheDocument();
     expect(screen.getByText("2022")).toBeInTheDocument();

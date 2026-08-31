@@ -274,6 +274,17 @@ function ConstraintDetails({ signal }) {
 }
 ConstraintDetails.propTypes = { signal: PropTypes.object.isRequired };
 
+// Competitor drawer: only the competitor identity is type-specific — summary,
+// source quote and provenance are rendered by the type-agnostic sections.
+function CompetitorDetails({ signal }) {
+  return (
+    <DrawerSection title="COMPETITOR">
+      <DrawerFieldRow label="Name" value={signal.competitor_name} />
+    </DrawerSection>
+  );
+}
+CompetitorDetails.propTypes = { signal: PropTypes.object.isRequired };
+
 function renderDetails(signal, signalType) {
   switch (signalType) {
     case "pain": return <PainDetails signal={signal} />;
@@ -284,6 +295,7 @@ function renderDetails(signal, signalType) {
     case "next-steps": return <NextStepDetails signal={signal} />;
     case "people": return <PeopleDetails signal={signal} />;
     case "constraints": return <ConstraintDetails signal={signal} />;
+    case "competitors": return <CompetitorDetails signal={signal} />;
     default: return null;
   }
 }

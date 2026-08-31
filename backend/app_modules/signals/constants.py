@@ -516,6 +516,12 @@ class SignalClusterType(models.TextChoices):
     # _group_by_canonical_key(key=lambda s: s.nature); nature is required so
     # there is no null bucket. Constraint is DC-scoped only (not account-level).
     CONSTRAINT = 'constraint', _('Constraint')
+    # COMPETITOR clusters on `competitor_name_normalized` (the derived name),
+    # NOT on a canonical_key — competitor is detached (canonical_key always
+    # None). Like TECH_STACK the grouping is read-time via
+    # _group_by_canonical_key(key=lambda s: s.competitor_name_normalized);
+    # like CONSTRAINT it is DC-scoped only (not account-level).
+    COMPETITOR = 'competitor', _('Competitor')
 
 
 class FreshnessStatus(models.TextChoices):

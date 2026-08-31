@@ -78,13 +78,16 @@ def _persist(activity, account, user, raw_signals):
 
 class TestRawNameExtraction:
 
-    def test_raw_name_and_competitor_flag_persist_without_catalogue(
+    def test_raw_name_persists_and_is_competitor_no_longer_extracted(
         self, account, activity, user_a,
     ):
         """
-        The red-repro case: an LLM emission carrying a tech name and
-        is_competitor, with NO catalogue UUID anywhere, must produce a
-        TechStackSignal whose identity comes from the raw text.
+        Identity comes from the raw text (no catalogue). The extractor no
+        longer POSES is_competitor — and since sub-step 8b the field no longer
+        exists at all, so an emitted is_competitor=true cannot land. The
+        competitor facet is now a CompetitorSignal from the competitor stage
+        (mirror of the earlier is_integration retirement). The persisted
+        TechStackSignal simply carries its raw identity.
         """
         persisted, dropped = _persist(
             activity, account, user_a,
@@ -98,14 +101,10 @@ class TestRawNameExtraction:
         assert isinstance(sig, TechStackSignal)
         assert sig.tech_name == 'Salesforce'
         assert sig.tech_name_normalized == 'salesforce'
-        assert sig.is_competitor is True
-
         # And it is what actually landed in the DB.
         sig.refresh_from_db()
         assert sig.tech_name == 'Salesforce'
         assert sig.tech_name_normalized == 'salesforce'
-        assert sig.is_competitor is True
-
     def test_raw_text_is_preserved_verbatim_and_normalised_by_save(
         self, account, activity, user_a,
     ):
@@ -175,13 +174,13 @@ class TestQualificationBooleansFromLLM:
         )
 
         sig = persisted[0]
-        assert sig.is_competitor is False
-        assert sig.is_integration is False
         assert sig.is_to_replace is False
 
     def test_booleans_flow_through_independently(
         self, account, activity, user_a,
     ):
+        # Sub-step 5: is_competitor is no longer extracted (stays default
+        # False even when the LLM emits it); is_to_replace still flows.
         persisted, _ = _persist(
             activity, account, user_a,
             [_raw('Salesforce', is_competitor=True, is_to_replace=True)],
@@ -189,11 +188,9 @@ class TestQualificationBooleansFromLLM:
 
         sig = persisted[0]
         sig.refresh_from_db()
-        assert sig.is_competitor is True
-        assert sig.is_integration is False
         assert sig.is_to_replace is True
 
-    def test_both_booleans_true_is_legal(self, account, activity, user_a):
+    def test_to_replace_flows_through(self, account, activity, user_a):
         persisted, _ = _persist(
             activity, account, user_a,
             [_raw('Slack', is_competitor=True, is_to_replace=True)],
@@ -201,23 +198,24 @@ class TestQualificationBooleansFromLLM:
 
         sig = persisted[0]
         sig.refresh_from_db()
-        assert (sig.is_competitor, sig.is_to_replace) == (True, True)
-        # is_integration is no longer extracted -- stays at the model default.
-        assert sig.is_integration is False
+        assert sig.is_to_replace is True
+        # is_competitor (8b) and is_integration (9c) are no longer fields at
+        # all, so an emitted value for either cannot land.
 
     def test_truthy_non_bool_values_are_coerced(
         self, account, activity, user_a,
     ):
-        """An LLM emitting "true"/1 must not land a non-boolean in the DB."""
+        """An LLM emitting "true"/1 must not land a non-boolean in the DB.
+        Coercion is asserted on is_to_replace, the surviving extracted flag
+        (is_competitor is no longer extracted -- sub-step 5)."""
         persisted, _ = _persist(
             activity, account, user_a,
-            [_raw('Jira', is_competitor=1, is_to_replace=None)],
+            [_raw('Jira', is_to_replace=1, is_competitor=1)],
         )
 
         sig = persisted[0]
-        assert sig.is_competitor is True
-        assert sig.is_to_replace is False
-
+        assert sig.is_to_replace is True
+        # is_competitor is not extracted anymore -> stays False regardless.
 
 # =============================================================================
 # C — MALFORMED EMISSIONS ARE DROPPED
@@ -352,8 +350,10 @@ class TestBatchDedupOnNormalisedName:
         )
 
         assert len(persisted) == 1
-        assert persisted[0].is_competitor is True
-        # Winner is the first occurrence -- the second's is_to_replace does not win.
+        # First-occurrence-wins still holds on the surviving flag: the second
+        # candidate's is_to_replace does not win. (is_competitor is no longer a
+        # field at all — dropped in sub-step 8b — so an emitted value cannot
+        # land regardless.)
         assert persisted[0].is_to_replace is False
 
 

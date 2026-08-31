@@ -54,6 +54,7 @@ export const SIGNAL_TYPE_OPTIONS = [
   { value: "next-steps", label: "Next Step" },
   { value: "people", label: "People" },
   { value: "constraints", label: "Constraint" },
+  { value: "competitors", label: "Competitor" },
 ];
 
 // ==============================|| SIGNALS FILTER PANEL ||============================== //

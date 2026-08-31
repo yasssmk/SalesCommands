@@ -47,6 +47,7 @@ const DC_TYPES = [
   "next-steps",
   "people",
   "constraints",
+  "competitors",
 ];
 
 // Grouped (cluster) default status set — pending + validated.
@@ -57,6 +58,7 @@ const emptyGroupedFilters = () => ({
   whats: [],
   dimensions: [],
   natures: [], // CONSTRAINT-family filter (ConstraintNature codes)
+  competitorNames: [], // COMPETITOR-family filter (competitor names, read-time)
   statuses: GROUPED_DEFAULT_STATUSES,
 });
 
@@ -132,7 +134,17 @@ export default function SignalsTab({ cycleId, accountId }) {
     groupedFilters.whats.length +
     groupedFilters.dimensions.length +
     groupedFilters.natures.length +
+    groupedFilters.competitorNames.length +
     (groupedFilters.statuses.includes("REJECTED") ? 1 : 0);
+
+  // Competitor-name options for the by-name filter — reported read-time by the
+  // grouped view from the competitors present on this deal.
+  const [competitorNameOptions, setCompetitorNameOptions] = useState([]);
+  const handleCompetitorNamesAvailable = useCallback((names) => {
+    setCompetitorNameOptions(
+      (names ?? []).map((n) => ({ value: n, label: n })),
+    );
+  }, []);
 
   // Sort state
   const [sortKey, setSortKey] = useState("date-desc");
@@ -310,6 +322,8 @@ export default function SignalsTab({ cycleId, accountId }) {
           whats={groupedFilters.whats}
           dimensions={groupedFilters.dimensions}
           natures={groupedFilters.natures}
+          competitorNames={groupedFilters.competitorNames}
+          onCompetitorNamesAvailable={handleCompetitorNamesAvailable}
           contacts={groupedContactIds}
           statuses={groupedFilters.statuses}
         />
@@ -344,6 +358,8 @@ export default function SignalsTab({ cycleId, accountId }) {
           onClear={handleGroupedClear}
           activeCount={groupedActiveCount}
           showConstraint
+          showCompetitor
+          competitorNameOptions={competitorNameOptions}
         />
       ) : (
         <SignalsFilterPanel

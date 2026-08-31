@@ -68,6 +68,7 @@ from app_modules.signals.serializers import (
     NextStepSignalListSerializer,
     PeopleSignalListSerializer,
     ConstraintSignalListSerializer,
+    CompetitorSignalListSerializer,
 )
 from .pain_signal_views import PainSignalViewSet
 from .objective_signal_views import ObjectiveSignalViewSet
@@ -77,6 +78,7 @@ from .blocker_signal_views import BlockerSignalViewSet
 from .next_step_signal_views import NextStepSignalViewSet
 from .people_signal_views import PeopleSignalViewSet
 from .constraint_signal_views import ConstraintSignalViewSet
+from .competitor_signal_views import CompetitorSignalViewSet
 
 
 # (frontend slug, ViewSet class, List serializer) — the slug is what the
@@ -91,6 +93,11 @@ _TYPES = (
     ('next-steps',  NextStepSignalViewSet,    NextStepSignalListSerializer),
     ('people',      PeopleSignalViewSet,      PeopleSignalListSerializer),
     ('constraints', ConstraintSignalViewSet,  ConstraintSignalListSerializer),
+    # Competitor carries no target_department / scope_level, so it is NOT
+    # added to _HAS_DEPARTMENT / _HAS_SCOPE below (those filters exclude it).
+    # Flat slug is PLURAL ('competitors'), like 'constraints'/'blockers' — the
+    # cluster enum and the internal signal_type stay singular ('competitor').
+    ('competitors', CompetitorSignalViewSet,  CompetitorSignalListSerializer),
 )
 
 _SERIALIZER_BY_SLUG = {slug: ser for slug, _vs, ser in _TYPES}

@@ -99,7 +99,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
     const args = lastHookArgs();
     expect(args.activityId).toBe("act-flat");
-    // No type filter selected → all activity flat types (constraints included).
+    // No type filter selected → all activity flat types (constraints + competitors included).
     expect(args.signalTypes).toEqual([
       "pain",
       "objective",
@@ -107,6 +107,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
       "tech-stack",
       "blockers",
       "constraints",
+      "competitors",
     ]);
     // Rejected excluded by default.
     expect(args.statuses).toEqual(["PENDING", "VALIDATED"]);

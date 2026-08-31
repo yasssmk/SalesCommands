@@ -68,7 +68,10 @@ describe("TechDetailBlock", () => {
         }}
       />,
     );
-    expect(screen.getByText("Competitor")).toBeInTheDocument();
+    // The manual "Competitor" tag was retired — competitors are their own
+    // signal type now, so TechDetailBlock never surfaces a Competitor chip
+    // even when a legacy is_competitor=true still lingers on the payload.
+    expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
     expect(screen.getByText("To replace")).toBeInTheDocument();
     expect(screen.queryByText("Integration")).not.toBeInTheDocument();
     expect(screen.getByText("Company-wide")).toBeInTheDocument();

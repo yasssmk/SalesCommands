@@ -79,8 +79,13 @@ CONTEXT_VERSION = 'v1'
 
 _SUPPORTED_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
-    'constraint',
+    'constraint', 'competitor',
 )
+
+# Stages that carry NO canonical taxonomy (no what/dimension, no nature, no
+# scope). They receive the session block only -- emitting an empty taxonomy
+# header would waste tokens and confuse the LLM with an irrelevant instruction.
+_NO_TAXONOMY_STAGES = ('blocker', 'competitor')
 
 
 # =============================================================================
@@ -127,9 +132,9 @@ def build_context_layer(activity, target_stage):
     blocks = [_build_session_block(activity)]
 
     # Taxonomy only for canonical-axis stages.
-    # Blocker stage is intentionally session-only: no canonical enums.
-    # See module docstring of blocker_v1.py.
-    if target_stage != 'blocker':
+    # Blocker and competitor stages are intentionally session-only: no
+    # canonical enums. See module docstring of blocker_v1.py / competitor_v1.py.
+    if target_stage not in _NO_TAXONOMY_STAGES:
         blocks.append(_build_taxonomy_block(target_stage))
 
         # The techstack stage receives no reference list: tech identity
@@ -280,13 +285,11 @@ def _build_taxonomy_block(target_stage):
     by its free-text `tech_name` (S10). Its only enum here is usage_scope.
 
     # TODO(S10 -> AI-sprint): the techstack branch below exposes
-    # usage_scope only. If the AI sprint decides the qualification
-    # booleans (is_competitor / is_integration / is_to_replace) need
-    # grounding data to be set reliably -- e.g. the seller's own product
-    # catalogue, so the model can tell "overlaps with what we sell" from
-    # "just a tool they use" -- this is where that block belongs, next to
-    # the other per-stage context. See the matching TODO in
-    # techstack_v1.py for the wording side.
+    # usage_scope only. is_competitor and is_integration are no longer
+    # techstack booleans (retired to the CompetitorSignal / ConstraintSignal
+    # stages). If the surviving is_to_replace flag ever needs grounding data
+    # to be set reliably, this is where that block belongs, next to the other
+    # per-stage context. See the matching TODO in techstack_v1.py.
 
     Field-level extraction details (which fields the LLM must emit,
     when to OMIT a signal) live in the per-stage request layer

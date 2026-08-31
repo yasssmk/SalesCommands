@@ -151,19 +151,24 @@ describe("SignalEditDialog — tech-stack identity payload", () => {
     expect(payload.tech_name).toBe("Salesforce CRM");
   });
 
-  it("emits the three qualification booleans", async () => {
+  it("emits only is_to_replace (competitor and integration toggles are gone)", async () => {
     renderDialog(PENDING_TECHSTACK);
 
-    fireEvent.click(screen.getByLabelText("Tool is a competitor"));
+    // The manual "Competitor" and "Integration" toggles were both retired —
+    // competitors are their own signal type, and an integration requirement is
+    // now a TECHNICAL ConstraintSignal. Only "to replace" survives.
+    expect(screen.queryByLabelText("Tool is a competitor")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Tool is an integration")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByLabelText("Tool is to be replaced"));
     save();
 
     await waitFor(() => expect(updateSignal).toHaveBeenCalled());
 
     const [, , payload] = updateSignal.mock.calls[0];
-    expect(payload.is_competitor).toBe(true);
+    expect(payload).not.toHaveProperty("is_competitor");
+    expect(payload).not.toHaveProperty("is_integration");
     expect(payload.is_to_replace).toBe(true);
-    expect(payload.is_integration).toBe(false);
   });
 
   it("blocks a save that blanks the tool name", async () => {

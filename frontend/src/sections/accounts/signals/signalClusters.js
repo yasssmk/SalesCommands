@@ -210,6 +210,14 @@ export const SIGNAL_TYPE_VISUALS = {
     color: "primary",
     label: "Constraint",
   },
+  // Competitor clusters key on the backend value 'competitor' (singular); the
+  // flat member vocabulary uses 'competitors' (plural) — mapped in the drawer,
+  // same split as constraint/tech_stack. Muted colour (no decorative accent),
+  // consistent with the competitor no-chip type treatment.
+  competitor: {
+    color: "default",
+    label: "Competitor",
+  },
 };
 
 // ==============================|| TARGET DATE URGENCY ||============================== //

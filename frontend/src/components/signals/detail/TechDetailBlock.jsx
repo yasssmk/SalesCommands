@@ -28,7 +28,7 @@ function formatDate(isoDate) {
 
 /**
  * TechDetailBlock — shared rendering of a TechStackSignal's type-specific
- * fields: qualification flags (competitor / integration / to-replace),
+ * fields: qualification flag (to-replace),
  * usage (ONE line — the using departments if any, else the scale),
  * lifecycle (used since / renewal / cost),
  * and discontinuation. Reads booleans and *_display off the signal.
@@ -37,8 +37,6 @@ function formatDate(isoDate) {
  */
 export default function TechDetailBlock({ signal }) {
   const qualifications = [
-    signal.is_competitor && { key: "competitor", label: "Competitor", color: "error" },
-    signal.is_integration && { key: "integration", label: "Integration", color: "info" },
     signal.is_to_replace && { key: "to-replace", label: "To replace", color: "warning" },
   ].filter(Boolean);
 
@@ -121,8 +119,6 @@ export default function TechDetailBlock({ signal }) {
 
 TechDetailBlock.propTypes = {
   signal: PropTypes.shape({
-    is_competitor: PropTypes.bool,
-    is_integration: PropTypes.bool,
     is_to_replace: PropTypes.bool,
     usage_scope_display: PropTypes.string,
     usage_departments: PropTypes.arrayOf(

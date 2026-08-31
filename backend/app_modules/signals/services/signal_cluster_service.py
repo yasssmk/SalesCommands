@@ -135,6 +135,7 @@ from ..constants import (
     SignalStatus,
 )
 from ..models import (
+    CompetitorSignal,
     ConstraintSignal,
     ImpactSignal,
     ObjectiveSignal,
@@ -314,6 +315,16 @@ class SignalClusterService:
             if stype == SignalClusterType.CONSTRAINT:
                 clusters.extend(
                     cls._list_constraint_clusters_for_account(
+                        account_id=account_id,
+                        decision_cycle_id=decision_cycle_id,
+                        include_archived=include_archived,
+                        member_filters=member_filters,
+                    )
+                )
+                continue
+            if stype == SignalClusterType.COMPETITOR:
+                clusters.extend(
+                    cls._list_competitor_clusters_for_account(
                         account_id=account_id,
                         decision_cycle_id=decision_cycle_id,
                         include_archived=include_archived,
@@ -615,6 +626,74 @@ class SignalClusterService:
 
         return clusters
 
+    # -------------------------------------------------------------------------
+    # INTERNAL — Competitor-specific listing (clusters on the normalised name,
+    # DC-scoped)
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def _list_competitor_clusters_for_account(
+        cls,
+        *,
+        account_id,
+        decision_cycle_id=None,
+        include_archived: bool = False,
+        member_filters=None,
+    ) -> list:
+        """
+        Competitor-specific cluster computation.
+
+        Competitor is DETACHED (canonical_key is always None) and DC-SCOPED
+        ONLY: it is never surfaced at the account level. When no
+        decision_cycle_id is provided this returns an empty list (mirror of the
+        constraint DC-only guard).
+
+        Like TechStack, the grouping is 100% read-time — here on
+        `competitor_name_normalized` (the lower/trim/collapse of
+        competitor_name that CompetitorSignal.save() recomputes on every
+        write), via the shared _group_by_canonical_key(key=...). A blank
+        normalised name carries no competitor identity and is skipped
+        (defensive, mirror of the TechStack blank-key skip).
+        """
+        # DC-only: no decision cycle → no competitor clusters (never account-wide).
+        if not decision_cycle_id:
+            return []
+
+        signals = cls._fetch_competitor_signals(
+            account_id=account_id,
+            decision_cycle_id=decision_cycle_id,
+            member_filters=member_filters,
+        )
+        grouped = cls._group_by_canonical_key(
+            signals, key=lambda s: s.competitor_name_normalized,
+        )
+
+        archived_keys = cls._get_archived_keys(
+            account_id,
+            SignalClusterType.COMPETITOR,
+        )
+
+        clusters: list = []
+        for competitor_name_normalized, members in grouped.items():
+            if not competitor_name_normalized:
+                # A blank normalised name carries no competitor identity — it
+                # cannot form a cluster (mirror of the TechStack blank-key skip).
+                continue
+
+            cluster = cls._build_competitor_cluster(
+                competitor_name_normalized, members,
+            )
+            cluster['is_archived'] = (
+                competitor_name_normalized in archived_keys
+            )
+
+            if cluster['is_archived'] and not include_archived:
+                continue
+
+            clusters.append(cluster)
+
+        return clusters
+
     # =========================================================================
     # PUBLIC — DETAIL
     # =========================================================================
@@ -776,6 +855,32 @@ class SignalClusterService:
 
             return cluster
 
+        if resolved_type == SignalClusterType.COMPETITOR:
+            # Competitor detail: the `canonical_key` path segment carries the
+            # competitor_name_normalized grouping key (competitor has no stored
+            # canonical_key). DC-scoped: filter members by decision_cycle_id so
+            # two DCs' clusters of the same competitor never merge.
+            members = list(
+                cls._fetch_competitor_signals(
+                    account_id=account_id,
+                    decision_cycle_id=decision_cycle_id,
+                )
+                .filter(competitor_name_normalized=canonical_key)
+            )
+
+            if not members:
+                raise StandardizedValidationError(
+                    SignalErrorMessages.CLUSTER_NOT_FOUND
+                )
+
+            cluster = cls._build_competitor_cluster(canonical_key, members)
+
+            archived_keys = cls._get_archived_keys(account_id, resolved_type)
+            cluster['is_archived'] = canonical_key in archived_keys
+            cluster['members'] = members
+
+            return cluster
+
         # _assert_signal_types_supported guarantees we never reach here.
 
     # =========================================================================
@@ -795,6 +900,8 @@ class SignalClusterService:
         SignalClusterType.TECH_STACK.value,
         # Constraint clusters on `nature` (read-time), DC-scoped only.
         SignalClusterType.CONSTRAINT.value,
+        # Competitor clusters on competitor_name_normalized (read-time), DC-only.
+        SignalClusterType.COMPETITOR.value,
     })
 
     @classmethod
@@ -1213,6 +1320,66 @@ class SignalClusterService:
 
         # SOURCE contact filter (who raised the requirement), via
         # source_activity.contacts. Same clause as the other read-time type.
+        if member_filters:
+            contacts = member_filters.get('contacts')
+            if contacts:
+                qs = qs.filter(
+                    source_activity__contacts__in=contacts
+                ).distinct()
+            else:
+                contact = member_filters.get('contact')
+                if contact:
+                    qs = qs.filter(source_activity__contacts=contact)
+
+        return qs
+
+    @classmethod
+    def _fetch_competitor_signals(cls, *, account_id, decision_cycle_id=None,
+                                  member_filters=None):
+        """
+        Base queryset for Competitor cluster aggregation (grouped on
+        competitor_name_normalized).
+
+        DC-scoped: competitors are aggregated per decision cycle, so
+        decision_cycle_id is applied whenever provided (the list path guards
+        that it is always present; the detail path passes it from the view).
+
+        Includes VALIDATED and PENDING (REJECTED excluded), on the shared
+        default status set via _member_statuses.
+
+        N+1 safety
+        ----------
+        Cloned on _fetch_constraint_signals but WITHOUT target_department:
+        CompetitorSignal has no such FK. select_related('source_activity',
+        'decision_cycle') covers the member payload's source block and
+        _cluster_has_active_dc (decision_cycle.outcome); prefetch_related(
+        'source_activity__contacts') covers distinct_contacts_count and the
+        member serializer's source block. The query count is constant
+        regardless of the number of signals/clusters.
+        """
+        qs = (
+            CompetitorSignal.objects
+            .filter(
+                account_id=account_id,
+                status__in=cls._member_statuses(member_filters),
+                # Always True for competitor (no `what` axis), kept for symmetry.
+                is_domain_valid=True,
+            )
+            .select_related(
+                'source_activity',
+                'decision_cycle',
+            )
+            .prefetch_related(
+                'source_activity__contacts',
+            )
+        )
+
+        if decision_cycle_id:
+            qs = qs.filter(decision_cycle_id=decision_cycle_id)
+
+        # SOURCE contact filter (who named the competitor), via
+        # source_activity.contacts. Same clause as the other read-time types.
+        # Competitor has NO nature-style enum filter.
         if member_filters:
             contacts = member_filters.get('contacts')
             if contacts:
@@ -1850,6 +2017,128 @@ class SignalClusterService:
             'has_target_date_soon':  False,
 
             # Priority — neutral floor (no TechStack scorer). See docstring.
+            'priority_score':  priority_score,
+            'priority_bucket': priority_bucket,
+
+            # Linking
+            'decision_cycle_ids': decision_cycle_ids,
+            'campaign_ids':       campaign_ids,
+
+            # Archival — default False, overridden by caller if applicable
+            'is_archived': False,
+        }
+
+    # =========================================================================
+    # BUILD — per Competitor cluster (grouped on competitor_name_normalized)
+    # =========================================================================
+
+    @classmethod
+    def _build_competitor_cluster(cls, competitor_name_normalized: str,
+                                  members: list) -> dict:
+        """
+        Build the Competitor cluster dict from a list of CompetitorSignal
+        members sharing the same competitor_name_normalized within one decision
+        cycle.
+
+        Near-verbatim clone of _build_tech_cluster (read-time grouping on a
+        derived name, no canonical axes, no scorer). Differences:
+          * canonical_key -> competitor_name_normalized;
+          * summary -> reference.competitor_name (the competitor's display name
+            is the cluster headline);
+          * campaign is a real inherited FK on CompetitorSignal (unlike
+            TechStack where it is shadow-overridden to None), so campaign_ids is
+            read from the members.
+
+        `members` includes VALIDATED and PENDING (REJECTED excluded). The
+        reference (most recent VALIDATED, else most recent member) supplies the
+        headline — an unstable identifier by design (it moves as new signals
+        land), which is why grouping keys off the stable normalised name.
+        """
+        validated = [m for m in members if m.status == SignalStatus.VALIDATED]
+        pending   = [m for m in members if m.status == SignalStatus.PENDING]
+
+        # Reference: most recent VALIDATED, else most recent member.
+        reference = validated[0] if validated else members[0]
+
+        # --- Corroboration & breadth (same computation as the axis types) ---
+        confirmation_count = len(validated)
+
+        distinct_contacts: set = set()
+        for signal in validated:
+            if signal.source_activity_id and signal.source_activity:
+                for contact in signal.source_activity.contacts.all():
+                    distinct_contacts.add(contact.id)
+        distinct_contacts_count = len(distinct_contacts)
+
+        # --- Lifecycle (reuse the shared helper; created_at-anchored) ---
+        has_active_dc = cls._cluster_has_active_dc(members)
+        first_observed_at, last_confirmed_at, freshness = (
+            cls._compute_lifecycle(validated, has_active_dc)
+        )
+
+        # --- Cluster status ---
+        status_value = SignalStatus.VALIDATED if validated else SignalStatus.PENDING
+        has_pending = bool(pending)
+        pending_count = len(pending)
+
+        # --- Linking (decision_cycle and campaign are real FKs on Competitor) ---
+        decision_cycle_ids = sorted({
+            str(m.decision_cycle_id) for m in members if m.decision_cycle_id
+        })
+        campaign_ids = sorted({
+            str(m.campaign_id) for m in members if m.campaign_id
+        })
+
+        # --- Priority: Competitor has no scorer. Neutral floor (0 -> LOW). ---
+        priority_score = 0
+        priority_bucket = bucket_from_score(priority_score)
+
+        return {
+            # Identity — the normalised competitor name IS the read-time key.
+            'canonical_key':     competitor_name_normalized,
+            'signal_type':       SignalClusterType.COMPETITOR.value,
+
+            # Canonical axes — no meaning for Competitor. Neutral (allow_null).
+            'what':              None,
+            'what_display':      None,
+            'dimension':         None,
+            'dimension_display': None,
+            # The competitor name is the cluster headline.
+            'summary':           reference.competitor_name,
+
+            # Corroboration & breadth
+            'confirmation_count':      confirmation_count,
+            'distinct_contacts_count': distinct_contacts_count,
+
+            # Status
+            'status':              status_value,
+            'has_pending_signals': has_pending,
+            'pending_count':       pending_count,
+
+            # Lifecycle
+            'first_observed_at': first_observed_at,
+            'last_confirmed_at': last_confirmed_at,
+            'freshness_status':  freshness,
+
+            # Temporal density — raw facts (count + covered period).
+            'signal_count':  len(members),
+            'period_start':  first_observed_at,
+            'period_end':    last_confirmed_at,
+            'span_days':     cls._compute_span_days(
+                first_observed_at, last_confirmed_at,
+            ),
+
+            # Departments — no target_department subject axis on Competitor.
+            'departments':   [],
+
+            # Scope — no scope_level on Competitor.
+            'max_scope_level': None,
+
+            # Objective-compat keys — Competitor has no target-date concept.
+            'target_dates':          [],
+            'has_target_date_soon':  False,
+
+            # Priority — neutral floor (no Competitor scorer).
             'priority_score':  priority_score,
             'priority_bucket': priority_bucket,
 

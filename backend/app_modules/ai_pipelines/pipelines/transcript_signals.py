@@ -155,6 +155,10 @@ from ..prompts.transcript_signals.constraint_v1 import (
     build_constraint_request,
     CONSTRAINT_PROMPT_VERSION,
 )
+from ..prompts.transcript_signals.competitor_v1 import (
+    build_competitor_request,
+    COMPETITOR_PROMPT_VERSION,
+)
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -190,6 +194,12 @@ _STAGES = [
     # objective / impact / tech), surface what stands in the way (blocker),
     # then capture the decision criteria the solution must meet (constraint).
     ('constraint', build_constraint_request),
+    # Competitor is LAST: like blocker/constraint it is a free-text stage
+    # with no canonical taxonomy (no what x dimension, no nature, no scope).
+    # It captures the C of MEDDPICC -- tools framed as a competing option to
+    # the seller's solution, distinct from used tools (techstack) and
+    # integration requirements (constraint TECHNICAL).
+    ('competitor', build_competitor_request),
 ]
 
 
@@ -208,6 +218,7 @@ class QualificationSignalsPipeline(BasePipeline):
         'techstack':   TECHSTACK_PROMPT_VERSION,
         'blocker':     BLOCKER_PROMPT_VERSION,
         'constraint':  CONSTRAINT_PROMPT_VERSION,
+        'competitor':  COMPETITOR_PROMPT_VERSION,
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.TRANSCRIPT_SIGNALS]

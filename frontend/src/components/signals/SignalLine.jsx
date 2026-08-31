@@ -315,6 +315,7 @@ SignalLine.propTypes = {
     "next-steps",
     "people",
     "constraints",
+    "competitors",
   ]).isRequired,
   onSelect: PropTypes.func,
   /** Hide the type chip when the surrounding section already names the type. */

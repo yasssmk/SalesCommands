@@ -11,6 +11,7 @@ const ALL_TYPES = [
   "next-steps",
   "people",
   "constraints",
+  "competitors",
 ];
 
 /**
@@ -45,6 +46,7 @@ export default function useDCAllSignals(accountId, cycleId) {
   const nextSteps = useGetSignalsByAccount(accountId, "next-steps", opts);
   const people = useGetSignalsByAccount(accountId, "people", opts);
   const constraints = useGetSignalsByAccount(accountId, "constraints", opts);
+  const competitors = useGetSignalsByAccount(accountId, "competitors", opts);
 
   const signalsByType = useMemo(
     () => ({
@@ -56,6 +58,7 @@ export default function useDCAllSignals(accountId, cycleId) {
       "next-steps": nextSteps.signals,
       people: people.signals,
       constraints: constraints.signals,
+      competitors: competitors.signals,
     }),
     [
       pain.signals,
@@ -66,6 +69,7 @@ export default function useDCAllSignals(accountId, cycleId) {
       nextSteps.signals,
       people.signals,
       constraints.signals,
+      competitors.signals,
     ],
   );
 
@@ -103,6 +107,11 @@ export default function useDCAllSignals(accountId, cycleId) {
     [constraints.signals],
   );
 
+  const competitorSignals = useMemo(
+    () => competitors.signals.map((s) => ({ ...s, _signalType: "competitors" })),
+    [competitors.signals],
+  );
+
   const allSignals = useMemo(
     () => [
       ...qualificationSignals,
@@ -111,6 +120,7 @@ export default function useDCAllSignals(accountId, cycleId) {
       ...nextStepSignals,
       ...peopleSignals,
       ...constraintSignals,
+      ...competitorSignals,
     ],
     [
       qualificationSignals,
@@ -119,6 +129,7 @@ export default function useDCAllSignals(accountId, cycleId) {
       nextStepSignals,
       peopleSignals,
       constraintSignals,
+      competitorSignals,
     ],
   );
 
@@ -130,7 +141,8 @@ export default function useDCAllSignals(accountId, cycleId) {
     blockers.signalsLoading ||
     nextSteps.signalsLoading ||
     people.signalsLoading ||
-    constraints.signalsLoading;
+    constraints.signalsLoading ||
+    competitors.signalsLoading;
 
   const error =
     pain.signalsError ||
@@ -140,7 +152,8 @@ export default function useDCAllSignals(accountId, cycleId) {
     blockers.signalsError ||
     nextSteps.signalsError ||
     people.signalsError ||
-    constraints.signalsError;
+    constraints.signalsError ||
+    competitors.signalsError;
 
   const mutateAll = useCallback(() => {
     pain.mutateSignals();
@@ -151,6 +164,7 @@ export default function useDCAllSignals(accountId, cycleId) {
     nextSteps.mutateSignals();
     people.mutateSignals();
     constraints.mutateSignals();
+    competitors.mutateSignals();
   }, [
     pain.mutateSignals,
     objective.mutateSignals,
@@ -160,6 +174,7 @@ export default function useDCAllSignals(accountId, cycleId) {
     nextSteps.mutateSignals,
     people.mutateSignals,
     constraints.mutateSignals,
+    competitors.mutateSignals,
   ]);
 
   return {
@@ -170,6 +185,7 @@ export default function useDCAllSignals(accountId, cycleId) {
     nextStepSignals,
     peopleSignals,
     constraintSignals,
+    competitorSignals,
     allSignals,
     loading,
     error,

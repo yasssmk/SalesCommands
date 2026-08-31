@@ -446,6 +446,7 @@ class TestBothFailed:
             'techstack': LLMTimeoutError('timeout'),
             'blocker': LLMTimeoutError('timeout'),
             'constraint': LLMTimeoutError('timeout'),
+            'competitor': LLMTimeoutError('timeout'),
             'next_steps': LLMTimeoutError('timeout'),
         }
 
