@@ -95,9 +95,9 @@ describe("TechStackCard — qualification chips", () => {
     expect(screen.queryByText("To replace")).not.toBeInTheDocument();
   });
 
-  it("renders the Integration chip from is_integration", () => {
+  it("no longer renders an Integration chip (integration is a TECHNICAL constraint now)", () => {
     renderCard({ is_integration: true });
-    expect(screen.getByText("Integration")).toBeInTheDocument();
+    expect(screen.queryByText("Integration")).not.toBeInTheDocument();
     expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
     expect(screen.queryByText("To replace")).not.toBeInTheDocument();
   });
@@ -109,14 +109,14 @@ describe("TechStackCard — qualification chips", () => {
     expect(screen.queryByText("Integration")).not.toBeInTheDocument();
   });
 
-  it("renders the surviving two chips at once — is_competitor never shows", () => {
+  it("renders only the surviving To replace chip — competitor and integration never show", () => {
     renderCard({
       is_competitor: true,
       is_integration: true,
       is_to_replace: true,
     });
     expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
-    expect(screen.getByText("Integration")).toBeInTheDocument();
+    expect(screen.queryByText("Integration")).not.toBeInTheDocument();
     expect(screen.getByText("To replace")).toBeInTheDocument();
   });
 
