@@ -718,23 +718,22 @@ class SignalClusterService:
         Priority:
           1. target_contact_id present → 'contact:<id>' (the most reliable
              identity; wins over the free-text name).
-          2. else → 'name:<full_name_normalized>|dept:<target_department_id>'.
+          2. else, full_name_normalized non-blank →
+             'name:<full_name_normalized>|dept:<target_department_id>'.
+          3. else (no contact AND no name) → 'signal:<id>', UNIQUE per signal.
 
-        Returns '' (falsy) for a FULLY ANONYMOUS signal — no contact AND blank
-        normalised name AND no department — which carries no per-person identity
-        and is skipped by the caller (mirror of the TechStack/Competitor
-        blank-key skip). A signal always has at least one of contact/department
-        (clean() invariant), so a blank name with a department still yields a
-        key on that department (see the PO decision flagged in the sub-step
-        deliverable).
+        A nameless, contact-less signal is NOT grouped on its department alone —
+        that would conflate distinct unidentified people. Instead each forms its
+        OWN "to identify" entry (the signal is never lost, and never merged).
+        Every signal therefore yields a key: no People is ever excluded from the
+        cluster listing (PO decision, sub-step 2-bis).
         """
         if signal.target_contact_id:
             return f'contact:{signal.target_contact_id}'
         name = signal.full_name_normalized or ''
-        dept = signal.target_department_id
-        if not name and not dept:
-            return ''
-        return f'name:{name}|dept:{dept or ""}'
+        if name:
+            return f'name:{name}|dept:{signal.target_department_id or ""}'
+        return f'signal:{signal.id}'
 
     @classmethod
     def _list_people_clusters_for_account(
