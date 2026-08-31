@@ -236,7 +236,6 @@ function buildTechStackInitialValues(signal) {
 
     // S1 — Catalog anchor (object whole)
     tech_name: signal.tech_name ?? "",
-    is_competitor: Boolean(signal.is_competitor),
     is_integration: Boolean(signal.is_integration),
     is_to_replace: Boolean(signal.is_to_replace),
 
