@@ -1,21 +1,28 @@
 # backend/tests/signals/test_migration_backfill_competitor.py
 """
 Data-migration test for the is_competitor -> CompetitorSignal backfill
-(Competitors sprint, sub-step 3).
+(Competitors sprint, sub-step 3; re-tooled in sub-step 8b).
 
 There is no pre-existing migration-test harness in this project and
-`django_test_migrations` is not installed, so this test drives Django's
-own MigrationExecutor:
+`django_test_migrations` is not installed, so this test drives Django's own
+MigrationExecutor.
 
-  * Prerequisite rows (account / activity / decision_cycle) are created via
-    the real fixtures.
-  * TechStackSignal source rows are created via the real model.
-  * The migration's forwards()/reverse() functions are exercised against the
-    HISTORICAL model state (executor.loader.project_state(...).apps), so the
-    CompetitorSignal seen by the migration has NO custom save() -- proving
-    the migration derives competitor_name_normalized itself rather than
-    leaning on the concrete model (the whole reason a data migration must
-    use apps.get_model).
+Sub-step 8b dropped the `is_competitor` COLUMN (migration 0033). The backfill
+migration 0031 reads `TechStackSignal.objects.filter(is_competitor=True)` —
+real SQL that needs the column to physically exist. So this test rolls the
+module_signals schema back to 0032 (the state right before the drop, where the
+column is still present), exercises 0031 against controlled data, then rolls
+forward to HEAD (0033, column dropped) so the rest of the suite runs on the
+final schema.
+
+  * The DB schema is moved with MigrationExecutor.migrate (needs transaction=True
+    so real DDL runs outside the test's atomic wrapper).
+  * TechStackSignal source rows are created via the HISTORICAL model
+    (apps.get_model at 0031, which still carries is_competitor) — NOT the
+    current model, which no longer declares the field.
+  * The migration's forwards()/reverse() are exercised against the historical
+    model state, so the CompetitorSignal seen by the migration has NO custom
+    save() -- proving the migration derives competitor_name_normalized itself.
 
 Covers the frozen mapping + exclusions + reverse + idempotence.
 """
@@ -27,10 +34,10 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
 from app_modules.signals.constants import SignalSource, SignalStatus
-from app_modules.signals.models import TechStackSignal
 
 
-pytestmark = pytest.mark.django_db
+# Real DDL (schema rollback) must run outside an atomic wrapper.
+pytestmark = pytest.mark.django_db(transaction=True)
 
 
 MIGRATION_MODULE = (
@@ -38,67 +45,89 @@ MIGRATION_MODULE = (
     '0031_backfill_competitor_from_techstack'
 )
 
-# Historical state to read the migration's model shapes from. The backfill is
-# a pure data migration (no schema op) so the model shapes at 0030 == at 0031;
-# 0030 already exists, and its CompetitorSignal carries no custom save().
-HIST_STATE = ('module_signals', '0030_competitorsignal')
+# The state right before the is_competitor drop — the column still exists here.
+BEFORE_DROP = ('module_signals', '0032_alter_signalclusterarchival_signal_type')
+# HEAD — the drop applied, column gone.
+AT_HEAD = ('module_signals', '0033_remove_techstacksignal_is_competitor')
+
+# Historical state to read the migration's model shapes from. At 0031 the
+# TechStackSignal model still carries is_competitor and CompetitorSignal has no
+# custom save().
+HIST_STATE = ('module_signals', '0031_backfill_competitor_from_techstack')
 
 
 def _hist_apps():
-    executor = MigrationExecutor(connection)
-    return executor.loader.project_state(HIST_STATE).apps
+    return MigrationExecutor(connection).loader.project_state(HIST_STATE).apps
 
 
 def _migration():
     return importlib.import_module(MIGRATION_MODULE)
 
 
-def _make_tech(account, user_a, *, tech_name, is_competitor,
+@pytest.fixture
+def before_drop_schema():
+    """Roll module_signals DDL back to 0032 (is_competitor present) for the
+    duration of the test, then restore HEAD (0033, column dropped)."""
+    MigrationExecutor(connection).migrate([BEFORE_DROP])
+    try:
+        yield
+    finally:
+        MigrationExecutor(connection).migrate([AT_HEAD])
+
+
+def _make_tech(hist, account, user_a, *, tech_name, is_competitor,
                source_activity=None, decision_cycle=None,
                source_quote=None, status=SignalStatus.PENDING):
-    """Create a TechStackSignal row via the real model (save() derives the
-    normalised key). source=LLM_EXTRACTED so an arbitrary status (incl.
-    REJECTED) is preserved at create (MANUAL would force VALIDATED)."""
-    ts = TechStackSignal(
-        account=account,
-        source_activity=source_activity,
-        decision_cycle=decision_cycle,
+    """Create a TechStackSignal row via the HISTORICAL model (0031 state, which
+    still declares is_competitor). The historical model has no save(), so
+    tech_name_normalized is set explicitly (the backfill does not read it) and
+    source=LLM_EXTRACTED so an arbitrary status (incl. REJECTED) is preserved."""
+    TechStackSignal = hist.get_model('module_signals', 'TechStackSignal')
+    normalized = ' '.join((tech_name or '').lower().split())
+    return TechStackSignal.objects.create(
+        account_id=account.id,
+        client_id=account.client_id,
+        source_activity_id=source_activity.id if source_activity else None,
+        decision_cycle_id=decision_cycle.id if decision_cycle else None,
         tech_name=tech_name,
+        tech_name_normalized=normalized,
         is_competitor=is_competitor,
         source_quote=source_quote,
         source=SignalSource.LLM_EXTRACTED,
         status=status,
         confidence=0.9,
         is_inferred=False,
+        created_by_id=user_a.id,
+        updated_by_id=user_a.id,
     )
-    ts.save(user=user_a, client_id=account.client_id)
-    return ts
 
 
 @pytest.fixture
-def seeded(account, activity, decision_cycle, user_a):
-    """Seed the five source cases described in the sub-step brief."""
+def seeded(before_drop_schema, account, activity, decision_cycle, user_a):
+    """Seed the five source cases described in the sub-step brief, via the
+    historical model at the rolled-back (0032) schema."""
+    hist = _hist_apps()
     a = _make_tech(
-        account, user_a, tech_name='Intercom', is_competitor=True,
+        hist, account, user_a, tech_name='Intercom', is_competitor=True,
         source_activity=activity, decision_cycle=decision_cycle,
         source_quote='we are also evaluating Intercom instead of you',
         status=SignalStatus.PENDING,
     )
     b = _make_tech(
-        account, user_a, tech_name='Zendesk', is_competitor=True,
+        hist, account, user_a, tech_name='Zendesk', is_competitor=True,
         source_activity=activity, source_quote=None,
         status=SignalStatus.REJECTED,
     )
     c = _make_tech(
-        account, user_a, tech_name='', is_competitor=True,
+        hist, account, user_a, tech_name='', is_competitor=True,
         source_activity=activity, source_quote='some quote',
     )
     d = _make_tech(
-        account, user_a, tech_name='Okta', is_competitor=True,
+        hist, account, user_a, tech_name='Okta', is_competitor=True,
         source_activity=None, source_quote='weighing Okta rather than you',
     )
     e = _make_tech(
-        account, user_a, tech_name='Salesforce', is_competitor=False,
+        hist, account, user_a, tech_name='Salesforce', is_competitor=False,
         source_activity=activity, source_quote='we run on Salesforce',
     )
     return {'a': a, 'b': b, 'c': c, 'd': d, 'e': e,
