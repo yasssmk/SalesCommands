@@ -32,7 +32,7 @@ Notes:
     and is read-only everywhere — it is never accepted from the API.
     TechStack is not clustered, so canonical_key is never set.
 
-  - Qualification: is_competitor / is_integration / is_to_replace are
+  - Qualification: is_integration / is_to_replace are
     three independent booleans, default False, writable on both Create
     and Update.
 
@@ -215,7 +215,6 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
             'tech_name',
             'tech_name_normalized',
             # Qualification (independent booleans)
-            'is_competitor',
             'is_integration',
             'is_to_replace',
             # Usage scale
@@ -278,7 +277,6 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
             'tech_name',
             'tech_name_normalized',
             # Qualification (independent booleans)
-            'is_competitor',
             'is_integration',
             'is_to_replace',
             # Usage scale
@@ -364,7 +362,6 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
             # Tech identity (raw; the normalised key is derived in save())
             'tech_name',
             # Qualification (independent booleans)
-            'is_competitor',
             'is_integration',
             'is_to_replace',
             # Usage scale + who (multi-department)
@@ -383,7 +380,6 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
         extra_kwargs = {
             **_base_extra_kwargs,
             'tech_name':          {'required': True, 'allow_blank': False},
-            'is_competitor':      {'required': False},
             'is_integration':     {'required': False},
             'is_to_replace':      {'required': False},
             'usage_scope':        {'required': False, 'allow_null': True},
@@ -439,7 +435,7 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
 
     Allowed beyond inherited base fields:
       - tech_name  (correcting what the LLM heard is a normal edit)
-      - is_competitor, is_integration, is_to_replace
+      - is_integration, is_to_replace
       - usage_scope  (scale) + usage_departments (multi-department M2M,
         list of StandardDepartment ids; replaces .set())
       - usage_start_year, renewal_date, cost_description
@@ -507,7 +503,6 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
             # Tech identity (raw; normalised key follows in save())
             'tech_name',
             # Qualification (independent booleans)
-            'is_competitor',
             'is_integration',
             'is_to_replace',
             # Usage scale + who (multi-department)
@@ -526,7 +521,6 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
         extra_kwargs = {
             **_base_extra_kwargs,
             'tech_name':          {'required': False, 'allow_blank': False},
-            'is_competitor':      {'required': False},
             'is_integration':     {'required': False},
             'is_to_replace':      {'required': False},
             'usage_scope':        {'required': False, 'allow_null': True},
