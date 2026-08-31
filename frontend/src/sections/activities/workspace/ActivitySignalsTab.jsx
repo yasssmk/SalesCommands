@@ -58,6 +58,7 @@ const ACTIVITY_FLAT_TYPES = [
   "blockers",
   "constraints",
   "competitors",
+  "people",
 ];
 
 // Grouped (client-side) default status set — pending + validated.
