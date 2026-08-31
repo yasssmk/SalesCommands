@@ -22,6 +22,10 @@ vi.mock("hooks/useActivityAllSignals", () => ({
     blockerSignals: [
       { id: "b1", status: "PENDING", summary: "Budget frozen Q4", source_quote: "Budget blocked", contact: { id: "c1", first_name: "Pierre", last_name: "Dupont" }, _signalType: "blockers" },
     ],
+    constraintSignals: [],
+    competitorSignals: [
+      { id: "cmp1", status: "VALIDATED", competitor_name: "Salesforce", summary: "Weighing Salesforce instead of us", _signalType: "competitors" },
+    ],
     nextStepSignals: [],
     allSignals: [],
     loading: false,
@@ -89,6 +93,14 @@ describe("ActivityQualificationTab (grouped by type, flat lists)", () => {
   it("renders the blocker under the Objections section as a flat row", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
     expect(screen.getByText("Budget frozen Q4")).toBeInTheDocument();
+  });
+
+  it("renders a Competitors section with the competitor row (grouped default view)", () => {
+    // Smoke bug: competitor is fetched by the hook but was dropped by the
+    // grouped tab / view. The section + row must render.
+    render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
+    expect(screen.getByTestId("section-competitors")).toBeInTheDocument();
+    expect(screen.getByText("Weighing Salesforce instead of us")).toBeInTheDocument();
   });
 
   it("always excludes REJECTED signals (never shown in the grouped synthesis)", () => {
