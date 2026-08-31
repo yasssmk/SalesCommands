@@ -25,7 +25,8 @@ class TestTechStackIsCompetitorDropped:
         # after the drop the field is absent from the model.
         assert 'is_competitor' not in _field_names()
 
-    def test_the_two_surviving_qualification_flags_stay(self):
+    def test_the_surviving_qualification_flag_stays(self):
+        # is_integration was dropped in 9c; is_to_replace is the sole survivor.
         names = _field_names()
-        assert 'is_integration' in names
+        assert 'is_integration' not in names
         assert 'is_to_replace' in names
