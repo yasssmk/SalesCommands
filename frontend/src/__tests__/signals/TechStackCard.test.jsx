@@ -88,9 +88,9 @@ describe("TechStackCard — qualification chips", () => {
     expect(screen.queryByText("To replace")).not.toBeInTheDocument();
   });
 
-  it("renders the Competitor chip from is_competitor", () => {
+  it("no longer renders a Competitor chip (competitors are their own signal type)", () => {
     renderCard({ is_competitor: true });
-    expect(screen.getByText("Competitor")).toBeInTheDocument();
+    expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
     expect(screen.queryByText("Integration")).not.toBeInTheDocument();
     expect(screen.queryByText("To replace")).not.toBeInTheDocument();
   });
@@ -109,13 +109,13 @@ describe("TechStackCard — qualification chips", () => {
     expect(screen.queryByText("Integration")).not.toBeInTheDocument();
   });
 
-  it("renders all three at once — the booleans are independent", () => {
+  it("renders the surviving two chips at once — is_competitor never shows", () => {
     renderCard({
       is_competitor: true,
       is_integration: true,
       is_to_replace: true,
     });
-    expect(screen.getByText("Competitor")).toBeInTheDocument();
+    expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
     expect(screen.getByText("Integration")).toBeInTheDocument();
     expect(screen.getByText("To replace")).toBeInTheDocument();
   });

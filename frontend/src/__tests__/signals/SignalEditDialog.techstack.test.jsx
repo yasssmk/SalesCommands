@@ -151,17 +151,20 @@ describe("SignalEditDialog — tech-stack identity payload", () => {
     expect(payload.tech_name).toBe("Salesforce CRM");
   });
 
-  it("emits the three qualification booleans", async () => {
+  it("emits the surviving qualification booleans (no competitor toggle)", async () => {
     renderDialog(PENDING_TECHSTACK);
 
-    fireEvent.click(screen.getByLabelText("Tool is a competitor"));
+    // The manual "Competitor" toggle was removed — competitors are their own
+    // signal type now, so the tech form no longer offers/emits is_competitor.
+    expect(screen.queryByLabelText("Tool is a competitor")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByLabelText("Tool is to be replaced"));
     save();
 
     await waitFor(() => expect(updateSignal).toHaveBeenCalled());
 
     const [, , payload] = updateSignal.mock.calls[0];
-    expect(payload.is_competitor).toBe(true);
+    expect(payload).not.toHaveProperty("is_competitor");
     expect(payload.is_to_replace).toBe(true);
     expect(payload.is_integration).toBe(false);
   });
