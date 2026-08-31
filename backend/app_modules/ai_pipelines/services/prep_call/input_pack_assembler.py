@@ -315,7 +315,6 @@ class PrepInputPackAssembler:
         return [
             {
                 'tech_name': s.tech_name or '',
-                'is_competitor': s.is_competitor,
                 'is_to_replace': s.is_to_replace,
             }
             for s in qs
