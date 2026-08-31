@@ -263,6 +263,10 @@ class DealHealthEvidenceBuilder:
         signal type for its header line when the key is absent.
 
         `is_to_replace` is new here — the catalogue had no equivalent.
+
+        `is_integration` is no longer emitted (sub-step 9b): the manual tag was
+        retired and an integration requirement now surfaces via the TECHNICAL
+        ConstraintSignal path, not off the tech row.
         """
         return [
             {
@@ -270,7 +274,6 @@ class DealHealthEvidenceBuilder:
                 'source_quote': s.source_quote or '',
                 'tech_name': s.tech_name or '',
                 'is_competitor': s.tech_name_normalized in competitor_norms,
-                'is_integration': s.is_integration,
                 'is_to_replace': s.is_to_replace,
                 'on_deal': s.decision_cycle_id is not None,
                 # WHO uses the tool -- multi-department. The list reflects
