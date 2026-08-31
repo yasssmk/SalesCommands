@@ -159,11 +159,14 @@ class TestDealHealthTechEvidence:
         assert tech[0]['tech_name'] == 'Salesforce'
         assert tech[0]['is_competitor'] is True
         assert tech[0]['is_to_replace'] is True
-        assert tech[0]['is_integration'] is False
+        # is_integration is no longer surfaced in the tech evidence — an
+        # integration requirement is now a TECHNICAL ConstraintSignal.
+        assert 'is_integration' not in tech[0]
 
-    def test_all_three_flags_are_emitted_independently(self, cycle, user_a):
-        # is_competitor now reflects a matching CompetitorSignal; the other
-        # two flags still come off the tech row.
+    def test_the_row_flags_are_emitted_independently(self, cycle, user_a):
+        # is_competitor now reflects a matching CompetitorSignal; is_to_replace
+        # still comes off the tech row. is_integration is no longer emitted even
+        # when the model flag is set.
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Slack',
@@ -173,11 +176,8 @@ class TestDealHealthTechEvidence:
         _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Slack')
 
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
-        assert (
-            tech['is_competitor'],
-            tech['is_integration'],
-            tech['is_to_replace'],
-        ) == (True, True, True)
+        assert (tech['is_competitor'], tech['is_to_replace']) == (True, True)
+        assert 'is_integration' not in tech
 
     def test_just_used_tool_still_appears_with_all_flags_false(
         self, cycle, user_a,
@@ -188,8 +188,8 @@ class TestDealHealthTechEvidence:
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
         assert tech['tech_name'] == 'Notion'
         assert tech['is_competitor'] is False
-        assert tech['is_integration'] is False
         assert tech['is_to_replace'] is False
+        assert 'is_integration' not in tech
 
     def test_catalogue_keys_and_canonical_key_are_gone(self, cycle, user_a):
         """
@@ -272,18 +272,21 @@ class TestDealHealthPromptRendering:
         assert 'To replace: yes' not in rendered
         assert 'Integration: yes' not in rendered
 
-    def test_prompt_renders_integration_flag(self, cycle, user_a):
+    def test_prompt_never_renders_integration_flag(self, cycle, user_a):
         from app_modules.ai_pipelines.prompts.deal_health.diagnostic_v1 import (
             _format_signal,
         )
 
+        # Even with the model flag set, the diagnostic no longer renders an
+        # "Integration: yes" line — the tech is_integration facet was retired;
+        # an integration requirement surfaces via the TECHNICAL constraint path.
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='HubSpot', is_integration=True,
         )
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
 
-        assert 'Integration: yes' in _format_signal('techstack', tech)
+        assert 'Integration: yes' not in _format_signal('techstack', tech)
 
 
 # =============================================================================
