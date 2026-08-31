@@ -94,6 +94,9 @@ class TestCreateWithoutCatalogue:
     def test_created_signal_carries_the_qualification_booleans(
         self, authed_api_a, account, activity,
     ):
+        # The manual "Competitor" tag was retired: is_competitor is no longer a
+        # serializer input, so sending it is silently ignored (the column keeps
+        # its model default). is_integration / is_to_replace stay writable.
         response = authed_api_a.post(
             _url_list(),
             _payload(
@@ -108,7 +111,7 @@ class TestCreateWithoutCatalogue:
         assert response.status_code == status.HTTP_201_CREATED, response.data
 
         sig = TechStackSignal.objects.get(account=account)
-        assert sig.is_competitor is True
+        assert sig.is_competitor is False
         assert sig.is_integration is False
         assert sig.is_to_replace is True
 
@@ -275,6 +278,9 @@ class TestEditingTheName:
     ):
         sig = self._make_validated(account, activity, user_a)
 
+        # is_competitor was dropped from the serializer, so a PATCH carrying it
+        # is silently ignored (the column keeps its value); is_integration /
+        # is_to_replace remain patchable.
         response = authed_api_a.patch(
             _url_detail(sig.id),
             {'is_competitor': True, 'is_to_replace': True},
@@ -283,7 +289,7 @@ class TestEditingTheName:
 
         assert response.status_code == status.HTTP_200_OK, response.data
         sig.refresh_from_db()
-        assert sig.is_competitor is True
+        assert sig.is_competitor is False
         assert sig.is_to_replace is True
         assert sig.is_integration is False
 
@@ -299,7 +305,7 @@ class TestReadSurface:
     ):
         authed_api_a.post(
             _url_list(),
-            _payload(account, activity, is_competitor=True),
+            _payload(account, activity, is_to_replace=True),
             format='json',
         )
 
@@ -314,5 +320,9 @@ class TestReadSurface:
 
         assert row['tech_name'] == 'Salesforce'
         assert row['tech_name_normalized'] == 'salesforce'
-        assert row['is_competitor'] is True
+        # is_competitor was dropped from the read surface (retired manual tag);
+        # the two surviving qualification booleans stay exposed.
+        assert 'is_competitor' not in row
+        assert row['is_to_replace'] is True
+        assert row['is_integration'] is False
         assert 'tech_catalog_entry' not in row
