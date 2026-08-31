@@ -234,10 +234,12 @@ class PeopleSignal(BaseSignal):
                     'A people signal must be linked to a source activity.'
                 )
 
-        if not self.target_contact_id and not self.target_department_id:
+        if (not self.target_contact_id
+                and not self.target_department_id
+                and not (self.full_name or '').strip()):
             errors['target_contact'] = _(
-                'At least one of target_contact or target_department '
-                'is required.'
+                'At least one of target_contact, target_department or '
+                'full_name is required.'
             )
 
         if errors:
