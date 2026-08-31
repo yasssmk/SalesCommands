@@ -252,11 +252,12 @@ class TestTechClusterDetail:
         data = SignalClusterDetailSerializer(detail).data
         members = data['members']
         assert len(members) == 2
-        # The tech member serializer exposes identity + the two surviving
-        # qualification booleans. is_competitor was retired from the surface.
-        assert {'tech_name', 'is_integration',
-                'is_to_replace'} <= set(members[0].keys())
+        # The tech member serializer exposes identity + is_to_replace, the sole
+        # surviving qualification boolean. is_competitor (8b) and is_integration
+        # (9b) were both retired from the surface.
+        assert {'tech_name', 'is_to_replace'} <= set(members[0].keys())
         assert 'is_competitor' not in members[0]
+        assert 'is_integration' not in members[0]
         assert any(m['is_to_replace'] for m in members)
 
     def test_detail_unknown_key_raises(self, account, activity, user_a):
