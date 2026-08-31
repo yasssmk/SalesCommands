@@ -220,28 +220,78 @@ class TestPeopleReconciliationFlow:
         assert sig.target_contact_id is None
         assert sig.target_department_id == finance.id
 
-    def test_unlink_without_department_real_behavior(
+
+# =============================================================================
+# IDENTITY INVARIANT — at least one of contact / department / full_name,
+# enforced on CREATE and UPDATE (sub-step 5.2).
+# =============================================================================
+
+class TestPeopleIdentityInvariant:
+
+    def _create_body(self, account, activity, decision_cycle, **extra):
+        body = {
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'decision_cycle': str(decision_cycle.id),
+            'role': PeopleRole.DECISION_MAKER,
+            'source': SignalSource.MANUAL,
+        }
+        body.update(extra)
+        return body
+
+    # ---- UNLINK (update) ----
+
+    def test_a_unlink_keeping_name_succeeds(
         self, authed_api_a, account, activity, decision_cycle, user_a, contact,
     ):
-        # 1.8 — a signal with ONLY a contact (no department). Unlinking removes
-        #        the last identity. The MODEL clean() invariant forbids a signal
-        #        with neither target_contact nor target_department.
-        #
-        # REAL BEHAVIOR (characterised, not endorsed): the PATCH returns 200 and
-        # the signal is left with NO contact AND NO department — the update
-        # serializer does NOT run the model clean() invariant. This is the
-        # FINDING reported to the PO; the test pins the current behaviour rather
-        # than asserting the audit's assumed 400. NB: not a 500 either.
-        sig = _mk_people(
-            account, activity, decision_cycle, user_a,
-            full_name='', target_contact=contact,
-        )
-        resp = authed_api_a.patch(
-            _people_detail_url(sig.id),
-            {'target_contact': None},
+        sig = _mk_people(account, activity, decision_cycle, user_a,
+                         full_name='Marc Dubois', target_contact=contact)
+        resp = authed_api_a.patch(_people_detail_url(sig.id),
+                                  {'target_contact': None}, format='json')
+        assert resp.status_code == status.HTTP_200_OK, resp.data  # name identifies
+
+    def test_b_unlink_keeping_department_succeeds(
+        self, authed_api_a, account, activity, decision_cycle, user_a,
+        contact, finance,
+    ):
+        sig = _mk_people(account, activity, decision_cycle, user_a,
+                         target_contact=contact, target_department=finance)
+        resp = authed_api_a.patch(_people_detail_url(sig.id),
+                                  {'target_contact': None}, format='json')
+        assert resp.status_code == status.HTTP_200_OK, resp.data  # dept identifies
+
+    def test_c_unlink_to_nothing_is_a_clean_400(
+        self, authed_api_a, account, activity, decision_cycle, user_a, contact,
+    ):
+        # contact-only signal (no name, no department) → unlink leaves NO
+        # identity → clean 400 (standard error handler), never 200, never 500.
+        sig = _mk_people(account, activity, decision_cycle, user_a,
+                         full_name='', target_contact=contact)
+        resp = authed_api_a.patch(_people_detail_url(sig.id),
+                                  {'target_contact': None}, format='json')
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST, resp.data
+        sig.refresh_from_db()
+        assert sig.target_contact_id == contact.id  # unchanged
+
+    # ---- CREATE ----
+
+    def test_d_create_without_any_identity_is_400(
+        self, authed_api_a, account, activity, decision_cycle,
+    ):
+        resp = authed_api_a.post(
+            _people_list_url(),
+            self._create_body(account, activity, decision_cycle),
             format='json',
         )
-        assert resp.status_code == status.HTTP_200_OK, resp.data
-        sig.refresh_from_db()
-        assert sig.target_contact_id is None
-        assert sig.target_department_id is None  # clean() invariant bypassed
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST, resp.data
+
+    def test_e_create_with_name_only_succeeds(
+        self, authed_api_a, account, activity, decision_cycle,
+    ):
+        resp = authed_api_a.post(
+            _people_list_url(),
+            self._create_body(account, activity, decision_cycle,
+                              full_name='Marc Dubois'),
+            format='json',
+        )
+        assert resp.status_code == status.HTTP_201_CREATED, resp.data  # name suffices
