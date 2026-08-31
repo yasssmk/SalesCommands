@@ -47,13 +47,20 @@ MIGRATION_MODULE = (
 
 # The state right before the is_competitor drop — the column still exists here.
 BEFORE_DROP = ('module_signals', '0032_alter_signalclusterarchival_signal_type')
-# HEAD — the drop applied, column gone.
-AT_HEAD = ('module_signals', '0033_remove_techstacksignal_is_competitor')
 
 # Historical state to read the migration's model shapes from. At 0031 the
 # TechStackSignal model still carries is_competitor and CompetitorSignal has no
 # custom save().
 HIST_STATE = ('module_signals', '0031_backfill_competitor_from_techstack')
+
+
+def _head_target():
+    """The current leaf migration of module_signals — the real HEAD, computed
+    dynamically so later schema drops don't leave this test restoring to a
+    stale node (which would corrupt the shared test DB for later tests)."""
+    loader = MigrationExecutor(connection).loader
+    leaves = [n for n in loader.graph.leaf_nodes() if n[0] == 'module_signals']
+    return leaves[0]
 
 
 def _hist_apps():
@@ -67,12 +74,14 @@ def _migration():
 @pytest.fixture
 def before_drop_schema():
     """Roll module_signals DDL back to 0032 (is_competitor present) for the
-    duration of the test, then restore HEAD (0033, column dropped)."""
+    duration of the test, then restore the true HEAD so the shared test DB is
+    left exactly as the rest of the suite expects."""
+    head = _head_target()
     MigrationExecutor(connection).migrate([BEFORE_DROP])
     try:
         yield
     finally:
-        MigrationExecutor(connection).migrate([AT_HEAD])
+        MigrationExecutor(connection).migrate([head])
 
 
 def _make_tech(hist, account, user_a, *, tech_name, is_competitor,
