@@ -92,7 +92,9 @@ describe("TechStackCard adopts TechDetailBlock", () => {
 
   it("renders qualification flags, usage and lifecycle via the block", () => {
     render(<TechStackCard techStack={tech} onValidate={vi.fn()} onReject={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />);
-    expect(screen.getByText("Competitor")).toBeInTheDocument();
+    // Competitor is its own signal type now — the retired manual tag never
+    // renders a chip, even with a legacy is_competitor=true on the payload.
+    expect(screen.queryByText("Competitor")).not.toBeInTheDocument();
     expect(screen.getByText("To replace")).toBeInTheDocument();
     expect(screen.getByText("Company-wide")).toBeInTheDocument();
     expect(screen.getByText("2022")).toBeInTheDocument();
