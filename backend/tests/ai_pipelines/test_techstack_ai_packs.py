@@ -84,7 +84,6 @@ def _create_tech(dc, user, client_id, tech_name='Salesforce', **flags):
         status=SignalStatus.VALIDATED,
         tech_name=tech_name,
         source_quote=f'They run everything on {tech_name}',
-        is_integration=flags.get('is_integration', False),
         is_to_replace=flags.get('is_to_replace', False),
     )
     sig.save(user=user, client_id=client_id)
@@ -165,12 +164,11 @@ class TestDealHealthTechEvidence:
 
     def test_the_row_flags_are_emitted_independently(self, cycle, user_a):
         # is_competitor now reflects a matching CompetitorSignal; is_to_replace
-        # still comes off the tech row. is_integration is no longer emitted even
-        # when the model flag is set.
+        # still comes off the tech row. is_integration is gone entirely (field
+        # dropped in 9c) so it is never emitted.
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Slack',
-            is_integration=True,
             is_to_replace=True,
         )
         _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Slack')
@@ -277,12 +275,12 @@ class TestDealHealthPromptRendering:
             _format_signal,
         )
 
-        # Even with the model flag set, the diagnostic no longer renders an
-        # "Integration: yes" line — the tech is_integration facet was retired;
-        # an integration requirement surfaces via the TECHNICAL constraint path.
+        # The diagnostic no longer renders an "Integration: yes" line — the
+        # tech is_integration facet was retired (field dropped in 9c); an
+        # integration requirement surfaces via the TECHNICAL constraint path.
         _create_tech(
             cycle, user_a, cycle.client_id,
-            tech_name='HubSpot', is_integration=True,
+            tech_name='HubSpot',
         )
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
 
