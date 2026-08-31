@@ -24,9 +24,8 @@
  * Design notes:
  *   - Uses `primary` color palette as the TechStack visual identity,
  *     distinct from Pain's `error`, Objective's `info`, People's `secondary`.
- *   - Border emphasis is integration-aware: an integration target earns
- *     an info border. Pending status takes precedence (warning border) —
- *     the rep's first action is always to validate.
+ *   - Border emphasis: pending status earns a warning border — the rep's
+ *     first action is always to validate.
  *   - Lifecycle line collapses null fields silently — a tool with only
  *     a renewal date should read "Renewal Sep 2025", not "— · Renewal
  *     Sep 2025 · —".
@@ -199,8 +198,7 @@ export default function TechStackCard({
     [techStack],
   );
 
-  /** Qualification flags — two independent booleans on the signal. */
-  const isIntegration = Boolean(techStack.is_integration);
+  /** Qualification flag — the sole independent boolean on the signal. */
   const isToReplace = Boolean(techStack.is_to_replace);
 
   /** Source line — "From Activity #abc12345" */
@@ -234,24 +232,21 @@ export default function TechStackCard({
   }, [techStack.source_activity]);
 
   /**
-   * Border emphasis — composes status, discontinuation, and strategic
-   * flags. Order of precedence:
+   * Border emphasis — composes status and discontinuation. Order of
+   * precedence:
    *   1. PENDING        → warning.light (universal — needs validation)
-   *   2. is_integration → info.main
-   *   3. is_discontinued → divider (visual de-emphasis)
-   *   4. default        → divider
+   *   2. default        → divider
    */
   const borderColor = useMemo(() => {
     if (isPending) return "warning.light";
-    if (isIntegration) return "info.main";
     return "divider";
-  }, [isPending, isIntegration]);
+  }, [isPending]);
 
-  /** Border thickness — integration / to replace get a stronger emphasis */
+  /** Border thickness — a "to replace" tool gets a stronger emphasis */
   const borderWidth = useMemo(() => {
-    if (isIntegration || isToReplace) return "2px";
+    if (isToReplace) return "2px";
     return "1px";
-  }, [isIntegration, isToReplace]);
+  }, [isToReplace]);
 
   // ==============================|| MENU HANDLERS ||============================== //
 
@@ -334,10 +329,9 @@ export default function TechStackCard({
             sx={{ fontSize: "0.68rem", height: 20, fontWeight: 500 }}
           />
 
-          {/* Qualification flags (integration / to replace), usage,
-              lifecycle and discontinuation are rendered by the shared
-              TechDetailBlock below. The flags still drive this card's border
-              emphasis via isIntegration/isToReplace. */}
+          {/* Qualification (to replace), usage, lifecycle and discontinuation
+              are rendered by the shared TechDetailBlock below. is_to_replace
+              still drives this card's border emphasis via isToReplace. */}
 
           {createdDate && (
             <Typography variant="caption" color="text.disabled">
@@ -477,8 +471,7 @@ TechStackCard.propTypes = {
     tech_name: PropTypes.string,
     tech_name_normalized: PropTypes.string,
 
-    // Qualification — two independent booleans
-    is_integration: PropTypes.bool,
+    // Qualification — the sole surviving boolean
     is_to_replace: PropTypes.bool,
 
     // Usage scale + who (multi-department)
