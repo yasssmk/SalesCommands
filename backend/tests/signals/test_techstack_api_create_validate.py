@@ -94,9 +94,8 @@ class TestCreateWithoutCatalogue:
     def test_created_signal_carries_the_qualification_booleans(
         self, authed_api_a, account, activity,
     ):
-        # The manual "Competitor" tag was retired and its column dropped
-        # (sub-step 8b): is_competitor is neither a serializer input nor a model
-        # field. is_integration / is_to_replace stay writable.
+        # is_competitor (8b) and is_integration (9b) were both retired from the
+        # serializer surface. is_to_replace is the sole writable qualification.
         response = authed_api_a.post(
             _url_list(),
             _payload(
@@ -315,9 +314,9 @@ class TestReadSurface:
 
         assert row['tech_name'] == 'Salesforce'
         assert row['tech_name_normalized'] == 'salesforce'
-        # is_competitor was dropped from the read surface (retired manual tag);
-        # the two surviving qualification booleans stay exposed.
+        # is_competitor (8b) and is_integration (9b) were both dropped from the
+        # read surface. Only is_to_replace survives as a qualification boolean.
         assert 'is_competitor' not in row
+        assert 'is_integration' not in row
         assert row['is_to_replace'] is True
-        assert row['is_integration'] is False
         assert 'tech_catalog_entry' not in row
