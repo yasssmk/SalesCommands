@@ -231,7 +231,8 @@ describe("QualificationGroupedView — no Type filter in grouped", () => {
       />,
     );
     // Cluster fetch covers all clusterable types, tech + constraint included
-    // (one fetch). Constraint is added on the DC surface (DC-scoped type).
+    // (one fetch). Constraint + Competitor are added on the DC surface
+    // (both DC-scoped types).
     const args = useGetClustersByAccount.mock.calls.at(-1);
     expect(args[1].signalType).toEqual([
       "objective",
@@ -239,6 +240,7 @@ describe("QualificationGroupedView — no Type filter in grouped", () => {
       "impact",
       "tech_stack",
       "constraint",
+      "competitor",
     ]);
     // All narrative sections + Tech/Objections render.
     expect(screen.getByText("Objectives")).toBeInTheDocument();

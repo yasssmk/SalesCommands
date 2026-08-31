@@ -4,7 +4,7 @@ import { useMemo, useCallback } from "react";
 import { useGetSignalsByActivity } from "api/signals/signals";
 
 const QUALIFICATION_TYPES = ["pain", "objective", "impact"];
-const ALL_TYPES = [...QUALIFICATION_TYPES, "blockers", "constraints", "next-steps"];
+const ALL_TYPES = [...QUALIFICATION_TYPES, "blockers", "constraints", "competitors", "next-steps"];
 
 /**
  * Fetch all 6 signal types for an activity in parallel via SWR.
@@ -20,6 +20,7 @@ export default function useActivityAllSignals(activityId) {
   const techStack = useGetSignalsByActivity(activityId, "tech-stack");
   const blockers = useGetSignalsByActivity(activityId, "blockers");
   const constraints = useGetSignalsByActivity(activityId, "constraints");
+  const competitors = useGetSignalsByActivity(activityId, "competitors");
   const nextSteps = useGetSignalsByActivity(activityId, "next-steps");
 
   const signalsByType = useMemo(
@@ -30,6 +31,7 @@ export default function useActivityAllSignals(activityId) {
       "tech-stack": techStack.signals,
       blockers: blockers.signals,
       constraints: constraints.signals,
+      competitors: competitors.signals,
       "next-steps": nextSteps.signals,
     }),
     [
@@ -39,6 +41,7 @@ export default function useActivityAllSignals(activityId) {
       techStack.signals,
       blockers.signals,
       constraints.signals,
+      competitors.signals,
       nextSteps.signals,
     ],
   );
@@ -67,6 +70,11 @@ export default function useActivityAllSignals(activityId) {
     [constraints.signals],
   );
 
+  const competitorSignals = useMemo(
+    () => competitors.signals.map((s) => ({ ...s, _signalType: "competitors" })),
+    [competitors.signals],
+  );
+
   const nextStepSignals = useMemo(
     () => nextSteps.signals.map((s) => ({ ...s, _signalType: "next-steps" })),
     [nextSteps.signals],
@@ -78,6 +86,7 @@ export default function useActivityAllSignals(activityId) {
       ...techStackSignals,
       ...blockerSignals,
       ...constraintSignals,
+      ...competitorSignals,
       ...nextStepSignals,
     ],
     [
@@ -85,6 +94,7 @@ export default function useActivityAllSignals(activityId) {
       techStackSignals,
       blockerSignals,
       constraintSignals,
+      competitorSignals,
       nextStepSignals,
     ],
   );
@@ -96,6 +106,7 @@ export default function useActivityAllSignals(activityId) {
     techStack.signalsLoading ||
     blockers.signalsLoading ||
     constraints.signalsLoading ||
+    competitors.signalsLoading ||
     nextSteps.signalsLoading;
 
   const error =
@@ -105,6 +116,7 @@ export default function useActivityAllSignals(activityId) {
     techStack.signalsError ||
     blockers.signalsError ||
     constraints.signalsError ||
+    competitors.signalsError ||
     nextSteps.signalsError;
 
   const mutateAll = useCallback(() => {
@@ -114,6 +126,7 @@ export default function useActivityAllSignals(activityId) {
     techStack.mutateSignals();
     blockers.mutateSignals();
     constraints.mutateSignals();
+    competitors.mutateSignals();
     nextSteps.mutateSignals();
   }, [
     pain.mutateSignals,
@@ -122,6 +135,7 @@ export default function useActivityAllSignals(activityId) {
     techStack.mutateSignals,
     blockers.mutateSignals,
     constraints.mutateSignals,
+    competitors.mutateSignals,
     nextSteps.mutateSignals,
   ]);
 
@@ -131,6 +145,7 @@ export default function useActivityAllSignals(activityId) {
     techStackSignals,
     blockerSignals,
     constraintSignals,
+    competitorSignals,
     nextStepSignals,
     allSignals,
     loading,

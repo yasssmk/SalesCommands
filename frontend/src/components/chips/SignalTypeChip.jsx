@@ -26,6 +26,10 @@ const TYPE_CONFIG = {
   "next-steps": { color: "secondary", label: "Next Step", Icon: ScheduleOutlined },
   people: { color: "success", label: "People", Icon: TeamOutlined },
   constraints: { color: "default", label: "Constraint", Icon: SafetyOutlined },
+  // Competitor is shown as a MUTED label with NO decorative icon (UX rule —
+  // deliberate divergence from the other types, which carry a coloured icon
+  // chip). `Icon: null` renders the neutral chip without an icon element.
+  competitors: { color: "default", label: "Competitor", Icon: null },
 };
 
 // ==============================|| SIGNAL TYPE CHIP ||============================== //
@@ -42,7 +46,7 @@ export default function SignalTypeChip({
 
   return (
     <Chip
-      icon={<Icon style={{ fontSize: 12 }} />}
+      icon={Icon ? <Icon style={{ fontSize: 12 }} /> : undefined}
       label={label}
       color={color}
       size={size}
@@ -62,6 +66,7 @@ SignalTypeChip.propTypes = {
     "next-steps",
     "people",
     "constraints",
+    "competitors",
   ]),
   size: PropTypes.oneOf(["small", "medium"]),
 };

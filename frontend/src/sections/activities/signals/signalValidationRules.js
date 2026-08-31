@@ -41,6 +41,10 @@ const REQUIRED_FIELDS = {
     { key: "summary", label: "Summary" },
     { key: "rigidity", label: "Rigidity" },
   ],
+  competitors: [
+    { key: "competitor_name", label: "Competitor name" },
+    { key: "summary", label: "Summary" },
+  ],
 };
 
 /**

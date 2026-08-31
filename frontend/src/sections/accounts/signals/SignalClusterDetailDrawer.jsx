@@ -607,11 +607,16 @@ export default function SignalClusterDetailDrawer({
   // shared member components key on the flat slug 'constraints' (plural) —
   // same mapping story as tech_stack → tech-stack.
   const isConstraint = signalType === "constraint";
+  // Competitor clusters key on 'competitor' (singular); members render under
+  // the flat slug 'competitors' (plural) — same mapping story.
+  const isCompetitor = signalType === "competitor";
   const memberSlug = isTech
     ? "tech-stack"
     : isConstraint
       ? "constraints"
-      : signalType;
+      : isCompetitor
+        ? "competitors"
+        : signalType;
 
   const typeVisuals = resolveSignalTypeVisuals(signalType);
 
@@ -624,9 +629,9 @@ export default function SignalClusterDetailDrawer({
   const { cluster, clusterLoading, clusterError, mutateCluster } =
     useGetClusterDetail(accountId, canonicalKey, {
       signalType,
-      // DC-scope the constraint detail so two cycles' same-nature clusters
-      // never merge. Ignored server-side for the other types.
-      decisionCycleId: isConstraint ? decisionCycleId : undefined,
+      // DC-scope the constraint AND competitor detail so two cycles' clusters
+      // of the same key never merge. Ignored server-side for the other types.
+      decisionCycleId: isConstraint || isCompetitor ? decisionCycleId : undefined,
     });
 
   // ==============================|| DERIVED ||============================== //
@@ -880,7 +885,7 @@ export default function SignalClusterDetailDrawer({
             model, so surfacing a "Low" badge would display a priority that
             does not exist. Pain / Objective / Impact keep their real badge.
           */}
-          {display?.priority_bucket && !isTech && !isConstraint && (
+          {display?.priority_bucket && !isTech && !isConstraint && !isCompetitor && (
             <Tooltip
               title={`Priority score: ${display?.priority_score ?? "—"}`}
             >
@@ -1257,9 +1262,9 @@ export default function SignalClusterDetailDrawer({
                 sx={{ px: 0.5, minWidth: 0, maxWidth: 220 }}
               >
                 <Typography variant="caption" noWrap>
-                  {/* Back label: the representative text for tech / constraint
-                      (no canonical axes), the "WHAT × DIMENSION" title otherwise. */}
-                  {((isTech || isConstraint) ? display?.summary : canonicalText) ||
+                  {/* Back label: the representative text for tech / constraint /
+                      competitor (no canonical axes), the "WHAT × DIMENSION" title otherwise. */}
+                  {((isTech || isConstraint || isCompetitor) ? display?.summary : canonicalText) ||
                     typeVisuals.label}
                 </Typography>
               </Button>

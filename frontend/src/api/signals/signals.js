@@ -36,6 +36,7 @@ const SIGNAL_TYPES = [
   "next-steps",
   "people",
   "constraints",
+  "competitors",
 ];
 
 // ==============================|| ENDPOINTS ||============================== //
@@ -99,6 +100,13 @@ const endpoints = {
   constraintsValidate: (id) => `/module-signals/constraints/${id}/validate/`,
   constraintsReject: (id) => `/module-signals/constraints/${id}/reject/`,
   constraintsReopen: (id) => `/module-signals/constraints/${id}/reopen/`,
+
+  // Competitor (flat slug is PLURAL 'competitors', like the backend URL segment)
+  competitors: "/module-signals/competitors/",
+  competitorsDetail: (id) => `/module-signals/competitors/${id}/`,
+  competitorsValidate: (id) => `/module-signals/competitors/${id}/validate/`,
+  competitorsReject: (id) => `/module-signals/competitors/${id}/reject/`,
+  competitorsReopen: (id) => `/module-signals/competitors/${id}/reopen/`,
 };
 
 // ==============================|| ENDPOINT HELPERS ||============================== //
@@ -127,6 +135,8 @@ function getBaseEndpoint(signalType) {
       return endpoints.people;
     case "constraints":
       return endpoints.constraints;
+    case "competitors":
+      return endpoints.competitors;
     default:
       return null;
   }
@@ -157,6 +167,8 @@ function getDetailEndpoint(signalType, id) {
       return endpoints.peopleDetail(id);
     case "constraints":
       return endpoints.constraintsDetail(id);
+    case "competitors":
+      return endpoints.competitorsDetail(id);
     default:
       return null;
   }
@@ -187,6 +199,8 @@ function getValidateEndpoint(signalType, id) {
       return endpoints.peopleValidate(id);
     case "constraints":
       return endpoints.constraintsValidate(id);
+    case "competitors":
+      return endpoints.competitorsValidate(id);
     default:
       return null;
   }
@@ -217,6 +231,8 @@ function getRejectEndpoint(signalType, id) {
       return endpoints.peopleReject(id);
     case "constraints":
       return endpoints.constraintsReject(id);
+    case "competitors":
+      return endpoints.competitorsReject(id);
     default:
       return null;
   }
@@ -247,6 +263,8 @@ function getReopenEndpoint(signalType, id) {
       return endpoints.peopleReopen(id);
     case "constraints":
       return endpoints.constraintsReopen(id);
+    case "competitors":
+      return endpoints.competitorsReopen(id);
     default:
       return null;
   }
@@ -266,6 +284,7 @@ function revalidateSignalLists() {
     endpoints.nextSteps,
     endpoints.people,
     endpoints.constraints,
+    endpoints.competitors,
   ]);
 }
 

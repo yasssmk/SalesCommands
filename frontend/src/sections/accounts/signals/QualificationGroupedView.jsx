@@ -25,7 +25,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
@@ -72,6 +72,9 @@ const CLUSTER_TYPES_WITH_TECH = [...CLUSTER_TYPES, TECH_CLUSTER_TYPE];
 // requested alongside the others on the DC surface, never at account level.
 // Same cluster pipeline / vocabulary (backend slug 'constraint', singular).
 const CONSTRAINT_CLUSTER_TYPE = "constraint";
+// Competitor clusters (backend slug 'competitor', singular). DC-only, grouped
+// on competitor_name_normalized (one competitor = one cluster).
+const COMPETITOR_CLUSTER_TYPE = "competitor";
 // nature code (ConstraintNature) → human label + stable display order. The
 // cluster payload carries the code in `canonical_key`; there is no nature_display
 // on the cluster, so the label lives here (front-only, matches the backend enum).
@@ -392,6 +395,61 @@ ConstraintSection.propTypes = {
   onClusterClick: PropTypes.func.isRequired,
 };
 
+/**
+ * CompetitorSection — the competitors named on one decision cycle, rendered
+ * through the CLUSTER pipeline (one competitor = one aggregated cluster, keyed
+ * on competitor_name_normalized). Unlike ConstraintSection there is NO nature
+ * bucketing: competitors have no taxonomy axis, so the clusters are a flat
+ * list, each headlined by its competitor_name. Clicking a row opens the shared
+ * SignalClusterDetailDrawer (the 'competitor' → 'competitors' member-slug
+ * translation lives inside it).
+ */
+function CompetitorSection({
+  title,
+  testId,
+  emptyLabel,
+  clusters,
+  loading,
+  surface,
+  onClusterClick,
+}) {
+  return (
+    <CollapsibleSection
+      title={title}
+      count={clusters.length}
+      level="section"
+      testId={testId}
+    >
+      {loading && clusters.length === 0 ? (
+        <Stack alignItems="center" py={2}>
+          <CircularProgress size={18} />
+        </Stack>
+      ) : clusters.length === 0 ? (
+        <NeutralEmpty label={emptyLabel} />
+      ) : (
+        clusters.map((cluster) => (
+          <ClusterRow
+            key={`${cluster.signal_type}:${cluster.canonical_key}`}
+            cluster={cluster}
+            surface={surface}
+            onClick={onClusterClick}
+          />
+        ))
+      )}
+    </CollapsibleSection>
+  );
+}
+
+CompetitorSection.propTypes = {
+  title: PropTypes.string.isRequired,
+  testId: PropTypes.string.isRequired,
+  emptyLabel: PropTypes.string.isRequired,
+  clusters: PropTypes.array.isRequired,
+  loading: PropTypes.bool,
+  surface: PropTypes.oneOf(["account", "dc"]).isRequired,
+  onClusterClick: PropTypes.func.isRequired,
+};
+
 // ==============================|| QUALIFICATION GROUPED VIEW ||============================== //
 
 export default function QualificationGroupedView({
@@ -402,6 +460,8 @@ export default function QualificationGroupedView({
   whats = undefined,
   dimensions = undefined,
   natures = undefined,
+  competitorNames = undefined,
+  onCompetitorNamesAvailable = undefined,
   contacts = undefined,
   statuses = undefined,
 }) {
@@ -414,6 +474,9 @@ export default function QualificationGroupedView({
   const showObjections = isDC;
   // Constraints (requirements) are DC-scoped only — never at account level.
   const showConstraints = isDC;
+  // Competitors are DC-scoped only AND shown only when at least one competitor
+  // is present on the deal (gate on presence, per the sub-step decision).
+  // `competitorClusters` is defined below; the JSX gate references it.
 
   // The QUALIFICATION-family filters (perimeter = scope=BUSINESS OR
   // target_department; what / dimension = subject; contact = source; status)
@@ -426,7 +489,7 @@ export default function QualificationGroupedView({
   // Qualification filters, while pain/objective/impact honour them.
   // Constraint is added to the fetch ONLY on the DC surface (DC-scoped type).
   const fetchSignalTypes = isDC
-    ? [...CLUSTER_TYPES_WITH_TECH, CONSTRAINT_CLUSTER_TYPE]
+    ? [...CLUSTER_TYPES_WITH_TECH, CONSTRAINT_CLUSTER_TYPE, COMPETITOR_CLUSTER_TYPE]
     : CLUSTER_TYPES_WITH_TECH;
   const { clusters, clustersLoading, clustersError, mutateClusters } =
     useGetClustersByAccount(accountId, {
@@ -485,6 +548,35 @@ export default function QualificationGroupedView({
       ),
     [clusters],
   );
+
+  // Right column: the competitor clusters from the SAME fetch (one competitor =
+  // one row). DC-scoped, so this is empty on the account surface.
+  const competitorClusters = useMemo(
+    () =>
+      (clusters ?? []).filter(
+        (c) => c.signal_type === COMPETITOR_CLUSTER_TYPE,
+      ),
+    [clusters],
+  );
+
+  // The competitor names present on this deal, read-time, for the by-name
+  // filter options (built from the data, not a fixed vocabulary). Reported up
+  // so the DC filter panel can offer them.
+  const competitorNamesAvailable = useMemo(
+    () => Array.from(new Set(competitorClusters.map((c) => c.summary).filter(Boolean))),
+    [competitorClusters],
+  );
+  useEffect(() => {
+    onCompetitorNamesAvailable?.(competitorNamesAvailable);
+  }, [onCompetitorNamesAvailable, competitorNamesAvailable]);
+
+  // Apply the by-name filter client-side: the clusters are already one-per-name,
+  // so a name selection simply narrows the rendered set (no backend round-trip).
+  const visibleCompetitorClusters = useMemo(() => {
+    if (!competitorNames || competitorNames.length === 0) return competitorClusters;
+    const wanted = new Set(competitorNames);
+    return competitorClusters.filter((c) => wanted.has(c.summary));
+  }, [competitorClusters, competitorNames]);
 
   // ---- Cluster drawer state ----
   const [clusterDrawer, setClusterDrawer] = useState({
@@ -647,6 +739,20 @@ export default function QualificationGroupedView({
               onClusterClick={handleClusterClick}
             />
           )}
+
+          {/* Competitors — DC surface only, shown when at least one is present.
+              One competitor = one cluster (grouped on the normalised name). */}
+          {isDC && competitorClusters.length > 0 && (
+            <CompetitorSection
+              title="Competitors"
+              testId="section-competitors"
+              emptyLabel="No competitors named"
+              clusters={visibleCompetitorClusters}
+              loading={clustersLoading}
+              surface={surface}
+              onClusterClick={handleClusterClick}
+            />
+          )}
         </Grid>
       </Grid>
 
@@ -713,6 +819,10 @@ QualificationGroupedView.propTypes = {
   dimensions: PropTypes.arrayOf(PropTypes.string),
   /** CONSTRAINT-family filter — nature codes (ConstraintNature). DC surface only. */
   natures: PropTypes.arrayOf(PropTypes.string),
+  /** Selected competitor names (client-side filter on the competitor clusters). */
+  competitorNames: PropTypes.arrayOf(PropTypes.string),
+  /** Reports the competitor names present on this deal (read-time), for the filter. */
+  onCompetitorNamesAvailable: PropTypes.func,
   /** SOURCE filter — Contact ids (source_activity.contacts), multi. */
   contacts: PropTypes.arrayOf(PropTypes.string),
   /** Status filter values; empty/undefined = grouped default (pending+validated). */
