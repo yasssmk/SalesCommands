@@ -45,8 +45,7 @@ two inherited fields to `None`. Each override has a precise reason:
   * signal_category = None
         Aligned with ObjectiveSignal. The signal_category tag is not
         meaningful for TechStack observations — qualification lives on
-        the signal itself via the is_competitor / is_integration /
-        is_to_replace flags.
+        the signal itself via the is_integration / is_to_replace flags.
 
 History — fields removed from BaseSignal directly:
   source_contact and source_department were previously shadow-overridden
@@ -124,8 +123,8 @@ class TechStackSignal(BaseSignal):
         is recomputed on every write and can never desync from it.
 
     Qualification flags (independent, default False):
-        is_competitor, is_integration, is_to_replace. All three False
-        means "a tool the account simply uses".
+        is_integration, is_to_replace. Both False means "a tool the
+        account simply uses".
 
     Not clusterable — no canonical_key is computed.
 
@@ -210,22 +209,12 @@ class TechStackSignal(BaseSignal):
     # QUALIFICATION FLAGS
     # =========================================================================
     #
-    # Three INDEPENDENT booleans — a single tool can be several of these
-    # at once (a competitor we also integrate with and want to replace),
-    # or none. All three False is the default and the common case: a
-    # tool the account simply uses.
+    # Two INDEPENDENT booleans — a single tool can be both at once (one we
+    # integrate with and want to replace), or neither. Both False is the
+    # default and the common case: a tool the account simply uses.
     #
     # Declared in the style of `is_discontinued` below (BooleanField,
     # default=False, verbose_name + help_text).
-
-    is_competitor = models.BooleanField(
-        default=False,
-        verbose_name=_('Is Competitor'),
-        help_text=_(
-            'True when this tool overlaps with what we sell — '
-            'displacing it is a winnable angle on the deal.'
-        ),
-    )
 
     is_integration = models.BooleanField(
         default=False,
