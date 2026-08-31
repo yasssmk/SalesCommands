@@ -350,12 +350,12 @@ def get_urlpatterns():
         ),
 
         path(
-            'competitor/',
+            'competitors/',
             CompetitorSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
             name='competitor-list',
         ),
         path(
-            'competitor/<uuid:pk>/',
+            'competitors/<uuid:pk>/',
             CompetitorSignalViewSet.as_view({
                 'get':    'retrieve',
                 'patch':  'partial_update',
@@ -365,17 +365,17 @@ def get_urlpatterns():
             name='competitor-detail',
         ),
         path(
-            'competitor/<uuid:pk>/validate/',
+            'competitors/<uuid:pk>/validate/',
             CompetitorSignalViewSet.as_view({'post': 'validate_signal'}),
             name='competitor-validate',
         ),
         path(
-            'competitor/<uuid:pk>/reject/',
+            'competitors/<uuid:pk>/reject/',
             CompetitorSignalViewSet.as_view({'post': 'reject_signal'}),
             name='competitor-reject',
         ),
         path(
-            'competitor/<uuid:pk>/reopen/',
+            'competitors/<uuid:pk>/reopen/',
             CompetitorSignalViewSet.as_view({'post': 'reopen_signal'}),
             name='competitor-reopen',
         ),

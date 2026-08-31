@@ -78,7 +78,7 @@ class TestCompetitorInAggregatedEndpoint:
         assert resp.status_code == status.HTTP_200_OK
 
         rows = resp.json()['results']
-        comp_rows = [r for r in rows if r['signal_type'] == 'competitor']
+        comp_rows = [r for r in rows if r['signal_type'] == 'competitors']
         assert len(comp_rows) == 1
         row = comp_rows[0]
         assert row['competitor_name'] == 'Intercom'
@@ -99,7 +99,7 @@ class TestCompetitorInAggregatedEndpoint:
             'decision_cycle_id': str(decision_cycle.id),
         })
         rows = resp.json()['results']
-        assert [r for r in rows if r['signal_type'] == 'competitor'] == []
+        assert [r for r in rows if r['signal_type'] == 'competitors'] == []
 
         # Explicit ?status=REJECTED surfaces it.
         resp2 = authed_api_a.get(self._url(), {
@@ -107,7 +107,7 @@ class TestCompetitorInAggregatedEndpoint:
             'status': 'REJECTED',
         })
         rows2 = resp2.json()['results']
-        assert len([r for r in rows2 if r['signal_type'] == 'competitor']) == 1
+        assert len([r for r in rows2 if r['signal_type'] == 'competitors']) == 1
 
 
 # =============================================================================

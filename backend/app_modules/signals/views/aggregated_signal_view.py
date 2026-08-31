@@ -95,7 +95,9 @@ _TYPES = (
     ('constraints', ConstraintSignalViewSet,  ConstraintSignalListSerializer),
     # Competitor carries no target_department / scope_level, so it is NOT
     # added to _HAS_DEPARTMENT / _HAS_SCOPE below (those filters exclude it).
-    ('competitor',  CompetitorSignalViewSet,  CompetitorSignalListSerializer),
+    # Flat slug is PLURAL ('competitors'), like 'constraints'/'blockers' — the
+    # cluster enum and the internal signal_type stay singular ('competitor').
+    ('competitors', CompetitorSignalViewSet,  CompetitorSignalListSerializer),
 )
 
 _SERIALIZER_BY_SLUG = {slug: ser for slug, _vs, ser in _TYPES}
