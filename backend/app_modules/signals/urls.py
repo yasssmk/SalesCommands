@@ -26,6 +26,7 @@ def get_urlpatterns():
         NextStepSignalViewSet,
         PeopleSignalViewSet,
         ConstraintSignalViewSet,
+        CompetitorSignalViewSet,
         SignalChoicesView,
         SignalClusterListView,
         SignalClusterDetailView,
@@ -346,6 +347,37 @@ def get_urlpatterns():
             'constraints/<uuid:pk>/reopen/',
             ConstraintSignalViewSet.as_view({'post': 'reopen_signal'}),
             name='constraint-reopen',
+        ),
+
+        path(
+            'competitor/',
+            CompetitorSignalViewSet.as_view({'get': 'list', 'post': 'create'}),
+            name='competitor-list',
+        ),
+        path(
+            'competitor/<uuid:pk>/',
+            CompetitorSignalViewSet.as_view({
+                'get':    'retrieve',
+                'patch':  'partial_update',
+                'put':    'update',
+                'delete': 'destroy',
+            }),
+            name='competitor-detail',
+        ),
+        path(
+            'competitor/<uuid:pk>/validate/',
+            CompetitorSignalViewSet.as_view({'post': 'validate_signal'}),
+            name='competitor-validate',
+        ),
+        path(
+            'competitor/<uuid:pk>/reject/',
+            CompetitorSignalViewSet.as_view({'post': 'reject_signal'}),
+            name='competitor-reject',
+        ),
+        path(
+            'competitor/<uuid:pk>/reopen/',
+            CompetitorSignalViewSet.as_view({'post': 'reopen_signal'}),
+            name='competitor-reopen',
         ),
 
         # =====================================================================
