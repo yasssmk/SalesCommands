@@ -525,6 +525,8 @@ class TranscriptSignalExtractor:
             return self._build_blocker_data(raw, activity)
         if stage == 'constraint':
             return self._build_constraint_data(raw, activity)
+        if stage == 'competitor':
+            return self._build_competitor_data(raw, activity)
 
         logger.warning(
             'persist_stage_unknown_stage',
@@ -910,6 +912,52 @@ class TranscriptSignalExtractor:
 
             # NEVER what/dimension (detached, sub-step 1). canonical_key is
             # forced to None by ConstraintSignal.save().
+        }
+
+    # ---------------------- Competitor ----------------------
+
+    def _build_competitor_data(self, raw, activity):
+        """
+        Build SignalManager.create() data for a Competitor signal.
+
+        Schema requirements (from competitor_v1.py):
+            summary, competitor_name, source_quote, confidence, is_inferred
+
+        Detached (sub-step 1): NEVER pass nature / rigidity / scope_level /
+        target_department / what / dimension. CompetitorSignal carries only
+        competitor_name (+ its derived normalised key) and the narrative
+        summary; canonical_key is forced to None and competitor_name_normalized
+        is derived by CompetitorSignal.save().
+
+        A missing required key, or a blank summary / source_quote /
+        competitor_name after strip, DROPS the signal (return None) — mirror of
+        the strict stance _build_constraint_data applies.
+        """
+        required = ('summary', 'source_quote', 'competitor_name')
+        if not all(k in raw and raw[k] is not None for k in required):
+            return None
+
+        summary = str(raw['summary']).strip()
+        source_quote = str(raw['source_quote']).strip()
+        competitor_name = str(raw['competitor_name']).strip()
+        if not summary or not source_quote or not competitor_name:
+            return None
+
+        return {
+            'signal_type':      'competitor',
+            'account':          activity.account,
+            'source_activity':  activity,
+            'source':           SignalSource.LLM_EXTRACTED,
+            'status':           SignalStatus.PENDING,
+            'summary':          summary,
+            'competitor_name':  competitor_name,
+            'source_quote':     source_quote,
+            'confidence':       self._safe_float(raw.get('confidence')),
+            'is_inferred':      bool(raw.get('is_inferred')),
+
+            # NEVER nature/rigidity/scope_level/target_department/what/dimension
+            # (detached). canonical_key is forced to None and
+            # competitor_name_normalized is derived by CompetitorSignal.save().
         }
 
     # =========================================================================

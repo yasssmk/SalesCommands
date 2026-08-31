@@ -79,8 +79,13 @@ CONTEXT_VERSION = 'v1'
 
 _SUPPORTED_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
-    'constraint',
+    'constraint', 'competitor',
 )
+
+# Stages that carry NO canonical taxonomy (no what/dimension, no nature, no
+# scope). They receive the session block only -- emitting an empty taxonomy
+# header would waste tokens and confuse the LLM with an irrelevant instruction.
+_NO_TAXONOMY_STAGES = ('blocker', 'competitor')
 
 
 # =============================================================================
@@ -127,9 +132,9 @@ def build_context_layer(activity, target_stage):
     blocks = [_build_session_block(activity)]
 
     # Taxonomy only for canonical-axis stages.
-    # Blocker stage is intentionally session-only: no canonical enums.
-    # See module docstring of blocker_v1.py.
-    if target_stage != 'blocker':
+    # Blocker and competitor stages are intentionally session-only: no
+    # canonical enums. See module docstring of blocker_v1.py / competitor_v1.py.
+    if target_stage not in _NO_TAXONOMY_STAGES:
         blocks.append(_build_taxonomy_block(target_stage))
 
         # The techstack stage receives no reference list: tech identity
