@@ -212,6 +212,7 @@ class PrepInputPackAssembler:
             TechStackSignal,
             BlockerSignal,
             ConstraintSignal,
+            CompetitorSignal,
             PeopleSignal,
         )
 
@@ -266,6 +267,15 @@ class PrepInputPackAssembler:
                     'rigidity', 'target_department__name',
                 )
             ),
+            # Sub-step 4: the competitor facet is now sourced from the
+            # detached CompetitorSignal (DC-scoped + VALIDATED), cloned on
+            # the ConstraintSignal read above — NOT from TechStackSignal
+            # .is_competitor. Each row is a competitor on this deal.
+            'competitor': list(
+                CompetitorSignal.objects.filter(
+                    decision_cycle=dc, status=validated,
+                ).values('competitor_name')
+            ),
             'people': self._serialize_people_signals(
                 PeopleSignal.objects.filter(
                     decision_cycle=dc, status=validated,
@@ -282,6 +292,7 @@ class PrepInputPackAssembler:
             'techstack': [],
             'blocker': [],
             'constraint': [],
+            'competitor': [],
             'people': [],
         }
 
@@ -454,33 +465,37 @@ class PrepInputPackAssembler:
     @staticmethod
     def _build_competitive_context(signals):
         """
-        Split the account's tooling into commercial buckets.
+        Split the deal's tooling into commercial buckets.
 
-        S10: reads `tech_name` (was `catalog_name`, derived from the
-        TechCatalog FK the extractor no longer sets — every tool was
-        rendering as "unknown" in the prompt).
+        Sub-step 4 recabling — the SOURCE of the competitor facet changed,
+        the OUTPUT shape did not:
+          * `competing_on_deal` is now built from the detached
+            CompetitorSignal (`signals['competitor']`, DC-scoped + VALIDATED
+            upstream), tool <- competitor_name. TechStackSignal.is_competitor
+            is no longer consulted here.
+          * `incumbents` is REDEFINED as the account's tooling on the deal —
+            every TechStackSignal — with NO reference to is_competitor. A tool
+            can now be both an incumbent (it is in place) and a competitor (a
+            CompetitorSignal names it): the three buckets are non-exclusive by
+            design.
+          * `to_replace` is UNCHANGED — still fed by TechStackSignal.is_to_replace.
 
-        `to_replace` is a NEW bucket, not a partition of the other two: a
-        tool the account intends to drop is an open door whether or not
-        we compete with it, so a competitor slated for replacement
-        legitimately appears in both `competing_on_deal` and `to_replace`.
-        `incumbents` and `competing_on_deal` stay mutually exclusive, as
-        before.
+        The prep-call prompt reads only the `tool` of each entry (see
+        prompts/prep_call/context.py), so the entry shape stays {'tool': ...}.
         """
         techstack = signals.get('techstack', [])
+        competitors = signals.get('competitor', [])
         return {
             'incumbents': [
-                {'tool': t['tech_name'], 'is_competitor': t['is_competitor']}
+                {'tool': t['tech_name']}
                 for t in techstack
-                if not t.get('is_competitor')
             ],
             'competing_on_deal': [
-                {'tool': t['tech_name'], 'is_competitor': True}
-                for t in techstack
-                if t.get('is_competitor')
+                {'tool': c['competitor_name']}
+                for c in competitors
             ],
             'to_replace': [
-                {'tool': t['tech_name'], 'is_competitor': t['is_competitor']}
+                {'tool': t['tech_name']}
                 for t in techstack
                 if t.get('is_to_replace')
             ],

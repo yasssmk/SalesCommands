@@ -124,10 +124,23 @@ class DealHealthEvidenceBuilder:
             TechStackSignal,
             BlockerSignal,
             ConstraintSignal,
+            CompetitorSignal,
             PeopleSignal,
         )
 
         validated = SignalStatus.VALIDATED
+
+        # Sub-step 4 recabling: the competitor facet is sourced from the
+        # detached CompetitorSignal (DC-scoped + VALIDATED), not from
+        # TechStackSignal.is_competitor. We match a tech row to a competitor
+        # by its normalised name (the backfill mirrors every is_competitor
+        # techstack into a CompetitorSignal with the same normalised name, so
+        # the marker stays strictly equivalent). Output shape is unchanged.
+        competitor_norms = set(
+            CompetitorSignal.objects.filter(
+                decision_cycle=dc, status=validated,
+            ).values_list('competitor_name_normalized', flat=True)
+        )
 
         return {
             'pain': self._serialize_pain_signals(
@@ -150,7 +163,8 @@ class DealHealthEvidenceBuilder:
             'techstack': self._serialize_techstack_signals(
                 TechStackSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).prefetch_related('usage_departments')
+                ).prefetch_related('usage_departments'),
+                competitor_norms,
             ),
             'blocker': self._serialize_blocker_signals(
                 BlockerSignal.objects.filter(
@@ -229,9 +243,15 @@ class DealHealthEvidenceBuilder:
         ]
 
     @staticmethod
-    def _serialize_techstack_signals(qs):
+    def _serialize_techstack_signals(qs, competitor_norms=frozenset()):
         """
         Tech evidence, read entirely off the signal (S10).
+
+        Sub-step 4: `is_competitor` is no longer read off the tech row's own
+        flag — it now reflects whether a detached CompetitorSignal (DC-scoped
+        + VALIDATED) names this tool, matched on the normalised name via
+        `competitor_norms`. The emitted key and the downstream "Competitor:
+        yes" rendering are unchanged.
 
         Was: the tool label came from str(tech_catalog_entry) and the two
         commercial flags from that catalogue row. The extractor no longer
@@ -249,7 +269,7 @@ class DealHealthEvidenceBuilder:
                 'summary': '',
                 'source_quote': s.source_quote or '',
                 'tech_name': s.tech_name or '',
-                'is_competitor': s.is_competitor,
+                'is_competitor': s.tech_name_normalized in competitor_norms,
                 'is_integration': s.is_integration,
                 'is_to_replace': s.is_to_replace,
                 'on_deal': s.decision_cycle_id is not None,
