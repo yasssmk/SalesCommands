@@ -13,12 +13,13 @@ through the REAL DRF endpoints (APIClient), not model shortcuts:
 Cluster transitions are read through the real read-time SignalClusterService
 (same pattern as the competitor cluster tests).
 
-FINDINGS status:
-  * full_name not wired into the People serializers — FIXED in sub-step 5.1
-    (see TestFullNameSerializer: create persists full_name; List/Detail expose
-    full_name + read-only full_name_normalized).
-  * contact create response omits the new id — still open (5.3).
-  * People PATCH unlink bypasses the model clean() invariant — still open (5.2).
+FINDINGS status (all three closed):
+  * full_name not wired into the People serializers — FIXED (5.1).
+  * People PATCH unlink bypasses the model clean() invariant — FIXED (5.2):
+    the identity rule (contact / department / full_name) is enforced on create
+    AND update (see TestPeopleIdentityInvariant).
+  * contact create response omits the new id — FIXED (5.3): POST /contacts/
+    returns the full created object so create -> link chains without a re-query.
 """
 import pytest
 from django.urls import reverse
@@ -183,14 +184,15 @@ class TestPeopleReconciliationFlow:
             format='json',
         )
         assert resp.status_code == status.HTTP_201_CREATED, resp.data
-        # FINDING: the create response does NOT return the new contact's id
-        # (nor full_name / account / standard_department) — only the plain
-        # write fields. A client cannot chain create -> link from the response
-        # alone; it must re-query. We fetch from the DB to continue the flow.
-        assert 'id' not in _unwrap(resp)
-        contact = Contact.objects.get(account=account, first_name='Marc',
-                                      last_name='Dubois')
-        contact_id = contact.id
+        # The create response returns the created object (id + full read shape),
+        # so the client can chain create -> link WITHOUT a re-query (5.3).
+        body = _unwrap(resp)
+        contact_id = body['id']
+        assert body['first_name'] == 'Marc'
+        assert body['last_name'] == 'Dubois'
+        assert body['full_name'] == 'Marc Dubois'
+        assert body['account'] is not None
+        contact = Contact.objects.get(id=contact_id)
         # client_id auto-injected from the account (multi-tenant); email absent OK.
         assert str(contact.client_id) == str(account.client_id)
         assert contact.email is None
