@@ -18,9 +18,10 @@ Product rules under test:
      (empty string, never None — mirrors the model's prevailing
      non-nullable text convention, cf. `cost_description` and `notes`).
 
-  4. `is_competitor`, `is_integration`, `is_to_replace` are three
-     INDEPENDENT booleans defaulting to False. All-False means "a tool
-     the account simply uses". Any combination is legal.
+  4. `is_integration`, `is_to_replace` are two INDEPENDENT booleans
+     defaulting to False (is_competitor was dropped in sub-step 8b).
+     Both-False means "a tool the account simply uses". Any combination
+     is legal.
 
 Non-regression:
   * `canonical_key` stays None — TechStack is not clusterable and the
@@ -182,11 +183,11 @@ class TestTechNameNormalization:
 
 class TestQualificationBooleans:
 
-    def test_all_three_default_to_false(self, account, activity, user_a):
-        """No qualification set = a tech the account simply uses."""
+    def test_both_default_to_false(self, account, activity, user_a):
+        """No qualification set = a tech the account simply uses. (is_competitor
+        was dropped in sub-step 8b — only two qualification flags remain.)"""
         sig = _make_signal(account, activity, user_a, tech_name='Notion')
 
-        assert sig.is_competitor is False
         assert sig.is_integration is False
         assert sig.is_to_replace is False
 
@@ -195,29 +196,24 @@ class TestQualificationBooleans:
         sig = _make_signal(
             account, activity, user_a,
             tech_name='Salesforce',
-            is_competitor=True,
             is_integration=False,
             is_to_replace=True,
         )
 
         sig.refresh_from_db()
-        assert sig.is_competitor is True
         assert sig.is_integration is False
         assert sig.is_to_replace is True
 
-    def test_all_three_can_be_true_at_once(self, account, activity, user_a):
+    def test_both_can_be_true_at_once(self, account, activity, user_a):
         sig = _make_signal(
             account, activity, user_a,
             tech_name='Slack',
-            is_competitor=True,
             is_integration=True,
             is_to_replace=True,
         )
 
         sig.refresh_from_db()
-        assert (sig.is_competitor, sig.is_integration, sig.is_to_replace) == (
-            True, True, True,
-        )
+        assert (sig.is_integration, sig.is_to_replace) == (True, True)
 
     def test_booleans_survive_a_name_edit(self, account, activity, user_a):
         """The save() override must not reset unrelated fields."""
@@ -233,7 +229,6 @@ class TestQualificationBooleans:
         sig.refresh_from_db()
         assert sig.tech_name_normalized == 'jira software'
         assert sig.is_integration is True
-        assert sig.is_competitor is False
         assert sig.is_to_replace is False
 
 
