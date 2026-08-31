@@ -293,7 +293,7 @@ class TestDealHealthPromptRendering:
 
 class TestPrepCallTechSerialization:
 
-    def test_serialized_tech_carries_name_and_two_flags(
+    def test_serialized_tech_carries_name_and_to_replace_only(
         self, cycle, user_a,
     ):
         from app_modules.signals.models import TechStackSignal
@@ -301,7 +301,6 @@ class TestPrepCallTechSerialization:
         _create_tech(
             cycle, user_a, cycle.client_id,
             tech_name='Salesforce',
-            is_competitor=True,
             is_to_replace=True,
         )
 
@@ -311,11 +310,12 @@ class TestPrepCallTechSerialization:
 
         assert len(rows) == 1
         assert rows[0]['tech_name'] == 'Salesforce'
-        assert rows[0]['is_competitor'] is True
         assert rows[0]['is_to_replace'] is True
-        # is_integration is NOT surfaced in the prep-call pack anymore: it was
-        # never consumed by the competitive context, and integration
-        # requirements are now TECHNICAL constraints.
+        # is_competitor is NO LONGER surfaced: the competitor facet is the
+        # CompetitorSignal now, and the manual tech flag has been retired.
+        assert 'is_competitor' not in rows[0]
+        # is_integration is NOT surfaced either (retired earlier; TECHNICAL
+        # constraint captures a required integration).
         assert 'is_integration' not in rows[0]
         assert 'catalog_name' not in rows[0]
         assert 'is_integration_target' not in rows[0]
