@@ -144,6 +144,7 @@ class PeopleSignalListSerializer(_PeopleDisplayMixin, BaseSignalListSerializer):
         _base_fields = _strip_shadow_fields(BaseSignalListSerializer.Meta.fields)
 
         fields = _base_fields + [
+            'full_name', 'full_name_normalized',
             'role', 'role_display',
             'influence', 'influence_display',
             'target_contact',
@@ -179,6 +180,7 @@ class PeopleSignalDetailSerializer(_PeopleDisplayMixin, BaseSignalDetailSerializ
         _base_fields = _strip_shadow_fields(BaseSignalDetailSerializer.Meta.fields)
 
         fields = _base_fields + [
+            'full_name', 'full_name_normalized',
             'role', 'role_display',
             'influence', 'influence_display',
             'target_contact',
@@ -231,6 +233,7 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalCreateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
+            'full_name',
             'role',
             'influence',
             'target_contact',
@@ -240,6 +243,9 @@ class PeopleSignalCreateSerializer(BaseSignalCreateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
+            # full_name is the raw person identity; full_name_normalized is
+            # derived in save() and is NEVER writable (not a field here).
+            'full_name':         {'required': False, 'allow_blank': True},
             'role':              {'required': True},
             'influence':         {'required': False, 'allow_null': True},
             'target_contact':    {'required': False, 'allow_null': True},
@@ -302,6 +308,7 @@ class PeopleSignalUpdateSerializer(BaseSignalUpdateSerializer):
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalUpdateSerializer.Meta.extra_kwargs)
 
         fields = _base_fields + [
+            'full_name',
             'role',
             'influence',
             'target_contact',
@@ -310,6 +317,9 @@ class PeopleSignalUpdateSerializer(BaseSignalUpdateSerializer):
         ]
         extra_kwargs = {
             **_base_extra_kwargs,
+            # full_name may be corrected; full_name_normalized is derived in
+            # save() and is NEVER writable (not a field here).
+            'full_name':         {'required': False, 'allow_blank': True},
             'role':              {'required': False},
             'influence':         {'required': False, 'allow_null': True},
             'target_contact':    {'required': False, 'allow_null': True},
