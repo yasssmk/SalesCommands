@@ -24,11 +24,9 @@
  * Design notes:
  *   - Uses `primary` color palette as the TechStack visual identity,
  *     distinct from Pain's `error`, Objective's `info`, People's `secondary`.
- *   - Border emphasis is competitor/integration-aware: a competitor tool
- *     is a strong commercial signal and earns a prominent error border;
- *     an integration target earns an info border. Pending status takes
- *     precedence over both (warning border) — the rep's first action
- *     is always to validate.
+ *   - Border emphasis is integration-aware: an integration target earns
+ *     an info border. Pending status takes precedence (warning border) —
+ *     the rep's first action is always to validate.
  *   - Lifecycle line collapses null fields silently — a tool with only
  *     a renewal date should read "Renewal Sep 2025", not "— · Renewal
  *     Sep 2025 · —".
@@ -201,8 +199,7 @@ export default function TechStackCard({
     [techStack],
   );
 
-  /** Qualification flags — three independent booleans on the signal. */
-  const isCompetitor = Boolean(techStack.is_competitor);
+  /** Qualification flags — two independent booleans on the signal. */
   const isIntegration = Boolean(techStack.is_integration);
   const isToReplace = Boolean(techStack.is_to_replace);
 
@@ -240,23 +237,21 @@ export default function TechStackCard({
    * Border emphasis — composes status, discontinuation, and strategic
    * flags. Order of precedence:
    *   1. PENDING        → warning.light (universal — needs validation)
-   *   2. is_competitor  → error.main (strong commercial signal)
-   *   3. is_integration → info.main
-   *   4. is_discontinued → divider (visual de-emphasis)
-   *   5. default        → divider
+   *   2. is_integration → info.main
+   *   3. is_discontinued → divider (visual de-emphasis)
+   *   4. default        → divider
    */
   const borderColor = useMemo(() => {
     if (isPending) return "warning.light";
-    if (isCompetitor) return "error.main";
     if (isIntegration) return "info.main";
     return "divider";
-  }, [isPending, isCompetitor, isIntegration]);
+  }, [isPending, isIntegration]);
 
-  /** Border thickness — competitors/integration get a stronger emphasis */
+  /** Border thickness — integration / to replace get a stronger emphasis */
   const borderWidth = useMemo(() => {
-    if (isCompetitor || isIntegration || isToReplace) return "2px";
+    if (isIntegration || isToReplace) return "2px";
     return "1px";
-  }, [isCompetitor, isIntegration, isToReplace]);
+  }, [isIntegration, isToReplace]);
 
   // ==============================|| MENU HANDLERS ||============================== //
 
@@ -339,10 +334,10 @@ export default function TechStackCard({
             sx={{ fontSize: "0.68rem", height: 20, fontWeight: 500 }}
           />
 
-          {/* Qualification flags (competitor / integration / to replace),
-              usage, lifecycle and discontinuation are rendered by the shared
+          {/* Qualification flags (integration / to replace), usage,
+              lifecycle and discontinuation are rendered by the shared
               TechDetailBlock below. The flags still drive this card's border
-              emphasis via isCompetitor/isIntegration/isToReplace. */}
+              emphasis via isIntegration/isToReplace. */}
 
           {createdDate && (
             <Typography variant="caption" color="text.disabled">
@@ -482,8 +477,7 @@ TechStackCard.propTypes = {
     tech_name: PropTypes.string,
     tech_name_normalized: PropTypes.string,
 
-    // Qualification — three independent booleans
-    is_competitor: PropTypes.bool,
+    // Qualification — two independent booleans
     is_integration: PropTypes.bool,
     is_to_replace: PropTypes.bool,
 
