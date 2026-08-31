@@ -238,7 +238,7 @@ class TestTechClusterDetail:
     def test_detail_returns_members_through_tech_serializer(
         self, account, activity, user_a,
     ):
-        _mk_tech(account, activity, user_a, 'Salesforce', is_competitor=True)
+        _mk_tech(account, activity, user_a, 'Salesforce', is_to_replace=True)
         _mk_tech(account, activity, user_a, 'salesforce')
 
         detail = SignalClusterService.get_cluster_detail(
@@ -252,10 +252,12 @@ class TestTechClusterDetail:
         data = SignalClusterDetailSerializer(detail).data
         members = data['members']
         assert len(members) == 2
-        # The tech member serializer exposes identity + qualification.
-        assert {'tech_name', 'is_competitor', 'is_integration',
+        # The tech member serializer exposes identity + the two surviving
+        # qualification booleans. is_competitor was retired from the surface.
+        assert {'tech_name', 'is_integration',
                 'is_to_replace'} <= set(members[0].keys())
-        assert any(m['is_competitor'] for m in members)
+        assert 'is_competitor' not in members[0]
+        assert any(m['is_to_replace'] for m in members)
 
     def test_detail_unknown_key_raises(self, account, activity, user_a):
         from core.exceptions import StandardizedValidationError
