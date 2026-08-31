@@ -317,11 +317,10 @@ class TestIsIntegrationReRouting:
 
         result = _run(account, activity, user_a)
 
-        # Tech signal persisted, but is_integration was NOT set (stays False).
+        # Tech signal persisted; is_integration is no longer a field (dropped
+        # in 9c) so an emitted value cannot land on the tech row.
         techs = result['signals_by_stage']['techstack']
         assert len(techs) == 1
-        techs[0].refresh_from_db()
-        assert techs[0].is_integration is False
 
         # The integration requirement lives as a TECHNICAL constraint.
         constraints = result['signals_by_stage']['constraint']

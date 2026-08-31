@@ -174,7 +174,6 @@ class TestQualificationBooleansFromLLM:
         )
 
         sig = persisted[0]
-        assert sig.is_integration is False
         assert sig.is_to_replace is False
 
     def test_booleans_flow_through_independently(
@@ -189,7 +188,6 @@ class TestQualificationBooleansFromLLM:
 
         sig = persisted[0]
         sig.refresh_from_db()
-        assert sig.is_integration is False
         assert sig.is_to_replace is True
 
     def test_to_replace_flows_through(self, account, activity, user_a):
@@ -201,9 +199,8 @@ class TestQualificationBooleansFromLLM:
         sig = persisted[0]
         sig.refresh_from_db()
         assert sig.is_to_replace is True
-        # is_integration is not extracted -- stays at the model default False.
-        # (is_competitor is no longer a field at all -- dropped in sub-step 8b.)
-        assert sig.is_integration is False
+        # is_competitor (8b) and is_integration (9c) are no longer fields at
+        # all, so an emitted value for either cannot land.
 
     def test_truthy_non_bool_values_are_coerced(
         self, account, activity, user_a,
