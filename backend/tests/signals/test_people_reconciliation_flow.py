@@ -13,11 +13,12 @@ through the REAL DRF endpoints (APIClient), not model shortcuts:
 Cluster transitions are read through the real read-time SignalClusterService
 (same pattern as the competitor cluster tests).
 
-FINDING surfaced by this test (see test_create_via_api_silently_drops_full_name):
-`full_name` / `full_name_normalized` were added to the PeopleSignal MODEL
-(sub-step 1) but wired into NONE of the People serializers — so the real POST
-create path cannot SET full_name and the read serializers cannot EXPOSE it.
-The name-carrying fixture below is therefore built through the model manager.
+FINDINGS status:
+  * full_name not wired into the People serializers — FIXED in sub-step 5.1
+    (see TestFullNameSerializer: create persists full_name; List/Detail expose
+    full_name + read-only full_name_normalized).
+  * contact create response omits the new id — still open (5.3).
+  * People PATCH unlink bypasses the model clean() invariant — still open (5.2).
 """
 import pytest
 from django.urls import reverse
@@ -71,9 +72,9 @@ def _contacts_url():
 def _mk_people(account, activity, decision_cycle, user_a, *,
                full_name='', role=PeopleRole.DECISION_MAKER,
                target_contact=None, target_department=None):
-    """Create a PeopleSignal via the model manager (the create serializer does
-    not accept full_name — see the FINDING). Used to build a NAMED, contact-less
-    signal, the reconciliation entry point."""
+    """Create a PeopleSignal via the model manager — a compact way to build a
+    NAMED, contact-less signal (the reconciliation entry point) for the flow
+    tests. The real POST path is exercised separately in TestFullNameSerializer."""
     sig = PeopleSignal(
         account=account,
         source_activity=activity,
@@ -89,36 +90,54 @@ def _mk_people(account, activity, decision_cycle, user_a, *,
 
 
 # =============================================================================
-# FINDING — full_name is not wired into the create serializer
+# full_name is wired into the People serializers (sub-step 5.1)
 # =============================================================================
 
-class TestFullNameSerializerGap:
+class TestFullNameSerializer:
 
-    def test_create_via_api_silently_drops_full_name(
+    def _post(self, api, account, activity, decision_cycle, finance, **extra):
+        body = {
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'decision_cycle': str(decision_cycle.id),
+            'role': PeopleRole.DECISION_MAKER,
+            'target_department': finance.id,
+            'source': SignalSource.MANUAL,
+        }
+        body.update(extra)
+        return api.post(_people_list_url(), body, format='json')
+
+    def test_create_persists_and_read_exposes_full_name(
         self, authed_api_a, account, activity, decision_cycle, finance,
     ):
-        resp = authed_api_a.post(
-            _people_list_url(),
-            {
-                'account': str(account.id),
-                'source_activity': str(activity.id),
-                'decision_cycle': str(decision_cycle.id),
-                'role': PeopleRole.DECISION_MAKER,
-                'target_department': finance.id,
-                'full_name': 'Marc Dubois',
-                'source': SignalSource.MANUAL,
-            },
-            format='json',
-        )
+        resp = self._post(authed_api_a, account, activity, decision_cycle,
+                          finance, full_name='Marc Dubois')
+        assert resp.status_code == status.HTTP_201_CREATED, resp.data
+
+        # Persisted (Create serializer accepts full_name; save() derives norm).
+        sig = PeopleSignal.objects.get(account=account)
+        assert sig.full_name == 'Marc Dubois'
+        assert sig.full_name_normalized == 'marc dubois'
+
+        # Read surface (Detail) exposes both — normalized is read-only-derived.
+        detail = authed_api_a.get(_people_detail_url(sig.id))
+        assert detail.status_code == status.HTTP_200_OK
+        body = _unwrap(detail)
+        assert body['full_name'] == 'Marc Dubois'
+        assert body['full_name_normalized'] == 'marc dubois'
+
+    def test_full_name_normalized_is_not_writable(
+        self, authed_api_a, account, activity, decision_cycle, finance,
+    ):
+        # Attempt to author full_name_normalized directly — it must be ignored
+        # and stay derived from the raw full_name.
+        resp = self._post(authed_api_a, account, activity, decision_cycle,
+                          finance, full_name='Marc Dubois',
+                          full_name_normalized='HACKED')
         assert resp.status_code == status.HTTP_201_CREATED, resp.data
 
         sig = PeopleSignal.objects.get(account=account)
-        # full_name is NOT in PeopleSignalCreateSerializer.Meta.fields, so DRF
-        # drops it: the created signal has an empty name.
-        assert sig.full_name == ''
-        assert sig.full_name_normalized == ''
-        # And the read surface never exposes it either.
-        assert 'full_name' not in resp.data
+        assert sig.full_name_normalized == 'marc dubois'  # derived, not 'HACKED'
 
 
 # =============================================================================
