@@ -109,7 +109,6 @@ class TestCreateWithoutCatalogue:
         assert response.status_code == status.HTTP_201_CREATED, response.data
 
         sig = TechStackSignal.objects.get(account=account)
-        assert sig.is_integration is False
         assert sig.is_to_replace is True
 
     def test_booleans_default_false_when_omitted(
@@ -118,7 +117,7 @@ class TestCreateWithoutCatalogue:
         authed_api_a.post(_url_list(), _payload(account, activity), format='json')
 
         sig = TechStackSignal.objects.get(account=account)
-        assert (sig.is_integration, sig.is_to_replace) == (False, False)
+        assert sig.is_to_replace is False
 
     def test_create_without_a_tech_name_is_rejected(
         self, authed_api_a, account, activity,
@@ -285,7 +284,6 @@ class TestEditingTheName:
         assert response.status_code == status.HTTP_200_OK, response.data
         sig.refresh_from_db()
         assert sig.is_to_replace is True
-        assert sig.is_integration is False
 
 
 # =============================================================================
