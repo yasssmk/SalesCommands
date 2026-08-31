@@ -84,7 +84,6 @@ def _create_tech(dc, user, client_id, tech_name='Salesforce', **flags):
         status=SignalStatus.VALIDATED,
         tech_name=tech_name,
         source_quote=f'They run everything on {tech_name}',
-        is_competitor=flags.get('is_competitor', False),
         is_integration=flags.get('is_integration', False),
         is_to_replace=flags.get('is_to_replace', False),
     )
@@ -197,7 +196,7 @@ class TestDealHealthTechEvidence:
         The old FK-derived keys must not survive: leaving them would keep
         feeding None / False into the diagnostic prompt.
         """
-        _create_tech(cycle, user_a, cycle.client_id, is_competitor=True)
+        _create_tech(cycle, user_a, cycle.client_id)
 
         tech = DealHealthEvidenceBuilder().build(cycle)['signals']['techstack'][0]
         assert 'catalog_name' not in tech
@@ -472,10 +471,10 @@ class TestDealHealthCompetitorFromCompetitorSignal:
         from app_modules.ai_pipelines.prompts.deal_health.diagnostic_v1 import (
             _format_signal,
         )
-        # Used tool with the techstack flag OFF ...
+        # A merely-used tool (no manual competitor flag exists anymore) ...
         _create_tech(
             cycle, user_a, cycle.client_id,
-            tech_name='Salesforce', is_competitor=False,
+            tech_name='Salesforce',
         )
         # ... but a CompetitorSignal names it as a competitor on this deal.
         _create_competitor(cycle, user_a, cycle.client_id, competitor_name='Salesforce')
