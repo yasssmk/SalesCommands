@@ -104,6 +104,20 @@ class TestPeopleClusterKey:
         clusters = _list_people(account, decision_cycle)
         assert len(clusters) == 2
 
+    def test_e_nameless_people_never_merge_on_department_alone(
+        self, account, activity, decision_cycle, user_a, dept_sales,
+    ):
+        # Two People with NO name and NO contact, on the SAME department: they
+        # are two DISTINCT unidentified stakeholders — they must each form their
+        # own "to identify" entry, NOT collapse into one department cluster.
+        _mk_people(account, activity, decision_cycle, user_a,
+                   full_name='', target_department=dept_sales)
+        _mk_people(account, activity, decision_cycle, user_a,
+                   full_name='', target_department=dept_sales)
+
+        clusters = _list_people(account, decision_cycle)
+        assert len(clusters) == 2
+
     def test_d_contact_and_nameonly_do_not_merge(
         self, account, activity, decision_cycle, user_a, contact, dept_sales,
     ):
