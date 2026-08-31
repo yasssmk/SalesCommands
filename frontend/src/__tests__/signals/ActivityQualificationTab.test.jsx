@@ -26,6 +26,9 @@ vi.mock("hooks/useActivityAllSignals", () => ({
     competitorSignals: [
       { id: "cmp1", status: "VALIDATED", competitor_name: "Salesforce", summary: "Weighing Salesforce instead of us", _signalType: "competitors" },
     ],
+    peopleSignals: [
+      { id: "ppl1", status: "VALIDATED", full_name: "Marc Dubois", role: "CHAMPION", summary: "Marc Dubois — internal champion", _signalType: "people" },
+    ],
     nextStepSignals: [],
     allSignals: [],
     loading: false,
@@ -101,6 +104,15 @@ describe("ActivityQualificationTab (grouped by type, flat lists)", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
     expect(screen.getByTestId("section-competitors")).toBeInTheDocument();
     expect(screen.getByText("Weighing Salesforce instead of us")).toBeInTheDocument();
+  });
+
+  it("renders a People section with the people row (grouped default view)", () => {
+    // People is fetched by the hook but must also REACH the grouped default
+    // view (same lesson as competitor). The section + row must render.
+    render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
+    expect(screen.getByTestId("section-people")).toBeInTheDocument();
+    // The person's identity (full_name) is the row message.
+    expect(screen.getByText("Marc Dubois")).toBeInTheDocument();
   });
 
   it("always excludes REJECTED signals (never shown in the grouped synthesis)", () => {
