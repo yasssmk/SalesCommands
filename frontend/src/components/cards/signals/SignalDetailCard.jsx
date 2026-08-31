@@ -262,7 +262,6 @@ SignalDetailCard.propTypes = {
       contacts: PropTypes.arrayOf(PropTypes.object),
     }),
     tech_name: PropTypes.string,
-    is_integration: PropTypes.bool,
     is_to_replace: PropTypes.bool,
     metadata: PropTypes.object,
   }).isRequired,
