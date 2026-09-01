@@ -139,15 +139,6 @@ const mockActivity = {
   sequence_context: null,
 };
 
-// The "Next Steps" tab is a DC-ONLY feature: it is only visible when the
-// activity has a decision_cycle. Tests that assert the tab (or its badge)
-// is present use this DC-bearing variant.
-const mockActivityWithCycle = {
-  ...mockActivity,
-  decision_cycle: "dc-1",
-  decision_cycle_detail: { id: "dc-1", name: "Test Cycle" },
-};
-
 // ==============================|| HELPERS ||============================== //
 
 const mockPush = vi.fn();
@@ -194,8 +185,7 @@ describe("ActivityWorkspacePage", () => {
   // ------------------------------------------------------------------
   it("renders all 5 tabs in happy path", () => {
     setupRouter("overview");
-    // Next Steps is DC-only, so the all-5-tabs happy path is a DC context.
-    setupActivity({ activity: mockActivityWithCycle });
+    setupActivity();
 
     render(<ActivityWorkspacePage />);
 
@@ -368,8 +358,7 @@ describe("ActivityWorkspacePage", () => {
 
   it("shows badge on Next Steps tab when pending next steps exist", () => {
     setupRouter("overview");
-    // The Next Steps tab only shows in a DC context.
-    setupActivity({ activity: mockActivityWithCycle });
+    setupActivity();
     vi.mocked(useActivitySignalCounts).mockReturnValue({
       counts: {
         pending: 3,
