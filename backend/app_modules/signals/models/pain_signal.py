@@ -155,25 +155,6 @@ class PainSignal(BaseSignal):
     )
 
     # =========================================================================
-    # ATTRIBUTION
-    # =========================================================================
-
-    target_department = models.ForeignKey(
-        'core_modules.StandardDepartment',
-        on_delete=models.SET_NULL,
-        related_name='pain_signals',
-        null=True,
-        blank=True,
-        verbose_name=_('Target Department'),
-        help_text=_(
-            'Department concerned by this pain. Purely descriptive — '
-            'no conditional enforcement (unlike ObjectiveSignal). '
-            'Source (who speaks) ≠ concerned (the subject): the CTO '
-            'may report a pain felt by Marketing.'
-        ),
-    )
-
-    # =========================================================================
     # TARGET DEPARTMENTS (multi-department — WHO the pain concerns)
     # =========================================================================
     #
@@ -181,16 +162,17 @@ class PainSignal(BaseSignal):
     # the multi-department scope carrier, mirroring
     # TechStackSignal.usage_departments and ConstraintSignal.target_departments
     # (constraint_signal.py) — the established multi-department pattern in this
-    # module. It supersedes the single-FK target_department above (kept during
-    # the FK→M2M transition; the drop is a later sub-step). scope_level is
-    # unaffected — it stays as the descriptive organisational-scope axis.
+    # module. It replaced the legacy single-FK target_department, dropped in
+    # sub-step 2d once every reader/writer moved onto the M2M (backfill in
+    # migrations 0039/0040; the drop in 0041). scope_level is unaffected — it
+    # stays as the descriptive organisational-scope axis.
     #
     #   * blank=True — a pain may concern NO specific department (BUSINESS).
     #   * Direct M2M (no `through`) to the shared StandardDepartment controlled
     #     list — a plain link table (module_signals_pain_target_departments)
     #     is enough. StandardDepartment is GLOBAL reference data (no client_id),
     #     so the link never crosses tenants (the tenant boundary is on THIS
-    #     signal). related_name distinct from the FK's `pain_signals`.
+    #     signal). related_name distinct from TechStack's / Constraint's.
     target_departments = models.ManyToManyField(
         'core_modules.StandardDepartment',
         related_name='pain_signals_scoped_to',
