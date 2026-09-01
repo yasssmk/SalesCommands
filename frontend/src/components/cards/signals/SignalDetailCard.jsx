@@ -171,6 +171,13 @@ export default function SignalDetailCard({
         </Box>
       )}
 
+      {/* Objective (next-steps) — what the proposed activity is for */}
+      {isNextStep && signal.suggested_objective && (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          {signal.suggested_objective}
+        </Typography>
+      )}
+
       {/* Contact */}
       {contactName && (
         <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 1 }}>

@@ -314,6 +314,38 @@ class TestListRetrieveNextStepAPI:
         contact_ids = {c['id'] for c in data['suggested_contacts']}
         assert contact_ids == {str(contact.id), str(contact_extra.id)}
 
+    def test_suggested_objective_is_exposed_on_list_and_detail(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        """The LLM-generated objective is readable on both surfaces."""
+        ns = NextStepSignal(
+            account=account, source_activity=activity,
+            suggested_title='objective check',
+            suggested_activity_type=ActivityType.CALL,
+            suggested_objective='Confirm budget ownership before the demo.',
+            source=SignalSource.MANUAL,
+        )
+        ns.save(user=user_a, client_id=account.client_id)
+
+        # Detail
+        detail = authed_api_a.get(_url_detail(ns.id))
+        assert detail.status_code == status.HTTP_200_OK
+        assert detail.json()['suggested_objective'] == (
+            'Confirm budget ownership before the demo.'
+        )
+
+        # List (filtered to this activity)
+        listing = authed_api_a.get(f'{_url_list()}?source_activity={activity.id}')
+        assert listing.status_code == status.HTTP_200_OK
+        body = listing.json()
+        rows = body.get('results') or body.get('data', {}).get('results') or body
+        if isinstance(rows, dict):
+            rows = rows.get('results', rows)
+        row = next(r for r in rows if r['id'] == str(ns.id))
+        assert row['suggested_objective'] == (
+            'Confirm budget ownership before the demo.'
+        )
+
 
 # =============================================================================
 # VALIDATE / REJECT

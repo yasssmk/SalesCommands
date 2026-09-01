@@ -35,6 +35,7 @@ const mockNextStepSignals = [
     suggested_title: "Follow up on pricing",
     suggested_activity_type: "CALL",
     suggested_due_date: "2026-06-15",
+    suggested_objective: "Lock the pricing narrative with the CFO before Q4 close",
     source_quote: "We should discuss pricing next week",
     suggested_contacts: [
       { id: "c1", first_name: "Jane", last_name: "Doe" },
@@ -218,6 +219,22 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.getByText("AI Suggestions")).toBeInTheDocument();
     expect(screen.getByText("Follow up on pricing")).toBeInTheDocument();
     expect(screen.getByText("Send proposal")).toBeInTheDocument();
+  });
+
+  it("renders the suggested objective on the suggestion card", () => {
+    render(
+      <ActivityNextStepsTab
+        activity={mockActivity}
+        isLocked={false}
+        mutateCounts={mockMutateCounts}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Lock the pricing narrative with the CFO before Q4 close",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("renders Upcoming Activities section", () => {

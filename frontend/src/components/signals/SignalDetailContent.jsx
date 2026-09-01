@@ -216,6 +216,9 @@ function NextStepDetails({ signal }) {
       <DrawerSection title="SUGGESTION">
         <DrawerFieldRow label="Type" value={signal.suggested_activity_type_display} />
         <DrawerFieldRow label="Due date" value={formatDate(signal.suggested_due_date)} />
+        {signal.suggested_objective && (
+          <DrawerFieldRow label="Objective" value={signal.suggested_objective} />
+        )}
         {suggestedContacts && (
           <DrawerFieldRow label="Contacts" value={suggestedContacts} />
         )}

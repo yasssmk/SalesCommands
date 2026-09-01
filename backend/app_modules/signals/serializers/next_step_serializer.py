@@ -180,6 +180,7 @@ class NextStepSignalListSerializer(_NextStepDisplayMixin, BaseSignalListSerializ
             'suggested_activity_type',
             'suggested_activity_type_display',
             'suggested_due_date',
+            'suggested_objective',
             'suggested_contacts',
             'linked_activity',
         ]
@@ -222,6 +223,7 @@ class NextStepSignalDetailSerializer(_NextStepDisplayMixin, BaseSignalDetailSeri
             'suggested_activity_type',
             'suggested_activity_type_display',
             'suggested_due_date',
+            'suggested_objective',
             'suggested_contacts',
             'linked_activity',
         ]

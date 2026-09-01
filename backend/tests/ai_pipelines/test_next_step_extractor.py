@@ -65,6 +65,39 @@ class TestBuildNextStepDataHappyPath:
         # M2M-aware path treats a missing key as "no relations").
         assert 'suggested_contacts' not in data
 
+    def test_builder_carries_suggested_objective(self, account, activity):
+        """The LLM-emitted objective is read into the data dict (stripped)."""
+        extractor = NextStepExtractor()
+        raw = {
+            'suggested_title':         'Send pricing recap to CFO',
+            'suggested_activity_type': 'EMAIL',
+            'suggested_due_date':      '2026-12-15',
+            'source_quote':            'The CFO asked for a pricing recap',
+            'suggested_objective':     '  Secure CFO buy-in on pricing before Q4 close.  ',
+            'confidence':              0.9,
+            'is_inferred':             False,
+        }
+        data = extractor._build_next_step_data(raw, activity)
+
+        assert data['suggested_objective'] == (
+            'Secure CFO buy-in on pricing before Q4 close.'
+        )
+
+    def test_builder_defaults_objective_to_empty_when_absent(self, account, activity):
+        """A missing objective is tolerated — persisted as empty, not a drop."""
+        extractor = NextStepExtractor()
+        raw = {
+            'suggested_title':         'Send pricing recap to CFO',
+            'suggested_activity_type': 'EMAIL',
+            'source_quote':            'The CFO asked for a pricing recap',
+            'confidence':              0.9,
+            'is_inferred':             False,
+        }
+        data = extractor._build_next_step_data(raw, activity)
+
+        assert data is not None
+        assert data['suggested_objective'] == ''
+
 
 # =============================================================================
 # BUILDER -- defensive drops on required fields
@@ -273,6 +306,7 @@ class TestPersistExtractedIntegration:
                 'suggested_title':         'Send pricing recap',
                 'suggested_activity_type': 'EMAIL',
                 'suggested_due_date':      '2026-12-15',
+                'suggested_objective':     'Give the CFO the numbers to greenlight the deal.',
                 'source_quote':            'The CFO asked for a pricing recap',
                 'confidence':              0.9,
                 'is_inferred':             False,
@@ -327,6 +361,9 @@ class TestPersistExtractedIntegration:
         assert signal.suggested_title         == 'Send pricing recap'
         assert signal.suggested_activity_type == 'EMAIL'
         assert signal.suggested_due_date      == datetime.date(2026, 12, 15)
+        assert signal.suggested_objective     == (
+            'Give the CFO the numbers to greenlight the deal.'
+        )
         assert signal.source                  == SignalSource.LLM_EXTRACTED
         assert signal.status                  == SignalStatus.PENDING
         assert signal.canonical_key           is None  # never clusters

@@ -19,7 +19,7 @@ prompts/base.py.
 Schema (v1)
 -----------
 The LLM emits one JSON object with a single key `signals` containing
-an array of next-step observations. Each observation has exactly 6
+an array of next-step observations. Each observation has exactly 7
 fields:
 
     suggested_title          string   -- proposed Activity title
@@ -34,6 +34,13 @@ fields:
                                           ISO-8601 date (YYYY-MM-DD),
                                           or null when the rep did
                                           not commit to a date.
+    suggested_objective      string   -- OBJECTIVE of the proposed
+                                          activity: what it achieves
+                                          and the stakes (prospect +
+                                          seller angle), 1-3 sentences.
+                                          "" when the transcript gives
+                                          no basis. Feeds
+                                          Activity.call_to_action.
     source_quote             string   -- JUSTIFICATION for the
                                           suggestion (see contract
                                           below).
@@ -82,15 +89,8 @@ wired end to end (API write + front display) and tested, but no prompt
 ever emits it, so it stays empty until suggested-contact resolution
 lands. It is deliberately kept, not dead code -- do not remove it.
 
-`suggested_objective` is a DORMANT capability of the same kind, and THIS
-prompt is its intended future population point. A next step is meant to
-carry the OBJECTIVE of the activity it proposes (what it is for, the
-stakes -- prospect + commercial angle); that objective pre-fills
-Activity.call_to_action at materialisation. The v1 prompt does NOT emit
-it yet, so the downstream mapping stays a no-op; a later prompt revision
-must add an objective field to the OUTPUT SCHEMA to light it up. Tracked
-as TD (next-step objective generation). Deliberately kept -- do not
-remove the field or its mapping.
+(By contrast `suggested_objective` IS now emitted by this prompt and
+persisted -- see the OUTPUT SCHEMA and the persistence contract below.)
 
 Persistence contract
 --------------------
@@ -110,6 +110,10 @@ NextStepSignal row:
                                                        -> None, the
                                                        signal still
                                                        persists)
+    suggested_objective       ->  suggested_objective (stripped; ""
+                                                       when absent -> the
+                                                       call_to_action
+                                                       mapping is skipped)
     source_quote              ->  source_quote  (declared on BaseSignal)
     confidence                ->  confidence    (declared on BaseSignal)
     is_inferred               ->  is_inferred   (declared on BaseSignal)
@@ -206,6 +210,7 @@ Return a single JSON object with this exact shape:
       "suggested_title":         "<short title for the next-step Activity, around 200 chars or less>",
       "suggested_activity_type": "<one value from the ACTIVITY TYPE TAXONOMY above>",
       "suggested_due_date":      "<YYYY-MM-DD ISO date, or null when no date can be inferred>",
+      "suggested_objective":     "<OBJECTIVE of the proposed activity -- see EMISSION RULES below>",
       "source_quote":            "<JUSTIFICATION for the suggestion -- see EMISSION RULES below>",
       "confidence":              <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
       "is_inferred":             <boolean, true when the signal is inferred rather than directly stated>
@@ -230,6 +235,19 @@ EMISSION RULES
   Friday", "before end of Q4") AND you can compute the actual date
   unambiguously. When in doubt, emit null -- the rep will pick a date
   at validation time. Never invent a date.
+- `suggested_objective` is the OBJECTIVE of the proposed activity: what
+  it is meant to achieve and why it matters -- state the stakes from
+  BOTH angles, the prospect's (what they get out of it) and the
+  seller's (how it advances the deal). Write 1-3 concise sentences in
+  the transcript's language. It is NOT a restatement of the title and
+  NOT a quote; it is the purpose behind the action, grounded in the
+  conversation. Emit "" (empty string) only when the transcript gives
+  no basis for an objective -- do not fabricate one.
+
+  EXAMPLE (continuing the case above):
+    suggested_objective: "Quantify the ROI of cutting the 15h/week of
+      manual reporting so the DSI can justify the project internally,
+      and give us the figures to anchor pricing."
 - `source_quote` MUST be the JUSTIFICATION for the suggestion -- the
   passage in the transcript that shows WHY this next step is needed
   (an explicit ask, a commitment, an open question). It is NOT a
