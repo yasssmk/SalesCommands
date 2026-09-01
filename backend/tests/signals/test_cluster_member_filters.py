@@ -80,9 +80,12 @@ def _pain(account, activity, user, *, dept=None, scope=ScopeLevel.DEPARTMENT,
         summary='Reporting is slow', source_quote=quote,
         source=SignalSource.MANUAL if is_validated else SignalSource.LLM_EXTRACTED,
         status=SignalStatus.VALIDATED if is_validated else SignalStatus.PENDING,
-        scope_level=scope, target_department=dept,
+        scope_level=scope,
     )
     p.save(user=user, client_id=account.client_id)
+    # sub-step 2b: the department filter reads the target_departments M2M.
+    if dept:
+        p.target_departments.set([dept])
     return p
 
 

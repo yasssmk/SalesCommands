@@ -184,20 +184,33 @@ class ImpactSignal(BaseSignal):
     )
 
     # =========================================================================
-    # ATTRIBUTION
+    # TARGET DEPARTMENTS (multi-department — WHO the impact concerns)
     # =========================================================================
-
-    target_department = models.ForeignKey(
+    #
+    # An impact can legitimately concern SEVERAL departments at once. This M2M
+    # is the multi-department scope carrier, mirroring
+    # TechStackSignal.usage_departments and ConstraintSignal.target_departments
+    # (constraint_signal.py) — the established multi-department pattern in this
+    # module. It replaced the legacy single-FK target_department, dropped in
+    # sub-step 2d once every reader/writer moved onto the M2M (backfill in
+    # migrations 0039/0040; the drop in 0041). scope_level is unaffected — it
+    # stays as the descriptive organisational-scope axis.
+    #
+    #   * blank=True — an impact may concern NO specific department (BUSINESS).
+    #   * Direct M2M (no `through`) to the shared StandardDepartment controlled
+    #     list — a plain link table (module_signals_impact_target_departments)
+    #     is enough. StandardDepartment is GLOBAL reference data (no client_id),
+    #     so the link never crosses tenants (the tenant boundary is on THIS
+    #     signal). related_name distinct from TechStack's / Constraint's.
+    target_departments = models.ManyToManyField(
         'core_modules.StandardDepartment',
-        on_delete=models.SET_NULL,
-        related_name='impact_signals',
-        null=True,
+        related_name='impact_signals_scoped_to',
         blank=True,
-        verbose_name=_('Target Department'),
+        verbose_name=_('Target Departments'),
         help_text=_(
-            'Department concerned by this impact. Purely descriptive — '
-            'no conditional enforcement. Source (who speaks) ≠ concerned '
-            '(the subject).'
+            'The set of departments this impact concerns (multi-department). '
+            'Supersedes the legacy single-FK target_department. Empty when no '
+            'department is designated (BUSINESS / company-wide).'
         ),
     )
 

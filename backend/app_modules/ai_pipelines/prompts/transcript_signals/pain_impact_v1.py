@@ -30,10 +30,10 @@ Output schema (v1)
 ONE JSON object with two arrays::
 
     {
-      "pains":   [ {what, dimension, scope_level, target_department,
+      "pains":   [ {what, dimension, scope_level, target_departments,
                     summary, source_quote, confidence, is_inferred}, ... ],
       "impacts": [ {what, dimension, impact_type, scope_level,
-                    target_department, summary, source_quote,
+                    target_departments, summary, source_quote,
                     confidence, is_inferred}, ... ]
     }
 
@@ -46,9 +46,10 @@ Independent scope
 scope_level (BUSINESS | DEPARTMENT, never PERSONAL) is decided per signal by
 the A1 subject-not-speaker rule. The PAIN takes the scope of who HAS the
 problem; the IMPACT takes the scope of who BEARS the cost -- they MAY differ
-(a department's problem can cost the whole company). target_department is
-drawn from the controlled StandardDepartment vocabulary and resolved by an
-exact name lookup in the extractor.
+(a department's problem can cost the whole company). target_departments is a
+LIST (sub-step 2c: a pain/impact may concern several departments) drawn from
+the controlled StandardDepartment vocabulary and resolved by exact name lookup
+in the extractor; scope_level is KEPT as the descriptive scope axis.
 
 Persistence contract
 --------------------
@@ -154,14 +155,18 @@ SCOPE (decided independently for each signal)
   of that signal -- which perimeter it concerns -- NEVER by who is speaking. The
   PAIN takes the scope of who HAS the problem; the IMPACT takes the scope of who
   BEARS the cost, and these MAY differ.
-- DEPARTMENT = the signal names or clearly identifies one specific department (use
-  that department verbatim from the `target_department` list in the context), even
+- DEPARTMENT = the signal names or clearly identifies one or more specific
+  departments (use those departments verbatim from the `target_departments` list in
+  the context), even
   if the speaker belongs to another department. BUSINESS = no specific department is
   named; the observation is company-wide or cross-departmental. A senior person
   (CEO, GM, C-level) describing one department is still DEPARTMENT. Never emit
   PERSONAL or any other value.
-- `target_department` is REQUIRED when scope_level is DEPARTMENT (one value from the
-  context list) and MUST be null when scope_level is BUSINESS.
+- `target_departments` lists EVERY department explicitly concerned (from the
+  context list) -- a pain or an impact may concern SEVERAL departments at once.
+  Emit at least one when scope_level is DEPARTMENT, and `[]` when scope_level is
+  BUSINESS. NEVER invent a department that was not clearly named -- when in
+  doubt, emit `[]`.
 
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
@@ -172,7 +177,7 @@ Return a single JSON object with this exact shape:
       "what":         "<one value from the `what` list in the CANONICAL TAXONOMY>",
       "dimension":    "<one value from the `dimension` list in the CANONICAL TAXONOMY>",
       "scope_level":  "<BUSINESS or DEPARTMENT>",
-      "target_department": "<one value from the `target_department` list when DEPARTMENT, else null>",
+      "target_departments": ["<zero or more department names from the `target_departments` list -- every department explicitly concerned; [] when scope_level is BUSINESS>"],
       "summary":      "<one short sentence rephrasing the pain (cause) in your own words, ~200 chars or less>",
       "source_quote": "<verbatim excerpt stating the CAUSE -- no figure>",
       "confidence":   <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER>,
@@ -185,7 +190,7 @@ Return a single JSON object with this exact shape:
       "dimension":    "<one value from the `dimension` list in the CANONICAL TAXONOMY>",
       "impact_type":  "<one value from the `impact_type` list in the CANONICAL TAXONOMY>",
       "scope_level":  "<BUSINESS or DEPARTMENT>",
-      "target_department": "<one value from the `target_department` list when DEPARTMENT, else null>",
+      "target_departments": ["<zero or more department names from the `target_departments` list -- every department explicitly concerned; [] when scope_level is BUSINESS>"],
       "summary":      "<one short sentence rephrasing the impact (consequence) in your own words, ~200 chars or less>",
       "source_quote": "<verbatim excerpt stating the measurable CONSEQUENCE>",
       "confidence":   <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER>,
@@ -223,10 +228,10 @@ EMISSION RULES
 
 FEW-SHOTS (the cause/consequence frontier + independent scope)
 1) Passage: "the marketing data isn't reliable, it costs the company about 40k per quarter"
-   -> "pains":   [ {{ scope_level="DEPARTMENT", target_department="Marketing",
+   -> "pains":   [ {{ scope_level="DEPARTMENT", target_departments=["Marketing"],
                       source_quote="the marketing data isn't reliable" }} ]
       "impacts": [ {{ impact_type="FINANCIAL", scope_level="BUSINESS",
-                      target_department=null,
+                      target_departments=[],
                       source_quote="it costs the company about 40k per quarter" }} ]
    Note the INDEPENDENT scope: the pain is Marketing's problem (DEPARTMENT/Marketing),
    the cost is borne company-wide (BUSINESS). The figure is on the IMPACT, never the pain.

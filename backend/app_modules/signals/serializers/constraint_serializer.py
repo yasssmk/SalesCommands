@@ -38,6 +38,8 @@ from rest_framework import serializers
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
+from app_modules.core_modules.models import StandardDepartment
+
 from ..models import ConstraintSignal
 from .base_serializer import (
     BaseSignalCreateSerializer,
@@ -66,15 +68,24 @@ class _ConstraintDisplayMixin:
     def get_rigidity_display(self, obj):
         return obj.get_rigidity_display() if obj.rigidity else None
 
-    def get_target_department(self, obj):
-        """Compact department payload. Returns None when the FK is not set."""
-        dept = obj.target_department
-        if not dept:
-            return None
-        return {
-            'id':   str(dept.id),
-            'name': dept.get_name_display(),
-        }
+    def get_target_departments(self, obj):
+        """
+        Compact list of the departments this constraint concerns
+        (multi-department). Returns a list of {id, name} payloads, one entry
+        per linked StandardDepartment. Empty list when none are designated.
+
+        N+1-safe: reads obj.target_departments.all(), which the ViewSet
+        prefetches (prefetch_related('target_departments')); `.all()` (not a
+        filtered queryset) hits the prefetched cache. Mirrors
+        _TechStackDisplayMixin.get_usage_departments.
+        """
+        return [
+            {
+                'id':   str(d.id),
+                'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
+            }
+            for d in obj.target_departments.all()
+        ]
 
 
 # =============================================================================
@@ -123,7 +134,7 @@ class ConstraintSignalListSerializer(_ConstraintDisplayMixin, BaseSignalListSeri
     what_display        = serializers.SerializerMethodField()
     dimension_display   = serializers.SerializerMethodField()
     rigidity_display    = serializers.SerializerMethodField()
-    target_department   = serializers.SerializerMethodField()
+    target_departments  = serializers.SerializerMethodField()
 
     class Meta(BaseSignalListSerializer.Meta):
         model = ConstraintSignal
@@ -134,7 +145,7 @@ class ConstraintSignalListSerializer(_ConstraintDisplayMixin, BaseSignalListSeri
             'nature', 'nature_display',
             'summary',
             'rigidity', 'rigidity_display',
-            'target_department',
+            'target_departments',
             # Legacy axes — read-only, present for historical rows.
             'what', 'what_display',
             'dimension', 'dimension_display',
@@ -161,7 +172,7 @@ class ConstraintSignalDetailSerializer(_ConstraintDisplayMixin, BaseSignalDetail
     what_display        = serializers.SerializerMethodField()
     dimension_display   = serializers.SerializerMethodField()
     rigidity_display    = serializers.SerializerMethodField()
-    target_department   = serializers.SerializerMethodField()
+    target_departments  = serializers.SerializerMethodField()
 
     class Meta(BaseSignalDetailSerializer.Meta):
         model = ConstraintSignal
@@ -173,7 +184,7 @@ class ConstraintSignalDetailSerializer(_ConstraintDisplayMixin, BaseSignalDetail
             'summary',
             'notes',
             'rigidity', 'rigidity_display',
-            'target_department',
+            'target_departments',
             # Legacy axes — read-only, present for historical rows.
             'what', 'what_display',
             'dimension', 'dimension_display',
@@ -218,6 +229,18 @@ class ConstraintSignalCreateSerializer(BaseSignalCreateSerializer):
 
     signal_type = serializers.HiddenField(default='constraint')
 
+    # WHO the constraint concerns — multi-department M2M, written as a list of
+    # StandardDepartment ids. PrimaryKeyRelatedField(many=True) validates each
+    # id and hands SignalManager.create a list of instances, applied via .set()
+    # after the row is saved (M2M can't be set pre-save). Same write shape as
+    # TechStackSignal.usage_departments. Optional — [] means no department.
+    # Replaces the legacy single-FK target_department (no longer written).
+    target_departments = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=StandardDepartment.objects.all(),
+    )
+
     class Meta(BaseSignalCreateSerializer.Meta):
         model = ConstraintSignal
 
@@ -228,7 +251,7 @@ class ConstraintSignalCreateSerializer(BaseSignalCreateSerializer):
             'nature',
             'summary',
             'rigidity',
-            'target_department',
+            'target_departments',
             'notes',
         ]
         extra_kwargs = {
@@ -236,7 +259,6 @@ class ConstraintSignalCreateSerializer(BaseSignalCreateSerializer):
             'nature':            {'required': True},
             'summary':           {'required': True},
             'rigidity':          {'required': True},
-            'target_department': {'required': False, 'allow_null': True},
             'notes':             {'required': False, 'allow_blank': True},
         }
 
@@ -280,6 +302,16 @@ class ConstraintSignalUpdateSerializer(BaseSignalUpdateSerializer):
       source_activity, decision_cycle, campaign.
     """
 
+    # Multi-department scope, writable via a list of StandardDepartment ids
+    # (same shape as Create). Applied via .set() by SignalManager on update;
+    # PATCH { target_departments: [] } clears the set. Replaces the legacy
+    # single-FK target_department (no longer written).
+    target_departments = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=StandardDepartment.objects.all(),
+    )
+
     class Meta(BaseSignalUpdateSerializer.Meta):
         model = ConstraintSignal
 
@@ -290,7 +322,7 @@ class ConstraintSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'nature',
             'summary',
             'rigidity',
-            'target_department',
+            'target_departments',
             'notes',
         ]
         extra_kwargs = {
@@ -298,6 +330,5 @@ class ConstraintSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'nature':            {'required': False},
             'summary':           {'required': False},
             'rigidity':          {'required': False},
-            'target_department': {'required': False, 'allow_null': True},
             'notes':             {'required': False, 'allow_blank': True},
         }

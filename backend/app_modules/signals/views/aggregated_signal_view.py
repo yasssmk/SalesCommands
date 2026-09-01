@@ -261,6 +261,7 @@ class AggregatedSignalListView(BaseAPIView):
                 viewset_cls, request,
                 account_id, decision_cycle_id, activity_id, status_filters,
                 department_id, contact_id, scope,
+                slug=slug,
             )
             for obj in qs:
                 obj._signal_type = slug
@@ -277,7 +278,7 @@ class AggregatedSignalListView(BaseAPIView):
     def _scoped_queryset(
         self, viewset_cls, request,
         account_id, decision_cycle_id, activity_id, status_filters,
-        department_id=None, contact_id=None, scope=None,
+        department_id=None, contact_id=None, scope=None, slug=None,
     ):
         """
         Reuse a per-type ViewSet's get_queryset (tenant + owner scoping +
@@ -285,6 +286,10 @@ class AggregatedSignalListView(BaseAPIView):
         and field-specific filters. The queryset is NOT rewritten — only
         filtered. department_id / scope are only ever passed for types that
         carry the field (the caller pre-filters the type list).
+
+        `slug` selects how the department filter is applied: Constraint scopes
+        on the multi-department target_departments M2M (sub-step 1b), the other
+        _HAS_DEPARTMENT types still on the single target_department FK.
         """
         vs = viewset_cls()
         vs.request      = request
@@ -303,7 +308,16 @@ class AggregatedSignalListView(BaseAPIView):
         if status_filters:
             qs = qs.filter(status__in=status_filters)
         if department_id is not None:
-            qs = qs.filter(target_department_id=department_id)
+            if slug in ('constraints', 'pain', 'impact'):
+                # Multi-department scope: constraint (1b) and pain/impact (2b)
+                # match if the department is in their target_departments M2M.
+                # distinct() guards against duplicate rows from the join.
+                # Objective/People stay on the single target_department FK.
+                qs = qs.filter(
+                    target_departments__id=department_id
+                ).distinct()
+            else:
+                qs = qs.filter(target_department_id=department_id)
         if scope:
             qs = qs.filter(scope_level=scope)
         if contact_id:

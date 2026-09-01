@@ -146,7 +146,7 @@ class DealHealthEvidenceBuilder:
             'pain': self._serialize_pain_signals(
                 PainSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('target_department')
+                ).prefetch_related('target_departments')
             ),
             'objective': self._serialize_objective_signals(
                 ObjectiveSignal.objects.filter(
@@ -156,7 +156,7 @@ class DealHealthEvidenceBuilder:
             'impact': self._serialize_impact_signals(
                 ImpactSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('target_department')
+                ).prefetch_related('target_departments')
             ),
             # S10: tech identity lives on the signal's own columns, so
             # the catalogue FK is no longer joined.
@@ -174,7 +174,7 @@ class DealHealthEvidenceBuilder:
             'constraint': self._serialize_constraint_signals(
                 ConstraintSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('target_department')
+                ).prefetch_related('target_departments')
             ),
             'people': self._serialize_people_signals(
                 PeopleSignal.objects.filter(
@@ -192,10 +192,12 @@ class DealHealthEvidenceBuilder:
                 'summary': s.summary,
                 'source_quote': s.source_quote or '',
                 'canonical_key': s.canonical_key,
-                'target_department': (
-                    s.target_department.get_name_display()
-                    if s.target_department else None
-                ),
+                # Multi-department scope (sub-step 2b): list of concerned
+                # departments read off the target_departments M2M. Consumed by
+                # diagnostic_v1._format_signal (which already renders the list).
+                'target_departments': [
+                    d.get_name_display() for d in s.target_departments.all()
+                ],
                 'scope_level': s.scope_level,
                 'what': s.what,
                 'dimension': s.dimension,
@@ -228,10 +230,11 @@ class DealHealthEvidenceBuilder:
                 'summary': s.summary,
                 'source_quote': s.source_quote or '',
                 'canonical_key': s.canonical_key,
-                'target_department': (
-                    s.target_department.get_name_display()
-                    if s.target_department else None
-                ),
+                # Multi-department scope (sub-step 2b): list of concerned
+                # departments read off the target_departments M2M.
+                'target_departments': [
+                    d.get_name_display() for d in s.target_departments.all()
+                ],
                 'scope_level': s.scope_level,
                 'what': s.what,
                 'dimension': s.dimension,
@@ -312,10 +315,13 @@ class DealHealthEvidenceBuilder:
                 'summary': s.summary,
                 'source_quote': s.source_quote or '',
                 'nature': s.nature,
-                'target_department': (
-                    s.target_department.get_name_display()
-                    if s.target_department else None
-                ),
+                # Multi-department scope (sub-step 1b): the list of concerned
+                # departments read off the target_departments M2M (a mono-
+                # department constraint yields a 1-element list). Replaces the
+                # single target_department FK string.
+                'target_departments': [
+                    d.get_name_display() for d in s.target_departments.all()
+                ],
                 'rigidity': s.rigidity,
             }
             for s in qs

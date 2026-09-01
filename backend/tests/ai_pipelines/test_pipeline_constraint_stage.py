@@ -61,15 +61,16 @@ def _constraint_reply(objs):
 
 
 def _constraint_obj(*, summary, nature, rigidity='FIRM',
-                    scope_level='BUSINESS', target_department=None,
+                    target_departments=None,
                     source_quote='we require it', confidence=0.9,
                     is_inferred=False):
+    # sub-step 1c: scope is the multi-department target_departments LIST (no
+    # scope_level, no single FK).
     return {
         'summary': summary,
         'nature': nature,
         'rigidity': rigidity,
-        'scope_level': scope_level,
-        'target_department': target_department,
+        'target_departments': target_departments or [],
         'source_quote': source_quote,
         'confidence': confidence,
         'is_inferred': is_inferred,
@@ -103,8 +104,7 @@ class TestConstraintStagePersistence:
                 summary='Must integrate with the SAP ERP',
                 nature='TECHNICAL',
                 rigidity='FIRM',
-                scope_level='DEPARTMENT',
-                target_department='IT',
+                target_departments=['IT'],
                 source_quote='it has to plug into our SAP instance',
             )]),
         }
@@ -117,7 +117,8 @@ class TestConstraintStagePersistence:
         assert isinstance(sig, ConstraintSignal)
         assert sig.nature == ConstraintNature.TECHNICAL
         assert sig.rigidity == Rigidity.FIRM
-        assert sig.target_department_id == it_department.id
+        # sub-step 1c: scope is the multi-department M2M (legacy FK dropped in 1d).
+        assert set(sig.target_departments.values_list('id', flat=True)) == {it_department.id}
         assert sig.status == SignalStatus.PENDING
         assert sig.source == SignalSource.LLM_EXTRACTED
         assert sig.source_activity_id == activity.id
@@ -134,8 +135,7 @@ class TestConstraintStagePersistence:
             'constraint': _constraint_reply([_constraint_obj(
                 summary='GDPR compliance is mandatory',
                 nature='CONTRACTUAL',
-                scope_level='BUSINESS',
-                target_department=None,
+                target_departments=[],
                 source_quote='GDPR compliance is non-negotiable',
             )]),
         }
@@ -143,8 +143,8 @@ class TestConstraintStagePersistence:
         constraints = _run(account, activity, user_a)['signals_by_stage']['constraint']
         assert len(constraints) == 1
         assert constraints[0].nature == ConstraintNature.CONTRACTUAL
-        # BUSINESS scope -> no department stored (constraint has no scope_level col).
-        assert constraints[0].target_department_id is None
+        # No department named -> empty M2M (legacy FK dropped in 1d).
+        assert list(constraints[0].target_departments.all()) == []
 
     def test_functional_constraint_nature(
         self, account, activity, user_a,
@@ -374,12 +374,13 @@ class TestConstraintPromptContent:
         assert 'Constraint vs. Pain' in req
         assert 'Constraint vs. Blocker' in req
 
-    def test_context_has_nature_list_and_scope_but_not_what_dimension(self, activity):
+    def test_context_has_nature_list_and_departments_but_not_what_dimension(self, activity):
         _, ctx = self._constraint_user_prompt(activity)
-        # nature list + scope taxonomy present.
+        # nature list + the multi-department target_departments vocab present
+        # (sub-step 1c: a LIST of names, no scope_level).
         assert 'nature' in ctx
-        assert 'scope_level' in ctx
-        assert 'target_department' in ctx
+        assert 'target_departments' in ctx
+        assert 'scope_level' not in ctx
         # The business what x dimension block must NOT be injected for
         # constraint (it is detached).
         assert 'DOMAIN vs DIMENSION' not in ctx

@@ -142,9 +142,16 @@ def _format_signal(signal_type, sig):
     if quote:
         lines.append(f"    Source quote: \"{quote}\"")
 
-    dept = sig.get('target_department')
-    if dept:
-        lines.append(f"    Department: {dept}")
+    # Multi-department scope (sub-step 1b): Constraint carries a list of names
+    # in `target_departments`; the other types still emit the single-FK
+    # `target_department` string. Render whichever is present.
+    depts = sig.get('target_departments')
+    if depts:
+        lines.append(f"    Department: {', '.join(depts)}")
+    else:
+        dept = sig.get('target_department')
+        if dept:
+            lines.append(f"    Department: {dept}")
 
     scope = sig.get('scope_level')
     if scope:
