@@ -143,6 +143,46 @@ class ConstraintSignal(BaseSignal):
     )
 
     # =========================================================================
+    # TARGET DEPARTMENTS (multi-department — WHO the constraint concerns)
+    # =========================================================================
+    #
+    # A constraint can legitimately concern SEVERAL departments at once
+    # (e.g. a security requirement owned by IT AND Security & Risk). This M2M
+    # is the multi-department carrier that supersedes the single-FK
+    # target_department above, mirroring TechStackSignal.usage_departments
+    # (tech_stack_signal.py) — the established multi-department pattern in
+    # this module.
+    #
+    #   * blank=True — a constraint may concern NO specific department
+    #     (company-wide / cross-departmental — the common case).
+    #   * Direct M2M (no `through`) to the shared StandardDepartment
+    #     controlled list — same shape as TechStackSignal.usage_departments,
+    #     Campaign.target_departments and DecisionStep.departments. A plain
+    #     link table (module_signals_constraint_target_departments) is
+    #     enough: the relation carries no extra attributes.
+    #   * StandardDepartment is GLOBAL reference data (no client_id of its
+    #     own), so the link never crosses tenants: the tenant boundary lives
+    #     on THIS signal (client_id), the department rows are shared vocabulary.
+    #   * related_name distinct from the FK's `constraint_signals` and from
+    #     TechStack's `tech_stack_signals_used_by`.
+    #
+    # During the FK→M2M transition the legacy target_department is backfilled
+    # into this M2M as its first entry (data migration); readers move onto the
+    # M2M in a later sub-step before the FK is dropped.
+    target_departments = models.ManyToManyField(
+        'core_modules.StandardDepartment',
+        related_name='constraint_signals_scoped_to',
+        blank=True,
+        verbose_name=_('Target Departments'),
+        help_text=_(
+            'The set of departments this constraint concerns (multi-department: '
+            'a constraint can be owned by IT and Security & Risk at once). '
+            'Supersedes the legacy single-FK target_department. Empty when no '
+            'department is designated (company-wide / cross-departmental).'
+        ),
+    )
+
+    # =========================================================================
     # RIGIDITY
     # =========================================================================
 
