@@ -82,6 +82,16 @@ wired end to end (API write + front display) and tested, but no prompt
 ever emits it, so it stays empty until suggested-contact resolution
 lands. It is deliberately kept, not dead code -- do not remove it.
 
+`suggested_objective` is a DORMANT capability of the same kind, and THIS
+prompt is its intended future population point. A next step is meant to
+carry the OBJECTIVE of the activity it proposes (what it is for, the
+stakes -- prospect + commercial angle); that objective pre-fills
+Activity.call_to_action at materialisation. The v1 prompt does NOT emit
+it yet, so the downstream mapping stays a no-op; a later prompt revision
+must add an objective field to the OUTPUT SCHEMA to light it up. Tracked
+as TD (next-step objective generation). Deliberately kept -- do not
+remove the field or its mapping.
+
 Persistence contract
 --------------------
 The downstream persistence service (NextStepExtractor) first applies

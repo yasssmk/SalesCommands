@@ -294,6 +294,13 @@ class NextStepExtractor:
             # display) but the extraction pipeline never fills it, because
             # the key is intentionally absent here. Do not add it back until
             # suggested-contact resolution lands (TD-7).
+            #
+            # Same story for suggested_objective (the proposed activity's
+            # objective → Activity.call_to_action): DORMANT capability, key
+            # intentionally absent here. THIS is its future population point
+            # — the extraction prompt must first emit it (TD, next-step
+            # objective generation); until then the downstream mapping in
+            # activities/serializers.py stays a no-op.
         }
 
     # =========================================================================
