@@ -375,6 +375,52 @@ def resolve_constraint_departments(raw):
     return resolved
 
 
+def resolve_scope_and_departments(raw):
+    """
+    Resolve (scope_level, list[StandardDepartment]) for a Pain / Impact signal
+    (sub-step 2c) — the multi-department analog of resolve_scope_and_department.
+
+    Unlike Constraint (1c), Pain/Impact KEEP scope_level (descriptive): only the
+    department moves from a single FK to the target_departments LIST. The prompt
+    now emits `target_departments` (a list of names, like techstack/constraint)
+    plus scope_level, and this resolver mirrors the single-FK guards of
+    resolve_scope_and_department, extended to a list:
+
+      * scope_level other than the literal "DEPARTMENT" (PERSONAL, missing,
+        junk, BUSINESS) -> BUSINESS + [] ;
+      * a DEPARTMENT scope whose names do not resolve (or resolve only to
+        General Management, which resolve_constraint_departments drops) ->
+        BUSINESS + [] (the "no resolvable department is business-normal" rule) ;
+      * otherwise DEPARTMENT + the deduplicated list of resolved departments.
+
+    The department list itself is resolved by resolve_constraint_departments —
+    the generic `target_departments` list resolver (name is historical; it is
+    not constraint-specific), reading the SAME controlled vocabulary and the
+    same two-layer (exact + unambiguous-word) matching.
+
+    This function is NEW: pain/impact call it instead of the shared
+    resolve_scope_and_department, which is left UNTOUCHED for Objective (still
+    single-FK, mono-department).
+
+    Returns:
+        tuple (scope_level: str, target_departments: list[StandardDepartment])
+    """
+    scope_raw = raw.get('scope_level')
+
+    # GUARD 1 — anything that is not an explicit DEPARTMENT is BUSINESS + [].
+    if scope_raw != ScopeLevel.DEPARTMENT:
+        return ScopeLevel.BUSINESS, []
+
+    departments = resolve_constraint_departments(raw)
+
+    # No resolvable department (unresolved names / General-Management only) ->
+    # fold to BUSINESS with no department, mirroring the single-FK guard.
+    if not departments:
+        return ScopeLevel.BUSINESS, []
+
+    return ScopeLevel.DEPARTMENT, departments
+
+
 class TranscriptSignalExtractor:
     """
     Stage-by-stage persistence for the TranscriptSignalsPipeline.
@@ -615,11 +661,13 @@ class TranscriptSignalExtractor:
         if not all(k in raw and raw[k] is not None for k in required):
             return None
 
-        # Scope + department are now LLM-extracted (BUSINESS | DEPARTMENT),
-        # with the safety-net guards folding invalid/PERSONAL/unresolved
-        # emissions back to BUSINESS. Replaces the previous reliance on the
-        # PainSignal model default (BUSINESS).
-        scope_level, target_department = resolve_scope_and_department(raw)
+        # Scope is LLM-extracted; scope_level is KEPT (descriptive) and the
+        # department is now the multi-department target_departments LIST
+        # (sub-step 2c) resolved by resolve_scope_and_departments (the shared
+        # resolve_scope_and_department is left for Objective). The legacy FK
+        # target_department is NO LONGER written (M2M carrier since 2b; drop 2d).
+        # SignalManager.create pops the M2M and applies it via .set() post-save.
+        scope_level, target_departments = resolve_scope_and_departments(raw)
 
         return {
             'signal_type':      'pain',
@@ -634,8 +682,8 @@ class TranscriptSignalExtractor:
             'confidence':       self._safe_float(raw.get('confidence')),
             'is_inferred':      bool(raw.get('is_inferred')),
 
-            'scope_level':        scope_level,
-            'target_department':  target_department,
+            'scope_level':         scope_level,
+            'target_departments':  target_departments,
         }
 
     # ---------------------- Objective ----------------------
@@ -716,11 +764,13 @@ class TranscriptSignalExtractor:
         if not all(k in raw and raw[k] is not None for k in required):
             return None
 
-        # Scope + department are now LLM-extracted (BUSINESS | DEPARTMENT)
-        # with the shared safety-net guards. Replaces the previous forced
-        # scope_level=BUSINESS. ImpactSignal.clean() has no scope-conditional
-        # rule, so target_department is purely descriptive here.
-        scope_level, target_department = resolve_scope_and_department(raw)
+        # Scope is LLM-extracted; scope_level is KEPT (descriptive) and the
+        # department is now the multi-department target_departments LIST
+        # (sub-step 2c) resolved by resolve_scope_and_departments. ImpactSignal.
+        # clean() has no scope-conditional rule, so scope_level is purely
+        # descriptive. The legacy FK target_department is NO LONGER written
+        # (M2M carrier since 2b; drop 2d). Objective keeps the shared resolver.
+        scope_level, target_departments = resolve_scope_and_departments(raw)
 
         return {
             'signal_type':      'impact',
@@ -736,8 +786,8 @@ class TranscriptSignalExtractor:
             'confidence':       self._safe_float(raw.get('confidence')),
             'is_inferred':      bool(raw.get('is_inferred')),
 
-            'scope_level':        scope_level,
-            'target_department':  target_department,
+            'scope_level':         scope_level,
+            'target_departments':  target_departments,
 
             # metric_text and human_impact NOT extracted in v1 -- rep
             # fills during validation. The fields are nullable on the

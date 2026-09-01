@@ -210,7 +210,8 @@ class TestLegitimateDepartmentFewShotsUnchanged:
             build_pain_impact_request,
         )
         req = build_pain_impact_request('A TRANSCRIPT BODY')
-        assert 'target_department="Marketing"' in req
+        # sub-step 2c: pain/impact emit the department as a LIST.
+        assert 'target_departments=["Marketing"]' in req
 
     def test_subject_not_speaker_principle_intact(self):
         # The subject-not-speaker framing (the original scope invariant) must

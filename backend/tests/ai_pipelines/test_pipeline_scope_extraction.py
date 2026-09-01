@@ -41,11 +41,11 @@ def _pain_impact_reply(*, pains=None, impacts=None):
     return json.dumps({'pains': pains or [], 'impacts': impacts or []})
 
 
-def _pain_obj(*, scope_level, target_department):
-    """One pain object with the given scope + department (or null)."""
+def _pain_obj(*, scope_level, target_departments):
+    """One pain object with the given scope + department list (sub-step 2c)."""
     return {
         'what': 'DATA', 'dimension': 'QUALITY',
-        'scope_level': scope_level, 'target_department': target_department,
+        'scope_level': scope_level, 'target_departments': target_departments,
         'summary': 'Data quality issue', 'source_quote': 'The data cannot be trusted',
         'confidence': 0.9, 'is_inferred': False,
     }
@@ -93,10 +93,10 @@ class TestMergedPainImpactStage:
 
         # Independent scope: the pain is Marketing's, the cost is the company's.
         assert pains[0].scope_level == ScopeLevel.DEPARTMENT
-        assert pains[0].target_department_id == marketing_department.id
+        assert set(pains[0].target_departments.values_list('id', flat=True)) == {marketing_department.id}
 
         assert impacts[0].scope_level == ScopeLevel.BUSINESS
-        assert impacts[0].target_department_id is None
+        assert list(impacts[0].target_departments.all()) == []
 
     def test_only_one_llm_sub_call_for_pain_and_impact(
         self, account, activity, user_a, marketing_department,
@@ -141,11 +141,11 @@ class TestScopeGuards:
         # emission must fold to BUSINESS -- never persist a PERSONAL row.
         pains = self._run_single_pain(
             account, activity, user_a, fake_provider,
-            _pain_obj(scope_level='PERSONAL', target_department='Marketing'),
+            _pain_obj(scope_level='PERSONAL', target_departments=['Marketing']),
         )
         assert len(pains) == 1, 'signal must NOT be dropped'
         assert pains[0].scope_level == ScopeLevel.BUSINESS
-        assert pains[0].target_department_id is None
+        assert list(pains[0].target_departments.all()) == []
 
     def test_unresolved_department_folds_to_business(
         self, account, activity, user_a, fake_provider, patch_active_provider,
@@ -155,11 +155,11 @@ class TestScopeGuards:
         pains = self._run_single_pain(
             account, activity, user_a, fake_provider,
             _pain_obj(scope_level='DEPARTMENT',
-                      target_department='Totally Unknown Department'),
+                      target_departments=['Totally Unknown Department']),
         )
         assert len(pains) == 1, 'unresolved department must NOT drop the signal'
         assert pains[0].scope_level == ScopeLevel.BUSINESS
-        assert pains[0].target_department_id is None
+        assert list(pains[0].target_departments.all()) == []
 
     def test_general_management_folds_to_business(
         self, account, activity, user_a, fake_provider, patch_active_provider,
@@ -172,11 +172,11 @@ class TestScopeGuards:
         pains = self._run_single_pain(
             account, activity, user_a, fake_provider,
             _pain_obj(scope_level='DEPARTMENT',
-                      target_department='General Management'),
+                      target_departments=['General Management']),
         )
         assert len(pains) == 1
         assert pains[0].scope_level == ScopeLevel.BUSINESS
-        assert pains[0].target_department_id is None
+        assert list(pains[0].target_departments.all()) == []
 
     def test_department_happy_path_resolves_fk(
         self, account, activity, user_a, marketing_department,
@@ -185,11 +185,11 @@ class TestScopeGuards:
         # DEPARTMENT happy path: scope kept, FK resolved.
         pains = self._run_single_pain(
             account, activity, user_a, fake_provider,
-            _pain_obj(scope_level='DEPARTMENT', target_department='Marketing'),
+            _pain_obj(scope_level='DEPARTMENT', target_departments=['Marketing']),
         )
         assert len(pains) == 1
         assert pains[0].scope_level == ScopeLevel.DEPARTMENT
-        assert pains[0].target_department_id == marketing_department.id
+        assert set(pains[0].target_departments.values_list('id', flat=True)) == {marketing_department.id}
 
     def test_business_scope_persists_without_department(
         self, account, activity, user_a, fake_provider, patch_active_provider,
@@ -197,8 +197,8 @@ class TestScopeGuards:
         # BUSINESS happy path: scope kept, no department.
         pains = self._run_single_pain(
             account, activity, user_a, fake_provider,
-            _pain_obj(scope_level='BUSINESS', target_department=None),
+            _pain_obj(scope_level='BUSINESS', target_departments=[]),
         )
         assert len(pains) == 1
         assert pains[0].scope_level == ScopeLevel.BUSINESS
-        assert pains[0].target_department_id is None
+        assert list(pains[0].target_departments.all()) == []

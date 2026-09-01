@@ -317,7 +317,10 @@ def _build_taxonomy_block(target_stage):
             'IMPACT signals only): '
             + _enum_json_array(ImpactType)
         )
-        lines.extend(_scope_taxonomy_lines())
+        # Sub-step 2c: pain+impact emit target_departments as a LIST (scope_level
+        # kept). The multi variant leaves the shared _scope_taxonomy_lines
+        # untouched for objective (still single-FK target_department).
+        lines.extend(_scope_taxonomy_lines_multi())
 
     elif target_stage == 'pain':
         lines.extend(_what_dimension_lines())
@@ -503,5 +506,66 @@ def _scope_taxonomy_lines():
         'need alone does not designate a department).',
         '- target_department (REQUIRED when scope_level is "DEPARTMENT", '
         'null when "BUSINESS"; pick exactly one value from this list): '
+        + _enum_json_array(StandardDepartment.DepartmentChoices),
+    ]
+
+
+def _scope_taxonomy_lines_multi():
+    """
+    Multi-department variant of _scope_taxonomy_lines for the pain_impact stage
+    (sub-step 2c): scope_level is KEPT exactly as in the shared block, but the
+    department is emitted as a LIST (target_departments) instead of the single
+    target_department. Pain and Impact can each concern SEVERAL departments.
+
+    The conservative scope guidance is identical to _scope_taxonomy_lines (same
+    "subject decides, never the speaker", over-attribution / anti-over-correction
+    guards, same SAP / encryption few-shot pair) so the same emission threshold
+    applies. Only the department field's name and cardinality change. The shared
+    _scope_taxonomy_lines is left UNTOUCHED for Objective (still single-FK).
+    """
+    from app_modules.core_modules.models import StandardDepartment
+
+    return [
+        '- scope_level (organisational scope of the observation): '
+        '["BUSINESS", "DEPARTMENT"] '
+        '-- the scope is determined by the SUBJECT of the observation '
+        '(which perimeter the pain/impact concerns), '
+        'NOT by who is speaking. Emit DEPARTMENT ONLY when one or more '
+        'specific departments are EXPLICITLY NAMED or unambiguously DESIGNATED '
+        'as the subject that owns the observation ("the IT department requires", '
+        '"our DSI mandates", "the Marketing team owns this", "Finance '
+        'imposes"); use those departments verbatim from the list below, even '
+        'if a person from another department says it, and even if the '
+        'financial consequence hits the whole company. Otherwise emit '
+        'BUSINESS: no department is named, or the observation is '
+        'company-wide or cross-departmental. WHEN IN DOUBT, emit BUSINESS '
+        'with target_departments = [] -- BUSINESS is the safe default. '
+        'A technical theme-word alone (SSO, ERP, encryption, chiffrement, '
+        'cloud, API) does NOT designate a department: "we need end-to-end '
+        'encryption" with no department named is company-wide -> BUSINESS, '
+        'never IT. The seniority, role, or department of the SPEAKER never '
+        'determines scope, in EITHER direction -- an IT lead stating a '
+        'company-wide need is still BUSINESS, and a CEO describing one '
+        'explicitly named department is still DEPARTMENT. '
+        'ANTI-OVER-CORRECTION: a department that IS explicitly named or '
+        'clearly designated as the subject MUST stay in the list -- do '
+        'NOT fold a legitimately designated department back to BUSINESS; '
+        'fold to BUSINESS only what is genuinely undesignated. Never emit '
+        'any other value.',
+        '- SCOPE EXAMPLES (designation decides -- not the speaker, not a '
+        'technical word): '
+        '"the IT department requires integration with their SAP instance" '
+        '-> scope_level="DEPARTMENT", target_departments=["IT"] (IT is '
+        'explicitly designated as the owner); '
+        '"IT and Finance both sign off on this" '
+        '-> scope_level="DEPARTMENT", target_departments=["IT", "Finance"] '
+        '(list every explicitly designated department); '
+        '"we need end-to-end encryption" (no department named) '
+        '-> scope_level="BUSINESS", target_departments=[] (a technical '
+        'need alone does not designate a department).',
+        '- target_departments (the departments the observation concerns; emit '
+        'EVERY department explicitly designated as the subject, [] when '
+        'scope_level is "BUSINESS"; pick zero or more values from this list, '
+        'exact strings): '
         + _enum_json_array(StandardDepartment.DepartmentChoices),
     ]
