@@ -197,7 +197,8 @@ export default function ActivityModal({
         "MEETING",
       status: activity?.status || "PLANNED",
       description: activity?.description || "",
-      call_to_action: activity?.call_to_action || "",
+      call_to_action:
+        activity?.call_to_action || nextStepSignal?.suggested_objective || "",
       scheduled_date: activity?.scheduled_date
         ? dayjs(activity.scheduled_date)
         : nextStepSignal?.suggested_due_date

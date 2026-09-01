@@ -229,7 +229,9 @@ class NextStepExtractor:
             confidence, is_inferred.
 
         Optional:
-            suggested_due_date (ISO YYYY-MM-DD or null).
+            suggested_due_date (ISO YYYY-MM-DD or null),
+            suggested_objective (free text; the proposed activity's
+            purpose / stakes — feeds Activity.call_to_action).
 
         Drops on:
             * missing or empty required fields;
@@ -271,6 +273,12 @@ class NextStepExtractor:
         # --- Lenient due-date parsing ---
         suggested_due_date = self._parse_iso_date(raw.get('suggested_due_date'))
 
+        # --- Objective (the proposed activity's purpose / stakes) ---
+        # LLM-emitted free text; tolerated absent (persisted empty, never a
+        # drop). Feeds Activity.call_to_action at materialisation via the
+        # mapping in activities/serializers.py.
+        suggested_objective = str(raw.get('suggested_objective') or '').strip()
+
         return {
             'signal_type':              'next_step',
             'account':                  activity.account,
@@ -280,6 +288,7 @@ class NextStepExtractor:
             'suggested_title':          suggested_title,
             'suggested_activity_type':  suggested_activity_type,
             'suggested_due_date':       suggested_due_date,
+            'suggested_objective':      suggested_objective,
             'source_quote':             source_quote,
             'confidence':               safe_float(raw.get('confidence')),
             'is_inferred':              bool(raw.get('is_inferred')),
@@ -288,6 +297,12 @@ class NextStepExtractor:
             # The M2M is left at its empty default; SignalManager's
             # M2M-aware create path (Sprint B2) is a no-op when the key
             # is not present in `data`.
+            #
+            # THIS is the reason suggested_contacts is a DORMANT capability:
+            # the field is fully wired downstream (API write + front
+            # display) but the extraction pipeline never fills it, because
+            # the key is intentionally absent here. Do not add it back until
+            # suggested-contact resolution lands (TD-7).
         }
 
     # =========================================================================

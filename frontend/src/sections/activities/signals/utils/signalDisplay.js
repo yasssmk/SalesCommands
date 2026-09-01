@@ -31,6 +31,12 @@ export function getNextStepSummary(signal) {
   return signal?.suggested_title || "Untitled suggestion";
 }
 
+// Renders a NextStepSignal's `suggested_contacts` for the next-step
+// display surfaces (AISuggestionCard, NextStepSuggestionDrawer,
+// SignalDetailCard/Content). Note: this is a DORMANT capability — the
+// field is wired and displayable but the LLM extraction never populates
+// it (TD-7), so in practice this returns "" today. That empty result is
+// expected, not a bug; the empty-safe guard below is intentional.
 export function formatSuggestedContacts(contacts) {
   if (!contacts || contacts.length === 0) return "";
   return contacts

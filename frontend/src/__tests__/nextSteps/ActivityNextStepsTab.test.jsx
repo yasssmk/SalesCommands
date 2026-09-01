@@ -35,6 +35,7 @@ const mockNextStepSignals = [
     suggested_title: "Follow up on pricing",
     suggested_activity_type: "CALL",
     suggested_due_date: "2026-06-15",
+    suggested_objective: "Lock the pricing narrative with the CFO before Q4 close",
     source_quote: "We should discuss pricing next week",
     suggested_contacts: [
       { id: "c1", first_name: "Jane", last_name: "Doe" },
@@ -220,6 +221,22 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.getByText("Send proposal")).toBeInTheDocument();
   });
 
+  it("renders the suggested objective on the suggestion card", () => {
+    render(
+      <ActivityNextStepsTab
+        activity={mockActivity}
+        isLocked={false}
+        mutateCounts={mockMutateCounts}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Lock the pricing narrative with the CFO before Q4 close",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders Upcoming Activities section", () => {
     render(
       <ActivityNextStepsTab
@@ -377,5 +394,67 @@ describe("ActivityNextStepsTab", () => {
     );
 
     expect(screen.getByText("Upcoming Activities")).toBeInTheDocument();
+  });
+});
+
+// ==============================|| DC-ONLY AI SUGGESTIONS GUARD ||============================== //
+//
+// PO decision (1-bis): the AI SUGGESTIONS block (AISuggestionCard list of
+// NextStepSignal) is a DC-only feature. In a campaign context (no
+// decision_cycle) it must NOT be proposed. Everything else — "Add
+// manually", Upcoming Activities — stays. The tab itself stays visible
+// (that is asserted in ActivityTabs.test.jsx).
+
+const mockActivityNoDc = {
+  ...mockActivity,
+  decision_cycle: null,
+};
+
+describe("ActivityNextStepsTab — DC-only AI suggestions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("does NOT render the AI Suggestions block without a decision cycle", () => {
+    render(
+      <ActivityNextStepsTab
+        activity={mockActivityNoDc}
+        isLocked={false}
+        mutateCounts={mockMutateCounts}
+      />,
+    );
+
+    expect(screen.queryByText("AI Suggestions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Follow up on pricing")).not.toBeInTheDocument();
+  });
+
+  it("still renders 'Add manually' without a decision cycle (manual path stays)", () => {
+    render(
+      <ActivityNextStepsTab
+        activity={mockActivityNoDc}
+        isLocked={false}
+        mutateCounts={mockMutateCounts}
+      />,
+    );
+
+    expect(screen.getByText("Add manually")).toBeInTheDocument();
+  });
+
+  it("renders the AI Suggestions block AND 'Add manually' with a decision cycle", () => {
+    render(
+      <ActivityNextStepsTab
+        activity={mockActivity}
+        isLocked={false}
+        mutateCounts={mockMutateCounts}
+      />,
+    );
+
+    expect(screen.getByText("AI Suggestions")).toBeInTheDocument();
+    expect(screen.getByText("Follow up on pricing")).toBeInTheDocument();
+    expect(screen.getByText("Add manually")).toBeInTheDocument();
   });
 });

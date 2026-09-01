@@ -96,6 +96,70 @@ def _apply_patches(patches):
 
 
 # =============================================================================
+# FIXTURE OVERRIDE — DC context for the extraction endpoint tests
+# =============================================================================
+# NextStepSignal is now a DC-ONLY feature (PO decision): the endpoint runs
+# the next-steps pipeline only when the source activity has a decision_cycle.
+# The shared `activity` fixture (tests/signals/conftest.py) carries NO
+# decision_cycle, so every test here that exercises the next-steps pipeline
+# needs a DC-bearing activity. We override `activity` at module scope to
+# attach an active DecisionCycle; the DC-only guard test that specifically
+# needs a campaign (no-DC) activity uses `activity_without_cycle` instead.
+
+@pytest.fixture
+def activity(db, account, user_a):
+    """
+    Module override of the shared `activity` fixture: an Activity tied to
+    an active DecisionCycle (DC context), so the next-steps pipeline runs
+    under the DC-only guard. The DC-less variant is `activity_without_cycle`.
+    """
+    from app_modules.activities.models import Activity
+    from app_modules.activities.constants import ActivityType, ActivityStatus
+    from app_modules.decision_cycles.models import DecisionCycle
+
+    cycle = DecisionCycle(
+        account=account,
+        owner=user_a,
+        name='Extraction endpoint cycle',
+        is_active=True,
+    )
+    cycle.save(user=user_a, client_id=account.client_id)
+
+    a = Activity(
+        title='Discovery call with Acme',
+        activity_type=ActivityType.MEETING,
+        status=ActivityStatus.COMPLETED,
+        account=account,
+        owner=user_a,
+        decision_cycle=cycle,
+    )
+    a.save(user=user_a, client_id=account.client_id)
+    return a
+
+
+@pytest.fixture
+def activity_without_cycle(db, account, user_a):
+    """
+    Activity with NO decision_cycle (campaign context). Used by the
+    DC-only guard test asserting that next steps are skipped when the
+    activity has no DC.
+    """
+    from app_modules.activities.models import Activity
+    from app_modules.activities.constants import ActivityType, ActivityStatus
+
+    a = Activity(
+        title='Discovery call with Acme (no cycle)',
+        activity_type=ActivityType.MEETING,
+        status=ActivityStatus.COMPLETED,
+        account=account,
+        owner=user_a,
+        decision_cycle=None,
+    )
+    a.save(user=user_a, client_id=account.client_id)
+    return a
+
+
+# =============================================================================
 # HAPPY PATH
 # =============================================================================
 
@@ -668,3 +732,104 @@ class TestBothPipelinesCrash:
             )
 
         assert resp.status_code == 500
+
+
+# =============================================================================
+# DC-ONLY GUARD — next steps are extracted ONLY when the activity has a DC
+# =============================================================================
+
+@pytest.mark.django_db
+class TestNextStepDcOnlyGuard:
+    """
+    PO decision: NextStepSignal is a DC-ONLY feature. When the source
+    activity has NO decision_cycle (campaign context), the next-steps
+    pipeline must be SKIPPED silently (no error, qualification keeps
+    running). When the activity HAS a decision_cycle, next-steps run
+    normally.
+    """
+
+    def test_no_next_step_without_dc(
+        self, authed_api_a, activity_without_cycle, patch_active_provider,
+        fake_provider,
+    ):
+        activity = activity_without_cycle
+        # DC-less activity == campaign context.
+        assert activity.decision_cycle_id is None
+
+        from app_modules.signals.models import NextStepSignal
+
+        fake_provider.replies = {
+            **CANNED_REPLIES_HAPPY,
+            'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY,
+        }
+
+        with _apply_patches(_bypass_redis):
+            resp = authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': TRANSCRIPT,
+                    'run_qualification': True,
+                    'run_next_steps': True,
+                },
+                format='json',
+            )
+
+        # Silent skip: NOT an error.
+        assert resp.status_code == 200
+        data = resp.json()['data']
+
+        # No NextStepSignal was created for a DC-less activity.
+        assert NextStepSignal.objects.filter(
+            source_activity=activity,
+        ).count() == 0
+
+        # No NEXT_STEPS pipeline run was launched.
+        assert AIPipelineRun.objects.filter(
+            source_activity=activity,
+            pipeline_type=AIPipelineType.NEXT_STEPS,
+        ).count() == 0
+        assert data['next_steps_run'] is None
+        assert data['next_step_signals'] == []
+
+        # Qualification is INTACT — it still ran and produced its run row.
+        assert data['qualification_run'] is not None
+        assert AIPipelineRun.objects.filter(
+            source_activity=activity,
+            pipeline_type=AIPipelineType.TRANSCRIPT_SIGNALS,
+        ).count() == 1
+
+    def test_next_step_extracted_with_dc(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        # Mirror / non-regression: a DC-bearing activity still extracts.
+        # `activity` is overridden in this module to carry a decision_cycle.
+        assert activity.decision_cycle_id is not None
+
+        from app_modules.signals.models import NextStepSignal
+
+        fake_provider.replies = {
+            **CANNED_REPLIES_HAPPY,
+            'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY,
+        }
+
+        with _apply_patches(_bypass_redis):
+            resp = authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': TRANSCRIPT,
+                    'run_qualification': True,
+                    'run_next_steps': True,
+                },
+                format='json',
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()['data']
+
+        assert NextStepSignal.objects.filter(
+            source_activity=activity,
+        ).count() >= 1
+        assert data['next_steps_run'] is not None
+        assert len(data['next_step_signals']) >= 1

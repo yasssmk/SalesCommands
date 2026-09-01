@@ -318,41 +318,46 @@ export default function ActivityNextStepsTab({
         signals={nextStepSignals}
       />
 
-      {/* AI Suggestions */}
-      <Box mt={2}>
-        {filteredSignals.length > 0 ? (
-          <Box mb={3}>
-            <Typography
-              variant="subtitle2"
-              color="text.secondary"
-              mb={1}
-              fontWeight={600}
-            >
-              AI Suggestions
-            </Typography>
-            <Stack spacing={1.5}>
-              {filteredSignals.map((signal) => (
-                <AISuggestionCard
-                  key={signal.id}
-                  signal={signal}
-                  onConvert={handleConvert}
-                  onEdit={handleEdit}
-                  onReject={handleReject}
-                  onViewActivity={handleViewActivity}
-                  onSelect={handleSelect}
-                  isLocked={isLocked}
-                />
-              ))}
-            </Stack>
-          </Box>
-        ) : (
-          <Box py={4} textAlign="center">
-            <Typography variant="body2" color="text.secondary">
-              No suggestions match the current filter.
-            </Typography>
-          </Box>
-        )}
-      </Box>
+      {/* AI Suggestions — DC-only: extracted next-step suggestions are not
+          proposed in a campaign context (activity without a decision_cycle).
+          Mirrors the backend guard. The manual path and Upcoming Activities
+          below stay available regardless. */}
+      {Boolean(activity?.decision_cycle) && (
+        <Box mt={2}>
+          {filteredSignals.length > 0 ? (
+            <Box mb={3}>
+              <Typography
+                variant="subtitle2"
+                color="text.secondary"
+                mb={1}
+                fontWeight={600}
+              >
+                AI Suggestions
+              </Typography>
+              <Stack spacing={1.5}>
+                {filteredSignals.map((signal) => (
+                  <AISuggestionCard
+                    key={signal.id}
+                    signal={signal}
+                    onConvert={handleConvert}
+                    onEdit={handleEdit}
+                    onReject={handleReject}
+                    onViewActivity={handleViewActivity}
+                    onSelect={handleSelect}
+                    isLocked={isLocked}
+                  />
+                ))}
+              </Stack>
+            </Box>
+          ) : (
+            <Box py={4} textAlign="center">
+              <Typography variant="body2" color="text.secondary">
+                No suggestions match the current filter.
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      )}
 
       {/* Upcoming Activities section */}
       <Divider sx={{ my: 2 }} />

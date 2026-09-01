@@ -1073,6 +1073,49 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / Next steps ✅ — Garde DC-only + objectif du next step généré/affiché E2E (branche `feat/next-steps-dc-only`)
+- **Objectif** : finir le câblage du NextStepSignal — le proposer UNIQUEMENT en
+  contexte decision_cycle (feature DC-only), et faire porter au next step
+  l'OBJECTIF de l'activité qu'il propose (rôle + enjeux, prospect + commercial),
+  généré par le LLM et propagé jusqu'à `Activity.call_to_action`.
+- **Livré** (chaque sous-étape : reproduction ROUGE d'abord par le VRAI chemin +
+  sonde de non-vacuité, restauration par édition ciblée jamais `git checkout`) :
+  - **Garde DC-only (BE)** : `want_nextsteps` conditionné à
+    `activity.decision_cycle_id` (`activity_extraction_view.py:171`) — saut
+    SILENCIEUX en campagne (200, pas de 400), qualification intacte ; toggle
+    unique gate dedup + run + réponse.
+  - **Garde DC-only (front)** : l'onglet Next Steps reste TOUJOURS visible
+    (campagne ET DC) ; seul le BLOC de suggestions IA est masqué sans DC
+    (`ActivityNextStepsTab`) ; « Set a next step manually » reste accessible en
+    campagne (une campagne réussie peut matérialiser une activité / faire naître
+    un DC).
+  - **Objectif du next step (`suggested_objective`) alimenté E2E** : le prompt
+    `next_steps_v1` l'émet (OUTPUT SCHEMA + règle d'émission), le builder
+    `next_step_extractor` le stocke (toléré vide), le serializer l'expose
+    (List + Detail), il s'affiche sur toutes les surfaces (AISuggestionCard,
+    drawer, SignalDetailCard/Content) et pré-remplit `call_to_action` à la
+    conversion (mapping `serializers.py:1100` ACTIVÉ + pré-remplissage
+    `ActivityModal.jsx`).
+  - **`suggested_contacts`** : capacité DORMANTE **documentée** (commentaires
+    seuls), NON retirée — câblée API mais jamais alimentée (LLM ne l'émet pas).
+- **Migrations** : **aucune** (le champ `suggested_objective` et le mapping
+  `call_to_action` préexistaient — activés, pas recréés ; aucun champ retiré).
+- **Validation** : suites vertes (Postgres, en série) — `pytest tests/signals`
+  **373**, `tests/ai_pipelines` **364**, `vitest` **1012** (136 fichiers) ;
+  **smoke PO OK** (objectif visible/éditable dans le modal de conversion,
+  pré-rempli depuis le signal).
+- **Dette fermée** : **aucune entrée TECH_DEBT** sur le next step lui-même
+  (étape planifiée, pas une dette).
+- **Dette ajoutée** : **TD-214** (audit discipline de logging — log via patterns
+  existants), **TD-215** (enrichissement objectif → étape DC que le next step
+  fait progresser). **MAJ** : **TD-7** (`suggested_contacts` dormant documenté,
+  résolution nom→Contact toujours à faire), **TD-204**/**TD-205** (rendu soigné
+  de l'objectif sur carte/drawer au sprint UX Activity).
+- **Prochain jalon** : **UX Activity** (layout Activity sans onglets — voir la
+  séquence PO 2026-08-31 ci-dessous).
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -1279,12 +1322,13 @@ possibles) :
 - **✅ LIVRÉ** : **Competitors** (`claude/competitor-signal-model-migration-lzc5dh`)
   — voir la fiche « Sprint Bloc IA / Competitors ✅ » ci-dessus ; **People**
   (`feat/people-full-name`) — signal People **éditable manuellement**, voir la
-  fiche « Sprint Bloc IA / People ✅ » ci-dessus.
+  fiche « Sprint Bloc IA / People ✅ » ci-dessus ; **Next steps**
+  (`feat/next-steps-dc-only`) — garde DC-only + objectif du next step généré et
+  affiché E2E, voir la fiche « Sprint Bloc IA / Next steps ✅ » ci-dessus.
 - **Reste du bloc Signaux (ordre confirmé PO)** :
-  1. **Next steps**.
-  2. **UX Activity** — layout Activity **sans onglets** (tranche TD-186 : pas de
+  1. **UX Activity** — layout Activity **sans onglets** (tranche TD-186 : pas de
      bascule onglet).
-  3. **Blocker (Objection)**.
+  2. **Blocker (Objection)**.
   - [+ suites déjà cadrées : **M2M scope transverse**, **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]

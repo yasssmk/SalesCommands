@@ -133,6 +133,15 @@ export default function NextStepSuggestionDrawer({
           />
         </DrawerSection>
 
+        {/* Objective — what the proposed activity is for */}
+        {signal.suggested_objective && (
+          <DrawerSection title="OBJECTIVE">
+            <Typography variant="body2" color="text.secondary">
+              {signal.suggested_objective}
+            </Typography>
+          </DrawerSection>
+        )}
+
         {/* Contacts */}
         {contactsText && (
           <DrawerSection title="SUGGESTED CONTACTS">
@@ -254,6 +263,7 @@ NextStepSuggestionDrawer.propTypes = {
     suggested_activity_type: PropTypes.string,
     suggested_activity_type_display: PropTypes.string,
     suggested_due_date: PropTypes.string,
+    suggested_objective: PropTypes.string,
     suggested_contacts: PropTypes.arrayOf(
       PropTypes.shape({
         id: PropTypes.string,

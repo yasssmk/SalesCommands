@@ -126,6 +126,13 @@ export default function AISuggestionCard({
             {signal?.suggested_title || "Untitled suggestion"}
           </Typography>
 
+          {/* Objective — what the proposed activity is for */}
+          {signal?.suggested_objective && (
+            <Typography variant="body2" color="text.secondary">
+              {signal.suggested_objective}
+            </Typography>
+          )}
+
           {/* Source quote (compact: 2-line clamp) */}
           {signal?.source_quote && (
             <Typography
@@ -230,6 +237,7 @@ AISuggestionCard.propTypes = {
     suggested_title: PropTypes.string,
     suggested_activity_type: PropTypes.string,
     suggested_due_date: PropTypes.string,
+    suggested_objective: PropTypes.string,
     suggested_contacts: PropTypes.arrayOf(
       PropTypes.shape({
         id: PropTypes.string,

@@ -68,6 +68,14 @@ class _NextStepDisplayMixin:
         suggested attendees on a next-step card. Returns [] when no
         contacts are suggested.
 
+        DORMANT CAPABILITY: this read surface is wired end to end but
+        currently always returns [] in practice, because the extraction
+        pipeline never populates `suggested_contacts` (the v1 prompt does
+        not emit contacts — TD-7). The field is fed only through the
+        Create/Update serializers (API), not by the LLM. Kept as the
+        foundation for suggested-contact resolution — do not treat the
+        empty result as a bug.
+
         Relies on the parent ViewSet having
         `prefetch_related('suggested_contacts')` on the queryset to
         avoid N+1 — see NextStepSignalViewSet.get_queryset().
@@ -172,6 +180,7 @@ class NextStepSignalListSerializer(_NextStepDisplayMixin, BaseSignalListSerializ
             'suggested_activity_type',
             'suggested_activity_type_display',
             'suggested_due_date',
+            'suggested_objective',
             'suggested_contacts',
             'linked_activity',
         ]
@@ -214,6 +223,7 @@ class NextStepSignalDetailSerializer(_NextStepDisplayMixin, BaseSignalDetailSeri
             'suggested_activity_type',
             'suggested_activity_type_display',
             'suggested_due_date',
+            'suggested_objective',
             'suggested_contacts',
             'linked_activity',
         ]
@@ -262,6 +272,10 @@ class NextStepSignalCreateSerializer(BaseSignalCreateSerializer):
         _base_fields       = _strip_shadow_fields(BaseSignalCreateSerializer.Meta.fields)
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalCreateSerializer.Meta.extra_kwargs)
 
+        # `suggested_contacts` is a DORMANT-but-wired M2M: writable here via
+        # the API, but the extraction pipeline never sets it (the v1 prompt
+        # does not emit contacts — TD-7). Keep it exposed for write — it is
+        # the foundation for suggested-contact resolution. Do not remove.
         fields = _base_fields + [
             'suggested_title',
             'suggested_activity_type',
@@ -320,6 +334,10 @@ class NextStepSignalUpdateSerializer(BaseSignalUpdateSerializer):
         _base_fields       = _strip_shadow_fields(BaseSignalUpdateSerializer.Meta.fields)
         _base_extra_kwargs = _strip_shadow_extra_kwargs(BaseSignalUpdateSerializer.Meta.extra_kwargs)
 
+        # `suggested_contacts` stays PATCH-able (dormant capability): the API
+        # can amend it, but nothing feeds it automatically yet — the LLM
+        # extraction never emits contacts (TD-7). Kept for the future
+        # suggested-contact resolution feature. Do not remove.
         fields = _base_fields + [
             'suggested_title',
             'suggested_activity_type',

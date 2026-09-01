@@ -168,7 +168,18 @@ class ActivityExtractionView(BaseAPIView):
         client_id  = validated['client_id']
         client_id_str = str(client_id)
         want_qualif = validated['run_qualification']
-        want_nextsteps = validated['run_next_steps']
+        # DC-only guard: NextStepSignal is a decision-cycle feature. When the
+        # source activity has no decision_cycle (campaign context), the
+        # next-steps pipeline is skipped SILENTLY — this single toggle gates
+        # the dedup lookup, the pipeline run, and the status/response shaping
+        # downstream, so no next-step path can bypass the guard. Qualification
+        # (want_qualif) is unaffected. activity is loaded with
+        # select_related('decision_cycle') by the input serializer, so this is
+        # a local column read (no extra query).
+        want_nextsteps = (
+            validated['run_next_steps']
+            and activity.decision_cycle_id is not None
+        )
 
         log_ctx = ctx_from_request(request) if callable(ctx_from_request) else {}
         log_ctx_base = {
