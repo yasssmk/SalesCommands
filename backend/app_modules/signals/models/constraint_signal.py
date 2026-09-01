@@ -126,32 +126,17 @@ class ConstraintSignal(BaseSignal):
     )
 
     # =========================================================================
-    # ATTRIBUTION
-    # =========================================================================
-
-    target_department = models.ForeignKey(
-        'core_modules.StandardDepartment',
-        on_delete=models.SET_NULL,
-        related_name='constraint_signals',
-        null=True,
-        blank=True,
-        verbose_name=_('Target Department'),
-        help_text=_(
-            'Department that owns or enforces this constraint. '
-            'Purely descriptive — no conditional enforcement.'
-        ),
-    )
-
-    # =========================================================================
     # TARGET DEPARTMENTS (multi-department — WHO the constraint concerns)
     # =========================================================================
     #
     # A constraint can legitimately concern SEVERAL departments at once
     # (e.g. a security requirement owned by IT AND Security & Risk). This M2M
-    # is the multi-department carrier that supersedes the single-FK
-    # target_department above, mirroring TechStackSignal.usage_departments
-    # (tech_stack_signal.py) — the established multi-department pattern in
-    # this module.
+    # is the multi-department scope carrier, mirroring
+    # TechStackSignal.usage_departments (tech_stack_signal.py) — the
+    # established multi-department pattern in this module. It replaced the
+    # legacy single-FK target_department, dropped in sub-step 1d once every
+    # reader/writer moved onto the M2M (the backfill lives in migrations
+    # 0036/0037; the drop in migration 0038).
     #
     #   * blank=True — a constraint may concern NO specific department
     #     (company-wide / cross-departmental — the common case).
@@ -163,12 +148,7 @@ class ConstraintSignal(BaseSignal):
     #   * StandardDepartment is GLOBAL reference data (no client_id of its
     #     own), so the link never crosses tenants: the tenant boundary lives
     #     on THIS signal (client_id), the department rows are shared vocabulary.
-    #   * related_name distinct from the FK's `constraint_signals` and from
-    #     TechStack's `tech_stack_signals_used_by`.
-    #
-    # During the FK→M2M transition the legacy target_department is backfilled
-    # into this M2M as its first entry (data migration); readers move onto the
-    # M2M in a later sub-step before the FK is dropped.
+    #   * related_name distinct from TechStack's `tech_stack_signals_used_by`.
     target_departments = models.ManyToManyField(
         'core_modules.StandardDepartment',
         related_name='constraint_signals_scoped_to',

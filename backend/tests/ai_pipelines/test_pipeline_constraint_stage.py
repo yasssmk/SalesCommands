@@ -117,9 +117,8 @@ class TestConstraintStagePersistence:
         assert isinstance(sig, ConstraintSignal)
         assert sig.nature == ConstraintNature.TECHNICAL
         assert sig.rigidity == Rigidity.FIRM
-        # sub-step 1c: scope is the multi-department M2M (FK no longer written).
+        # sub-step 1c: scope is the multi-department M2M (legacy FK dropped in 1d).
         assert set(sig.target_departments.values_list('id', flat=True)) == {it_department.id}
-        assert sig.target_department_id is None
         assert sig.status == SignalStatus.PENDING
         assert sig.source == SignalSource.LLM_EXTRACTED
         assert sig.source_activity_id == activity.id
@@ -144,9 +143,8 @@ class TestConstraintStagePersistence:
         constraints = _run(account, activity, user_a)['signals_by_stage']['constraint']
         assert len(constraints) == 1
         assert constraints[0].nature == ConstraintNature.CONTRACTUAL
-        # No department named -> empty M2M (FK never written since sub-step 1c).
+        # No department named -> empty M2M (legacy FK dropped in 1d).
         assert list(constraints[0].target_departments.all()) == []
-        assert constraints[0].target_department_id is None
 
     def test_functional_constraint_nature(
         self, account, activity, user_a,
