@@ -46,9 +46,10 @@ pytestmark = pytest.mark.django_db
 
 
 # Every stage that injects the shared scope block. Hardening the block must
-# reach ALL of them (pain/objective/impact via the merged and split stages,
-# and constraint).
-_STAGES_WITH_SCOPE_BLOCK = ('pain_impact', 'pain', 'objective', 'impact', 'constraint')
+# reach ALL of them (pain/objective/impact via the merged and split stages).
+# Constraint moved to the multi-department target_departments LIST (sub-step
+# 1c) and no longer injects the shared scope_level block, so it is excluded.
+_STAGES_WITH_SCOPE_BLOCK = ('pain_impact', 'pain', 'objective', 'impact')
 
 
 # =============================================================================
@@ -165,14 +166,15 @@ class TestConstraintFewShotReplaced:
     def test_replacement_named_department_leg_present(self):
         req = self._constraint_prompt()
         assert 'The IT department requires integration with their SAP instance' in req
-        assert 'target_department="IT"' in req
+        # sub-step 1c: the department is emitted in the target_departments LIST.
+        assert 'target_departments=["IT"]' in req
 
     def test_replacement_business_leg_present(self):
         req = self._constraint_prompt()
-        # Company-wide encryption need -> SECURITY / BUSINESS (the smoke bug,
-        # corrected).
+        # Company-wide encryption need -> SECURITY, no department (the smoke
+        # bug, corrected): an empty target_departments list.
         assert 'we need end-to-end encryption' in req
-        assert 'scope_level="BUSINESS"' in req
+        assert 'target_departments=[]' in req
 
 
 # =============================================================================

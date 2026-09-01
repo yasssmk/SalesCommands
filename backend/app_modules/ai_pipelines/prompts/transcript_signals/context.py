@@ -356,12 +356,23 @@ def _build_taxonomy_block(target_stage):
     elif target_stage == 'constraint':
         # Constraint is DETACHED from the what x dimension canonical axes
         # (sub-step 1): no _what_dimension_lines here. It is classified on
-        # `nature` and scoped on target_department (department-only).
+        # `nature` and scoped on the multi-department target_departments list
+        # (sub-step 1c) — no scope_level, no single FK. The department vocab is
+        # injected as a list of valid names, cloning the techstack
+        # usage_departments contract, so the extractor resolves each name by
+        # exact match (no fuzzy matching). _scope_taxonomy_lines stays untouched
+        # for pain/objective/impact.
+        from app_modules.core_modules.models import StandardDepartment
         lines.append(
             '- nature (kind of decision criterion; pick EXACTLY ONE code): '
             + _enum_coded_list(ConstraintNature)
         )
-        lines.extend(_scope_taxonomy_lines())
+        lines.append(
+            '- target_departments (WHO the constraint concerns; pick zero or '
+            'more values from this list, exact strings; [] when no specific '
+            'department is named): '
+            + _enum_json_array(StandardDepartment.DepartmentChoices)
+        )
 
     return '\n'.join(lines)
 
