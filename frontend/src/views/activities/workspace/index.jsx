@@ -146,8 +146,8 @@ export default function ActivityWorkspacePage() {
   const nextStepsPending = counts?.by_type?.next_step?.pending || 0;
 
   const visibleTabs = useMemo(
-    () => getVisibleTabs(activity?.activity_type),
-    [activity?.activity_type],
+    () => getVisibleTabs(activity?.activity_type, Boolean(activity?.decision_cycle)),
+    [activity?.activity_type, activity?.decision_cycle],
   );
 
   const tabsWithBadges = useMemo(() => {
