@@ -1404,9 +1404,10 @@ class SignalClusterService:
 
         N+1 safety
         ----------
-        select_related('source_activity', 'decision_cycle', 'target_department')
-        covers the member payload's source block, _cluster_has_active_dc
-        (decision_cycle.outcome) and _compute_departments (target_department).
+        select_related('source_activity', 'decision_cycle') covers the member
+        payload's source block and _cluster_has_active_dc
+        (decision_cycle.outcome). prefetch_related('target_departments') covers
+        _compute_constraint_departments (the multi-department M2M scope).
         prefetch_related('source_activity__contacts') covers
         distinct_contacts_count and the member serializer's source block. The
         query count is constant regardless of the number of signals/clusters.
@@ -1422,10 +1423,14 @@ class SignalClusterService:
             .select_related(
                 'source_activity',
                 'decision_cycle',
-                'target_department',
             )
             .prefetch_related(
                 'source_activity__contacts',
+                # Multi-department scope (sub-step 1b): read WHO the constraint
+                # concerns off the target_departments M2M, not the legacy FK.
+                # M2M can't ride select_related; prefetch keeps _compute_
+                # constraint_departments N+1-safe.
+                'target_departments',
             )
         )
 
@@ -2572,9 +2577,11 @@ class SignalClusterService:
                 first_observed_at, last_confirmed_at,
             ),
 
-            # Departments — distinct target_department across members (a nature
-            # cluster may span several departments).
-            'departments':   cls._compute_departments(members),
+            # Departments — distinct target_departments (M2M) across members.
+            # Constraint reads the multi-department M2M (sub-step 1b), so a
+            # single member may itself contribute several departments; the
+            # other cluster types stay on the FK-based _compute_departments.
+            'departments':   cls._compute_constraint_departments(members),
 
             # Scope — no scope_level on Constraint.
             'max_scope_level': None,
@@ -2671,6 +2678,34 @@ class SignalClusterService:
                 'id':   str(dept.id),
                 'name': dept.get_name_display(),
             })
+        return departments
+
+    @staticmethod
+    def _compute_constraint_departments(members: list) -> list:
+        """
+        Distinct departments across a Constraint cluster's members, read off
+        the multi-department target_departments M2M (sub-step 1b) rather than
+        the legacy single FK. Same compact {id, name} shape and stable
+        (oldest-member-first) ordering as _compute_departments; the difference
+        is a single member can contribute SEVERAL departments (a constraint may
+        concern IT and Security & Risk at once).
+
+        N+1-safe: target_departments is prefetch_related in
+        _fetch_constraint_signals, so member.target_departments.all() hits the
+        prefetched cache. Only the Constraint cluster path uses this; the FK
+        types keep _compute_departments untouched.
+        """
+        seen = set()
+        departments = []
+        for member in sorted(members, key=lambda m: m.created_at):
+            for dept in member.target_departments.all():
+                if dept.id in seen:
+                    continue
+                seen.add(dept.id)
+                departments.append({
+                    'id':   str(dept.id),
+                    'name': dept.get_name_display(),
+                })
         return departments
 
     @staticmethod
