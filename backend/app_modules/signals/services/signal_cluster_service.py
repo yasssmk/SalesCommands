@@ -1100,12 +1100,20 @@ class SignalClusterService:
         return statuses or DEFAULT_LIST_STATUSES
 
     @classmethod
-    def _apply_member_filters(cls, qs, member_filters):
+    def _apply_member_filters(cls, qs, member_filters, *, uses_m2m_departments=False):
         """
         Apply the member filters to a cluster member queryset before clustering.
         Status is applied by the caller via _member_statuses (it replaces the
         default status__in). Cross-family filters combine as AND; OR is used
         ONLY within the perimeter clause.
+
+        `uses_m2m_departments` selects how the department half of the perimeter
+        and the legacy department filter are expressed: Pain and Impact scope on
+        the multi-department target_departments M2M (sub-step 2b), so they pass
+        True (department clauses use target_departments__id__in + distinct());
+        Objective stays on the single target_department FK and passes the
+        default False. Both call this shared method, but the department SQL
+        differs by type — nothing else does.
 
           - perimeter (the unified OR): scope=BUSINESS OR target_department in
             perimeter_departments. "Business" = scope_level=BUSINESS (PO
@@ -1125,9 +1133,15 @@ class SignalClusterService:
         if not member_filters:
             return qs
 
-        # --- Unified PERIMETER (OR): scope=BUSINESS OR target_department in list.
-        # Cluster members are only pain/objective/impact, which all carry both
-        # scope_level and target_department, so both halves apply uniformly.
+        # --- Unified PERIMETER (OR): scope=BUSINESS OR department in list.
+        # scope_level is carried by pain/objective/impact alike; the department
+        # half reads the M2M for pain/impact (sub-step 2b) and the FK for
+        # objective. distinct() guards the M2M join against duplicate rows.
+        dept_in = (
+            Q(target_departments__id__in=member_filters['perimeter_departments'])
+            if uses_m2m_departments else
+            Q(target_department_id__in=member_filters.get('perimeter_departments'))
+        ) if member_filters.get('perimeter_departments') else None
         perimeter_business = member_filters.get('perimeter_business')
         perimeter_departments = member_filters.get('perimeter_departments')
         if perimeter_business or perimeter_departments:
@@ -1135,13 +1149,18 @@ class SignalClusterService:
             if perimeter_business:
                 perimeter_q |= Q(scope_level=ScopeLevel.BUSINESS)
             if perimeter_departments:
-                perimeter_q |= Q(target_department_id__in=perimeter_departments)
+                perimeter_q |= dept_in
             qs = qs.filter(perimeter_q)
+            if uses_m2m_departments and perimeter_departments:
+                qs = qs.distinct()
 
         # --- Legacy separate department / scope (AND) — back-compat only.
         departments = member_filters.get('departments')
         if departments:
-            qs = qs.filter(target_department_id__in=departments)
+            if uses_m2m_departments:
+                qs = qs.filter(target_departments__id__in=departments).distinct()
+            else:
+                qs = qs.filter(target_department_id__in=departments)
         scope = member_filters.get('scope')
         if scope:
             qs = qs.filter(scope_level=scope)
@@ -1202,19 +1221,19 @@ class SignalClusterService:
                 'source_activity',
                 'decision_cycle',
                 'campaign',
-                # Join path for the cluster `departments` aggregate — avoids
-                # one query per member when reading member.target_department.
-                'target_department',
             )
             .prefetch_related(
                 'source_activity__contacts',
+                # Multi-department scope (sub-step 2b): the cluster departments
+                # aggregate reads the target_departments M2M, not the legacy FK.
+                'target_departments',
             )
         )
 
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
 
-        qs = cls._apply_member_filters(qs, member_filters)
+        qs = cls._apply_member_filters(qs, member_filters, uses_m2m_departments=True)
 
         return qs
 
@@ -1305,18 +1324,19 @@ class SignalClusterService:
                 'source_activity',
                 'decision_cycle',
                 'campaign',
-                # Join path for the cluster `departments` aggregate.
-                'target_department',
             )
             .prefetch_related(
                 'source_activity__contacts',
+                # Multi-department scope (sub-step 2b): the cluster departments
+                # aggregate reads the target_departments M2M, not the legacy FK.
+                'target_departments',
             )
         )
 
         if decision_cycle_id:
             qs = qs.filter(decision_cycle_id=decision_cycle_id)
 
-        qs = cls._apply_member_filters(qs, member_filters)
+        qs = cls._apply_member_filters(qs, member_filters, uses_m2m_departments=True)
 
         return qs
 
@@ -1755,7 +1775,7 @@ class SignalClusterService:
 
             # Departments involved — distinct target_department across members
             # (factual list of {id, name}; empty when all members are BUSINESS).
-            'departments':   cls._compute_departments(members),
+            'departments':   cls._compute_m2m_departments(members),
 
             # Scope (shared shape with Objective and Impact via
             # max_scope_level key)
@@ -2058,7 +2078,7 @@ class SignalClusterService:
 
             # Departments involved — distinct target_department across members
             # (factual list of {id, name}; empty when all members are BUSINESS).
-            'departments':   cls._compute_departments(members),
+            'departments':   cls._compute_m2m_departments(members),
 
             # Scope (shared shape with Pain and Objective via
             # max_scope_level key)
@@ -2694,6 +2714,33 @@ class SignalClusterService:
         _fetch_constraint_signals, so member.target_departments.all() hits the
         prefetched cache. Only the Constraint cluster path uses this; the FK
         types keep _compute_departments untouched.
+        """
+        seen = set()
+        departments = []
+        for member in sorted(members, key=lambda m: m.created_at):
+            for dept in member.target_departments.all():
+                if dept.id in seen:
+                    continue
+                seen.add(dept.id)
+                departments.append({
+                    'id':   str(dept.id),
+                    'name': dept.get_name_display(),
+                })
+        return departments
+
+    @staticmethod
+    def _compute_m2m_departments(members: list) -> list:
+        """
+        Distinct departments across a cluster's members, read off the
+        multi-department target_departments M2M (sub-step 2b) rather than the
+        legacy single FK. Same compact {id, name} shape and stable
+        (oldest-member-first) ordering as _compute_departments; a single member
+        can contribute SEVERAL departments. Used by the Pain and Impact cluster
+        builders; Objective/People keep the FK-based _compute_departments, and
+        Constraint keeps its own _compute_constraint_departments.
+
+        N+1-safe: target_departments is prefetch_related in the pain/impact
+        fetches, so member.target_departments.all() hits the prefetched cache.
         """
         seen = set()
         departments = []

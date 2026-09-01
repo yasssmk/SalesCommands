@@ -73,6 +73,10 @@ class PainSignalViewSet(BaseSignalViewSet):
         qs = qs.select_related(
             'decision_cycle',
             'campaign',
-            'target_department',
+        ).prefetch_related(
+            # Multi-department scope (sub-step 2b): the serializer reads the
+            # target_departments M2M; prefetch keeps get_target_departments
+            # N+1-safe (M2M can't ride select_related).
+            'target_departments',
         )
         return qs

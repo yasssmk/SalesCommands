@@ -308,10 +308,11 @@ class AggregatedSignalListView(BaseAPIView):
         if status_filters:
             qs = qs.filter(status__in=status_filters)
         if department_id is not None:
-            if slug == 'constraints':
-                # Multi-department scope (sub-step 1b): a constraint matches if
-                # the department is in its target_departments M2M. distinct()
-                # guards against duplicate rows from the join.
+            if slug in ('constraints', 'pain', 'impact'):
+                # Multi-department scope: constraint (1b) and pain/impact (2b)
+                # match if the department is in their target_departments M2M.
+                # distinct() guards against duplicate rows from the join.
+                # Objective/People stay on the single target_department FK.
                 qs = qs.filter(
                     target_departments__id=department_id
                 ).distinct()
