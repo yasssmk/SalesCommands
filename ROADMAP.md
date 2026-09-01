@@ -1116,6 +1116,60 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / M2M scope départements ✅ — Scope département FK → M2M pour Pain, Impact, Constraint (branche `feat/signal-scope-m2m`)
+- **Objectif** : un même signal peut concerner PLUSIEURS départements. Passer le
+  scope département de FK simple (`target_department`) à M2M (`target_departments`
+  → StandardDepartment) pour les 3 signaux TRANSVERSAUX **Pain, Impact, Constraint**.
+  **Objective et People RESTENT FK mono-département** (décision produit : un
+  objectif vise une cible unique ; une personne appartient à un département).
+  Blocker/Competitor/NextStep : pas de scope département. Patron cloné =
+  `TechStackSignal.usage_departments` (Sprint Tech scope, TD-201).
+  ⚠️ **Insertion cadrée hors-séquence** (« M2M scope transverse », suite déjà
+  cadrée dans la séquence PO 2026-08-31), traitée AVANT UX Activity à la demande
+  PO. La séquence signaux reste **UX Activity → Blocker**.
+- **Livré** (chaîne complète par signal — Constraint 1a-1d, Pain+Impact 2a-2d ;
+  chaque sous-étape : reproduction ROUGE d'abord par le VRAI chemin + sonde de
+  non-vacuité, restauration par édition ciblée, jamais `git checkout`) :
+  - **Modèle + backfill** : champ `target_departments` (M2M, cloné sur
+    `usage_departments`) + migration de données FK → 1ère entrée du M2M
+    (baseline PO prouvée par SELECT : Constraint 14, Pain 15, Impact 4 lignes).
+  - **Recâblage de TOUS les lecteurs** (serializer read, clustering
+    `_compute_departments` + perimeter + fetch, prep_call, deal_health, endpoint
+    agrégé) de la FK (objet unique) vers le M2M (collection), **PAR TYPE** —
+    sans casser Objective/People (restés FK) : lecteurs partagés isolés par
+    type/flag (helper `_compute_m2m_departments` dédié pain/impact ;
+    `_apply_member_filters(uses_m2m_departments=…)` ; filtre agrégé branché sur le
+    slug). Test de non-régression Objective à chaque étape.
+  - **Extraction** : `constraint_v1` et `pain_impact_v1` (combiné) émettent une
+    LISTE de départements ; résolution multi clonée sur
+    `resolve_tech_usage_departments`. `scope_level` **RETIRÉ** du prompt Constraint
+    (pas de colonne `scope_level` sur Constraint), **GARDÉ** sur Pain/Impact
+    (descriptif). Objective (prompt séparé + resolver partagé) intact.
+  - **Drop des anciennes FK** `target_department` (Constraint, Pain, Impact)
+    après recâblage — migrations à la main, réversibles.
+  - **Assainissement** de la dérive `signal_type` (matérialise le choix `people`
+    oublié par le sprint People — analogue de 0032 pour `competitor`) : arbre de
+    migrations enfin propre (`makemigrations --check` vert).
+- **Migrations** (toutes écrites À LA MAIN, dérive `signal_type` exclue des étapes
+  M2M) : **0036** (AddField M2M Constraint), **0037** (backfill Constraint),
+  **0038** (drop FK Constraint), **0039** (AddField M2M Pain+Impact), **0040**
+  (backfill Pain+Impact), **0041** (drop FK Pain+Impact), **0042** (assainissement
+  `signal_type`, choices-only, sans DDL).
+- **Validation** : suites vertes (Postgres, en série) — `pytest tests/signals`
+  **395**, `tests/ai_pipelines` **370** ; `makemigrations --check module_signals`
+  **propre (« No changes detected », exit 0)** ; `vitest` **inchangé** (aucun
+  front touché ce chantier — backend + prompts uniquement). **Smoke PO à faire.**
+- **Dette fermée** : **aucune** (chantier planifié / insertion PO, pas une dette ;
+  TD-201 — précédent TechStack `usage_departments` — déjà RESOLVED).
+- **Dette ajoutée** : **TD-216** (garde-fou anti-dérive `signal_type` en CI).
+  **MAJ** : **TD-204** / **TD-205** (front M2M : rendu + édition multi-département
+  au sprint UX Signals), **TD-206** (docstrings/prompts morts résiduels FK
+  `target_department` à balayer).
+- **Prochain jalon** : **UX Activity** (séquence PO 2026-08-31 — inchangée :
+  UX Activity → Blocker).
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -1324,12 +1378,15 @@ possibles) :
   (`feat/people-full-name`) — signal People **éditable manuellement**, voir la
   fiche « Sprint Bloc IA / People ✅ » ci-dessus ; **Next steps**
   (`feat/next-steps-dc-only`) — garde DC-only + objectif du next step généré et
-  affiché E2E, voir la fiche « Sprint Bloc IA / Next steps ✅ » ci-dessus.
+  affiché E2E, voir la fiche « Sprint Bloc IA / Next steps ✅ » ci-dessus ;
+  **M2M scope transverse** (`feat/signal-scope-m2m`) — scope département FK→M2M
+  pour Pain/Impact/Constraint (Objective/People restent FK), voir la fiche
+  « Sprint Bloc IA / M2M scope départements ✅ » ci-dessus.
 - **Reste du bloc Signaux (ordre confirmé PO)** :
   1. **UX Activity** — layout Activity **sans onglets** (tranche TD-186 : pas de
      bascule onglet).
   2. **Blocker (Objection)**.
-  - [+ suites déjà cadrées : **M2M scope transverse**, **Filtres transverse**
+  - [+ suites déjà cadrées : **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]
 - **Resserrement prompt tech (TD-207) à traiter AVANT la fin d'Activity** :
