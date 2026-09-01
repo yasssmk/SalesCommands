@@ -288,6 +288,12 @@ class NextStepExtractor:
             # The M2M is left at its empty default; SignalManager's
             # M2M-aware create path (Sprint B2) is a no-op when the key
             # is not present in `data`.
+            #
+            # THIS is the reason suggested_contacts is a DORMANT capability:
+            # the field is fully wired downstream (API write + front
+            # display) but the extraction pipeline never fills it, because
+            # the key is intentionally absent here. Do not add it back until
+            # suggested-contact resolution lands (TD-7).
         }
 
     # =========================================================================

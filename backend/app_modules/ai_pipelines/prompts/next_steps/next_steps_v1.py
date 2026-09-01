@@ -77,6 +77,11 @@ production-grade at MVP scope. Attribution happens at rep validation
 time. Tracked as TD-7 in TECH_DEBT.md (Next Steps Tab UI in Sprint F6
 must expose a multi-contact selector for PENDING NextStepSignals).
 
+This is why `suggested_contacts` is a DORMANT capability: the field is
+wired end to end (API write + front display) and tested, but no prompt
+ever emits it, so it stays empty until suggested-contact resolution
+lands. It is deliberately kept, not dead code -- do not remove it.
+
 Persistence contract
 --------------------
 The downstream persistence service (NextStepExtractor) first applies

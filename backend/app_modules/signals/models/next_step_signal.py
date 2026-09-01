@@ -212,6 +212,13 @@ class NextStepSignal(BaseSignal):
         ),
     )
 
+    # DORMANT CAPABILITY — do NOT remove. `suggested_contacts` is fully
+    # wired (writable via the Create/Update serializers → SignalManager's
+    # M2M .set() path, read/displayed by the next-step front surfaces) and
+    # covered by tests, but it is NEVER fed by the extraction pipeline: the
+    # v1 next-steps prompt does not emit contacts and NextStepExtractor
+    # leaves the M2M empty (TD-7). It is the foundation for the future
+    # "suggested contact resolution" feature — kept intentionally.
     suggested_contacts = models.ManyToManyField(
         'module_contacts.Contact',
         related_name='suggested_in_next_steps',
