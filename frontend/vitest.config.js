@@ -57,6 +57,7 @@ export default defineConfig({
       // specific config/* modules resolve to their file (Next does this via
       // baseUrl). Keep the specific entry BEFORE `config` so it wins.
       "config/formatters": path.resolve(__dirname, "src/config/formatters.js"),
+      "config/swr": path.resolve(__dirname, "src/config/swr.js"),
       config: path.resolve(__dirname, "src/config/theme-config.js"),
     },
   },

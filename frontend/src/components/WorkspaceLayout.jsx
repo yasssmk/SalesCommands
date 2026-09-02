@@ -53,6 +53,7 @@ import Typography from '@mui/material/Typography';
 import MainCard from 'components/MainCard';
 import WorkspaceBreadcrumb from 'components/WorkspaceBreadcrumb';
 import EditableField from 'sections/accounts/workspace/EditableField';
+import { WorkspaceDrawerProvider } from 'contexts/WorkspaceDrawerContext';
 
 // ==============================|| HEADER SKELETON ||============================== //
 
@@ -108,7 +109,7 @@ function WorkspaceTabsSkeleton() {
 
 // ==============================|| WORKSPACE LAYOUT ||============================== //
 
-export default function WorkspaceLayout({
+function WorkspaceLayoutInner({
   // Navigation
   breadcrumbs,
 
@@ -279,9 +280,21 @@ export default function WorkspaceLayout({
   );
 }
 
+// ==============================|| PROVIDER WRAP (transparent — no DOM) ||============================== //
+
+// Mounts the workspace drawer state around every workspace. The provider
+// renders no DOM of its own (B3.5.0); the visual coque is B3.5.1.
+export default function WorkspaceLayout(props) {
+  return (
+    <WorkspaceDrawerProvider>
+      <WorkspaceLayoutInner {...props} />
+    </WorkspaceDrawerProvider>
+  );
+}
+
 // ==============================|| PROP TYPES ||============================== //
 
-WorkspaceLayout.propTypes = {
+WorkspaceLayoutInner.propTypes = {
   /** Breadcrumb items for WorkspaceBreadcrumb */
   breadcrumbs: PropTypes.arrayOf(
     PropTypes.shape({

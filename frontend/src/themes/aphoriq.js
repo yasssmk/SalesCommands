@@ -46,6 +46,12 @@ export default function AphoriQ(theme) {
       pill: 999,
     },
 
+    // --- Drawer — the single width for the unified workspace drawer coque
+    //     (B3.5). Design value; consumed as theme.aphoriQ.drawer.width. ---
+    drawer: {
+      width: 480,
+    },
+
     // --- Border scale — hairline(0.5) is the MD target; thin(1) matches the
     //     current `border:'1px solid'`. `color` REFERENCES the palette. ---
     border: {
