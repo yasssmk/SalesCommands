@@ -52,6 +52,15 @@ export default function AphoriQ(theme) {
       width: 480,
     },
 
+    // --- Breadcrumb — the CONSTANT height of the single layout breadcrumb bar
+    //     (UX Activity L0). The bar is always rendered (even when the trail is
+    //     empty) so it reserves this height everywhere → a stable anchor for the
+    //     workspace drawer coque (L2). Dimensionless design value (px), consumed
+    //     as theme.aphoriQ.breadcrumb.minHeight. ---
+    breadcrumb: {
+      minHeight: 40,
+    },
+
     // --- Border scale — hairline(0.5) is the MD target; thin(1) matches the
     //     current `border:'1px solid'`. `color` REFERENCES the palette. ---
     border: {

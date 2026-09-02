@@ -17,6 +17,7 @@ import Typography from "@mui/material/Typography";
 // Project imports
 import WorkspaceLayout from "components/WorkspaceLayout";
 import { buildActivityBreadcrumbs } from "components/WorkspaceBreadcrumb";
+import { useBreadcrumb } from "contexts/BreadcrumbContext";
 import { useGetActivity, updateActivity } from "api/accounts/activities";
 import { useGetLastExtractionRun } from "api/aiPipelines/lastRun";
 import { useActivitySignalCounts } from "api/signals/signalCounts";
@@ -170,6 +171,37 @@ export default function ActivityWorkspacePage() {
     });
   }, [visibleTabs, signalsPending, nextStepsPending]);
 
+  // ==============================|| CONTEXTUAL BREADCRUMB (pilot — L0) ||============================== //
+
+  // Pilot page for the layout breadcrumb mechanism: push this activity's trail
+  // (Account › [Step] › Activity) to the shared BreadcrumbBar. Reuses the same
+  // builder as the in-page WorkspaceBreadcrumb (which stays in L0 — the in-page
+  // crumb + legacy layout crumb are removed in L1).
+  const { setCrumbs } = useBreadcrumb();
+
+  const breadcrumbItems = useMemo(
+    () =>
+      activity
+        ? buildActivityBreadcrumbs({
+            accountId: activity.account,
+            accountName: activity.account_detail?.company_name,
+            cycleId: activity.decision_cycle || null,
+            stepId: activity.decision_step || null,
+            stepName: activity.decision_step_detail?.name || null,
+            activityTitle: activity.title,
+          })
+        : [],
+    [activity],
+  );
+
+  useEffect(() => {
+    setCrumbs(breadcrumbItems);
+  }, [breadcrumbItems, setCrumbs]);
+
+  // Clear on unmount so the trail doesn't bleed onto the next page (L0: only
+  // this pilot pushes; the other pages wire up in L1).
+  useEffect(() => () => setCrumbs([]), [setCrumbs]);
+
   // ==============================|| RENDER - ERROR ||============================== //
 
   // Render tab content
@@ -293,18 +325,6 @@ export default function ActivityWorkspacePage() {
       </Box>
     );
   }
-
-  // Build breadcrumb items
-  const breadcrumbItems = activity
-    ? buildActivityBreadcrumbs({
-        accountId: activity.account,
-        accountName: activity.account_detail?.company_name,
-        cycleId: activity.decision_cycle || null,
-        stepId: activity.decision_step || null,
-        stepName: activity.decision_step_detail?.name || null,
-        activityTitle: activity.title,
-      })
-    : [];
 
   return (
     <>

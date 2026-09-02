@@ -19,6 +19,8 @@ import Footer from './Footer';
 import HorizontalBar from './Drawer/HorizontalBar';
 import Loader from 'components/Loader';
 import Breadcrumbs from 'components/@extended/Breadcrumbs';
+import BreadcrumbBar from 'components/BreadcrumbBar';
+import { BreadcrumbProvider } from 'contexts/BreadcrumbContext';
 // import AddCustomer from 'sections/apps/customer/AddCustomer';
 
 import { MenuOrientation } from 'config';
@@ -58,6 +60,10 @@ export default function DashboardLayout({ children }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+    {/* BreadcrumbProvider wraps BOTH the bar and the pages (children) so a
+        page's setCrumbs push reaches the SAME provider the bar reads — no
+        two-instances trap (UX Activity L0). */}
+    <BreadcrumbProvider>
     <Stack direction="row" width={1}>
       <Header />
       {!isHorizontal ? <Drawer /> : <HorizontalBar />}
@@ -73,6 +79,10 @@ export default function DashboardLayout({ children }) {
             flexDirection: 'column',
           }}
         >
+          {/* Single contextual breadcrumb bar — always present, constant height
+              (anchor). Coexists with the legacy @extended/Breadcrumbs in L0; L1
+              removes the legacy. */}
+          <BreadcrumbBar />
           {pathname !== '/apps/profiles/account/my-account' && pathname !== '/'  && <Breadcrumbs />}
           {children}
           <Footer />
@@ -80,6 +90,7 @@ export default function DashboardLayout({ children }) {
       </Box>
       {/* <AddCustomer /> */}
     </Stack>
+    </BreadcrumbProvider>
     </QueryClientProvider>
   );
 }
