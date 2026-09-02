@@ -54,7 +54,8 @@ vi.mock("sections/accounts/signals/SignalClusterDetailDrawer", () => ({
 }));
 vi.mock("sections/accounts/signals/AlertSignalReject", () => ({ default: () => null }));
 vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
-vi.mock("components/signals/SignalQuickDrawer", () => ({ default: () => null }));
+// The signal detail now lives in the single workspace drawer coque (openDrawer),
+// never mounted by the view itself, so it needs no stub.
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 

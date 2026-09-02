@@ -16,7 +16,12 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
-import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import WorkspaceCoque from "../_utils/workspaceCoque";
+
+// The signal detail now lives in the single workspace drawer coque (openDrawer);
+// render the tab inside that coque so a row click shows its detail as in the app.
+const render = (ui, opts) => rtlRender(ui, { wrapper: WorkspaceCoque, ...opts });
 
 // ==============================|| MOCKS ||============================== //
 

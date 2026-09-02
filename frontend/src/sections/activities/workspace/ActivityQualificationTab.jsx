@@ -32,7 +32,8 @@ import {
 
 // Section imports
 import SignalsGroupedView from "sections/activities/signals/SignalsGroupedView";
-import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
+import SignalDetailPanel from "components/signals/SignalDetailPanel";
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
 // ==============================|| ACTIVITY QUALIFICATION TAB (GROUPED) ||============================== //
@@ -60,10 +61,9 @@ export default function ActivityQualificationTab({
 
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // Drawer state
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedSignal, setSelectedSignal] = useState(null);
-  const [selectedType, setSelectedType] = useState(null);
+  // The single workspace drawer coque (B3.5.3): clicking a signal injects its
+  // detail via openDrawer; the coque owns open state + close.
+  const { openDrawer } = useWorkspaceDrawer();
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -102,18 +102,6 @@ export default function ActivityQualificationTab({
   );
 
   // Handlers
-  const handleSelect = useCallback((signal, signalType) => {
-    setSelectedSignal(signal);
-    setSelectedType(signalType);
-    setDrawerOpen(true);
-  }, []);
-
-  const handleCloseDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    setSelectedSignal(null);
-    setSelectedType(null);
-  }, []);
-
   const handleValidate = useCallback(
     async (signal, signalType) => {
       const result = await validateSignal(signalType, signal.id);
@@ -161,6 +149,26 @@ export default function ActivityQualificationTab({
     setEditType(signalType);
     setEditDialogOpen(true);
   }, []);
+
+  // Inject the signal detail into the single coque. Clicking another signal
+  // replaces the content; the coque owns the close button. Declared after the
+  // action handlers it captures.
+  const handleSelect = useCallback(
+    (signal, signalType) => {
+      openDrawer(
+        <SignalDetailPanel
+          signal={signal}
+          signalType={signalType}
+          onValidate={handleValidate}
+          onReject={handleReject}
+          onEdit={handleEdit}
+          onReopen={handleReopen}
+          isLocked={isLocked}
+        />,
+      );
+    },
+    [openDrawer, handleValidate, handleReject, handleEdit, handleReopen, isLocked],
+  );
 
   const handleEditClose = useCallback(() => {
     setEditDialogOpen(false);
@@ -214,19 +222,6 @@ export default function ActivityQualificationTab({
         onSelect={handleSelect}
         onValidate={handleValidate}
         onReject={handleReject}
-        isLocked={isLocked}
-      />
-
-      {/* Quick Drawer */}
-      <SignalQuickDrawer
-        open={drawerOpen}
-        signal={selectedSignal}
-        signalType={selectedType}
-        onClose={handleCloseDrawer}
-        onValidate={handleValidate}
-        onReject={handleReject}
-        onEdit={handleEdit}
-        onReopen={handleReopen}
         isLocked={isLocked}
       />
 

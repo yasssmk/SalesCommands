@@ -41,7 +41,8 @@ import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import CollapsibleSection from "components/signals/CollapsibleSection";
 import SignalLine from "components/signals/SignalLine";
-import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
+import SignalDetailPanel from "components/signals/SignalDetailPanel";
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 
 import { useGetClustersByAccount } from "api/signals/signalClusters";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
@@ -590,12 +591,10 @@ export default function QualificationGroupedView({
     setClusterDrawer({ open: false, summary: null });
   }, []);
 
-  // ---- Typed-section member drawer + modals ----
-  const [memberDrawer, setMemberDrawer] = useState({
-    open: false,
-    signal: null,
-    signalType: null,
-  });
+  // ---- Typed-section member detail (single coque) + modals ----
+  // Clicking a signal injects its detail into the single workspace drawer coque
+  // (B3.5.3) via openDrawer; the coque owns open state + close.
+  const { openDrawer } = useWorkspaceDrawer();
   const [rejectModal, setRejectModal] = useState({
     open: false,
     signal: null,
@@ -606,13 +605,6 @@ export default function QualificationGroupedView({
     signal: null,
     signalType: null,
   });
-
-  const handleSelect = useCallback((signal, signalType) => {
-    setMemberDrawer({ open: true, signal, signalType });
-  }, []);
-  const handleDrawerClose = useCallback(() => {
-    setMemberDrawer({ open: false, signal: null, signalType: null });
-  }, []);
 
   const handleValidate = useCallback(
     async (signal, signalType) => {
@@ -658,6 +650,25 @@ export default function QualificationGroupedView({
   const handleEditSuccess = useCallback(() => {
     mutateSections();
   }, [mutateSections]);
+
+  // Inject the signal detail into the single coque. Clicking another signal
+  // replaces the content; the coque owns the close button. Declared after the
+  // action handlers it captures (reject/edit open modals).
+  const handleSelect = useCallback(
+    (signal, signalType) => {
+      openDrawer(
+        <SignalDetailPanel
+          signal={signal}
+          signalType={signalType}
+          onValidate={handleValidate}
+          onReject={handleRejectOpen}
+          onEdit={handleEditOpen}
+          onReopen={handleReopen}
+        />,
+      );
+    },
+    [openDrawer, handleValidate, handleRejectOpen, handleEditOpen, handleReopen],
+  );
 
   if (clustersError) {
     return (
@@ -768,18 +779,7 @@ export default function QualificationGroupedView({
         onClusterChange={mutateClusters}
       />
 
-      {/* Typed-section member drawer + modals. */}
-      <SignalQuickDrawer
-        open={memberDrawer.open}
-        signal={memberDrawer.signal}
-        signalType={memberDrawer.signalType}
-        onClose={handleDrawerClose}
-        onValidate={handleValidate}
-        onReject={handleRejectOpen}
-        onEdit={handleEditOpen}
-        onReopen={handleReopen}
-      />
-
+      {/* Typed-section modals. */}
       <AlertSignalReject
         open={rejectModal.open}
         onClose={handleRejectClose}

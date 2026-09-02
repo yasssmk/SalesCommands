@@ -46,7 +46,8 @@ import SignalsFilterPanel from "components/signals/SignalsFilterPanel";
 import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
 import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
-import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
+import SignalDetailPanel from "components/signals/SignalDetailPanel";
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
@@ -165,10 +166,9 @@ export default function AccountSignalsTab({ accountId, account }) {
     signalType: null,
   });
 
-  // Signal detail drawer (opened by clicking a signal line).
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedSignal, setSelectedSignal] = useState(null);
-  const [selectedType, setSelectedType] = useState(null);
+  // The single workspace drawer coque (B3.5.3): clicking a signal line injects
+  // its detail via openDrawer; the coque owns open state + close.
+  const { openDrawer } = useWorkspaceDrawer();
 
   // ==============================|| DATA FETCHING ||============================== //
 
@@ -253,19 +253,6 @@ export default function AccountSignalsTab({ accountId, account }) {
     [mutateAll],
   );
 
-  // Drawer open/close — clicking a signal line shows its detail.
-  const handleSelect = useCallback((signal, signalType) => {
-    setSelectedSignal(signal);
-    setSelectedType(signalType);
-    setDrawerOpen(true);
-  }, []);
-
-  const handleCloseDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    setSelectedSignal(null);
-    setSelectedType(null);
-  }, []);
-
   const handleRejectOpen = useCallback((signal, signalType) => {
     setRejectModal({ open: true, signal, signalType });
   }, []);
@@ -292,6 +279,25 @@ export default function AccountSignalsTab({ accountId, account }) {
     mutateAll();
     // Dialog closes itself on success
   }, [mutateAll]);
+
+  // Clicking a signal line injects its detail into the single coque. Clicking
+  // another signal replaces the content; the coque owns the close button.
+  // Declared after the action handlers it captures (reject/edit open modals).
+  const handleSelect = useCallback(
+    (signal, signalType) => {
+      openDrawer(
+        <SignalDetailPanel
+          signal={signal}
+          signalType={signalType}
+          onValidate={handleValidate}
+          onReject={handleRejectOpen}
+          onEdit={handleEdit}
+          onReopen={handleReopen}
+        />,
+      );
+    },
+    [openDrawer, handleValidate, handleRejectOpen, handleEdit, handleReopen],
+  );
 
   const handleDelete = useCallback(
     async (signal, signalType) => {
@@ -411,18 +417,6 @@ export default function AccountSignalsTab({ accountId, account }) {
       )}
 
       {/* ==================== MODALS ==================== */}
-
-      {/* Signal detail drawer (opened by clicking a line) */}
-      <SignalQuickDrawer
-        open={drawerOpen}
-        signal={selectedSignal}
-        signalType={selectedType}
-        onClose={handleCloseDrawer}
-        onValidate={handleValidate}
-        onReject={handleRejectOpen}
-        onEdit={handleEdit}
-        onReopen={handleReopen}
-      />
 
       {/* Reject confirmation */}
       <AlertSignalReject
