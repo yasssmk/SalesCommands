@@ -16,7 +16,9 @@ import Footer from './Footer';
 import HorizontalBar from './Drawer/HorizontalBar';
 import Loader from 'components/Loader';
 import BreadcrumbBar from 'components/BreadcrumbBar';
+import WorkspaceDrawer from 'components/WorkspaceDrawer';
 import { BreadcrumbProvider } from 'contexts/BreadcrumbContext';
+import { WorkspaceDrawerProvider } from 'contexts/WorkspaceDrawerContext';
 // import AddCustomer from 'sections/apps/customer/AddCustomer';
 
 import { MenuOrientation } from 'config';
@@ -59,6 +61,11 @@ export default function DashboardLayout({ children }) {
         page's setCrumbs push reaches the SAME provider the bar reads — no
         two-instances trap (UX Activity L0). */}
     <BreadcrumbProvider>
+    {/* WorkspaceDrawerProvider at the LAYOUT level (UX Activity L2): the single
+        coque state now covers EVERY view — lists and workspaces alike — so any
+        page can openDrawer(node). It renders no DOM of its own; the visual coque
+        is the <WorkspaceDrawer /> sibling below. */}
+    <WorkspaceDrawerProvider>
     <Stack direction="row" width={1}>
       <Header />
       {!isHorizontal ? <Drawer /> : <HorizontalBar />}
@@ -78,12 +85,29 @@ export default function DashboardLayout({ children }) {
               height (anchor). Each page declares its trail via useBreadcrumb;
               the legacy menu-derived @extended/Breadcrumbs was removed in L1. */}
           <BreadcrumbBar />
-          {children}
+
+          {/* Screen splits BELOW the breadcrumb: a flex-row [page content][coque].
+              The breadcrumb above stays full-width (never pushed by the coque);
+              the coque PUSHES the page content on large screens (shrinks the
+              flex-grow column) and renders as an overlay on narrow screens. No
+              hardcoded offset — the row sits under the breadcrumb structurally,
+              so alignment holds on every view (UX Activity L2). */}
+          <Box
+            data-testid="content-coque-row"
+            sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexGrow: 1, minWidth: 0 }}
+          >
+            <Box sx={{ flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              {children}
+            </Box>
+            <WorkspaceDrawer />
+          </Box>
+
           <Footer />
         </Container>
       </Box>
       {/* <AddCustomer /> */}
     </Stack>
+    </WorkspaceDrawerProvider>
     </BreadcrumbProvider>
     </QueryClientProvider>
   );

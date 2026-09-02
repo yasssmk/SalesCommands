@@ -7,23 +7,15 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
-import AphoriqTheme from "../_utils/aphoriqTheme";
-
-// config (theme-config.js) calls next/font/google at import time — not loadable
-// under vitest; it is pulled transitively via MainCard → Highlighter.
-vi.mock("next/font/google", () => ({
-  Public_Sans: () => ({ className: "mock", style: { fontFamily: "mock" } }),
-}));
+import WorkspaceCoque from "../_utils/workspaceCoque";
 
 // Control push vs overlay deterministically (WorkspaceDrawer picks the mode via
-// useMediaQuery(down('lg'))).
+// useMediaQuery(down('lg'))). Since L2 the coque + provider live at the layout,
+// so this mounts the standalone WorkspaceCoque harness (provider + coque).
 vi.mock("@mui/material/useMediaQuery", () => ({ default: vi.fn(() => false) }));
 import useMediaQuery from "@mui/material/useMediaQuery";
 
-import WorkspaceLayout from "components/WorkspaceLayout";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
-
-const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 // A child (inside the provider) that drives the drawer.
 function Trigger() {
@@ -40,10 +32,10 @@ function Trigger() {
 }
 
 function renderWorkspace() {
-  return render(
-    <WorkspaceLayout title="WS">
+  return rtlRender(
+    <WorkspaceCoque>
       <Trigger />
-    </WorkspaceLayout>,
+    </WorkspaceCoque>,
   );
 }
 

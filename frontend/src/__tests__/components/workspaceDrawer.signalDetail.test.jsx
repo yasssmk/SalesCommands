@@ -10,26 +10,20 @@
 //   - the coque SLIDES open on large via a theme.transitions-driven wrapper
 //     (MUI Collapse) — not a sharp mount/unmount.
 //
-// next/navigation is globally mocked in vitest.setup.js; next/font is mocked
-// here because WorkspaceLayout pulls MainCard → Highlighter at import time.
+// next/navigation is globally mocked in vitest.setup.js. Since L2 the coque +
+// provider live at the layout, so tests mount the standalone WorkspaceCoque
+// harness (provider + coque) rather than WorkspaceLayout.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
-import AphoriqTheme from "../_utils/aphoriqTheme";
-
-vi.mock("next/font/google", () => ({
-  Public_Sans: () => ({ className: "mock", style: { fontFamily: "mock" } }),
-}));
+import WorkspaceCoque from "../_utils/workspaceCoque";
 
 // Deterministic push (large) vs overlay (narrow).
 vi.mock("@mui/material/useMediaQuery", () => ({ default: vi.fn(() => false) }));
 import useMediaQuery from "@mui/material/useMediaQuery";
 
-import WorkspaceLayout from "components/WorkspaceLayout";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
-
-const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 const SIGNAL_A = {
   id: "sig-a",
@@ -62,10 +56,10 @@ function Trigger() {
 }
 
 function renderWorkspace() {
-  return render(
-    <WorkspaceLayout title="WS">
+  return rtlRender(
+    <WorkspaceCoque>
       <Trigger />
-    </WorkspaceLayout>,
+    </WorkspaceCoque>,
   );
 }
 
