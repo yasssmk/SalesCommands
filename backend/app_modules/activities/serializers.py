@@ -731,9 +731,12 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         
         Priority:
             1. If PENDING next_activities exist in sequence → True (reality wins)
-            2. If next_activity FK is set and PENDING → True
-            3. If next_step_agreed is explicitly set → return its value
-            4. Otherwise → None (ask user to confirm)
+            2. If next_step_agreed is explicitly set → return its value
+            3. Otherwise → None (ask user to confirm)
+
+        Note: the avant/après relation is derived at read-time via
+        ActivitySequenceService (sequence_context); there is no stored
+        next_activity FK (dropped in migration 0016).
         
         Returns:
             True: next step exists or was agreed

@@ -204,14 +204,15 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 _contacts_count=Count('contacts'),
             )
         elif self.action == 'retrieve':
-            # Retrieve: full relations for detail view
+            # Retrieve: full relations for detail view.
+            # NB: previous_activity / next_activity were dropped in migration
+            # 0016 — the avant/après relation is derived at read-time by
+            # ActivitySequenceService, not via stored FKs.
             queryset = queryset.select_related(
                 'account',
                 'owner',
                 'decision_cycle',
                 'decision_step',
-                'previous_activity',
-                'next_activity',
                 'created_by',
                 'updated_by'
             ).prefetch_related(
@@ -543,48 +544,24 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
     
     def perform_destroy(self, instance):
         """
-        Delete activity with linked list cleanup and audit logging.
-        
-        Uses direct database updates to avoid unique constraint violations
-        on OneToOneField (next_activity_id, previous_activity_id).
-        
-        Strategy:
-            1. Capture adjacent activity IDs before any modification
-            2. Clear links on the instance being deleted (breaks the chain)
-            3. Reconnect adjacent activities
-            4. Delete the instance
+        Delete activity with audit logging and cache invalidation.
+
+        The previous/next ("avant/après") relationship is NOT stored: it is
+        derived at read-time by ActivitySequenceService (see
+        get_sequence_context / the serializer's sequence_context). Deleting a
+        middle activity therefore needs no adjacent re-linking — the sequence
+        recomputes itself on the next read (the removed activity simply drops
+        out of its scope). The former linked-list splice referenced the
+        previous_activity / next_activity FKs dropped in migration 0016.
         """
         user = self.request.user
         client_id = self.get_client_id()
         activity_id = str(instance.id)
         account_id = str(instance.account_id)
-        
-        # Capture adjacent activity IDs before modification
-        previous_id = instance.previous_activity_id
-        next_id = instance.next_activity_id
-        
-        # Step 1: Clear links on the instance being deleted
-        # This releases the unique constraint on next_activity_id and previous_activity_id
-        Activity.objects.filter(id=instance.id).update(
-            previous_activity=None,
-            next_activity=None
-        )
-        
-        # Step 2: Reconnect adjacent activities
-        if previous_id and next_id:
-            # Chain: A → [B] → C  becomes  A → C
-            Activity.objects.filter(id=previous_id).update(next_activity=next_id)
-            Activity.objects.filter(id=next_id).update(previous_activity=previous_id)
-        elif previous_id:
-            # Chain: A → [B]  becomes  A (end)
-            Activity.objects.filter(id=previous_id).update(next_activity=None)
-        elif next_id:
-            # Chain: [B] → C  becomes  C (start)
-            Activity.objects.filter(id=next_id).update(previous_activity=None)
-        
-        # Step 3: Delete the instance
+
+        # Delete the instance (sequence adjacency is recomputed at read-time)
         instance.delete()
-        
+
         # Audit log
         audit_log(
             event='activity_delete_success',
