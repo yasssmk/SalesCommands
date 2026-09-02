@@ -5,7 +5,13 @@
 // blockers, with client-side status filtering and CRUD.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
+import { render as rtlRender, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import WorkspaceCoque from "../_utils/workspaceCoque";
+
+// The signal detail now lives in the single workspace drawer coque (openDrawer);
+// render the tab inside that coque so a row click shows its detail as in the app.
+const render = (ui, opts) => rtlRender(ui, { wrapper: WorkspaceCoque, ...opts });
 
 // ==============================|| MOCKS ||============================== //
 

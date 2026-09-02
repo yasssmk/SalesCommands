@@ -25,9 +25,10 @@ vi.mock("utils/displayError", () => ({
   displayErrorSnackbar: vi.fn(),
 }));
 
-// Drawer / dialog are irrelevant here — stub to null.
-vi.mock("sections/activities/signals/SignalQuickDrawer", () => ({ default: () => null }));
-vi.mock("sections/activities/signals/SignalEditDialog", () => ({ default: () => null }));
+// The edit drawer is irrelevant here — stub to null. The signal detail now
+// lives in the single workspace drawer coque (openDrawer), never mounted by the
+// tab itself, so it needs no stub.
+vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 

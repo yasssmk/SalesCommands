@@ -1,9 +1,16 @@
-// frontend/src/__tests__/signals/SignalQuickDrawer.test.jsx
+// frontend/src/__tests__/components/signals/SignalDetailPanel.test.jsx
+//
+// B3.5.3 — SignalDetailPanel is the signal DETAIL dé-coqué: the shared
+// SignalDetailContent plus origin-activity navigation, injected into the single
+// workspace drawer coque via openDrawer (no <Drawer> shell of its own; the coque
+// owns the close button). These tests exercise the panel's rendering + lifecycle
+// actions directly (no coque needed — useWorkspaceDrawer falls back to a no-op
+// context when unwrapped; next/navigation is globally mocked in vitest.setup.js).
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { useRouter } from "next/navigation";
-import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
+import SignalDetailPanel from "components/signals/SignalDetailPanel";
 
 afterEach(() => {
   cleanup();
@@ -108,18 +115,11 @@ const MOCK_NEXTSTEP = {
   linked_activity: null,
 };
 
-describe("SignalQuickDrawer", () => {
-  // === Existing tests (preserved) ===
+describe("SignalDetailPanel", () => {
+  // === Rendering + header ===
 
-  it("renders signal details when open", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_PAIN}
-        signalType="pain"
-        onClose={vi.fn()}
-      />,
-    );
+  it("renders signal details", () => {
+    render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
 
     expect(screen.getByText("Pain")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
@@ -129,11 +129,9 @@ describe("SignalQuickDrawer", () => {
 
   it("shows Validate, Reject, Edit buttons for PENDING signal", () => {
     render(
-      <SignalQuickDrawer
-        open={true}
+      <SignalDetailPanel
         signal={MOCK_PAIN}
         signalType="pain"
-        onClose={vi.fn()}
         onValidate={vi.fn()}
         onReject={vi.fn()}
         onEdit={vi.fn()}
@@ -148,13 +146,7 @@ describe("SignalQuickDrawer", () => {
   it("hides Validate/Reject for VALIDATED signal", () => {
     const validated = { ...MOCK_PAIN, status: "VALIDATED" };
     render(
-      <SignalQuickDrawer
-        open={true}
-        signal={validated}
-        signalType="pain"
-        onClose={vi.fn()}
-        onEdit={vi.fn()}
-      />,
+      <SignalDetailPanel signal={validated} signalType="pain" onEdit={vi.fn()} />,
     );
 
     expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
@@ -163,15 +155,7 @@ describe("SignalQuickDrawer", () => {
   });
 
   it("hides all action buttons when locked", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_PAIN}
-        signalType="pain"
-        onClose={vi.fn()}
-        isLocked
-      />,
-    );
+    render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" isLocked />);
 
     expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
@@ -181,13 +165,7 @@ describe("SignalQuickDrawer", () => {
   it("calls onValidate on Validate click", () => {
     const onValidate = vi.fn();
     render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_PAIN}
-        signalType="pain"
-        onClose={vi.fn()}
-        onValidate={onValidate}
-      />,
+      <SignalDetailPanel signal={MOCK_PAIN} signalType="pain" onValidate={onValidate} />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /validate/i }));
@@ -197,13 +175,7 @@ describe("SignalQuickDrawer", () => {
   it("calls onReject on Reject click", () => {
     const onReject = vi.fn();
     render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_PAIN}
-        signalType="pain"
-        onClose={vi.fn()}
-        onReject={onReject}
-      />,
+      <SignalDetailPanel signal={MOCK_PAIN} signalType="pain" onReject={onReject} />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /reject/i }));
@@ -213,58 +185,25 @@ describe("SignalQuickDrawer", () => {
   it("calls onEdit on Edit click", () => {
     const onEdit = vi.fn();
     render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_PAIN}
-        signalType="pain"
-        onClose={vi.fn()}
-        onEdit={onEdit}
-      />,
+      <SignalDetailPanel signal={MOCK_PAIN} signalType="pain" onEdit={onEdit} />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
     expect(onEdit).toHaveBeenCalledWith(MOCK_PAIN, "pain");
   });
 
-  it("calls onClose on close button click", () => {
-    const onClose = vi.fn();
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_PAIN}
-        signalType="pain"
-        onClose={onClose}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /close drawer/i }));
-    expect(onClose).toHaveBeenCalled();
-  });
-
   it("returns null when signal is null", () => {
     const { container } = render(
-      <SignalQuickDrawer
-        open={true}
-        signal={null}
-        signalType="pain"
-        onClose={vi.fn()}
-      />,
+      <SignalDetailPanel signal={null} signalType="pain" />,
     );
 
     expect(container.firstChild).toBeNull();
   });
 
-  // === New enriched drawer tests ===
+  // === Enriched detail fields ===
 
   it("shows pain-specific fields: theme, scope, notes, related tool", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_PAIN}
-        signalType="pain"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
 
     expect(screen.getByText("CLASSIFICATION")).toBeInTheDocument();
     expect(screen.getByText("Data × Time")).toBeInTheDocument();
@@ -279,14 +218,7 @@ describe("SignalQuickDrawer", () => {
   });
 
   it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_TECHSTACK}
-        signalType="tech-stack"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={MOCK_TECHSTACK} signalType="tech-stack" />);
 
     expect(screen.getByText("IDENTITY")).toBeInTheDocument();
     expect(screen.getAllByText("Salesforce").length).toBeGreaterThanOrEqual(1);
@@ -304,14 +236,7 @@ describe("SignalQuickDrawer", () => {
   });
 
   it("shows objective-specific fields: success criteria, target date, target contact", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_OBJECTIVE}
-        signalType="objective"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
 
     // Objective specifics now rendered via the shared ObjectiveDetailBlock.
     // Owner line follows the card's single-truth logic: DEPARTMENT scope
@@ -322,41 +247,20 @@ describe("SignalQuickDrawer", () => {
   });
 
   it("shows validated_by info for validated signals", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_OBJECTIVE}
-        signalType="objective"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
 
     expect(screen.getByText("Admin User")).toBeInTheDocument();
   });
 
   it("shows blocker-specific fields: raised by, source quote", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_BLOCKER}
-        signalType="blockers"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={MOCK_BLOCKER} signalType="blockers" />);
 
     expect(screen.getByText("Sophie Martin")).toBeInTheDocument();
     expect(screen.getByText(/Our budget is completely frozen/)).toBeInTheDocument();
   });
 
   it("shows impact-specific fields: impact type, metric, human impact", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_IMPACT}
-        signalType="impact"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={MOCK_IMPACT} signalType="impact" />);
 
     expect(screen.getByText("Time impact")).toBeInTheDocument();
     expect(screen.getByText("5 hours per week")).toBeInTheDocument();
@@ -364,14 +268,7 @@ describe("SignalQuickDrawer", () => {
   });
 
   it("shows next-step-specific fields: type, due date, contacts", () => {
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={MOCK_NEXTSTEP}
-        signalType="next-steps"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={MOCK_NEXTSTEP} signalType="next-steps" />);
 
     expect(screen.getByText("Phone Call")).toBeInTheDocument();
     expect(screen.getByText("Jane Doe")).toBeInTheDocument();
@@ -385,14 +282,7 @@ describe("SignalQuickDrawer", () => {
       contact: null,
       source_context: { contacts: [] },
     };
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={minimal}
-        signalType="pain"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={minimal} signalType="pain" />);
 
     expect(screen.queryByText("N/A")).not.toBeInTheDocument();
     expect(screen.queryByText("RELATED TOOL")).not.toBeInTheDocument();
@@ -402,11 +292,9 @@ describe("SignalQuickDrawer", () => {
 
   it("composes the shared ImpactDetailBlock (IMPACT EVIDENCE section)", () => {
     // The 'IMPACT EVIDENCE' section heading is produced ONLY by the shared
-    // ImpactDetailBlock — its presence proves the drawer composes the block
+    // ImpactDetailBlock — its presence proves the panel composes the block
     // rather than keeping its own per-type copy.
-    render(
-      <SignalQuickDrawer open signal={MOCK_IMPACT} signalType="impact" onClose={vi.fn()} />,
-    );
+    render(<SignalDetailPanel signal={MOCK_IMPACT} signalType="impact" />);
     expect(screen.getByText("IMPACT EVIDENCE")).toBeInTheDocument();
     expect(screen.getByText("Time impact")).toBeInTheDocument();
   });
@@ -427,9 +315,7 @@ describe("SignalQuickDrawer", () => {
         ],
       },
     };
-    render(
-      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={vi.fn()} />,
-    );
+    render(<SignalDetailPanel signal={signal} signalType="pain" />);
     expect(screen.getByText("ORIGIN")).toBeInTheDocument();
     expect(screen.getByText("Dana Lee · CMO · Marketing")).toBeInTheDocument();
     expect(screen.getByText("Sam Roe")).toBeInTheDocument();
@@ -438,7 +324,6 @@ describe("SignalQuickDrawer", () => {
   it("navigates to the origin activity on 'View origin activity' click", () => {
     const push = vi.fn();
     vi.mocked(useRouter).mockReturnValue({ push });
-    const onClose = vi.fn();
     const signal = {
       id: "pd2",
       status: "PENDING",
@@ -448,12 +333,9 @@ describe("SignalQuickDrawer", () => {
         contacts: [{ id: "c1", first_name: "Dana", last_name: "Lee" }],
       },
     };
-    render(
-      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={onClose} />,
-    );
+    render(<SignalDetailPanel signal={signal} signalType="pain" />);
     fireEvent.click(screen.getByRole("button", { name: /view origin activity/i }));
     expect(push).toHaveBeenCalledWith("/activities/act-42");
-    expect(onClose).toHaveBeenCalled();
   });
 
   it("omits ORIGIN when there is no activity id and no contacts", () => {
@@ -463,9 +345,7 @@ describe("SignalQuickDrawer", () => {
       summary: "bare",
       source_context: { contacts: [] },
     };
-    render(
-      <SignalQuickDrawer open signal={signal} signalType="pain" onClose={vi.fn()} />,
-    );
+    render(<SignalDetailPanel signal={signal} signalType="pain" />);
     expect(screen.queryByText("ORIGIN")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /view origin activity/i }),
@@ -487,16 +367,9 @@ describe("SignalQuickDrawer", () => {
       contact: null,
       source_context: { contacts: [] },
     };
-    render(
-      <SignalQuickDrawer
-        open={true}
-        signal={plainTech}
-        signalType="tech-stack"
-        onClose={vi.fn()}
-      />,
-    );
+    render(<SignalDetailPanel signal={plainTech} signalType="tech-stack" />);
 
-    // Appears twice: drawer header + IDENTITY row.
+    // Appears twice: panel header + IDENTITY row.
     expect(screen.getAllByText("CustomTool").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("Qualification")).not.toBeInTheDocument();
     expect(screen.queryByText("Not in catalog")).not.toBeInTheDocument();
@@ -508,11 +381,9 @@ describe("SignalQuickDrawer", () => {
     const onReopen = vi.fn();
     const rejected = { ...MOCK_PAIN, status: "REJECTED" };
     render(
-      <SignalQuickDrawer
-        open
+      <SignalDetailPanel
         signal={rejected}
         signalType="pain"
-        onClose={vi.fn()}
         onReopen={onReopen}
         onEdit={vi.fn()}
       />,
@@ -529,23 +400,21 @@ describe("SignalQuickDrawer", () => {
 
   it("does NOT show Reopen for PENDING or VALIDATED signals", () => {
     const { rerender } = render(
-      <SignalQuickDrawer open signal={MOCK_PAIN} signalType="pain" onClose={vi.fn()} onReopen={vi.fn()} />,
+      <SignalDetailPanel signal={MOCK_PAIN} signalType="pain" onReopen={vi.fn()} />,
     );
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
 
     rerender(
-      <SignalQuickDrawer open signal={{ ...MOCK_PAIN, status: "VALIDATED" }} signalType="pain" onClose={vi.fn()} onReopen={vi.fn()} />,
+      <SignalDetailPanel signal={{ ...MOCK_PAIN, status: "VALIDATED" }} signalType="pain" onReopen={vi.fn()} />,
     );
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
   });
 
   it("hides Reopen when locked", () => {
     render(
-      <SignalQuickDrawer
-        open
+      <SignalDetailPanel
         signal={{ ...MOCK_PAIN, status: "REJECTED" }}
         signalType="pain"
-        onClose={vi.fn()}
         onReopen={vi.fn()}
         isLocked
       />,
@@ -565,11 +434,9 @@ describe("SignalQuickDrawer", () => {
       source_context: { contacts: [] },
     };
     render(
-      <SignalQuickDrawer
-        open
+      <SignalDetailPanel
         signal={incompleteObjective}
         signalType="objective"
-        onClose={vi.fn()}
         onValidate={vi.fn()}
       />,
     );

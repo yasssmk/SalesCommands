@@ -31,7 +31,11 @@ import AlertTerritoryBulkDelete from 'sections/territories/AlertTerritoryBulkDel
 import TerritoryListFilterPanel from 'sections/territories/TerritoryListFilterPanel';
 
 // hooks
+import { useBreadcrumb } from 'contexts/BreadcrumbContext';
 import useTerritoryListFilters from 'hooks/useTerritoryListFilters';
+
+// Static section trail for the layout BreadcrumbBar (stable ref → no effect loop).
+const TERRITORIES_CRUMBS = [{ label: 'Territories' }];
 
 // api
 import { useGetTerritories, useGetTerritoryCounts } from 'api/territories/territories';
@@ -56,6 +60,13 @@ import CloseOutlined from '@ant-design/icons/CloseOutlined';
  */
 export default function TerritoriesListPage() {
   const matchDownSM = useMediaQuery((theme) => theme.breakpoints.down('sm'));
+
+  // Declare this section's trail to the layout BreadcrumbBar.
+  const { setCrumbs } = useBreadcrumb();
+  useEffect(() => {
+    setCrumbs(TERRITORIES_CRUMBS);
+    return () => setCrumbs([]);
+  }, [setCrumbs]);
 
   // ==============================|| STATE ||============================== //
 

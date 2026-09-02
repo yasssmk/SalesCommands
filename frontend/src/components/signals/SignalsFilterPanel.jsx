@@ -1,4 +1,4 @@
-// frontend/src/sections/activities/signals/SignalsFilterPanel.jsx
+// frontend/src/components/signals/SignalsFilterPanel.jsx
 //
 // Standard filter drawer for the flat "Signals" views — mirrors the app's
 // other filter panels (e.g. CampaignFilterPanel): a right-anchored Drawer with

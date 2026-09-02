@@ -153,7 +153,7 @@ vi.mock("sections/accounts/activities/ActivityModal", () => ({
     ) : null,
 }));
 
-vi.mock("sections/activities/signals/SignalEditDialog", () => ({
+vi.mock("components/signals/SignalEditDrawer", () => ({
   default: ({ open }) =>
     open ? <div data-testid="signal-edit-dialog" /> : null,
 }));

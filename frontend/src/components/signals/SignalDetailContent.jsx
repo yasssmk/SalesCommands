@@ -37,7 +37,7 @@ import SignalStatusChip from "components/chips/SignalStatusChip";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
-import SignalIncompleteAlert from "sections/activities/signals/SignalIncompleteAlert";
+import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
 import {
   getTechSummary,
   getContact,

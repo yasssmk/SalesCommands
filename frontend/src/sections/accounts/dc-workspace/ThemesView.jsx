@@ -25,7 +25,7 @@ import {
 
 // Activity signal components — reused for inline rendering
 import SignalThemeBlock from "sections/activities/signals/SignalThemeBlock";
-import SignalCompactLine from "sections/activities/signals/SignalCompactLine";
+import SignalCompactLine from "components/signals/SignalCompactLine";
 import BlockerCompactCard from "sections/activities/signals/BlockerCompactCard";
 
 // ==============================|| HELPERS ||============================== //

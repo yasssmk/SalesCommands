@@ -1,4 +1,4 @@
-// frontend/src/__tests__/signals/SignalEditDialog.techstack.test.jsx
+// frontend/src/__tests__/signals/SignalEditDrawer.techstack.test.jsx
 //
 // The TechStack edit form emits the signal's own tech identity (S10):
 // tech_name plus the three qualification booleans, and never a catalogue
@@ -16,12 +16,15 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  render,
+  render as rtlRender,
   screen,
   fireEvent,
   waitFor,
   cleanup,
 } from "@testing-library/react";
+import AphoriqTheme from "../../_utils/aphoriqTheme";
+
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 // ==============================|| MOCKS ||============================== //
 
@@ -41,7 +44,7 @@ vi.mock("api/businessData/contacts", () => ({
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
-import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import { updateSignal } from "api/signals/signals";
 
 // ==============================|| FIXTURES ||============================== //
@@ -75,7 +78,7 @@ const PENDING_TECHSTACK = {
 
 function renderDialog(signal) {
   return render(
-    <SignalEditDialog
+    <SignalEditDrawer
       open
       onClose={vi.fn()}
       onSuccess={vi.fn()}
@@ -102,7 +105,7 @@ afterEach(() => {
 
 // ==============================|| TESTS ||============================== //
 
-describe("SignalEditDialog — tech-stack identity payload", () => {
+describe("SignalEditDrawer — tech-stack identity payload", () => {
   it("emits tech_name on a notes-only edit of a validated signal", async () => {
     renderDialog(VALIDATED_TECHSTACK);
 
