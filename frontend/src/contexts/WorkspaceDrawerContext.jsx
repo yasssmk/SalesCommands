@@ -14,7 +14,15 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { createContext, useContext, useState, useCallback, useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from "react";
 
 import { useMenuState } from "hooks/useMenuState";
 
@@ -30,7 +38,8 @@ const WorkspaceDrawerContext = createContext({
 // ==============================|| PROVIDER ||============================== //
 
 export function WorkspaceDrawerProvider({ children }) {
-  const { handlerDrawerOpen } = useMenuState();
+  const { menuMaster, handlerDrawerOpen } = useMenuState();
+  const menuOpen = Boolean(menuMaster?.isDashboardDrawerOpened);
 
   // The injected content node is the single source of truth: a non-null node
   // means the drawer is open.
@@ -47,6 +56,18 @@ export function WorkspaceDrawerProvider({ children }) {
   );
 
   const closeDrawer = useCallback(() => setContent(null), []);
+
+  // Reverse exclusivity: the hamburger lives in the shell (outside this
+  // provider), so we OBSERVE the menu singleton instead of wiring the toggle.
+  // Close the drawer only on a menu OPEN transition (false → true) — never on
+  // its close, so openDrawer()'s own handlerDrawerOpen(false) can't loop.
+  const prevMenuOpen = useRef(menuOpen);
+  useEffect(() => {
+    if (menuOpen && !prevMenuOpen.current) {
+      setContent(null);
+    }
+    prevMenuOpen.current = menuOpen;
+  }, [menuOpen]);
 
   const value = useMemo(
     () => ({ isOpen, content, openDrawer, closeDrawer }),
