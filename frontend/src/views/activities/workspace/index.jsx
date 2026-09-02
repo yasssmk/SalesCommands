@@ -329,7 +329,6 @@ export default function ActivityWorkspacePage() {
   return (
     <>
       <WorkspaceLayout
-        breadcrumbs={breadcrumbItems}
         {...headerProps}
         tabs={tabsWithBadges}
         activeTab={currentTab}

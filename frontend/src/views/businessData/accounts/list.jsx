@@ -1,7 +1,7 @@
 // frontend/src/views/businessData/accounts/list.jsx
 
 'use client';
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 
 // material-ui
 import Box from '@mui/material/Box';
@@ -22,8 +22,12 @@ import AccountCSVImportModal from 'sections/admin/accounts/AccountCSVImportModal
 import useOwnerScope from 'hooks/useOwnerScope';
 
 // hooks
+import { useBreadcrumb } from 'contexts/BreadcrumbContext';
 import useLocalStorage from 'hooks/useLocalStorage';
 import { useAuth } from 'hooks/useAuth';
+
+// Static section trail for the layout BreadcrumbBar (stable ref → no effect loop).
+const ACCOUNTS_CRUMBS = [{ label: 'Accounts' }];
 
 // api
 import { useGetAccounts } from 'api/admin/accounts';
@@ -94,6 +98,13 @@ const CLASSIFICATION_COLORS = {
  */
 export default function AccountsListPage() {
   const { tenantId } = useAuth();
+
+  // Declare this section's trail to the layout BreadcrumbBar.
+  const { setCrumbs } = useBreadcrumb();
+  useEffect(() => {
+    setCrumbs(ACCOUNTS_CRUMBS);
+    return () => setCrumbs([]);
+  }, [setCrumbs]);
   const router = useRouter();
   const MAX_PAGE_SIZE = 100;
 

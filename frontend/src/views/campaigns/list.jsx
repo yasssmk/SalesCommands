@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 // material-ui
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -34,7 +34,11 @@ import AlertCampaignDelete from "sections/campaigns/AlertCampaignDelete";
 import AlertCampaignBulkDelete from "sections/campaigns/AlertCampaignBulkDelete";
 
 // hooks
+import { useBreadcrumb } from "contexts/BreadcrumbContext";
 import useCampaignListFilters from "hooks/useCampaignListFilters";
+
+// Static section trail for the layout BreadcrumbBar (stable ref → no effect loop).
+const CAMPAIGNS_CRUMBS = [{ label: "Campaigns" }];
 
 // api
 import { useGetCampaigns, deleteCampaign, CHANNEL_LABELS, CAMPAIGN_STATUSES } from "api/campaigns/campaigns";
@@ -69,6 +73,13 @@ const STATUS_LABELS = {
  */
 export default function CampaignsListPage() {
   const matchDownSM = useMediaQuery((theme) => theme.breakpoints.down("sm"));
+
+  // Declare this section's trail to the layout BreadcrumbBar.
+  const { setCrumbs } = useBreadcrumb();
+  useEffect(() => {
+    setCrumbs(CAMPAIGNS_CRUMBS);
+    return () => setCrumbs([]);
+  }, [setCrumbs]);
 
   // ==============================|| STATE ||============================== //
 

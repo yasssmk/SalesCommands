@@ -11,9 +11,9 @@
 // a client-side link (router.push); the last segment is the current page (plain
 // text). Fully themed via aphoriQ + iconSizes — no hardcoded hex/px.
 //
-// SCOPE (L0): this bar COEXISTS with the legacy @extended/Breadcrumbs — the
-// legacy removal + wiring every page is L1. Here only the pilot page (activity
-// workspace) pushes a trail.
+// This is the SINGLE breadcrumb of the app (L1): the legacy menu-derived
+// @extended/Breadcrumbs was removed from the layout and each page declares its
+// trail via useBreadcrumb.
 
 "use client";
 

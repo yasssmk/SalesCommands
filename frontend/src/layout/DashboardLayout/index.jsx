@@ -3,9 +3,6 @@ import PropTypes from 'prop-types';
 
 import { useEffect } from 'react';
 
-// next
-import { usePathname } from 'next/navigation';
-
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -18,7 +15,6 @@ import Header from './Header';
 import Footer from './Footer';
 import HorizontalBar from './Drawer/HorizontalBar';
 import Loader from 'components/Loader';
-import Breadcrumbs from 'components/@extended/Breadcrumbs';
 import BreadcrumbBar from 'components/BreadcrumbBar';
 import { BreadcrumbProvider } from 'contexts/BreadcrumbContext';
 // import AddCustomer from 'sections/apps/customer/AddCustomer';
@@ -40,7 +36,6 @@ const queryClient = new QueryClient({
 
 export default function DashboardLayout({ children }) {
   const { menuMasterLoading } = useMenuState();
-  const pathname = usePathname();
   const downXL = useMediaQuery((theme) => theme.breakpoints.down('xl'));
   const downLG = useMediaQuery((theme) => theme.breakpoints.down('lg'));
 
@@ -79,11 +74,10 @@ export default function DashboardLayout({ children }) {
             flexDirection: 'column',
           }}
         >
-          {/* Single contextual breadcrumb bar — always present, constant height
-              (anchor). Coexists with the legacy @extended/Breadcrumbs in L0; L1
-              removes the legacy. */}
+          {/* The single contextual breadcrumb bar — always present, constant
+              height (anchor). Each page declares its trail via useBreadcrumb;
+              the legacy menu-derived @extended/Breadcrumbs was removed in L1. */}
           <BreadcrumbBar />
-          {pathname !== '/apps/profiles/account/my-account' && pathname !== '/'  && <Breadcrumbs />}
           {children}
           <Footer />
         </Container>

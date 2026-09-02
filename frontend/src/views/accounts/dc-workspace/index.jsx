@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 // MUI
@@ -13,6 +13,7 @@ import Typography from "@mui/material/Typography";
 // Project imports
 import WorkspaceLayout from "components/WorkspaceLayout";
 import { buildDCWorkspaceBreadcrumbs } from "components/WorkspaceBreadcrumb";
+import { useBreadcrumb } from "contexts/BreadcrumbContext";
 import { useGetDecisionCyclesByAccount } from "api/accounts/decisionCycles";
 
 // Section imports
@@ -74,6 +75,30 @@ export default function DCWorkspacePage() {
     accountId,
     onUpdate: mutateCycles,
   });
+
+  // ==============================|| CONTEXTUAL BREADCRUMB ||============================== //
+
+  // Push this cycle's trail (Account › Cycle) to the layout BreadcrumbBar. The
+  // account segment carries an href → it replaces the removed "← Back".
+  const { setCrumbs } = useBreadcrumb();
+
+  const breadcrumbItems = useMemo(
+    () =>
+      cycle
+        ? buildDCWorkspaceBreadcrumbs({
+            accountId,
+            accountName: cycle.account_name,
+            cycleName: cycle.name,
+          })
+        : [],
+    [cycle, accountId],
+  );
+
+  useEffect(() => {
+    setCrumbs(breadcrumbItems);
+  }, [breadcrumbItems, setCrumbs]);
+
+  useEffect(() => () => setCrumbs([]), [setCrumbs]);
 
   // ==============================|| TAB CONTENT ||============================== //
 
@@ -176,20 +201,11 @@ export default function DCWorkspacePage() {
     );
   }
 
-  // ==============================|| BREADCRUMBS ||============================== //
-
-  const breadcrumbItems = buildDCWorkspaceBreadcrumbs({
-    accountId,
-    accountName: cycle.account_name,
-    cycleName: cycle.name,
-  });
-
   // ==============================|| RENDER ||============================== //
 
   return (
     <>
       <WorkspaceLayout
-        breadcrumbs={breadcrumbItems}
         {...headerProps}
         tabs={DC_WORKSPACE_TABS}
         activeTab={currentTab}
