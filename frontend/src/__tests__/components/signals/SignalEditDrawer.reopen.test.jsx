@@ -1,7 +1,10 @@
-// frontend/src/__tests__/signals/SignalEditDialog.reopen.test.jsx
+// frontend/src/__tests__/signals/SignalEditDrawer.reopen.test.jsx
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import AphoriqTheme from "../../_utils/aphoriqTheme";
+
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 // ==============================|| MOCKS ||============================== //
 
@@ -45,7 +48,7 @@ vi.mock("sections/activities/signals/BlockerEditForm", () => ({
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
-import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import { reopenSignal } from "api/signals/signals";
 import { displaySuccessSnackbar } from "utils/displayError";
 
@@ -63,10 +66,10 @@ const BASE_PROPS = {
   choicesLoading: false,
 };
 
-describe("SignalEditDialog — Reopen button", () => {
+describe("SignalEditDrawer — Reopen button", () => {
   it("does not show Reopen button when signal is PENDING", () => {
     render(
-      <SignalEditDialog
+      <SignalEditDrawer
         {...BASE_PROPS}
         signal={{ id: "s1", status: "PENDING" }}
         signalType="pain"
@@ -80,7 +83,7 @@ describe("SignalEditDialog — Reopen button", () => {
 
   it("shows Reopen button when signal is VALIDATED", () => {
     render(
-      <SignalEditDialog
+      <SignalEditDrawer
         {...BASE_PROPS}
         signal={{ id: "s1", status: "VALIDATED" }}
         signalType="pain"
@@ -94,7 +97,7 @@ describe("SignalEditDialog — Reopen button", () => {
 
   it("shows Reopen button when signal is REJECTED", () => {
     render(
-      <SignalEditDialog
+      <SignalEditDrawer
         {...BASE_PROPS}
         signal={{ id: "s1", status: "REJECTED" }}
         signalType="pain"
@@ -108,7 +111,7 @@ describe("SignalEditDialog — Reopen button", () => {
 
   it("calls reopenSignal with correct type and id on click", async () => {
     render(
-      <SignalEditDialog
+      <SignalEditDrawer
         {...BASE_PROPS}
         signal={{ id: "s1", status: "VALIDATED" }}
         signalType="pain"

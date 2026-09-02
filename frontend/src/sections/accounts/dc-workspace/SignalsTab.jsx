@@ -35,7 +35,7 @@ import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
 import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
 import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
-import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
 // The DC flat list covers every signal type captured in a decision cycle.
 const DC_TYPES = [
@@ -391,7 +391,7 @@ export default function SignalsTab({ cycleId, accountId }) {
       />
 
       {/* Edit Dialog (6 original types only — people/constraints forms deferred) */}
-      <SignalEditDialog
+      <SignalEditDrawer context="activity"
         open={editDialogOpen}
         onClose={handleEditClose}
         onSuccess={handleEditSuccess}

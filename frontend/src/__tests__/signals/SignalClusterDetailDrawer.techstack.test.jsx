@@ -7,6 +7,7 @@
 // badge (neutral 'LOW' floor, not a real priority); pain keeps its real badge.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //

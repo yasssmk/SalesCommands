@@ -35,7 +35,7 @@ import NextStepsFilterBar from "sections/activities/nextSteps/NextStepsFilterBar
 import NextStepSuggestionDrawer from "sections/activities/nextSteps/NextStepSuggestionDrawer";
 import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
-import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
 // ==============================|| SORT HELPERS ||============================== //
 
@@ -406,7 +406,7 @@ export default function ActivityNextStepsTab({
       )}
 
       {/* Signal edit dialog */}
-      <SignalEditDialog
+      <SignalEditDrawer context="activity"
         open={editDialogOpen}
         onClose={() => {
           setEditDialogOpen(false);

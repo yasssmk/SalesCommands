@@ -48,7 +48,7 @@ import QualificationGroupedView from "sections/accounts/signals/QualificationGro
 import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
 import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
 import AlertSignalReject from "../signals/AlertSignalReject";
-import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
 import {
   useGetSignalChoices,
@@ -434,7 +434,7 @@ export default function AccountSignalsTab({ accountId, account }) {
       />
 
       {/* Edit dialog */}
-      <SignalEditDialog
+      <SignalEditDrawer context="activity"
         open={editModal.open}
         onClose={handleEditClose}
         onSuccess={handleEditSuccess}

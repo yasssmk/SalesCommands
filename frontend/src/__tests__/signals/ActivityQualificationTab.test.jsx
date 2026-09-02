@@ -5,6 +5,7 @@
 // blockers, with client-side status filtering and CRUD.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //

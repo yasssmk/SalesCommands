@@ -42,7 +42,7 @@ import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedF
 import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
 import ActivityQualificationTab from "sections/activities/workspace/ActivityQualificationTab";
 import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
-import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import SignalsFlatView from "components/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 
@@ -394,7 +394,7 @@ export default function ActivitySignalsTab({
       />
 
       {/* Edit Dialog */}
-      <SignalEditDialog
+      <SignalEditDrawer context="activity"
         open={editDialogOpen}
         onClose={handleEditClose}
         onSuccess={handleEditSuccess}

@@ -38,7 +38,7 @@ import Typography from "@mui/material/Typography";
 import ClusterRow from "./ClusterRow";
 import SignalClusterDetailDrawer from "./SignalClusterDetailDrawer";
 import AlertSignalReject from "./AlertSignalReject";
-import SignalEditDialog from "./SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import CollapsibleSection from "components/signals/CollapsibleSection";
 import SignalLine from "components/signals/SignalLine";
 import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
@@ -788,7 +788,7 @@ export default function QualificationGroupedView({
         signalType={rejectModal.signalType}
       />
 
-      <SignalEditDialog
+      <SignalEditDrawer context="account"
         open={editModal.open}
         onClose={handleEditClose}
         onSuccess={handleEditSuccess}
