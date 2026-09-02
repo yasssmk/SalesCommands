@@ -54,6 +54,7 @@ import MainCard from 'components/MainCard';
 import WorkspaceBreadcrumb from 'components/WorkspaceBreadcrumb';
 import EditableField from 'sections/accounts/workspace/EditableField';
 import { WorkspaceDrawerProvider } from 'contexts/WorkspaceDrawerContext';
+import WorkspaceDrawer from 'components/WorkspaceDrawer';
 
 // ==============================|| HEADER SKELETON ||============================== //
 
@@ -185,7 +186,12 @@ function WorkspaceLayoutInner({
   const validInfoItems = (infoItems || []).filter(Boolean);
 
   return (
-    <Box>
+    // Flex row: [main column][WorkspaceDrawer]. On large screens the drawer is
+    // an inline flex sibling that PUSHES (shrinks) this column; its top aligns
+    // with the top of the workspace header. On narrow screens the drawer renders
+    // as an overlay (portal), leaving this column full width.
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
       {/* ==================== BREADCRUMB ==================== */}
       {breadcrumbs && breadcrumbs.length > 0 && (
         <Box sx={{ mb: 2 }}>
@@ -276,6 +282,10 @@ function WorkspaceLayoutInner({
       <MainCard sx={{ mt: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
         {children}
       </MainCard>
+      </Box>
+
+      {/* ==================== WORKSPACE DRAWER (push/overlay coque) ==================== */}
+      <WorkspaceDrawer />
     </Box>
   );
 }
