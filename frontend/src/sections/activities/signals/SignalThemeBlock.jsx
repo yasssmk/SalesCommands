@@ -18,7 +18,7 @@ import Typography from "@mui/material/Typography";
 import { DownOutlined, UpOutlined } from "@ant-design/icons";
 
 // Project imports
-import SignalCompactLine from "./SignalCompactLine";
+import SignalCompactLine from "components/signals/SignalCompactLine";
 
 // ==============================|| SIGNAL THEME BLOCK ||============================== //
 

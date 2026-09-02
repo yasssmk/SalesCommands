@@ -2,7 +2,7 @@
 
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import SignalIncompleteAlert from "sections/activities/signals/SignalIncompleteAlert";
+import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
 
 afterEach(() => {
   cleanup();

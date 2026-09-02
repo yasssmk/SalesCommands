@@ -32,7 +32,7 @@ import {
 
 // Section imports
 import SignalsGroupedView from "sections/activities/signals/SignalsGroupedView";
-import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
+import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 
 // ==============================|| ACTIVITY QUALIFICATION TAB (GROUPED) ||============================== //

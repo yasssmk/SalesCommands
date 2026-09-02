@@ -1,4 +1,4 @@
-// frontend/src/sections/activities/signals/SignalQuickDrawer.jsx
+// frontend/src/components/signals/SignalQuickDrawer.jsx
 //
 // Single-signal drawer used across the flat views and the grouped tech/blocker
 // sections. It is a thin themed MUI Drawer shell around the shared

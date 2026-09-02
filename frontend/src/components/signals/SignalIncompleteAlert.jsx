@@ -1,4 +1,4 @@
-// frontend/src/sections/activities/signals/SignalIncompleteAlert.jsx
+// frontend/src/components/signals/SignalIncompleteAlert.jsx
 
 "use client";
 

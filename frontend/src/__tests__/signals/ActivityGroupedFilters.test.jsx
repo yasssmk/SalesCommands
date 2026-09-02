@@ -26,7 +26,7 @@ vi.mock("utils/displayError", () => ({
 }));
 
 // Drawer / dialog are irrelevant here — stub to null.
-vi.mock("sections/activities/signals/SignalQuickDrawer", () => ({ default: () => null }));
+vi.mock("components/signals/SignalQuickDrawer", () => ({ default: () => null }));
 vi.mock("sections/activities/signals/SignalEditDialog", () => ({ default: () => null }));
 
 // ==============================|| IMPORTS (after mocks) ||============================== //

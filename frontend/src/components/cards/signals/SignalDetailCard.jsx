@@ -26,7 +26,7 @@ import {
 import SignalStatusChip from "components/chips/SignalStatusChip";
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
-import SignalIncompleteAlert from "sections/activities/signals/SignalIncompleteAlert";
+import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
 import {
   getTechSummary,
   getContact,

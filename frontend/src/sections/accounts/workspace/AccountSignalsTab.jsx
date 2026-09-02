@@ -41,12 +41,12 @@ import Typography from "@mui/material/Typography";
 import FilterOutlined from "@ant-design/icons/FilterOutlined";
 
 // project imports
-import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
-import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
+import SignalsFlatView from "components/signals/SignalsFlatView";
+import SignalsFilterPanel from "components/signals/SignalsFilterPanel";
 import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
 import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
-import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
+import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
 import AlertSignalReject from "../signals/AlertSignalReject";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 

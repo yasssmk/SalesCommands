@@ -28,13 +28,13 @@ import {
 } from "utils/displayError";
 
 // Section imports — reuse Activity signal components
-import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
-import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
+import SignalsFilterPanel from "components/signals/SignalsFilterPanel";
+import SignalsFlatView from "components/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
 import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
-import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
+import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
 
 // The DC flat list covers every signal type captured in a decision cycle.

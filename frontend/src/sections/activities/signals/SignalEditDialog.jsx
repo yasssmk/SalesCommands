@@ -27,7 +27,7 @@ import {
 } from "utils/displayError";
 
 import { getMissingFields } from "./signalValidationRules";
-import SignalIncompleteAlert from "./SignalIncompleteAlert";
+import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
 import { buildEditInitialValues } from "./wizard/forms/buildEditInitialValues";
 import InlinePainForm from "./wizard/forms/InlinePainForm";
 import InlineObjectiveForm from "./wizard/forms/InlineObjectiveForm";

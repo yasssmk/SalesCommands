@@ -54,7 +54,7 @@ vi.mock("sections/accounts/signals/SignalClusterDetailDrawer", () => ({
 }));
 vi.mock("sections/accounts/signals/AlertSignalReject", () => ({ default: () => null }));
 vi.mock("sections/accounts/signals/SignalEditDialog", () => ({ default: () => null }));
-vi.mock("sections/activities/signals/SignalQuickDrawer", () => ({ default: () => null }));
+vi.mock("components/signals/SignalQuickDrawer", () => ({ default: () => null }));
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 

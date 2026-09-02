@@ -37,13 +37,13 @@ import {
 } from "utils/displayError";
 
 // Section imports
-import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
+import SignalsFilterPanel from "components/signals/SignalsFilterPanel";
 import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
 import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
 import ActivityQualificationTab from "sections/activities/workspace/ActivityQualificationTab";
-import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
+import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
 import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
-import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
+import SignalsFlatView from "components/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 
 // The activity flat view shows qualification (pain/objective/impact) plus

@@ -1,4 +1,4 @@
-// frontend/src/sections/activities/signals/SignalCompactLine.jsx
+// frontend/src/components/signals/SignalCompactLine.jsx
 
 "use client";
 
@@ -22,7 +22,7 @@ import {
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
-import { getTechSummary, getContact, formatContact } from "./utils/signalDisplay";
+import { getTechSummary, getContact, formatContact } from "sections/activities/signals/utils/signalDisplay";
 
 function truncate(str, max = 80) {
   if (!str) return "—";

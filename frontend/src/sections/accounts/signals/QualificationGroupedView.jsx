@@ -41,7 +41,7 @@ import AlertSignalReject from "./AlertSignalReject";
 import SignalEditDialog from "./SignalEditDialog";
 import CollapsibleSection from "components/signals/CollapsibleSection";
 import SignalLine from "components/signals/SignalLine";
-import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
+import SignalQuickDrawer from "components/signals/SignalQuickDrawer";
 
 import { useGetClustersByAccount } from "api/signals/signalClusters";
 import useAggregatedSignals from "api/signals/aggregatedSignals";

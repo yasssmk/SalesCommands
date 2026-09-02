@@ -1,4 +1,4 @@
-// frontend/src/sections/activities/signals/SignalsFlatView.jsx
+// frontend/src/components/signals/SignalsFlatView.jsx
 
 "use client";
 
