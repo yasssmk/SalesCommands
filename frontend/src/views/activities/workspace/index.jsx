@@ -2,20 +2,26 @@
 
 "use client";
 
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 import { useEffect, useMemo } from "react";
 
 // MUI
-import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
+// Icons — section markers for the collapsible bands.
+import ExperimentOutlined from "@ant-design/icons/ExperimentOutlined";
+import FileTextOutlined from "@ant-design/icons/FileTextOutlined";
+import RadarChartOutlined from "@ant-design/icons/RadarChartOutlined";
+import RightCircleOutlined from "@ant-design/icons/RightCircleOutlined";
+
 // Project imports
 import WorkspaceLayout from "components/WorkspaceLayout";
+import CollapsibleStrip from "components/display/CollapsibleStrip";
 import { buildActivityBreadcrumbs } from "components/WorkspaceBreadcrumb";
 import { useBreadcrumb } from "contexts/BreadcrumbContext";
 import { useGetActivity, updateActivity } from "api/accounts/activities";
@@ -29,12 +35,10 @@ import {
 
 // Section imports
 import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
-import {
-  ACTIVITY_TABS,
-  DEFAULT_TAB,
-  getVisibleTabs,
-} from "sections/activities/workspace/ActivityTabs";
-import { resolveWorkspaceTab } from "utils/workspaceTabs";
+// getVisibleTabs is the single source of truth for the Preparation eligibility
+// gate (activity_type ∈ CALL/MEETING/DEMO). Reused here as the eligibility
+// oracle for the Preparation band — the tab selector itself is gone.
+import { getVisibleTabs } from "sections/activities/workspace/ActivityTabs";
 import ActivityOverviewTab from "sections/activities/workspace/ActivityOverviewTab";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
@@ -46,36 +50,19 @@ import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStep
 export default function ActivityWorkspacePage() {
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const activityId = params?.id;
-  // Map a legacy/removed `?tab=` id to a live tab so the MUI Tabs never gets an
-  // invalid value (e.g. a stale "qualification" link → the Signals tab, whose
-  // Grouped mode is the old qualification synthesis).
-  const rawTab = searchParams.get("tab");
-  const currentTab = resolveWorkspaceTab(
-    rawTab,
-    ACTIVITY_TABS.map((t) => t.id),
-    DEFAULT_TAB,
-  );
-
-  // Rewrite a stale `?tab=` so the resolved value doesn't linger in the URL.
-  useEffect(() => {
-    if (rawTab && rawTab !== currentTab) {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("tab", currentTab);
-      router.replace(`?${params.toString()}`, { scroll: false });
-    }
-  }, [rawTab, currentTab, router, searchParams]);
 
   const { activity, activityLoading, activityError, mutateActivity } =
     useGetActivity(activityId);
 
-  // Last extraction run metadata (per-pipeline breakdown for wizard Step 1)
+  // Last extraction run metadata. `lastRun` is the most recent SUCCESS|PARTIAL
+  // run (backend-filtered) — its presence is the "activity has been analysed"
+  // predicate that drives the spotlight (default-open) below.
   const { lastRun, latestRun, runsByPipeline, mutateLastRun } =
     useGetLastExtractionRun(activityId);
 
-  // Signal counts for header pending badge
+  // Signal counts for the header pending badge.
   const { counts, mutateCounts } = useActivitySignalCounts(activityId);
 
   // Pipeline runner — owned here so pipelineState is accessible to header (F4)
@@ -89,13 +76,6 @@ export default function ActivityWorkspacePage() {
   // Activity is locked when completed or cancelled — workspace becomes read-only
   const isLocked =
     activity?.status === "COMPLETED" || activity?.status === "CANCELLED";
-
-  // Handle tab change via URL
-  const handleTabChange = (newTab) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", newTab);
-    router.push(`?${params.toString()}`, { scroll: false });
-  };
 
   // Handle inline field save — blocked when activity is locked
   const handleSaveField = async (fieldKey, newValue) => {
@@ -119,10 +99,6 @@ export default function ActivityWorkspacePage() {
 
   // ==============================|| HEADER PROPS (from hook) ||============================== //
 
-  const handlePendingClick = () => {
-    handleTabChange("signals");
-  };
-
   const headerProps = useActivityHeaderProps({
     activity,
     onSave: handleSaveField,
@@ -131,52 +107,22 @@ export default function ActivityWorkspacePage() {
     pipelineState: pipelineRunner.state,
     lastRun,
     counts,
-    onPendingClick: handlePendingClick,
   });
 
-  // ==============================|| TAB BADGES ||============================== //
+  // ==============================|| ADAPTIVE BODY STATE ||============================== //
 
-  const signalsPending = counts?.by_type
-    ? (counts.by_type.pain?.pending || 0) +
-      (counts.by_type.objective?.pending || 0) +
-      (counts.by_type.impact?.pending || 0) +
-      (counts.by_type.tech_stack?.pending || 0) +
-      (counts.by_type.blocker?.pending || 0)
-    : 0;
+  // Spotlight predicate: the activity is "analysed" once a successful (or
+  // partial) extraction run exists. Drives which bands open by default.
+  const analyzed = Boolean(lastRun);
 
-  const nextStepsPending = counts?.by_type?.next_step?.pending || 0;
-
-  const visibleTabs = useMemo(
-    () => getVisibleTabs(activity?.activity_type),
-    [activity?.activity_type],
+  // Preparation band is conditional on activity_type — reuse the existing gate
+  // (getVisibleTabs), never a hardcoded type set.
+  const showPreparation = getVisibleTabs(activity?.activity_type).some(
+    (tab) => tab.id === "preparation",
   );
-
-  const tabsWithBadges = useMemo(() => {
-    return visibleTabs.map((tab) => {
-      let badgeCount = 0;
-      if (tab.id === "signals") badgeCount = signalsPending;
-      if (tab.id === "next-steps") badgeCount = nextStepsPending;
-
-      if (badgeCount > 0) {
-        return {
-          ...tab,
-          label: (
-            <Badge badgeContent={badgeCount} color="warning" max={99}>
-              {tab.label}
-            </Badge>
-          ),
-        };
-      }
-      return tab;
-    });
-  }, [visibleTabs, signalsPending, nextStepsPending]);
 
   // ==============================|| CONTEXTUAL BREADCRUMB (pilot — L0) ||============================== //
 
-  // Pilot page for the layout breadcrumb mechanism: push this activity's trail
-  // (Account › [Step] › Activity) to the shared BreadcrumbBar. Reuses the same
-  // builder as the in-page WorkspaceBreadcrumb (which stays in L0 — the in-page
-  // crumb + legacy layout crumb are removed in L1).
   const { setCrumbs } = useBreadcrumb();
 
   const breadcrumbItems = useMemo(
@@ -198,67 +144,11 @@ export default function ActivityWorkspacePage() {
     setCrumbs(breadcrumbItems);
   }, [breadcrumbItems, setCrumbs]);
 
-  // Clear on unmount so the trail doesn't bleed onto the next page (L0: only
-  // this pilot pushes; the other pages wire up in L1).
+  // Clear on unmount so the trail doesn't bleed onto the next page.
   useEffect(() => () => setCrumbs([]), [setCrumbs]);
 
-  // ==============================|| RENDER - ERROR ||============================== //
+  // ==============================|| RENDER - LOADING / ERROR ||============================== //
 
-  // Render tab content
-  const renderTabContent = () => {
-    switch (currentTab) {
-      case "overview":
-        return (
-          <ActivityOverviewTab
-            activity={activity}
-            onSave={handleSaveField}
-            isLocked={isLocked}
-          />
-        );
-      case "preparation":
-        return (
-          <ActivityPreparationTab activity={activity} isLocked={isLocked} />
-        );
-      case "notes":
-        return (
-          <ActivityNotesTab
-            activity={activity}
-            onSave={handleSaveField}
-            isLocked={isLocked}
-            pipelineRunner={pipelineRunner}
-            lastRun={lastRun}
-            latestRun={latestRun}
-            runsByPipeline={runsByPipeline}
-          />
-        );
-      case "signals":
-        return (
-          <ActivitySignalsTab
-            activity={activity}
-            isLocked={isLocked}
-            mutateCounts={mutateCounts}
-          />
-        );
-      case "next-steps":
-        return (
-          <ActivityNextStepsTab
-            activity={activity}
-            isLocked={isLocked}
-            mutateCounts={mutateCounts}
-          />
-        );
-      default:
-        return (
-          <ActivityOverviewTab
-            activity={activity}
-            onSave={handleSaveField}
-            isLocked={isLocked}
-          />
-        );
-    }
-  };
-
-  // Loading state
   if (activityLoading) {
     return (
       <Box
@@ -272,7 +162,6 @@ export default function ActivityWorkspacePage() {
     );
   }
 
-  // Error state
   if (activityError) {
     const isTimeout = activityError?.response?.status === 408;
     const isNotFound = activityError?.response?.status === 404;
@@ -312,7 +201,6 @@ export default function ActivityWorkspacePage() {
     );
   }
 
-  // No data state (should not happen if no error, but safety check)
   if (!activity) {
     return (
       <Box
@@ -326,16 +214,73 @@ export default function ActivityWorkspacePage() {
     );
   }
 
+  // ==============================|| RENDER - STACKED BODY (no tabs) ||============================== //
+
   return (
     <>
-      <WorkspaceLayout
-        {...headerProps}
-        tabs={tabsWithBadges}
-        activeTab={currentTab}
-        onTabChange={handleTabChange}
-        loading={activityLoading}
-      >
-        {renderTabContent()}
+      <WorkspaceLayout {...headerProps} loading={activityLoading}>
+        <Stack spacing={2}>
+          {/* Context — fixed, always visible (interim: the former Overview tab) */}
+          <ActivityOverviewTab
+            activity={activity}
+            onSave={handleSaveField}
+            isLocked={isLocked}
+          />
+
+          {/* Preparation — conditional on activity_type; open when NOT analysed */}
+          {showPreparation && (
+            <CollapsibleStrip
+              title="Preparation"
+              icon={ExperimentOutlined}
+              defaultExpanded={!analyzed}
+            >
+              <ActivityPreparationTab activity={activity} isLocked={isLocked} />
+            </CollapsibleStrip>
+          )}
+
+          {/* Source — transcript / notes (interim: the former Notes tab) */}
+          <CollapsibleStrip
+            title="Source"
+            icon={FileTextOutlined}
+            defaultExpanded={false}
+          >
+            <ActivityNotesTab
+              activity={activity}
+              onSave={handleSaveField}
+              isLocked={isLocked}
+              pipelineRunner={pipelineRunner}
+              lastRun={lastRun}
+              latestRun={latestRun}
+              runsByPipeline={runsByPipeline}
+            />
+          </CollapsibleStrip>
+
+          {/* Signals — open when analysed */}
+          <CollapsibleStrip
+            title="Signals"
+            icon={RadarChartOutlined}
+            defaultExpanded={analyzed}
+          >
+            <ActivitySignalsTab
+              activity={activity}
+              isLocked={isLocked}
+              mutateCounts={mutateCounts}
+            />
+          </CollapsibleStrip>
+
+          {/* Next step — open when analysed */}
+          <CollapsibleStrip
+            title="Next step"
+            icon={RightCircleOutlined}
+            defaultExpanded={analyzed}
+          >
+            <ActivityNextStepsTab
+              activity={activity}
+              isLocked={isLocked}
+              mutateCounts={mutateCounts}
+            />
+          </CollapsibleStrip>
+        </Stack>
       </WorkspaceLayout>
 
       {/* Modals (Complete, Cancel, Reopen, Delete) */}
