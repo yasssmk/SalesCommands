@@ -143,4 +143,24 @@ describe("ActivityContextSection (read-only)", () => {
       expect(rulesForElement(g)).toMatch(/grid-template-columns/);
     });
   });
+
+  it("uses minmax(0,...) tracks so long values never overlap the other column", () => {
+    renderCtx(dcActivity);
+    const css = Array.from(document.querySelectorAll("style"))
+      .map((s) => s.textContent || "")
+      .join("");
+    // minmax(0,1fr) is unique to the Context grid — its absence would let a long
+    // email/phone push under the adjacent column.
+    expect(css).toMatch(/minmax\(0/);
+  });
+
+  it("separates groups with hairline rules (DC case renders like the campaign case)", () => {
+    renderCtx(dcActivity);
+    const seps = screen.getAllByTestId("ctx-sep");
+    expect(seps.length).toBeGreaterThanOrEqual(2);
+    seps.forEach((s) => expect(rulesForElement(s)).toContain("0.5px"));
+    // DC linked context is a two-column grid (Decision cycle | Step), not stacked.
+    expect(screen.getByText("HQ rollout")).toBeInTheDocument();
+    expect(screen.getByText(/Discovery/)).toBeInTheDocument();
+  });
 });

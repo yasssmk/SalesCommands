@@ -91,8 +91,11 @@ function TwoColRow({ children }) {
       data-testid="ctx-grid"
       sx={{
         display: "grid",
-        gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-        columnGap: 3,
+        // minmax(0, 1fr) tracks: long values (emails, phones) wrap inside their
+        // cell instead of overflowing under the other column — no overlap.
+        gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 1fr) minmax(0, 1fr)" },
+        alignItems: "start",
+        columnGap: 4,
         rowGap: 1.5,
       }}
     >
@@ -102,6 +105,21 @@ function TwoColRow({ children }) {
 }
 
 TwoColRow.propTypes = { children: PropTypes.node };
+
+// A discreet hairline rule separating the card's groups (aphoriQ border token).
+function GroupRule() {
+  const theme = useTheme();
+  return (
+    <Box
+      data-testid="ctx-sep"
+      sx={{
+        borderTopStyle: "solid",
+        borderTopWidth: theme.aphoriQ.border.width.hairline,
+        borderTopColor: theme.aphoriQ.border.color,
+      }}
+    />
+  );
+}
 
 // Small muted sub-heading inside the single card (e.g. "Internal team").
 function SubLabel({ children }) {
@@ -214,6 +232,9 @@ Provenance.propTypes = { activity: PropTypes.object };
 // ==============================|| ACTIVITY CONTEXT SECTION ||============================== //
 
 export default function ActivityContextSection({ activity }) {
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+
   if (!activity) return null;
 
   const schedule = getSchedule(activity);
@@ -221,9 +242,6 @@ export default function ActivityContextSection({ activity }) {
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
   const hasProvenance = Boolean(activity.source_activity_detail);
-
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
 
@@ -238,23 +256,25 @@ export default function ActivityContextSection({ activity }) {
       </Stack>
 
       <Stack spacing={2}>
-        {/* Row 1 — Objective (left) · Scheduled (right, right-aligned) */}
-        <TwoColRow>
-          <LabeledValue
-            dense
-            label="Objective"
-            value={activity.call_to_action}
-            placeholder="No objective defined"
-          />
-          <Box sx={{ textAlign: { md: "right" } }}>
-            <LabeledValue dense label={schedule.label} value={schedule.value} />
-          </Box>
-        </TwoColRow>
+        {/* Group 1 — Details: Objective | Scheduled, then Description */}
+        <Stack spacing={1.5}>
+          <TwoColRow>
+            <LabeledValue
+              dense
+              label="Objective"
+              value={activity.call_to_action}
+              placeholder="No objective defined"
+            />
+            <Box sx={{ textAlign: { md: "right" } }}>
+              <LabeledValue dense label={schedule.label} value={schedule.value} />
+            </Box>
+          </TwoColRow>
+          <LabeledValue dense label="Description" value={activity.description} />
+        </Stack>
 
-        {/* Description — full width */}
-        <LabeledValue dense label="Description" value={activity.description} />
+        <GroupRule />
 
-        {/* People — Internal team (left) · External contacts (right) */}
+        {/* Group 2 — People: Internal team | External contacts */}
         <TwoColRow>
           <Box>
             <SubLabel>Internal team</SubLabel>
@@ -291,11 +311,13 @@ export default function ActivityContextSection({ activity }) {
           </Box>
         </TwoColRow>
 
-        {/* Linked context (rule a, compact) */}
-        <LinkedContext activity={activity} />
+        <GroupRule />
 
-        {/* Provenance — integrated info line, full width */}
-        {hasProvenance && <Provenance activity={activity} />}
+        {/* Group 3 — Linked context (rule a, compact) + provenance */}
+        <Stack spacing={1.5}>
+          <LinkedContext activity={activity} />
+          {hasProvenance && <Provenance activity={activity} />}
+        </Stack>
       </Stack>
     </Surface>
   );
