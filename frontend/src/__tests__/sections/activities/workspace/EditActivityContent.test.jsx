@@ -33,13 +33,32 @@ vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
 vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: class {} }));
 
 // Async pickers hit live API hooks — stub them; distinguish owner vs invited by `multiple`.
+// The stubs also expose a "pick" button that fires onChange the way MUI
+// Autocomplete does — (event, newValue) — so tests can prove the handler reads
+// the 2nd argument (the value), not the 1st (the event).
 vi.mock("components/AsyncSelection/AsyncUserSelect", () => ({
-  default: ({ value, multiple }) => (
-    <div data-testid={multiple ? "invited-select" : "owner-select"} data-value={JSON.stringify(value)} />
+  default: ({ value, onChange, multiple }) => (
+    <div>
+      <div data-testid={multiple ? "invited-select" : "owner-select"} data-value={JSON.stringify(value)} />
+      <button
+        type="button"
+        data-testid={multiple ? "pick-invited" : "pick-owner"}
+        onClick={() => onChange({ synthetic: true }, multiple ? [{ id: "u9" }] : { id: "u9" })}
+      />
+    </div>
   ),
 }));
 vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
-  default: ({ value }) => <div data-testid="contacts-select" data-value={JSON.stringify(value)} />,
+  default: ({ value, onChange }) => (
+    <div>
+      <div data-testid="contacts-select" data-value={JSON.stringify(value)} />
+      <button
+        type="button"
+        data-testid="pick-contacts"
+        onClick={() => onChange({ synthetic: true }, [{ id: "c9" }, { id: "c1" }])}
+      />
+    </div>
+  ),
 }));
 
 // Spies used inside vi.mock factories must be hoisted (vi.mock is hoisted).
@@ -170,5 +189,36 @@ describe("EditActivityContent — save + cancel", () => {
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(closeDrawer).toHaveBeenCalled();
     expect(updateActivity).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditActivityContent — onChange reads the value (2nd arg), never the event", () => {
+  it("selecting contacts stores the ARRAY value (not the event) and saves those ids", async () => {
+    renderEdit();
+    // simulate MUI Autocomplete multiple onChange: (event, newValueArray)
+    fireEvent.click(screen.getByTestId("pick-contacts"));
+    await waitFor(() => {
+      const dv = screen.getByTestId("contacts-select").getAttribute("data-value");
+      expect(JSON.parse(dv)).toBeInstanceOf(Array); // the value, not the {synthetic} event
+      expect(dv).toContain("c9");
+    });
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(updateActivity).toHaveBeenCalled());
+    expect(updateActivity.mock.calls[0][1].contact_ids).toEqual(["c9", "c1"]);
+  });
+
+  it("selecting owner stores the value object (2nd arg) → owner_id in the payload", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("pick-owner"));
+    await waitFor(() =>
+      expect(screen.getByTestId("owner-select").getAttribute("data-value")).toContain("u9"),
+    );
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(updateActivity).toHaveBeenCalled());
+    expect(updateActivity.mock.calls[0][1].owner_id).toBe("u9");
   });
 });

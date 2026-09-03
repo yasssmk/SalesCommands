@@ -184,31 +184,35 @@ export default function EditActivityContent({ activity, onSaved }) {
         </Select>
       </Stack>
 
-      {/* Dates */}
+      {/* Dates — the coque is only ~480px wide, so keep the row to TWO pickers
+          (scheduled date + time, each with minWidth:0 so they shrink instead of
+          overflowing) and put due date on its own full-width row below. */}
       <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-          <Stack spacing={0.5} sx={{ flex: 1 }}>
-            <InputLabel>Scheduled date</InputLabel>
-            <DatePicker
-              value={values.scheduled_date}
-              onChange={(v) => {
-                setFieldValue("scheduled_date", v);
-                setFieldTouched("scheduled_date", true, false);
-                if (!v) setFieldValue("scheduled_time", null);
-              }}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
+        <Stack spacing={1.5}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+            <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
+              <InputLabel>Scheduled date</InputLabel>
+              <DatePicker
+                value={values.scheduled_date}
+                onChange={(v) => {
+                  setFieldValue("scheduled_date", v);
+                  setFieldTouched("scheduled_date", true, false);
+                  if (!v) setFieldValue("scheduled_time", null);
+                }}
+                slotProps={{ textField: { fullWidth: true } }}
+              />
+            </Stack>
+            <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
+              <InputLabel>Scheduled time</InputLabel>
+              <TimePicker
+                value={values.scheduled_time}
+                onChange={(v) => setFieldValue("scheduled_time", v)}
+                disabled={!values.scheduled_date}
+                slotProps={{ textField: { fullWidth: true } }}
+              />
+            </Stack>
           </Stack>
-          <Stack spacing={0.5} sx={{ flex: 1 }}>
-            <InputLabel>Scheduled time</InputLabel>
-            <TimePicker
-              value={values.scheduled_time}
-              onChange={(v) => setFieldValue("scheduled_time", v)}
-              disabled={!values.scheduled_date}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
-          </Stack>
-          <Stack spacing={0.5} sx={{ flex: 1 }}>
+          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
             <InputLabel>Due date</InputLabel>
             <DatePicker
               value={values.due_date}
@@ -262,7 +266,7 @@ export default function EditActivityContent({ activity, onSaved }) {
         <InputLabel>Owner</InputLabel>
         <AsyncUserSelect
           value={values.owner}
-          onChange={(v) => setFieldValue("owner", v)}
+          onChange={(_event, value) => setFieldValue("owner", value)}
           label=""
           placeholder="Search a user…"
         />
@@ -274,7 +278,7 @@ export default function EditActivityContent({ activity, onSaved }) {
         <AsyncUserSelect
           multiple
           value={values.invited}
-          onChange={(v) => setFieldValue("invited", v || [])}
+          onChange={(_event, value) => setFieldValue("invited", value || [])}
           label=""
           placeholder="Search users…"
         />
@@ -286,7 +290,7 @@ export default function EditActivityContent({ activity, onSaved }) {
         <AsyncContactSelect
           multiple
           value={values.contacts}
-          onChange={(v) => setFieldValue("contacts", v || [])}
+          onChange={(_event, value) => setFieldValue("contacts", value || [])}
           filters={{ account_id: accountId }}
           label=""
           placeholder="Search contacts…"
