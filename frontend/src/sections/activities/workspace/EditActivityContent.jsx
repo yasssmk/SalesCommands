@@ -1,327 +1,216 @@
 // frontend/src/sections/activities/workspace/EditActivityContent.jsx
 //
-// S2c-1 — the Activity EDIT form, injected as a SHELL-LESS node into the shared
-// WorkspaceDrawer coque via openDrawer(<EditActivityContent activity=… />). The
-// coque already provides the drawer shell (close button + padded scroll body +
-// width) — this node renders ONLY its section title, the form, and the actions,
-// and closes via closeDrawer.
+// S2c-2.2 — the Activity EDIT drawer, injected as a SHELL-LESS node into the
+// shared WorkspaceDrawer coque via openDrawer(<EditActivityContent activity=… />).
+// The coque provides the shell (close button + padded scroll body + width); this
+// node renders a bold "Edit activity" h3 title + FOUR stacked SECTION BOXES,
+// separated by the header hairline filet:
 //
-// Edits CONTENT fields only (PO-fixed scope): title, activity_type, scheduled
-// date/time, due date, objective (call_to_action), description, owner, invited
-// users, contacts. NO status, NO cycle/step. Formik + Yup, matching the project
-// standard (ActivityModal's field patterns + date rule). Save PATCHes via
-// updateActivity (which already revalidates SWR, so the header/Context refresh).
-// Themed via aphoriQ/MUI — no hardcoded hex/px.
+//   (1) Title & type · (2) Date & time · (3) Objective & description ·
+//   (4) People (owner · invited · contacts)
+//
+// Each section is a self-contained box (background.default ground, radius lg)
+// that DISPLAYS the current values and carries an "Edit" button. In this step the
+// Edit button is inert — per-section read↔edit + partial PATCH save lands in
+// S2c-2.3 (cloning UnifiedDateSection's local read/edit mechanics). Edits stay
+// scoped to CONTENT fields only (no status, no cycle/step). Themed via aphoriQ/
+// MUI — no hardcoded hex/px.
 
 "use client";
 
 import PropTypes from "prop-types";
-
-import { useFormik } from "formik";
-import * as Yup from "yup";
 import dayjs from "dayjs";
 
 // MUI
+import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import FormHelperText from "@mui/material/FormHelperText";
-import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import { TimePicker } from "@mui/x-date-pickers/TimePicker";
-import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+
+// Icons
+import EditOutlined from "@ant-design/icons/EditOutlined";
 
 // Project
-import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
-import {
-  updateActivity,
-  ACTIVITY_TYPES,
-  ACTIVITY_TYPE_LABELS,
-} from "api/accounts/activities";
-import {
-  displaySuccessSnackbar,
-  displayErrorSnackbar,
-} from "utils/displayError";
-import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
-import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
-
-// ==============================|| VALIDATION ||============================== //
-
-// Mirrors ActivityModal's date rule (serializers.py:1224-1230 — at least one of
-// scheduled_date / due_date must remain) plus the min-1-contact backend rule.
-const validationSchema = Yup.object(
-  {
-    title: Yup.string().trim().required("Title is required").max(255, "Title must be at most 255 characters"),
-    activity_type: Yup.string().required("Activity type is required"),
-    call_to_action: Yup.string().max(500, "Objective must be at most 500 characters").nullable(),
-    description: Yup.string().max(2000, "Description must be at most 2000 characters").nullable(),
-    scheduled_date: Yup.date()
-      .nullable()
-      .typeError("Please select a valid date")
-      .when("due_date", {
-        is: (dueDate) => !dueDate,
-        then: (schema) => schema.required("A scheduled date or a due date is required"),
-        otherwise: (schema) => schema.nullable(),
-      }),
-    due_date: Yup.date().nullable().typeError("Please select a valid date"),
-    contacts: Yup.array().min(1, "At least one contact is required"),
-  },
-  [["scheduled_date", "due_date"]],
-);
+import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
+import LabeledValue from "components/display/LabeledValue";
+import PersonRow from "components/display/PersonRow";
 
 // ==============================|| HELPERS ||============================== //
 
-function fmtDate(v) {
-  return v ? dayjs(v).format("YYYY-MM-DD") : null;
+function typeLabel(value) {
+  return ACTIVITY_TYPE_LABELS[value] || value || "—";
 }
+
+function fmtDate(v) {
+  return v ? dayjs(v).format("MMM D, YYYY") : null;
+}
+
+function fmtTime(t) {
+  return t ? dayjs(`1970-01-01T${t}`).format("h:mm A") : null;
+}
+
+function personName(p) {
+  if (!p) return null;
+  return p.full_name || [p.first_name, p.last_name].filter(Boolean).join(" ") || p.email || null;
+}
+
+function scheduledDisplay(activity) {
+  const date = fmtDate(activity?.scheduled_date);
+  if (!date) return null;
+  const time = fmtTime(activity?.scheduled_time);
+  return time ? `${date} · ${time}` : date;
+}
+
+// ==============================|| SECTION SHELL ||============================== //
+
+// The hairline filet, identical to the workspace header separator
+// (WorkspaceHeader.jsx:104-108): a top border in the aphoriQ hairline width/color.
+function Filet() {
+  const aq = useTheme().aphoriQ;
+  return (
+    <Box
+      data-testid="section-filet"
+      sx={{
+        borderTopStyle: "solid",
+        borderTopWidth: aq.border.width.hairline,
+        borderTopColor: aq.border.color,
+      }}
+    />
+  );
+}
+
+// A section box: the page background ground + radius lg, a header row (muted
+// title + an Edit button) and the read content. `onEdit` is wired in S2c-2.3;
+// while undefined the Edit button is inert (renders, does nothing on click).
+function SectionBox({ title, onEdit, children }) {
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+  return (
+    <Box
+      data-testid="edit-section"
+      sx={{
+        backgroundColor: "background.default",
+        borderRadius: `${aq.radius.lg}px`,
+        p: 2,
+      }}
+    >
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+        <Typography variant="caption" sx={{ color: aq.text.muted }}>
+          {title}
+        </Typography>
+        <Button
+          size="small"
+          variant="text"
+          onClick={onEdit}
+          startIcon={<EditOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+        >
+          Edit
+        </Button>
+      </Stack>
+      <Stack spacing={1.5}>{children}</Stack>
+    </Box>
+  );
+}
+
+SectionBox.propTypes = {
+  title: PropTypes.string.isRequired,
+  onEdit: PropTypes.func,
+  children: PropTypes.node,
+};
 
 // ==============================|| EDIT ACTIVITY CONTENT ||============================== //
 
-export default function EditActivityContent({ activity, onSaved }) {
-  const { closeDrawer } = useWorkspaceDrawer();
-  const accountId = activity?.account_detail?.id || activity?.account || null;
+export default function EditActivityContent({ activity }) {
+  const aq = useTheme().aphoriQ;
 
-  const formik = useFormik({
-    enableReinitialize: true,
-    validationSchema,
-    initialValues: {
-      title: activity?.title || "",
-      activity_type: activity?.activity_type || "",
-      scheduled_date: activity?.scheduled_date ? dayjs(activity.scheduled_date) : null,
-      scheduled_time: activity?.scheduled_time ? dayjs(`2000-01-01T${activity.scheduled_time}`) : null,
-      due_date: activity?.due_date ? dayjs(activity.due_date) : null,
-      call_to_action: activity?.call_to_action || "",
-      description: activity?.description || "",
-      owner: activity?.owner_detail || null,
-      invited: activity?.invited_users_detail || [],
-      contacts: activity?.contacts_detail || [],
-    },
-    onSubmit: async (values, { setSubmitting }) => {
-      const payload = {
-        title: values.title.trim(),
-        activity_type: values.activity_type,
-        scheduled_date: fmtDate(values.scheduled_date),
-        // time only survives when a scheduled date does
-        scheduled_time:
-          values.scheduled_date && values.scheduled_time
-            ? dayjs(values.scheduled_time).format("HH:mm:ss")
-            : null,
-        due_date: fmtDate(values.due_date),
-        call_to_action: values.call_to_action?.trim() || null,
-        description: values.description?.trim() || null,
-        owner_id: values.owner?.id ?? null,
-        invited_user_ids: (values.invited || []).map((u) => u.id),
-        contact_ids: (values.contacts || []).map((c) => c.id),
-      };
-      try {
-        const result = await updateActivity(activity.id, payload);
-        if (result?.success) {
-          displaySuccessSnackbar("Activity updated");
-          onSaved?.();
-          closeDrawer();
-        } else {
-          displayErrorSnackbar(result);
-        }
-      } catch (err) {
-        displayErrorSnackbar(err);
-      } finally {
-        setSubmitting(false);
-      }
-    },
-  });
-
-  const { values, errors, touched, handleChange, handleBlur, setFieldValue, setFieldTouched } = formik;
-
-  const fieldError = (name) => touched[name] && errors[name];
+  const scheduled = scheduledDisplay(activity);
+  const due = fmtDate(activity?.due_date);
+  const owner = personName(activity?.owner_detail);
+  const invited = activity?.invited_users_detail || [];
+  const contacts = activity?.contacts_detail || [];
 
   return (
-    <Stack spacing={2} component="form" onSubmit={formik.handleSubmit} noValidate>
-      <Typography variant="subtitle2" color="text.primary" sx={{ fontWeight: "bold" }}>
+    <Stack spacing={2}>
+      <Typography variant="h3" component="h2" sx={{ fontWeight: "bold" }}>
         Edit activity
       </Typography>
 
-      {/* Title */}
-      <Stack spacing={0.5}>
-        <InputLabel htmlFor="title" required>
-          Title
-        </InputLabel>
-        <TextField
-          id="title"
-          name="title"
-          fullWidth
-          value={values.title}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          error={Boolean(fieldError("title"))}
-          helperText={fieldError("title") || " "}
-        />
-      </Stack>
+      {/* (1) Title & type */}
+      <SectionBox title="Title & type">
+        <LabeledValue label="Title" value={activity?.title} placeholder="Untitled" strong />
+        <LabeledValue label="Type" value={typeLabel(activity?.activity_type)} />
+      </SectionBox>
 
-      {/* Type */}
-      <Stack spacing={0.5}>
-        <InputLabel htmlFor="activity_type" required>
-          Type
-        </InputLabel>
-        <Select
-          id="activity_type"
-          name="activity_type"
-          fullWidth
-          value={values.activity_type}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          error={Boolean(fieldError("activity_type"))}
-        >
-          {Object.entries(ACTIVITY_TYPES).map(([key, value]) => (
-            <MenuItem key={key} value={value}>
-              {ACTIVITY_TYPE_LABELS[key]}
-            </MenuItem>
-          ))}
-        </Select>
-      </Stack>
+      <Filet />
 
-      {/* Dates — the coque is only ~480px wide, so keep the row to TWO pickers
-          (scheduled date + time, each with minWidth:0 so they shrink instead of
-          overflowing) and put due date on its own full-width row below. */}
-      <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Stack spacing={1.5}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-            <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
-              <InputLabel>Scheduled date</InputLabel>
-              <DatePicker
-                value={values.scheduled_date}
-                onChange={(v) => {
-                  setFieldValue("scheduled_date", v);
-                  setFieldTouched("scheduled_date", true, false);
-                  if (!v) setFieldValue("scheduled_time", null);
-                }}
-                slotProps={{ textField: { fullWidth: true } }}
-              />
-            </Stack>
-            <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
-              <InputLabel>Scheduled time</InputLabel>
-              <TimePicker
-                value={values.scheduled_time}
-                onChange={(v) => setFieldValue("scheduled_time", v)}
-                disabled={!values.scheduled_date}
-                slotProps={{ textField: { fullWidth: true } }}
-              />
-            </Stack>
-          </Stack>
-          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-            <InputLabel>Due date</InputLabel>
-            <DatePicker
-              value={values.due_date}
-              onChange={(v) => {
-                setFieldValue("due_date", v);
-                setFieldTouched("due_date", true, false);
-              }}
-              slotProps={{ textField: { fullWidth: true } }}
-            />
-          </Stack>
-        </Stack>
-      </LocalizationProvider>
-      {Boolean(fieldError("scheduled_date")) && (
-        <FormHelperText error>{errors.scheduled_date}</FormHelperText>
-      )}
-
-      {/* Objective */}
-      <Stack spacing={0.5}>
-        <InputLabel htmlFor="call_to_action">Objective</InputLabel>
-        <TextField
-          id="call_to_action"
-          name="call_to_action"
-          fullWidth
-          value={values.call_to_action}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          error={Boolean(fieldError("call_to_action"))}
-          helperText={fieldError("call_to_action") || " "}
-        />
-      </Stack>
-
-      {/* Description */}
-      <Stack spacing={0.5}>
-        <InputLabel htmlFor="description">Description</InputLabel>
-        <TextField
-          id="description"
-          name="description"
-          fullWidth
-          multiline
-          minRows={3}
-          value={values.description}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          error={Boolean(fieldError("description"))}
-          helperText={fieldError("description") || " "}
-        />
-      </Stack>
-
-      {/* Owner */}
-      <Stack spacing={0.5}>
-        <InputLabel>Owner</InputLabel>
-        <AsyncUserSelect
-          value={values.owner}
-          onChange={(_event, value) => setFieldValue("owner", value)}
-          label=""
-          placeholder="Search a user…"
-        />
-      </Stack>
-
-      {/* Invited users */}
-      <Stack spacing={0.5}>
-        <InputLabel>Invited users</InputLabel>
-        <AsyncUserSelect
-          multiple
-          value={values.invited}
-          onChange={(_event, value) => setFieldValue("invited", value || [])}
-          label=""
-          placeholder="Search users…"
-        />
-      </Stack>
-
-      {/* Contacts */}
-      <Stack spacing={0.5}>
-        <InputLabel required>Contacts</InputLabel>
-        <AsyncContactSelect
-          multiple
-          value={values.contacts}
-          onChange={(_event, value) => setFieldValue("contacts", value || [])}
-          filters={{ account_id: accountId }}
-          label=""
-          placeholder="Search contacts…"
-          error={Boolean(fieldError("contacts"))}
-          helperText={fieldError("contacts") || undefined}
-        />
-        {Boolean(fieldError("contacts")) && (
-          <FormHelperText error>{errors.contacts}</FormHelperText>
+      {/* (2) Date & time */}
+      <SectionBox title="Date & time">
+        {scheduled && <LabeledValue label="Scheduled" value={scheduled} strong />}
+        {due && <LabeledValue label="Due date" value={due} strong />}
+        {!scheduled && !due && (
+          <LabeledValue label="Date" placeholder="No date set" />
         )}
-      </Stack>
+      </SectionBox>
 
-      {/* Actions */}
-      <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1, pt: 1 }}>
-        <Button variant="text" color="inherit" onClick={() => closeDrawer()}>
-          Cancel
-        </Button>
-        <Button
-          type="submit"
-          variant="contained"
-          disabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
-        >
-          Save
-        </Button>
-      </Box>
+      <Filet />
+
+      {/* (3) Objective & description */}
+      <SectionBox title="Objective & description">
+        <LabeledValue label="Objective" value={activity?.call_to_action} placeholder="No objective set" />
+        <LabeledValue
+          label="Description"
+          value={activity?.description}
+          placeholder="No description added"
+        />
+      </SectionBox>
+
+      <Filet />
+
+      {/* (4) People */}
+      <SectionBox title="People">
+        <Box>
+          <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+            Owner
+          </Typography>
+          {owner ? <PersonRow name={owner} suffix="owner" /> : (
+            <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
+              No owner
+            </Typography>
+          )}
+        </Box>
+
+        <Box>
+          <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+            Invited users
+          </Typography>
+          {invited.length > 0 ? (
+            invited.map((u) => <PersonRow key={u.id} name={personName(u)} />)
+          ) : (
+            <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
+              None
+            </Typography>
+          )}
+        </Box>
+
+        <Box>
+          <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+            Contacts
+          </Typography>
+          {contacts.length > 0 ? (
+            contacts.map((c) => <PersonRow key={c.id} name={personName(c)} />)
+          ) : (
+            <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
+              None
+            </Typography>
+          )}
+        </Box>
+      </SectionBox>
     </Stack>
   );
 }
 
 EditActivityContent.propTypes = {
-  /** The activity to edit (its *_detail fields seed the initial values). */
+  /** The activity to edit (its *_detail fields seed the displayed values). */
   activity: PropTypes.object.isRequired,
-  /** Optional callback fired after a successful save (before the coque closes). */
-  onSaved: PropTypes.func,
 };
