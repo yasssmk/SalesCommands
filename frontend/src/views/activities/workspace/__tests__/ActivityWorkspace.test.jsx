@@ -95,8 +95,13 @@ vi.mock("hooks/usePipelineRunner", () => ({
 
 // Interim section components — marker divs so we can assert which band body is
 // mounted (a CollapsibleStrip unmounts its body while collapsed).
-vi.mock("sections/activities/workspace/ActivityOverviewTab", () => ({
+// S2a: the Context block now renders ActivityContextSection (read-only), not
+// the legacy ActivityOverviewTab. Mock both so we can assert the swap.
+vi.mock("sections/activities/workspace/ActivityContextSection", () => ({
   default: () => <div data-testid="body-context">Context Content</div>,
+}));
+vi.mock("sections/activities/workspace/ActivityOverviewTab", () => ({
+  default: () => <div data-testid="legacy-overview">Legacy Overview</div>,
 }));
 vi.mock("sections/activities/workspace/ActivityPreparationTab", () => ({
   default: () => <div data-testid="body-preparation">Preparation Content</div>,
@@ -223,11 +228,13 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
     expect(screen.queryAllByRole("tablist")).toHaveLength(0);
   });
 
-  it("always renders the fixed Context block", () => {
+  it("always renders the fixed Context block (new section, not the legacy tab)", () => {
     setupRouter();
     setupActivity();
     renderPage();
     expect(screen.getByTestId("body-context")).toBeInTheDocument();
+    // the legacy ActivityOverviewTab is no longer rendered by the page
+    expect(screen.queryByTestId("legacy-overview")).not.toBeInTheDocument();
   });
 
   it("renders the four bands in fixed order for an eligible type (CALL)", () => {

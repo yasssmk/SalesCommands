@@ -39,7 +39,7 @@ import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader
 // gate (activity_type ∈ CALL/MEETING/DEMO). Reused here as the eligibility
 // oracle for the Preparation band — the tab selector itself is gone.
 import { getVisibleTabs } from "sections/activities/workspace/ActivityTabs";
-import ActivityOverviewTab from "sections/activities/workspace/ActivityOverviewTab";
+import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
@@ -220,12 +220,8 @@ export default function ActivityWorkspacePage() {
     <>
       <WorkspaceLayout {...headerProps} loading={activityLoading}>
         <Stack spacing={2}>
-          {/* Context — fixed, always visible (interim: the former Overview tab) */}
-          <ActivityOverviewTab
-            activity={activity}
-            onSave={handleSaveField}
-            isLocked={isLocked}
-          />
+          {/* Context — fixed, always visible; read-only aphoriQ display (S2a) */}
+          <ActivityContextSection activity={activity} />
 
           {/* Preparation — conditional on activity_type; open when NOT analysed */}
           {showPreparation && (
