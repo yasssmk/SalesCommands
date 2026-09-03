@@ -92,6 +92,12 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.getByText("Initial outreach call")).toBeInTheDocument();
   });
 
+  it("external contact row shows job title between name and department", () => {
+    renderCtx(baseActivity);
+    // "Chevalier Iki · Head of HR · HR" — job_title sits between name and dept
+    expect(screen.getByText(/· Head of HR · HR/)).toBeInTheDocument();
+  });
+
   it("always shows the Description label, with a placeholder when empty", () => {
     renderCtx({ ...baseActivity, description: null });
     expect(screen.getByText("Description")).toBeInTheDocument();

@@ -286,7 +286,7 @@ export default function ActivityContextSection({ activity }) {
                     key={c.id}
                     interactive
                     name={personName(c)}
-                    suffix={c.department_name || undefined}
+                    suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
                   />
                 ))}
               </Stack>
