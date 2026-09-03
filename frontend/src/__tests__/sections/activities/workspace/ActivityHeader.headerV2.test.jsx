@@ -24,6 +24,7 @@ vi.mock("sections/campaigns/CampaignOutcomeModal", () => ({ default: () => null 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import ThemeCustomization from "themes/index";
+import StatusPill from "components/chips/StatusPill";
 import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
 import {
   ACTIVITY_STATUS_COLORS,
@@ -86,17 +87,21 @@ describe("ActivityHeader V2 — status is a PILL in titleAdornment (Row 1)", () 
     expect(container.querySelectorAll(".MuiChip-root").length).toBe(0);
   });
 
-  it("the {text, background} table lives in the constants file, dark bg shared", () => {
-    // 2 colours per status: text (=border) + background; background is one dark
-    // token shared by every status (stored per-status to vary later).
+  it("the {text, background} table lives in the constants file; bg = the page background token", () => {
+    // 2 colours per status: text (=border) + background. The background reuses
+    // the theme's page/header background token (background.paper — inverts
+    // light/dark), shared by every status; no frozen colour.
     expect(ACTIVITY_STATUS_CHIP_COLORS.PLANNED.text).toBe("text.secondary");
     expect(ACTIVITY_STATUS_CHIP_COLORS.COMPLETED.text).toBe("success.main");
     expect(ACTIVITY_STATUS_CHIP_COLORS.CANCELLED.text).toBe("error.main");
     expect(ACTIVITY_STATUS_CHIP_COLORS.ON_HOLD.text).toBe("warning.main");
+    expect(ACTIVITY_STATUS_CHIP_COLORS.PLANNED.background).toBe("background.paper");
     const bg = ACTIVITY_STATUS_CHIP_COLORS.PLANNED.background;
     expect(ACTIVITY_STATUS_CHIP_COLORS.COMPLETED.background).toBe(bg);
     expect(ACTIVITY_STATUS_CHIP_COLORS.CANCELLED.background).toBe(bg);
     expect(ACTIVITY_STATUS_CHIP_COLORS.ON_HOLD.background).toBe(bg);
+    // never the removed frozen colour
+    expect(bg).not.toBe("common.black");
   });
 
   it("titleAdornment is a PILL rendered via StatusPill: visible CONTOUR (=text) + dark FOND", () => {
@@ -116,7 +121,7 @@ describe("ActivityHeader V2 — status is a PILL in titleAdornment (Row 1)", () 
     expect(pill.getAttribute("data-status-color")).toBe(ACTIVITY_STATUS_COLORS.PLANNED);
   });
 
-  it("text = border (both colorText), dark background, and text tracks the status", () => {
+  it("text = border (both colorText); background = the page bg token (not frozen black)", () => {
     const read = (status) => {
       const { result } = useHeader({ ...base, status });
       const { container } = render(<div>{result.current.titleAdornment}</div>, { wrapper });
@@ -124,6 +129,15 @@ describe("ActivityHeader V2 — status is a PILL in titleAdornment (Row 1)", () 
       cleanup();
       return cols;
     };
+    // reference: resolve the theme's page background token through a real sx probe
+    const { container: pc } = render(
+      <ThemeCustomization>
+        <StatusPill label="x" colorText="rgb(1, 2, 3)" colorBg="background.paper" />
+      </ThemeCustomization>,
+    );
+    const pageBg = pillColors(rulesForElement(pc.querySelector('[data-testid="status-pill"]'))).background;
+    cleanup();
+
     const cancelled = read("CANCELLED");
     const completed = read("COMPLETED");
     const planned = read("PLANNED");
@@ -131,8 +145,11 @@ describe("ActivityHeader V2 — status is a PILL in titleAdornment (Row 1)", () 
     // 3-part chip: the TEXT colour equals the BORDER colour (both colorText)
     expect(cancelled.text).toBeTruthy();
     expect(cancelled.text).toBe(cancelled.border);
-    // dark BACKGROUND (common.black), shared across statuses
-    expect(cancelled.background.replace(/\s/g, "")).toMatch(/#000(000)?/i);
+    // BACKGROUND = the theme's page background token (blends in), never #000
+    expect(pageBg).toBeTruthy();
+    expect(cancelled.background).toBe(pageBg);
+    expect(cancelled.background.replace(/\s/g, "")).not.toMatch(/#000(000)?$/i);
+    // shared across statuses
     expect(completed.background).toBe(cancelled.background);
     // TEXT colour tracks the status (from the constant): each status differs
     expect(cancelled.text).not.toBe(completed.text);
