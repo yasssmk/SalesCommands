@@ -422,11 +422,23 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
     
     @property
     def is_overdue(self):
-        """Check if activity is overdue."""
+        """Check if activity is overdue on its EFFECTIVE date.
+
+        Effective date = scheduled_date if set, else due_date. A PLANNED activity
+        is overdue when either date is strictly before today (date comparison, so
+        an activity due/scheduled TODAY is not yet overdue). This mirrors the
+        canonical rule used by step-status derivation
+        (StepStatusDerivationService._is_activity_overdue) so a scheduled-only
+        activity (no due_date) past its planned date is flagged everywhere
+        is_overdue is read (header, cards, list serializers).
+        """
         if self.status in [ActivityStatus.COMPLETED, ActivityStatus.CANCELLED]:
             return False
-        if self.due_date:
-            return self.due_date < timezone.now().date()
+        today = timezone.now().date()
+        if self.scheduled_date and self.scheduled_date < today:
+            return True
+        if self.due_date and self.due_date < today:
+            return True
         return False
     
     @property
