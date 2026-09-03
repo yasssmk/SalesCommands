@@ -71,7 +71,7 @@ function CoquePanel({ content, onClose }) {
     <Box
       sx={{
         width: aq.drawer.width,
-        backgroundColor: aq.surface.level1,
+        backgroundColor: aq.surface.level2,
         borderLeftStyle: "solid",
         borderLeftWidth: aq.border.width.hairline,
         borderLeftColor: aq.border.color,
@@ -114,7 +114,7 @@ export default function WorkspaceDrawer() {
             ? {
                 sx: {
                   width: { xs: "100%", sm: aq.drawer.width },
-                  backgroundColor: aq.surface.level1,
+                  backgroundColor: aq.surface.level2,
                 },
               }
             : undefined

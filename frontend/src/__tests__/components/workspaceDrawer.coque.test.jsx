@@ -8,6 +8,34 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
+import { testTheme } from "../_utils/aphoriqTheme";
+
+// The emotion rule text for an element's own css-* classes (scoped).
+function rulesForElement(el) {
+  const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+  const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+  return classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+}
+
+// The cascade winner background-color of an element's emotion rules — the LAST
+// declaration across its css-* classes (sx overrides come last and win).
+function bgOf(el) {
+  const all = rulesForElement(el).match(/background-color:\s*([^;}]+)/g) || [];
+  if (all.length === 0) return null;
+  return all[all.length - 1].replace(/background-color:\s*/, "").trim();
+}
+
+// Walk up from `el` and return the background-color of the first ancestor that
+// declares one (the coque panel Box paints the shell background).
+function bgOfAncestor(el) {
+  let node = el;
+  while (node) {
+    const bg = bgOf(node);
+    if (bg) return bg;
+    node = node.parentElement;
+  }
+  return null;
+}
 
 // Control push vs overlay deterministically (WorkspaceDrawer picks the mode via
 // useMediaQuery(down('lg'))). Since L2 the coque + provider live at the layout,
@@ -81,5 +109,28 @@ describe("WorkspaceDrawer coque (B3.5.1)", () => {
     expect(screen.getByTestId("dcontent")).toBeInTheDocument();
     // temporary MUI Drawer paints a backdrop overlay
     expect(document.querySelector(".MuiBackdrop-root")).not.toBeNull();
+  });
+});
+
+describe("WorkspaceDrawer coque — anthracite background (S2c-2)", () => {
+  it("large PUSH: the coque panel background is the aphoriQ surface.level2 token (not level1)", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const bg = bgOfAncestor(screen.getByTestId("dcontent"));
+    expect(bg).toBe(testTheme.aphoriQ.surface.level2);
+    expect(bg).not.toBe(testTheme.aphoriQ.surface.level1);
+  });
+
+  it("narrow OVERLAY: the temporary Drawer paper background is surface.level2 (not level1)", () => {
+    useMediaQuery.mockReturnValue(true); // narrow
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const paper = document.querySelector(".MuiDrawer-paper");
+    expect(paper).not.toBeNull();
+    const bg = bgOf(paper);
+    expect(bg).toBe(testTheme.aphoriQ.surface.level2);
+    expect(bg).not.toBe(testTheme.aphoriQ.surface.level1);
   });
 });

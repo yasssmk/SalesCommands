@@ -6,9 +6,9 @@
 //   Details: Objective | Scheduled (bold values), then Description (bold)
 //   ── hairline ──
 //   People: Internal team | External contacts — bold name + inline suffix (no
-//           avatar). A "+" per column header (inert). External contact names
-//           look clickable (pointer + hover) but carry no handler yet — the
-//           drawer is wired in a later sprint. No email/phone on the rows.
+//           avatar). External contact names look clickable (pointer + hover) but
+//           carry no handler yet — the drawer is wired in a later sprint. No
+//           email/phone on the rows.
 //   ── hairline ──  (only when there is provenance)
 //   Origin: a single provenance line (where the activity was born), a branch
 //           icon + TWO separate accent links (context, then activity) to live
@@ -30,7 +30,6 @@ import Typography from "@mui/material/Typography";
 
 // Icons
 import InfoCircleOutlined from "@ant-design/icons/InfoCircleOutlined";
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 
 // Primitives
@@ -118,16 +117,14 @@ function GroupRule() {
   );
 }
 
-// Column header: muted label at the left, an inert "+" at the right.
+// Column header: a muted label. (The inert "+" was removed in S2c-2.)
 function ColumnHeader({ label }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
+  const aq = useTheme().aphoriQ;
   return (
     <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
       <Typography variant="caption" sx={{ color: aq.text.muted }}>
         {label}
       </Typography>
-      <PlusOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted, display: "flex" }} />
     </Stack>
   );
 }

@@ -121,9 +121,9 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(rulesForElement(screen.getByText("Admin Tenant A"))).not.toMatch(/cursor:\s*pointer/);
   });
 
-  it("shows an inert '+' on each column header and NO chevron on contacts", () => {
+  it("shows NO '+' on the column headers and NO chevron on contacts (S2c-2 removed the inert +)", () => {
     const { container } = renderCtx(baseActivity);
-    expect(container.querySelectorAll(".anticon-plus").length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll(".anticon-plus").length).toBe(0);
     expect(container.querySelectorAll(".anticon-right").length).toBe(0);
   });
 
