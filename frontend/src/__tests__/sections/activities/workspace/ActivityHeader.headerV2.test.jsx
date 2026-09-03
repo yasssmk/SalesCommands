@@ -23,6 +23,15 @@ vi.mock("themes/emotionCache", () => ({
 vi.mock("sections/campaigns/CampaignOutcomeModal", () => ({ default: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
+// Spy the coque so we can assert the ⋮ Edit item opens the edit content.
+const openDrawer = vi.fn();
+vi.mock("contexts/WorkspaceDrawerContext", () => ({
+  useWorkspaceDrawer: () => ({ isOpen: false, content: null, openDrawer, closeDrawer: vi.fn() }),
+}));
+vi.mock("sections/activities/workspace/EditActivityContent", () => ({
+  default: () => <div data-testid="edit-activity-content" />,
+}));
+
 import ThemeCustomization from "themes/index";
 import StatusPill from "components/chips/StatusPill";
 import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
@@ -198,6 +207,22 @@ describe("ActivityHeader V2 — ⋮ menu is Edit | Delete only", () => {
     expect(screen.queryByText("Log Response")).not.toBeInTheDocument();
     expect(screen.queryByText("Cancel")).not.toBeInTheDocument();
     expect(screen.queryByText("Reopen")).not.toBeInTheDocument();
+  });
+
+  it("clicking Edit opens the edit content in the coque (openDrawer with EditActivityContent)", async () => {
+    openDrawer.mockClear();
+    render(
+      <ThemeCustomization>
+        <ActionsHarness activity={base} />
+      </ThemeCustomization>,
+    );
+    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(screen.getByText("Edit"));
+    expect(openDrawer).toHaveBeenCalledTimes(1);
+    const node = openDrawer.mock.calls[0][0];
+    expect(node).toBeTruthy();
+    // the injected node is the EditActivityContent, fed the activity
+    expect(node.props.activity).toBe(base);
   });
 });
 

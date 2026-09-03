@@ -26,6 +26,10 @@ vi.mock("next/font/google", () => ({
 // modals bundle, so stub it out to keep the import graph clean.
 vi.mock("sections/campaigns/CampaignOutcomeModal", () => ({ default: () => null }));
 
+// EditActivityContent pulls @mui/x-date-pickers (unresolvable ESM in this env);
+// the header only references it on the ⋮ Edit click, so stub it here.
+vi.mock("sections/activities/workspace/EditActivityContent", () => ({ default: () => null }));
+
 // Router spy — the header pushes navigation through next/navigation.
 const pushMock = vi.fn();
 vi.mock("next/navigation", () => ({

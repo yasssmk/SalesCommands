@@ -43,6 +43,10 @@ import StatusPill from "components/chips/StatusPill";
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
 
+// Drawer coque + edit content
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import EditActivityContent from "sections/activities/workspace/EditActivityContent";
+
 // Modals
 import AlertActivityDelete from "sections/accounts/activities/AlertActivityDelete";
 
@@ -107,6 +111,7 @@ export default function useActivityHeaderProps({
 }) {
   const theme = useTheme();
   const router = useRouter();
+  const { openDrawer } = useWorkspaceDrawer();
 
   // ==============================|| STATE ||============================== //
 
@@ -150,6 +155,12 @@ export default function useActivityHeaderProps({
   const handleDeleteClick = () => {
     handleMenuClose();
     setDeleteDialogOpen(true);
+  };
+
+  // Edit — inject the edit form into the workspace drawer coque (S2c).
+  const handleEditClick = () => {
+    handleMenuClose();
+    openDrawer(<EditActivityContent activity={activity} />);
   };
 
   // ==============================|| HANDLERS — Navigation ||============================== //
@@ -391,9 +402,8 @@ export default function useActivityHeaderProps({
         <MoreOutlined />
       </IconButton>
       <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
-        {/* Edit — opens the activity edit drawer (status change happens here).
-            Inert for now; wired in S2c. Shown even though it is not connected. */}
-        <MenuItem>
+        {/* Edit — opens the activity edit form in the workspace drawer coque. */}
+        <MenuItem onClick={handleEditClick}>
           <ListItemIcon>
             <EditOutlined style={{ color: theme.palette.text.secondary }} />
           </ListItemIcon>
