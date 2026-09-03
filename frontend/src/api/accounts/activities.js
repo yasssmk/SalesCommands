@@ -68,15 +68,19 @@ export const ACTIVITY_STATUSES = {
  */
 export const ACTIVITY_STATUS_LABELS = {
   PLANNED: "Planned",
+  ON_HOLD: "On hold",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
 
 /**
- * Status colors for UI display
+ * Status → semantic colour role (MUI palette role, never a hex). Consumed by the
+ * activity header's status chip. Planned reads neutral/muted (default), Completed
+ * success, Cancelled error, On hold warning.
  */
 export const ACTIVITY_STATUS_COLORS = {
   PLANNED: "default",
+  ON_HOLD: "warning",
   COMPLETED: "success",
   CANCELLED: "error",
 };

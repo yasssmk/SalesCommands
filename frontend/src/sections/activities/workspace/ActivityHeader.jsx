@@ -20,37 +20,33 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "@mui/material/styles";
 import Avatar from "@mui/material/Avatar";
 import Chip from "@mui/material/Chip";
-import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Date formatting
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 
 // API
-import { ACTIVITY_STATUS_LABELS } from "api/accounts/activities";
+import {
+  ACTIVITY_STATUS_LABELS,
+  ACTIVITY_STATUS_COLORS,
+} from "api/accounts/activities";
 
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
 
 // Modals
-import ActivityCompleteModal from "sections/accounts/activities/ActivityCompleteModal";
 import AlertActivityDelete from "sections/accounts/activities/AlertActivityDelete";
-import AlertActivityCancel from "sections/accounts/activities/AlertActivityCancel";
-import AlertActivityReopen from "sections/accounts/activities/AlertActivityReopen";
-import CampaignOutcomeModal from "sections/campaigns/CampaignOutcomeModal";
 
 // Icons
 import {
   MoreOutlined,
   EditOutlined,
   CheckCircleOutlined,
-  StopOutlined,
   DeleteOutlined,
   PhoneOutlined,
   MailOutlined,
@@ -64,7 +60,6 @@ import {
   BankOutlined,
   ApartmentOutlined,
   RightOutlined,
-  UndoOutlined,
   AimOutlined,
   ExperimentOutlined,
   ExclamationCircleOutlined,
@@ -93,34 +88,11 @@ const TYPE_AVATAR_COLORS = {
   OTHER: "grey.500",
 };
 
-// Status → MUI colour role for the single discreet status chip. Planned reads
-// neutral, Completed success, Cancelled error, On hold warning. The chip is
-// tinted (light background + full-colour text/border) via theme tokens below —
-// the role also drives the `.MuiChip-color*` class.
-const STATUS_CHIP_COLOR = {
-  PLANNED: "default",
-  ON_HOLD: "warning",
-  COMPLETED: "success",
-  CANCELLED: "error",
-};
-
-// Per-role tint: light background + full-colour text/border, all theme tokens
-// (no hardcoded hex). "default" is the neutral/muted Planned look.
-const STATUS_CHIP_TINT = {
-  default: { bgcolor: "action.hover", color: "text.secondary", borderColor: "divider" },
-  success: { bgcolor: "success.lighter", color: "success.dark", borderColor: "success.light" },
-  error: { bgcolor: "error.lighter", color: "error.dark", borderColor: "error.light" },
-  warning: { bgcolor: "warning.lighter", color: "warning.dark", borderColor: "warning.light" },
-};
-
-const STATUS_LABEL_FALLBACK = { ON_HOLD: "On hold" };
-
 // ==============================|| ACTIVITY HEADER PROPS HOOK ||============================== //
 
 export default function useActivityHeaderProps({
   activity,
   onSave,
-  onUpdate,
   isLocked = false,
   pipelineState = PIPELINE_STATE.IDLE,
   lastRun = null,
@@ -136,13 +108,9 @@ export default function useActivityHeaderProps({
   const [anchorEl, setAnchorEl] = useState(null);
   const menuOpen = Boolean(anchorEl);
 
-  // Modal states
-  const [completeModalOpen, setCompleteModalOpen] = useState(false);
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  // Delete confirmation (the only status/lifecycle action left in the ⋮ menu —
+  // Complete/Cancel/Reopen now happen via the Edit drawer, S2c).
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [campaignOutcomeModalOpen, setCampaignOutcomeModalOpen] =
-    useState(false);
 
   // ==============================|| EARLY RETURN (no data) ||============================== //
 
@@ -155,65 +123,23 @@ export default function useActivityHeaderProps({
   const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
   const avatarColor = TYPE_AVATAR_COLORS[activity.activity_type] || "grey.500";
 
-  const statusChipColor = STATUS_CHIP_COLOR[activity.status] || "default";
+  // Status → semantic colour role and label come from the front activities
+  // constants (ACTIVITY_STATUS_COLORS / ACTIVITY_STATUS_LABELS), never hardcoded.
+  const statusChipColor = ACTIVITY_STATUS_COLORS[activity.status] || "default";
   const statusChipLabel =
-    ACTIVITY_STATUS_LABELS[activity.status] ||
-    STATUS_LABEL_FALLBACK[activity.status] ||
-    activity.status;
+    ACTIVITY_STATUS_LABELS[activity.status] || activity.status;
 
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
-  const isPlanned = activity.status === "PLANNED";
-  const canComplete = !isCompleted && !isCancelled;
-  const canCancel = isPlanned;
-  const canReopen = isCompleted || isCancelled;
 
+  // Delete is offered for standalone activities only (unchanged gate).
   const isCampaignActivity =
     Boolean(activity.campaign_detail) && !activity.decision_cycle;
-  const previousActivities =
-    activity?.sequence_context?.previous_activities || [];
-  const previousActivity = previousActivities[0] || null;
-  const isPreviousBlocking =
-    isCampaignActivity &&
-    previousActivity &&
-    previousActivity.status !== "COMPLETED";
 
   // ==============================|| HANDLERS — Actions menu ||============================== //
 
   const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
-
-  const handleCompleteClick = () => {
-    handleMenuClose();
-    if (isCampaignActivity) {
-      setCampaignOutcomeModalOpen(true);
-    } else {
-      setCompleteModalOpen(true);
-    }
-  };
-  const handleCompleteSuccess = () => {
-    setCompleteModalOpen(false);
-    setCampaignOutcomeModalOpen(false);
-    onUpdate?.();
-  };
-
-  const handleCancelClick = () => {
-    handleMenuClose();
-    setCancelDialogOpen(true);
-  };
-  const handleCancelSuccess = () => {
-    setCancelDialogOpen(false);
-    onUpdate?.();
-  };
-
-  const handleReopenClick = () => {
-    handleMenuClose();
-    setReopenDialogOpen(true);
-  };
-  const handleReopenSuccess = () => {
-    setReopenDialogOpen(false);
-    onUpdate?.();
-  };
 
   const handleDeleteClick = () => {
     handleMenuClose();
@@ -439,58 +365,15 @@ export default function useActivityHeaderProps({
         <MoreOutlined />
       </IconButton>
       <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
-        {/* Edit — opens the activity edit drawer. Inert for now; wired in S2c. */}
+        {/* Edit — opens the activity edit drawer (status change happens here).
+            Inert for now; wired in S2c. Shown even though it is not connected. */}
         <MenuItem>
           <ListItemIcon>
             <EditOutlined style={{ color: theme.palette.text.secondary }} />
           </ListItemIcon>
           <Typography>Edit</Typography>
         </MenuItem>
-        <Divider />
-        {canComplete && !isLocked && (
-          <Tooltip
-            title={
-              isPreviousBlocking
-                ? "Complete the previous activities in the playlist first."
-                : ""
-            }
-            placement="left"
-            arrow
-          >
-            <span>
-              <MenuItem
-                onClick={isPreviousBlocking ? undefined : handleCompleteClick}
-                disabled={isPreviousBlocking}
-              >
-                <ListItemIcon>
-                  <CheckCircleOutlined
-                    style={{ color: theme.palette.success.main }}
-                  />
-                </ListItemIcon>
-                <Typography>
-                  {isCampaignActivity ? "Log Response" : "Complete"}
-                </Typography>
-              </MenuItem>
-            </span>
-          </Tooltip>
-        )}
-        {canCancel && !isLocked && !isCampaignActivity && (
-          <MenuItem onClick={handleCancelClick}>
-            <ListItemIcon>
-              <StopOutlined style={{ color: theme.palette.warning.main }} />
-            </ListItemIcon>
-            <Typography>Cancel</Typography>
-          </MenuItem>
-        )}
-        {canReopen && (
-          <MenuItem onClick={handleReopenClick}>
-            <ListItemIcon>
-              <UndoOutlined style={{ color: theme.palette.primary.main }} />
-            </ListItemIcon>
-            <Typography>Reopen</Typography>
-          </MenuItem>
-        )}
-        {!isCampaignActivity && <Divider />}
+        {/* Delete — existing action, wired as before (standalone activities). */}
         {!isCampaignActivity && (
           <MenuItem onClick={handleDeleteClick}>
             <ListItemIcon>
@@ -506,20 +389,15 @@ export default function useActivityHeaderProps({
   // ==============================|| ROW 2: Chips ||============================== //
 
   // The type now lives in the avatar tile, so the single chip is the STATUS —
-  // discreet (light tint + full-colour text/border), the only filled-tone chip.
+  // rendered with the design-system "light" chip variant (soft tinted background
+  // + full-colour text/border), the discreet mockup format, never a saturated pill.
   const chips = [
     <Chip
       key="status"
       label={statusChipLabel}
       color={statusChipColor}
       size="small"
-      variant="outlined"
-      sx={{
-        borderStyle: "solid",
-        borderWidth: theme.aphoriQ.border.width.thin,
-        fontWeight: "medium",
-        ...STATUS_CHIP_TINT[statusChipColor],
-      }}
+      variant="light"
     />,
   ];
 
@@ -646,32 +524,6 @@ export default function useActivityHeaderProps({
 
   const modals = (
     <>
-      <ActivityCompleteModal
-        open={completeModalOpen}
-        onClose={() => setCompleteModalOpen(false)}
-        activity={activity}
-        onSuccess={handleCompleteSuccess}
-      />
-      <CampaignOutcomeModal
-        open={campaignOutcomeModalOpen}
-        onClose={() => setCampaignOutcomeModalOpen(false)}
-        activity={activity}
-        campaignId={activity?.campaign_detail?.id}
-        onComplete={handleCompleteSuccess}
-        onUpdate={onUpdate}
-      />
-      <AlertActivityCancel
-        open={cancelDialogOpen}
-        handleClose={() => setCancelDialogOpen(false)}
-        activity={activity}
-        onSuccess={handleCancelSuccess}
-      />
-      <AlertActivityReopen
-        open={reopenDialogOpen}
-        handleClose={() => setReopenDialogOpen(false)}
-        activity={activity}
-        onSuccess={handleReopenSuccess}
-      />
       <AlertActivityDelete
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}

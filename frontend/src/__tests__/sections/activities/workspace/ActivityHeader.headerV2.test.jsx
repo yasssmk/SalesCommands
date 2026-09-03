@@ -25,6 +25,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import ThemeCustomization from "themes/index";
 import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
+import { ACTIVITY_STATUS_COLORS } from "api/accounts/activities";
 
 const wrapper = ({ children }) => <ThemeCustomization>{children}</ThemeCustomization>;
 
@@ -60,9 +61,18 @@ describe("ActivityHeader V2 — avatar tile + status chip", () => {
     expect(screen.queryByText(/Campaign:/)).not.toBeInTheDocument();
   });
 
-  it("status chip colour follows the status (Planned neutral, Completed success, Cancelled error)", () => {
+  it("status chip is DISCREET (light variant), colour from the ACTIVITY_STATUS_COLORS constant", () => {
+    // the mapping lives in the front constants file, not hardcoded in the header
+    expect(ACTIVITY_STATUS_COLORS.PLANNED).toBe("default");
+    expect(ACTIVITY_STATUS_COLORS.COMPLETED).toBe("success");
+    expect(ACTIVITY_STATUS_COLORS.CANCELLED).toBe("error");
+    expect(ACTIVITY_STATUS_COLORS.ON_HOLD).toBe("warning");
+
     const planned = renderHook(() => useActivityHeaderProps({ activity: { ...base, status: "PLANNED" } }), { wrapper });
     const { container: c1 } = render(<div>{planned.result.current.chips}</div>, { wrapper });
+    // discreet: the DS "light" chip variant, never a filled/saturated pill
+    expect(c1.querySelector(".MuiChip-light")).toBeTruthy();
+    expect(c1.querySelector(".MuiChip-filled")).toBeFalsy();
     expect(c1.querySelector(".MuiChip-colorDefault")).toBeTruthy();
     cleanup();
 
@@ -74,6 +84,11 @@ describe("ActivityHeader V2 — avatar tile + status chip", () => {
     const cancelled = renderHook(() => useActivityHeaderProps({ activity: { ...base, status: "CANCELLED" } }), { wrapper });
     const { container: c3 } = render(<div>{cancelled.result.current.chips}</div>, { wrapper });
     expect(c3.querySelector(".MuiChip-colorError")).toBeTruthy();
+    cleanup();
+
+    const onHold = renderHook(() => useActivityHeaderProps({ activity: { ...base, status: "ON_HOLD" } }), { wrapper });
+    const { container: c4 } = render(<div>{onHold.result.current.chips}</div>, { wrapper });
+    expect(c4.querySelector(".MuiChip-colorWarning")).toBeTruthy();
   });
 });
 
@@ -84,18 +99,22 @@ function ActionsHarness({ activity }) {
   return <div>{props.headerActions}</div>;
 }
 
-describe("ActivityHeader V2 — ⋮ menu offers status change + Edit", () => {
-  it("menu shows a status action and an Edit item", async () => {
+describe("ActivityHeader V2 — ⋮ menu is Edit | Delete only", () => {
+  it("menu shows only Edit (inert) and Delete — no Complete/Cancel/Reopen", async () => {
     render(
       <ThemeCustomization>
         <ActionsHarness activity={base} />
       </ThemeCustomization>,
     );
     await userEvent.click(screen.getByRole("button"));
-    // status change (Complete for a planned standalone activity)
-    expect(screen.getByText("Complete")).toBeInTheDocument();
-    // Edit (inert for now — drawer wired in S2c)
+    // Edit (inert for now — drawer wired in S2c) + Delete (wired as before)
     expect(screen.getByText("Edit")).toBeInTheDocument();
+    expect(screen.getByText("Delete")).toBeInTheDocument();
+    // status-change items are gone (status change happens via Edit)
+    expect(screen.queryByText("Complete")).not.toBeInTheDocument();
+    expect(screen.queryByText("Log Response")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cancel")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reopen")).not.toBeInTheDocument();
   });
 });
 

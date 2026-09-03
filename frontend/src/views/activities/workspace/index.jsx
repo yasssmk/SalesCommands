@@ -21,7 +21,6 @@ import RightCircleOutlined from "@ant-design/icons/RightCircleOutlined";
 
 // Project imports
 import WorkspaceHeader from "components/WorkspaceHeader";
-import MainCard from "components/MainCard";
 import CollapsibleStrip from "components/display/CollapsibleStrip";
 import { buildActivityBreadcrumbs } from "components/WorkspaceBreadcrumb";
 import { useBreadcrumb } from "contexts/BreadcrumbContext";
@@ -220,10 +219,11 @@ export default function ActivityWorkspacePage() {
   return (
     <>
       {/* HEADER-1: the new shared WorkspaceHeader (Activity is the first surface
-          migrated off WorkspaceLayout). Body + breadcrumb + drawer unchanged. */}
+          migrated off WorkspaceLayout). The body cards are siblings of the header
+          (no outer MainCard) so their left edge lines up with the header content
+          — a single vertical column title → sections (HEADER-2 #4). */}
       <WorkspaceHeader {...headerProps} />
-      <MainCard>
-        <Stack spacing={2}>
+      <Stack spacing={2}>
           {/* Context — fixed, always visible; read-only aphoriQ display (S2a) */}
           <ActivityContextSection activity={activity} />
 
@@ -281,9 +281,8 @@ export default function ActivityWorkspacePage() {
             />
           </CollapsibleStrip>
         </Stack>
-      </MainCard>
 
-      {/* Modals (Complete, Cancel, Reopen, Delete) */}
+      {/* Modals (Delete) */}
       {headerProps.modals}
     </>
   );
