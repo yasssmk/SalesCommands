@@ -251,7 +251,13 @@ export default function ActivityContextSection({ activity }) {
               <LabeledValue dense strong label={schedule.label} value={schedule.value} />
             </Box>
           </TwoColRow>
-          <LabeledValue dense strong label="Description" value={activity.description} />
+          <LabeledValue
+            dense
+            strong
+            label="Description"
+            value={activity.description}
+            placeholder="Click to add a description…"
+          />
         </Stack>
 
         <GroupRule />

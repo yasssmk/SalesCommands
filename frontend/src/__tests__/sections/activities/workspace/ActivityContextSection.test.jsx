@@ -92,6 +92,12 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.getByText("Initial outreach call")).toBeInTheDocument();
   });
 
+  it("always shows the Description label, with a placeholder when empty", () => {
+    renderCtx({ ...baseActivity, description: null });
+    expect(screen.getByText("Description")).toBeInTheDocument();
+    expect(screen.getByText("Click to add a description…")).toBeInTheDocument();
+  });
+
   it("people rows have NO avatar, inline suffixes, no email/phone; contact name is interactive", () => {
     const { container } = renderCtx(baseActivity);
     // no avatars anywhere
