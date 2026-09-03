@@ -14,7 +14,7 @@ vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
   default: () => <div data-testid="contact-filter" />,
 }));
 
-import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
+import SignalsFilterPanel from "components/signals/SignalsFilterPanel";
 
 const BASE = {
   open: true,

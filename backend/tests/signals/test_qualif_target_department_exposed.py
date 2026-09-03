@@ -51,11 +51,12 @@ class TestTargetDepartmentExposed:
             account=account, source_activity=activity,
             source=SignalSource.LLM_EXTRACTED,
             what=SignalWhat.DATA, dimension=SignalDimension.QUALITY,
-            scope_level=ScopeLevel.DEPARTMENT, target_department=marketing_dept,
+            scope_level=ScopeLevel.DEPARTMENT,
             summary='Marketing data quality is poor',
             source_quote='the marketing data is unreliable',
         )
         p.save(user=user_a, client_id=account.client_id)
+        p.target_departments.set([marketing_dept])  # sub-step 2b: M2M scope
 
         resp = authed_api_a.get(
             reverse('module_signals:pain-list'),
@@ -64,10 +65,10 @@ class TestTargetDepartmentExposed:
         assert resp.status_code == status.HTTP_200_OK
         row = _row(resp, p.id)
         assert row['scope_level'] == ScopeLevel.DEPARTMENT
-        assert row['target_department'] == {
+        assert row['target_departments'] == [{
             'id': str(marketing_dept.id),
             'name': marketing_dept.get_name_display(),
-        }
+        }]
 
     def test_pain_list_business_scope_has_null_department(
         self, authed_api_a, account, activity, user_a,
@@ -89,7 +90,7 @@ class TestTargetDepartmentExposed:
         assert resp.status_code == status.HTTP_200_OK
         row = _row(resp, p.id)
         assert row['scope_level'] == ScopeLevel.BUSINESS
-        assert row['target_department'] is None
+        assert row['target_departments'] == []
 
     def test_objective_list_exposes_scope_and_department(
         self, authed_api_a, account, activity, user_a, marketing_dept,
@@ -124,11 +125,12 @@ class TestTargetDepartmentExposed:
             source=SignalSource.LLM_EXTRACTED,
             what=SignalWhat.DATA, dimension=SignalDimension.QUALITY,
             impact_type=ImpactType.PRODUCTIVITY,
-            scope_level=ScopeLevel.DEPARTMENT, target_department=marketing_dept,
+            scope_level=ScopeLevel.DEPARTMENT,
             summary='Marketing loses time on bad data',
             source_quote='marketing spends 6h/week cleaning data',
         )
         i.save(user=user_a, client_id=account.client_id)
+        i.target_departments.set([marketing_dept])  # sub-step 2b: M2M scope
 
         resp = authed_api_a.get(
             reverse('module_signals:impact-list'),
@@ -137,7 +139,7 @@ class TestTargetDepartmentExposed:
         assert resp.status_code == status.HTTP_200_OK
         row = _row(resp, i.id)
         assert row['scope_level'] == ScopeLevel.DEPARTMENT
-        assert row['target_department'] == {
+        assert row['target_departments'] == [{
             'id': str(marketing_dept.id),
             'name': marketing_dept.get_name_display(),
-        }
+        }]

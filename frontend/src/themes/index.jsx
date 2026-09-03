@@ -11,6 +11,7 @@ import Palette from './palette';
 import Typography from './typography';
 import CustomShadows from './shadows';
 import IconSizes from './iconSizes';
+import AphoriQ from './aphoriq';
 import componentsOverride from './overrides';
 import { NextAppDirEmotionCacheProvider } from './emotionCache';
 
@@ -25,6 +26,7 @@ const ThemeCustomization = React.memo(function ThemeCustomization({ children }) 
   const themeTypography = useMemo(() => Typography(fontFamily), [fontFamily]);
   const themeCustomShadows = useMemo(() => CustomShadows(theme), [theme]);
    const themeIconSizes = useMemo(() => IconSizes(), []);
+  const themeAphoriQ = useMemo(() => AphoriQ(theme), [theme]);
 
   const themeOptions = useMemo(
     () => ({
@@ -48,9 +50,10 @@ const ThemeCustomization = React.memo(function ThemeCustomization({ children }) 
       palette: theme.palette,
       customShadows: themeCustomShadows,
       typography: themeTypography,
-      iconSizes: themeIconSizes
+      iconSizes: themeIconSizes,
+      aphoriQ: themeAphoriQ
     }),
-    [themeDirection, theme, themeTypography, themeCustomShadows, themeIconSizes]
+    [themeDirection, theme, themeTypography, themeCustomShadows, themeIconSizes, themeAphoriQ]
   );
 
   // ✅ createTheme est coûteux, mais déjà optimisé par les useMemo ci-dessus

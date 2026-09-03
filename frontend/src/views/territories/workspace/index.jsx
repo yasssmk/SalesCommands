@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 
 // material-ui
@@ -14,6 +14,8 @@ import Typography from '@mui/material/Typography';
 
 // project imports
 import MainCard from 'components/MainCard';
+import { buildTerritoryBreadcrumbs } from 'components/WorkspaceBreadcrumb';
+import { useBreadcrumb } from 'contexts/BreadcrumbContext';
 import TerritoryHeader from 'sections/territories/workspace/TerritoryHeader';
 import TerritoryTabs, { DEFAULT_TAB } from 'sections/territories/workspace/TerritoryTabs';
 import TerritoryAccountsTab from 'sections/territories/workspace/TerritoryAccountsTab';
@@ -21,9 +23,6 @@ import TerritoryContactsTab from 'sections/territories/workspace/TerritoryContac
 import TerritoryActivitiesTab from 'sections/territories/workspace/TerritoryActivitiesTab';
 import { TERRITORY_TYPES } from 'api/territories/territories';
 import { useGetTerritoryWorkspace } from 'api/territories/territories';
-
-// assets
-import ArrowLeftOutlined from '@ant-design/icons/ArrowLeftOutlined';
 
 // ==============================|| TERRITORY WORKSPACE PAGE ||============================== //
 
@@ -66,19 +65,29 @@ export default function TerritoryWorkspacePage() {
     router.push('/territories');
   };
 
+  // ==============================|| CONTEXTUAL BREADCRUMB ||============================== //
+
+  // Push the territory trail (Territories › name) to the layout BreadcrumbBar.
+  // The "Territories" segment carries an href → it replaces the removed
+  // "← Back to Territories".
+  const { setCrumbs } = useBreadcrumb();
+
+  const breadcrumbItems = useMemo(
+    () => (territory ? buildTerritoryBreadcrumbs({ territoryName: territory.name }) : []),
+    [territory],
+  );
+
+  useEffect(() => {
+    setCrumbs(breadcrumbItems);
+  }, [breadcrumbItems, setCrumbs]);
+
+  useEffect(() => () => setCrumbs([]), [setCrumbs]);
+
   // ==============================|| RENDER - ERROR ||============================== //
 
   if (error || (!loading && !territory)) {
     return (
       <Box>
-        <Button
-          startIcon={<ArrowLeftOutlined />}
-          onClick={handleBack}
-          sx={{ mb: 2 }}
-          color="inherit"
-        >
-          Back to Territories
-        </Button>
         <MainCard>
           <Stack spacing={2} alignItems="center" py={4}>
             <Typography variant="h5" color="error">
@@ -100,18 +109,8 @@ export default function TerritoryWorkspacePage() {
 
   return (
     <Box>
-      {/* Back Navigation */}
-      <Button
-        startIcon={<ArrowLeftOutlined />}
-        onClick={handleBack}
-        sx={{ mb: 2 }}
-        color="inherit"
-      >
-        Back to Territories
-      </Button>
-
       {/* Territory Header */}
-      <TerritoryHeader 
+      <TerritoryHeader
         territory={territory} 
         stats={stats} 
         loading={loading}

@@ -436,12 +436,10 @@ class TestAggregatedSignalsEndpoint:
         sales = self._dept('Sales')
 
         p = _mk_pain(account, activity, user_a)
-        p.target_department = marketing
-        p.save(user=user_a, client_id=account.client_id)
+        p.target_departments.set([marketing])  # sub-step 2b: M2M scope
 
         p_other = _mk_pain(account, activity, user_a)
-        p_other.target_department = sales
-        p_other.save(user=user_a, client_id=account.client_id)
+        p_other.target_departments.set([sales])
 
         _mk_tech(account, activity, user_a)  # no target_department
 
@@ -512,14 +510,12 @@ class TestAggregatedSignalsEndpoint:
         marketing = self._dept('Marketing')
 
         pending = _mk_pain(account, activity, user_a)
-        pending.target_department = marketing
-        pending.save(user=user_a, client_id=account.client_id)
+        pending.target_departments.set([marketing])  # sub-step 2b: M2M scope
         # MANUAL source forces VALIDATED in save(); force PENDING via update().
         PainSignal.objects.filter(id=pending.id).update(status=SignalStatus.PENDING)
 
         validated = _mk_pain(account, activity, user_a)  # stays VALIDATED
-        validated.target_department = marketing
-        validated.save(user=user_a, client_id=account.client_id)
+        validated.target_departments.set([marketing])
 
         resp = authed_api_a.get(_url(), {
             'account_id': str(account.id),

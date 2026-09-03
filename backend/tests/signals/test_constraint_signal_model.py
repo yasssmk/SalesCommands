@@ -35,13 +35,6 @@ pytestmark = pytest.mark.django_db
 # FIXTURES
 # =============================================================================
 
-@pytest.fixture
-def department(db):
-    from app_modules.core_modules.models import StandardDepartment
-    dept, _ = StandardDepartment.objects.get_or_create(name='Finance')
-    return dept
-
-
 # =============================================================================
 # SHADOW OVERRIDES
 # =============================================================================
@@ -200,37 +193,21 @@ class TestConstraintRigidity:
 
 
 # =============================================================================
-# TARGET DEPARTMENT — optional FK (the scope axis)
+# TARGET DEPARTMENT — legacy single FK DROPPED (sub-step 1d)
 # =============================================================================
+# The scope axis is now the multi-department target_departments M2M
+# (sub-steps 1a-1c). The legacy single FK target_department is removed here;
+# these tests pin its absence and the M2M's presence via _meta.
 
-class TestConstraintTargetDepartment:
+class TestConstraintTargetDepartmentFKDropped:
 
-    def test_with_department(self, account, activity, department, user_a):
-        s = ConstraintSignal(
-            account=account,
-            source_activity=activity,
-            nature=ConstraintNature.FINANCIAL,
-            summary='ROI validated by Finance',
-            rigidity=Rigidity.FIRM,
-            target_department=department,
-            source=SignalSource.MANUAL,
-        )
-        s.save(user=user_a, client_id=account.client_id)
-        s.refresh_from_db()
-        assert s.target_department_id == department.id
+    def test_legacy_target_department_fk_is_removed(self):
+        with pytest.raises(FieldDoesNotExist):
+            ConstraintSignal._meta.get_field('target_department')
 
-    def test_without_department(self, account, activity, user_a):
-        s = ConstraintSignal(
-            account=account,
-            source_activity=activity,
-            nature=ConstraintNature.SECURITY,
-            summary='Security audit required',
-            rigidity=Rigidity.FIRM,
-            source=SignalSource.MANUAL,
-        )
-        s.save(user=user_a, client_id=account.client_id)
-        s.refresh_from_db()
-        assert s.target_department_id is None
+    def test_target_departments_m2m_is_present(self):
+        field = ConstraintSignal._meta.get_field('target_departments')
+        assert field.many_to_many is True
 
 
 # =============================================================================

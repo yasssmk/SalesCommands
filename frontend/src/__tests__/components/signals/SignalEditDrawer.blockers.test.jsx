@@ -1,7 +1,10 @@
-// frontend/src/__tests__/signals/SignalEditDialog.blockers.test.jsx
+// frontend/src/__tests__/signals/SignalEditDrawer.blockers.test.jsx
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import AphoriqTheme from "../../_utils/aphoriqTheme";
+
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 // ==============================|| MOCKS ||============================== //
 
@@ -25,7 +28,7 @@ vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
-import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import { updateSignal } from "api/signals/signals";
 import { displaySuccessSnackbar } from "utils/displayError";
 
@@ -46,10 +49,10 @@ afterEach(() => {
   cleanup();
 });
 
-describe("SignalEditDialog — blockers type", () => {
+describe("SignalEditDrawer — blockers type", () => {
   it("renders BlockerEditForm with blocker initial values", () => {
     render(
-      <SignalEditDialog
+      <SignalEditDrawer
         open={true}
         onClose={vi.fn()}
         onSuccess={vi.fn()}
@@ -71,7 +74,7 @@ describe("SignalEditDialog — blockers type", () => {
     const onClose = vi.fn();
 
     render(
-      <SignalEditDialog
+      <SignalEditDrawer
         open={true}
         onClose={onClose}
         onSuccess={onSuccess}
@@ -103,7 +106,7 @@ describe("SignalEditDialog — blockers type", () => {
   it("renders cancel button that closes dialog", () => {
     const onClose = vi.fn();
     render(
-      <SignalEditDialog
+      <SignalEditDrawer
         open={true}
         onClose={onClose}
         onSuccess={vi.fn()}

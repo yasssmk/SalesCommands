@@ -219,14 +219,24 @@ class PrepInputPackAssembler:
         validated = SignalStatus.VALIDATED
 
         return {
-            'pain': list(
-                PainSignal.objects.filter(
+            # Multi-department scope (sub-step 2b): read WHO the pain concerns
+            # off the target_departments M2M, not the legacy FK. A
+            # .values('target_department__name') join would multiply rows, so
+            # iterate instances with the M2M prefetched and aggregate the names.
+            'pain': [
+                {
+                    'summary': p.summary,
+                    'source_quote': p.source_quote,
+                    'what': p.what,
+                    'dimension': p.dimension,
+                    'department_names': [
+                        d.get_name_display() for d in p.target_departments.all()
+                    ],
+                }
+                for p in PainSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('target_department').values(
-                    'summary', 'source_quote', 'what', 'dimension',
-                    'target_department__name',
-                )
-            ),
+                ).prefetch_related('target_departments')
+            ],
             'objective': list(
                 ObjectiveSignal.objects.filter(
                     decision_cycle=dc, status=validated,
@@ -237,15 +247,24 @@ class PrepInputPackAssembler:
                     'target_department__name',
                 )
             ),
-            'impact': list(
-                ImpactSignal.objects.filter(
+            # Multi-department scope (sub-step 2b): same M2M treatment as pain.
+            'impact': [
+                {
+                    'summary': i.summary,
+                    'source_quote': i.source_quote,
+                    'what': i.what,
+                    'dimension': i.dimension,
+                    'impact_type': i.impact_type,
+                    'metric_text': i.metric_text,
+                    'human_impact': i.human_impact,
+                    'department_names': [
+                        d.get_name_display() for d in i.target_departments.all()
+                    ],
+                }
+                for i in ImpactSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('target_department').values(
-                    'summary', 'source_quote', 'what', 'dimension',
-                    'impact_type', 'metric_text', 'human_impact',
-                    'target_department__name',
-                )
-            ),
+                ).prefetch_related('target_departments')
+            ],
             # S10: tech identity lives on the signal's own columns, so
             # the catalogue FK is no longer joined. usage_department is
             # not read by _serialize_techstack_signals either.
@@ -259,14 +278,26 @@ class PrepInputPackAssembler:
                     decision_cycle=dc, status=validated,
                 ).select_related('contact')
             ),
-            'constraint': list(
-                ConstraintSignal.objects.filter(
+            # Multi-department scope (sub-step 1b): read WHO the constraint
+            # concerns off the target_departments M2M, not the legacy FK. A
+            # .values('target_department__name') join would multiply rows (one
+            # per department), so iterate instances with the M2M prefetched and
+            # aggregate the names into a per-signal list.
+            'constraint': [
+                {
+                    'summary': c.summary,
+                    'source_quote': c.source_quote,
+                    'what': c.what,
+                    'dimension': c.dimension,
+                    'rigidity': c.rigidity,
+                    'department_names': [
+                        d.get_name_display() for d in c.target_departments.all()
+                    ],
+                }
+                for c in ConstraintSignal.objects.filter(
                     decision_cycle=dc, status=validated,
-                ).select_related('target_department').values(
-                    'summary', 'source_quote', 'what', 'dimension',
-                    'rigidity', 'target_department__name',
-                )
-            ),
+                ).prefetch_related('target_departments')
+            ],
             # Sub-step 4: the competitor facet is now sourced from the
             # detached CompetitorSignal (DC-scoped + VALIDATED), cloned on
             # the ConstraintSignal read above — NOT from TechStackSignal
@@ -370,7 +401,9 @@ class PrepInputPackAssembler:
         value = [
             {
                 'summary': i['summary'],
-                'department': i.get('target_department__name'),
+                # Multi-department (sub-step 2b): list of concerned departments
+                # (a mono-department impact yields a 1-element list).
+                'departments': i.get('department_names', []),
                 'theme': f"{i.get('what', '')} x {i.get('dimension', '')}",
             }
             for i in signals.get('impact', [])
@@ -385,7 +418,10 @@ class PrepInputPackAssembler:
         constraints = [
             {
                 'summary': c['summary'],
-                'department': c.get('target_department__name'),
+                # Multi-department (sub-step 1b): the list of concerned
+                # departments (a mono-department constraint yields a 1-element
+                # list, preserving the previous information).
+                'departments': c.get('department_names', []),
                 'rigidity': c.get('rigidity', ''),
             }
             for c in signals.get('constraint', [])
@@ -415,7 +451,9 @@ class PrepInputPackAssembler:
         their_pains = [
             p['summary']
             for p in signals.get('pain', [])
-            if p.get('target_department__name') == contact_dept and contact_dept
+            # Multi-department (sub-step 2b): match if the contact's department
+            # is among the pain's concerned departments.
+            if contact_dept and contact_dept in p.get('department_names', [])
         ]
 
         their_desires = [
@@ -434,8 +472,10 @@ class PrepInputPackAssembler:
             for i in signals.get('impact', [])
             if (
                 i.get('human_impact')
-                and i.get('target_department__name') == contact_dept
+                # Multi-department (sub-step 2b): contact's department among the
+                # impact's concerned departments.
                 and contact_dept
+                and contact_dept in i.get('department_names', [])
             )
         ]
 

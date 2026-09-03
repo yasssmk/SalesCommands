@@ -6,8 +6,8 @@ This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
   * system.py        -- universal output / evidence / taxonomy rules.
   * build_context_layer(activity, 'constraint') -- session grounding +
-    the ConstraintNature list and the scope (scope_level +
-    target_department) taxonomy. NO what/dimension block: constraint is
+    the ConstraintNature list and the target_departments vocabulary (the
+    list of valid department names). NO what/dimension block: constraint is
     detached from the business canonical axes (sub-step 1).
 The full assembly is performed by PromptBuilder.assemble() in base.py.
 
@@ -30,15 +30,15 @@ is measured against.
 Schema (v1)
 -----------
 The LLM emits one JSON object with a single key `signals` containing an
-array of constraint observations. Each observation has exactly 7 fields:
+array of constraint observations. Each observation has exactly 6 fields:
 
     summary            string       -- short rephrasing of the requirement
     nature             string       -- ONE value from ConstraintNature
                                         (see the NATURE list in the context)
-    scope_level        string       -- "BUSINESS" or "DEPARTMENT"
-    target_department  string|null  -- one value from the target_department
-                                        list when scope_level is DEPARTMENT,
-                                        else null
+    target_departments string[]     -- zero or more department names from the
+                                        target_departments list -- the
+                                        departments explicitly concerned; []
+                                        when none is clearly named
     rigidity           string       -- "FIRM" or "FLEXIBLE"
     source_quote       string       -- verbatim excerpt from the transcript
     confidence         float        -- LLM self-declared, in [0.0, 1.0]
@@ -46,15 +46,15 @@ array of constraint observations. Each observation has exactly 7 fields:
 
 Empty result is represented by {"signals": []}.
 
-Scope note (subject-not-speaker) -- why scope_level is emitted but not stored
-----------------------------------------------------------------------------
-Constraint is scoped by DEPARTMENT only (PO decision): the model emits
-`scope_level` + `target_department` exactly like pain/objective/impact, so
-the SHARED resolver `resolve_scope_and_department` can turn a named
-department into the target_department FK. ConstraintSignal has NO
-scope_level column -- only `target_department` is persisted; a BUSINESS
-constraint stores target_department = None. The `scope_level` field is a
-routing signal for the resolver, not a stored value.
+Scope note (subject-not-speaker) -- multi-department, no scope_level
+--------------------------------------------------------------------
+Constraint is scoped on the multi-department target_departments M2M
+(sub-step 1c): a constraint may concern SEVERAL departments at once. The
+model emits `target_departments` as a LIST of names (clone of the TechStack
+usage_departments contract), resolved by resolve_constraint_departments into
+the M2M. Unlike pain/objective/impact there is NO scope_level -- an empty
+list is the "company-wide / no specific department" reading. Constraint no
+longer uses the shared resolve_scope_and_department.
 
 Persistence contract
 --------------------
@@ -69,10 +69,13 @@ maps each surviving signal to a new ConstraintSignal row:
                                          a signal with an out-of-list nature
                                          is DROPPED, never coerced)
     rigidity            ->  rigidity
-    target_department   ->  target_department (resolved from scope_level +
-                                         target_department by the shared
-                                         resolve_scope_and_department; BUSINESS
-                                         or an unresolved name -> None)
+    target_departments  ->  target_departments (M2M; each name resolved to a
+                                         StandardDepartment by
+                                         resolve_constraint_departments;
+                                         unresolved names dropped, [] when
+                                         none; applied via .set() post-save.
+                                         The legacy single-FK target_department
+                                         is no longer written, sub-step 1c)
     source_quote        ->  source_quote (declared on BaseSignal)
     confidence          ->  confidence   (declared on BaseSignal)
     is_inferred         ->  is_inferred  (declared on BaseSignal)
@@ -206,8 +209,7 @@ Return a single JSON object with this exact shape:
     {{
       "summary":      "<one short sentence rephrasing the requirement in your own words, around 200 chars or less>",
       "nature":       "<one code from the `nature` list in the context: FUNCTIONAL | TECHNICAL | FINANCIAL | CONTRACTUAL | OPERATIONAL | SECURITY>",
-      "scope_level":  "<one value from the `scope_level` list in the context: BUSINESS or DEPARTMENT>",
-      "target_department": "<one value from the `target_department` list when scope_level is DEPARTMENT, otherwise null>",
+      "target_departments": ["<zero or more department names from the `target_departments` list in the context -- the departments EXPLICITLY concerned by the constraint; [] when none is clearly named>"],
       "rigidity":     "<FIRM when the requirement is non-negotiable, FLEXIBLE when it is a preference>",
       "source_quote": "<verbatim excerpt from the transcript stating the requirement>",
       "confidence":   <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
@@ -223,20 +225,20 @@ RIGIDITY
              "it would help if ...").
 
 SCOPE (the SUBJECT decides the scope, never the speaker)
-- `scope_level` MUST be exactly BUSINESS or DEPARTMENT, decided ONLY by
-  the SUBJECT of the constraint -- which perimeter the requirement
-  concerns -- never by who is speaking.
-- DEPARTMENT = the constraint names or clearly identifies one specific
-  department that owns the requirement (use that department verbatim from
-  the `target_department` list), even if the speaker belongs to another
-  department.
-- BUSINESS = no specific department is named; the requirement is
-  company-wide or cross-departmental. NEVER invent a department that was
-  not clearly named -- when in doubt, emit BUSINESS with
-  target_department = null. BUSINESS is the safe default.
-- `target_department` is REQUIRED when scope_level is DEPARTMENT (pick
-  exactly one value from the `target_department` list) and MUST be null
-  when scope_level is BUSINESS.
+- `target_departments` is the SET of departments the constraint concerns,
+  decided ONLY by the SUBJECT of the constraint -- which perimeter the
+  requirement concerns -- never by who is speaking.
+- List a department ONLY when the constraint names or clearly identifies it
+  as concerned by / owning the requirement (use the department verbatim from
+  the `target_departments` list), even if the speaker belongs to another
+  department. A constraint may concern SEVERAL departments at once -- list
+  every one that is explicitly designated.
+- Emit `[]` (empty list) when no specific department is named; the
+  requirement is company-wide or cross-departmental. NEVER invent a department
+  that was not clearly named -- when in doubt, emit `[]`. An empty list is the
+  safe default.
+- Pick every value EXACTLY from the `target_departments` list in the context
+  (exact strings). Never emit a name outside it.
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of a
@@ -258,22 +260,23 @@ EMISSION RULES
 SCOPE / NATURE EXAMPLES (designation decides the department -- never the
 speaker, never a technical theme-word)
 - "The IT department requires integration with their SAP instance"
-      -> nature="TECHNICAL", scope_level="DEPARTMENT", target_department="IT",
-         rigidity="FIRM"
+      -> nature="TECHNICAL", target_departments=["IT"], rigidity="FIRM"
          (IT is EXPLICITLY DESIGNATED as the department that owns the
           requirement -- the designation decides, not the technical word "SAP")
+- "IT and Finance both must sign off on the data-retention rules"
+      -> nature="CONTRACTUAL", target_departments=["IT", "Finance"],
+         rigidity="FIRM"
+         (SEVERAL departments explicitly concerned -- list every one named)
 - "we need end-to-end encryption" (no department named)
-      -> nature="SECURITY", scope_level="BUSINESS", target_department=null
+      -> nature="SECURITY", target_departments=[]
          (a technical need alone does NOT designate a department -- do NOT
           tag IT just because encryption is technical)
 - "we need real-time dashboards for the whole company"
-      -> nature="FUNCTIONAL", scope_level="BUSINESS", target_department=null
+      -> nature="FUNCTIONAL", target_departments=[]
 - "GDPR compliance is non-negotiable"
-      -> nature="CONTRACTUAL", scope_level="BUSINESS", target_department=null,
-         rigidity="FIRM"
+      -> nature="CONTRACTUAL", target_departments=[], rigidity="FIRM"
 - "ideally the price stays under 50k a year"
-      -> nature="FINANCIAL", scope_level="BUSINESS", target_department=null,
-         rigidity="FLEXIBLE"
+      -> nature="FINANCIAL", target_departments=[], rigidity="FLEXIBLE"
 - (NOT a constraint) "our reporting takes three weeks today"
       -> this is a PAIN, not a constraint -- do NOT emit it here.
 - (NOT a constraint) "I can't get budget signed off before Q3"

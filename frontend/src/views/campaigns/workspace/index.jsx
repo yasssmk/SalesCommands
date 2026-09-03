@@ -10,7 +10,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 // MUI
@@ -23,6 +23,7 @@ import Typography from "@mui/material/Typography";
 import MainCard from "components/MainCard";
 import WorkspaceLayout from "components/WorkspaceLayout";
 import { buildCampaignBreadcrumbs } from "sections/campaigns/workspace/CampaignBreadcrumbs";
+import { useBreadcrumb } from "contexts/BreadcrumbContext";
 import useCampaignHeaderProps from "sections/campaigns/workspace/CampaignHeader";
 import {
   CAMPAIGN_TABS,
@@ -43,9 +44,6 @@ import {
   displayErrorSnackbar,
 } from "utils/displayError";
 import CampaignOutcomeModal from "sections/campaigns/CampaignOutcomeModal";
-
-// icons
-import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
 
 // ==============================|| CAMPAIGN WORKSPACE PAGE ||============================== //
 
@@ -101,9 +99,20 @@ export default function CampaignWorkspacePage() {
     onSave: handleCampaignSave,
   });
 
-  const breadcrumbItems = campaign
-    ? buildCampaignBreadcrumbs({ campaignName: campaign.name })
-    : [];
+  // Push this campaign's trail (Campaigns › name) to the layout BreadcrumbBar.
+  // The "Campaigns" segment carries an href → it replaces the removed "← Back".
+  const { setCrumbs } = useBreadcrumb();
+
+  const breadcrumbItems = useMemo(
+    () => (campaign ? buildCampaignBreadcrumbs({ campaignName: campaign.name }) : []),
+    [campaign],
+  );
+
+  useEffect(() => {
+    setCrumbs(breadcrumbItems);
+  }, [breadcrumbItems, setCrumbs]);
+
+  useEffect(() => () => setCrumbs([]), [setCrumbs]);
 
   // ==============================|| ERROR STATE ||============================== //
 
@@ -146,19 +155,8 @@ export default function CampaignWorkspacePage() {
           onUpdate={mutateCampaign}
         />
       )}
-      {/* Back Navigation */}
-      <Button
-        startIcon={<ArrowLeftOutlined />}
-        onClick={handleBack}
-        sx={{ mb: 2 }}
-        color="inherit"
-      >
-        Back
-      </Button>
-
       {/* Workspace Layout */}
       <WorkspaceLayout
-        breadcrumbs={breadcrumbItems}
         {...headerProps}
         tabs={CAMPAIGN_TABS}
         activeTab={currentTab}

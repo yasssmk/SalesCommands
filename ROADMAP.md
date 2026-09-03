@@ -1116,6 +1116,77 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Bloc IA / M2M scope départements ✅ — Scope département FK → M2M pour Pain, Impact, Constraint (branche `feat/signal-scope-m2m`)
+- **Objectif** : un même signal peut concerner PLUSIEURS départements. Passer le
+  scope département de FK simple (`target_department`) à M2M (`target_departments`
+  → StandardDepartment) pour les 3 signaux TRANSVERSAUX **Pain, Impact, Constraint**.
+  **Objective et People RESTENT FK mono-département** (décision produit : un
+  objectif vise une cible unique ; une personne appartient à un département).
+  Blocker/Competitor/NextStep : pas de scope département. Patron cloné =
+  `TechStackSignal.usage_departments` (Sprint Tech scope, TD-201).
+  ⚠️ **Insertion cadrée hors-séquence** (« M2M scope transverse », suite déjà
+  cadrée dans la séquence PO 2026-08-31), traitée AVANT UX Activity à la demande
+  PO. La séquence signaux reste **UX Activity → Blocker**.
+- **Livré** (chaîne complète par signal — Constraint 1a-1d, Pain+Impact 2a-2d ;
+  chaque sous-étape : reproduction ROUGE d'abord par le VRAI chemin + sonde de
+  non-vacuité, restauration par édition ciblée, jamais `git checkout`) :
+  - **Modèle + backfill** : champ `target_departments` (M2M, cloné sur
+    `usage_departments`) + migration de données FK → 1ère entrée du M2M
+    (baseline PO prouvée par SELECT : Constraint 14, Pain 15, Impact 4 lignes).
+  - **Recâblage de TOUS les lecteurs** (serializer read, clustering
+    `_compute_departments` + perimeter + fetch, prep_call, deal_health, endpoint
+    agrégé) de la FK (objet unique) vers le M2M (collection), **PAR TYPE** —
+    sans casser Objective/People (restés FK) : lecteurs partagés isolés par
+    type/flag (helper `_compute_m2m_departments` dédié pain/impact ;
+    `_apply_member_filters(uses_m2m_departments=…)` ; filtre agrégé branché sur le
+    slug). Test de non-régression Objective à chaque étape.
+  - **Extraction** : `constraint_v1` et `pain_impact_v1` (combiné) émettent une
+    LISTE de départements ; résolution multi clonée sur
+    `resolve_tech_usage_departments`. `scope_level` **RETIRÉ** du prompt Constraint
+    (pas de colonne `scope_level` sur Constraint), **GARDÉ** sur Pain/Impact
+    (descriptif). Objective (prompt séparé + resolver partagé) intact.
+  - **Drop des anciennes FK** `target_department` (Constraint, Pain, Impact)
+    après recâblage — migrations à la main, réversibles.
+  - **Assainissement** de la dérive `signal_type` (matérialise le choix `people`
+    oublié par le sprint People — analogue de 0032 pour `competitor`) : arbre de
+    migrations enfin propre (`makemigrations --check` vert).
+- **Migrations** (toutes écrites À LA MAIN, dérive `signal_type` exclue des étapes
+  M2M) : **0036** (AddField M2M Constraint), **0037** (backfill Constraint),
+  **0038** (drop FK Constraint), **0039** (AddField M2M Pain+Impact), **0040**
+  (backfill Pain+Impact), **0041** (drop FK Pain+Impact), **0042** (assainissement
+  `signal_type`, choices-only, sans DDL).
+- **Validation** : suites vertes (Postgres, en série) — `pytest tests/signals`
+  **395**, `tests/ai_pipelines` **370** ; `makemigrations --check module_signals`
+  **propre (« No changes detected », exit 0)** ; `vitest` **inchangé** (aucun
+  front touché ce chantier — backend + prompts uniquement). **Smoke PO à faire.**
+- **Dette fermée** : **aucune** (chantier planifié / insertion PO, pas une dette ;
+  TD-201 — précédent TechStack `usage_departments` — déjà RESOLVED).
+- **Dette ajoutée** : **TD-216** (garde-fou anti-dérive `signal_type` en CI).
+  **MAJ** : **TD-204** / **TD-205** (front M2M : rendu + édition multi-département
+  au sprint UX Signals), **TD-206** (docstrings/prompts morts résiduels FK
+  `target_department` à balayer).
+- **Prochain jalon** : **UX Activity** (séquence PO 2026-08-31 — inchangée :
+  UX Activity → Blocker).
+
+### Sprint Bloc IA / Fondations UX Activity ✅ (chantier UX Activity — EN COURS) — Thème aphoriQ + coque drawer unique + breadcrumb commun (branche `feat/ux-activity-b0-theme`)
+⚠️ **Fondations seulement — le chantier UX Activity N'EST PAS clos.** Ces fondations UI transverses sont mergées dans `main` ; le **contenu Activity section par section** (affichage + drawers + édition, connexion E2E LLM→modèle→affichage→drawer→édition) reste à faire sur une **nouvelle branche**.
+- **Objectif** : poser les **fondations UI transverses** du chantier UX Activity (thème, coque drawer, breadcrumb) avant d'attaquer le **contenu Activity section par section**.
+- **Livré** (chaque sous-étape : reproduction ROUGE par le vrai chemin + sonde de non-vacuité, STOP) :
+  - **Fix DELETE d'activité** — déjà mergé (**PR #149**), rappel seulement.
+  - **Thème `theme.aphoriQ`** additif (un seul ThemeProvider, template CONSERVÉ) : `surface.level1/2/3`, `radius` (lg=12), `border` (hairline=0.5…), `text.muted`, `accent`, `warningTint`, `drawer.width`, `breadcrumb.minHeight` ; valeurs = références palette (inversion light/dark). Migration progressive page par page.
+  - **Primitives thémées centralisées** : `components/display/EmptyState` + `Surface` (résolvent 8 empty-states dupliqués + surfaces `grey.50` en dur) ; `SignalsFilterBar` mort supprimé.
+  - **Centralisation** de 5 composants signaux dans `components/signals/` (QuickDrawer, FilterPanel, FlatView, CompactLine, IncompleteAlert).
+  - **Drawer d'édition UNIFIÉ** `components/signals/SignalEditDrawer` (remplace les 2 `SignalEditDialog` dupliqués activities+accounts ; 6 types éditables partout ; context activity=source implicite / account=pickers source).
+  - **Coque drawer UNIQUE** : `WorkspaceDrawerProvider` + `useWorkspaceDrawer(openDrawer(node)/closeDrawer)` ; coque **push** (large) / **overlay** (étroit), largeur token, exclusivité bidirectionnelle avec le menu ; **remontée au niveau `DashboardLayout`** (accessible PARTOUT, listes incluses) ; **ancrée sous le breadcrumb** ; 1er contenu branché = **détail signal** (`SignalDetailContent` via `openDrawer`) + **transition de glissement** (Collapse horizontal, `theme.transitions`, 0 durée/easing en dur).
+  - **Breadcrumb contextuel COMMUN** au layout (L0/L1/L2) : `BreadcrumbContext` + `useBreadcrumb` + barre hauteur constante ; legacy `@extended/Breadcrumbs` + « ← Back » retirés ; toutes pages branchées (segments `href` = navigation).
+- **Migrations** : **aucune** (frontend uniquement — thème / composants).
+- **Validation** : `vitest` **1032 passed (145 fichiers)** ; `pytest` **inchangé** (aucun backend touché par ces fondations front). **Chantier UX Activity EN COURS** (fondations seulement). **Smoke PO à faire.**
+- **Dette fermée** : **aucune** (fondations, pas une dette).
+- **Dette ajoutée** : **TD-217** (peaufinage breadcrumb + header commun layout), **TD-218** (transition drawer à peaufiner), **TD-219** (revue champs éditables + ajout Objective « how is success measured »), **TD-220** (promotion aphoriQ finale + retrait tokens template), **TD-221** (dédup `wizard/forms/`). **MAJ** : **TD-204** (polish drawers/débordements + rendu Activity + recâblage M2M front affichage), **TD-205** (édition dans les drawers + recâblage M2M front édition).
+- **Prochain jalon** : **contenu Activity SECTION PAR SECTION** (Header+Context d'abord, puis Signals → Next step → Preparation/Source), sur **nouvelle branche**, connexion bout en bout LLM→modèle→affichage→drawer→édition. **UX Activity reste OUVERT** (fondations livrées, contenu en cours) → puis **Blocker**.
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
@@ -1324,12 +1395,18 @@ possibles) :
   (`feat/people-full-name`) — signal People **éditable manuellement**, voir la
   fiche « Sprint Bloc IA / People ✅ » ci-dessus ; **Next steps**
   (`feat/next-steps-dc-only`) — garde DC-only + objectif du next step généré et
-  affiché E2E, voir la fiche « Sprint Bloc IA / Next steps ✅ » ci-dessus.
+  affiché E2E, voir la fiche « Sprint Bloc IA / Next steps ✅ » ci-dessus ;
+  **M2M scope transverse** (`feat/signal-scope-m2m`) — scope département FK→M2M
+  pour Pain/Impact/Constraint (Objective/People restent FK), voir la fiche
+  « Sprint Bloc IA / M2M scope départements ✅ » ci-dessus.
 - **Reste du bloc Signaux (ordre confirmé PO)** :
   1. **UX Activity** — layout Activity **sans onglets** (tranche TD-186 : pas de
-     bascule onglet).
+     bascule onglet). **Fondations livrées** (thème aphoriQ, coque drawer unique,
+     breadcrumb commun — voir la fiche « Sprint Bloc IA / Fondations UX Activity ✅ »
+     ci-dessus) ; **contenu Activity section par section EN COURS** — chantier UX
+     Activity **NON clos**.
   2. **Blocker (Objection)**.
-  - [+ suites déjà cadrées : **M2M scope transverse**, **Filtres transverse**
+  - [+ suites déjà cadrées : **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]
 - **Resserrement prompt tech (TD-207) à traiter AVANT la fin d'Activity** :

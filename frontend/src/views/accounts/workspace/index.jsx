@@ -15,6 +15,7 @@ import Typography from "@mui/material/Typography";
 // project imports
 import MainCard from "components/MainCard";
 import WorkspaceLayout from "components/WorkspaceLayout";
+import { useBreadcrumb } from "contexts/BreadcrumbContext";
 import useAccountHeaderProps from "sections/accounts/workspace/AccountHeader";
 import {
   WORKSPACE_TABS,
@@ -34,9 +35,6 @@ import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
-
-// assets
-import ArrowLeftOutlined from "@ant-design/icons/ArrowLeftOutlined";
 
 // ==============================|| ACCOUNT WORKSPACE PAGE ||============================== //
 
@@ -123,6 +121,25 @@ export default function AccountWorkspacePage() {
     router.back();
   };
 
+  // ==============================|| CONTEXTUAL BREADCRUMB ||============================== //
+
+  // Push the account's trail to the layout BreadcrumbBar. An account is a root
+  // entity (reached from territory / campaign / DC / activity — no single parent
+  // list), so the trail is one non-clickable segment: its name. Browser-back
+  // covers history (the removed "← Back" was history-based, not hierarchical).
+  const { setCrumbs } = useBreadcrumb();
+
+  const breadcrumbItems = useMemo(
+    () => (account?.company_name ? [{ label: account.company_name }] : []),
+    [account?.company_name],
+  );
+
+  useEffect(() => {
+    setCrumbs(breadcrumbItems);
+  }, [breadcrumbItems, setCrumbs]);
+
+  useEffect(() => () => setCrumbs([]), [setCrumbs]);
+
   /**
    * Handle inline field save
    *
@@ -168,14 +185,6 @@ export default function AccountWorkspacePage() {
   if (workspaceError || (!workspaceLoading && !account)) {
     return (
       <Box>
-        <Button
-          startIcon={<ArrowLeftOutlined />}
-          onClick={handleBack}
-          sx={{ mb: 2 }}
-          color="inherit"
-        >
-          Back
-        </Button>
         <MainCard>
           <Stack spacing={2} alignItems="center" py={4}>
             <Typography variant="h5" color="error">
@@ -198,16 +207,6 @@ export default function AccountWorkspacePage() {
 
   return (
     <Box>
-      {/* Back Navigation */}
-      <Button
-        startIcon={<ArrowLeftOutlined />}
-        onClick={handleBack}
-        sx={{ mb: 2 }}
-        color="inherit"
-      >
-        Back
-      </Button>
-
       {/* Workspace Layout: Header + Tabs + Content */}
       <WorkspaceLayout
         {...headerProps}

@@ -108,7 +108,7 @@ function WorkspaceTabsSkeleton() {
 
 // ==============================|| WORKSPACE LAYOUT ||============================== //
 
-export default function WorkspaceLayout({
+function WorkspaceLayoutInner({
   // Navigation
   breadcrumbs,
 
@@ -184,6 +184,9 @@ export default function WorkspaceLayout({
   const validInfoItems = (infoItems || []).filter(Boolean);
 
   return (
+    // The workspace drawer coque was lifted to DashboardLayout (UX Activity L2)
+    // so it covers every view; WorkspaceLayout now renders only the workspace's
+    // own header / tabs / content column.
     <Box>
       {/* ==================== BREADCRUMB ==================== */}
       {breadcrumbs && breadcrumbs.length > 0 && (
@@ -279,9 +282,17 @@ export default function WorkspaceLayout({
   );
 }
 
+// ==============================|| EXPORT ||============================== //
+
+// The WorkspaceDrawerProvider + coque were lifted to DashboardLayout (L2); this
+// component is now just the workspace's header / tabs / content.
+export default function WorkspaceLayout(props) {
+  return <WorkspaceLayoutInner {...props} />;
+}
+
 // ==============================|| PROP TYPES ||============================== //
 
-WorkspaceLayout.propTypes = {
+WorkspaceLayoutInner.propTypes = {
   /** Breadcrumb items for WorkspaceBreadcrumb */
   breadcrumbs: PropTypes.arrayOf(
     PropTypes.shape({

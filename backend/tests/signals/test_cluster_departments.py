@@ -48,9 +48,11 @@ def _make_pain(account, activity, user_a, *, scope_level, department=None):
         source_quote='it takes hours every week',
         source=SignalSource.MANUAL,
         scope_level=scope_level,
-        target_department=department,
     )
     pain.save(user=user_a, client_id=account.client_id)
+    # sub-step 2b: the cluster departments aggregate reads the M2M.
+    if department:
+        pain.target_departments.set([department])
     return pain
 
 

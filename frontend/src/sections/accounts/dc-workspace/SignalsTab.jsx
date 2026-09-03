@@ -28,14 +28,15 @@ import {
 } from "utils/displayError";
 
 // Section imports — reuse Activity signal components
-import SignalsFilterPanel from "sections/activities/signals/SignalsFilterPanel";
-import SignalsFlatView from "sections/activities/signals/SignalsFlatView";
+import SignalsFilterPanel from "components/signals/SignalsFilterPanel";
+import SignalsFlatView from "components/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
 import QualificationGroupedView from "sections/accounts/signals/QualificationGroupedView";
 import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
-import SignalQuickDrawer from "sections/activities/signals/SignalQuickDrawer";
-import SignalEditDialog from "sections/activities/signals/SignalEditDialog";
+import SignalDetailPanel from "components/signals/SignalDetailPanel";
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
 // The DC flat list covers every signal type captured in a decision cycle.
 const DC_TYPES = [
@@ -152,10 +153,9 @@ export default function SignalsTab({ cycleId, accountId }) {
   // Pagination
   const [page, setPage] = useState(1);
 
-  // Drawer state
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedSignal, setSelectedSignal] = useState(null);
-  const [selectedType, setSelectedType] = useState(null);
+  // The single workspace drawer coque (B3.5.3): clicking a signal injects its
+  // detail via openDrawer; the coque owns open state + close.
+  const { openDrawer } = useWorkspaceDrawer();
 
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -244,17 +244,24 @@ export default function SignalsTab({ cycleId, accountId }) {
     mutateAll();
   }, [mutateAll]);
 
-  const handleSelect = useCallback((signal, signalType) => {
-    setSelectedSignal(signal);
-    setSelectedType(signalType);
-    setDrawerOpen(true);
-  }, []);
-
-  const handleCloseDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    setSelectedSignal(null);
-    setSelectedType(null);
-  }, []);
+  // Inject the signal detail into the single coque. Clicking another signal
+  // replaces the content; the coque owns the close button.
+  const handleSelect = useCallback(
+    (signal, signalType) => {
+      openDrawer(
+        <SignalDetailPanel
+          signal={signal}
+          signalType={signalType}
+          onValidate={handleValidate}
+          onReject={handleReject}
+          onEdit={handleEdit}
+          onReopen={handleReopen}
+          isLocked={false}
+        />,
+      );
+    },
+    [openDrawer, handleValidate, handleReject, handleEdit, handleReopen],
+  );
 
   // Reset to page 1 whenever a control changes the result set.
   const onSortChange = (v) => { setSortKey(v); setPage(1); };
@@ -377,21 +384,8 @@ export default function SignalsTab({ cycleId, accountId }) {
         />
       )}
 
-      {/* Quick Drawer */}
-      <SignalQuickDrawer
-        open={drawerOpen}
-        signal={selectedSignal}
-        signalType={selectedType}
-        onClose={handleCloseDrawer}
-        onValidate={handleValidate}
-        onReject={handleReject}
-        onEdit={handleEdit}
-        onReopen={handleReopen}
-        isLocked={false}
-      />
-
       {/* Edit Dialog (6 original types only — people/constraints forms deferred) */}
-      <SignalEditDialog
+      <SignalEditDrawer context="activity"
         open={editDialogOpen}
         onClose={handleEditClose}
         onSuccess={handleEditSuccess}

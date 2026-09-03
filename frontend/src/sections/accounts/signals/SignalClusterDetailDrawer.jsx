@@ -68,7 +68,7 @@ import SignalLine from "components/signals/SignalLine";
 import SignalDetailContent from "components/signals/SignalDetailContent";
 import TechDetailBlock from "components/signals/detail/TechDetailBlock";
 import AlertSignalReject from "./AlertSignalReject";
-import SignalEditDialog from "./SignalEditDialog";
+import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
 import { useGetClusterDetail } from "api/signals/signalClusters";
 import { validateSignal, reopenSignal } from "api/signals/signals";
@@ -1318,7 +1318,7 @@ export default function SignalClusterDetailDrawer({
 
       {/* ==================== MEMBER MODALS — universal ==================== */}
 
-      <SignalEditDialog
+      <SignalEditDrawer context="account"
         open={editModal.open}
         onClose={handleEditClose}
         onSuccess={handleEditSuccess}

@@ -3,7 +3,7 @@
 ConstraintSignalViewSet — CRUD + validate/reject/reopen for ConstraintSignal.
 
 Inherits all shared logic from BaseSignalViewSet. Extends get_queryset()
-with the `target_department` FK preload to avoid N+1 on list responses.
+with the `target_departments` M2M prefetch to avoid N+1 on list responses.
 
 Cluster cache invalidation is set to True: ConstraintSignal participates
 in the cluster model via its canonical_key (constraint:{what}:{dimension}).
@@ -48,5 +48,8 @@ class ConstraintSignalViewSet(BaseSignalViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        qs = qs.select_related('target_department')
+        # Multi-department scope is the target_departments M2M — prefetched so
+        # the list/detail serializer's get_target_departments iterates the
+        # cache with no per-row query (mirrors TechStackSignalViewSet).
+        qs = qs.prefetch_related('target_departments')
         return qs

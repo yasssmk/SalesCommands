@@ -72,16 +72,18 @@ class _PainDisplayMixin:
     def get_scope_level_display(self, obj):
         return obj.get_scope_level_display() if obj.scope_level else None
 
-    def get_target_department(self, obj):
-        # Compact FK shape — mirrors _ObjectiveDisplayMixin.get_target_department.
-        # Null when scope is BUSINESS (no department). id + human name.
-        d = obj.target_department
-        if not d:
-            return None
-        return {
-            'id':   str(d.id),
-            'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
-        }
+    def get_target_departments(self, obj):
+        # Compact list of the departments this pain concerns (multi-department,
+        # sub-step 2b). Clones _ConstraintDisplayMixin.get_target_departments.
+        # N+1-safe: reads obj.target_departments.all(), prefetched by the
+        # ViewSet. Empty list when none are designated (BUSINESS).
+        return [
+            {
+                'id':   str(d.id),
+                'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
+            }
+            for d in obj.target_departments.all()
+        ]
 
 # =============================================================================
 # LIST
@@ -109,7 +111,7 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
 
     # Scope axis
     scope_level_display = serializers.SerializerMethodField()
-    target_department   = serializers.SerializerMethodField()
+    target_departments  = serializers.SerializerMethodField()
 
     # Cross-reference — free-text tool mention
 
@@ -121,7 +123,7 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
             'dimension', 'dimension_display',
             # Scope
             'scope_level', 'scope_level_display',
-            'target_department',
+            'target_departments',
             # Narrative
             'summary',
             # Cross-reference — TechStack
@@ -147,7 +149,7 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
     what_display        = serializers.SerializerMethodField()
     dimension_display   = serializers.SerializerMethodField()
     scope_level_display = serializers.SerializerMethodField()
-    target_department   = serializers.SerializerMethodField()
+    target_departments  = serializers.SerializerMethodField()
 
     # Cross-reference — free-text tool mention
 
@@ -157,7 +159,7 @@ class PainSignalDetailSerializer(_PainDisplayMixin, BaseSignalDetailSerializer):
             'what', 'what_display',
             'dimension', 'dimension_display',
             'scope_level', 'scope_level_display',
-            'target_department',
+            'target_departments',
             'summary',
             'notes',
             # Cross-reference — TechStack

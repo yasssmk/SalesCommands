@@ -92,16 +92,18 @@ class _ImpactDisplayMixin:
     def get_human_impact_display(self, obj):
         return obj.get_human_impact_display() if obj.human_impact else None
 
-    def get_target_department(self, obj):
-        # Compact FK shape — mirrors _ObjectiveDisplayMixin.get_target_department.
-        # Null when scope is BUSINESS (no department). id + human name.
-        d = obj.target_department
-        if not d:
-            return None
-        return {
-            'id':   str(d.id),
-            'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
-        }
+    def get_target_departments(self, obj):
+        # Compact list of the departments this impact concerns (multi-department,
+        # sub-step 2b). Clones _ConstraintDisplayMixin.get_target_departments.
+        # N+1-safe: reads obj.target_departments.all(), prefetched by the
+        # ViewSet. Empty list when none are designated (BUSINESS).
+        return [
+            {
+                'id':   str(d.id),
+                'name': d.get_name_display() if hasattr(d, 'get_name_display') else str(d),
+            }
+            for d in obj.target_departments.all()
+        ]
 
 
 # =============================================================================
@@ -126,7 +128,7 @@ class ImpactSignalListSerializer(_ImpactDisplayMixin, BaseSignalListSerializer):
 
     # Scope axis
     scope_level_display  = serializers.SerializerMethodField()
-    target_department    = serializers.SerializerMethodField()
+    target_departments   = serializers.SerializerMethodField()
 
     # Impact nature axis
     impact_type_display  = serializers.SerializerMethodField()
@@ -148,7 +150,7 @@ class ImpactSignalListSerializer(_ImpactDisplayMixin, BaseSignalListSerializer):
             'dimension', 'dimension_display',
             # Scope
             'scope_level', 'scope_level_display',
-            'target_department',
+            'target_departments',
             # Impact nature
             'impact_type', 'impact_type_display',
             # Narrative
@@ -184,7 +186,7 @@ class ImpactSignalDetailSerializer(_ImpactDisplayMixin, BaseSignalDetailSerializ
 
     # Scope axis
     scope_level_display  = serializers.SerializerMethodField()
-    target_department    = serializers.SerializerMethodField()
+    target_departments   = serializers.SerializerMethodField()
 
     # Impact nature axis
     impact_type_display  = serializers.SerializerMethodField()
@@ -201,7 +203,7 @@ class ImpactSignalDetailSerializer(_ImpactDisplayMixin, BaseSignalDetailSerializ
             'what', 'what_display',
             'dimension', 'dimension_display',
             'scope_level', 'scope_level_display',
-            'target_department',
+            'target_departments',
             'impact_type', 'impact_type_display',
             'summary',
             'metric_text',

@@ -40,10 +40,14 @@ pytestmark = pytest.mark.django_db
 
 def _mk_constraint(account, activity, decision_cycle, user_a, nature, *,
                    summary='A requirement', rigidity=Rigidity.FIRM,
-                   source=SignalSource.MANUAL, **extra):
+                   source=SignalSource.MANUAL, target_departments=None, **extra):
     """
     Create + persist a ConstraintSignal in one decision cycle. MANUAL source
     lands VALIDATED; pass source=LLM_EXTRACTED for a PENDING member.
+
+    `target_departments` (a list of StandardDepartment) is attached to the
+    multi-department M2M after save (M2M can't be set pre-save) — the scope
+    carrier the cluster reads since sub-step 1b.
     """
     sig = ConstraintSignal(
         account=account,
@@ -56,6 +60,8 @@ def _mk_constraint(account, activity, decision_cycle, user_a, nature, *,
         **extra,
     )
     sig.save(user=user_a, client_id=account.client_id)
+    if target_departments:
+        sig.target_departments.set(target_departments)
     return sig
 
 
@@ -185,7 +191,7 @@ class TestConstraintClusterContract:
         it_dept, _ = StandardDepartment.objects.get_or_create(name='IT')
 
         _mk_constraint(account, activity, decision_cycle, user_a,
-                       ConstraintNature.TECHNICAL, target_department=it_dept)
+                       ConstraintNature.TECHNICAL, target_departments=[it_dept])
         _mk_constraint(account, activity, decision_cycle, user_a,
                        ConstraintNature.TECHNICAL)  # BUSINESS (no dept)
 

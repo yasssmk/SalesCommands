@@ -6,6 +6,7 @@
 // when a member is clicked.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //

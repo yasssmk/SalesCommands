@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import SignalCompactLine from "sections/activities/signals/SignalCompactLine";
+import SignalCompactLine from "components/signals/SignalCompactLine";
 
 afterEach(() => {
   cleanup();
