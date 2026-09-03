@@ -86,6 +86,25 @@ export const ACTIVITY_STATUS_COLORS = {
 };
 
 /**
+ * Two-colour table for the standard StatusPill (contour+text = `text`,
+ * background = `background`). Values are theme tokens / MUI palette paths, never
+ * hex, so sx resolves them. `text` colours the TEXT and the BORDER by status
+ * (Planned neutral/muted, Completed success, Cancelled error, On hold warning);
+ * `background` is one dark surface token shared by every status today, but stored
+ * per-status so it can vary later.
+ *
+ * NOTE: aphoriQ exposes no dark surface token (surface.level1..3 are all light),
+ * so the dark background uses the palette's `common.black` — swap here if a dedicated
+ * dark-surface token is later added to the theme.
+ */
+export const ACTIVITY_STATUS_CHIP_COLORS = {
+  PLANNED: { text: "text.secondary", background: "common.black" },
+  ON_HOLD: { text: "warning.main", background: "common.black" },
+  COMPLETED: { text: "success.main", background: "common.black" },
+  CANCELLED: { text: "error.main", background: "common.black" },
+};
+
+/**
  * Activity outcomes (matching backend ActivityOutcome choices)
  */
 export const ACTIVITY_OUTCOMES = {

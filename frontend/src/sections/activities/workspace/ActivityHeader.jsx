@@ -20,7 +20,6 @@ import { useRouter } from "next/navigation";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Avatar from "@mui/material/Avatar";
-import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import Menu from "@mui/material/Menu";
@@ -35,7 +34,11 @@ import { format, formatDistanceToNow, parseISO } from "date-fns";
 import {
   ACTIVITY_STATUS_LABELS,
   ACTIVITY_STATUS_COLORS,
+  ACTIVITY_STATUS_CHIP_COLORS,
 } from "api/accounts/activities";
+
+// Primitives
+import StatusPill from "components/chips/StatusPill";
 
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
@@ -103,7 +106,6 @@ export default function useActivityHeaderProps({
   onPendingClick,
 }) {
   const theme = useTheme();
-  const aq = theme.aphoriQ;
   const router = useRouter();
 
   // ==============================|| STATE ||============================== //
@@ -367,33 +369,18 @@ export default function useActivityHeaderProps({
 
   // ==============================|| ROW 1: Status pill (title adornment) ||============================== //
 
-  // A compact PILL next to the title: one neutral surface background for every
-  // status (detaches slightly from the header), text coloured by the status role
-  // read from ACTIVITY_STATUS_COLORS ("default" → muted grey). All theme tokens.
-  const statusTextColor =
-    statusChipColor === "default" ? aq.text.muted : `${statusChipColor}.main`;
+  // A compact PILL next to the title, rendered with the shared StatusPill: dark
+  // background + status-coloured text AND border, from the {text, background}
+  // table in the activities constants. Contour now visible (3-part chip).
+  const chipStyle =
+    ACTIVITY_STATUS_CHIP_COLORS[activity.status] || ACTIVITY_STATUS_CHIP_COLORS.PLANNED;
   const titleAdornment = (
-    <Box
-      component="span"
-      data-testid="status-pill"
+    <StatusPill
       data-status-color={statusChipColor}
-      sx={{
-        display: "inline-flex",
-        alignItems: "center",
-        flexShrink: 0,
-        px: 1,
-        py: 0.25,
-        borderRadius: `${theme.aphoriQ.radius.pill}px`,
-        bgcolor: aq.surface.level3,
-        color: statusTextColor,
-        fontSize: theme.typography.caption.fontSize,
-        fontWeight: "medium",
-        lineHeight: 1.6,
-        whiteSpace: "nowrap",
-      }}
-    >
-      {statusChipLabel}
-    </Box>
+      label={statusChipLabel}
+      colorText={chipStyle.text}
+      colorBg={chipStyle.background}
+    />
   );
 
   // ==============================|| ROW 1: Actions (⋯ menu) ||============================== //

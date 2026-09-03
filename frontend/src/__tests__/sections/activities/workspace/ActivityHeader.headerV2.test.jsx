@@ -25,7 +25,21 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import ThemeCustomization from "themes/index";
 import useActivityHeaderProps from "sections/activities/workspace/ActivityHeader";
-import { ACTIVITY_STATUS_COLORS } from "api/accounts/activities";
+import {
+  ACTIVITY_STATUS_COLORS,
+  ACTIVITY_STATUS_CHIP_COLORS,
+} from "api/accounts/activities";
+
+// Pull the three colour properties out of the pill's emotion rule (theme-
+// independent — we compare them to each other, not to a re-built palette).
+function pillColors(rule) {
+  const pick = (re) => (rule.match(re) || [])[1]?.trim();
+  return {
+    text: pick(/[;{]color:\s*([^;}]+)/),
+    border: pick(/border-color:\s*([^;}]+)/),
+    background: pick(/background-color:\s*([^;}]+)/),
+  };
+}
 
 const wrapper = ({ children }) => <ThemeCustomization>{children}</ThemeCustomization>;
 
@@ -72,24 +86,58 @@ describe("ActivityHeader V2 — status is a PILL in titleAdornment (Row 1)", () 
     expect(container.querySelectorAll(".MuiChip-root").length).toBe(0);
   });
 
-  it("titleAdornment is a PILL, colour from ACTIVITY_STATUS_COLORS, same neutral background for all", () => {
-    // the colour-role mapping lives in the front constants file, not the header
-    expect(ACTIVITY_STATUS_COLORS.PLANNED).toBe("default");
-    expect(ACTIVITY_STATUS_COLORS.COMPLETED).toBe("success");
-    expect(ACTIVITY_STATUS_COLORS.CANCELLED).toBe("error");
-    expect(ACTIVITY_STATUS_COLORS.ON_HOLD).toBe("warning");
+  it("the {text, background} table lives in the constants file, dark bg shared", () => {
+    // 2 colours per status: text (=border) + background; background is one dark
+    // token shared by every status (stored per-status to vary later).
+    expect(ACTIVITY_STATUS_CHIP_COLORS.PLANNED.text).toBe("text.secondary");
+    expect(ACTIVITY_STATUS_CHIP_COLORS.COMPLETED.text).toBe("success.main");
+    expect(ACTIVITY_STATUS_CHIP_COLORS.CANCELLED.text).toBe("error.main");
+    expect(ACTIVITY_STATUS_CHIP_COLORS.ON_HOLD.text).toBe("warning.main");
+    const bg = ACTIVITY_STATUS_CHIP_COLORS.PLANNED.background;
+    expect(ACTIVITY_STATUS_CHIP_COLORS.COMPLETED.background).toBe(bg);
+    expect(ACTIVITY_STATUS_CHIP_COLORS.CANCELLED.background).toBe(bg);
+    expect(ACTIVITY_STATUS_CHIP_COLORS.ON_HOLD.background).toBe(bg);
+  });
 
+  it("titleAdornment is a PILL rendered via StatusPill: visible CONTOUR (=text) + dark FOND", () => {
     const { result } = useHeader({ ...base, status: "PLANNED" });
     const { container } = render(<div>{result.current.titleAdornment}</div>, { wrapper });
     const pill = container.querySelector('[data-testid="status-pill"]');
     expect(pill).toBeTruthy();
     expect(pill.textContent).toMatch(/Planned/);
-    // it is NOT the generic MUI chip
     expect(container.querySelector(".MuiChip-root")).toBeFalsy();
-    // pill shape: a large (pill) border-radius, not a small rectangle
-    expect(rulesForElement(pill)).toMatch(/border-radius:\s*999px/);
-    // colour role comes from the constant
+    const rule = rulesForElement(pill);
+    // pill shape
+    expect(rule).toMatch(/border-radius:\s*999px/);
+    // 3 parts: a solid border is now present (was missing before)
+    expect(rule).toMatch(/border-style:\s*solid/);
+    expect(rule).toMatch(/border-color:/);
+    // colour role still sourced from ACTIVITY_STATUS_COLORS
     expect(pill.getAttribute("data-status-color")).toBe(ACTIVITY_STATUS_COLORS.PLANNED);
+  });
+
+  it("text = border (both colorText), dark background, and text tracks the status", () => {
+    const read = (status) => {
+      const { result } = useHeader({ ...base, status });
+      const { container } = render(<div>{result.current.titleAdornment}</div>, { wrapper });
+      const cols = pillColors(rulesForElement(container.querySelector('[data-testid="status-pill"]')));
+      cleanup();
+      return cols;
+    };
+    const cancelled = read("CANCELLED");
+    const completed = read("COMPLETED");
+    const planned = read("PLANNED");
+
+    // 3-part chip: the TEXT colour equals the BORDER colour (both colorText)
+    expect(cancelled.text).toBeTruthy();
+    expect(cancelled.text).toBe(cancelled.border);
+    // dark BACKGROUND (common.black), shared across statuses
+    expect(cancelled.background.replace(/\s/g, "")).toMatch(/#000(000)?/i);
+    expect(completed.background).toBe(cancelled.background);
+    // TEXT colour tracks the status (from the constant): each status differs
+    expect(cancelled.text).not.toBe(completed.text);
+    expect(cancelled.text).not.toBe(planned.text);
+    expect(completed.text).not.toBe(planned.text);
   });
 
   it("pill colour role tracks the status (Completed→success, Cancelled→error, On hold→warning)", () => {
