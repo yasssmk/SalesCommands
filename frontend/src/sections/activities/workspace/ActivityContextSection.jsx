@@ -5,12 +5,14 @@
 //   header: (i) "Context" (bold)
 //   Details: Objective | Scheduled (bold values), then Description (bold)
 //   ── hairline ──
-//   People: Internal team | External contacts — initials avatar + bold name +
-//           inline suffix; a "+" per column header, a "›" per external contact
-//           (all inert). No email/phone on the rows.
+//   People: Internal team | External contacts — bold name + inline suffix (no
+//           avatar). A "+" per column header (inert). External contact names
+//           look clickable (pointer + hover) but carry no handler yet — the
+//           drawer is wired in a later sprint. No email/phone on the rows.
 //   ── hairline ──  (only when there is provenance)
-//   Origin: a single provenance line (where the activity was born), with live
-//           accent links. The current campaign/DC rattachement is NOT shown here
+//   Origin: a single provenance line (where the activity was born), a branch
+//           icon + TWO separate accent links (context, then activity) to live
+//           routes. The current campaign/DC rattachement is NOT shown here
 //           (it lives in the header).
 // Read-only: the only navigation is the accent links to live routes. No editing,
 // no ComingSoon, no Previous/Next. Weights/colours/sizes come from the theme.
@@ -22,7 +24,6 @@ import Link from "next/link";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
-import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -30,8 +31,7 @@ import Typography from "@mui/material/Typography";
 // Icons
 import InfoCircleOutlined from "@ant-design/icons/InfoCircleOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
-import RightOutlined from "@ant-design/icons/RightOutlined";
-import LinkOutlined from "@ant-design/icons/LinkOutlined";
+import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 
 // Primitives
 import Surface from "components/display/Surface";
@@ -81,16 +81,6 @@ function getSchedule(activity) {
 function personName(p) {
   if (!p) return null;
   return p.full_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.email || null;
-}
-
-// First-word + last-word initials, e.g. "Admin Tenant A" -> "AA", "Chevalier Iki" -> "CI".
-function initials(name) {
-  if (!name) return "";
-  const words = String(name).trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "";
-  const first = words[0][0] || "";
-  const last = words[words.length - 1][0] || "";
-  return (first + last).toUpperCase();
 }
 
 // ==============================|| SHARED SMALL PIECES ||============================== //
@@ -209,7 +199,7 @@ function ProvenanceLine({ activity }) {
   return (
     <Stack direction="row" spacing={1} alignItems="flex-start">
       <Box sx={{ mt: 0.25, flexShrink: 0 }}>
-        <LinkOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
+        <BranchesOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
       </Box>
       <Typography variant="body2" sx={{ color: aq.text.muted, minWidth: 0 }}>
         {body}
@@ -270,16 +260,9 @@ export default function ActivityContextSection({ activity }) {
         <TwoColRow>
           <Box>
             <ColumnHeader label="Internal team" />
-            {owner && (
-              <PersonRow avatarText={initials(personName(owner))} name={personName(owner)} suffix="owner" />
-            )}
+            {owner && <PersonRow name={personName(owner)} suffix="owner" />}
             {invited.map((u) => (
-              <PersonRow
-                key={u.id}
-                avatarText={initials(personName(u))}
-                name={personName(u)}
-                suffix="invited"
-              />
+              <PersonRow key={u.id} name={personName(u)} suffix="invited" />
             ))}
             {!owner && invited.length === 0 && (
               <Typography variant="body2" sx={emptyItalic}>
@@ -295,14 +278,9 @@ export default function ActivityContextSection({ activity }) {
                 {contacts.map((c) => (
                   <PersonRow
                     key={c.id}
-                    avatarText={initials(personName(c))}
+                    interactive
                     name={personName(c)}
                     suffix={c.department_name || undefined}
-                    trailing={
-                      <RightOutlined
-                        style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted, display: "flex" }}
-                      />
-                    }
                   />
                 ))}
               </Stack>

@@ -24,6 +24,12 @@ vi.mock("next/link", () => ({
 import ThemeCustomization from "themes/index";
 import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
 
+function rulesForElement(el) {
+  const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+  const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+  return classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+}
+
 const ACCOUNT = { id: "acc-1", company_name: "RED RUBAN" };
 const OWNER = { id: "u1", email: "admin@test.com", first_name: "Admin", last_name: "Tenant A", full_name: "Admin Tenant A" };
 const CONTACT = { id: "c1", first_name: "Chevalier", last_name: "Iki", full_name: "Chevalier Iki", email: "iki@rr.com", phone_number: "+33124354657", job_title: "Head of HR", department_name: "HR" };
@@ -86,12 +92,10 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.getByText("Initial outreach call")).toBeInTheDocument();
   });
 
-  it("people rows have round initials avatars and inline suffixes, no email/phone", () => {
+  it("people rows have NO avatar, inline suffixes, no email/phone; contact name is interactive", () => {
     const { container } = renderCtx(baseActivity);
-    // avatars (owner + contact), initials first-word + last-word letters
-    expect(container.querySelectorAll(".MuiAvatar-root").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("AA")).toBeInTheDocument(); // Admin … A
-    expect(screen.getByText("CI")).toBeInTheDocument(); // Chevalier Iki
+    // no avatars anywhere
+    expect(container.querySelector(".MuiAvatar-root")).toBeNull();
     expect(screen.getByText("Admin Tenant A")).toBeInTheDocument();
     expect(screen.getByText(/· owner/)).toBeInTheDocument();
     expect(screen.getByText("Chevalier Iki")).toBeInTheDocument();
@@ -100,14 +104,15 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.queryByText(/admin@test.com/)).not.toBeInTheDocument();
     expect(screen.queryByText(/iki@rr.com/)).not.toBeInTheDocument();
     expect(screen.queryByText(/\+33/)).not.toBeInTheDocument();
+    // contact name looks interactive (cursor), owner name does not
+    expect(rulesForElement(screen.getByText("Chevalier Iki"))).toMatch(/cursor:\s*pointer/);
+    expect(rulesForElement(screen.getByText("Admin Tenant A"))).not.toMatch(/cursor:\s*pointer/);
   });
 
-  it("shows an inert '+' on each column header and a '›' per contact", () => {
+  it("shows an inert '+' on each column header and NO chevron on contacts", () => {
     const { container } = renderCtx(baseActivity);
-    // "+" on Internal team AND External contacts headers
     expect(container.querySelectorAll(".anticon-plus").length).toBeGreaterThanOrEqual(2);
-    // one chevron per external contact
-    expect(container.querySelectorAll(".anticon-right").length).toBeGreaterThanOrEqual(1);
+    expect(container.querySelectorAll(".anticon-right").length).toBe(0);
   });
 
   it("does NOT render the current campaign/DC rattachement in Context", () => {
@@ -120,25 +125,30 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.queryByText(/^From/)).not.toBeInTheDocument();
   });
 
-  it("provenance CAMPAIGN — single line, campaign link + source-activity link, no rattachement", () => {
-    renderCtx(provCampaign);
+  it("provenance CAMPAIGN — branch icon, TWO separate links (distinct targets), no rattachement", () => {
+    const { container } = renderCtx(provCampaign);
+    // branch/connection icon, not a link icon
+    expect(container.querySelector(".anticon-branches")).toBeTruthy();
+    expect(container.querySelector(".anticon-link")).toBeNull();
     expect(screen.getByText(/From campaign/i)).toBeInTheDocument();
+    // two DISTINCT <Link> targets (never one wrapping link)
     const hrefs = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
     expect(hrefs).toContain("/campaigns/cmp1");
     expect(hrefs).toContain("/activities/act9");
+    expect(new Set(hrefs).size).toBeGreaterThanOrEqual(2);
     // NOT the rattachement line
     expect(screen.queryByText(/Q2 Outbound/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Active/)).not.toBeInTheDocument();
-    // provenance = second separator present
     expect(screen.getAllByTestId("ctx-sep")).toHaveLength(2);
   });
 
-  it("provenance DECISION_CYCLE — 'From Decision Cycle' with DC link, no step (absent from payload)", () => {
+  it("provenance DECISION_CYCLE — 'From Decision Cycle', TWO separate links, no step", () => {
     renderCtx(provDC);
     expect(screen.getByText(/From Decision Cycle/i)).toBeInTheDocument();
     const hrefs = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
     expect(hrefs).toContain("/accounts/acc-1/dc/dc9?tab=timeline");
     expect(hrefs).toContain("/activities/act9");
+    expect(new Set(hrefs).size).toBeGreaterThanOrEqual(2);
   });
 
   it("does NOT render ComingSoon nor Previous/Next activity", () => {
