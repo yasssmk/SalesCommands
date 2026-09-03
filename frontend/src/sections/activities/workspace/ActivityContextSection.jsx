@@ -23,6 +23,9 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
+// Icons
+import InfoCircleOutlined from "@ant-design/icons/InfoCircleOutlined";
+
 // Primitives
 import Surface from "components/display/Surface";
 import LabeledValue from "components/display/LabeledValue";
@@ -81,28 +84,39 @@ function contactTertiary(contact) {
   return [contact.email, contact.phone_number].filter(Boolean).join(" · ") || null;
 }
 
-// ==============================|| SECTION CARD ||============================== //
-
-function ContextCard({ title, children }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
+// Responsive two-column grid row (1 column on narrow, 2 columns on md+).
+function TwoColRow({ children }) {
   return (
-    <Surface level="level2" radius="lg" data-testid="ctx-card" sx={{ p: 2.5 }}>
-      <Typography
-        variant="subtitle2"
-        sx={{ color: aq.text.muted, mb: 1.5, display: "block" }}
-      >
-        {title}
-      </Typography>
+    <Box
+      data-testid="ctx-grid"
+      sx={{
+        display: "grid",
+        gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+        columnGap: 3,
+        rowGap: 1.5,
+      }}
+    >
       {children}
-    </Surface>
+    </Box>
   );
 }
 
-ContextCard.propTypes = {
-  title: PropTypes.string.isRequired,
-  children: PropTypes.node,
-};
+TwoColRow.propTypes = { children: PropTypes.node };
+
+// Small muted sub-heading inside the single card (e.g. "Internal team").
+function SubLabel({ children }) {
+  const theme = useTheme();
+  return (
+    <Typography
+      variant="caption"
+      sx={{ color: theme.aphoriQ.text.muted, display: "block", mb: 0.5 }}
+    >
+      {children}
+    </Typography>
+  );
+}
+
+SubLabel.propTypes = { children: PropTypes.node };
 
 // ==============================|| LINKED CONTEXT (rule a) ||============================== //
 
@@ -120,23 +134,27 @@ function LinkedContext({ activity }) {
         : step.name
       : null;
     return (
-      <Stack spacing={1.5}>
-        <LabeledValue label="Decision cycle" value={dc.name} />
-        <LabeledValue label="Step" value={stepValue} />
-      </Stack>
+      <TwoColRow>
+        <LabeledValue dense label="Decision cycle" value={dc.name} />
+        <LabeledValue dense label="Step" value={stepValue} />
+      </TwoColRow>
     );
   }
 
   if (campaign) {
     return (
-      <Stack spacing={1.5}>
-        <LabeledValue label="Campaign" value={campaign.name} />
-        <LabeledValue label="Campaign status" value={campaign.campaign_status} />
+      <TwoColRow>
+        <LabeledValue dense label="Campaign" value={campaign.name} />
         <LabeledValue
+          dense
           label="Sequence"
-          value={campaign.sequence_position != null ? `Step ${campaign.sequence_position}` : null}
+          value={
+            campaign.sequence_position != null
+              ? `Step ${campaign.sequence_position} · ${campaign.campaign_status}`
+              : campaign.campaign_status
+          }
         />
-      </Stack>
+      </TwoColRow>
     );
   }
 
@@ -204,44 +222,56 @@ export default function ActivityContextSection({ activity }) {
   const contacts = activity.contacts_detail || [];
   const hasProvenance = Boolean(activity.source_activity_detail);
 
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+
+  const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
+
   return (
-    <Stack spacing={2}>
-      {/* Details */}
-      <ContextCard title="Details">
-        <Stack spacing={1.5}>
+    <Surface level="level2" radius="lg" data-testid="ctx-card" sx={{ p: 2.5 }}>
+      {/* Card title */}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+        <InfoCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
+        <Typography variant="subtitle2" sx={{ color: aq.text.muted }}>
+          Context
+        </Typography>
+      </Stack>
+
+      <Stack spacing={2}>
+        {/* Row 1 — Objective (left) · Scheduled (right, right-aligned) */}
+        <TwoColRow>
           <LabeledValue
+            dense
             label="Objective"
             value={activity.call_to_action}
             placeholder="No objective defined"
           />
-          <LabeledValue label={schedule.label} value={schedule.value} />
-          <LabeledValue label="Description" value={activity.description} />
-        </Stack>
-      </ContextCard>
+          <Box sx={{ textAlign: { md: "right" } }}>
+            <LabeledValue dense label={schedule.label} value={schedule.value} />
+          </Box>
+        </TwoColRow>
 
-      {/* People */}
-      <ContextCard title="People">
-        <Stack spacing={2}>
+        {/* Description — full width */}
+        <LabeledValue dense label="Description" value={activity.description} />
+
+        {/* People — Internal team (left) · External contacts (right) */}
+        <TwoColRow>
           <Box>
-            <Typography variant="caption" sx={{ color: (t) => t.aphoriQ.text.muted, display: "block", mb: 0.5 }}>
-              Internal team
-            </Typography>
+            <SubLabel>Internal team</SubLabel>
             {owner && <PersonRow name={owner.name} secondary={owner.secondary} />}
             {invited.map((u) => {
               const line = ownerLine(u);
               return <PersonRow key={u.id} name={line?.name} secondary={line?.secondary} />;
             })}
             {!owner && invited.length === 0 && (
-              <Typography variant="body2" sx={{ color: (t) => t.aphoriQ.text.subtle, fontStyle: "italic" }}>
+              <Typography variant="body2" sx={emptyItalic}>
                 No internal team
               </Typography>
             )}
           </Box>
 
           <Box>
-            <Typography variant="caption" sx={{ color: (t) => t.aphoriQ.text.muted, display: "block", mb: 0.5 }}>
-              External contacts
-            </Typography>
+            <SubLabel>External contacts</SubLabel>
             {contacts.length > 0 ? (
               <Stack spacing={0.5}>
                 {contacts.map((c) => (
@@ -254,22 +284,20 @@ export default function ActivityContextSection({ activity }) {
                 ))}
               </Stack>
             ) : (
-              <Typography variant="body2" sx={{ color: (t) => t.aphoriQ.text.subtle, fontStyle: "italic" }}>
+              <Typography variant="body2" sx={emptyItalic}>
                 No contacts linked
               </Typography>
             )}
           </Box>
-        </Stack>
-      </ContextCard>
+        </TwoColRow>
 
-      {/* Linked context + provenance */}
-      <ContextCard title="Linked context">
-        <Stack spacing={1.5}>
-          <LinkedContext activity={activity} />
-          {hasProvenance && <Provenance activity={activity} />}
-        </Stack>
-      </ContextCard>
-    </Stack>
+        {/* Linked context (rule a, compact) */}
+        <LinkedContext activity={activity} />
+
+        {/* Provenance — integrated info line, full width */}
+        {hasProvenance && <Provenance activity={activity} />}
+      </Stack>
+    </Surface>
   );
 }
 

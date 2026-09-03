@@ -127,4 +127,20 @@ describe("ActivityContextSection (read-only)", () => {
     const card = screen.getAllByTestId("ctx-card")[0];
     expect(rulesForElement(card)).toContain("0.5px");
   });
+
+  // --- S2a-fix: compact single-card, two-column layout ---
+
+  it("renders a SINGLE Context card (not stacked separate cards)", () => {
+    renderCtx(dcActivity);
+    expect(screen.getAllByTestId("ctx-card")).toHaveLength(1);
+  });
+
+  it("lays out Objective/Scheduled and People as two-column grids", () => {
+    renderCtx(dcActivity);
+    const grids = screen.getAllByTestId("ctx-grid");
+    expect(grids.length).toBeGreaterThanOrEqual(2);
+    grids.forEach((g) => {
+      expect(rulesForElement(g)).toMatch(/grid-template-columns/);
+    });
+  });
 });

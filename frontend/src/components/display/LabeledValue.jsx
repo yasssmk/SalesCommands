@@ -12,7 +12,7 @@ import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
-export default function LabeledValue({ label, value, placeholder, children }) {
+export default function LabeledValue({ label, value, placeholder, dense = false, children }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
 
@@ -23,7 +23,10 @@ export default function LabeledValue({ label, value, placeholder, children }) {
 
   return (
     <Box>
-      <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+      <Typography
+        variant="caption"
+        sx={{ color: aq.text.muted, display: "block", mb: dense ? 0 : 0.25 }}
+      >
         {label}
       </Typography>
       {isEmpty ? (
@@ -47,6 +50,8 @@ LabeledValue.propTypes = {
   value: PropTypes.node,
   /** Muted italic text shown when the value is empty. */
   placeholder: PropTypes.string,
+  /** Tighten the label→value gap for compact grids. */
+  dense: PropTypes.bool,
   /** Non-string value node (rendered as-is), takes precedence over `value`. */
   children: PropTypes.node,
 };
