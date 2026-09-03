@@ -29,6 +29,14 @@ import { ACTIVITY_STATUS_COLORS } from "api/accounts/activities";
 
 const wrapper = ({ children }) => <ThemeCustomization>{children}</ThemeCustomization>;
 
+// The emotion rule text for an element's own css-* classes (scoped, avoids
+// cross-test <style> contamination).
+function rulesForElement(el) {
+  const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+  const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+  return classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+}
+
 const base = {
   id: "act-1",
   activity_type: "CALL",
@@ -41,54 +49,64 @@ function useHeader(activity, extra = {}) {
   return renderHook(() => useActivityHeaderProps({ activity, ...extra }), { wrapper });
 }
 
-describe("ActivityHeader V2 — avatar tile + status chip", () => {
-  it("avatar is a rounded (non-circular) tile carrying the type icon", () => {
+describe("ActivityHeader V2 — avatar tile sized from theme.iconSizes", () => {
+  it("avatar is a rounded tile with the type icon, dimensioned from iconSizes (not 56px)", () => {
     const { result } = useHeader(base);
     const { container } = render(<div>{result.current.avatar}</div>, { wrapper });
-    // type icon present
+    // type icon present, rounded (not circular)
     expect(container.querySelector(".anticon-phone")).toBeTruthy();
-    // rounded tile, not a circle (MUI rounded variant)
     expect(container.querySelector(".MuiAvatar-rounded")).toBeTruthy();
-    expect(container.querySelector(".MuiAvatar-circular")).toBeFalsy();
+    // reduced: the old hardcoded 56px tile is gone
+    const avatar = container.querySelector(".MuiAvatar-root");
+    const rule = rulesForElement(avatar);
+    expect(rule).not.toMatch(/56px/);
+    // sized from the theme's iconSizes scale (px integers <= xxl-derived tile)
+    expect(rule).toMatch(/width:\s*\d+px/);
   });
+});
 
-  it("chips = a SINGLE status chip; no type/campaign/outcome chip", () => {
+describe("ActivityHeader V2 — status is a PILL in titleAdornment (Row 1)", () => {
+  it("the status is NOT in the chips slot (Row 2 is empty)", () => {
     const { result } = useHeader({ ...base, campaign_detail: { id: "cmp1", name: "Q2" }, outcome: "SUCCESSFUL" });
     const { container } = render(<div>{result.current.chips}</div>, { wrapper });
-    const chips = container.querySelectorAll(".MuiChip-root");
-    expect(chips.length).toBe(1);
-    expect(screen.getByText("Planned")).toBeInTheDocument();
-    expect(screen.queryByText(/Campaign:/)).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".MuiChip-root").length).toBe(0);
   });
 
-  it("status chip is DISCREET (light variant), colour from the ACTIVITY_STATUS_COLORS constant", () => {
-    // the mapping lives in the front constants file, not hardcoded in the header
+  it("titleAdornment is a PILL, colour from ACTIVITY_STATUS_COLORS, same neutral background for all", () => {
+    // the colour-role mapping lives in the front constants file, not the header
     expect(ACTIVITY_STATUS_COLORS.PLANNED).toBe("default");
     expect(ACTIVITY_STATUS_COLORS.COMPLETED).toBe("success");
     expect(ACTIVITY_STATUS_COLORS.CANCELLED).toBe("error");
     expect(ACTIVITY_STATUS_COLORS.ON_HOLD).toBe("warning");
 
-    const planned = renderHook(() => useActivityHeaderProps({ activity: { ...base, status: "PLANNED" } }), { wrapper });
-    const { container: c1 } = render(<div>{planned.result.current.chips}</div>, { wrapper });
-    // discreet: the DS "light" chip variant, never a filled/saturated pill
-    expect(c1.querySelector(".MuiChip-light")).toBeTruthy();
-    expect(c1.querySelector(".MuiChip-filled")).toBeFalsy();
-    expect(c1.querySelector(".MuiChip-colorDefault")).toBeTruthy();
-    cleanup();
+    const { result } = useHeader({ ...base, status: "PLANNED" });
+    const { container } = render(<div>{result.current.titleAdornment}</div>, { wrapper });
+    const pill = container.querySelector('[data-testid="status-pill"]');
+    expect(pill).toBeTruthy();
+    expect(pill.textContent).toMatch(/Planned/);
+    // it is NOT the generic MUI chip
+    expect(container.querySelector(".MuiChip-root")).toBeFalsy();
+    // pill shape: a large (pill) border-radius, not a small rectangle
+    expect(rulesForElement(pill)).toMatch(/border-radius:\s*999px/);
+    // colour role comes from the constant
+    expect(pill.getAttribute("data-status-color")).toBe(ACTIVITY_STATUS_COLORS.PLANNED);
+  });
 
-    const done = renderHook(() => useActivityHeaderProps({ activity: { ...base, status: "COMPLETED" } }), { wrapper });
-    const { container: c2 } = render(<div>{done.result.current.chips}</div>, { wrapper });
-    expect(c2.querySelector(".MuiChip-colorSuccess")).toBeTruthy();
-    cleanup();
+  it("pill colour role tracks the status (Completed→success, Cancelled→error, On hold→warning)", () => {
+    for (const status of ["COMPLETED", "CANCELLED", "ON_HOLD"]) {
+      const { result } = renderHook(() => useActivityHeaderProps({ activity: { ...base, status } }), { wrapper });
+      const { container } = render(<div>{result.current.titleAdornment}</div>, { wrapper });
+      const pill = container.querySelector('[data-testid="status-pill"]');
+      expect(pill.getAttribute("data-status-color")).toBe(ACTIVITY_STATUS_COLORS[status]);
+      cleanup();
+    }
+  });
+});
 
-    const cancelled = renderHook(() => useActivityHeaderProps({ activity: { ...base, status: "CANCELLED" } }), { wrapper });
-    const { container: c3 } = render(<div>{cancelled.result.current.chips}</div>, { wrapper });
-    expect(c3.querySelector(".MuiChip-colorError")).toBeTruthy();
-    cleanup();
-
-    const onHold = renderHook(() => useActivityHeaderProps({ activity: { ...base, status: "ON_HOLD" } }), { wrapper });
-    const { container: c4 } = render(<div>{onHold.result.current.chips}</div>, { wrapper });
-    expect(c4.querySelector(".MuiChip-colorWarning")).toBeTruthy();
+describe("ActivityHeader V2 — title is read-only", () => {
+  it("does not provide onTitleSave (inline edit removed; editing via the drawer, S2c)", () => {
+    const { result } = useHeader(base, { onSave: vi.fn() });
+    expect(result.current.onTitleSave).toBeUndefined();
   });
 });
 

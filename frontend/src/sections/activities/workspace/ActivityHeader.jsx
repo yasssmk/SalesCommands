@@ -1,13 +1,14 @@
 // frontend/src/sections/activities/workspace/ActivityHeader.jsx
 /**
- * Activity Header — Hook version for WorkspaceLayout.
+ * Activity Header — hook feeding the shared WorkspaceHeader (opaque slots).
  *
- * Returns layout props + modals JSX:
- *   { avatar, title, onTitleSave, titleDisabled, headerActions, chips, infoItems, modals }
+ * Returns layout props + modals JSX (title is read-only — no onTitleSave):
+ *   { avatar, title, titleAdornment, headerActions, chips, infoItems, modals }
+ * titleAdornment is the status pill (Row 1, next to the title); chips is empty.
  *
  * Usage in index.jsx:
- *   const headerProps = useActivityHeaderProps({ activity, onSave, onUpdate, isLocked });
- *   <WorkspaceLayout {...headerProps} />
+ *   const headerProps = useActivityHeaderProps({ activity });
+ *   <WorkspaceHeader {...headerProps} />
  *   {headerProps.modals}
  */
 
@@ -19,7 +20,7 @@ import { useRouter } from "next/navigation";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Avatar from "@mui/material/Avatar";
-import Chip from "@mui/material/Chip";
+import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import Menu from "@mui/material/Menu";
@@ -92,14 +93,17 @@ const TYPE_AVATAR_COLORS = {
 
 export default function useActivityHeaderProps({
   activity,
-  onSave,
-  isLocked = false,
+  // onSave / isLocked are no longer consumed here — the header title is
+  // read-only (inline edit removed; editing happens in the edit drawer, S2c).
+  // The page still passes onSave (handleSaveField) to ActivityNotesTab, so the
+  // page-level handler is NOT dead — only this hook stopped reading it.
   pipelineState = PIPELINE_STATE.IDLE,
   lastRun = null,
   counts = null,
   onPendingClick,
 }) {
   const theme = useTheme();
+  const aq = theme.aphoriQ;
   const router = useRouter();
 
   // ==============================|| STATE ||============================== //
@@ -335,15 +339,19 @@ export default function useActivityHeaderProps({
 
   // ==============================|| ROW 1: Avatar ||============================== //
 
-  // Square rounded TILE carrying the activity-type icon (radius from the theme).
+  // Square rounded TILE carrying the activity-type icon. Both the tile and the
+  // icon are sized from the theme's iconSizes scale (no hardcoded px): the icon
+  // is the `xl` glyph, the tile twice that — a compact tile that matches the
+  // mockup. Radius from the aphoriQ token.
+  const tileIconSize = theme.iconSizes.xl;
   const avatar = (
     <Avatar
       variant="rounded"
       sx={{
-        width: 56,
-        height: 56,
+        width: tileIconSize * 2,
+        height: tileIconSize * 2,
         bgcolor: avatarColor,
-        fontSize: "1.5rem",
+        fontSize: tileIconSize,
         borderRadius: `${theme.aphoriQ.radius.md}px`,
       }}
     >
@@ -353,9 +361,40 @@ export default function useActivityHeaderProps({
 
   // ==============================|| ROW 1: Title ||============================== //
 
+  // Read-only title — inline editing is removed; editing happens in the edit
+  // drawer (S2c). We no longer pass onTitleSave/titleDisabled to the shell.
   const title = activity.title || "";
-  const onTitleSave = onSave;
-  const titleDisabled = isLocked;
+
+  // ==============================|| ROW 1: Status pill (title adornment) ||============================== //
+
+  // A compact PILL next to the title: one neutral surface background for every
+  // status (detaches slightly from the header), text coloured by the status role
+  // read from ACTIVITY_STATUS_COLORS ("default" → muted grey). All theme tokens.
+  const statusTextColor =
+    statusChipColor === "default" ? aq.text.muted : `${statusChipColor}.main`;
+  const titleAdornment = (
+    <Box
+      component="span"
+      data-testid="status-pill"
+      data-status-color={statusChipColor}
+      sx={{
+        display: "inline-flex",
+        alignItems: "center",
+        flexShrink: 0,
+        px: 1,
+        py: 0.25,
+        borderRadius: `${theme.aphoriQ.radius.pill}px`,
+        bgcolor: aq.surface.level3,
+        color: statusTextColor,
+        fontSize: theme.typography.caption.fontSize,
+        fontWeight: "medium",
+        lineHeight: 1.6,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {statusChipLabel}
+    </Box>
+  );
 
   // ==============================|| ROW 1: Actions (⋯ menu) ||============================== //
 
@@ -388,18 +427,9 @@ export default function useActivityHeaderProps({
 
   // ==============================|| ROW 2: Chips ||============================== //
 
-  // The type now lives in the avatar tile, so the single chip is the STATUS —
-  // rendered with the design-system "light" chip variant (soft tinted background
-  // + full-colour text/border), the discreet mockup format, never a saturated pill.
-  const chips = [
-    <Chip
-      key="status"
-      label={statusChipLabel}
-      color={statusChipColor}
-      size="small"
-      variant="light"
-    />,
-  ];
+  // Empty — the status now renders as a pill next to the title (titleAdornment,
+  // Row 1), and the type lives in the avatar tile. No Row 2 chips for Activity.
+  const chips = [];
 
   // ==============================|| INFO ITEMS (after divider) ||============================== //
 
@@ -545,8 +575,7 @@ export default function useActivityHeaderProps({
   return {
     avatar,
     title,
-    onTitleSave,
-    titleDisabled,
+    titleAdornment,
     headerActions,
     chips,
     infoItems,

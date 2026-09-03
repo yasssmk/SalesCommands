@@ -73,4 +73,14 @@ describe("WorkspaceHeader — shared opaque-slot shell", () => {
     // EditableField renders the value as clickable text (double-click to edit)
     expect(screen.getByText("Editable")).toBeInTheDocument();
   });
+
+  it("renders the optional titleAdornment node on Row 1 (next to the title)", () => {
+    renderHeader({ title: "T", titleAdornment: <span data-testid="slot-adornment">pill</span> });
+    expect(screen.getByTestId("slot-adornment")).toBeInTheDocument();
+  });
+
+  it("omits the titleAdornment slot when not provided (back-compatible default)", () => {
+    renderHeader({ title: "T" });
+    expect(screen.queryByTestId("slot-adornment")).not.toBeInTheDocument();
+  });
 });

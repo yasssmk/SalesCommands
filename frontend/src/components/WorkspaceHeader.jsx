@@ -37,6 +37,7 @@ export default function WorkspaceHeader({
   title,
   onTitleSave,
   titleDisabled = false,
+  titleAdornment,
   headerActions,
   chips,
   extraRows,
@@ -56,23 +57,28 @@ export default function WorkspaceHeader({
         <Stack direction="row" alignItems="center" spacing={2} sx={{ flexWrap: "wrap" }}>
           {avatar}
 
-          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-            {onTitleSave ? (
-              <EditableField
-                value={title}
-                fieldKey="title"
-                onSave={onTitleSave}
-                placeholder="Untitled…"
-                variant="h3"
-                // Bold weight comes from the theme's token, never a literal.
-                typographyProps={{ component: "h1", noWrap: true, sx: { fontWeight: "bold" } }}
-                disabled={titleDisabled}
-              />
-            ) : (
-              <Typography variant="h3" component="h1" noWrap sx={{ fontWeight: "bold" }}>
-                {title}
-              </Typography>
-            )}
+          {/* Title + optional adornment (e.g. a status pill) sit together on
+              Row 1; the group flex-grows so headerActions stays hard-right. */}
+          <Box sx={{ flexGrow: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 1 }}>
+            <Box sx={{ minWidth: 0 }}>
+              {onTitleSave ? (
+                <EditableField
+                  value={title}
+                  fieldKey="title"
+                  onSave={onTitleSave}
+                  placeholder="Untitled…"
+                  variant="h3"
+                  // Bold weight comes from the theme's token, never a literal.
+                  typographyProps={{ component: "h1", noWrap: true, sx: { fontWeight: "bold" } }}
+                  disabled={titleDisabled}
+                />
+              ) : (
+                <Typography variant="h3" component="h1" noWrap sx={{ fontWeight: "bold" }}>
+                  {title}
+                </Typography>
+              )}
+            </Box>
+            {titleAdornment}
           </Box>
 
           {headerActions}
@@ -120,6 +126,8 @@ WorkspaceHeader.propTypes = {
   onTitleSave: PropTypes.func,
   /** Disable title editing (only relevant with onTitleSave). */
   titleDisabled: PropTypes.bool,
+  /** Optional node rendered on Row 1 right after the title (opaque, e.g. a status pill). */
+  titleAdornment: PropTypes.node,
   /** Actions node rendered top-right of Row 1 (opaque, e.g. a ⋮ menu). */
   headerActions: PropTypes.node,
   /** Array of chip nodes for Row 2 (opaque). */
