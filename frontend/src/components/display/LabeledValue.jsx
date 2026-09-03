@@ -12,7 +12,7 @@ import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
-export default function LabeledValue({ label, value, placeholder, dense = false, children }) {
+export default function LabeledValue({ label, value, placeholder, dense = false, strong = false, children }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
 
@@ -34,7 +34,12 @@ export default function LabeledValue({ label, value, placeholder, dense = false,
           {placeholder}
         </Typography>
       ) : typeof content === "string" ? (
-        <Typography variant="body2" color="text.primary" sx={{ whiteSpace: "pre-line" }}>
+        <Typography
+          variant="body2"
+          color="text.primary"
+          // `strong` maps to the theme's bold weight token (never a literal).
+          sx={{ whiteSpace: "pre-line", ...(strong && { fontWeight: "bold" }) }}
+        >
           {content}
         </Typography>
       ) : (
@@ -52,6 +57,8 @@ LabeledValue.propTypes = {
   placeholder: PropTypes.string,
   /** Tighten the label→value gap for compact grids. */
   dense: PropTypes.bool,
+  /** Render the value in the theme's bold weight. */
+  strong: PropTypes.bool,
   /** Non-string value node (rendered as-is), takes precedence over `value`. */
   children: PropTypes.node,
 };

@@ -1,16 +1,19 @@
 // frontend/src/sections/activities/workspace/ActivityContextSection.jsx
 //
-// UX Activity S2a — the READ-ONLY Context card, themed via aphoriQ, matched to
+// UX Activity S2a — the READ-ONLY Context card, themed via aphoriQ, copied from
 // the mockup. One compact Surface card:
-//   Details (Objective | Scheduled, then Description)
+//   header: (i) "Context" (bold)
+//   Details: Objective | Scheduled (bold values), then Description (bold)
 //   ── hairline ──
-//   People (Internal team | External contacts, stacked, no avatars)
-//   ── hairline ──  (only when there is an origin group)
-//   Origin: provenance line (where the activity was born) + the current
-//           campaign/DC rattachement line, under a branch icon.
-// Read-only: the only navigation is the accent links to live routes
-// (/campaigns/{id}, /accounts/{accountId}/dc/{cycleId}?tab=timeline,
-// /activities/{id}). No editing, no chips, no avatars, no ComingSoon/prev-next.
+//   People: Internal team | External contacts — initials avatar + bold name +
+//           inline suffix; a "+" per column header, a "›" per external contact
+//           (all inert). No email/phone on the rows.
+//   ── hairline ──  (only when there is provenance)
+//   Origin: a single provenance line (where the activity was born), with live
+//           accent links. The current campaign/DC rattachement is NOT shown here
+//           (it lives in the header).
+// Read-only: the only navigation is the accent links to live routes. No editing,
+// no ComingSoon, no Previous/Next. Weights/colours/sizes come from the theme.
 
 "use client";
 
@@ -19,13 +22,16 @@ import Link from "next/link";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
+import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
 import InfoCircleOutlined from "@ant-design/icons/InfoCircleOutlined";
-import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
+import RightOutlined from "@ant-design/icons/RightOutlined";
+import LinkOutlined from "@ant-design/icons/LinkOutlined";
 
 // Primitives
 import Surface from "components/display/Surface";
@@ -77,21 +83,24 @@ function personName(p) {
   return p.full_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.email || null;
 }
 
-function contactCoords(contact) {
-  return [contact.email, contact.phone_number].filter(Boolean).join(" · ") || null;
+// First-word + last-word initials, e.g. "Admin Tenant A" -> "AA", "Chevalier Iki" -> "CI".
+function initials(name) {
+  if (!name) return "";
+  const words = String(name).trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+  const first = words[0][0] || "";
+  const last = words[words.length - 1][0] || "";
+  return (first + last).toUpperCase();
 }
 
 // ==============================|| SHARED SMALL PIECES ||============================== //
 
-// Responsive two-column grid row (1 column on narrow, 2 columns on md+).
 function TwoColRow({ children }) {
   return (
     <Box
       data-testid="ctx-grid"
       sx={{
         display: "grid",
-        // minmax(0, 1fr) tracks: long values (emails, phones) wrap inside their
-        // cell instead of overflowing under the other column — no overlap.
         gridTemplateColumns: { xs: "minmax(0, 1fr)", md: "minmax(0, 1fr) minmax(0, 1fr)" },
         alignItems: "start",
         columnGap: 4,
@@ -105,7 +114,6 @@ function TwoColRow({ children }) {
 
 TwoColRow.propTypes = { children: PropTypes.node };
 
-// A discreet hairline rule separating the card's groups (aphoriQ border token).
 function GroupRule() {
   const theme = useTheme();
   return (
@@ -120,23 +128,24 @@ function GroupRule() {
   );
 }
 
-// Small muted sub-heading inside the single card (e.g. "Internal team").
-function SubLabel({ children }) {
+// Column header: muted label at the left, an inert "+" at the right.
+function ColumnHeader({ label }) {
   const theme = useTheme();
+  const aq = theme.aphoriQ;
   return (
-    <Typography
-      variant="caption"
-      sx={{ color: theme.aphoriQ.text.muted, display: "block", mb: 0.5 }}
-    >
-      {children}
-    </Typography>
+    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+      <Typography variant="caption" sx={{ color: aq.text.muted }}>
+        {label}
+      </Typography>
+      <PlusOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted, display: "flex" }} />
+    </Stack>
   );
 }
 
-SubLabel.propTypes = { children: PropTypes.node };
+ColumnHeader.propTypes = { label: PropTypes.string.isRequired };
 
-// An aphoriQ-accent navigation link to a live route (read-only, no drawer).
-function AccentLink({ href, children }) {
+// An aphoriQ-accent navigation link to a live route (read-only).
+function AccentLink({ href, bold = false, children }) {
   const aq = useTheme().aphoriQ;
   return (
     <Box
@@ -144,6 +153,7 @@ function AccentLink({ href, children }) {
       href={href}
       sx={{
         color: aq.accent,
+        fontWeight: bold ? "bold" : "regular",
         textDecoration: "none",
         "&:hover": { textDecoration: "underline" },
       }}
@@ -153,59 +163,43 @@ function AccentLink({ href, children }) {
   );
 }
 
-AccentLink.propTypes = { href: PropTypes.string.isRequired, children: PropTypes.node };
+AccentLink.propTypes = { href: PropTypes.string.isRequired, bold: PropTypes.bool, children: PropTypes.node };
 
-// ==============================|| ORIGIN — PROVENANCE LINE ||============================== //
+// ==============================|| ORIGIN — PROVENANCE (single line) ||============================== //
 
-// Where the activity was BORN (source_activity_detail). Caller guarantees the
-// payload is non-null. Three cases: CAMPAIGN / DECISION_CYCLE / MANUAL.
 function ProvenanceLine({ activity }) {
-  const aq = useTheme().aphoriQ;
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
   const src = activity.source_activity_detail;
   const type = src.source_context?.type;
   const ctxName = src.source_context?.name;
   const ctxId = src.source_context?.id;
-  const accountName = activity.account_detail?.company_name;
   const accountId = activity.account_detail?.id || activity.account;
 
-  // The source activity title, linked when its id is present.
   const titleNode = src.title
     ? src.id
       ? <AccentLink href={`/activities/${src.id}`}>{src.title}</AccentLink>
       : <Box component="span" sx={{ color: "text.primary" }}>{src.title}</Box>
     : null;
 
+  const sep = <Box component="span" sx={{ color: aq.text.muted }}>{" › "}</Box>;
+
   let body;
   if (type === "CAMPAIGN") {
     body = (
       <>
         {"From campaign "}
-        <AccentLink href={`/campaigns/${ctxId}`}>{ctxName}</AccentLink>
-        {accountName && (
-          <>
-            {" › "}
-            <Box component="span" sx={{ color: "text.primary" }}>{accountName}</Box>
-          </>
-        )}
-        {titleNode && (
-          <>
-            {" — "}
-            {titleNode}
-          </>
-        )}
+        <AccentLink bold href={`/campaigns/${ctxId}`}>{ctxName}</AccentLink>
+        {titleNode && <>{sep}{titleNode}</>}
       </>
     );
   } else if (type === "DECISION_CYCLE") {
+    // No origin step in the payload (source_context = {type,id,name}) — omit it.
     body = (
       <>
-        {"From "}
-        <AccentLink href={`/accounts/${accountId}/dc/${ctxId}?tab=timeline`}>{ctxName}</AccentLink>
-        {titleNode && (
-          <>
-            {" — "}
-            {titleNode}
-          </>
-        )}
+        {"From Decision Cycle "}
+        <AccentLink bold href={`/accounts/${accountId}/dc/${ctxId}?tab=timeline`}>{ctxName}</AccentLink>
+        {titleNode && <>{sep}{titleNode}</>}
       </>
     );
   } else {
@@ -213,58 +207,18 @@ function ProvenanceLine({ activity }) {
   }
 
   return (
-    <Typography variant="body2" sx={{ color: aq.text.muted }}>
-      {body}
-    </Typography>
+    <Stack direction="row" spacing={1} alignItems="flex-start">
+      <Box sx={{ mt: 0.25, flexShrink: 0 }}>
+        <LinkOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
+      </Box>
+      <Typography variant="body2" sx={{ color: aq.text.muted, minWidth: 0 }}>
+        {body}
+      </Typography>
+    </Stack>
   );
 }
 
 ProvenanceLine.propTypes = { activity: PropTypes.object };
-
-// ==============================|| ORIGIN — CURRENT RATTACHEMENT LINE ||============================== //
-
-// The current campaign / decision-cycle rattachement, inline (dot-separated).
-// Rule (a): a decision cycle takes priority and is exclusive over the campaign.
-function LinkedInline({ activity }) {
-  const aq = useTheme().aphoriQ;
-  const dc = activity.decision_cycle_detail;
-  const step = activity.decision_step_detail;
-  const campaign = activity.campaign_detail;
-  const accountId = activity.account_detail?.id || activity.account;
-  const contactName = personName(activity.contacts_detail?.[0]);
-
-  let parts;
-  if (dc) {
-    parts = [
-      <AccentLink key="dc" href={`/accounts/${accountId}/dc/${dc.id}?tab=timeline`}>{dc.name}</AccentLink>,
-      step?.name || null,
-      step?.stage_display || null,
-    ];
-  } else if (campaign) {
-    parts = [
-      <AccentLink key="cmp" href={`/campaigns/${campaign.id}`}>{campaign.name}</AccentLink>,
-      campaign.sequence_position != null ? `Step ${campaign.sequence_position}` : null,
-      campaign.campaign_status || null,
-      contactName,
-    ];
-  } else {
-    return null;
-  }
-
-  const items = parts.filter(Boolean);
-  return (
-    <Typography variant="body2" sx={{ color: aq.text.muted }}>
-      {items.map((p, i) => (
-        <Box component="span" key={i}>
-          {i > 0 && " · "}
-          {p}
-        </Box>
-      ))}
-    </Typography>
-  );
-}
-
-LinkedInline.propTypes = { activity: PropTypes.object };
 
 // ==============================|| ACTIVITY CONTEXT SECTION ||============================== //
 
@@ -278,19 +232,16 @@ export default function ActivityContextSection({ activity }) {
   const owner = activity.owner_detail;
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
-
   const hasProvenance = Boolean(activity.source_activity_detail);
-  const hasLinked = Boolean(activity.decision_cycle_detail || activity.campaign_detail);
-  const hasOrigin = hasProvenance || hasLinked;
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
 
   return (
     <Surface level="level2" radius="lg" data-testid="ctx-card" sx={{ p: 2.5 }}>
-      {/* Card title */}
+      {/* Card title (bold) */}
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <InfoCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
-        <Typography variant="subtitle2" sx={{ color: aq.text.muted }}>
+        <InfoCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.primary }} />
+        <Typography variant="subtitle2" color="text.primary" sx={{ fontWeight: "bold" }}>
           Context
         </Typography>
       </Stack>
@@ -301,28 +252,34 @@ export default function ActivityContextSection({ activity }) {
           <TwoColRow>
             <LabeledValue
               dense
+              strong
               label="Objective"
               value={activity.call_to_action}
               placeholder="Click to define an objective…"
             />
             <Box sx={{ textAlign: { md: "right" } }}>
-              <LabeledValue dense label={schedule.label} value={schedule.value} />
+              <LabeledValue dense strong label={schedule.label} value={schedule.value} />
             </Box>
           </TwoColRow>
-          <LabeledValue dense label="Description" value={activity.description} />
+          <LabeledValue dense strong label="Description" value={activity.description} />
         </Stack>
 
         <GroupRule />
 
-        {/* Group 2 — People (no avatars) */}
+        {/* Group 2 — People (avatars, no coordinates) */}
         <TwoColRow>
           <Box>
-            <SubLabel>Internal team</SubLabel>
+            <ColumnHeader label="Internal team" />
             {owner && (
-              <PersonRow name={personName(owner)} suffix="owner" secondary={owner.email} />
+              <PersonRow avatarText={initials(personName(owner))} name={personName(owner)} suffix="owner" />
             )}
             {invited.map((u) => (
-              <PersonRow key={u.id} name={personName(u)} suffix="invited" secondary={u.email} />
+              <PersonRow
+                key={u.id}
+                avatarText={initials(personName(u))}
+                name={personName(u)}
+                suffix="invited"
+              />
             ))}
             {!owner && invited.length === 0 && (
               <Typography variant="body2" sx={emptyItalic}>
@@ -332,15 +289,20 @@ export default function ActivityContextSection({ activity }) {
           </Box>
 
           <Box>
-            <SubLabel>External contacts</SubLabel>
+            <ColumnHeader label="External contacts" />
             {contacts.length > 0 ? (
               <Stack spacing={0.5}>
                 {contacts.map((c) => (
                   <PersonRow
                     key={c.id}
+                    avatarText={initials(personName(c))}
                     name={personName(c)}
                     suffix={c.department_name || undefined}
-                    tertiary={contactCoords(c)}
+                    trailing={
+                      <RightOutlined
+                        style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted, display: "flex" }}
+                      />
+                    }
                   />
                 ))}
               </Stack>
@@ -352,21 +314,11 @@ export default function ActivityContextSection({ activity }) {
           </Box>
         </TwoColRow>
 
-        {/* Group 3 — Origin: provenance + current rattachement (branch icon) */}
-        {hasOrigin && (
+        {/* Group 3 — Origin (provenance only, conditional) */}
+        {hasProvenance && (
           <>
             <GroupRule />
-            <Stack direction="row" spacing={1} alignItems="flex-start">
-              <Box sx={{ mt: 0.25, flexShrink: 0 }}>
-                <BranchesOutlined
-                  style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted, display: "flex" }}
-                />
-              </Box>
-              <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-                {hasProvenance && <ProvenanceLine activity={activity} />}
-                {hasLinked && <LinkedInline activity={activity} />}
-              </Stack>
-            </Stack>
+            <ProvenanceLine activity={activity} />
           </>
         )}
       </Stack>
