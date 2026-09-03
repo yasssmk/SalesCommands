@@ -13,6 +13,7 @@ import Palette from "themes/palette";
 import Typography from "themes/typography";
 import CustomShadows from "themes/shadows";
 import IconSizes from "themes/iconSizes";
+import AphoriQ from "themes/aphoriq";
 
 // next/font is not available in the test env — stub it like the other
 // theme-consuming tests do.
@@ -40,6 +41,7 @@ const theme = createTheme({
   customShadows: CustomShadows(paletteTheme),
   typography: Typography(`'Public Sans', sans-serif`),
   iconSizes: IconSizes(),
+  aphoriQ: AphoriQ({ palette: paletteTheme.palette }),
 });
 
 const activity = {

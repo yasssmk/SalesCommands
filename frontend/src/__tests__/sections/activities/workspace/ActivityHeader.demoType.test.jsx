@@ -16,6 +16,7 @@ import Palette from "themes/palette";
 import Typography from "themes/typography";
 import CustomShadows from "themes/shadows";
 import IconSizes from "themes/iconSizes";
+import AphoriQ from "themes/aphoriq";
 
 import {
   ACTIVITY_TYPES,
@@ -46,6 +47,7 @@ const theme = createTheme({
   customShadows: CustomShadows(paletteTheme),
   typography: Typography(`'Public Sans', sans-serif`),
   iconSizes: IconSizes(),
+  aphoriQ: AphoriQ({ palette: paletteTheme.palette }),
 });
 
 const wrapper = ({ children }) => (
@@ -73,30 +75,21 @@ describe("Activity type maps — DEMO (api/accounts/activities.js)", () => {
 });
 
 describe("ActivityHeader — DEMO activity type", () => {
-  it("renders the DEMO label, icon and chip colour (not the OTHER fallback)", () => {
+  it("renders the DEMO icon in the avatar tile, not the OTHER fallback", () => {
+    // HEADER-1: the activity type is shown by the avatar TILE (icon), not a
+    // type chip — so a DEMO activity carries the desktop icon in a rounded tile.
     const { result } = renderHook(
       () => useActivityHeaderProps({ activity: demoActivity }),
       { wrapper },
     );
 
-    const { container } = render(
-      <div>
-        {result.current.avatar}
-        {result.current.chips}
-      </div>,
-      { wrapper },
-    );
+    const { container } = render(<div>{result.current.avatar}</div>, { wrapper });
 
     // Avatar carries the dedicated DEMO icon, not the question-circle fallback.
     expect(container.querySelector(".anticon-desktop")).toBeTruthy();
     expect(container.querySelector(".anticon-question-circle")).toBeFalsy();
-
-    // Type chip shows the human label "Demo" (not the raw enum value "DEMO")…
-    const label = screen.getByText("Demo");
-    // …and carries a dedicated colour, not the default fallback.
-    const chipRoot = label.closest(".MuiChip-root");
-    expect(chipRoot).toBeTruthy();
-    expect(chipRoot.className).toContain("MuiChip-colorError");
-    expect(chipRoot.className).not.toContain("MuiChip-colorDefault");
+    // …in a rounded tile (not a circular avatar).
+    expect(container.querySelector(".MuiAvatar-rounded")).toBeTruthy();
+    expect(container.querySelector(".MuiAvatar-circular")).toBeFalsy();
   });
 });

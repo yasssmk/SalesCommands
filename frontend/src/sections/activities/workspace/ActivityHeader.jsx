@@ -30,21 +30,10 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Date formatting
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, parseISO } from "date-fns";
 
 // API
-import {
-  updateActivity,
-  ACTIVITY_TYPE_LABELS,
-  ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_COLORS,
-  ACTIVITY_OUTCOME_LABELS,
-  ACTIVITY_OUTCOME_COLORS,
-} from "api/accounts/activities";
-import {
-  displaySuccessSnackbar,
-  displayErrorSnackbar,
-} from "utils/displayError";
+import { ACTIVITY_STATUS_LABELS } from "api/accounts/activities";
 
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
@@ -59,6 +48,7 @@ import CampaignOutcomeModal from "sections/campaigns/CampaignOutcomeModal";
 // Icons
 import {
   MoreOutlined,
+  EditOutlined,
   CheckCircleOutlined,
   StopOutlined,
   DeleteOutlined,
@@ -103,15 +93,27 @@ const TYPE_AVATAR_COLORS = {
   OTHER: "grey.500",
 };
 
-const TYPE_CHIP_COLORS = {
-  CALL: "info",
-  EMAIL: "warning",
-  MEETING: "success",
-  DEMO: "error",
-  TASK: "secondary",
-  LINKEDIN: "primary",
-  OTHER: "default",
+// Status → MUI colour role for the single discreet status chip. Planned reads
+// neutral, Completed success, Cancelled error, On hold warning. The chip is
+// tinted (light background + full-colour text/border) via theme tokens below —
+// the role also drives the `.MuiChip-color*` class.
+const STATUS_CHIP_COLOR = {
+  PLANNED: "default",
+  ON_HOLD: "warning",
+  COMPLETED: "success",
+  CANCELLED: "error",
 };
+
+// Per-role tint: light background + full-colour text/border, all theme tokens
+// (no hardcoded hex). "default" is the neutral/muted Planned look.
+const STATUS_CHIP_TINT = {
+  default: { bgcolor: "action.hover", color: "text.secondary", borderColor: "divider" },
+  success: { bgcolor: "success.lighter", color: "success.dark", borderColor: "success.light" },
+  error: { bgcolor: "error.lighter", color: "error.dark", borderColor: "error.light" },
+  warning: { bgcolor: "warning.lighter", color: "warning.dark", borderColor: "warning.light" },
+};
+
+const STATUS_LABEL_FALLBACK = { ON_HOLD: "On hold" };
 
 // ==============================|| ACTIVITY HEADER PROPS HOOK ||============================== //
 
@@ -134,11 +136,6 @@ export default function useActivityHeaderProps({
   const [anchorEl, setAnchorEl] = useState(null);
   const menuOpen = Boolean(anchorEl);
 
-  // Type change menu
-  const [typeAnchorEl, setTypeAnchorEl] = useState(null);
-  const typeMenuOpen = Boolean(typeAnchorEl);
-  const [savingType, setSavingType] = useState(false);
-
   // Modal states
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -157,7 +154,12 @@ export default function useActivityHeaderProps({
 
   const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
   const avatarColor = TYPE_AVATAR_COLORS[activity.activity_type] || "grey.500";
-  const typeChipColor = TYPE_CHIP_COLORS[activity.activity_type] || "default";
+
+  const statusChipColor = STATUS_CHIP_COLOR[activity.status] || "default";
+  const statusChipLabel =
+    ACTIVITY_STATUS_LABELS[activity.status] ||
+    STATUS_LABEL_FALLBACK[activity.status] ||
+    activity.status;
 
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
@@ -216,35 +218,6 @@ export default function useActivityHeaderProps({
   const handleDeleteClick = () => {
     handleMenuClose();
     setDeleteDialogOpen(true);
-  };
-
-  // ==============================|| HANDLERS — Type change ||============================== //
-
-  const handleTypeMenuOpen = (event) => setTypeAnchorEl(event.currentTarget);
-  const handleTypeMenuClose = () => setTypeAnchorEl(null);
-
-  const handleTypeChange = async (newType) => {
-    if (newType === activity.activity_type) {
-      handleTypeMenuClose();
-      return;
-    }
-    setSavingType(true);
-    try {
-      const result = await updateActivity(activity.id, {
-        activity_type: newType,
-      });
-      if (result.success) {
-        displaySuccessSnackbar("Activity type updated");
-        onUpdate?.();
-      } else {
-        displayErrorSnackbar(result);
-      }
-    } catch (err) {
-      displayErrorSnackbar(err);
-    } finally {
-      setSavingType(false);
-      handleTypeMenuClose();
-    }
   };
 
   // ==============================|| HANDLERS — Navigation ||============================== //
@@ -338,18 +311,14 @@ export default function useActivityHeaderProps({
           '&:hover .pending-label': onPendingClick ? { textDecoration: 'underline' } : {},
         }}
       >
+        <ExclamationCircleOutlined
+          style={{ fontSize: theme.iconSizes.sm, color: theme.palette.warning.main, display: 'flex' }}
+        />
         <Typography
-          variant="caption"
+          variant="body2"
           className="pending-label"
-          sx={{
-            bgcolor: 'warning.main',
-            color: 'warning.contrastText',
-            px: 1,
-            py: 0.25,
-            borderRadius: 4,
-            fontWeight: 600,
-            lineHeight: 1.5,
-          }}
+          color="warning.main"
+          sx={{ fontWeight: 'medium' }}
         >
           {pending} to validate
         </Typography>
@@ -407,11 +376,14 @@ export default function useActivityHeaderProps({
     if (!dateField) return null;
 
     const label = activity.due_date ? "Due" : "Scheduled";
-    const dateText = format(new Date(dateField), "MMM d, yyyy");
-    const isOverdue =
-      activity.due_date &&
-      new Date(activity.due_date) < new Date() &&
-      isPlanned;
+    // parseISO reads a date-only string as LOCAL midnight — `new Date("YYYY-MM-DD")`
+    // parses it as UTC midnight, shifting the shown day back by one in any
+    // negative-UTC timezone. R2 fix.
+    const dateText = format(parseISO(dateField), "MMM d, yyyy");
+    // Overdue is the backend's decision (date-vs-date, status-aware), never a
+    // client recompute — `new Date("YYYY-MM-DD") < new Date()` marked today's
+    // activities overdue. R2 fix.
+    const isOverdue = Boolean(activity.is_overdue);
 
     return (
       <Stack key="date" direction="row" spacing={0.75} alignItems="center">
@@ -437,9 +409,17 @@ export default function useActivityHeaderProps({
 
   // ==============================|| ROW 1: Avatar ||============================== //
 
+  // Square rounded TILE carrying the activity-type icon (radius from the theme).
   const avatar = (
     <Avatar
-      sx={{ width: 56, height: 56, bgcolor: avatarColor, fontSize: "1.5rem" }}
+      variant="rounded"
+      sx={{
+        width: 56,
+        height: 56,
+        bgcolor: avatarColor,
+        fontSize: "1.5rem",
+        borderRadius: `${theme.aphoriQ.radius.md}px`,
+      }}
     >
       <TypeIcon />
     </Avatar>
@@ -459,6 +439,14 @@ export default function useActivityHeaderProps({
         <MoreOutlined />
       </IconButton>
       <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
+        {/* Edit — opens the activity edit drawer. Inert for now; wired in S2c. */}
+        <MenuItem>
+          <ListItemIcon>
+            <EditOutlined style={{ color: theme.palette.text.secondary }} />
+          </ListItemIcon>
+          <Typography>Edit</Typography>
+        </MenuItem>
+        <Divider />
         {canComplete && !isLocked && (
           <Tooltip
             title={
@@ -517,92 +505,22 @@ export default function useActivityHeaderProps({
 
   // ==============================|| ROW 2: Chips ||============================== //
 
+  // The type now lives in the avatar tile, so the single chip is the STATUS —
+  // discreet (light tint + full-colour text/border), the only filled-tone chip.
   const chips = [
-    // Type chip (clickable → type change menu)
-    <Tooltip key="type" title={isLocked ? "" : "Click to change type"} arrow>
-      <Chip
-        label={
-          ACTIVITY_TYPE_LABELS[activity.activity_type] || activity.activity_type
-        }
-        color={typeChipColor}
-        size="small"
-        variant="filled"
-        onClick={isLocked ? undefined : handleTypeMenuOpen}
-        sx={isLocked ? {} : { cursor: "pointer" }}
-      />
-    </Tooltip>,
-
-    // Type change menu (anchored to chip)
-    <Menu
-      key="type-menu"
-      anchorEl={typeAnchorEl}
-      open={typeMenuOpen}
-      onClose={handleTypeMenuClose}
-    >
-      {Object.entries(ACTIVITY_TYPE_LABELS).map(([typeValue, typeLabel]) => {
-        const isSelected = activity.activity_type === typeValue;
-        const TypeOptionIcon = TYPE_ICONS[typeValue] || QuestionCircleOutlined;
-        return (
-          <MenuItem
-            key={typeValue}
-            selected={isSelected}
-            onClick={() => handleTypeChange(typeValue)}
-            disabled={savingType}
-          >
-            <ListItemIcon>
-              <TypeOptionIcon
-                style={{
-                  color: isSelected
-                    ? theme.palette.primary.main
-                    : theme.palette.text.secondary,
-                }}
-              />
-            </ListItemIcon>
-            <Typography
-              variant="body2"
-              fontWeight={isSelected ? 600 : 400}
-              color={isSelected ? "primary.main" : "text.primary"}
-            >
-              {typeLabel}
-            </Typography>
-          </MenuItem>
-        );
-      })}
-    </Menu>,
-
-    // Status chip
     <Chip
       key="status"
-      label={ACTIVITY_STATUS_LABELS[activity.status] || activity.status}
-      color={ACTIVITY_STATUS_COLORS[activity.status] || "default"}
+      label={statusChipLabel}
+      color={statusChipColor}
       size="small"
-      variant="filled"
+      variant="outlined"
+      sx={{
+        borderStyle: "solid",
+        borderWidth: theme.aphoriQ.border.width.thin,
+        fontWeight: "medium",
+        ...STATUS_CHIP_TINT[statusChipColor],
+      }}
     />,
-
-    // Campaign context chip (when activity belongs to a campaign)
-    activity.campaign_detail && !activity.decision_cycle && (
-      <Chip
-        key="campaign"
-        label={`Campaign: ${activity.campaign_detail.name}`}
-        size="small"
-        variant="outlined"
-        color="secondary"
-        icon={<AimOutlined />}
-        onClick={() => router.push(`/campaigns/${activity.campaign_detail.id}`)}
-        sx={{ cursor: "pointer" }}
-      />
-    ),
-
-    // Outcome chip (only when completed)
-    activity.outcome && (
-      <Chip
-        key="outcome"
-        label={ACTIVITY_OUTCOME_LABELS[activity.outcome] || activity.outcome}
-        color={ACTIVITY_OUTCOME_COLORS[activity.outcome] || "default"}
-        size="small"
-        variant="outlined"
-      />
-    ),
   ];
 
   // ==============================|| INFO ITEMS (after divider) ||============================== //
