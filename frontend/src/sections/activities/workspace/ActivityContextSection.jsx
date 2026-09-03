@@ -1,16 +1,16 @@
 // frontend/src/sections/activities/workspace/ActivityContextSection.jsx
 //
-// UX Activity S2a — the READ-ONLY Context display, themed via aphoriQ. Replaces
-// the legacy ActivityOverviewTab in the Context block. Order: Objective ·
-// Scheduled · Description · Internal team (owner + invited) · External contacts
-// (stacked) · Linked context (DC-priority-exclusive, rule a) · Provenance (an
-// integrated info line, not an Alert). No editing, no chips, no navigation
-// (except the provenance link to the live /activities/{id} route). ComingSoon
-// and Previous/Next activity are intentionally absent.
-//
-// Presentation-only bricks (Surface, LabeledValue, PersonRow) are shared in
-// components/display so the upcoming edit / contact drawers reuse them; this
-// section only orchestrates them for the activity Context.
+// UX Activity S2a — the READ-ONLY Context card, themed via aphoriQ, matched to
+// the mockup. One compact Surface card:
+//   Details (Objective | Scheduled, then Description)
+//   ── hairline ──
+//   People (Internal team | External contacts, stacked, no avatars)
+//   ── hairline ──  (only when there is an origin group)
+//   Origin: provenance line (where the activity was born) + the current
+//           campaign/DC rattachement line, under a branch icon.
+// Read-only: the only navigation is the accent links to live routes
+// (/campaigns/{id}, /accounts/{accountId}/dc/{cycleId}?tab=timeline,
+// /activities/{id}). No editing, no chips, no avatars, no ComingSoon/prev-next.
 
 "use client";
 
@@ -25,6 +25,7 @@ import Typography from "@mui/material/Typography";
 
 // Icons
 import InfoCircleOutlined from "@ant-design/icons/InfoCircleOutlined";
+import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 
 // Primitives
 import Surface from "components/display/Surface";
@@ -71,18 +72,16 @@ function getSchedule(activity) {
   return { label: "Scheduled", value: null };
 }
 
-function ownerLine(user) {
-  if (!user) return null;
-  return { name: user.full_name || user.email, secondary: user.email };
+function personName(p) {
+  if (!p) return null;
+  return p.full_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.email || null;
 }
 
-function contactSecondary(contact) {
-  return [contact.job_title, contact.department_name].filter(Boolean).join(" · ") || null;
-}
-
-function contactTertiary(contact) {
+function contactCoords(contact) {
   return [contact.email, contact.phone_number].filter(Boolean).join(" · ") || null;
 }
+
+// ==============================|| SHARED SMALL PIECES ||============================== //
 
 // Responsive two-column grid row (1 column on narrow, 2 columns on md+).
 function TwoColRow({ children }) {
@@ -136,98 +135,136 @@ function SubLabel({ children }) {
 
 SubLabel.propTypes = { children: PropTypes.node };
 
-// ==============================|| LINKED CONTEXT (rule a) ||============================== //
-
-function LinkedContext({ activity }) {
-  const dc = activity?.decision_cycle_detail;
-  const step = activity?.decision_step_detail;
-  const campaign = activity?.campaign_detail;
-
-  // Rule (a): a decision cycle takes priority and is exclusive — the campaign is
-  // never shown alongside it.
-  if (dc) {
-    const stepValue = step
-      ? step.stage_display
-        ? `${step.name} · ${step.stage_display}`
-        : step.name
-      : null;
-    return (
-      <TwoColRow>
-        <LabeledValue dense label="Decision cycle" value={dc.name} />
-        <LabeledValue dense label="Step" value={stepValue} />
-      </TwoColRow>
-    );
-  }
-
-  if (campaign) {
-    return (
-      <TwoColRow>
-        <LabeledValue dense label="Campaign" value={campaign.name} />
-        <LabeledValue
-          dense
-          label="Sequence"
-          value={
-            campaign.sequence_position != null
-              ? `Step ${campaign.sequence_position} · ${campaign.campaign_status}`
-              : campaign.campaign_status
-          }
-        />
-      </TwoColRow>
-    );
-  }
-
+// An aphoriQ-accent navigation link to a live route (read-only, no drawer).
+function AccentLink({ href, children }) {
+  const aq = useTheme().aphoriQ;
   return (
-    <Typography variant="body2" sx={{ color: (t) => t.aphoriQ.text.subtle, fontStyle: "italic" }}>
-      Not linked to a campaign or decision cycle.
-    </Typography>
+    <Box
+      component={Link}
+      href={href}
+      sx={{
+        color: aq.accent,
+        textDecoration: "none",
+        "&:hover": { textDecoration: "underline" },
+      }}
+    >
+      {children}
+    </Box>
   );
 }
 
-LinkedContext.propTypes = { activity: PropTypes.object };
+AccentLink.propTypes = { href: PropTypes.string.isRequired, children: PropTypes.node };
 
-// ==============================|| PROVENANCE (integrated line) ||============================== //
+// ==============================|| ORIGIN — PROVENANCE LINE ||============================== //
 
-function Provenance({ activity }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
-  const src = activity?.source_activity_detail;
-  if (!src) return null;
-
+// Where the activity was BORN (source_activity_detail). Caller guarantees the
+// payload is non-null. Three cases: CAMPAIGN / DECISION_CYCLE / MANUAL.
+function ProvenanceLine({ activity }) {
+  const aq = useTheme().aphoriQ;
+  const src = activity.source_activity_detail;
   const type = src.source_context?.type;
-  const prefix =
-    type === "CAMPAIGN"
-      ? "From campaign"
-      : type === "DECISION_CYCLE"
-        ? "From decision cycle"
-        : "Created manually";
+  const ctxName = src.source_context?.name;
+  const ctxId = src.source_context?.id;
+  const accountName = activity.account_detail?.company_name;
+  const accountId = activity.account_detail?.id || activity.account;
 
-  // The label to display: the source activity title when there is one, else the
-  // context name (campaign / cycle name).
-  const label = src.title || src.source_context?.name || null;
+  // The source activity title, linked when its id is present.
+  const titleNode = src.title
+    ? src.id
+      ? <AccentLink href={`/activities/${src.id}`}>{src.title}</AccentLink>
+      : <Box component="span" sx={{ color: "text.primary" }}>{src.title}</Box>
+    : null;
+
+  let body;
+  if (type === "CAMPAIGN") {
+    body = (
+      <>
+        {"From campaign "}
+        <AccentLink href={`/campaigns/${ctxId}`}>{ctxName}</AccentLink>
+        {accountName && (
+          <>
+            {" › "}
+            <Box component="span" sx={{ color: "text.primary" }}>{accountName}</Box>
+          </>
+        )}
+        {titleNode && (
+          <>
+            {" — "}
+            {titleNode}
+          </>
+        )}
+      </>
+    );
+  } else if (type === "DECISION_CYCLE") {
+    body = (
+      <>
+        {"From "}
+        <AccentLink href={`/accounts/${accountId}/dc/${ctxId}?tab=timeline`}>{ctxName}</AccentLink>
+        {titleNode && (
+          <>
+            {" — "}
+            {titleNode}
+          </>
+        )}
+      </>
+    );
+  } else {
+    body = <>{"From "}{titleNode || ctxName}</>;
+  }
 
   return (
     <Typography variant="body2" sx={{ color: aq.text.muted }}>
-      {prefix}
-      {label ? ": " : ""}
-      {label &&
-        (src.id ? (
-          <Box
-            component={Link}
-            href={`/activities/${src.id}`}
-            sx={{ color: aq.accent, textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
-          >
-            {label}
-          </Box>
-        ) : (
-          <Box component="span" sx={{ color: "text.primary" }}>
-            {label}
-          </Box>
-        ))}
+      {body}
     </Typography>
   );
 }
 
-Provenance.propTypes = { activity: PropTypes.object };
+ProvenanceLine.propTypes = { activity: PropTypes.object };
+
+// ==============================|| ORIGIN — CURRENT RATTACHEMENT LINE ||============================== //
+
+// The current campaign / decision-cycle rattachement, inline (dot-separated).
+// Rule (a): a decision cycle takes priority and is exclusive over the campaign.
+function LinkedInline({ activity }) {
+  const aq = useTheme().aphoriQ;
+  const dc = activity.decision_cycle_detail;
+  const step = activity.decision_step_detail;
+  const campaign = activity.campaign_detail;
+  const accountId = activity.account_detail?.id || activity.account;
+  const contactName = personName(activity.contacts_detail?.[0]);
+
+  let parts;
+  if (dc) {
+    parts = [
+      <AccentLink key="dc" href={`/accounts/${accountId}/dc/${dc.id}?tab=timeline`}>{dc.name}</AccentLink>,
+      step?.name || null,
+      step?.stage_display || null,
+    ];
+  } else if (campaign) {
+    parts = [
+      <AccentLink key="cmp" href={`/campaigns/${campaign.id}`}>{campaign.name}</AccentLink>,
+      campaign.sequence_position != null ? `Step ${campaign.sequence_position}` : null,
+      campaign.campaign_status || null,
+      contactName,
+    ];
+  } else {
+    return null;
+  }
+
+  const items = parts.filter(Boolean);
+  return (
+    <Typography variant="body2" sx={{ color: aq.text.muted }}>
+      {items.map((p, i) => (
+        <Box component="span" key={i}>
+          {i > 0 && " · "}
+          {p}
+        </Box>
+      ))}
+    </Typography>
+  );
+}
+
+LinkedInline.propTypes = { activity: PropTypes.object };
 
 // ==============================|| ACTIVITY CONTEXT SECTION ||============================== //
 
@@ -238,10 +275,13 @@ export default function ActivityContextSection({ activity }) {
   if (!activity) return null;
 
   const schedule = getSchedule(activity);
-  const owner = ownerLine(activity.owner_detail);
+  const owner = activity.owner_detail;
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
+
   const hasProvenance = Boolean(activity.source_activity_detail);
+  const hasLinked = Boolean(activity.decision_cycle_detail || activity.campaign_detail);
+  const hasOrigin = hasProvenance || hasLinked;
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
 
@@ -256,14 +296,14 @@ export default function ActivityContextSection({ activity }) {
       </Stack>
 
       <Stack spacing={2}>
-        {/* Group 1 — Details: Objective | Scheduled, then Description */}
+        {/* Group 1 — Details */}
         <Stack spacing={1.5}>
           <TwoColRow>
             <LabeledValue
               dense
               label="Objective"
               value={activity.call_to_action}
-              placeholder="No objective defined"
+              placeholder="Click to define an objective…"
             />
             <Box sx={{ textAlign: { md: "right" } }}>
               <LabeledValue dense label={schedule.label} value={schedule.value} />
@@ -274,15 +314,16 @@ export default function ActivityContextSection({ activity }) {
 
         <GroupRule />
 
-        {/* Group 2 — People: Internal team | External contacts */}
+        {/* Group 2 — People (no avatars) */}
         <TwoColRow>
           <Box>
             <SubLabel>Internal team</SubLabel>
-            {owner && <PersonRow name={owner.name} secondary={owner.secondary} />}
-            {invited.map((u) => {
-              const line = ownerLine(u);
-              return <PersonRow key={u.id} name={line?.name} secondary={line?.secondary} />;
-            })}
+            {owner && (
+              <PersonRow name={personName(owner)} suffix="owner" secondary={owner.email} />
+            )}
+            {invited.map((u) => (
+              <PersonRow key={u.id} name={personName(u)} suffix="invited" secondary={u.email} />
+            ))}
             {!owner && invited.length === 0 && (
               <Typography variant="body2" sx={emptyItalic}>
                 No internal team
@@ -297,9 +338,9 @@ export default function ActivityContextSection({ activity }) {
                 {contacts.map((c) => (
                   <PersonRow
                     key={c.id}
-                    name={c.full_name || `${c.first_name || ""} ${c.last_name || ""}`.trim()}
-                    secondary={contactSecondary(c)}
-                    tertiary={contactTertiary(c)}
+                    name={personName(c)}
+                    suffix={c.department_name || undefined}
+                    tertiary={contactCoords(c)}
                   />
                 ))}
               </Stack>
@@ -311,13 +352,23 @@ export default function ActivityContextSection({ activity }) {
           </Box>
         </TwoColRow>
 
-        <GroupRule />
-
-        {/* Group 3 — Linked context (rule a, compact) + provenance */}
-        <Stack spacing={1.5}>
-          <LinkedContext activity={activity} />
-          {hasProvenance && <Provenance activity={activity} />}
-        </Stack>
+        {/* Group 3 — Origin: provenance + current rattachement (branch icon) */}
+        {hasOrigin && (
+          <>
+            <GroupRule />
+            <Stack direction="row" spacing={1} alignItems="flex-start">
+              <Box sx={{ mt: 0.25, flexShrink: 0 }}>
+                <BranchesOutlined
+                  style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted, display: "flex" }}
+                />
+              </Box>
+              <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                {hasProvenance && <ProvenanceLine activity={activity} />}
+                {hasLinked && <LinkedInline activity={activity} />}
+              </Stack>
+            </Stack>
+          </>
+        )}
       </Stack>
     </Surface>
   );
