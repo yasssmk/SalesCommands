@@ -61,31 +61,47 @@ vi.mock("utils/displayError", () => ({ displaySuccessSnackbar, displayErrorSnack
 // handler reads the 2nd argument. The returned id is keyed off the passed
 // data-testid so owner vs invited vs contact payloads stay distinct.
 vi.mock("components/AsyncSelection/AsyncUserSelect", () => ({
-  default: (props) => (
-    <button
-      type="button"
-      data-testid={props["data-testid"]}
-      onClick={() =>
-        props.onChange(
-          {},
-          { id: props["data-testid"] === "owner-select" ? "owner9" : "inv9", full_name: "Picked User" },
-        )
-      }
-    >
-      pick
-    </button>
-  ),
+  default: (props) => {
+    const tid = props["data-testid"];
+    const newId = tid === "owner-select" ? "owner9" : "inv9";
+    return (
+      <div>
+        <button
+          type="button"
+          data-testid={tid}
+          data-exclude={JSON.stringify(props.excludeIds || [])}
+          onClick={() => props.onChange({}, { id: newId, full_name: "Picked User" })}
+        >
+          pick
+        </button>
+        {/* returns an ALREADY-present user (u2) to exercise the dedup guard */}
+        <button type="button" data-testid={`${tid}-dup`} onClick={() => props.onChange({}, { id: "u2", full_name: "Ivan Invit" })}>
+          pick-dup
+        </button>
+      </div>
+    );
+  },
 }));
 vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
-  default: (props) => (
-    <button
-      type="button"
-      data-testid={props["data-testid"]}
-      onClick={() => props.onChange({}, { id: "c9", full_name: "Picked Contact" })}
-    >
-      pick
-    </button>
-  ),
+  default: (props) => {
+    const tid = props["data-testid"];
+    return (
+      <div>
+        <button
+          type="button"
+          data-testid={tid}
+          data-exclude={JSON.stringify(props.excludeIds || [])}
+          onClick={() => props.onChange({}, { id: "c9", full_name: "Picked Contact" })}
+        >
+          pick
+        </button>
+        {/* returns an ALREADY-present contact (c1) to exercise the dedup guard */}
+        <button type="button" data-testid={`${tid}-dup`} onClick={() => props.onChange({}, { id: "c1", full_name: "Cara Contact" })}>
+          pick-dup
+        </button>
+      </div>
+    );
+  },
 }));
 
 import ThemeCustomization from "themes/index";
@@ -323,5 +339,46 @@ describe("EditActivityContent — People (draft + global save, no per-row PATCH)
     expect(payload.owner_id).toBe("u1");
     expect(payload.invited_user_ids).toEqual(["u2", "inv9"]);
     expect(payload.contact_ids).toEqual(["c1"]);
+  });
+});
+
+describe("EditActivityContent — no duplicate user/contact (exclusion + dedup)", () => {
+  it("adding an already-present invited does NOT create a duplicate row", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("add-invited"));
+    fireEvent.click(screen.getByTestId("invited-select-dup")); // picks u2 (already invited)
+    expect(screen.getAllByText("Ivan Invit")).toHaveLength(1);
+    expect(screen.getByTestId("remove-invited-u2")).toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  it("adding an already-present contact does NOT create a duplicate row", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("add-contact"));
+    fireEvent.click(screen.getByTestId("contact-select-dup")); // picks c1 (already a contact)
+    expect(screen.getAllByText("Cara Contact")).toHaveLength(1);
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  it("the contact selector excludes the already-selected contact ids", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("add-contact"));
+    const excl = JSON.parse(screen.getByTestId("contact-select").getAttribute("data-exclude"));
+    expect(excl).toContain("c1");
+  });
+
+  it("the invited selector excludes the current invited AND the owner", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("add-invited"));
+    const excl = JSON.parse(screen.getByTestId("invited-select").getAttribute("data-exclude"));
+    expect(excl).toContain("u2"); // already invited
+    expect(excl).toContain("u1"); // the owner
+  });
+
+  it("the owner selector excludes the current invited users", () => {
+    renderEdit({ ...ACTIVITY, owner_detail: null });
+    fireEvent.click(screen.getByTestId("add-owner"));
+    const excl = JSON.parse(screen.getByTestId("owner-select").getAttribute("data-exclude"));
+    expect(excl).toContain("u2");
   });
 });

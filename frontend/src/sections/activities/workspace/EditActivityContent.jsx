@@ -340,6 +340,7 @@ function PeopleSection({ values, setFieldValue, errors, accountId }) {
           <AsyncUserSelect
             data-testid="owner-select"
             value={null}
+            excludeIds={invited.map((u) => u.id)}
             onChange={(_event, user) => {
               setFieldValue("owner", user || null);
               setAddOwner(false);
@@ -368,8 +369,12 @@ function PeopleSection({ values, setFieldValue, errors, accountId }) {
           <AsyncUserSelect
             data-testid="invited-select"
             value={null}
+            excludeIds={[...invited.map((u) => u.id), values.owner?.id].filter(Boolean)}
             onChange={(_event, user) => {
-              if (user) setFieldValue("invited", [...invited, user]);
+              // dedup guard — never push a user already invited (belt + braces)
+              if (user && !invited.some((x) => x.id === user.id)) {
+                setFieldValue("invited", [...invited, user]);
+              }
               setAddInvited(false);
             }}
             label=""
@@ -396,8 +401,12 @@ function PeopleSection({ values, setFieldValue, errors, accountId }) {
           <AsyncContactSelect
             data-testid="contact-select"
             value={null}
+            excludeIds={contacts.map((c) => c.id)}
             onChange={(_event, contact) => {
-              if (contact) setFieldValue("contacts", [...contacts, contact]);
+              // dedup guard — never push a contact already selected (belt + braces)
+              if (contact && !contacts.some((x) => x.id === contact.id)) {
+                setFieldValue("contacts", [...contacts, contact]);
+              }
               setAddContact(false);
             }}
             filters={{ account_id: accountId }}

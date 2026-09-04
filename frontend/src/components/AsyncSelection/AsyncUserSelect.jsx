@@ -44,9 +44,10 @@ function AsyncUserSelect({
   helperText,
   filters = {},
   pageSize = 20,
+  excludeIds = [],
   ...props
 }) {
-  
+
   /**
    * Formatte le label d'un user pour l'Autocomplete
    * Format: "FirstName LastName (email, role)"
@@ -68,13 +69,22 @@ function AsyncUserSelect({
     
     return name || 'Unknown User';
   };
-  
+
+  /**
+   * Filter out excluded IDs (e.g., already selected users / the owner).
+   */
+  const filterOptions = (options) => {
+    if (!excludeIds || excludeIds.length === 0) return options;
+    return options.filter((opt) => !excludeIds.includes(opt.id));
+  };
+
   return (
     <AsyncSelect
       useDataHook={useGetUsers}
       dataKey="users"
       loadingKey="usersLoading"
       getOptionLabel={getUserLabel}
+      filterOptions={filterOptions}
       value={value}
       onChange={onChange}
       label={label}
@@ -99,7 +109,8 @@ AsyncUserSelect.propTypes = {
   error: PropTypes.bool,
   helperText: PropTypes.string,
   filters: PropTypes.object,
-  pageSize: PropTypes.number
+  pageSize: PropTypes.number,
+  excludeIds: PropTypes.array
 };
 
 export default AsyncUserSelect;

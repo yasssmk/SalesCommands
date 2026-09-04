@@ -1239,6 +1239,11 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             if 'contact_ids' in attrs:
                 contact_ids = attrs.pop('contact_ids')
                 if contact_ids is not None:
+                    # Dedup (order-preserving) so a repeated-but-valid id is
+                    # collapsed instead of failing the count-check below with a
+                    # misleading "not found"; the check still catches ids that
+                    # truly don't exist.
+                    contact_ids = list(dict.fromkeys(contact_ids))
                     if len(contact_ids) == 0:
                         raise StandardizedValidationError(
                             CoreErrorMessages.REQUIRED_FIELD.format(field='At least one contact')
@@ -1282,6 +1287,8 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             if 'invited_user_ids' in attrs:
                 invited_user_ids = attrs.pop('invited_user_ids')
                 if invited_user_ids is not None:
+                    # Dedup (order-preserving) — same rationale as contacts above.
+                    invited_user_ids = list(dict.fromkeys(invited_user_ids))
                     if invited_user_ids:
                         invited_users = User.objects.filter(
                             id__in=invited_user_ids,
