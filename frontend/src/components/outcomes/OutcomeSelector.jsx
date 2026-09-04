@@ -17,8 +17,8 @@ import Box from "@mui/material/Box";
 import StatusPill from "components/chips/StatusPill";
 import { OUTCOME_META, getOutcomesForType } from "utils/outcomes";
 
-export default function OutcomeSelector({ activityType, value, onChange, sx }) {
-  const outcomes = getOutcomesForType(activityType);
+export default function OutcomeSelector({ activityType, value, onChange, exclude = [], sx }) {
+  const outcomes = getOutcomesForType(activityType).filter((o) => !exclude.includes(o));
 
   return (
     <Box
@@ -60,5 +60,7 @@ OutcomeSelector.propTypes = {
   value: PropTypes.string,
   /** Raised with the clicked outcome value. */
   onChange: PropTypes.func.isRequired,
+  /** Outcome values to hide on top of the type filter (e.g. CALLBACK on a deal). */
+  exclude: PropTypes.arrayOf(PropTypes.string),
   sx: PropTypes.object,
 };
