@@ -26,7 +26,7 @@ vi.mock("themes/emotionCache", () => ({
   NextAppDirEmotionCacheProvider: ({ children }) => children,
 }));
 vi.mock("contexts/WorkspaceDrawerContext", () => ({
-  useWorkspaceDrawer: () => ({ closeDrawer: vi.fn() }),
+  useWorkspaceDrawer: () => ({ closeDrawer: vi.fn(), openDrawer: vi.fn() }),
 }));
 
 const useGetContact = vi.fn();
@@ -174,8 +174,8 @@ describe("ContactDrawerContent — identity + coordinates (always shown, 2 colum
   });
 });
 
-describe("ContactDrawerContent — Edit pencil pushed to the right (inert)", () => {
-  it("shows an Edit pencil control, inert (no crash on click)", () => {
+describe("ContactDrawerContent — Edit pencil pushed to the right", () => {
+  it("shows an Edit pencil control (no crash on click; wiring covered separately)", () => {
     mockContact();
     mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
     renderFiche();

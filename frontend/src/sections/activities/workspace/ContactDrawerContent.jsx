@@ -43,11 +43,13 @@ import EditOutlined from "@ant-design/icons/EditOutlined";
 import RadarChartOutlined from "@ant-design/icons/RadarChartOutlined";
 
 // Project
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import { useGetContact } from "api/businessData/contacts";
 import { useGetDCPeople } from "api/accounts/decisionCycles";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import Surface from "components/display/Surface";
 import CoordinateRow from "components/display/CoordinateRow";
+import EditContactContent from "sections/activities/workspace/EditContactContent";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -88,6 +90,7 @@ function Rule() {
 export default function ContactDrawerContent({ contactId, activity }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
+  const { openDrawer } = useWorkspaceDrawer();
 
   // Hooks are always called (no conditional hooks); the DC people fetch is a
   // no-op when the activity carries no decision_cycle (campaign activity).
@@ -186,9 +189,9 @@ export default function ContactDrawerContent({ contactId, activity }) {
             size="small"
             data-testid="contact-edit"
             aria-label="Edit contact"
-            onClick={() => {
-              // wired in CT-3 (edit contact drawer)
-            }}
+            onClick={() =>
+              openDrawer(<EditContactContent contactId={contactId} />, { title: "Edit contact" })
+            }
             sx={{ color: aq.text.muted, flexShrink: 0, alignSelf: "flex-start" }}
           >
             <EditOutlined style={{ fontSize: theme.iconSizes.sm }} />
