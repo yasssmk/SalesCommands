@@ -61,14 +61,25 @@ export default function DrawerContentLayout({
         {children}
       </Box>
 
-      <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
-        <Button variant="text" color="inherit" onClick={onCancel}>
-          {cancelLabel}
-        </Button>
-        <Button variant="contained" onClick={onSave} disabled={saveDisabled}>
-          {saveLabel}
-        </Button>
-      </Box>
+      {/* The global action row is OPTIONAL: a read-only content (e.g. the
+          Contact fiche, whose actions live in the body) passes neither handler
+          and gets the content alone. Rendered as soon as onSave OR onCancel is
+          provided — the current callers (edit activity, outcome) pass both, so
+          they render exactly as before. */}
+      {(onSave || onCancel) && (
+        <Box data-testid="drawer-actions" sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+          {onCancel && (
+            <Button variant="text" color="inherit" onClick={onCancel}>
+              {cancelLabel}
+            </Button>
+          )}
+          {onSave && (
+            <Button variant="contained" onClick={onSave} disabled={saveDisabled}>
+              {saveLabel}
+            </Button>
+          )}
+        </Box>
+      )}
     </Stack>
   );
 }
@@ -76,10 +87,11 @@ export default function DrawerContentLayout({
 DrawerContentLayout.propTypes = {
   /** Optional bold h3 title. Omit when the coque renders the title (Option A). */
   title: PropTypes.string,
-  /** Global save handler. */
-  onSave: PropTypes.func.isRequired,
-  /** Global cancel handler. */
-  onCancel: PropTypes.func.isRequired,
+  /** Global save handler. Optional — omit (with onCancel) for a read-only
+      content that wants no global action row. */
+  onSave: PropTypes.func,
+  /** Global cancel handler. Optional — see onSave. */
+  onCancel: PropTypes.func,
   /** Disable the Save button (e.g. invalid or pristine form). */
   saveDisabled: PropTypes.bool,
   saveLabel: PropTypes.string,
