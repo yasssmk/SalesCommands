@@ -37,6 +37,10 @@ import Surface from "components/display/Surface";
 import LabeledValue from "components/display/LabeledValue";
 import PersonRow from "components/display/PersonRow";
 
+// Drawer — clicking an external contact opens its read-only fiche in the coque.
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
+
 // ==============================|| FORMAT HELPERS ||============================== //
 
 function formatDate(dateStr) {
@@ -212,6 +216,7 @@ ProvenanceLine.propTypes = { activity: PropTypes.object };
 export default function ActivityContextSection({ activity }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
+  const { openDrawer } = useWorkspaceDrawer();
 
   if (!activity) return null;
 
@@ -282,6 +287,12 @@ export default function ActivityContextSection({ activity }) {
                   <PersonRow
                     key={c.id}
                     interactive
+                    onClick={() =>
+                      openDrawer(
+                        <ContactDrawerContent contactId={c.id} activity={activity} />,
+                        { title: "Contact" },
+                      )
+                    }
                     name={personName(c)}
                     suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
                   />
