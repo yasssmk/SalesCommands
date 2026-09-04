@@ -41,6 +41,12 @@ vi.mock("api/accounts/decisionCycles", () => ({
 import ThemeCustomization from "themes/index";
 import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
 
+function rulesForElement(el) {
+  const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+  const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+  return classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+}
+
 const CONTACT = {
   id: "c1",
   first_name: "Chevalier",
@@ -179,17 +185,17 @@ describe("ContactDrawerContent — Edit pencil pushed to the right (inert)", () 
     expect(edit).toBeInTheDocument();
   });
 
-  it("aligns the Edit pencil to the far right of the identity row (ml:auto)", () => {
+  it("puts the Edit pencil at the far right — last child of the flex identity row", () => {
     mockContact();
     mockDCPeople({ qualified: [], unqualified: [] });
     renderFiche();
     const edit = screen.getByTestId("contact-edit");
-    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
-    const classes = (edit.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
-    const rule = classes
-      .map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join(""))
-      .join("");
-    expect(rule).toContain("margin-left:auto");
+    const row = screen.getByTestId("contact-identity-row");
+    // the row is a flex row, and the pencil is its LAST child (so the growing
+    // name block pushes it to the far right).
+    const rowRule = rulesForElement(row);
+    expect(rowRule).toMatch(/display:\s*flex/);
+    expect(row.lastElementChild).toBe(edit);
   });
 });
 

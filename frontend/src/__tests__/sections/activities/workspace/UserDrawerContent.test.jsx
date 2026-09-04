@@ -60,32 +60,50 @@ function renderFiche(props = {}) {
 
 beforeEach(() => useGetUser.mockReset());
 
-describe("UserDrawerContent — identity + role + team + email", () => {
-  it("renders name, and Role / Team / Email labels with their values", () => {
+describe("UserDrawerContent — identity (name + role · team) + email-only coords", () => {
+  it("shows the real name (full_name), role · team under it, and Email as the only coordinate", () => {
     mockUser();
     renderFiche();
 
-    expect(screen.getByText("Admin Tenant A")).toBeInTheDocument();
+    // name = full_name (NOT the email)
+    const name = screen.getByTestId("user-name");
+    expect(name).toHaveTextContent("Admin Tenant A");
+    expect(name).not.toHaveTextContent("admin@test.com");
 
-    expect(screen.getByText("Role")).toBeInTheDocument();
-    expect(screen.getByText("Manager")).toBeInTheDocument();
+    // role · team live in the identity subtitle
+    const subtitle = screen.getByTestId("user-subtitle");
+    expect(subtitle).toHaveTextContent("Manager");
+    expect(subtitle).toHaveTextContent("Sales EMEA");
 
-    expect(screen.getByText("Team")).toBeInTheDocument();
-    expect(screen.getByText("Sales EMEA")).toBeInTheDocument();
-
+    // coordinates = Email only
     expect(screen.getByText("Email")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /admin@test\.com/ })).toBeInTheDocument();
+    // Role / Team are NOT coordinate rows anymore
+    expect(screen.queryByText("Role")).not.toBeInTheDocument();
+    expect(screen.queryByText("Team")).not.toBeInTheDocument();
   });
 
-  it("keeps all rows with 'No …' placeholders when values are empty", () => {
-    mockUser({ ...USER, role_name: null, team_name: "", email: "" });
+  it("never uses the email as the name (empty full_name → neutral placeholder)", () => {
+    mockUser({ ...USER, full_name: "", first_name: "", last_name: "", email: "ghost@test.com" });
     renderFiche();
+    const name = screen.getByTestId("user-name");
+    expect(name).not.toHaveTextContent("ghost@test.com");
+    // email still shows as the coordinate value
+    expect(screen.getByRole("link", { name: /ghost@test\.com/ })).toBeInTheDocument();
+  });
 
-    expect(screen.getByText("Role")).toBeInTheDocument();
-    expect(screen.getByText("Team")).toBeInTheDocument();
+  it("shows 'No role' / 'No team' placeholders in the subtitle when empty", () => {
+    mockUser({ ...USER, role_name: null, team_name: "" });
+    renderFiche();
+    const subtitle = screen.getByTestId("user-subtitle");
+    expect(subtitle).toHaveTextContent(/No role/i);
+    expect(subtitle).toHaveTextContent(/No team/i);
+  });
+
+  it("shows 'No email' in coords when the email is empty", () => {
+    mockUser({ ...USER, email: "" });
+    renderFiche();
     expect(screen.getByText("Email")).toBeInTheDocument();
-    expect(screen.getByText("No role")).toBeInTheDocument();
-    expect(screen.getByText("No team")).toBeInTheDocument();
     expect(screen.getByText("No email")).toBeInTheDocument();
   });
 });

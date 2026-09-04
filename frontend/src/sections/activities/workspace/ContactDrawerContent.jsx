@@ -149,8 +149,10 @@ export default function ContactDrawerContent({ contactId, activity }) {
   return (
     <DrawerContentLayout>
       <Stack spacing={2}>
-        {/* Identity */}
-        <Stack direction="row" spacing={2} alignItems="center">
+        {/* Identity — avatar | name block (grows) | Edit ✎ (far right).
+            The pencil is a direct child of this flex row and the middle block
+            grows, so the pencil is pushed to the far right. */}
+        <Stack direction="row" spacing={2} alignItems="center" data-testid="contact-identity-row">
           <Box
             aria-hidden
             sx={{
@@ -170,30 +172,27 @@ export default function ContactDrawerContent({ contactId, activity }) {
             {initials(contact)}
           </Box>
           <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-            <Stack direction="row" spacing={0.5} alignItems="center">
-              <Typography variant="subtitle1" color="text.primary" sx={{ fontWeight: "bold", minWidth: 0 }}>
-                {fullName(contact)}
-              </Typography>
-              {/* Edit ✎ pushed to the far right of the identity row — inert for
-                  now (opens the edit contact drawer in CT-3). */}
-              <IconButton
-                size="small"
-                data-testid="contact-edit"
-                aria-label="Edit contact"
-                onClick={() => {
-                  // wired in CT-3 (edit contact drawer)
-                }}
-                sx={{ color: aq.text.muted, flexShrink: 0, ml: "auto" }}
-              >
-                <EditOutlined style={{ fontSize: theme.iconSizes.sm }} />
-              </IconButton>
-            </Stack>
+            <Typography variant="subtitle1" color="text.primary" sx={{ fontWeight: "bold", minWidth: 0 }}>
+              {fullName(contact)}
+            </Typography>
             {jobDept && (
               <Typography variant="body2" sx={{ color: aq.text.muted }}>
                 {jobDept}
               </Typography>
             )}
           </Box>
+          {/* Edit ✎ — inert for now (opens the edit contact drawer in CT-3). */}
+          <IconButton
+            size="small"
+            data-testid="contact-edit"
+            aria-label="Edit contact"
+            onClick={() => {
+              // wired in CT-3 (edit contact drawer)
+            }}
+            sx={{ color: aq.text.muted, flexShrink: 0, alignSelf: "flex-start" }}
+          >
+            <EditOutlined style={{ fontSize: theme.iconSizes.sm }} />
+          </IconButton>
         </Stack>
 
         <Rule />

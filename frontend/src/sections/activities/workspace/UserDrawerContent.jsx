@@ -25,8 +25,6 @@ import Typography from "@mui/material/Typography";
 
 // Icons
 import MailOutlined from "@ant-design/icons/MailOutlined";
-import IdcardOutlined from "@ant-design/icons/IdcardOutlined";
-import TeamOutlined from "@ant-design/icons/TeamOutlined";
 
 // Project
 import { useGetUser } from "api/admin/users";
@@ -35,21 +33,23 @@ import CoordinateRow from "components/display/CoordinateRow";
 
 // ==============================|| HELPERS ||============================== //
 
+// Initials from the NAME only — never from the email.
 function initials(user) {
   const f = (user?.first_name || "").trim();
   const l = (user?.last_name || "").trim();
   const two = `${f.charAt(0)}${l.charAt(0)}`.trim();
   if (two) return two.toUpperCase();
-  const name = (user?.full_name || user?.email || "").trim();
+  const name = (user?.full_name || "").trim();
   return name ? name.charAt(0).toUpperCase() : "?";
 }
 
-function fullName(user) {
+// The displayed name is the REAL name (full_name / first+last) — never the
+// email. A user with no name shows a neutral placeholder instead.
+function displayName(user) {
   return (
     user?.full_name ||
     `${user?.first_name || ""} ${user?.last_name || ""}`.trim() ||
-    user?.email ||
-    "Team member"
+    "Unnamed member"
   );
 }
 
@@ -122,28 +122,27 @@ export default function UserDrawerContent({ userId }) {
             {initials(user)}
           </Box>
           <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-            <Typography variant="subtitle1" color="text.primary" sx={{ fontWeight: "bold" }}>
-              {fullName(user)}
+            <Typography
+              data-testid="user-name"
+              variant="subtitle1"
+              color="text.primary"
+              sx={{ fontWeight: "bold" }}
+            >
+              {displayName(user)}
+            </Typography>
+            {/* Platform role · team live under the name (identity, muted). */}
+            <Typography data-testid="user-subtitle" variant="body2" sx={{ color: aq.text.muted }}>
+              {user.role_name || "No role"}
+              {" · "}
+              {user.team_name || "No team"}
             </Typography>
           </Box>
         </Stack>
 
         <Rule />
 
-        {/* Platform role · team · email — always shown, two columns. */}
+        {/* Coordinates — Email only (the User model has no phone / job title). */}
         <Stack spacing={1}>
-          <CoordinateRow
-            icon={IdcardOutlined}
-            label="Role"
-            value={user.role_name}
-            placeholder="No role"
-          />
-          <CoordinateRow
-            icon={TeamOutlined}
-            label="Team"
-            value={user.team_name}
-            placeholder="No team"
-          />
           <CoordinateRow
             icon={MailOutlined}
             label="Email"
