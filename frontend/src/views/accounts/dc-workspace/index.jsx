@@ -139,9 +139,13 @@ export default function DCWorkspacePage() {
     }
   };
 
-  // ==============================|| LOADING ||============================== //
+  // ==============================|| LOADING (not yet resolved) ||============================== //
 
-  if (cyclesLoading) {
+  // The ids come from the route, so a null SWR key (tenantId still hydrating)
+  // is "not resolved yet", not "no cycle". isLoading is false while the key is
+  // null, so guard on "no cycle AND no error" too — otherwise "Decision cycle
+  // not found" flashes during that window. The real error is handled below.
+  if (cyclesLoading || (!cycle && !cyclesError)) {
     return (
       <Box
         display="flex"

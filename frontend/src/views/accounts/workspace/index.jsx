@@ -9,6 +9,7 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -180,9 +181,29 @@ export default function AccountWorkspacePage() {
     industryOptions,
   });
 
+  // ==============================|| RENDER - LOADING (not yet resolved) ||============================== //
+
+  // The account id always comes from the route, so a null SWR key (tenantId
+  // still hydrating) is NOT "no account" — it is "not resolved yet". isLoading
+  // is false while the key is null, so guard on "no account AND no error" too,
+  // otherwise "Account not found" flashes during that window. "Not found" is
+  // shown only on a real error (a missing account is a 404 → workspaceError).
+  if (workspaceLoading || (!account && !workspaceError)) {
+    return (
+      <Box
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="400px"
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   // ==============================|| RENDER - ERROR ||============================== //
 
-  if (workspaceError || (!workspaceLoading && !account)) {
+  if (workspaceError) {
     return (
       <Box>
         <MainCard>
