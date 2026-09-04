@@ -37,6 +37,17 @@ function bgOfAncestor(el) {
   return null;
 }
 
+// The coque panel element itself: the first ancestor of `el` that paints a
+// background-color (the CoquePanel Box carries bg + radius + border + margin).
+function panelOfAncestor(el) {
+  let node = el;
+  while (node) {
+    if (bgOf(node)) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 // Control push vs overlay deterministically (WorkspaceDrawer picks the mode via
 // useMediaQuery(down('lg'))). Since L2 the coque + provider live at the layout,
 // so this mounts the standalone WorkspaceCoque harness (provider + coque).
@@ -132,5 +143,48 @@ describe("WorkspaceDrawer coque — anthracite background (S2c-2)", () => {
     const bg = bgOf(paper);
     expect(bg).toBe(testTheme.aphoriQ.surface.level2);
     expect(bg).not.toBe(testTheme.aphoriQ.surface.level1);
+  });
+});
+
+describe("WorkspaceDrawer coque — rounded, detached floating card (SE-a)", () => {
+  it("large PUSH: the panel is rounded (radius.lg), has a detachment margin, and a full hairline border", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const panel = panelOfAncestor(screen.getByTestId("dcontent"));
+    expect(panel).not.toBeNull();
+    const rule = rulesForElement(panel);
+    // same radius as the page boxes (aphoriQ.radius.lg = 12px)
+    expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.lg}px`);
+    // detached from the edges — a margin is present
+    expect(rule).toMatch(/margin(-top|-right|-bottom|-left)?:/);
+    // full border (not the old left-only border): a solid border shorthand/side
+    expect(rule).toMatch(/border(-top|-right|-bottom)?(-style)?:\s*[^;]*solid|border-width:/);
+    // background stays anthracite
+    expect(bgOf(panel)).toBe(testTheme.aphoriQ.surface.level2);
+  });
+
+  it("large PUSH: the panel is NOT bordered on the left side only (border-left-only is gone)", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const rule = rulesForElement(panelOfAncestor(screen.getByTestId("dcontent")));
+    // the old design declared ONLY border-left-*; a full card must not be
+    // left-only. If a left border is declared it must be part of an all-sides
+    // border (a plain shorthand or explicit widths), so assert a non-left
+    // border declaration exists.
+    expect(rule).toMatch(/(^|[;{])border:|border-top|border-right|border-bottom|border-width:/);
+  });
+
+  it("narrow OVERLAY: the paper is rounded (radius.lg) and detached with a margin", () => {
+    useMediaQuery.mockReturnValue(true); // narrow
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const paper = document.querySelector(".MuiDrawer-paper");
+    const rule = rulesForElement(paper);
+    expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.lg}px`);
+    expect(rule).toMatch(/margin(-top|-right|-bottom|-left)?:/);
+    expect(bgOf(paper)).toBe(testTheme.aphoriQ.surface.level2);
   });
 });

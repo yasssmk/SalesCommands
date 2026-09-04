@@ -72,9 +72,14 @@ function CoquePanel({ content, onClose }) {
       sx={{
         width: aq.drawer.width,
         backgroundColor: aq.surface.level2,
-        borderLeftStyle: "solid",
-        borderLeftWidth: aq.border.width.hairline,
-        borderLeftColor: aq.border.color,
+        // A detached, rounded floating card: the same radius as the page boxes
+        // (header, Context card) + a full hairline border, with a top/bottom/right
+        // margin so the rounded corners clear the edges. Left stays near the main
+        // column (which carries its own padding).
+        border: `${aq.border.width.hairline}px solid ${aq.border.color}`,
+        borderRadius: `${aq.radius.lg}px`,
+        my: 1.5,
+        mr: 1.5,
         display: "flex",
         flexDirection: "column",
       }}
@@ -115,6 +120,14 @@ export default function WorkspaceDrawer() {
                 sx: {
                   width: { xs: "100%", sm: aq.drawer.width },
                   backgroundColor: aq.surface.level2,
+                  // Match the push card: rounded + full hairline border, detached
+                  // with a margin. The paper is full-height, so trim its height by
+                  // the top+bottom margin (theme.spacing(3) = 2×1.5) — token math,
+                  // no hardcoded px — to keep the rounded corners clear of the edges.
+                  border: `${aq.border.width.hairline}px solid ${aq.border.color}`,
+                  borderRadius: `${aq.radius.lg}px`,
+                  m: 1.5,
+                  height: `calc(100% - ${theme.spacing(3)})`,
                 },
               }
             : undefined
