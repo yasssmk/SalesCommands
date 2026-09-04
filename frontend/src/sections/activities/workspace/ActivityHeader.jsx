@@ -20,11 +20,17 @@ import { useRouter } from "next/navigation";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Avatar from "@mui/material/Avatar";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import IconButton from "@mui/material/IconButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 // Date formatting
@@ -43,9 +49,14 @@ import StatusPill from "components/chips/StatusPill";
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
 
-// Drawer coque + edit content
+// Drawer coque + edit / outcome content
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import EditActivityContent from "sections/activities/workspace/EditActivityContent";
+import OutcomeDrawerContent from "sections/activities/workspace/OutcomeDrawerContent";
+
+// Lifecycle API + snackbars
+import { reopenActivity, cancelActivity } from "api/accounts/activities";
+import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 
 // Modals
 import AlertActivityDelete from "sections/accounts/activities/AlertActivityDelete";
@@ -55,6 +66,8 @@ import {
   MoreOutlined,
   EditOutlined,
   CheckCircleOutlined,
+  CloseCircleOutlined,
+  ReloadOutlined,
   DeleteOutlined,
   PhoneOutlined,
   MailOutlined,
@@ -119,9 +132,11 @@ export default function useActivityHeaderProps({
   const [anchorEl, setAnchorEl] = useState(null);
   const menuOpen = Boolean(anchorEl);
 
-  // Delete confirmation (the only status/lifecycle action left in the ⋮ menu —
-  // Complete/Cancel/Reopen now happen via the Edit drawer, S2c).
+  // Delete confirmation.
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  // Cancel confirmation (light) + optional reason.
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelNote, setCancelNote] = useState("");
 
   // ==============================|| EARLY RETURN (no data) ||============================== //
 
@@ -142,6 +157,7 @@ export default function useActivityHeaderProps({
 
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
+  const isPlanned = !isCompleted && !isCancelled;
 
   // Delete is offered for standalone activities only (unchanged gate).
   const isCampaignActivity =
@@ -161,6 +177,41 @@ export default function useActivityHeaderProps({
   const handleEditClick = () => {
     handleMenuClose();
     openDrawer(<EditActivityContent activity={activity} />, { title: "Edit activity" });
+  };
+
+  // Complete — inject the outcome drawer (O-2a) into the coque. It handles the
+  // outcome/callback/completion + revalidation itself.
+  const handleCompleteClick = () => {
+    handleMenuClose();
+    openDrawer(<OutcomeDrawerContent activity={activity} />, { title: "Complete activity" });
+  };
+
+  // Reopen — back to PLANNED (clears outcome backend). Business error (e.g. a
+  // closed parent cycle → 400) surfaces as a snackbar, never a raw crash.
+  const handleReopenClick = async () => {
+    handleMenuClose();
+    const result = await reopenActivity(activity.id);
+    if (result?.success) {
+      displaySuccessSnackbar("Activity reopened");
+    } else {
+      displayErrorSnackbar(result);
+    }
+  };
+
+  // Cancel — light confirmation (optional reason) then cancelActivity.
+  const handleCancelClick = () => {
+    handleMenuClose();
+    setCancelDialogOpen(true);
+  };
+  const handleCancelConfirm = async () => {
+    const result = await cancelActivity(activity.id, { notes: cancelNote?.trim() || undefined });
+    if (result?.success) {
+      displaySuccessSnackbar("Activity cancelled");
+      setCancelDialogOpen(false);
+      setCancelNote("");
+    } else {
+      displayErrorSnackbar(result);
+    }
   };
 
   // ==============================|| HANDLERS — Navigation ||============================== //
@@ -402,6 +453,24 @@ export default function useActivityHeaderProps({
         <MoreOutlined />
       </IconButton>
       <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
+        {/* Complete — PLANNED only, above Edit; opens the outcome drawer. */}
+        {isPlanned && (
+          <MenuItem onClick={handleCompleteClick}>
+            <ListItemIcon>
+              <CheckCircleOutlined style={{ color: theme.palette.success.main }} />
+            </ListItemIcon>
+            <Typography>Complete</Typography>
+          </MenuItem>
+        )}
+        {/* Reopen — COMPLETED / CANCELLED only (back to PLANNED). */}
+        {(isCompleted || isCancelled) && (
+          <MenuItem onClick={handleReopenClick}>
+            <ListItemIcon>
+              <ReloadOutlined style={{ color: theme.palette.text.secondary }} />
+            </ListItemIcon>
+            <Typography>Reopen</Typography>
+          </MenuItem>
+        )}
         {/* Edit — opens the activity edit form in the workspace drawer coque. */}
         <MenuItem onClick={handleEditClick}>
           <ListItemIcon>
@@ -409,7 +478,16 @@ export default function useActivityHeaderProps({
           </ListItemIcon>
           <Typography>Edit</Typography>
         </MenuItem>
-        {/* Delete — existing action, wired as before (standalone activities). */}
+        {/* Cancel — PLANNED only (light confirmation). */}
+        {isPlanned && (
+          <MenuItem onClick={handleCancelClick}>
+            <ListItemIcon>
+              <CloseCircleOutlined style={{ color: theme.palette.warning.main }} />
+            </ListItemIcon>
+            <Typography>Cancel</Typography>
+          </MenuItem>
+        )}
+        {/* Delete — standalone activities only (unchanged gate). */}
         {!isCampaignActivity && (
           <MenuItem onClick={handleDeleteClick}>
             <ListItemIcon>
@@ -564,6 +642,30 @@ export default function useActivityHeaderProps({
           }
         }}
       />
+
+      {/* Cancel confirmation — light, with an optional reason. */}
+      <Dialog open={cancelDialogOpen} onClose={() => setCancelDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle>Cancel this activity?</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            margin="dense"
+            label="Reason (optional)"
+            value={cancelNote}
+            onChange={(e) => setCancelNote(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={() => setCancelDialogOpen(false)}>
+            Keep
+          </Button>
+          <Button color="error" data-testid="confirm-cancel-activity" onClick={handleCancelConfirm}>
+            Cancel activity
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 

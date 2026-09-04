@@ -31,6 +31,9 @@ vi.mock("contexts/WorkspaceDrawerContext", () => ({
 vi.mock("sections/activities/workspace/EditActivityContent", () => ({
   default: () => <div data-testid="edit-activity-content" />,
 }));
+vi.mock("sections/activities/workspace/OutcomeDrawerContent", () => ({
+  default: () => <div data-testid="outcome-drawer-content" />,
+}));
 
 import ThemeCustomization from "themes/index";
 import StatusPill from "components/chips/StatusPill";
@@ -192,20 +195,18 @@ function ActionsHarness({ activity }) {
 }
 
 describe("ActivityHeader V2 — ⋮ menu is Edit | Delete only", () => {
-  it("menu shows only Edit (inert) and Delete — no Complete/Cancel/Reopen", async () => {
+  it("PLANNED menu: Complete + Edit + Cancel + Delete (no Reopen) — status actions restored in O-2b", async () => {
     render(
       <ThemeCustomization>
         <ActionsHarness activity={base} />
       </ThemeCustomization>,
     );
     await userEvent.click(screen.getByRole("button"));
-    // Edit (inert for now — drawer wired in S2c) + Delete (wired as before)
+    expect(screen.getByText("Complete")).toBeInTheDocument();
     expect(screen.getByText("Edit")).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
     expect(screen.getByText("Delete")).toBeInTheDocument();
-    // status-change items are gone (status change happens via Edit)
-    expect(screen.queryByText("Complete")).not.toBeInTheDocument();
-    expect(screen.queryByText("Log Response")).not.toBeInTheDocument();
-    expect(screen.queryByText("Cancel")).not.toBeInTheDocument();
+    // Reopen is Completed/Cancelled-only
     expect(screen.queryByText("Reopen")).not.toBeInTheDocument();
   });
 

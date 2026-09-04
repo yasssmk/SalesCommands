@@ -29,6 +29,7 @@ vi.mock("sections/campaigns/CampaignOutcomeModal", () => ({ default: () => null 
 // EditActivityContent pulls @mui/x-date-pickers (unresolvable ESM in this env);
 // the header only references it on the ⋮ Edit click, so stub it here.
 vi.mock("sections/activities/workspace/EditActivityContent", () => ({ default: () => null }));
+vi.mock("sections/activities/workspace/OutcomeDrawerContent", () => ({ default: () => null }));
 
 // Router spy — the header pushes navigation through next/navigation.
 const pushMock = vi.fn();
