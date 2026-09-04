@@ -33,24 +33,34 @@ import CoordinateRow from "components/display/CoordinateRow";
 
 // ==============================|| HELPERS ||============================== //
 
+// The displayed name is the REAL name — never the email. Two user shapes reach
+// this fiche: the API serializer (full_name / first_name / last_name) and the
+// auth-context current user (name = get_full_name(), no full_name) that
+// useGetUser returns when the user is the logged-in one. Read both. A user with
+// no name at all shows a neutral placeholder.
+function displayName(user) {
+  return (
+    user?.full_name ||
+    user?.name ||
+    `${user?.first_name || ""} ${user?.last_name || ""}`.trim() ||
+    "Unnamed member"
+  );
+}
+
+// Platform role — API serializer exposes `role_name`, the auth-context user
+// exposes `role` (its role_name value).
+function roleLabel(user) {
+  return user?.role_name || user?.role || null;
+}
+
 // Initials from the NAME only — never from the email.
 function initials(user) {
   const f = (user?.first_name || "").trim();
   const l = (user?.last_name || "").trim();
   const two = `${f.charAt(0)}${l.charAt(0)}`.trim();
   if (two) return two.toUpperCase();
-  const name = (user?.full_name || "").trim();
-  return name ? name.charAt(0).toUpperCase() : "?";
-}
-
-// The displayed name is the REAL name (full_name / first+last) — never the
-// email. A user with no name shows a neutral placeholder instead.
-function displayName(user) {
-  return (
-    user?.full_name ||
-    `${user?.first_name || ""} ${user?.last_name || ""}`.trim() ||
-    "Unnamed member"
-  );
+  const name = displayName(user);
+  return name && name !== "Unnamed member" ? name.charAt(0).toUpperCase() : "?";
 }
 
 // A themed hairline rule (same form as the Contact fiche).
@@ -132,7 +142,7 @@ export default function UserDrawerContent({ userId }) {
             </Typography>
             {/* Platform role · team live under the name (identity, muted). */}
             <Typography data-testid="user-subtitle" variant="body2" sx={{ color: aq.text.muted }}>
-              {user.role_name || "No role"}
+              {roleLabel(user) || "No role"}
               {" · "}
               {user.team_name || "No team"}
             </Typography>

@@ -83,6 +83,18 @@ describe("UserDrawerContent — identity (name + role · team) + email-only coor
     expect(screen.queryByText("Team")).not.toBeInTheDocument();
   });
 
+  it("uses `name` / `role` (auth-context user shape) when full_name/role_name are absent", () => {
+    // The owner is often the logged-in user, so useGetUser returns the auth
+    // context user, whose name is under `name` (get_full_name) and role under
+    // `role` — not full_name / role_name. The fiche must read these too.
+    mockUser({ id: "u1", name: "Admin Tenant A", email: "admin@test.com", role: "Manager" });
+    renderFiche();
+    const name = screen.getByTestId("user-name");
+    expect(name).toHaveTextContent("Admin Tenant A");
+    expect(name).not.toHaveTextContent("Unnamed member");
+    expect(screen.getByTestId("user-subtitle")).toHaveTextContent("Manager");
+  });
+
   it("never uses the email as the name (empty full_name → neutral placeholder)", () => {
     mockUser({ ...USER, full_name: "", first_name: "", last_name: "", email: "ghost@test.com" });
     renderFiche();
