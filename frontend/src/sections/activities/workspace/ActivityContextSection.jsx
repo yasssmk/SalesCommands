@@ -37,6 +37,12 @@ import Surface from "components/display/Surface";
 import LabeledValue from "components/display/LabeledValue";
 import PersonRow from "components/display/PersonRow";
 
+// Drawer — clicking a person opens its read-only fiche in the coque
+// (external contact → Contact fiche; internal team member → User fiche).
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
+import UserDrawerContent from "sections/activities/workspace/UserDrawerContent";
+
 // ==============================|| FORMAT HELPERS ||============================== //
 
 function formatDate(dateStr) {
@@ -212,6 +218,7 @@ ProvenanceLine.propTypes = { activity: PropTypes.object };
 export default function ActivityContextSection({ activity }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
+  const { openDrawer } = useWorkspaceDrawer();
 
   if (!activity) return null;
 
@@ -263,9 +270,26 @@ export default function ActivityContextSection({ activity }) {
         <TwoColRow>
           <Box>
             <ColumnHeader label="Internal team" />
-            {owner && <PersonRow name={personName(owner)} suffix="owner" />}
+            {owner && (
+              <PersonRow
+                interactive
+                onClick={() =>
+                  openDrawer(<UserDrawerContent userId={owner.id} />, { title: "Team member" })
+                }
+                name={personName(owner)}
+                suffix="owner"
+              />
+            )}
             {invited.map((u) => (
-              <PersonRow key={u.id} name={personName(u)} suffix="invited" />
+              <PersonRow
+                key={u.id}
+                interactive
+                onClick={() =>
+                  openDrawer(<UserDrawerContent userId={u.id} />, { title: "Team member" })
+                }
+                name={personName(u)}
+                suffix="invited"
+              />
             ))}
             {!owner && invited.length === 0 && (
               <Typography variant="body2" sx={emptyItalic}>
@@ -282,6 +306,12 @@ export default function ActivityContextSection({ activity }) {
                   <PersonRow
                     key={c.id}
                     interactive
+                    onClick={() =>
+                      openDrawer(
+                        <ContactDrawerContent contactId={c.id} activity={activity} />,
+                        { title: "Contact" },
+                      )
+                    }
                     name={personName(c)}
                     suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
                   />

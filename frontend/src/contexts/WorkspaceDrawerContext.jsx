@@ -24,6 +24,8 @@ import {
   useRef,
 } from "react";
 
+import { usePathname } from "next/navigation";
+
 import { useMenuState } from "hooks/useMenuState";
 
 // ==============================|| CONTEXT ||============================== //
@@ -64,6 +66,19 @@ export function WorkspaceDrawerProvider({ children }) {
     setContent(null);
     setTitle(null);
   }, []);
+
+  // Close the drawer on route change: navigating away from the workspace must
+  // not leave a stale drawer open. Observe the Next pathname and close only on
+  // an actual change (never on the first render, so opening the drawer on the
+  // current page is untouched).
+  const pathname = usePathname();
+  const prevPathname = useRef(pathname);
+  useEffect(() => {
+    if (prevPathname.current !== pathname) {
+      prevPathname.current = pathname;
+      closeDrawer();
+    }
+  }, [pathname, closeDrawer]);
 
   // Reverse exclusivity: the hamburger lives in the shell (outside this
   // provider), so we OBSERVE the menu singleton instead of wiring the toggle.

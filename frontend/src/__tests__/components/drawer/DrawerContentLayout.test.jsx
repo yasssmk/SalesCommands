@@ -100,4 +100,50 @@ describe("DrawerContentLayout — title + content box + global actions", () => {
     expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
   });
+
+  // CT-1 — the action bar is OPTIONAL: a read-only content (e.g. the future
+  // Contact fiche, whose actions live in the body) passes no onSave/onCancel and
+  // gets the content alone, no global Save/Cancel row.
+  it("omits the action bar entirely when neither onSave nor onCancel is passed", () => {
+    render(
+      <ThemeCustomization>
+        <DrawerContentLayout title="Contact">
+          <div data-testid="group">g</div>
+        </DrawerContentLayout>
+      </ThemeCustomization>,
+    );
+    // content still renders…
+    expect(screen.getByTestId("drawer-content-box")).toBeInTheDocument();
+    expect(screen.getByTestId("group")).toBeInTheDocument();
+    // …but NO global action bar / buttons.
+    expect(screen.queryByTestId("drawer-actions")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the action bar as soon as onSave (or onCancel) is provided", () => {
+    // onSave only
+    render(
+      <ThemeCustomization>
+        <DrawerContentLayout onSave={() => {}}>
+          <div data-testid="group">g</div>
+        </DrawerContentLayout>
+      </ThemeCustomization>,
+    );
+    expect(screen.getByTestId("drawer-actions")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save/i })).toBeInTheDocument();
+
+    cleanup();
+
+    // onCancel only
+    render(
+      <ThemeCustomization>
+        <DrawerContentLayout onCancel={() => {}}>
+          <div data-testid="group">g</div>
+        </DrawerContentLayout>
+      </ThemeCustomization>,
+    );
+    expect(screen.getByTestId("drawer-actions")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
+  });
 });

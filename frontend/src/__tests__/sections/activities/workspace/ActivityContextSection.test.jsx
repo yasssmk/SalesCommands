@@ -104,7 +104,7 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.getByText("Click to add a description…")).toBeInTheDocument();
   });
 
-  it("people rows have NO avatar, inline suffixes, no email/phone; contact name is interactive", () => {
+  it("people rows have NO avatar, inline suffixes, no email/phone; names are interactive", () => {
     const { container } = renderCtx(baseActivity);
     // no avatars anywhere
     expect(container.querySelector(".MuiAvatar-root")).toBeNull();
@@ -116,9 +116,10 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.queryByText(/admin@test.com/)).not.toBeInTheDocument();
     expect(screen.queryByText(/iki@rr.com/)).not.toBeInTheDocument();
     expect(screen.queryByText(/\+33/)).not.toBeInTheDocument();
-    // contact name looks interactive (cursor), owner name does not
+    // both a contact (→ Contact fiche) and an internal member (→ User fiche)
+    // are now interactive.
     expect(rulesForElement(screen.getByText("Chevalier Iki"))).toMatch(/cursor:\s*pointer/);
-    expect(rulesForElement(screen.getByText("Admin Tenant A"))).not.toMatch(/cursor:\s*pointer/);
+    expect(rulesForElement(screen.getByText("Admin Tenant A"))).toMatch(/cursor:\s*pointer/);
   });
 
   it("shows NO '+' on the column headers and NO chevron on contacts (S2c-2 removed the inert +)", () => {
