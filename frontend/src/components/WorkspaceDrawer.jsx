@@ -73,12 +73,14 @@ function CoquePanel({ content, onClose }) {
         width: aq.drawer.width,
         backgroundColor: aq.surface.level2,
         // A detached, rounded floating card: the same radius as the page boxes
-        // (header, Context card) + a full hairline border, with a top/bottom/right
-        // margin so the rounded corners clear the edges. Left stays near the main
+        // (header, Context card) + a full hairline border, with a bottom/right
+        // margin so the rounded corners clear those edges. NO top margin — the
+        // coque shares the flex-start row line (DashboardLayout content-coque-row),
+        // so its top aligns with the header card top. Left stays near the main
         // column (which carries its own padding).
         border: `${aq.border.width.hairline}px solid ${aq.border.color}`,
         borderRadius: `${aq.radius.lg}px`,
-        my: 1.5,
+        mb: 1.5,
         mr: 1.5,
         display: "flex",
         flexDirection: "column",

@@ -164,6 +164,18 @@ describe("WorkspaceDrawer coque — rounded, detached floating card (SE-a)", () 
     expect(bgOf(panel)).toBe(testTheme.aphoriQ.surface.level2);
   });
 
+  it("large PUSH: the panel has NO top margin (its top aligns with the header row), keeps bottom+right detachment", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const rule = rulesForElement(panelOfAncestor(screen.getByTestId("dcontent")));
+    // no margin-top → the coque top sits at the flex-start row line = header top
+    expect(rule).not.toMatch(/margin-top:/);
+    // bottom + right detachment stay
+    expect(rule).toMatch(/margin-bottom:/);
+    expect(rule).toMatch(/margin-right:/);
+  });
+
   it("large PUSH: the panel is NOT bordered on the left side only (border-left-only is gone)", () => {
     renderWorkspace();
     fireEvent.click(screen.getByRole("button", { name: "open" }));
