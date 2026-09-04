@@ -382,3 +382,51 @@ describe("EditActivityContent — no duplicate user/contact (exclusion + dedup)"
     expect(excl).toContain("u2");
   });
 });
+
+describe("EditActivityContent — campaign activity locks date/people (COND-1)", () => {
+  const CAMPAIGN = { ...ACTIVITY, campaign_detail: { id: "camp-1", name: "Q2" } };
+
+  it("date is read-only on a campaign activity (double-click does not open edit)", () => {
+    renderEdit(CAMPAIGN);
+    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    expect(screen.queryByTestId("date-confirm")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /due date/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Sep 10, 2026/)).toBeInTheDocument(); // value still shown
+  });
+
+  it("people are read-only on a campaign activity (no remove/add) but still shown", () => {
+    renderEdit(CAMPAIGN);
+    expect(screen.queryByTestId("remove-owner")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("add-owner")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("add-invited")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("add-contact")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("remove-contact-c1")).not.toBeInTheDocument();
+    expect(screen.getByText("Ann Owner")).toBeInTheDocument();
+    expect(screen.getByText("Cara Contact")).toBeInTheDocument();
+  });
+
+  it("title / type / objective / description stay editable on a campaign activity", () => {
+    renderEdit(CAMPAIGN);
+    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    expect(screen.getByTestId("inline-input-title")).toBeInTheDocument();
+  });
+
+  it("Save payload excludes the campaign-locked fields (date/owner/invited/contacts)", async () => {
+    renderEdit(CAMPAIGN);
+    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "New" } });
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(updateActivity).toHaveBeenCalled());
+    const payload = updateActivity.mock.calls[0][1];
+    expect(payload.title).toBe("New");
+    expect(payload).toHaveProperty("activity_type");
+    expect(payload).not.toHaveProperty("scheduled_date");
+    expect(payload).not.toHaveProperty("scheduled_time");
+    expect(payload).not.toHaveProperty("due_date");
+    expect(payload).not.toHaveProperty("owner_id");
+    expect(payload).not.toHaveProperty("invited_user_ids");
+    expect(payload).not.toHaveProperty("contact_ids");
+  });
+});

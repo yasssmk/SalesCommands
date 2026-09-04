@@ -1181,7 +1181,27 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             client_id = self._get_client_id_from_context()
             instance = self.instance
             account = instance.account
-            
+
+            # =================================================================
+            # CAMPAIGN-LOCKED FIELDS (COND-1)
+            # =================================================================
+            # A campaign activity has date / contacts / owner / invited set by the
+            # campaign; they must not be changed via a user PATCH. Title, type,
+            # objective and description stay editable. Non-campaign activities are
+            # untouched. The cascade writes on the model directly (activity.complete
+            # / .save / .set) — never through this serializer — so it is unaffected.
+            if instance.campaign_id:
+                locked = {
+                    'scheduled_date', 'scheduled_time', 'due_date',
+                    'contact_ids', 'owner_id', 'invited_user_ids',
+                }
+                if locked & set(attrs.keys()):
+                    raise StandardizedValidationError(
+                        CoreErrorMessages.INVALID_DATA.format(
+                            detail='This field is set by the campaign and cannot be edited'
+                        )
+                    )
+
             # =================================================================
             # STATUS CHANGE LOGIC
             # =================================================================

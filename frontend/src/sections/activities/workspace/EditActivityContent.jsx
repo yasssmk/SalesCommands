@@ -113,13 +113,23 @@ function Filet() {
   );
 }
 
+// A discreet muted marker that a field is set by the campaign (no loud lock).
+function LockedHint() {
+  const aq = useTheme().aphoriQ;
+  return (
+    <Typography component="span" variant="caption" sx={{ color: aq.text.subtle, ml: 0.75 }}>
+      · set by the campaign
+    </Typography>
+  );
+}
+
 // ==============================|| DATE GROUP ||============================== //
 
 // Read: label ("Scheduled" / "Due date") + the current date (+time). DOUBLE-CLICK
 // flips to an inline toggle (scheduled|due, exclusive) + the active picker(s).
 // Switching the toggle clears the OTHER date (and scheduled_time when leaving
 // scheduled) — mechanics cloned from UnifiedDateSection.
-function DateGroup({ values, setFieldValue }) {
+function DateGroup({ values, setFieldValue, locked = false }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const [editing, setEditing] = useState(false);
@@ -128,6 +138,7 @@ function DateGroup({ values, setFieldValue }) {
   const startRef = useRef(null);
 
   const startEdit = () => {
+    if (locked) return;
     startRef.current = {
       scheduled_date: values.scheduled_date,
       scheduled_time: values.scheduled_time,
@@ -237,11 +248,12 @@ function DateGroup({ values, setFieldValue }) {
     <Box>
       <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
         {isScheduled ? "Scheduled" : "Due date"}
+        {locked && <LockedHint />}
       </Typography>
       <Box
         data-testid="inline-read-date"
         onDoubleClick={startEdit}
-        sx={{ cursor: "pointer", py: 0.25 }}
+        sx={{ cursor: locked ? "default" : "pointer", py: 0.25 }}
       >
         {display ? (
           <Typography variant="body2" color="text.primary">
@@ -257,7 +269,11 @@ function DateGroup({ values, setFieldValue }) {
   );
 }
 
-DateGroup.propTypes = { values: PropTypes.object.isRequired, setFieldValue: PropTypes.func.isRequired };
+DateGroup.propTypes = {
+  values: PropTypes.object.isRequired,
+  setFieldValue: PropTypes.func.isRequired,
+  locked: PropTypes.bool,
+};
 
 // ==============================|| PEOPLE PLACEHOLDER (SE-c) ||============================== //
 
@@ -296,15 +312,21 @@ PersonEditRow.propTypes = {
 // owner: single required slot (× empties it visually, but Formik keeps owner
 // required so a null owner_id is never sent). invited: optional removable list.
 // contacts: removable list, min 1 (Formik blocks Save when empty).
-function PeopleSection({ values, setFieldValue, errors, accountId }) {
+function PeopleSection({ values, setFieldValue, errors, accountId, locked = false }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const [addOwner, setAddOwner] = useState(false);
   const [addInvited, setAddInvited] = useState(false);
   const [addContact, setAddContact] = useState(false);
 
-  const caption = (t) => (
+  const caption = (t, withHint = false) => (
     <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
+      {t}
+      {withHint && locked && <LockedHint />}
+    </Typography>
+  );
+  const emptyLine = (t) => (
+    <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
       {t}
     </Typography>
   );
@@ -328,8 +350,10 @@ function PeopleSection({ values, setFieldValue, errors, accountId }) {
     <Stack data-testid="people-section" spacing={1.5}>
       {/* Activity owner — single required slot */}
       <Box>
-        {caption("Activity owner")}
-        {values.owner ? (
+        {caption("Activity owner", true)}
+        {locked ? (
+          values.owner ? <PersonRow name={personName(values.owner)} suffix="owner" /> : emptyLine("No owner")
+        ) : values.owner ? (
           <PersonEditRow
             name={personName(values.owner)}
             suffix="owner"
@@ -357,15 +381,17 @@ function PeopleSection({ values, setFieldValue, errors, accountId }) {
       {/* Invited — optional removable list */}
       <Box>
         {caption("Invited")}
-        {invited.map((u) => (
-          <PersonEditRow
-            key={u.id}
-            name={personName(u)}
-            onRemove={() => setFieldValue("invited", invited.filter((x) => x.id !== u.id))}
-            removeTestId={`remove-invited-${u.id}`}
-          />
-        ))}
-        {addInvited ? (
+        {locked
+          ? (invited.length ? invited.map((u) => <PersonRow key={u.id} name={personName(u)} />) : emptyLine("None"))
+          : invited.map((u) => (
+              <PersonEditRow
+                key={u.id}
+                name={personName(u)}
+                onRemove={() => setFieldValue("invited", invited.filter((x) => x.id !== u.id))}
+                removeTestId={`remove-invited-${u.id}`}
+              />
+            ))}
+        {!locked && (addInvited ? (
           <AsyncUserSelect
             data-testid="invited-select"
             value={null}
@@ -382,47 +408,55 @@ function PeopleSection({ values, setFieldValue, errors, accountId }) {
           />
         ) : (
           addButton(() => setAddInvited(true), "add-invited", "Add teammate")
-        )}
+        ))}
       </Box>
 
       {/* External contacts — removable list, min 1 */}
       <Box>
         {caption("External contacts")}
-        {contacts.map((c) => (
-          <PersonEditRow
-            key={c.id}
-            name={personName(c)}
-            suffix={c.department_name || undefined}
-            onRemove={() => setFieldValue("contacts", contacts.filter((x) => x.id !== c.id))}
-            removeTestId={`remove-contact-${c.id}`}
-          />
-        ))}
-        {addContact ? (
-          <AsyncContactSelect
-            data-testid="contact-select"
-            value={null}
-            excludeIds={contacts.map((c) => c.id)}
-            onChange={(_event, contact) => {
-              // dedup guard — never push a contact already selected (belt + braces)
-              if (contact && !contacts.some((x) => x.id === contact.id)) {
-                setFieldValue("contacts", [...contacts, contact]);
-              }
-              setAddContact(false);
-            }}
-            filters={{ account_id: accountId }}
-            label=""
-            placeholder="Search contacts…"
-          />
-        ) : (
-          addButton(() => setAddContact(true), "add-contact", "Add contact")
-        )}
-        {Boolean(errors.contacts) && <FormHelperText error>{errors.contacts}</FormHelperText>}
+        {locked
+          ? (contacts.length
+              ? contacts.map((c) => (
+                  <PersonRow key={c.id} name={personName(c)} suffix={c.department_name || undefined} />
+                ))
+              : emptyLine("None"))
+          : contacts.map((c) => (
+              <PersonEditRow
+                key={c.id}
+                name={personName(c)}
+                suffix={c.department_name || undefined}
+                onRemove={() => setFieldValue("contacts", contacts.filter((x) => x.id !== c.id))}
+                removeTestId={`remove-contact-${c.id}`}
+              />
+            ))}
+        {!locked &&
+          (addContact ? (
+            <AsyncContactSelect
+              data-testid="contact-select"
+              value={null}
+              excludeIds={contacts.map((c) => c.id)}
+              onChange={(_event, contact) => {
+                // dedup guard — never push a contact already selected (belt + braces)
+                if (contact && !contacts.some((x) => x.id === contact.id)) {
+                  setFieldValue("contacts", [...contacts, contact]);
+                }
+                setAddContact(false);
+              }}
+              filters={{ account_id: accountId }}
+              label=""
+              placeholder="Search contacts…"
+            />
+          ) : (
+            addButton(() => setAddContact(true), "add-contact", "Add contact")
+          ))}
+        {!locked && Boolean(errors.contacts) && <FormHelperText error>{errors.contacts}</FormHelperText>}
       </Box>
     </Stack>
   );
 }
 
 PeopleSection.propTypes = {
+  locked: PropTypes.bool,
   values: PropTypes.object.isRequired,
   setFieldValue: PropTypes.func.isRequired,
   errors: PropTypes.object.isRequired,
@@ -434,6 +468,9 @@ PeopleSection.propTypes = {
 export default function EditActivityContent({ activity, onSaved }) {
   const { closeDrawer } = useWorkspaceDrawer();
   const accountId = activity?.account_detail?.id || activity?.account || null;
+  // COND-1 — a campaign activity has date / contacts / owner / invited set by the
+  // campaign: those fields are locked (read-only) and never sent in the PATCH.
+  const isCampaign = Boolean(activity?.campaign_detail);
 
   // Memoized so the reference is STABLE across renders — with a fresh inline
   // object each render, enableReinitialize's compare (fresh dayjs objects) is
@@ -461,21 +498,26 @@ export default function EditActivityContent({ activity, onSaved }) {
     validationSchema,
     initialValues,
     onSubmit: async (values, { setSubmitting }) => {
+      // Always-editable fields.
       const payload = {
         title: values.title.trim(),
         activity_type: values.activity_type,
-        scheduled_date: fmtDate(values.scheduled_date),
-        scheduled_time:
-          values.scheduled_date && values.scheduled_time
-            ? dayjs(values.scheduled_time).format("HH:mm:ss")
-            : null,
-        due_date: fmtDate(values.due_date),
         call_to_action: values.call_to_action?.trim() || null,
         description: values.description?.trim() || null,
-        owner_id: values.owner?.id ?? null,
-        invited_user_ids: (values.invited || []).map((u) => u.id),
-        contact_ids: (values.contacts || []).map((c) => c.id),
       };
+      // Campaign-locked fields — only sent for a non-campaign activity (the
+      // backend also refuses them on a campaign activity).
+      if (!isCampaign) {
+        payload.scheduled_date = fmtDate(values.scheduled_date);
+        payload.scheduled_time =
+          values.scheduled_date && values.scheduled_time
+            ? dayjs(values.scheduled_time).format("HH:mm:ss")
+            : null;
+        payload.due_date = fmtDate(values.due_date);
+        payload.owner_id = values.owner?.id ?? null;
+        payload.invited_user_ids = (values.invited || []).map((u) => u.id);
+        payload.contact_ids = (values.contacts || []).map((c) => c.id);
+      }
       try {
         const result = await updateActivity(activity.id, payload);
         if (result?.success) {
@@ -524,7 +566,7 @@ export default function EditActivityContent({ activity, onSaved }) {
         <Filet />
 
         {/* (2) Date & time */}
-        <DateGroup values={values} setFieldValue={setFieldValue} />
+        <DateGroup values={values} setFieldValue={setFieldValue} locked={isCampaign} />
         {Boolean(errors.scheduled_date) && (
           <Typography variant="caption" color="error">
             {errors.scheduled_date}
@@ -558,6 +600,7 @@ export default function EditActivityContent({ activity, onSaved }) {
           setFieldValue={setFieldValue}
           errors={errors}
           accountId={accountId}
+          locked={isCampaign}
         />
       </Stack>
     </DrawerContentLayout>
