@@ -201,3 +201,97 @@ class TestMixed:
         result = PeopleConsolidationService().consolidate(cycle)
         assert len(result['unqualified']) == 1
         assert result['unqualified'][0]['activity_count'] == 2
+
+
+# =============================================================================
+# TESTS — ACTIVITY COUNT ON QUALIFIED (CT-2a)
+# =============================================================================
+
+class TestActivityCountQualified:
+    """
+    The Contact fiche reads the QUALIFIED entry of a contact (the one that
+    carries the role) and shows "N activités du deal". So activity_count must
+    be present on qualified entries too — the same DC-scoped count already
+    attached to unqualified entries.
+    """
+
+    def test_activity_count_present_on_qualified(
+        self, cycle, account, activity, user_a, contact,
+        completed_activity_on_step, five_steps,
+    ):
+        # Two DC activities carry this contact: the base one + one on a step.
+        _link_activity_to_cycle(activity, cycle, user_a)
+        _add_contact_to_activity(activity, contact)
+        act2 = completed_activity_on_step(five_steps[0])
+        act2.contacts.add(contact)
+
+        # …and the contact is qualified (has a role).
+        _create_people_signal(
+            account, activity, cycle, user_a,
+            role=PeopleRole.CHAMPION, contact=contact,
+        )
+
+        result = PeopleConsolidationService().consolidate(cycle)
+        assert len(result['qualified']) == 1
+        assert result['qualified'][0]['target_contact']['id'] == str(contact.id)
+        assert result['qualified'][0]['activity_count'] == 2
+
+    def test_qualified_activity_count_ignores_status(
+        self, cycle, account, activity, user_a, contact,
+        completed_activity_on_step, planned_activity_on_step, five_steps,
+    ):
+        # No status filter: completed + cancelled + future-planned all count.
+        from app_modules.activities.constants import ActivityStatus
+
+        _link_activity_to_cycle(activity, cycle, user_a)  # COMPLETED
+        _add_contact_to_activity(activity, contact)
+
+        cancelled = completed_activity_on_step(
+            five_steps[0], status=ActivityStatus.CANCELLED,
+        )
+        cancelled.contacts.add(contact)
+
+        future = planned_activity_on_step(five_steps[0])  # PLANNED, +7d
+        future.contacts.add(contact)
+
+        _create_people_signal(
+            account, activity, cycle, user_a,
+            role=PeopleRole.CHAMPION, contact=contact,
+        )
+
+        result = PeopleConsolidationService().consolidate(cycle)
+        assert len(result['qualified']) == 1
+        assert result['qualified'][0]['activity_count'] == 3
+
+    def test_qualified_without_dc_activities_count_zero(
+        self, cycle, account, activity, user_a, contact,
+    ):
+        # Signal anchored to the cycle, but the source activity is NOT linked to
+        # the DC and the contact is on no DC activity → count 0.
+        _create_people_signal(
+            account, activity, cycle, user_a,
+            role=PeopleRole.CHAMPION, contact=contact,
+        )
+
+        result = PeopleConsolidationService().consolidate(cycle)
+        assert len(result['qualified']) == 1
+        assert result['qualified'][0]['target_contact']['id'] == str(contact.id)
+        assert result['qualified'][0]['activity_count'] == 0
+
+    def test_department_only_qualified_activity_count_zero(
+        self, cycle, account, activity, user_a,
+    ):
+        # A dept-only qualified entry has no target_contact → count 0.
+        from app_modules.core_modules.models import StandardDepartment
+        dept = StandardDepartment.objects.first()
+
+        _link_activity_to_cycle(activity, cycle, user_a)
+        _create_people_signal(
+            account, activity, cycle, user_a,
+            role=PeopleRole.ECONOMIC_BUYER, dept=dept,
+        )
+
+        result = PeopleConsolidationService().consolidate(cycle)
+        assert len(result['qualified']) == 1
+        assert result['qualified'][0]['target_contact'] is None
+        assert result['qualified'][0]['activity_count'] == 0

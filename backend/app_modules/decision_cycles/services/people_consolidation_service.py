@@ -46,8 +46,13 @@ class PeopleConsolidationService:
               'qualified': list of dicts (one per validated PeopleSignal)
               'unqualified': list of dicts (contacts without a PeopleSignal)
         """
-        qualified = self._get_qualified(decision_cycle)
-        all_cycle_contacts = self._get_cycle_contacts(decision_cycle)
+        # DC-scoped activity counts per contact, computed ONCE and shared by
+        # both branches so a contact's count is identical whether it lands in
+        # qualified or unqualified.
+        activity_counts = self._activity_counts(decision_cycle)
+
+        qualified = self._get_qualified(decision_cycle, activity_counts)
+        all_cycle_contacts = self._get_cycle_contacts(decision_cycle, activity_counts)
 
         qualified_contact_ids = {
             q['target_contact']['id']
@@ -65,12 +70,18 @@ class PeopleConsolidationService:
             'unqualified': unqualified,
         }
 
-    def _get_qualified(self, dc):
+    def _get_qualified(self, dc, activity_counts):
         """
         Validated PeopleSignals on this decision cycle.
 
         Returns a list of dicts with signal data + compact contact
         and department payloads.
+
+        ``activity_counts`` is the shared DC-scoped {contact_id: n} map (see
+        ``_activity_counts``). Each entry carries ``activity_count`` — the same
+        DC-scoped count exposed on unqualified entries — so the Contact fiche
+        can read it from the qualified entry (the one that has the role). A
+        dept-only signal (no target_contact) has no contact to count → 0.
         """
         from app_modules.signals.models import PeopleSignal
 
@@ -91,6 +102,7 @@ class PeopleConsolidationService:
                 'influence_display': sig.get_influence_display() if sig.influence else None,
                 'target_contact': self._compact_contact(sig.target_contact),
                 'target_department': self._compact_department(sig.target_department),
+                'activity_count': activity_counts.get(sig.target_contact_id, 0),
                 'notes': sig.notes,
                 'status': sig.status,
                 'created_at': sig.created_at.isoformat() if sig.created_at else None,
@@ -98,7 +110,27 @@ class PeopleConsolidationService:
             result.append(entry)
         return result
 
-    def _get_cycle_contacts(self, dc):
+    @staticmethod
+    def _activity_counts(dc):
+        """
+        DC-scoped activity count per contact: {contact_id: n}.
+
+        Counts every activity of the cycle a contact is linked to via the
+        ``Activity.contacts`` M2M — NO status filter, so completed, cancelled
+        and future/planned activities all count (product decision: "toutes les
+        activités du deal"). Single source shared by qualified + unqualified.
+        """
+        from app_modules.activities.models import Activity
+
+        return dict(
+            Activity.objects
+            .filter(decision_cycle=dc)
+            .exclude(contacts__id=None)
+            .values_list('contacts__id')
+            .annotate(n=Count('id'))
+        )
+
+    def _get_cycle_contacts(self, dc, activity_counts):
         """
         All contacts appearing in cycle activities or step contacts.
 
@@ -107,7 +139,8 @@ class PeopleConsolidationService:
           2. DecisionStepContact for steps belonging to dc
 
         Returns deduplicated list of compact contact dicts with
-        activity_count.
+        activity_count (from the shared ``activity_counts`` map — see
+        ``_activity_counts``).
         """
         from app_modules.contacts.models import Contact
         from app_modules.activities.models import Activity
@@ -134,14 +167,6 @@ class PeopleConsolidationService:
             Contact.objects
             .filter(id__in=all_ids)
             .select_related('standard_department')
-        )
-
-        activity_counts = dict(
-            Activity.objects
-            .filter(decision_cycle=dc)
-            .exclude(contacts__id=None)
-            .values_list('contacts__id')
-            .annotate(n=Count('id'))
         )
 
         result = []
