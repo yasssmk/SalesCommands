@@ -16,7 +16,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
@@ -239,10 +239,12 @@ PeoplePlaceholder.propTypes = { activity: PropTypes.object.isRequired };
 export default function EditActivityContent({ activity, onSaved }) {
   const { closeDrawer } = useWorkspaceDrawer();
 
-  const formik = useFormik({
-    enableReinitialize: true,
-    validationSchema,
-    initialValues: {
+  // Memoized so the reference is STABLE across renders — with a fresh inline
+  // object each render, enableReinitialize's compare (fresh dayjs objects) is
+  // fragile and can reset the form under a picker interaction. Keyed on the
+  // frozen activity's id (the injected node snapshots the activity).
+  const initialValues = useMemo(
+    () => ({
       title: activity?.title || "",
       activity_type: activity?.activity_type || "",
       scheduled_date: activity?.scheduled_date ? dayjs(activity.scheduled_date) : null,
@@ -250,7 +252,15 @@ export default function EditActivityContent({ activity, onSaved }) {
       due_date: activity?.due_date ? dayjs(activity.due_date) : null,
       call_to_action: activity?.call_to_action || "",
       description: activity?.description || "",
-    },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activity?.id],
+  );
+
+  const formik = useFormik({
+    enableReinitialize: true,
+    validationSchema,
+    initialValues,
     onSubmit: async (values, { setSubmitting }) => {
       const payload = {
         title: values.title.trim(),
@@ -285,7 +295,6 @@ export default function EditActivityContent({ activity, onSaved }) {
 
   return (
     <DrawerContentLayout
-      title="Edit activity"
       onSave={formik.handleSubmit}
       onCancel={() => closeDrawer()}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}

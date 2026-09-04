@@ -90,10 +90,13 @@ beforeEach(() => {
 });
 
 describe("EditActivityContent — SE-b structure", () => {
-  it("renders the DrawerContentLayout title + ONE content box", () => {
+  it("renders ONE content box and does NOT render its own title (the coque owns it now)", () => {
     renderEdit();
-    expect(screen.getByText("Edit activity")).toHaveClass("MuiTypography-h3");
     expect(screen.getByTestId("drawer-content-box")).toBeInTheDocument();
+    // Option A: the "Edit activity" title is rendered by the coque header, not
+    // by the content — so the content alone shows no drawer-title.
+    expect(screen.queryByTestId("drawer-title")).not.toBeInTheDocument();
+    expect(screen.queryByText("Edit activity")).not.toBeInTheDocument();
   });
 
   it("has NO literal group titles and NO textual 'Edit'", () => {

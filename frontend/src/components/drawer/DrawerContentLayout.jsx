@@ -41,9 +41,13 @@ export default function DrawerContentLayout({
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h3" component="h2" sx={{ fontWeight: "bold" }} data-testid="drawer-title">
-        {title}
-      </Typography>
+      {/* Title is OPTIONAL: when the coque renders it in its header (Option A),
+          the layout omits it to avoid a duplicate. */}
+      {title ? (
+        <Typography variant="h3" component="h2" sx={{ fontWeight: "bold" }} data-testid="drawer-title">
+          {title}
+        </Typography>
+      ) : null}
 
       <Box
         data-testid="drawer-content-box"
@@ -70,8 +74,8 @@ export default function DrawerContentLayout({
 }
 
 DrawerContentLayout.propTypes = {
-  /** Bold h3 title at the top of the drawer content. */
-  title: PropTypes.string.isRequired,
+  /** Optional bold h3 title. Omit when the coque renders the title (Option A). */
+  title: PropTypes.string,
   /** Global save handler. */
   onSave: PropTypes.func.isRequired,
   /** Global cancel handler. */

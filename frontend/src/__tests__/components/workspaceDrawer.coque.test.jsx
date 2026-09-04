@@ -65,6 +65,13 @@ function Trigger() {
       <button onClick={() => openDrawer(<div data-testid="dcontent">drawer body</div>)}>
         open
       </button>
+      <button
+        onClick={() =>
+          openDrawer(<div data-testid="dcontent">drawer body</div>, { title: "Edit activity" })
+        }
+      >
+        open-titled
+      </button>
       <button onClick={closeDrawer}>close</button>
     </div>
   );
@@ -143,6 +150,31 @@ describe("WorkspaceDrawer coque — anthracite background (S2c-2)", () => {
     const bg = bgOf(paper);
     expect(bg).toBe(testTheme.aphoriQ.surface.level2);
     expect(bg).not.toBe(testTheme.aphoriQ.surface.level1);
+  });
+});
+
+describe("WorkspaceDrawer coque — optional title on the cross line (Option A, SE-b-fix)", () => {
+  it("large PUSH: opening WITH a title renders it as an h3 in the coque header, cross present", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open-titled" }));
+    const title = screen.getByTestId("coque-title");
+    expect(title).toHaveTextContent("Edit activity");
+    expect(title).toHaveClass("MuiTypography-h3");
+    expect(screen.getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
+  });
+
+  it("large PUSH: opening WITHOUT a title shows the cross alone (signal drawers unchanged)", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(screen.queryByTestId("coque-title")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
+  });
+
+  it("narrow OVERLAY: title also renders in the coque header when provided", () => {
+    useMediaQuery.mockReturnValue(true);
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open-titled" }));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit activity");
   });
 });
 

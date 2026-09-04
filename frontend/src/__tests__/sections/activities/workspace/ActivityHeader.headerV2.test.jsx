@@ -223,6 +223,8 @@ describe("ActivityHeader V2 — ⋮ menu is Edit | Delete only", () => {
     expect(node).toBeTruthy();
     // the injected node is the EditActivityContent, fed the activity
     expect(node.props.activity).toBe(base);
+    // Option A: the coque title is passed via openDrawer's options arg
+    expect(openDrawer.mock.calls[0][1]).toEqual({ title: "Edit activity" });
   });
 });
 

@@ -160,7 +160,7 @@ export default function useActivityHeaderProps({
   // Edit — inject the edit form into the workspace drawer coque (S2c).
   const handleEditClick = () => {
     handleMenuClose();
-    openDrawer(<EditActivityContent activity={activity} />);
+    openDrawer(<EditActivityContent activity={activity} />, { title: "Edit activity" });
   };
 
   // ==============================|| HANDLERS — Navigation ||============================== //

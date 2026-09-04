@@ -25,6 +25,7 @@ import Collapse from "@mui/material/Collapse";
 import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 
 // icons
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
@@ -34,14 +35,15 @@ import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 
 // ==============================|| COQUE HEADER ||============================== //
 
-function CoqueHeader({ onClose }) {
+function CoqueHeader({ onClose, title }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   return (
     <Stack
       direction="row"
-      justifyContent="flex-end"
+      justifyContent="space-between"
       alignItems="center"
+      spacing={1}
       sx={{
         px: 2,
         py: 1.5,
@@ -50,6 +52,21 @@ function CoqueHeader({ onClose }) {
         borderBottomColor: aq.border.color,
       }}
     >
+      {/* Optional title (Option A): shares the cross's line. Absent → an empty
+          spacer keeps the cross flush-right, identical to the title-less coque. */}
+      {title ? (
+        <Typography
+          variant="h3"
+          component="h2"
+          noWrap
+          sx={{ fontWeight: "bold", minWidth: 0 }}
+          data-testid="coque-title"
+        >
+          {title}
+        </Typography>
+      ) : (
+        <Box />
+      )}
       <IconButton size="small" onClick={onClose} aria-label="Close drawer">
         <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
       </IconButton>
@@ -57,14 +74,14 @@ function CoqueHeader({ onClose }) {
   );
 }
 
-CoqueHeader.propTypes = { onClose: PropTypes.func.isRequired };
+CoqueHeader.propTypes = { onClose: PropTypes.func.isRequired, title: PropTypes.string };
 
 // ==============================|| PUSH PANEL (large) ||============================== //
 
 // The push coque body. Extracted so its aphoriQ token reads happen only when it
 // actually MOUNTS — the Collapse below mounts it (via unmountOnExit) solely when
 // the drawer is open, so a closed coque never touches theme.aphoriQ.
-function CoquePanel({ content, onClose }) {
+function CoquePanel({ content, onClose, title }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   return (
@@ -86,7 +103,7 @@ function CoquePanel({ content, onClose }) {
         flexDirection: "column",
       }}
     >
-      <CoqueHeader onClose={onClose} />
+      <CoqueHeader onClose={onClose} title={title} />
       <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>{content}</Box>
     </Box>
   );
@@ -95,6 +112,7 @@ function CoquePanel({ content, onClose }) {
 CoquePanel.propTypes = {
   content: PropTypes.node,
   onClose: PropTypes.func.isRequired,
+  title: PropTypes.string,
 };
 
 // ==============================|| WORKSPACE DRAWER (COQUE) ||============================== //
@@ -103,12 +121,19 @@ export default function WorkspaceDrawer() {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const isNarrow = useMediaQuery(theme.breakpoints.down("lg"));
-  const { isOpen, content, closeDrawer } = useWorkspaceDrawer();
+  const { isOpen, content, title, closeDrawer } = useWorkspaceDrawer();
 
   // ---- Narrow: OVERLAY (temporary Drawer + backdrop) ----
   // The temporary MUI Drawer slides in/out natively via theme.transitions when
   // `open` toggles. PaperProps (and the children) resolve aphoriQ tokens only
   // while open — a closed overlay never touches theme.aphoriQ.
+  //
+  // disableEnforceFocus: MUI-X pickers (DatePicker/TimePicker) render their
+  // calendar in a Popper portaled to <body>, OUTSIDE this temporary Drawer's
+  // focus trap. With the default enforceFocus the trap yanks focus back and the
+  // calendar clicks never register (it appears to stay open / not commit). We
+  // relax focus enforcement so the portaled picker is usable; closing via the
+  // backdrop or the cross is unaffected.
   if (isNarrow) {
     return (
       <Drawer
@@ -116,6 +141,7 @@ export default function WorkspaceDrawer() {
         open={isOpen}
         variant="temporary"
         onClose={closeDrawer}
+        disableEnforceFocus
         PaperProps={
           isOpen
             ? {
@@ -135,7 +161,7 @@ export default function WorkspaceDrawer() {
             : undefined
         }
       >
-        <CoqueHeader onClose={closeDrawer} />
+        <CoqueHeader onClose={closeDrawer} title={title} />
         <Box sx={{ p: 2, overflowY: "auto" }}>{content}</Box>
       </Drawer>
     );
@@ -150,7 +176,7 @@ export default function WorkspaceDrawer() {
   // while open, so a closed coque renders null (and reads no aphoriQ tokens).
   return (
     <Collapse orientation="horizontal" in={isOpen} unmountOnExit sx={{ flexShrink: 0 }}>
-      <CoquePanel content={content} onClose={closeDrawer} />
+      <CoquePanel content={content} onClose={closeDrawer} title={title} />
     </Collapse>
   );
 }

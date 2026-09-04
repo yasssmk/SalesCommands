@@ -81,6 +81,20 @@ describe("DrawerContentLayout — title + content box + global actions", () => {
     expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
   });
 
+  it("omits the title when none is passed (the coque renders it — Option A)", () => {
+    render(
+      <ThemeCustomization>
+        <DrawerContentLayout onSave={() => {}} onCancel={() => {}}>
+          <div data-testid="group">g</div>
+        </DrawerContentLayout>
+      </ThemeCustomization>,
+    );
+    expect(screen.queryByTestId("drawer-title")).not.toBeInTheDocument();
+    // box + actions still render
+    expect(screen.getByTestId("drawer-content-box")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save/i })).toBeInTheDocument();
+  });
+
   it("honors custom saveLabel / cancelLabel", () => {
     renderLayout({ saveLabel: "Apply", cancelLabel: "Discard" });
     expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
