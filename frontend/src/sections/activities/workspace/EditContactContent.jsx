@@ -78,16 +78,21 @@ export default function EditContactContent({ contactId, onSaved }) {
     validationSchema,
     initialValues,
     onSubmit: async (values, { setSubmitting }) => {
-      // Exactly the V0 field set — never account_id. phone/linkedin are trimmed
-      // here because updateContact's sanitize list does not cover them.
+      // Exactly the V0 field set — never account_id. Optional STRING fields are
+      // sent as "" when empty, never null: the write serializer
+      // (core.serializers.ContactDetailsSerializer) declares email/phone/linkedin
+      // with allow_blank=True but NOT allow_null, so null is rejected ("may not
+      // be null") while "" clears the value (mirrors the old FormContactEdit).
+      // Only the department FK clears with null (its field is allow_null). phone/
+      // linkedin are trimmed here since updateContact's sanitize list omits them.
       const payload = {
         first_name: values.first_name.trim(),
         last_name: values.last_name.trim(),
-        job_title: values.job_title?.trim() || null,
+        job_title: values.job_title?.trim() || "",
         standard_department_id: values.standard_department_id || null,
-        email: values.email?.trim() || null,
-        phone_number: values.phone_number?.trim() || null,
-        linkedin: values.linkedin?.trim() || null,
+        email: values.email?.trim() || "",
+        phone_number: values.phone_number?.trim() || "",
+        linkedin: values.linkedin?.trim() || "",
       };
       try {
         const result = await updateContact(contactId, payload);

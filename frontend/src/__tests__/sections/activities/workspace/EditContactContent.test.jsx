@@ -168,6 +168,30 @@ describe("EditContactContent — save", () => {
     expect(payload).not.toHaveProperty("account_id");
   });
 
+  it("sends empty string coordinates (never null) so a contact saves without them", async () => {
+    // The write serializer accepts "" (allow_blank) but rejects null
+    // ("may not be null") for email/phone/linkedin. Empty coords must go as "".
+    renderEdit();
+    editField("email", "");
+    editField("phone_number", "");
+    editField("linkedin", "");
+    editField("job_title", "");
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateContact).toHaveBeenCalledTimes(1));
+    const payload = updateContact.mock.calls[0][1];
+    expect(payload.email).toBe("");
+    expect(payload.phone_number).toBe("");
+    expect(payload.linkedin).toBe("");
+    expect(payload.job_title).toBe("");
+    // none of the string coords is null
+    expect(payload.email).not.toBeNull();
+    expect(payload.phone_number).not.toBeNull();
+    expect(payload.linkedin).not.toBeNull();
+    // the department FK still clears with null (allow_null on the FK)
+    expect(payload.standard_department_id).toBe("d1");
+  });
+
   it("on success: success snackbar + closeDrawer + onSaved", async () => {
     const onSaved = vi.fn();
     renderEdit({ onSaved });
