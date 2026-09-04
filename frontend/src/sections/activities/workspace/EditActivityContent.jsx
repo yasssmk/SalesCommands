@@ -9,9 +9,11 @@
 //
 // Groups: (1) Title + Type · (2) Date & time (scheduled|due exclusive toggle,
 // mechanics cloned from UnifiedDateSection) · (3) Objective + Description ·
-// (4) People — a READ-ONLY placeholder here, made editable in SE-c.
+// (4) People — editable owner (single required slot) / invited / contacts
+// (min 1), all draft-only until the global Save.
 //
-// Formik + Yup (title required, at-least-one-date); no hardcoded hex/px.
+// Formik + Yup (title required, at-least-one-date, owner required, contacts
+// min 1); no hardcoded hex/px.
 
 "use client";
 
@@ -25,6 +27,8 @@ import dayjs from "dayjs";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import FormHelperText from "@mui/material/FormHelperText";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import ToggleButton from "@mui/material/ToggleButton";
@@ -32,6 +36,7 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import CheckOutlined from "@ant-design/icons/CheckOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -44,6 +49,8 @@ import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import PersonRow from "components/display/PersonRow";
+import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
+import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 
 // ==============================|| VALIDATION ||============================== //
 
@@ -62,6 +69,9 @@ const validationSchema = Yup.object(
         otherwise: (schema) => schema.nullable(),
       }),
     due_date: Yup.date().nullable().typeError("Please select a valid date"),
+    // owner is NOT NULL backend — Formik keeps the invariant, never sends null.
+    owner: Yup.object().nullable().required("An owner is required"),
+    contacts: Yup.array().min(1, "At least one contact is required"),
   },
   [["scheduled_date", "due_date"]],
 );
@@ -253,44 +263,168 @@ DateGroup.propTypes = { values: PropTypes.object.isRequired, setFieldValue: Prop
 
 // Read-only for now — owner / invited / contacts. SE-c replaces this with the
 // editable owner slot + removable invited/contacts + AsyncSelects.
-function PeoplePlaceholder({ activity }) {
-  const aq = useTheme().aphoriQ;
-  const owner = personName(activity?.owner_detail);
-  const invited = activity?.invited_users_detail || [];
-  const contacts = activity?.contacts_detail || [];
+// A person line with a remove ✕. Editable rows for owner / invited / contacts.
+function PersonEditRow({ name, suffix, onRemove, removeTestId }) {
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+  return (
+    <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+      <Box sx={{ minWidth: 0 }}>
+        <PersonRow name={name} suffix={suffix} />
+      </Box>
+      <IconButton
+        size="small"
+        onClick={onRemove}
+        data-testid={removeTestId}
+        aria-label={`Remove ${name}`}
+        sx={{ color: aq.text.muted }}
+      >
+        <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+      </IconButton>
+    </Stack>
+  );
+}
+
+PersonEditRow.propTypes = {
+  name: PropTypes.string,
+  suffix: PropTypes.string,
+  onRemove: PropTypes.func.isRequired,
+  removeTestId: PropTypes.string.isRequired,
+};
+
+// The editable People section — draft only; the drawer's global Save PATCHes.
+// owner: single required slot (× empties it visually, but Formik keeps owner
+// required so a null owner_id is never sent). invited: optional removable list.
+// contacts: removable list, min 1 (Formik blocks Save when empty).
+function PeopleSection({ values, setFieldValue, errors, accountId }) {
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+  const [addOwner, setAddOwner] = useState(false);
+  const [addInvited, setAddInvited] = useState(false);
+  const [addContact, setAddContact] = useState(false);
+
   const caption = (t) => (
-    <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+    <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
       {t}
     </Typography>
   );
+  const addButton = (onClick, testId, label) => (
+    <Button
+      variant="text"
+      size="small"
+      onClick={onClick}
+      data-testid={testId}
+      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+      sx={{ color: aq.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
+    >
+      {label}
+    </Button>
+  );
+
+  const invited = values.invited || [];
+  const contacts = values.contacts || [];
+
   return (
-    <Stack data-testid="people-placeholder" spacing={1.5}>
+    <Stack data-testid="people-section" spacing={1.5}>
+      {/* Activity owner — single required slot */}
       <Box>
-        {caption("Owner")}
-        {owner ? <PersonRow name={owner} suffix="owner" /> : null}
+        {caption("Activity owner")}
+        {values.owner ? (
+          <PersonEditRow
+            name={personName(values.owner)}
+            suffix="owner"
+            onRemove={() => setFieldValue("owner", null)}
+            removeTestId="remove-owner"
+          />
+        ) : addOwner ? (
+          <AsyncUserSelect
+            data-testid="owner-select"
+            value={null}
+            onChange={(_event, user) => {
+              setFieldValue("owner", user || null);
+              setAddOwner(false);
+            }}
+            label=""
+            placeholder="Search a user…"
+          />
+        ) : (
+          addButton(() => setAddOwner(true), "add-owner", "Add owner")
+        )}
+        {Boolean(errors.owner) && <FormHelperText error>{errors.owner}</FormHelperText>}
       </Box>
+
+      {/* Invited — optional removable list */}
       <Box>
-        {caption("Invited users")}
-        {invited.length ? invited.map((u) => <PersonRow key={u.id} name={personName(u)} />) : (
-          <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>None</Typography>
+        {caption("Invited")}
+        {invited.map((u) => (
+          <PersonEditRow
+            key={u.id}
+            name={personName(u)}
+            onRemove={() => setFieldValue("invited", invited.filter((x) => x.id !== u.id))}
+            removeTestId={`remove-invited-${u.id}`}
+          />
+        ))}
+        {addInvited ? (
+          <AsyncUserSelect
+            data-testid="invited-select"
+            value={null}
+            onChange={(_event, user) => {
+              if (user) setFieldValue("invited", [...invited, user]);
+              setAddInvited(false);
+            }}
+            label=""
+            placeholder="Search users…"
+          />
+        ) : (
+          addButton(() => setAddInvited(true), "add-invited", "Add teammate")
         )}
       </Box>
+
+      {/* External contacts — removable list, min 1 */}
       <Box>
-        {caption("Contacts")}
-        {contacts.length ? contacts.map((c) => <PersonRow key={c.id} name={personName(c)} />) : (
-          <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>None</Typography>
+        {caption("External contacts")}
+        {contacts.map((c) => (
+          <PersonEditRow
+            key={c.id}
+            name={personName(c)}
+            suffix={c.department_name || undefined}
+            onRemove={() => setFieldValue("contacts", contacts.filter((x) => x.id !== c.id))}
+            removeTestId={`remove-contact-${c.id}`}
+          />
+        ))}
+        {addContact ? (
+          <AsyncContactSelect
+            data-testid="contact-select"
+            value={null}
+            onChange={(_event, contact) => {
+              if (contact) setFieldValue("contacts", [...contacts, contact]);
+              setAddContact(false);
+            }}
+            filters={{ account_id: accountId }}
+            label=""
+            placeholder="Search contacts…"
+          />
+        ) : (
+          addButton(() => setAddContact(true), "add-contact", "Add contact")
         )}
+        {Boolean(errors.contacts) && <FormHelperText error>{errors.contacts}</FormHelperText>}
       </Box>
     </Stack>
   );
 }
 
-PeoplePlaceholder.propTypes = { activity: PropTypes.object.isRequired };
+PeopleSection.propTypes = {
+  values: PropTypes.object.isRequired,
+  setFieldValue: PropTypes.func.isRequired,
+  errors: PropTypes.object.isRequired,
+  accountId: PropTypes.string,
+};
 
 // ==============================|| EDIT ACTIVITY CONTENT ||============================== //
 
 export default function EditActivityContent({ activity, onSaved }) {
   const { closeDrawer } = useWorkspaceDrawer();
+  const accountId = activity?.account_detail?.id || activity?.account || null;
 
   // Memoized so the reference is STABLE across renders — with a fresh inline
   // object each render, enableReinitialize's compare (fresh dayjs objects) is
@@ -305,6 +439,9 @@ export default function EditActivityContent({ activity, onSaved }) {
       due_date: activity?.due_date ? dayjs(activity.due_date) : null,
       call_to_action: activity?.call_to_action || "",
       description: activity?.description || "",
+      owner: activity?.owner_detail || null,
+      invited: activity?.invited_users_detail || [],
+      contacts: activity?.contacts_detail || [],
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activity?.id],
@@ -326,6 +463,9 @@ export default function EditActivityContent({ activity, onSaved }) {
         due_date: fmtDate(values.due_date),
         call_to_action: values.call_to_action?.trim() || null,
         description: values.description?.trim() || null,
+        owner_id: values.owner?.id ?? null,
+        invited_user_ids: (values.invited || []).map((u) => u.id),
+        contact_ids: (values.contacts || []).map((c) => c.id),
       };
       try {
         const result = await updateActivity(activity.id, payload);
@@ -403,8 +543,13 @@ export default function EditActivityContent({ activity, onSaved }) {
 
         <Filet />
 
-        {/* (4) People — read-only placeholder (SE-c) */}
-        <PeoplePlaceholder activity={activity} />
+        {/* (4) People — editable owner / invited / contacts (draft + global save) */}
+        <PeopleSection
+          values={values}
+          setFieldValue={setFieldValue}
+          errors={errors}
+          accountId={accountId}
+        />
       </Stack>
     </DrawerContentLayout>
   );

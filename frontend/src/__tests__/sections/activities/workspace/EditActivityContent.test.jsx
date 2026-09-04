@@ -56,6 +56,38 @@ vi.mock("api/accounts/activities", async (orig) => ({
 }));
 vi.mock("utils/displayError", () => ({ displaySuccessSnackbar, displayErrorSnackbar }));
 
+// Async selects hit live API hooks — stub them. Each exposes a "pick" button that
+// fires onChange the way MUI Autocomplete does: (event, value) — proving the
+// handler reads the 2nd argument. The returned id is keyed off the passed
+// data-testid so owner vs invited vs contact payloads stay distinct.
+vi.mock("components/AsyncSelection/AsyncUserSelect", () => ({
+  default: (props) => (
+    <button
+      type="button"
+      data-testid={props["data-testid"]}
+      onClick={() =>
+        props.onChange(
+          {},
+          { id: props["data-testid"] === "owner-select" ? "owner9" : "inv9", full_name: "Picked User" },
+        )
+      }
+    >
+      pick
+    </button>
+  ),
+}));
+vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
+  default: (props) => (
+    <button
+      type="button"
+      data-testid={props["data-testid"]}
+      onClick={() => props.onChange({}, { id: "c9", full_name: "Picked Contact" })}
+    >
+      pick
+    </button>
+  ),
+}));
+
 import ThemeCustomization from "themes/index";
 import EditActivityContent from "sections/activities/workspace/EditActivityContent";
 
@@ -111,10 +143,13 @@ describe("EditActivityContent — SE-b structure", () => {
     expect(screen.getAllByTestId("group-filet").length).toBeGreaterThanOrEqual(3);
   });
 
-  it("keeps People as a read-only placeholder (owner shown, not editable here)", () => {
+  it("renders the editable People section (owner / invited / contacts), no placeholder", () => {
     renderEdit();
-    expect(screen.getByTestId("people-placeholder")).toBeInTheDocument();
+    expect(screen.queryByTestId("people-placeholder")).not.toBeInTheDocument();
+    expect(screen.getByTestId("people-section")).toBeInTheDocument();
     expect(screen.getByText("Ann Owner")).toBeInTheDocument();
+    expect(screen.getByText("Ivan Invit")).toBeInTheDocument();
+    expect(screen.getByText("Cara Contact")).toBeInTheDocument();
   });
 });
 
@@ -137,9 +172,10 @@ describe("EditActivityContent — double-click edit + global save", () => {
     expect(payload.scheduled_time).toBe("14:30:00");
     expect(payload.due_date).toBeNull();
     expect(payload.call_to_action).toBe("Qualify budget");
-    // People is NOT edited here → not part of this PATCH
-    expect(payload).not.toHaveProperty("owner_id");
-    expect(payload).not.toHaveProperty("contact_ids");
+    // People is now part of the PATCH (SE-c) — seeded from the activity
+    expect(payload.owner_id).toBe("u1");
+    expect(payload.invited_user_ids).toEqual(["u2"]);
+    expect(payload.contact_ids).toEqual(["c1"]);
     await waitFor(() => expect(closeDrawer).toHaveBeenCalled());
     expect(displaySuccessSnackbar).toHaveBeenCalled();
   });
@@ -225,5 +261,67 @@ describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATC
     fireEvent.click(save);
     await waitFor(() => expect(updateActivity).toHaveBeenCalledTimes(1));
     expect(updateActivity.mock.calls[0][1].scheduled_date).toBe("2026-10-01");
+  });
+});
+
+describe("EditActivityContent — People (draft + global save, no per-row PATCH)", () => {
+  it("owner filled shows a remove ✕; removing empties the slot and shows + Add owner, Save blocked", async () => {
+    renderEdit();
+    expect(screen.getByTestId("remove-owner")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("remove-owner"));
+    // slot empty → add affordance appears, no PATCH
+    expect(screen.getByTestId("add-owner")).toBeInTheDocument();
+    expect(screen.queryByText("Ann Owner")).not.toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+    // owner required → Save disabled even though the form is otherwise valid+dirty
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).toBeDisabled());
+  });
+
+  it("+ Add owner reveals AsyncUserSelect and its 2nd-arg value fills the slot", () => {
+    renderEdit({ ...ACTIVITY, owner_detail: null });
+    expect(screen.getByTestId("add-owner")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("add-owner"));
+    fireEvent.click(screen.getByTestId("owner-select")); // fires onChange({}, {id:"owner9"})
+    expect(screen.getByTestId("remove-owner")).toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  it("invited: add via AsyncUserSelect and remove a row (draft only)", () => {
+    renderEdit();
+    // remove the seeded invited
+    fireEvent.click(screen.getByTestId("remove-invited-u2"));
+    expect(screen.queryByText("Ivan Invit")).not.toBeInTheDocument();
+    // add a teammate
+    fireEvent.click(screen.getByTestId("add-invited"));
+    fireEvent.click(screen.getByTestId("invited-select")); // {id:"inv9"}
+    expect(screen.getByTestId("remove-invited-inv9")).toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  it("contacts min 1: removing the only contact blocks Save; adding one restores it", async () => {
+    renderEdit();
+    const save = screen.getByRole("button", { name: /save/i });
+    fireEvent.click(screen.getByTestId("remove-contact-c1"));
+    await waitFor(() => expect(save).toBeDisabled());
+    fireEvent.click(screen.getByTestId("add-contact"));
+    fireEvent.click(screen.getByTestId("contact-select")); // {id:"c9"}
+    expect(screen.getByTestId("remove-contact-c9")).toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  it("global Save sends owner_id / invited_user_ids / contact_ids from the People draft", async () => {
+    renderEdit();
+    // add a teammate so the invited list changes → also makes the form dirty
+    fireEvent.click(screen.getByTestId("add-invited"));
+    fireEvent.click(screen.getByTestId("invited-select"));
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(updateActivity).toHaveBeenCalledTimes(1));
+    const payload = updateActivity.mock.calls[0][1];
+    expect(payload.owner_id).toBe("u1");
+    expect(payload.invited_user_ids).toEqual(["u2", "inv9"]);
+    expect(payload.contact_ids).toEqual(["c1"]);
   });
 });
