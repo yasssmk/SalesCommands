@@ -16,7 +16,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
@@ -25,10 +25,13 @@ import dayjs from "dayjs";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
+import CheckOutlined from "@ant-design/icons/CheckOutlined";
+import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -107,9 +110,37 @@ function Filet() {
 // Switching the toggle clears the OTHER date (and scheduled_time when leaving
 // scheduled) — mechanics cloned from UnifiedDateSection.
 function DateGroup({ values, setFieldValue }) {
-  const aq = useTheme().aphoriQ;
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
   const [editing, setEditing] = useState(false);
   const [mode, setMode] = useState(values.scheduled_date || !values.due_date ? "scheduled" : "due");
+  // Snapshot of the draft (date/time/mode) captured on entering edit — ✗ restores it.
+  const startRef = useRef(null);
+
+  const startEdit = () => {
+    startRef.current = {
+      scheduled_date: values.scheduled_date,
+      scheduled_time: values.scheduled_time,
+      due_date: values.due_date,
+      mode,
+    };
+    setEditing(true);
+  };
+
+  // ✓ — keep the current draft, just return to read (no PATCH; the global Save owns it).
+  const confirm = () => setEditing(false);
+
+  // ✗ — restore the pre-edit draft (date/time/mode) and return to read.
+  const cancel = () => {
+    const s = startRef.current;
+    if (s) {
+      setFieldValue("scheduled_date", s.scheduled_date);
+      setFieldValue("scheduled_time", s.scheduled_time);
+      setFieldValue("due_date", s.due_date);
+      setMode(s.mode);
+    }
+    setEditing(false);
+  };
 
   const handleMode = (_e, val) => {
     if (!val) return;
@@ -160,6 +191,28 @@ function DateGroup({ values, setFieldValue }) {
               </Box>
             )}
           </Stack>
+
+          {/* ✓ validate (keep draft) / ✗ discard (restore) — local read/edit only. */}
+          <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
+            <IconButton
+              size="small"
+              onClick={confirm}
+              data-testid="date-confirm"
+              aria-label="Confirm date"
+              sx={{ color: "success.main" }}
+            >
+              <CheckOutlined style={{ fontSize: theme.iconSizes.sm }} />
+            </IconButton>
+            <IconButton
+              size="small"
+              onClick={cancel}
+              data-testid="date-cancel"
+              aria-label="Discard date changes"
+              sx={{ color: "error.main" }}
+            >
+              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+            </IconButton>
+          </Stack>
         </Stack>
       </LocalizationProvider>
     );
@@ -177,7 +230,7 @@ function DateGroup({ values, setFieldValue }) {
       </Typography>
       <Box
         data-testid="inline-read-date"
-        onDoubleClick={() => setEditing(true)}
+        onDoubleClick={startEdit}
         sx={{ cursor: "pointer", py: 0.25 }}
       >
         {display ? (

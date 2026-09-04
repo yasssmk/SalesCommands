@@ -180,3 +180,50 @@ describe("EditActivityContent — date toggle exclusivity (cloned mechanics)", (
     expect(payload.scheduled_time).toBeNull();
   });
 });
+
+describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATCH)", () => {
+  it("edit mode shows ✓ and ✗; ✓ returns to READ keeping the draft, no updateActivity", async () => {
+    renderEdit();
+    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    // in edit: confirm + cancel controls present
+    expect(screen.getByTestId("date-confirm")).toBeInTheDocument();
+    expect(screen.getByTestId("date-cancel")).toBeInTheDocument();
+    // change the scheduled date via the stubbed picker (label "Scheduled date")
+    fireEvent.click(screen.getByTestId("pick-Scheduled date"));
+    // validate the section
+    fireEvent.click(screen.getByTestId("date-confirm"));
+    // back to READ: pickers gone, new date shown, NO patch
+    await waitFor(() => expect(screen.queryByTestId("pick-Scheduled date")).not.toBeInTheDocument());
+    expect(screen.getByTestId("inline-read-date")).toBeInTheDocument();
+    expect(screen.getByText(/Oct 1, 2026/)).toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  it("✗ returns to READ restoring the date/time/mode from before editing", async () => {
+    renderEdit(); // scheduled 2026-09-10 14:30
+    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    // switch to Due Date and pick a due date
+    fireEvent.click(screen.getByRole("button", { name: /due date/i }));
+    fireEvent.click(screen.getByTestId("pick-Due date"));
+    // discard the in-flight edit
+    fireEvent.click(screen.getByTestId("date-cancel"));
+    await waitFor(() => expect(screen.queryByTestId("pick-Due date")).not.toBeInTheDocument());
+    // restored: scheduled mode + original date + time, NOT the due date
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.getByText(/Sep 10, 2026 · 2:30 PM/)).toBeInTheDocument();
+    expect(screen.queryByText(/Oct 1, 2026/)).not.toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  it("✓ keeps the draft so the GLOBAL Save then PATCHes the confirmed date", async () => {
+    renderEdit();
+    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    fireEvent.click(screen.getByTestId("pick-Scheduled date"));
+    fireEvent.click(screen.getByTestId("date-confirm"));
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(updateActivity).toHaveBeenCalledTimes(1));
+    expect(updateActivity.mock.calls[0][1].scheduled_date).toBe("2026-10-01");
+  });
+});
