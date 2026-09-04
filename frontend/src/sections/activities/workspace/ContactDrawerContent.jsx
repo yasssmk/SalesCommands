@@ -190,7 +190,9 @@ export default function ContactDrawerContent({ contactId, activity }) {
             data-testid="contact-edit"
             aria-label="Edit contact"
             onClick={() =>
-              openDrawer(<EditContactContent contactId={contactId} />, { title: "Edit contact" })
+              openDrawer(<EditContactContent contactId={contactId} activity={activity} />, {
+                title: "Edit contact",
+              })
             }
             sx={{ color: aq.text.muted, flexShrink: 0, alignSelf: "flex-start" }}
           >

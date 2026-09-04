@@ -18,12 +18,14 @@ vi.mock("themes/emotionCache", () => ({
   NextAppDirEmotionCacheProvider: ({ children }) => children,
 }));
 
-const { closeDrawer, updateContact, displaySuccessSnackbar, displayErrorSnackbar } = vi.hoisted(() => ({
-  closeDrawer: vi.fn(),
-  updateContact: vi.fn(() => Promise.resolve({ success: true, data: {} })),
-  displaySuccessSnackbar: vi.fn(),
-  displayErrorSnackbar: vi.fn(),
-}));
+const { closeDrawer, updateContact, createSignal, displaySuccessSnackbar, displayErrorSnackbar } =
+  vi.hoisted(() => ({
+    closeDrawer: vi.fn(),
+    updateContact: vi.fn(() => Promise.resolve({ success: true, data: {} })),
+    createSignal: vi.fn(() => Promise.resolve({ success: true, data: {} })),
+    displaySuccessSnackbar: vi.fn(),
+    displayErrorSnackbar: vi.fn(),
+  }));
 
 vi.mock("contexts/WorkspaceDrawerContext", () => ({
   useWorkspaceDrawer: () => ({ isOpen: true, content: null, openDrawer: vi.fn(), closeDrawer }),
@@ -32,10 +34,18 @@ vi.mock("utils/displayError", () => ({ displaySuccessSnackbar, displayErrorSnack
 
 const useGetContact = vi.fn();
 const useGetContactChoices = vi.fn();
+const useGetDCPeople = vi.fn();
+const mutatePeople = vi.fn();
 vi.mock("api/businessData/contacts", () => ({
   useGetContact: (...a) => useGetContact(...a),
   useGetContactChoices: (...a) => useGetContactChoices(...a),
   updateContact: (...a) => updateContact(...a),
+}));
+vi.mock("api/accounts/decisionCycles", () => ({
+  useGetDCPeople: (...a) => useGetDCPeople(...a),
+}));
+vi.mock("api/signals/signals", () => ({
+  createSignal: (...a) => createSignal(...a),
 }));
 
 import ThemeCustomization from "themes/index";
@@ -73,6 +83,16 @@ function mockChoices(depts = DEPARTMENTS) {
     choicesError: null,
   });
 }
+function mockDCPeople(peopleObj = { qualified: [], unqualified: [] }) {
+  useGetDCPeople.mockReturnValue({
+    people: peopleObj,
+    peopleLoading: false,
+    peopleError: null,
+    mutatePeople,
+  });
+}
+
+const DC_ACTIVITY = { id: "a1", decision_cycle: "dc-1", account: "acc-1" };
 
 function renderEdit(props = {}) {
   return render(
@@ -92,8 +112,10 @@ function editField(name, value) {
 beforeEach(() => {
   vi.clearAllMocks();
   updateContact.mockResolvedValue({ success: true, data: {} });
+  createSignal.mockResolvedValue({ success: true, data: {} });
   mockContact();
   mockChoices();
+  mockDCPeople();
 });
 
 describe("EditContactContent — fields", () => {
@@ -214,6 +236,75 @@ describe("EditContactContent — save", () => {
   it("Cancel closes the drawer", () => {
     renderEdit();
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(closeDrawer).toHaveBeenCalled();
+  });
+});
+
+describe("EditContactContent — sections", () => {
+  it("shows a 'Contact' section caption for the coordinates", () => {
+    renderEdit();
+    expect(screen.getByText("Contact")).toBeInTheDocument();
+  });
+});
+
+describe("EditContactContent — role in the decision (DC only)", () => {
+  const QUALIFIED = {
+    target_contact: { id: "c1" },
+    role: "CHAMPION",
+    role_display: "Champion",
+    influence: "HIGH",
+    influence_display: "High",
+    activity_count: 0,
+  };
+
+  it("is ABSENT outside a DC (no activity / decision_cycle)", () => {
+    renderEdit(); // no activity
+    expect(screen.queryByTestId("edit-contact-role-section")).not.toBeInTheDocument();
+    expect(screen.queryByText("Role in the decision")).not.toBeInTheDocument();
+  });
+
+  it("is PRESENT inside a DC, pre-filled from the contact's qualified entry", () => {
+    mockDCPeople({ qualified: [QUALIFIED], unqualified: [] });
+    renderEdit({ activity: DC_ACTIVITY });
+    expect(screen.getByTestId("edit-contact-role-section")).toBeInTheDocument();
+    expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Champion");
+    expect(screen.getByTestId("inline-read-influence")).toHaveTextContent("High");
+  });
+
+  it("changing the role and saving writes a MANUAL people signal, then revalidates", async () => {
+    mockDCPeople({ qualified: [QUALIFIED], unqualified: [] });
+    renderEdit({ activity: DC_ACTIVITY });
+
+    fireEvent.doubleClick(screen.getByTestId("inline-read-role"));
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: "Decision Maker" }));
+
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateContact).toHaveBeenCalledTimes(1));
+    expect(createSignal).toHaveBeenCalledWith(
+      "people",
+      expect.objectContaining({
+        role: "DECISION_MAKER",
+        target_contact: "c1",
+        account: "acc-1",
+        source: "MANUAL",
+        decision_cycle: "dc-1",
+      }),
+    );
+    expect(mutatePeople).toHaveBeenCalled();
+    expect(closeDrawer).toHaveBeenCalled();
+  });
+
+  it("does NOT write a people signal when the role is unchanged", async () => {
+    mockDCPeople({ qualified: [QUALIFIED], unqualified: [] });
+    renderEdit({ activity: DC_ACTIVITY });
+
+    editField("job_title", "Head of Sales"); // change only a contact field
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(updateContact).toHaveBeenCalledTimes(1));
+    expect(createSignal).not.toHaveBeenCalled();
     expect(closeDrawer).toHaveBeenCalled();
   });
 });
