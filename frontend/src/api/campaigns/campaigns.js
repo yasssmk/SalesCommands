@@ -241,7 +241,7 @@ const endpoints = {
  * revalidation path; it covers the union of what those functions revalidated
  * plus the accordion prefix, so no caller loses a key it had before.
  */
-function revalidateCampaignPlaylist(campaignId) {
+export function revalidateCampaignPlaylist(campaignId) {
   revalidateMultiple([
     endpoints.campaignPlaylist(campaignId),
     endpoints.campaignDashboard(campaignId),

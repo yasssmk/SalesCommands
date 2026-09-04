@@ -13,6 +13,7 @@ import Palette from "themes/palette";
 import Typography from "themes/typography";
 import CustomShadows from "themes/shadows";
 import IconSizes from "themes/iconSizes";
+import AphoriQ from "themes/aphoriq";
 
 // next/font is not available in the test env — stub it like the other
 // theme-consuming tests do.
@@ -24,6 +25,11 @@ vi.mock("next/font/google", () => ({
 // ESM under the test env. The header only references it inside its (unrendered)
 // modals bundle, so stub it out to keep the import graph clean.
 vi.mock("sections/campaigns/CampaignOutcomeModal", () => ({ default: () => null }));
+
+// EditActivityContent pulls @mui/x-date-pickers (unresolvable ESM in this env);
+// the header only references it on the ⋮ Edit click, so stub it here.
+vi.mock("sections/activities/workspace/EditActivityContent", () => ({ default: () => null }));
+vi.mock("sections/activities/workspace/OutcomeDrawerContent", () => ({ default: () => null }));
 
 // Router spy — the header pushes navigation through next/navigation.
 const pushMock = vi.fn();
@@ -40,6 +46,7 @@ const theme = createTheme({
   customShadows: CustomShadows(paletteTheme),
   typography: Typography(`'Public Sans', sans-serif`),
   iconSizes: IconSizes(),
+  aphoriQ: AphoriQ({ palette: paletteTheme.palette }),
 });
 
 const activity = {

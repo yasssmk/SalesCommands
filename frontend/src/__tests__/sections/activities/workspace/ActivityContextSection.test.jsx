@@ -1,0 +1,185 @@
+// frontend/src/__tests__/sections/activities/workspace/ActivityContextSection.test.jsx
+//
+// UX Activity S2a — read-only aphoriQ Context card, copied from the mockup:
+// bold "Context" title, dense two-column Details (bold values), People rows with
+// round initials avatars + inline suffix (no email/phone) and a "+" per column
+// header + a "›" per contact (all inert), and a CONDITIONAL provenance-only
+// origin line (never the current campaign/DC rattachement).
+
+import { render, screen, cleanup } from "@testing-library/react";
+import { describe, it, expect, vi, afterEach } from "vitest";
+
+afterEach(() => cleanup());
+
+vi.mock("next/font/google", () => ({
+  Public_Sans: () => ({ className: "mock", style: { fontFamily: "mock" } }),
+}));
+vi.mock("themes/emotionCache", () => ({
+  NextAppDirEmotionCacheProvider: ({ children }) => children,
+}));
+vi.mock("next/link", () => ({
+  default: ({ href, children }) => <a href={typeof href === "string" ? href : "#"}>{children}</a>,
+}));
+
+import ThemeCustomization from "themes/index";
+import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
+
+function rulesForElement(el) {
+  const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+  const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+  return classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+}
+
+const ACCOUNT = { id: "acc-1", company_name: "RED RUBAN" };
+const OWNER = { id: "u1", email: "admin@test.com", first_name: "Admin", last_name: "Tenant A", full_name: "Admin Tenant A" };
+const CONTACT = { id: "c1", first_name: "Chevalier", last_name: "Iki", full_name: "Chevalier Iki", email: "iki@rr.com", phone_number: "+33124354657", job_title: "Head of HR", department_name: "HR" };
+
+// No provenance; campaign_detail is set on purpose to prove the rattachement is
+// NOT rendered in Context (it lives in the header).
+const baseActivity = {
+  call_to_action: null,
+  scheduled_date: "2026-08-20",
+  scheduled_time: null,
+  due_date: null,
+  description: "Initial outreach call",
+  account: "acc-1",
+  account_detail: ACCOUNT,
+  owner_detail: OWNER,
+  invited_users_detail: [],
+  contacts_detail: [CONTACT],
+  campaign_detail: { id: "cmp1", name: "Q2 Outbound", campaign_status: "ACTIVE", sequence_position: 3 },
+  decision_cycle_detail: null,
+  decision_step_detail: null,
+  source_activity_detail: null,
+};
+
+const provCampaign = {
+  ...baseActivity,
+  source_activity_detail: {
+    id: "act9",
+    title: "Initial Outreach Call",
+    activity_type: "CALL",
+    status: "COMPLETED",
+    source_context: { type: "CAMPAIGN", id: "cmp1", name: "CAMP-B" },
+  },
+};
+
+const provDC = {
+  ...baseActivity,
+  source_activity_detail: {
+    id: "act9",
+    title: "Prep call",
+    activity_type: "CALL",
+    status: "COMPLETED",
+    source_context: { type: "DECISION_CYCLE", id: "dc9", name: "RED RUBAN deal" },
+  },
+};
+
+function renderCtx(activity) {
+  return render(
+    <ThemeCustomization>
+      <ActivityContextSection activity={activity} />
+    </ThemeCustomization>,
+  );
+}
+
+describe("ActivityContextSection — mockup copy", () => {
+  it("renders the Context title, Objective placeholder, Scheduled and Description", () => {
+    renderCtx(baseActivity);
+    expect(screen.getByText("Context")).toBeInTheDocument();
+    expect(screen.getByText("Click to define an objective…")).toBeInTheDocument();
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.getByText("Initial outreach call")).toBeInTheDocument();
+  });
+
+  it("external contact row shows job title between name and department", () => {
+    renderCtx(baseActivity);
+    // "Chevalier Iki · Head of HR · HR" — job_title sits between name and dept
+    expect(screen.getByText(/· Head of HR · HR/)).toBeInTheDocument();
+  });
+
+  it("always shows the Description label, with a placeholder when empty", () => {
+    renderCtx({ ...baseActivity, description: null });
+    expect(screen.getByText("Description")).toBeInTheDocument();
+    expect(screen.getByText("Click to add a description…")).toBeInTheDocument();
+  });
+
+  it("people rows have NO avatar, inline suffixes, no email/phone; contact name is interactive", () => {
+    const { container } = renderCtx(baseActivity);
+    // no avatars anywhere
+    expect(container.querySelector(".MuiAvatar-root")).toBeNull();
+    expect(screen.getByText("Admin Tenant A")).toBeInTheDocument();
+    expect(screen.getByText(/· owner/)).toBeInTheDocument();
+    expect(screen.getByText("Chevalier Iki")).toBeInTheDocument();
+    expect(screen.getByText(/· HR/)).toBeInTheDocument();
+    // no coordinates on people rows
+    expect(screen.queryByText(/admin@test.com/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/iki@rr.com/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\+33/)).not.toBeInTheDocument();
+    // contact name looks interactive (cursor), owner name does not
+    expect(rulesForElement(screen.getByText("Chevalier Iki"))).toMatch(/cursor:\s*pointer/);
+    expect(rulesForElement(screen.getByText("Admin Tenant A"))).not.toMatch(/cursor:\s*pointer/);
+  });
+
+  it("shows NO '+' on the column headers and NO chevron on contacts (S2c-2 removed the inert +)", () => {
+    const { container } = renderCtx(baseActivity);
+    expect(container.querySelectorAll(".anticon-plus").length).toBe(0);
+    expect(container.querySelectorAll(".anticon-right").length).toBe(0);
+  });
+
+  it("does NOT render the current campaign/DC rattachement in Context", () => {
+    renderCtx(baseActivity); // campaign_detail set, but source null → no origin group
+    expect(screen.queryByText(/Q2 Outbound/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Active/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Step 3/)).not.toBeInTheDocument();
+    // no origin group at all (no provenance) → single Details|People separator
+    expect(screen.getAllByTestId("ctx-sep")).toHaveLength(1);
+    expect(screen.queryByText(/^From/)).not.toBeInTheDocument();
+  });
+
+  it("provenance CAMPAIGN — branch icon, TWO separate links (distinct targets), no rattachement", () => {
+    const { container } = renderCtx(provCampaign);
+    // branch/connection icon, not a link icon
+    expect(container.querySelector(".anticon-branches")).toBeTruthy();
+    expect(container.querySelector(".anticon-link")).toBeNull();
+    expect(screen.getByText(/From campaign/i)).toBeInTheDocument();
+    // two DISTINCT <Link> targets (never one wrapping link)
+    const hrefs = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
+    expect(hrefs).toContain("/campaigns/cmp1");
+    expect(hrefs).toContain("/activities/act9");
+    expect(new Set(hrefs).size).toBeGreaterThanOrEqual(2);
+    // NOT the rattachement line
+    expect(screen.queryByText(/Q2 Outbound/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Active/)).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("ctx-sep")).toHaveLength(2);
+  });
+
+  it("provenance DECISION_CYCLE — 'From Decision Cycle', TWO separate links, no step", () => {
+    renderCtx(provDC);
+    expect(screen.getByText(/From Decision Cycle/i)).toBeInTheDocument();
+    const hrefs = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
+    expect(hrefs).toContain("/accounts/acc-1/dc/dc9?tab=timeline");
+    expect(hrefs).toContain("/activities/act9");
+    expect(new Set(hrefs).size).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does NOT render ComingSoon nor Previous/Next activity", () => {
+    renderCtx(baseActivity);
+    expect(screen.queryByText(/Coming Soon/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Previous Activity/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Next Activity/i)).not.toBeInTheDocument();
+  });
+
+  it("single card consuming aphoriQ tokens (hairline) with minmax grids", () => {
+    renderCtx(baseActivity);
+    const card = screen.getAllByTestId("ctx-card")[0];
+    const rule = (() => {
+      const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+      const classes = (card.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+      return classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    })();
+    expect(rule).toContain("0.5px");
+    const allCss = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    expect(allCss).toMatch(/minmax\(0/);
+  });
+});

@@ -124,7 +124,19 @@ function AsyncSelect({
    */
   const options = useMemo(() => {
     const searchResults = data || [];
-    
+    const idOf = (x) => x?.id || x?.uuid || x;
+
+    // Mode `multiple`: value is an ARRAY — prepend each SELECTED item that is not
+    // in the current results (comparing per element by id), never the array
+    // itself. (Prepending `value?.id` on an array would inject the whole array
+    // as one bogus option.) Single mode (value = object|null) is unchanged below.
+    if (Array.isArray(value)) {
+      const missing = value.filter(
+        (v) => v && !searchResults.some((o) => idOf(o) === idOf(v)),
+      );
+      return missing.length ? [...missing, ...searchResults] : searchResults;
+    }
+
     // Si value existe ET n'est pas dans les résultats, l'ajouter en premier
     if (value && !searchResults.find(option => {
       const optionId = option?.id || option?.uuid || option;
@@ -133,7 +145,7 @@ function AsyncSelect({
     })) {
       return [value, ...searchResults];
     }
-    
+
     return searchResults;
   }, [data, value]);
   

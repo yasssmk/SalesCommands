@@ -21,6 +21,7 @@ export const ACTIVITY_TYPES = {
   CALL: "CALL",
   EMAIL: "EMAIL",
   MEETING: "MEETING",
+  DEMO: "DEMO",
   TASK: "TASK",
   LINKEDIN: "LINKEDIN",
   OTHER: "OTHER",
@@ -33,6 +34,7 @@ export const ACTIVITY_TYPE_LABELS = {
   CALL: "Phone Call",
   EMAIL: "Email",
   MEETING: "Meeting",
+  DEMO: "Demo",
   TASK: "Task",
   LINKEDIN: "LinkedIn",
   OTHER: "Other",
@@ -45,6 +47,7 @@ export const ACTIVITY_TYPE_ICONS = {
   CALL: "PhoneOutlined",
   EMAIL: "MailOutlined",
   MEETING: "TeamOutlined",
+  DEMO: "DesktopOutlined",
   TASK: "CheckSquareOutlined",
   LINKEDIN: "LinkedinOutlined",
   OTHER: "QuestionCircleOutlined",
@@ -65,17 +68,38 @@ export const ACTIVITY_STATUSES = {
  */
 export const ACTIVITY_STATUS_LABELS = {
   PLANNED: "Planned",
+  ON_HOLD: "On hold",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
 
 /**
- * Status colors for UI display
+ * Status → semantic colour role (MUI palette role, never a hex). Consumed by the
+ * activity header's status chip. Planned reads neutral/muted (default), Completed
+ * success, Cancelled error, On hold warning.
  */
 export const ACTIVITY_STATUS_COLORS = {
   PLANNED: "default",
+  ON_HOLD: "warning",
   COMPLETED: "success",
   CANCELLED: "error",
+};
+
+/**
+ * Two-colour table for the standard StatusPill (contour+text = `text`,
+ * background = `background`). Values are theme tokens / MUI palette paths, never
+ * hex, so sx resolves them and they invert light/dark. `text` colours the TEXT
+ * and the BORDER by status (Planned neutral/muted, Completed success, Cancelled
+ * error, On hold warning); `background` reuses the theme's page/header background
+ * token (`background.paper`, which inverts light/dark) so the chip blends into the
+ * background and only its coloured contour detaches it — one value for every
+ * status today, stored per-status to vary later.
+ */
+export const ACTIVITY_STATUS_CHIP_COLORS = {
+  PLANNED: { text: "text.secondary", background: "background.paper" },
+  ON_HOLD: { text: "warning.main", background: "background.paper" },
+  COMPLETED: { text: "success.main", background: "background.paper" },
+  CANCELLED: { text: "error.main", background: "background.paper" },
 };
 
 /**

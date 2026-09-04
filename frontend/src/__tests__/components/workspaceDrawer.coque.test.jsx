@@ -8,6 +8,45 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
+import { testTheme } from "../_utils/aphoriqTheme";
+
+// The emotion rule text for an element's own css-* classes (scoped).
+function rulesForElement(el) {
+  const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+  const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+  return classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+}
+
+// The cascade winner background-color of an element's emotion rules — the LAST
+// declaration across its css-* classes (sx overrides come last and win).
+function bgOf(el) {
+  const all = rulesForElement(el).match(/background-color:\s*([^;}]+)/g) || [];
+  if (all.length === 0) return null;
+  return all[all.length - 1].replace(/background-color:\s*/, "").trim();
+}
+
+// Walk up from `el` and return the background-color of the first ancestor that
+// declares one (the coque panel Box paints the shell background).
+function bgOfAncestor(el) {
+  let node = el;
+  while (node) {
+    const bg = bgOf(node);
+    if (bg) return bg;
+    node = node.parentElement;
+  }
+  return null;
+}
+
+// The coque panel element itself: the first ancestor of `el` that paints a
+// background-color (the CoquePanel Box carries bg + radius + border + margin).
+function panelOfAncestor(el) {
+  let node = el;
+  while (node) {
+    if (bgOf(node)) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
 
 // Control push vs overlay deterministically (WorkspaceDrawer picks the mode via
 // useMediaQuery(down('lg'))). Since L2 the coque + provider live at the layout,
@@ -25,6 +64,13 @@ function Trigger() {
       <div data-testid="main-content" />
       <button onClick={() => openDrawer(<div data-testid="dcontent">drawer body</div>)}>
         open
+      </button>
+      <button
+        onClick={() =>
+          openDrawer(<div data-testid="dcontent">drawer body</div>, { title: "Edit activity" })
+        }
+      >
+        open-titled
       </button>
       <button onClick={closeDrawer}>close</button>
     </div>
@@ -81,5 +127,108 @@ describe("WorkspaceDrawer coque (B3.5.1)", () => {
     expect(screen.getByTestId("dcontent")).toBeInTheDocument();
     // temporary MUI Drawer paints a backdrop overlay
     expect(document.querySelector(".MuiBackdrop-root")).not.toBeNull();
+  });
+});
+
+describe("WorkspaceDrawer coque — anthracite background (S2c-2)", () => {
+  it("large PUSH: the coque panel background is the aphoriQ surface.level2 token (not level1)", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const bg = bgOfAncestor(screen.getByTestId("dcontent"));
+    expect(bg).toBe(testTheme.aphoriQ.surface.level2);
+    expect(bg).not.toBe(testTheme.aphoriQ.surface.level1);
+  });
+
+  it("narrow OVERLAY: the temporary Drawer paper background is surface.level2 (not level1)", () => {
+    useMediaQuery.mockReturnValue(true); // narrow
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const paper = document.querySelector(".MuiDrawer-paper");
+    expect(paper).not.toBeNull();
+    const bg = bgOf(paper);
+    expect(bg).toBe(testTheme.aphoriQ.surface.level2);
+    expect(bg).not.toBe(testTheme.aphoriQ.surface.level1);
+  });
+});
+
+describe("WorkspaceDrawer coque — optional title on the cross line (Option A, SE-b-fix)", () => {
+  it("large PUSH: opening WITH a title renders it as an h3 in the coque header, cross present", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open-titled" }));
+    const title = screen.getByTestId("coque-title");
+    expect(title).toHaveTextContent("Edit activity");
+    expect(title).toHaveClass("MuiTypography-h3");
+    expect(screen.getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
+  });
+
+  it("large PUSH: opening WITHOUT a title shows the cross alone (signal drawers unchanged)", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(screen.queryByTestId("coque-title")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
+  });
+
+  it("narrow OVERLAY: title also renders in the coque header when provided", () => {
+    useMediaQuery.mockReturnValue(true);
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open-titled" }));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit activity");
+  });
+});
+
+describe("WorkspaceDrawer coque — rounded, detached floating card (SE-a)", () => {
+  it("large PUSH: the panel is rounded (radius.lg), has a detachment margin, and a full hairline border", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const panel = panelOfAncestor(screen.getByTestId("dcontent"));
+    expect(panel).not.toBeNull();
+    const rule = rulesForElement(panel);
+    // same radius as the page boxes (aphoriQ.radius.lg = 12px)
+    expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.lg}px`);
+    // detached from the edges — a margin is present
+    expect(rule).toMatch(/margin(-top|-right|-bottom|-left)?:/);
+    // full border (not the old left-only border): a solid border shorthand/side
+    expect(rule).toMatch(/border(-top|-right|-bottom)?(-style)?:\s*[^;]*solid|border-width:/);
+    // background stays anthracite
+    expect(bgOf(panel)).toBe(testTheme.aphoriQ.surface.level2);
+  });
+
+  it("large PUSH: the panel has NO top margin (its top aligns with the header row), keeps bottom+right detachment", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const rule = rulesForElement(panelOfAncestor(screen.getByTestId("dcontent")));
+    // no margin-top → the coque top sits at the flex-start row line = header top
+    expect(rule).not.toMatch(/margin-top:/);
+    // bottom + right detachment stay
+    expect(rule).toMatch(/margin-bottom:/);
+    expect(rule).toMatch(/margin-right:/);
+  });
+
+  it("large PUSH: the panel is NOT bordered on the left side only (border-left-only is gone)", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const rule = rulesForElement(panelOfAncestor(screen.getByTestId("dcontent")));
+    // the old design declared ONLY border-left-*; a full card must not be
+    // left-only. If a left border is declared it must be part of an all-sides
+    // border (a plain shorthand or explicit widths), so assert a non-left
+    // border declaration exists.
+    expect(rule).toMatch(/(^|[;{])border:|border-top|border-right|border-bottom|border-width:/);
+  });
+
+  it("narrow OVERLAY: the paper is rounded (radius.lg) and detached with a margin", () => {
+    useMediaQuery.mockReturnValue(true); // narrow
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const paper = document.querySelector(".MuiDrawer-paper");
+    const rule = rulesForElement(paper);
+    expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.lg}px`);
+    expect(rule).toMatch(/margin(-top|-right|-bottom|-left)?:/);
+    expect(bgOf(paper)).toBe(testTheme.aphoriQ.surface.level2);
   });
 });

@@ -31,6 +31,7 @@ import { useMenuState } from "hooks/useMenuState";
 const WorkspaceDrawerContext = createContext({
   isOpen: false,
   content: null,
+  title: null,
   openDrawer: () => {},
   closeDrawer: () => {},
 });
@@ -44,18 +45,25 @@ export function WorkspaceDrawerProvider({ children }) {
   // The injected content node is the single source of truth: a non-null node
   // means the drawer is open.
   const [content, setContent] = useState(null);
+  // Optional coque title (Option A): the coque renders it in its header, on the
+  // close cross's line. Absent → the coque header shows the cross alone.
+  const [title, setTitle] = useState(null);
   const isOpen = content != null;
 
   const openDrawer = useCallback(
-    (node) => {
+    (node, options = {}) => {
       setContent(node ?? null);
+      setTitle(options?.title ?? null);
       // Exclusivity: opening the workspace drawer collapses the left menu.
       handlerDrawerOpen(false);
     },
     [handlerDrawerOpen],
   );
 
-  const closeDrawer = useCallback(() => setContent(null), []);
+  const closeDrawer = useCallback(() => {
+    setContent(null);
+    setTitle(null);
+  }, []);
 
   // Reverse exclusivity: the hamburger lives in the shell (outside this
   // provider), so we OBSERVE the menu singleton instead of wiring the toggle.
@@ -65,13 +73,14 @@ export function WorkspaceDrawerProvider({ children }) {
   useEffect(() => {
     if (menuOpen && !prevMenuOpen.current) {
       setContent(null);
+      setTitle(null);
     }
     prevMenuOpen.current = menuOpen;
   }, [menuOpen]);
 
   const value = useMemo(
-    () => ({ isOpen, content, openDrawer, closeDrawer }),
-    [isOpen, content, openDrawer, closeDrawer],
+    () => ({ isOpen, content, title, openDrawer, closeDrawer }),
+    [isOpen, content, title, openDrawer, closeDrawer],
   );
 
   return (
