@@ -29,8 +29,8 @@ import PropTypes from "prop-types";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -82,51 +82,77 @@ function Rule() {
   );
 }
 
-// One coordinate line: icon + value. `href` makes the value an accent link
-// (email / linkedin); otherwise it is plain text (phone). Renders nothing when
-// the value is empty, so blank channels drop out of the stack.
-function CoordinateLine({ icon: Icon, value, href, ariaLabel }) {
+// One coordinate ROW, two columns: (icon + label) on the left, value on the
+// right. The row is ALWAYS rendered — an empty channel shows a discreet
+// placeholder ("No email"…) so the user sees what is missing. `href` makes a
+// present value an accent link (email / linkedin); otherwise it is plain text.
+function CoordinateRow({ icon: Icon, label, value, href, ariaLabel, placeholder }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
-  if (!value) return null;
+  const hasValue = Boolean(value);
 
-  const valueNode = href ? (
-    <Box
-      component="a"
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={ariaLabel}
-      sx={{
-        color: aq.accent,
-        textDecoration: "none",
-        wordBreak: "break-word",
-        "&:hover": { textDecoration: "underline" },
-      }}
-    >
-      {value}
-    </Box>
-  ) : (
-    <Typography variant="body2" color="text.primary" sx={{ wordBreak: "break-word" }}>
-      {value}
-    </Typography>
-  );
+  let valueNode;
+  if (!hasValue) {
+    valueNode = (
+      <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
+        {placeholder}
+      </Typography>
+    );
+  } else if (href) {
+    valueNode = (
+      <Box
+        component="a"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={ariaLabel}
+        sx={{
+          color: aq.accent,
+          textDecoration: "none",
+          wordBreak: "break-word",
+          "&:hover": { textDecoration: "underline" },
+        }}
+      >
+        {value}
+      </Box>
+    );
+  } else {
+    valueNode = (
+      <Typography variant="body2" color="text.primary" sx={{ wordBreak: "break-word" }}>
+        {value}
+      </Typography>
+    );
+  }
 
   return (
-    <Stack direction="row" spacing={1} alignItems="center">
-      <Box sx={{ flexShrink: 0, display: "flex" }}>
-        <Icon style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
-      </Box>
-      {valueNode}
-    </Stack>
+    <Box
+      sx={{
+        display: "grid",
+        gridTemplateColumns: "minmax(0, auto) minmax(0, 1fr)",
+        alignItems: "center",
+        columnGap: 2,
+      }}
+    >
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Box sx={{ flexShrink: 0, display: "flex" }}>
+          <Icon style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
+        </Box>
+        <Typography variant="caption" sx={{ color: aq.text.muted }}>
+          {label}
+        </Typography>
+      </Stack>
+      <Box sx={{ textAlign: "right", minWidth: 0 }}>{valueNode}</Box>
+    </Box>
   );
 }
 
-CoordinateLine.propTypes = {
+CoordinateRow.propTypes = {
   icon: PropTypes.elementType.isRequired,
+  label: PropTypes.string.isRequired,
   value: PropTypes.string,
   href: PropTypes.string,
   ariaLabel: PropTypes.string,
+  placeholder: PropTypes.string.isRequired,
 };
 
 // ==============================|| CONTACT DRAWER CONTENT ||============================== //
@@ -141,10 +167,17 @@ export default function ContactDrawerContent({ contactId, activity }) {
   const cycleId = activity?.decision_cycle || null;
   const { people } = useGetDCPeople(cycleId);
 
-  // The contact's QUALIFIED entry in DC people (the one that carries the role).
+  // The contact in DC people. The role lives on the QUALIFIED entry
+  // (target_contact); activity_count lives on BOTH the qualified and the
+  // unqualified entry (contact) — a contact with a role and one without both
+  // have a deal activity count. Look the contact up in both lists.
   const qualified = people?.qualified || [];
-  const dcEntry =
+  const unqualified = people?.unqualified || [];
+  const qualifiedEntry =
     qualified.find((q) => q?.target_contact?.id === contactId) || null;
+  const unqualifiedEntry =
+    unqualified.find((u) => u?.contact?.id === contactId) || null;
+  const inDC = Boolean(cycleId);
 
   // ---- loading / error (no crash, discreet) ----
   if (contactLoading) {
@@ -172,13 +205,18 @@ export default function ContactDrawerContent({ contactId, activity }) {
 
   const jobDept = [contact.job_title, contact.department_name].filter(Boolean).join(" · ");
 
-  // Role is shown only when a qualified DC entry exists AND carries a role.
-  const roleLabel = dcEntry ? dcEntry.role_display || dcEntry.role : null;
-  const influenceLabel = dcEntry ? dcEntry.influence_display || dcEntry.influence : null;
-  const showRole = Boolean(roleLabel);
+  // Role comes from the qualified entry; may be absent (unqualified / no DC).
+  const roleLabel = qualifiedEntry
+    ? qualifiedEntry.role_display || qualifiedEntry.role
+    : null;
+  const influenceLabel = qualifiedEntry
+    ? qualifiedEntry.influence_display || qualifiedEntry.influence
+    : null;
 
-  // Activities encart only inside a DC and when the contact is in DC people.
-  const showActivities = Boolean(dcEntry) && typeof dcEntry.activity_count === "number";
+  // Deal activity count: whichever entry carries the contact (qualified OR
+  // unqualified), else 0. The encart shows for any contact inside a DC.
+  const activityCount =
+    qualifiedEntry?.activity_count ?? unqualifiedEntry?.activity_count ?? 0;
 
   return (
     <DrawerContentLayout>
@@ -203,10 +241,25 @@ export default function ContactDrawerContent({ contactId, activity }) {
           >
             {initials(contact)}
           </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography variant="subtitle1" color="text.primary" sx={{ fontWeight: "bold" }}>
-              {fullName(contact)}
-            </Typography>
+          <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              <Typography variant="subtitle1" color="text.primary" sx={{ fontWeight: "bold", minWidth: 0 }}>
+                {fullName(contact)}
+              </Typography>
+              {/* Edit ✎ next to the name — inert for now (opens the edit
+                  contact drawer in CT-3). */}
+              <IconButton
+                size="small"
+                data-testid="contact-edit"
+                aria-label="Edit contact"
+                onClick={() => {
+                  // wired in CT-3 (edit contact drawer)
+                }}
+                sx={{ color: aq.text.muted, flexShrink: 0 }}
+              >
+                <EditOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            </Stack>
             {jobDept && (
               <Typography variant="body2" sx={{ color: aq.text.muted }}>
                 {jobDept}
@@ -217,93 +270,96 @@ export default function ContactDrawerContent({ contactId, activity }) {
 
         <Rule />
 
-        {/* Coordinates — a line drops out when empty */}
+        {/* Coordinates — the 3 lines are ALWAYS shown, two columns, with a
+            "No …" placeholder when a channel is empty. */}
         <Stack spacing={1}>
-          <CoordinateLine
+          <CoordinateRow
             icon={MailOutlined}
+            label="Email"
             value={contact.email}
             href={contact.email ? `mailto:${contact.email}` : undefined}
             ariaLabel={contact.email}
+            placeholder="No email"
           />
-          <CoordinateLine icon={PhoneOutlined} value={contact.phone_number} />
-          <CoordinateLine
+          <CoordinateRow
+            icon={PhoneOutlined}
+            label="Phone"
+            value={contact.phone_number}
+            placeholder="No phone"
+          />
+          <CoordinateRow
             icon={LinkedinOutlined}
+            label="LinkedIn"
             value={contact.linkedin}
             href={contact.linkedin || undefined}
             ariaLabel="LinkedIn profile"
+            placeholder="No LinkedIn"
           />
         </Stack>
 
-        {/* Involved in N activities — from the qualified DC entry */}
-        {showActivities && (
+        {/* Involved in N activities — shown for any contact inside a DC (even
+            0). Absent outside a DC (campaign activity → no deal, no count). */}
+        {inDC && (
           <Surface data-testid="contact-activities" level="level1" radius="lg" sx={{ p: 1.5 }}>
             <Stack direction="row" spacing={1} alignItems="center">
               <TeamOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
               <Typography variant="body2" color="text.primary">
                 Involved in{" "}
                 <Box component="span" sx={{ fontWeight: "bold" }}>
-                  {dcEntry.activity_count}
+                  {activityCount}
                 </Box>{" "}
-                activit{dcEntry.activity_count === 1 ? "y" : "ies"} in this deal
+                activit{activityCount === 1 ? "y" : "ies"} in this deal
               </Typography>
             </Stack>
           </Surface>
         )}
 
-        {/* Decision role — read from DC people, absent when unknown */}
-        {showRole && (
-          <>
-            <Rule />
-            <Box data-testid="contact-role">
-              <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-                Role in the decision
-              </Typography>
-              <Typography variant="body2" color="text.primary" sx={{ fontWeight: "bold" }}>
-                {roleLabel}
-                {influenceLabel && (
-                  <Box component="span" sx={{ color: aq.text.muted, fontWeight: "regular" }}>
-                    {" · "}
-                    {influenceLabel}
-                  </Box>
-                )}
-              </Typography>
-            </Box>
-          </>
-        )}
+        {/* Decision role — ALWAYS present (rule + block); a placeholder invites
+            qualifying the contact when no role is known yet. */}
+        <Rule />
+        <Box data-testid="contact-role">
+          <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+            Role in the decision
+          </Typography>
+          {roleLabel ? (
+            <Typography variant="body2" color="text.primary" sx={{ fontWeight: "bold" }}>
+              {roleLabel}
+              {influenceLabel && (
+                <Box component="span" sx={{ color: aq.text.muted, fontWeight: "regular" }}>
+                  {" · "}
+                  {influenceLabel}
+                </Box>
+              )}
+            </Typography>
+          ) : (
+            <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
+              No role defined
+            </Typography>
+          )}
+        </Box>
 
-        {/* Body actions — present but inert */}
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<EditOutlined />}
-            onClick={() => {
-              // wired in CT-3 (edit contact drawer)
-            }}
-          >
-            Edit
-          </Button>
-          <Box
-            component="span"
-            data-testid="contact-signals-link"
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              // future: browse this contact's / department's signals in place
-            }}
-            sx={{
-              color: aq.accent,
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 0.5,
-              "&:hover": { textDecoration: "underline" },
-            }}
-          >
-            <RadarChartOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            See signals
-          </Box>
-        </Stack>
+        {/* Bottom action — the only one in the body, inert for now. */}
+        <Box
+          component="span"
+          data-testid="contact-signals-link"
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            // future: browse this contact's / department's signals in place
+          }}
+          sx={{
+            color: aq.accent,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 0.5,
+            alignSelf: "flex-start",
+            "&:hover": { textDecoration: "underline" },
+          }}
+        >
+          <RadarChartOutlined style={{ fontSize: theme.iconSizes.sm }} />
+          See signals
+        </Box>
       </Stack>
     </DrawerContentLayout>
   );
