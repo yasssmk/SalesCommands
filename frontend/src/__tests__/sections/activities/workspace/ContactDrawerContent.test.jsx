@@ -168,7 +168,7 @@ describe("ContactDrawerContent — identity + coordinates (always shown, 2 colum
   });
 });
 
-describe("ContactDrawerContent — Edit pencil next to the name (inert)", () => {
+describe("ContactDrawerContent — Edit pencil pushed to the right (inert)", () => {
   it("shows an Edit pencil control, inert (no crash on click)", () => {
     mockContact();
     mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
@@ -177,6 +177,19 @@ describe("ContactDrawerContent — Edit pencil next to the name (inert)", () => 
     expect(edit).toBeInTheDocument();
     fireEvent.click(edit);
     expect(edit).toBeInTheDocument();
+  });
+
+  it("aligns the Edit pencil to the far right of the identity row (ml:auto)", () => {
+    mockContact();
+    mockDCPeople({ qualified: [], unqualified: [] });
+    renderFiche();
+    const edit = screen.getByTestId("contact-edit");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (edit.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes
+      .map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join(""))
+      .join("");
+    expect(rule).toContain("margin-left:auto");
   });
 });
 

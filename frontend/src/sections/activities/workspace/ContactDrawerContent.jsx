@@ -47,6 +47,7 @@ import { useGetContact } from "api/businessData/contacts";
 import { useGetDCPeople } from "api/accounts/decisionCycles";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import Surface from "components/display/Surface";
+import CoordinateRow from "components/display/CoordinateRow";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -81,79 +82,6 @@ function Rule() {
     />
   );
 }
-
-// One coordinate ROW, two columns: (icon + label) on the left, value on the
-// right. The row is ALWAYS rendered — an empty channel shows a discreet
-// placeholder ("No email"…) so the user sees what is missing. `href` makes a
-// present value an accent link (email / linkedin); otherwise it is plain text.
-function CoordinateRow({ icon: Icon, label, value, href, ariaLabel, placeholder }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
-  const hasValue = Boolean(value);
-
-  let valueNode;
-  if (!hasValue) {
-    valueNode = (
-      <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
-        {placeholder}
-      </Typography>
-    );
-  } else if (href) {
-    valueNode = (
-      <Box
-        component="a"
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={ariaLabel}
-        sx={{
-          color: aq.accent,
-          textDecoration: "none",
-          wordBreak: "break-word",
-          "&:hover": { textDecoration: "underline" },
-        }}
-      >
-        {value}
-      </Box>
-    );
-  } else {
-    valueNode = (
-      <Typography variant="body2" color="text.primary" sx={{ wordBreak: "break-word" }}>
-        {value}
-      </Typography>
-    );
-  }
-
-  return (
-    <Box
-      sx={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, auto) minmax(0, 1fr)",
-        alignItems: "center",
-        columnGap: 2,
-      }}
-    >
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Box sx={{ flexShrink: 0, display: "flex" }}>
-          <Icon style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
-        </Box>
-        <Typography variant="caption" sx={{ color: aq.text.muted }}>
-          {label}
-        </Typography>
-      </Stack>
-      <Box sx={{ textAlign: "right", minWidth: 0 }}>{valueNode}</Box>
-    </Box>
-  );
-}
-
-CoordinateRow.propTypes = {
-  icon: PropTypes.elementType.isRequired,
-  label: PropTypes.string.isRequired,
-  value: PropTypes.string,
-  href: PropTypes.string,
-  ariaLabel: PropTypes.string,
-  placeholder: PropTypes.string.isRequired,
-};
 
 // ==============================|| CONTACT DRAWER CONTENT ||============================== //
 
@@ -246,8 +174,8 @@ export default function ContactDrawerContent({ contactId, activity }) {
               <Typography variant="subtitle1" color="text.primary" sx={{ fontWeight: "bold", minWidth: 0 }}>
                 {fullName(contact)}
               </Typography>
-              {/* Edit ✎ next to the name — inert for now (opens the edit
-                  contact drawer in CT-3). */}
+              {/* Edit ✎ pushed to the far right of the identity row — inert for
+                  now (opens the edit contact drawer in CT-3). */}
               <IconButton
                 size="small"
                 data-testid="contact-edit"
@@ -255,7 +183,7 @@ export default function ContactDrawerContent({ contactId, activity }) {
                 onClick={() => {
                   // wired in CT-3 (edit contact drawer)
                 }}
-                sx={{ color: aq.text.muted, flexShrink: 0 }}
+                sx={{ color: aq.text.muted, flexShrink: 0, ml: "auto" }}
               >
                 <EditOutlined style={{ fontSize: theme.iconSizes.sm }} />
               </IconButton>
