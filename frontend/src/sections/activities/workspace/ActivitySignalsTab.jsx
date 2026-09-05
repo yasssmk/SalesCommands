@@ -1,9 +1,16 @@
 // frontend/src/sections/activities/workspace/ActivitySignalsTab.jsx
 //
-// Activity "Signals" tab — the flat, exhaustive list of the activity's
-// signals (SignalLine rows via the aggregated endpoint scoped by activity_id,
-// server-paginated 20/page). The grouped synthesis lives in its own
-// "Qualification" tab (ActivityQualificationTab), mirroring Account / DC.
+// Activity "Signals" tab — FLAT-FORCED (SIG-2). The Grouped/Flat toggle is gone:
+// this tab is now only the flat validation list (SignalsValidationList), which
+// splits the activity's signals into 3 status sections (To validate / Validated
+// / Rejected), each grouped by type behind a coloured type header. The grouped
+// synthesis still lives in its own place (ActivityQualificationTab, and the
+// shared grouped views on DC / Account) — untouched here.
+//
+// The list is fed by the aggregated endpoint (useAggregatedSignals) scoped by
+// activity_id. It fetches the whole matching set in one page (pageSize 100, the
+// endpoint's max) so the 3 sections are coherent — no server pager. Clicking a
+// row injects the signal detail into the single workspace drawer coque.
 
 "use client";
 
@@ -38,19 +45,16 @@ import {
 
 // Section imports
 import SignalsFilterPanel from "components/signals/SignalsFilterPanel";
-import SignalsGroupedFilterPanel from "sections/accounts/signals/SignalsGroupedFilterPanel";
-import SignalsViewToggle from "sections/activities/signals/SignalsViewToggle";
-import ActivityQualificationTab from "sections/activities/workspace/ActivityQualificationTab";
+import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
-import SignalsFlatView from "components/signals/SignalsFlatView";
 import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
-// tech-stack, blockers and constraints — next-steps live in their own tab and
-// are excluded. Constraints are activity-scoped provenance here (the DC groups
-// them by nature; the account excludes them — deal-scoped).
+// tech-stack, blockers and constraints, competitors and people — next-steps
+// live in their own tab and are excluded. Constraints are activity-scoped
+// provenance here (the DC groups them by nature; the account excludes them).
 const ACTIVITY_FLAT_TYPES = [
   "pain",
   "objective",
@@ -62,15 +66,10 @@ const ACTIVITY_FLAT_TYPES = [
   "people",
 ];
 
-// Grouped (client-side) default status set — pending + validated.
-const GROUPED_DEFAULT_STATUSES = ["PENDING", "VALIDATED"];
-const emptyGroupedFilters = () => ({
-  perimeter: [],
-  contacts: [], // contact objects (Autocomplete value); ids derived for filter
-  whats: [],
-  dimensions: [],
-  statuses: GROUPED_DEFAULT_STATUSES,
-});
+// The aggregated endpoint caps page_size at 100 (core StandardResultsSetPagination).
+// One activity's signal set sits well under that, so we fetch it all in one page
+// and render the 3 grouped sections without a pager.
+const PAGE_SIZE = 100;
 
 // ==============================|| ACTIVITY SIGNALS TAB (FLAT) ||============================== //
 
@@ -85,10 +84,8 @@ export default function ActivitySignalsTab({
   // Choices for edit forms
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // Filter / sort / pagination state
+  // Filter / sort state
   const [filterPanelOpen, setFilterPanelOpen] = useState(false);
-  // Flat / Grouped toggle — Grouped (synthesis) default. React state only.
-  const [view, setView] = useState("grouped");
   const {
     pending,
     updatePending,
@@ -116,44 +113,7 @@ export default function ActivitySignalsTab({
   );
   const contactFilters = useMemo(() => ({ account_id: accountId }), [accountId]);
 
-  // ---- Grouped filter state — the unified perimeter model, applied CLIENT-SIDE
-  // on the Activity synthesis (no cluster endpoint). Separate from the flat
-  // filters so the flat view stays untouched.
-  const [groupedFilters, setGroupedFilters] = useState(emptyGroupedFilters);
-  const handleGroupedChange = useCallback(
-    (field, newValue) =>
-      setGroupedFilters((prev) => ({ ...prev, [field]: newValue })),
-    [],
-  );
-  const handleGroupedClear = useCallback(
-    () => setGroupedFilters(emptyGroupedFilters()),
-    [],
-  );
-  const perimeterOptions = useMemo(
-    () => [{ value: "BUSINESS", label: "Business" }, ...departmentOptions],
-    [departmentOptions],
-  );
-  const groupedActiveCount =
-    groupedFilters.perimeter.length +
-    groupedFilters.contacts.length +
-    groupedFilters.whats.length +
-    groupedFilters.dimensions.length +
-    (groupedFilters.statuses.includes("REJECTED") ? 1 : 0);
-  // The client-side filter matches on contact IDS (source_context.contacts.id);
-  // the panel keeps the contact OBJECTS for its Autocomplete value.
-  const activityGroupedFilters = useMemo(
-    () => ({
-      perimeter: groupedFilters.perimeter,
-      whats: groupedFilters.whats,
-      dimensions: groupedFilters.dimensions,
-      statuses: groupedFilters.statuses,
-      contacts: groupedFilters.contacts.map((c) => c.id),
-    }),
-    [groupedFilters],
-  );
-
   const [sortKey, setSortKey] = useState("date-desc");
-  const [page, setPage] = useState(1);
 
   // The single workspace drawer coque (B3.5.3): clicking a signal injects its
   // detail via openDrawer; the coque owns open state + close.
@@ -164,9 +124,10 @@ export default function ActivitySignalsTab({
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // One aggregated call, server-driven filter / sort / paginate. The filter
-  // drawer drives signal_type (a subset; none selected = all activity types)
-  // and status (default pending+validated, +rejected when opted in).
+  // One aggregated call, server-driven filter / sort. The filter drawer drives
+  // signal_type (a subset; none selected = all activity types) and status
+  // (default pending+validated, +rejected when opted in — which surfaces the
+  // Rejected section). The whole set comes back in one page (pageSize 100).
   const signalTypes = useMemo(
     () => (activeTypes.length ? activeTypes : ACTIVITY_FLAT_TYPES),
     [activeTypes],
@@ -174,7 +135,6 @@ export default function ActivitySignalsTab({
 
   const {
     signals: flatSignals,
-    pageCount,
     loading,
     error,
     mutate: mutateAll,
@@ -186,8 +146,8 @@ export default function ActivitySignalsTab({
     contact: contactId,
     scope,
     ordering: sortKey,
-    page,
-    pageSize: 20,
+    page: 1,
+    pageSize: PAGE_SIZE,
   });
 
   // Handlers
@@ -270,69 +230,45 @@ export default function ActivitySignalsTab({
     mutateCounts?.();
   }, [mutateAll, mutateCounts]);
 
-  // Reset to page 1 whenever a control changes the result set.
-  const onSortChange = (v) => {
-    setSortKey(v);
-    setPage(1);
-  };
   const handleOpenFilters = () => {
     syncPending();
     setFilterPanelOpen(true);
   };
   const handleApplyFilters = () => {
     apply();
-    setPage(1);
   };
   const handleClearFilters = () => {
     clear();
-    setPage(1);
   };
 
-  // A page fetch can fail while a previous page is still shown (SWR keeps the
-  // last data). Keep the list and surface the transient failure via the
-  // standard error snackbar instead of blanking the view.
+  // A fetch can fail while previous data is still shown (SWR keeps the last
+  // data). Keep the list and surface the transient failure via the standard
+  // error snackbar instead of blanking the view.
   useEffect(() => {
     if (error && flatSignals.length) displayErrorSnackbar(error);
   }, [error, flatSignals.length]);
 
   return (
     <Box>
-      {/* Toolbar: view toggle · sort (flat only) · filter icon */}
+      {/* Toolbar: sort · filter icon */}
       <Stack
         direction="row"
-        justifyContent="space-between"
+        justifyContent="flex-end"
         alignItems="center"
         sx={{ mb: 2.5, flexWrap: "wrap", gap: 1 }}
       >
-        <SignalsViewToggle view={view} onChange={setView} />
-        <Stack direction="row" alignItems="center" gap={1}>
-          {view === "flat" && (
-            <SignalsSortSelect value={sortKey} onChange={onSortChange} />
-          )}
-          <Tooltip title="Filters">
-            <IconButton onClick={handleOpenFilters} aria-label="Open filters">
-              <Badge
-                badgeContent={view === "grouped" ? groupedActiveCount : activeCount}
-                color="primary"
-              >
-                <FilterOutlined />
-              </Badge>
-            </IconButton>
-          </Tooltip>
-        </Stack>
+        <SignalsSortSelect value={sortKey} onChange={setSortKey} />
+        <Tooltip title="Filters">
+          <IconButton onClick={handleOpenFilters} aria-label="Open filters">
+            <Badge badgeContent={activeCount} color="primary">
+              <FilterOutlined />
+            </Badge>
+          </IconButton>
+        </Tooltip>
       </Stack>
 
-      {/* Grouped (default) = the Activity Qualification synthesis (flat lists by
-          type), filtered client-side by the Qualification filters; Flat = the
-          SignalLine list. */}
-      {view === "grouped" ? (
-        <ActivityQualificationTab
-          activity={activity}
-          isLocked={isLocked}
-          mutateCounts={mutateCounts}
-          groupedFilters={activityGroupedFilters}
-        />
-      ) : error && !flatSignals.length ? (
+      {/* The flat validation list: 3 status sections × type groups. */}
+      {error && !flatSignals.length ? (
         <Box
           display="flex"
           justifyContent="center"
@@ -342,54 +278,32 @@ export default function ActivitySignalsTab({
           <Typography color="error">Failed to load signals</Typography>
         </Box>
       ) : (
-        <SignalsFlatView
+        <SignalsValidationList
           signals={flatSignals}
-          serverPaginated
-          page={page}
-          pageCount={pageCount}
-          onPageChange={setPage}
           loading={loading}
           onSelect={handleSelect}
-          onValidate={handleValidate}
-          onReject={handleReject}
-          onEdit={handleEdit}
-          onReopen={handleReopen}
-          isLocked={isLocked}
           emptyMessage="No signals match these filters"
         />
       )}
 
-      {/* Filter drawer. Grouped = accordion-sectioned panel (client-side
-          Qualification filters); Flat keeps its own unchanged SignalsFilterPanel. */}
-      {view === "grouped" ? (
-        <SignalsGroupedFilterPanel
-          open={filterPanelOpen}
-          onClose={() => setFilterPanelOpen(false)}
-          perimeterOptions={perimeterOptions}
-          contactFilters={contactFilters}
-          value={groupedFilters}
-          onChange={handleGroupedChange}
-          onClear={handleGroupedClear}
-          activeCount={groupedActiveCount}
-        />
-      ) : (
-        <SignalsFilterPanel
-          open={filterPanelOpen}
-          onClose={() => setFilterPanelOpen(false)}
-          availableTypes={ACTIVITY_FLAT_TYPES}
-          departmentOptions={departmentOptions}
-          contactFilters={contactFilters}
-          pendingFilters={pending}
-          onFilterChange={updatePending}
-          onApply={handleApplyFilters}
-          onClear={handleClearFilters}
-          hasPendingChanges={hasPendingChanges}
-          mode="flat"
-        />
-      )}
+      {/* Filter drawer (flat mode) — type / department / contact / include-rejected. */}
+      <SignalsFilterPanel
+        open={filterPanelOpen}
+        onClose={() => setFilterPanelOpen(false)}
+        availableTypes={ACTIVITY_FLAT_TYPES}
+        departmentOptions={departmentOptions}
+        contactFilters={contactFilters}
+        pendingFilters={pending}
+        onFilterChange={updatePending}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
+        hasPendingChanges={hasPendingChanges}
+        mode="flat"
+      />
 
       {/* Edit Dialog */}
-      <SignalEditDrawer context="activity"
+      <SignalEditDrawer
+        context="activity"
         open={editDialogOpen}
         onClose={handleEditClose}
         onSuccess={handleEditSuccess}

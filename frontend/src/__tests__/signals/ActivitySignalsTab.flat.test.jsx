@@ -1,23 +1,24 @@
 // frontend/src/__tests__/signals/ActivitySignalsTab.flat.test.jsx
 //
-// The Activity "Signals" tab is now flat-only (the grouped synthesis moved to
-// ActivityQualificationTab). It is fed by the aggregated endpoint via
-// useAggregatedSignals (one server-paginated mixed list) scoped by activity_id.
+// SIG-2 — the Activity "Signals" tab is FLAT-FORCED: the Grouped/Flat toggle is
+// gone (the grouped synthesis stays only in ActivityQualificationTab / DC /
+// Account). The tab renders the SignalsValidationList — one flat list split into
+// 3 status sections (To validate / Validated / Rejected), each grouped by type —
+// fed by the aggregated endpoint (all matching signals, pageSize 100, no pager).
 //
 // Proves:
-//   - renders SignalLine rows straight from the aggregated hook, each typed
-//     from its own signal_type,
-//   - drives the aggregated hook's status filter server-side (statuses arg),
-//   - opens the signal drawer on row click,
-//   - shows Reopen on a rejected row and calls reopenSignal,
-//   - advances / rewinds the server page (page arg) via the pager.
+//   - no Grouped/Flat toggle (flat forced),
+//   - renders the validation list straight from the aggregated hook,
+//   - scopes the aggregated call to this activity + the flat types + pageSize 100,
+//   - drives the status / type filters server-side,
+//   - opens the signal drawer on row click and reopens a rejected signal there.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
 import { render as rtlRender, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
 
-// The signal detail now lives in the single workspace drawer coque (openDrawer);
+// The signal detail lives in the single workspace drawer coque (openDrawer);
 // render the tab inside that coque so a row click shows its detail as in the app.
 const render = (ui, opts) => rtlRender(ui, { wrapper: WorkspaceCoque, ...opts });
 
@@ -35,12 +36,6 @@ vi.mock("api/signals/signals", () => ({
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(),
   displayErrorSnackbar: vi.fn(),
-}));
-
-// Grouped view has its own suite — stub it so these tests focus on the flat
-// view + the toggle wiring.
-vi.mock("sections/activities/workspace/ActivityQualificationTab", () => ({
-  default: () => <div data-testid="grouped-view" />,
 }));
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
@@ -75,11 +70,6 @@ function lastHookArgs() {
   return useAggregatedSignals.mock.calls.at(-1)[0];
 }
 
-// Grouped is the default view; switch to Flat for the flat-list assertions.
-function toFlat() {
-  fireEvent.click(screen.getByRole("button", { name: /flat view/i }));
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
@@ -88,25 +78,34 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
-  it("renders SignalLine rows from the aggregated hook, mixed types", () => {
+describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
+  it("has NO Grouped/Flat toggle", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
+    expect(screen.queryByRole("button", { name: /grouped view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /flat view/i })).not.toBeInTheDocument();
+  });
 
+  it("renders the validation list rows straight from the aggregated hook", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     expect(screen.getAllByTestId("signal-line")).toHaveLength(3);
     expect(screen.getByText("Pain signal flat")).toBeInTheDocument();
     expect(screen.getByText("Objective signal flat")).toBeInTheDocument();
     expect(screen.getByText("Budget frozen flat")).toBeInTheDocument();
   });
 
-  it("scopes the aggregated call to this activity and the qualification+blocker types", () => {
+  it("renders the 3 status sections", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
+    const titles = screen
+      .getAllByTestId("signal-section-title")
+      .map((el) => el.textContent);
+    // Rejected is empty by default (not fetched) → its section is hidden.
+    expect(titles).toEqual(["To validate", "Validated"]);
+  });
 
+  it("scopes the aggregated call to this activity, the flat types, and fetches all (pageSize 100)", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     const args = lastHookArgs();
     expect(args.activityId).toBe("act-flat");
-    // No type filter selected → all activity flat types (constraints +
-    // competitors + people included).
     expect(args.signalTypes).toEqual([
       "pain",
       "objective",
@@ -117,21 +116,19 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
       "competitors",
       "people",
     ]);
-    // Rejected excluded by default.
+    // Rejected excluded by default (structural sections still cover it when opted in).
     expect(args.statuses).toEqual(["PENDING", "VALIDATED"]);
-    expect(args.pageSize).toBe(20);
+    expect(args.pageSize).toBe(100);
   });
 
-  it("shows the filter icon (not inline chips)", () => {
+  it("shows the filter icon and the sort select", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
     expect(screen.getByLabelText("Open filters")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Validated" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Sort")).toBeInTheDocument();
   });
 
   it("filters by type via the drawer", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
     fireEvent.click(screen.getByLabelText("Open filters"));
     fireEvent.click(screen.getByLabelText("Objective"));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -140,7 +137,6 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
   it("adds REJECTED to the statuses arg only when opted in via the drawer", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
     fireEvent.click(screen.getByLabelText("Open filters"));
     fireEvent.click(screen.getByLabelText("Include rejected"));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -149,8 +145,6 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
 
   it("opens the signal drawer when a row is clicked", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
-
     expect(screen.queryByLabelText("Close drawer")).not.toBeInTheDocument();
     fireEvent.click(screen.getAllByTestId("signal-line")[0]);
     expect(screen.getByLabelText("Close drawer")).toBeInTheDocument();
@@ -165,9 +159,7 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
       }),
     );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
 
-    // Row carries no action button — click it to open the drawer.
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("signal-line"));
 
@@ -177,76 +169,22 @@ describe("ActivitySignalsTab — Flat view (aggregated endpoint)", () => {
     expect(reopenSignal).toHaveBeenCalledWith("pain", "r1");
   });
 
-  it("advances and rewinds the server page via the pager", () => {
-    useAggregatedSignals.mockImplementation(() => flatReturn({ pageCount: 3 }));
-    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
-
-    expect(lastHookArgs().page).toBe(1);
-
-    fireEvent.click(screen.getByRole("button", { name: /go to next page/i }));
-    expect(lastHookArgs().page).toBe(2);
-
-    fireEvent.click(screen.getByRole("button", { name: /go to previous page/i }));
-    expect(lastHookArgs().page).toBe(1);
-  });
-
-  it("shows the sort select", () => {
-    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
-    expect(screen.getByLabelText("Sort")).toBeInTheDocument();
-  });
-
-  it("blanks to the red error surface only when the flat list is empty", () => {
+  it("blanks to the red error surface only when the list is empty", () => {
     useAggregatedSignals.mockImplementation(() =>
       flatReturn({ signals: [], count: 0, error: new Error("boom") }),
     );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
     expect(screen.getByText("Failed to load signals")).toBeInTheDocument();
     expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
   });
 
-  it("keeps the flat list on a transient page-fetch error and snackbars it", () => {
+  it("keeps the list on a transient error and snackbars it", () => {
     useAggregatedSignals.mockImplementation(() =>
       flatReturn({ error: new Error("boom") }),
     );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    toFlat();
     expect(screen.queryByText("Failed to load signals")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
     expect(displayErrorSnackbar).toHaveBeenCalled();
-  });
-});
-
-describe("ActivitySignalsTab — Flat/Grouped toggle", () => {
-  it("defaults to Grouped (the qualification synthesis)", () => {
-    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
-    expect(screen.queryAllByTestId("signal-line")).toHaveLength(0);
-  });
-
-  it("switching to Flat shows the SignalLine list; back to Grouped shows the synthesis", () => {
-    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    fireEvent.click(screen.getByRole("button", { name: /flat view/i }));
-    expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
-    expect(screen.queryByTestId("grouped-view")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /grouped view/i }));
-    expect(screen.getByTestId("grouped-view")).toBeInTheDocument();
-  });
-
-  it("grouped mode opens the accordion Qualification filter panel", () => {
-    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    fireEvent.click(screen.getByLabelText("Open filters"));
-    // Accordion family sections.
-    expect(screen.getByText("Qualification")).toBeInTheDocument();
-    expect(screen.getByText("Tech Stack")).toBeInTheDocument();
-    expect(screen.getByText("Objection")).toBeInTheDocument();
-    // Qualification controls (same as Account/DC grouped).
-    expect(screen.getByLabelText("Perimeter")).toBeInTheDocument();
-    expect(screen.getByLabelText("Domain")).toBeInTheDocument();
-    expect(screen.getByLabelText("Dimension")).toBeInTheDocument();
-    expect(screen.getByLabelText("Status")).toBeInTheDocument();
   });
 });
