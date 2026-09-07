@@ -1,38 +1,24 @@
 // frontend/src/components/signals/SignalsHaloBox.jsx
 //
-// SIG-HALO — a coloured GLOW ("halo") wrapper for the Activity Signals band.
-// The band signals its global validation state at a glance, VISIBLE EVEN WHEN
-// THE BAND IS COLLAPSED, because the glow lives on this wrapper (always mounted)
-// rather than inside the collapsible band body.
+// SIG-HALO — the Activity Signals band halo. A THIN signal-specific adapter over
+// the generic HaloBox primitive: it derives the colour from the (complete)
+// signal counts via the utils/signalsHalo CONSTANTS (state→colour + thresholds),
+// then renders HaloBox with that colour.
 //
 //   - >=1 pending signal        → warning (amber) glow → "still to validate"
 //   - 0 pending, >=1 total       → primary glow         → "all processed"
 //   - 0 signal                   → no glow
 //
-// The glow is a themed customShadows token (a soft coloured box-shadow, NOT a
-// thick border, NO inner fill) — no hex / px literal lives here. Activity-only:
-// wired at the Activity band mount; it does NOT touch the shared CollapsibleStrip
-// (so other bands / DC / Account never inherit a halo).
+// Visible EVEN WHEN THE BAND IS COLLAPSED (the wrapper is always mounted). No
+// colour role or threshold is hardcoded here — they live in utils/signalsHalo.
 
 "use client";
 
 import PropTypes from "prop-types";
 
-// MUI
-import { useTheme } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-
-// ==============================|| HALO PREDICATE ||============================== //
-
-/**
- * Resolve the halo colour role from the (complete) signal counts.
- * @returns {"warning"|"primary"|null} a customShadows key, or null for no halo.
- */
-export function getSignalsHalo({ pendingCount = 0, totalSignals = 0 } = {}) {
-  if (pendingCount >= 1) return "warning"; // something still to validate
-  if (totalSignals >= 1) return "primary"; // all signals processed
-  return null; // nothing to validate → no halo
-}
+// Project imports
+import HaloBox from "components/display/HaloBox";
+import { getSignalsHaloColor } from "utils/signalsHalo";
 
 // ==============================|| SIGNALS HALO BOX ||============================== //
 
@@ -42,25 +28,12 @@ export default function SignalsHaloBox({
   children,
   ...rest
 }) {
-  const theme = useTheme();
-
-  const key = getSignalsHalo({ pendingCount, totalSignals });
-  const boxShadow = key ? theme.customShadows[key] : "none";
+  const color = getSignalsHaloColor({ pendingCount, totalSignals });
 
   return (
-    <Box
-      data-testid="signals-halo"
-      sx={{
-        boxShadow,
-        borderRadius: `${theme.aphoriQ.radius.md}px`,
-        transition: theme.transitions.create("box-shadow", {
-          duration: theme.transitions.duration.shorter,
-        }),
-      }}
-      {...rest}
-    >
+    <HaloBox color={color} data-testid="signals-halo" {...rest}>
       {children}
-    </Box>
+    </HaloBox>
   );
 }
 

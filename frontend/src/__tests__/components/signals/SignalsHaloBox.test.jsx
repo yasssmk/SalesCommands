@@ -1,11 +1,11 @@
 // frontend/src/__tests__/components/signals/SignalsHaloBox.test.jsx
 //
-// SIG-HALO — the coloured halo around the Activity Signals band.
+// SIG-HALO — the Activity Signals band halo. SignalsHaloBox is the thin
+// signal-specific adapter: it derives the colour from the signal counts (via the
+// utils/signalsHalo constants) and renders the generic HaloBox primitive.
 //   - >=1 pending signal  → warning (amber) glow
 //   - 0 pending, >=1 total → primary glow (all processed)
-//   - 0 total              → no halo
-// The glow is a themed customShadows token (no hex/px literal), applied on a
-// wrapper Box so it shows even when the band is collapsed.
+//   - 0 total              → no glow
 
 import { render, screen, cleanup } from "@testing-library/react";
 import { useTheme } from "@mui/material/styles";
@@ -21,9 +21,8 @@ vi.mock("themes/emotionCache", () => ({
 }));
 
 import ThemeCustomization from "themes/index";
-import SignalsHaloBox, { getSignalsHalo } from "components/signals/SignalsHaloBox";
+import SignalsHaloBox from "components/signals/SignalsHaloBox";
 
-// Exposes the live customShadows glow tokens so assertions use the real theme.
 function ShadowProbe() {
   const theme = useTheme();
   return (
@@ -46,24 +45,8 @@ function renderBox(props) {
   );
 }
 
-describe("getSignalsHalo — predicate", () => {
-  it(">=1 pending → 'warning'", () => {
-    expect(getSignalsHalo({ pendingCount: 3, totalSignals: 5 })).toBe("warning");
-    expect(getSignalsHalo({ pendingCount: 1, totalSignals: 1 })).toBe("warning");
-  });
-
-  it("0 pending & >=1 total → 'primary'", () => {
-    expect(getSignalsHalo({ pendingCount: 0, totalSignals: 4 })).toBe("primary");
-  });
-
-  it("0 total → null (no halo)", () => {
-    expect(getSignalsHalo({ pendingCount: 0, totalSignals: 0 })).toBeNull();
-    expect(getSignalsHalo({})).toBeNull();
-  });
-});
-
-describe("SignalsHaloBox — rendering", () => {
-  it("applies the WARNING glow token when there is >=1 pending", () => {
+describe("SignalsHaloBox — signal adapter over HaloBox", () => {
+  it("applies the WARNING glow when there is >=1 pending", () => {
     renderBox({ pendingCount: 2, totalSignals: 5 });
     const warning = screen.getByTestId("cs").getAttribute("data-warning");
     expect(screen.getByTestId("signals-halo")).toHaveStyle({ boxShadow: warning });
@@ -71,7 +54,7 @@ describe("SignalsHaloBox — rendering", () => {
     expect(screen.getByText("band body")).toBeInTheDocument();
   });
 
-  it("applies the PRIMARY glow token when all signals are processed (0 pending)", () => {
+  it("applies the PRIMARY glow when all signals are processed (0 pending)", () => {
     renderBox({ pendingCount: 0, totalSignals: 4 });
     const primary = screen.getByTestId("cs").getAttribute("data-primary");
     expect(screen.getByTestId("signals-halo")).toHaveStyle({ boxShadow: primary });
