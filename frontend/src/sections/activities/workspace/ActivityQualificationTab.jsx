@@ -35,6 +35,7 @@ import SignalsGroupedView from "sections/activities/signals/SignalsGroupedView";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
+import { getSignalTypeLabel } from "utils/signalTypes";
 
 // ==============================|| ACTIVITY QUALIFICATION TAB (GROUPED) ||============================== //
 
@@ -164,10 +165,16 @@ export default function ActivityQualificationTab({
           onEdit={handleEdit}
           onReopen={handleReopen}
           isLocked={isLocked}
+          currentActivityId={activityId}
         />,
+        // SIG-5e-fix: Objective detail carries its type as the coque title, and
+        // hides "View origin activity" when the origin IS this activity.
+        signalType === "objective"
+          ? { title: getSignalTypeLabel("objective") }
+          : undefined,
       );
     },
-    [openDrawer, handleValidate, handleReject, handleEdit, handleReopen, isLocked],
+    [openDrawer, handleValidate, handleReject, handleEdit, handleReopen, isLocked, activityId],
   );
 
   const handleEditClose = useCallback(() => {

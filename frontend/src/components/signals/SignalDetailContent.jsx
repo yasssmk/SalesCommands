@@ -417,6 +417,23 @@ function objectiveScopeLabel(signal) {
   return "Company";
 }
 
+// A read-flow field: a discreet muted label ABOVE the value (not a rigid
+// label/value column) — reads like a page, not a form.
+function ReadField({ label, value }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <Box sx={{ mb: 1.25 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+        {label}
+      </Typography>
+      <Typography variant="body2" color="text.primary" sx={{ whiteSpace: "pre-line" }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+ReadField.propTypes = { label: PropTypes.string, value: PropTypes.node };
+
 function ObjectiveDetailView({
   signal,
   onValidate,
@@ -458,25 +475,31 @@ function ObjectiveDetailView({
         <SignalIncompleteAlert missingFields={missingFields} />
 
         {signal.validated_by && (
-          <DrawerFieldRow
+          <ReadField
             label="Validated by"
             value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
           />
         )}
         {signal.validated_at && (
-          <DrawerFieldRow label="Validated at" value={formatDateTime(signal.validated_at)} />
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
         )}
-        {(signal.validated_by || signal.validated_at) && <Box sx={{ mb: 1.5 }} />}
 
-        {/* Section 1 — What's the goal? */}
+        {/* Section 1 — What's the goal? The summary reads as a paragraph; the
+            Domain × Dimension are conveyed by the recap only (no separate rows). */}
         <SectionHeader
           index={1}
           title="What's the goal?"
           subtitle="Describe the objective and pick its canonical axes."
         />
-        <DrawerFieldRow label="Summary" value={signal.summary} />
-        <DrawerFieldRow label="Domain" value={signal.what_display} />
-        <DrawerFieldRow label="Dimension" value={signal.dimension_display} />
+        {signal.summary && (
+          <Typography
+            variant="body2"
+            color="text.primary"
+            sx={{ whiteSpace: "pre-line", mb: axisPreview ? 1 : 0 }}
+          >
+            {signal.summary}
+          </Typography>
+        )}
         {axisPreview && (
           <Box
             sx={{
@@ -516,7 +539,7 @@ function ObjectiveDetailView({
           title="Who owns it?"
           subtitle="Pick the organisational scope driving this goal."
         />
-        <DrawerFieldRow label="Scope" value={objectiveScopeLabel(signal)} />
+        <ReadField label="Scope" value={objectiveScopeLabel(signal)} />
 
         <Divider sx={{ my: 2 }} />
 
@@ -526,9 +549,9 @@ function ObjectiveDetailView({
           title="How is success measured?"
           subtitle="Optional — success criteria, deadline, and notes."
         />
-        <DrawerFieldRow label="Success criteria" value={signal.success_criteria} />
-        <DrawerFieldRow label="Target date" value={formatDate(signal.target_date)} />
-        <DrawerFieldRow label="Notes" value={signal.notes} />
+        <ReadField label="Success criteria" value={signal.success_criteria} />
+        <ReadField label="Target date" value={formatDate(signal.target_date)} />
+        <ReadField label="Notes" value={signal.notes} />
 
         <Divider sx={{ my: 2 }} />
 
@@ -551,15 +574,18 @@ function ObjectiveDetailView({
         {/* Section 5 — Origin (detail-only, read) */}
         <SectionHeader index={5} title="Origin" subtitle="Where this signal was captured" />
         {contacts.length > 0 && (
-          <DrawerFieldRow label={contacts.length > 1 ? "Contacts" : "Contact"}>
+          <Box sx={{ mb: 1.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              {contacts.length > 1 ? "Contacts" : "Contact"}
+            </Typography>
             <Stack spacing={0.25}>
               {contacts.map((c) => (
-                <Typography key={c.id} variant="body2">
+                <Typography key={c.id} variant="body2" color="text.primary">
                   {formatDrawerContact(c)}
                 </Typography>
               ))}
             </Stack>
-          </DrawerFieldRow>
+          </Box>
         )}
         {showOriginLink && (
           <Button

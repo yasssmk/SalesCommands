@@ -136,6 +136,12 @@ describe("ActivityQualificationTab (grouped by type, flat lists)", () => {
     expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
   });
 
+  it("SIG-5e-fix: opening an Objective sets the coque title 'Objective'", () => {
+    render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(screen.getByText("Objective signal B"));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objective");
+  });
+
   it("validates from the drawer: click a row → Validate", async () => {
     const mutateCounts = vi.fn();
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} mutateCounts={mutateCounts} />);

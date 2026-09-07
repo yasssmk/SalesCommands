@@ -180,6 +180,13 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getByTestId("edit-objective-stub")).toBeInTheDocument();
   });
 
+  it("SIG-5e-fix: opening an Objective sets the coque title 'Objective'", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(screen.getByText("Validated"));
+    fireEvent.click(await screen.findByText("Objective signal flat"));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objective");
+  });
+
   it("opens the signal drawer when a row is clicked", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     expect(screen.queryByLabelText("Close drawer")).not.toBeInTheDocument();

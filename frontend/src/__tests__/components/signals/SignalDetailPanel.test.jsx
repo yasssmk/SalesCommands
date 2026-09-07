@@ -293,6 +293,17 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByRole("button", { name: /view origin activity/i })).toBeInTheDocument();
   });
 
+  it("SIG-5e-fix: summary reads as a paragraph; no Domain/Dimension rows (recap only)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    // Summary is a plain paragraph — no "Summary" column label.
+    expect(screen.getByText("Reduce reporting time by 50%")).toBeInTheDocument();
+    expect(screen.queryByText("Summary")).not.toBeInTheDocument();
+    // Domain / Dimension separate rows are gone — the recap conveys them.
+    expect(screen.queryByText("Domain")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dimension")).not.toBeInTheDocument();
+    expect(screen.getByText("Operations × Time")).toBeInTheDocument();
+  });
+
   it("SIG-5e: keeps the bottom actions (Edit; Validate/Reject on a pending objective)", () => {
     render(
       <SignalDetailPanel
