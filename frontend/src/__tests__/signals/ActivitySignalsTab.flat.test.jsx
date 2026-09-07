@@ -42,7 +42,7 @@ vi.mock("utils/displayError", () => ({
 
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import { reopenSignal } from "api/signals/signals";
+import { reopenSignal, validateSignal, rejectSignal } from "api/signals/signals";
 import { displayErrorSnackbar } from "utils/displayError";
 
 const MOCK_ACTIVITY = { id: "act-flat", account: "acc-1" };
@@ -135,6 +135,35 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     expect(screen.queryByLabelText("Open filters")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Sort")).not.toBeInTheDocument();
+  });
+
+  it("validating a pending row inline calls validateSignal(type, id) and revalidates", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    // The two pending rows expose a ✓ Validate button; click the pain one.
+    const validateBtns = screen.getAllByRole("button", { name: /validate signal/i });
+    expect(validateBtns.length).toBeGreaterThan(0);
+    await act(async () => {
+      fireEvent.click(validateBtns[0]);
+    });
+    expect(validateSignal).toHaveBeenCalledWith("pain", "p1");
+  });
+
+  it("rejecting a pending row inline calls rejectSignal(type, id)", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    const rejectBtns = screen.getAllByRole("button", { name: /reject signal/i });
+    await act(async () => {
+      fireEvent.click(rejectBtns[0]);
+    });
+    expect(rejectSignal).toHaveBeenCalledWith("pain", "p1");
+  });
+
+  it("a failed inline validate surfaces a snackbar (business error)", async () => {
+    validateSignal.mockResolvedValueOnce({ success: false, error: "Complete missing fields" });
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: /validate signal/i })[0]);
+    });
+    expect(displayErrorSnackbar).toHaveBeenCalled();
   });
 
   it("opens the signal drawer when a row is clicked", () => {

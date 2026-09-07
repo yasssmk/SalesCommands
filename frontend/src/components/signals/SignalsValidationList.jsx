@@ -102,6 +102,8 @@ function groupByType(signals) {
 export default function SignalsValidationList({
   signals,
   onSelect,
+  onValidate,
+  onReject,
   loading = false,
   emptyMessage = "No signals found for this activity",
 }) {
@@ -187,6 +189,8 @@ export default function SignalsValidationList({
                           signal={signal}
                           signalType={type}
                           onSelect={onSelect}
+                          onValidate={onValidate}
+                          onReject={onReject}
                           showTypeChip={false}
                           showScopeChip={false}
                           showNatureChip={false}
@@ -217,6 +221,10 @@ SignalsValidationList.propTypes = {
   ).isRequired,
   /** (signal, signalType) => void — the parent opens the signal drawer. */
   onSelect: PropTypes.func,
+  /** Inline validate on a pending row — (signal, signalType) => Promise. */
+  onValidate: PropTypes.func,
+  /** Inline reject on a pending row — (signal, signalType) => Promise. */
+  onReject: PropTypes.func,
   loading: PropTypes.bool,
   emptyMessage: PropTypes.string,
 };

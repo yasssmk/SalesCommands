@@ -3,12 +3,20 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useState } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+
+// Icon size token (the project's iconSizes source — used directly so the row
+// needs no theme wrapper). sm = 14px.
+import IconSizes from "themes/iconSizes";
 
 // Icons
 import {
@@ -16,12 +24,16 @@ import {
   CalendarOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
+  CheckOutlined,
+  CloseOutlined,
   StopOutlined,
 } from "@ant-design/icons";
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import { getTechSummary } from "sections/activities/signals/utils/signalDisplay";
+
+const ICON_SIZES = IconSizes();
 
 // Light status treatment — reuses the design-system `light` Chip variant
 // (tinted background + light border, see themes/overrides/Chip.js) with a
@@ -138,6 +150,8 @@ export default function SignalLine({
   signal,
   signalType,
   onSelect,
+  onValidate,
+  onReject,
   showTypeChip = true,
   showScopeChip = true,
   showNatureChip = true,
@@ -155,6 +169,25 @@ export default function SignalLine({
   const originContact = formatOriginContact(contacts[0]);
   const extraContacts = contacts.length > 1 ? contacts.length - 1 : 0;
 
+  // Inline validate / reject — only on a PENDING row, and only when a caller
+  // wires the handlers (the Activity validation list). DC/Account pass none →
+  // no inline actions (unchanged). "Always clickable" = no missing-field guard;
+  // a business error (e.g. incomplete signal → 400) surfaces via the caller's
+  // snackbar. `busy` blocks a double-click during the async call.
+  const canAct = signal.status === "PENDING" && Boolean(onValidate || onReject);
+  const [busy, setBusy] = useState(null); // "validate" | "reject" | null
+
+  const runAction = async (kind, fn, e) => {
+    e.stopPropagation(); // never bubble to the row → drawer
+    if (busy || !fn) return;
+    setBusy(kind);
+    try {
+      await fn(signal, signalType);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <Box
       data-testid="signal-line"
@@ -170,8 +203,9 @@ export default function SignalLine({
       }}
       sx={{
         display: "flex",
-        flexDirection: "column",
-        gap: 0.75,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 1,
         width: "100%",
         border: 1,
         borderColor: "divider",
@@ -185,6 +219,8 @@ export default function SignalLine({
         "&:hover": { bgcolor: "action.hover" },
       }}
     >
+      {/* Content column (message + meta) — flex-grows; actions sit to its right. */}
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0.75 }}>
       {/* Line 1: [type chip] · full message (wraps, no truncation) */}
       <Stack
         direction="row"
@@ -301,6 +337,56 @@ export default function SignalLine({
           />
         )}
       </Stack>
+      </Box>
+
+      {/* Inline actions (validation worklist) — ✓ validate / ✗ reject, to the
+          right of the row. stopPropagation keeps them from opening the drawer;
+          clicking the rest of the row still does. Colours via palette roles
+          (success / error), size via the iconSizes token. */}
+      {canAct && (
+        <Stack
+          direction="row"
+          spacing={0.25}
+          alignItems="center"
+          sx={{ flexShrink: 0 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Tooltip title="Validate">
+            <span>
+              <IconButton
+                size="small"
+                color="success"
+                aria-label="Validate signal"
+                disabled={Boolean(busy)}
+                onClick={(e) => runAction("validate", onValidate, e)}
+              >
+                {busy === "validate" ? (
+                  <CircularProgress size={ICON_SIZES.sm} color="inherit" />
+                ) : (
+                  <CheckOutlined style={{ fontSize: ICON_SIZES.sm }} />
+                )}
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Reject">
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                aria-label="Reject signal"
+                disabled={Boolean(busy)}
+                onClick={(e) => runAction("reject", onReject, e)}
+              >
+                {busy === "reject" ? (
+                  <CircularProgress size={ICON_SIZES.sm} color="inherit" />
+                ) : (
+                  <CloseOutlined style={{ fontSize: ICON_SIZES.sm }} />
+                )}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
+      )}
     </Box>
   );
 }
@@ -337,6 +423,10 @@ SignalLine.propTypes = {
     "competitors",
   ]).isRequired,
   onSelect: PropTypes.func,
+  /** Inline validate — (signal, type) => Promise. Shown on PENDING rows only. */
+  onValidate: PropTypes.func,
+  /** Inline reject — (signal, type) => Promise. Shown on PENDING rows only. */
+  onReject: PropTypes.func,
   /** Hide the type chip when the surrounding section already names the type. */
   showTypeChip: PropTypes.bool,
   /** Show the signal scope as an outlined chip (default true); false → no scope at all. */

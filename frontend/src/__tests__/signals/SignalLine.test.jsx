@@ -118,6 +118,80 @@ describe("SignalLine — competitor message", () => {
   });
 });
 
+describe("SignalLine — inline validate/reject actions (SIG-3)", () => {
+  it("renders NO action buttons by default (DC/Account unchanged)", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    expect(screen.queryByRole("button", { name: /validate signal/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject signal/i })).not.toBeInTheDocument();
+  });
+
+  it("renders ✓ Validate and ✗ Reject on a PENDING row when handlers are provided", () => {
+    render(
+      <SignalLine signal={DEPT_PAIN} signalType="pain" onValidate={vi.fn()} onReject={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: /validate signal/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reject signal/i })).toBeInTheDocument();
+  });
+
+  it("shows NO inline actions on a non-pending row (validated/rejected are done)", () => {
+    const validated = { ...DEPT_PAIN, status: "VALIDATED" };
+    render(
+      <SignalLine signal={validated} signalType="pain" onValidate={vi.fn()} onReject={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: /validate signal/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject signal/i })).not.toBeInTheDocument();
+  });
+
+  it("clicking ✓ calls onValidate(signal, type) and NOT onSelect (stopPropagation)", () => {
+    const onValidate = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <SignalLine
+        signal={DEPT_PAIN}
+        signalType="pain"
+        onValidate={onValidate}
+        onReject={vi.fn()}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /validate signal/i }));
+    expect(onValidate).toHaveBeenCalledWith(DEPT_PAIN, "pain");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("clicking ✗ calls onReject(signal, type) and NOT onSelect", () => {
+    const onReject = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <SignalLine
+        signal={DEPT_PAIN}
+        signalType="pain"
+        onValidate={vi.fn()}
+        onReject={onReject}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reject signal/i }));
+    expect(onReject).toHaveBeenCalledWith(DEPT_PAIN, "pain");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("clicking the message (not the actions) still opens the drawer via onSelect", () => {
+    const onSelect = vi.fn();
+    render(
+      <SignalLine
+        signal={DEPT_PAIN}
+        signalType="pain"
+        onValidate={vi.fn()}
+        onReject={vi.fn()}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByText("Marketing data is unreliable"));
+    expect(onSelect).toHaveBeenCalledWith(DEPT_PAIN, "pain");
+  });
+});
+
 describe("SignalLine — informational content", () => {
   it("renders a DEPARTMENT scope chip with the target department name", () => {
     render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
@@ -173,13 +247,13 @@ describe("SignalLine — no action buttons (actions live in the drawer)", () => 
   // The row is purely informational: it must render NO lifecycle action
   // button for any status, even when legacy action handlers are still
   // passed by a not-yet-cleaned parent (extra props are ignored).
-  it("renders no validate / reject / edit / reopen / delete button on a PENDING row", () => {
+  it("renders no edit / reopen / delete button inline (those live in the drawer)", () => {
+    // edit / reopen are ignored inline (drawer-only); validate/reject are inline
+    // only when their handlers are wired (SIG-3) — none here → no buttons at all.
     render(
       <SignalLine
         signal={DEPT_PAIN}
         signalType="pain"
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
         onEdit={vi.fn()}
         onReopen={vi.fn()}
       />,
@@ -241,7 +315,9 @@ describe("SignalLine — visual polish (C-polish)", () => {
   it("puts the scope on the meta line (line 2), not before the message (line 1)", () => {
     render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
     const row = screen.getByTestId("signal-line");
-    const [line1, line2] = row.children;
+    // The row now wraps its two lines in a content column (actions sit beside it).
+    const content = row.children[0];
+    const [line1, line2] = content.children;
     expect(line1).not.toHaveTextContent(/Department · Marketing/);
     expect(line2).toHaveTextContent(/Department · Marketing/);
   });

@@ -203,6 +203,8 @@ export default function ActivitySignalsTab({
           signals={flatSignals}
           loading={loading}
           onSelect={handleSelect}
+          onValidate={handleValidate}
+          onReject={handleReject}
           emptyMessage="No signals for this activity"
         />
       )}
