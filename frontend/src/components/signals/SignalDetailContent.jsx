@@ -407,20 +407,6 @@ SectionHeader.propTypes = {
   subtitle: PropTypes.string,
 };
 
-// Read label for the objective scope (mirrors the pill's Company / Department).
-function objectiveScopeLabel(signal) {
-  if (signal.scope_level === "DEPARTMENT") {
-    const name = signal.target_department?.name;
-    return name ? `Department: ${name}` : "Department";
-  }
-  if (signal.scope_level === "PERSONAL") {
-    const c = signal.target_contact;
-    const name = c ? `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() : "";
-    return name ? `Personal · ${name}` : "Personal";
-  }
-  return "Company";
-}
-
 // A read-flow field: a discreet muted label ABOVE the value (not a rigid
 // label/value column) — reads like a page, not a form.
 function ReadField({ label, value }) {
@@ -437,6 +423,49 @@ function ReadField({ label, value }) {
   );
 }
 ReadField.propTypes = { label: PropTypes.string, value: PropTypes.node };
+
+// A label/value ROW: muted label on the LEFT, value on the RIGHT (2-column,
+// value right-aligned). Used for scope + metrics, where each field is a short
+// scalar read as "Label ………… Value".
+function ReadRow({ label, value }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: 2,
+        mb: 1,
+      }}
+    >
+      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+        {label}
+      </Typography>
+      <Typography
+        variant="body2"
+        color="text.primary"
+        sx={{ textAlign: "right", whiteSpace: "pre-line" }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+ReadRow.propTypes = { label: PropTypes.string, value: PropTypes.node };
+
+// Read scope as a label/value pair (mirrors the pill's Company / Department).
+function objectiveScopeRow(signal) {
+  if (signal.scope_level === "DEPARTMENT") {
+    return { label: "Department", value: signal.target_department?.name || "—" };
+  }
+  if (signal.scope_level === "PERSONAL") {
+    const c = signal.target_contact;
+    const name = c ? `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() : "";
+    return { label: "Contact", value: name || "—" };
+  }
+  return { label: "Scope", value: "Company" };
+}
 
 function ObjectiveDetailView({
   signal,
@@ -483,7 +512,7 @@ function ObjectiveDetailView({
             mb: 2,
           }}
         >
-          <Typography variant="h6" fontWeight={600} data-testid="objective-detail-title">
+          <Typography variant="h3" fontWeight="bold" data-testid="objective-detail-title">
             {getSignalTypeLabel("objective")}
           </Typography>
           <StatusPill
@@ -510,14 +539,25 @@ function ObjectiveDetailView({
             values — no instruction subtitles (those live in the edit). */}
         <SectionHeader index={1} title="Goal" />
         {signal.summary && (
-          <Typography
-            variant="body1"
-            fontWeight={500}
-            color="text.primary"
-            sx={{ whiteSpace: "pre-line", my: 1 }}
+          <Box
+            data-testid="objective-summary-box"
+            sx={{
+              my: 1,
+              px: 1.5,
+              py: 1.25,
+              bgcolor: "action.hover",
+              borderRadius: 1,
+            }}
           >
-            {signal.summary}
-          </Typography>
+            <Typography
+              variant="body1"
+              fontWeight={500}
+              color="text.primary"
+              sx={{ whiteSpace: "pre-line" }}
+            >
+              {signal.summary}
+            </Typography>
+          </Box>
         )}
         {axisPreview && (
           <Box
@@ -552,11 +592,9 @@ function ObjectiveDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — Scope (the header names it; just the value, aéré). */}
+        {/* Section 2 — Scope, as a label/value row (value right). */}
         <SectionHeader index={2} title="Scope" />
-        <Typography variant="body2" color="text.primary" sx={{ my: 1 }}>
-          {objectiveScopeLabel(signal)}
-        </Typography>
+        <ReadRow {...objectiveScopeRow(signal)} />
 
         <Divider sx={{ my: 2 }} />
 
@@ -564,9 +602,9 @@ function ObjectiveDetailView({
         <SectionHeader index={3} title="Metrics" />
         {hasMetrics ? (
           <>
-            <ReadField label="Success criteria" value={signal.success_criteria} />
-            <ReadField label="Target date" value={formatDate(signal.target_date)} />
-            <ReadField label="Notes" value={signal.notes} />
+            <ReadRow label="Success criteria" value={signal.success_criteria} />
+            <ReadRow label="Target date" value={formatDate(signal.target_date)} />
+            <ReadRow label="Notes" value={signal.notes} />
           </>
         ) : (
           <Typography variant="body2" color="text.disabled" sx={{ fontStyle: "italic", my: 1 }}>

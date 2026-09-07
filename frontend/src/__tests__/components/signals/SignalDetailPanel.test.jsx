@@ -246,8 +246,10 @@ describe("SignalDetailPanel", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
 
     // SIG-5e: read-mirror of the edit — sections + values, no ObjectiveDetailBlock.
+    // SIG-5e-fix4: scope reads as a label/value row (label 'Department' / value 'Finance').
     expect(screen.getByText("Monthly reports done in 2 hours")).toBeInTheDocument();
-    expect(screen.getByText("Department: Finance")).toBeInTheDocument();
+    expect(screen.getByText("Department")).toBeInTheDocument();
+    expect(screen.getByText("Finance")).toBeInTheDocument();
   });
 
   // ==== SIG-5e — Objective detail rebuilt as a read mirror of the edit ====
@@ -284,6 +286,38 @@ describe("SignalDetailPanel", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
     expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
+  });
+
+  it("SIG-5e-fix4: the 'Objective' title is rendered at the large (h3) heading size", () => {
+    // Point 3 — the in-detail title matches the edit drawer title (coque h3
+    // bold), not the previous h6. MUI maps variant h3 to an <h3> element.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByTestId("objective-detail-title").tagName).toBe("H3");
+  });
+
+  it("SIG-5e-fix4: the summary sits in a posed background box", () => {
+    // Point 4 — the summary is posed on a subtle background box so it stands
+    // out, rather than being a bare paragraph.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByTestId("objective-summary-box")).toHaveTextContent(
+      "Reduce reporting time by 50%",
+    );
+  });
+
+  it("SIG-5e-fix4: scope is a label/value row — 'Department' and 'Finance' are separate", () => {
+    // Point 5 — scope reads as a 2-column label(left)/value(right) row, not the
+    // old combined "Department: Finance" string.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText("Department")).toBeInTheDocument();
+    expect(screen.getByText("Finance")).toBeInTheDocument();
+    expect(screen.queryByText("Department: Finance")).not.toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix4: target date reads as a label/value row ('Target date' / value)", () => {
+    // Point 6 — target date is a label(left)/value(right) row in Metrics.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText("Target date")).toBeInTheDocument();
+    expect(screen.getByText("31 Dec 2026")).toBeInTheDocument();
   });
 
   it("SIG-5e-fix3: empty Metrics renders a single 'No metrics defined' line", () => {
@@ -603,8 +637,8 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
 
   it("Objective (mono FK): its single target_department is UNCHANGED (not joined)", () => {
     // MOCK_OBJECTIVE carries the singular target_department FK ({name:'Finance'})
-    // rendered by ObjectiveDetailBlock's owner line. SIG-4 must not touch it.
+    // rendered in the Scope label/value row. SIG-4 must not touch it.
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
-    expect(screen.getByText("Department: Finance")).toBeInTheDocument();
+    expect(screen.getByText("Finance")).toBeInTheDocument();
   });
 });
