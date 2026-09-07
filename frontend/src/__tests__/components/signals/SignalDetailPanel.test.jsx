@@ -264,28 +264,34 @@ describe("SignalDetailPanel", () => {
     },
   };
 
-  it("SIG-5e-fix2: 5 short section titles (no instruction subtitles) + the recap", () => {
+  it("SIG-5e-fix3: 4 short sections (Goal/Scope/Metrics/Source) — quote+origin merged", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     expect(screen.getByText("Goal")).toBeInTheDocument();
     expect(screen.getByText("Scope")).toBeInTheDocument();
     expect(screen.getByText("Metrics")).toBeInTheDocument();
-    expect(screen.getByText("Source quote")).toBeInTheDocument();
-    expect(screen.getByText("Origin")).toBeInTheDocument();
-    // The edit's instruction subtitles are gone from the detail.
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Merged: the old separate "Source quote" and "Origin" headers are gone.
+    expect(screen.queryByText("Source quote")).not.toBeInTheDocument();
+    expect(screen.queryByText("Origin")).not.toBeInTheDocument();
+    // No instruction subtitles; the recap conveys the axes.
     expect(
       screen.queryByText("Describe the objective and pick its canonical axes."),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Operations × Time")).toBeInTheDocument();
-    expect(screen.getByText(/canonical_key: objective:OPS:TIME/)).toBeInTheDocument();
   });
 
-  it("SIG-5e-fix2: no type chip in the body; status is a coloured pill", () => {
+  it("SIG-5e-fix3: title 'Objective' + status pill on the same header line", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
-    // The SignalTypeChip renders the label "Objective"; the new detail drops it
-    // (the type is the coque title, absent in this unit render).
-    expect(screen.queryByText("Objective")).not.toBeInTheDocument();
-    // Status is a StatusPill (not muted text).
+    expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
     expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
+  });
+
+  it("SIG-5e-fix3: empty Metrics renders a single 'No metrics defined' line", () => {
+    const noMetrics = { ...MOCK_OBJECTIVE, id: "o-nm", success_criteria: "", target_date: "", notes: "" };
+    render(<SignalDetailPanel signal={noMetrics} signalType="objective" />);
+    expect(screen.getByText("No metrics defined")).toBeInTheDocument();
+    expect(screen.queryByText("Success criteria")).not.toBeInTheDocument();
+    expect(screen.queryByText("Target date")).not.toBeInTheDocument();
   });
 
   it("SIG-5e: 'View origin activity' hidden when the origin IS the current activity", () => {

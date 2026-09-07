@@ -39,7 +39,6 @@ import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
-import { getSignalTypeLabel } from "utils/signalTypes";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -186,11 +185,6 @@ export default function ActivitySignalsTab({
           isLocked={isLocked}
           currentActivityId={activityId}
         />,
-        // SIG-5e: Objective detail carries its type as the coque title (no chips).
-        // Other types keep the current title-less coque.
-        signalType === "objective"
-          ? { title: getSignalTypeLabel("objective") }
-          : undefined,
       );
     },
     [openDrawer, handleValidate, handleReject, handleEdit, handleReopen, isLocked, activityId],

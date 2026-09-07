@@ -36,6 +36,7 @@ import {
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
 import StatusPill from "components/chips/StatusPill";
+import { getSignalTypeLabel } from "utils/signalTypes";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
@@ -466,12 +467,25 @@ function ObjectiveDetailView({
     originActivityId && onOpenActivity && originActivityId !== currentActivityId,
   );
   const statusPill = STATUS_PILL[signal.status] ?? { label: signal.status, role: "warning" };
+  const hasMetrics = Boolean(signal.success_criteria || signal.target_date || signal.notes);
 
   return (
     <>
       <Box sx={{ px: 2.5, py: 2, flex: 1, overflow: "auto" }}>
-        {/* Status — coloured pill (the type is the coque title; no type chip). */}
-        <Box sx={{ mb: 1.5 }}>
+        {/* Title (left) + status pill (right) on one line. The type lives here,
+            not in the coque header, so the pill can sit beside it. */}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h6" fontWeight={600} data-testid="objective-detail-title">
+            {getSignalTypeLabel("objective")}
+          </Typography>
           <StatusPill
             label={statusPill.label}
             colorText={`${statusPill.role}.main`}
@@ -497,10 +511,10 @@ function ObjectiveDetailView({
         <SectionHeader index={1} title="Goal" />
         {signal.summary && (
           <Typography
-            variant="subtitle1"
-            fontWeight={600}
+            variant="body1"
+            fontWeight={500}
             color="text.primary"
-            sx={{ whiteSpace: "pre-line", mb: axisPreview ? 1 : 0 }}
+            sx={{ whiteSpace: "pre-line", my: 1 }}
           >
             {signal.summary}
           </Typography>
@@ -538,22 +552,33 @@ function ObjectiveDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — Scope */}
+        {/* Section 2 — Scope (the header names it; just the value, aéré). */}
         <SectionHeader index={2} title="Scope" />
-        <ReadField label="Organisational scope" value={objectiveScopeLabel(signal)} />
+        <Typography variant="body2" color="text.primary" sx={{ my: 1 }}>
+          {objectiveScopeLabel(signal)}
+        </Typography>
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Metrics */}
+        {/* Section 3 — Metrics (one discreet line when empty). */}
         <SectionHeader index={3} title="Metrics" />
-        <ReadField label="Success criteria" value={signal.success_criteria} />
-        <ReadField label="Target date" value={formatDate(signal.target_date)} />
-        <ReadField label="Notes" value={signal.notes} />
+        {hasMetrics ? (
+          <>
+            <ReadField label="Success criteria" value={signal.success_criteria} />
+            <ReadField label="Target date" value={formatDate(signal.target_date)} />
+            <ReadField label="Notes" value={signal.notes} />
+          </>
+        ) : (
+          <Typography variant="body2" color="text.disabled" sx={{ fontStyle: "italic", my: 1 }}>
+            No metrics defined
+          </Typography>
+        )}
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 4 — Source quote */}
-        <SectionHeader index={4} title="Source quote" />
+        {/* Section 4 — Source: the quote, who said it, and (conditionally) a link
+            to the origin activity. Merges the former Source quote + Origin. */}
+        <SectionHeader index={4} title="Source" />
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
@@ -561,13 +586,8 @@ function ObjectiveDetailView({
             No source quote
           </Typography>
         )}
-
-        <Divider sx={{ my: 2 }} />
-
-        {/* Section 5 — Origin (detail-only, read) */}
-        <SectionHeader index={5} title="Origin" />
         {contacts.length > 0 && (
-          <Box sx={{ mb: 1.25 }}>
+          <Box sx={{ mt: 1.25 }}>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
               {contacts.length > 1 ? "Contacts" : "Contact"}
             </Typography>
