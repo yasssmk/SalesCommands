@@ -154,7 +154,14 @@ export default function SignalsValidationList({
               title={title}
               titleColor={titleColor}
               defaultExpanded={defaultExpanded}
-              meta={sectionSignals.length || undefined}
+              meta={
+                sectionSignals.length ? (
+                  // The count takes the section's status colour (not muted).
+                  <Box component="span" sx={{ color: titleColor, fontWeight: 600 }}>
+                    {sectionSignals.length}
+                  </Box>
+                ) : undefined
+              }
             >
               {sectionSignals.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ py: 0.5 }}>

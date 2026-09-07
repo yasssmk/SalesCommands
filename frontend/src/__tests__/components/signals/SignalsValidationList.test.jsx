@@ -57,6 +57,31 @@ describe("SignalsValidationList (SIG-2-fix2)", () => {
     });
   });
 
+  it("colours each section's count (meta) by its status", () => {
+    render(
+      <AphoriqTheme>
+        <SignalsValidationList
+          signals={[
+            { id: "p1", status: "PENDING", summary: "a", _signalType: "pain" },
+            { id: "p2", status: "PENDING", summary: "b", _signalType: "pain" },
+            { id: "v1", status: "VALIDATED", summary: "c", _signalType: "objective" },
+            { id: "v2", status: "VALIDATED", summary: "d", _signalType: "objective" },
+            { id: "v3", status: "VALIDATED", summary: "e", _signalType: "objective" },
+            { id: "r1", status: "REJECTED", summary: "f", _signalType: "blockers" },
+            { id: "r2", status: "REJECTED", summary: "g", _signalType: "blockers" },
+            { id: "r3", status: "REJECTED", summary: "h", _signalType: "blockers" },
+            { id: "r4", status: "REJECTED", summary: "i", _signalType: "blockers" },
+          ]}
+          onSelect={vi.fn()}
+        />
+      </AphoriqTheme>,
+    );
+    // Section counts are 2 / 3 / 4 (distinct) → coloured by status.
+    expect(screen.getByText("2")).toHaveStyle({ color: testTheme.palette.warning.main });
+    expect(screen.getByText("3")).toHaveStyle({ color: testTheme.palette.success.main });
+    expect(screen.getByText("4")).toHaveStyle({ color: testTheme.palette.error.main });
+  });
+
   it("renders type headers in ONE uniform muted colour (not per-type colours)", () => {
     renderList();
     // Objective and Pain headers (in the open 'To validate' section) are muted…

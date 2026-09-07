@@ -135,6 +135,10 @@ export default function ActivityWorkspacePage() {
     pipelineState: pipelineRunner.state,
     lastRun,
     counts,
+    // The "N to validate" badge reads the COMPLETE pending count (8 validable
+    // types, same aggregate as the Signals list + halo) so header = list; the
+    // /counts/ badge source only covered 6 types.
+    pendingCount: bandPendingCount,
   });
 
   // ==============================|| ADAPTIVE BODY STATE ||============================== //

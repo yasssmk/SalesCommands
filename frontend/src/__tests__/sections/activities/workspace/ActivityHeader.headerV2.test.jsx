@@ -249,3 +249,20 @@ describe("ActivityHeader V2 — R2 Overdue from backend is_overdue", () => {
     expect(screen.getByText(/Sep 3, 2026/)).toBeInTheDocument();
   });
 });
+
+describe("ActivityHeader — 'N to validate' uses the complete pending count", () => {
+  it("renders the passed pendingCount (complete 8-type source), not counts.pending", () => {
+    // The by-activity /counts/ endpoint only totals 6 types, so it would
+    // under-state pending. The page passes the complete count from the aggregate.
+    const { result } = useHeader(base, { pendingCount: 7, counts: { pending: 3 } });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(screen.getByText(/7 to validate/)).toBeInTheDocument();
+    expect(screen.queryByText(/3 to validate/)).not.toBeInTheDocument();
+  });
+
+  it("hides the counter when the complete pending count is 0 (even if counts.pending > 0)", () => {
+    const { result } = useHeader(base, { pendingCount: 0, counts: { pending: 5 } });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(screen.queryByText(/to validate/)).not.toBeInTheDocument();
+  });
+});

@@ -120,6 +120,11 @@ export default function useActivityHeaderProps({
   pipelineState = PIPELINE_STATE.IDLE,
   lastRun = null,
   counts = null,
+  // Complete pending count (the 8 validable types of the Signals list). When
+  // provided it is the source of truth for the "N to validate" badge, replacing
+  // counts.pending — the by-activity /counts/ endpoint only totals 6 types and
+  // would under-state pending. Falls back to counts.pending when not passed.
+  pendingCount = null,
   onPendingClick,
 }) {
   const theme = useTheme();
@@ -290,7 +295,9 @@ export default function useActivityHeaderProps({
   // ==============================|| PENDING COUNTER HELPER ||============================== //
 
   const renderPendingCounter = () => {
-    const pending = counts?.pending;
+    // Prefer the complete pending count (8-type aggregate) so the header matches
+    // the Signals list; fall back to counts.pending (6-type) only when absent.
+    const pending = pendingCount != null ? pendingCount : counts?.pending;
     if (!pending || pending <= 0) return null;
 
     return (
