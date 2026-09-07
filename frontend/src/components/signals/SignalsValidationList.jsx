@@ -1,17 +1,19 @@
 // frontend/src/components/signals/SignalsValidationList.jsx
 //
-// SIG-2 / SIG-2-fix2 — the flat signal VALIDATION list.
+// SIG-2 / SIG-2-fix* — the flat signal VALIDATION list.
 //
 // One flat list split into 3 stacked STATUS sections (To validate / Validated /
 // Rejected), each a collapsible strip (CollapsibleStrip) with a STATUS-coloured
-// title. Inside a section the signals are grouped BY TYPE; each type group is
-// ALSO a collapsible strip whose title is the SIG-1 type colour. Each signal is
-// a compact SignalLine carrying NO chips (type / scope / nature / status all
-// off) — just its message + muted meta (date · contact · scope). All detail
+// title (warning / success / error). Inside a section the signals are grouped BY
+// TYPE; a type group is a PLAIN header (uniform muted tone — the SIG-1 per-type
+// colours stay in reserve) followed by its rows. Collapse happens ONLY at the
+// status-section level (one fold), not per type. Each signal is a compact
+// SignalLine carrying NO chips (type / scope / nature / status / contact overflow
+// all off) — just its message + muted meta (date · contact · scope). All detail
 // lives in the drawer, opened by clicking a row (onSelect).
 //
-// Default open state: "To validate" is open (its type groups open); "Validated"
-// and "Rejected" start collapsed. Chevrons expand / collapse both levels.
+// Default open state: "To validate" is open; "Validated" and "Rejected" start
+// collapsed. The section chevron expands / collapses.
 //
 // Generic / reusable: wired only on the Activity Signals tab today; DC and
 // Account will reuse it when they migrate off the shared SignalsFlatView (TD-235).
@@ -23,7 +25,6 @@
 import PropTypes from "prop-types";
 
 // MUI
-import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
@@ -35,12 +36,14 @@ import { ThunderboltOutlined } from "@ant-design/icons";
 // Project imports
 import CollapsibleStrip from "components/display/CollapsibleStrip";
 import SignalLine from "components/signals/SignalLine";
-import { getSignalTypeLabel, getSignalTypeColor } from "utils/signalTypes";
+// Only the type LABEL is used here; the SIG-1 per-type colours (getSignalTypeColor /
+// aphoriQ.signalColors) stay in reserve — type headers are a uniform muted tone.
+import { getSignalTypeLabel } from "utils/signalTypes";
 
 // The 3 status sections, stacked in this order. `titleColor` is a palette path
-// (resolved by MUI sx): a semantic STATUS colour, distinct from the SIG-1 TYPE
-// colours. Rejected stays muted — rejection is a routine outcome, not an error
-// (red is reserved for technical failures across the app).
+// (resolved by MUI sx): a semantic STATUS colour, distinct from the (reserved)
+// SIG-1 TYPE colours. To validate = warning, Validated = success, Rejected =
+// error (PO: red-for-status is fine in this worklist context).
 const STATUS_SECTIONS = [
   {
     status: "PENDING",
@@ -58,7 +61,7 @@ const STATUS_SECTIONS = [
   {
     status: "REJECTED",
     title: "Rejected",
-    titleColor: "text.secondary",
+    titleColor: "error.main",
     defaultExpanded: false,
   },
 ];
@@ -102,8 +105,6 @@ export default function SignalsValidationList({
   loading = false,
   emptyMessage = "No signals found for this activity",
 }) {
-  const theme = useTheme();
-
   // Loading with nothing to show yet → spinner.
   if (loading && !signals.length) {
     return (
@@ -160,15 +161,19 @@ export default function SignalsValidationList({
                   {emptyText}
                 </Typography>
               ) : (
-                <Stack spacing={1}>
+                <Stack spacing={2}>
                   {groupByType(sectionSignals).map(([type, typeSignals]) => (
-                    <CollapsibleStrip
-                      key={type}
-                      title={getSignalTypeLabel(type) ?? type}
-                      titleColor={getSignalTypeColor(type, theme) ?? undefined}
-                      defaultExpanded
-                      meta={typeSignals.length}
-                    >
+                    <Box key={type}>
+                      {/* Type group = a plain muted header (uniform tone, NOT a
+                          per-type colour) + its rows. No nested collapse — the
+                          only fold is at the status-section level above. */}
+                      <Typography
+                        variant="subtitle2"
+                        color="text.secondary"
+                        sx={{ fontWeight: 500, mb: 0.75 }}
+                      >
+                        {getSignalTypeLabel(type) ?? type}
+                      </Typography>
                       {typeSignals.map((signal) => (
                         <SignalLine
                           key={signal.id}
@@ -179,9 +184,10 @@ export default function SignalsValidationList({
                           showScopeChip={false}
                           showNatureChip={false}
                           showStatusChip={false}
+                          showContactOverflow={false}
                         />
                       ))}
-                    </CollapsibleStrip>
+                    </Box>
                   ))}
                 </Stack>
               )}

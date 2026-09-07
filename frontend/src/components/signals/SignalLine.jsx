@@ -137,6 +137,7 @@ export default function SignalLine({
   showScopeChip = true,
   showNatureChip = true,
   showStatusChip = true,
+  showContactOverflow = true,
 }) {
   const isRejected = signal.status === "REJECTED";
 
@@ -242,7 +243,7 @@ export default function SignalLine({
             <Typography variant="caption" color="text.secondary" noWrap>
               {originContact}
             </Typography>
-            {extraContacts > 0 && (
+            {showContactOverflow && extraContacts > 0 && (
               <Chip
                 label={`+${extraContacts}`}
                 size="small"
@@ -348,4 +349,6 @@ SignalLine.propTypes = {
   showNatureChip: PropTypes.bool,
   /** Show the status chip (default true; false in the validation list). */
   showStatusChip: PropTypes.bool,
+  /** Show the "+N" contact-overflow chip (default true; false in the validation list). */
+  showContactOverflow: PropTypes.bool,
 };

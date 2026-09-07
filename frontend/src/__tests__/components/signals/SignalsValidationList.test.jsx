@@ -7,7 +7,7 @@
 // with no chips (type / scope / nature / status all off — detail lives in the
 // drawer). Default: "To validate" open, "Validated" + "Rejected" collapsed.
 
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 import AphoriqTheme, { testTheme } from "../../_utils/aphoriqTheme";
@@ -44,13 +44,27 @@ describe("SignalsValidationList (SIG-2-fix2)", () => {
     expect(follows(val, rej)).toBe(true);
   });
 
-  it("colours each section title by STATUS (To validate = warning, Validated = success)", () => {
+  it("colours each section title by STATUS (warning / success / error)", () => {
     renderList();
     expect(screen.getByText("To validate")).toHaveStyle({
       color: testTheme.palette.warning.main,
     });
     expect(screen.getByText("Validated")).toHaveStyle({
       color: testTheme.palette.success.main,
+    });
+    expect(screen.getByText("Rejected")).toHaveStyle({
+      color: testTheme.palette.error.main,
+    });
+  });
+
+  it("renders type headers in ONE uniform muted colour (not per-type colours)", () => {
+    renderList();
+    // Objective and Pain headers (in the open 'To validate' section) are muted…
+    expect(screen.getByText("Objective")).toHaveStyle({
+      color: testTheme.palette.text.secondary,
+    });
+    expect(screen.getByText("Pain")).toHaveStyle({
+      color: testTheme.palette.text.secondary,
     });
   });
 
@@ -76,13 +90,14 @@ describe("SignalsValidationList (SIG-2-fix2)", () => {
     expect(follows(screen.getByText("Objective"), screen.getByText("Pain"))).toBe(true);
   });
 
-  it("makes each TYPE group collapsible (clicking its header hides its rows)", async () => {
+  it("collapses ONLY at the status-section level — type groups are plain headers", () => {
     renderList();
-    expect(screen.getByText("Manual exports are slow")).toBeInTheDocument();
+    // SIGNALS has all 3 statuses → exactly 3 collapsible headers (the sections).
+    // If type groups were still collapsible strips there would be more.
+    expect(document.querySelectorAll("[aria-expanded]")).toHaveLength(3);
+    // Clicking a type header does NOT collapse its rows (no chevron / no toggle).
     fireEvent.click(screen.getByText("Pain"));
-    await waitFor(() =>
-      expect(screen.queryByText("Manual exports are slow")).not.toBeInTheDocument(),
-    );
+    expect(screen.getByText("Manual exports are slow")).toBeInTheDocument();
   });
 
   it("renders rows with NO chip (type / scope / nature / status all off)", () => {
@@ -111,6 +126,34 @@ describe("SignalsValidationList (SIG-2-fix2)", () => {
     expect(row.querySelector(".MuiChip-root")).toBeNull();
     expect(screen.queryByText("Security")).not.toBeInTheDocument();
     expect(screen.queryByText("Pending")).not.toBeInTheDocument();
+  });
+
+  it("does not render the +N contact-overflow chip in the list rows", () => {
+    render(
+      <AphoriqTheme>
+        <SignalsValidationList
+          signals={[
+            {
+              id: "p1",
+              status: "PENDING",
+              summary: "multi-contact pain",
+              _signalType: "pain",
+              source_context: {
+                contacts: [
+                  { id: "c1", first_name: "Dana", last_name: "Lee" },
+                  { id: "c2", first_name: "Sam", last_name: "Roe" },
+                  { id: "c3", first_name: "Kim", last_name: "Fox" },
+                ],
+              },
+            },
+          ]}
+          onSelect={vi.fn()}
+        />
+      </AphoriqTheme>,
+    );
+    expect(screen.getByText("multi-contact pain")).toBeInTheDocument();
+    // The first contact still shows as muted text, but the "+2" overflow chip is gone.
+    expect(screen.queryByText("+2")).not.toBeInTheDocument();
   });
 
   it("opens the drawer via onSelect when a row is clicked", () => {

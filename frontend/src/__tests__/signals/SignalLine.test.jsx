@@ -145,6 +145,14 @@ describe("SignalLine — informational content", () => {
     expect(screen.getByText(/Dana Lee/)).toBeInTheDocument();
     expect(screen.getByText("+2")).toBeInTheDocument();
   });
+
+  it("hides the +N contact-overflow chip when showContactOverflow=false", () => {
+    render(<SignalLine signal={MULTI_CONTACT_PAIN} signalType="pain" showContactOverflow={false} />);
+    // The first contact still shows…
+    expect(screen.getByText(/Dana Lee/)).toBeInTheDocument();
+    // …but the "+2" overflow chip is gone.
+    expect(screen.queryByText("+2")).not.toBeInTheDocument();
+  });
 });
 
 describe("SignalLine — no action buttons (actions live in the drawer)", () => {
