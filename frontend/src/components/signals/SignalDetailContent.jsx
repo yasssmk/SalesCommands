@@ -35,6 +35,7 @@ import {
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
+import StatusPill from "components/chips/StatusPill";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
@@ -368,10 +369,12 @@ ProvenanceSection.propTypes = {
 // is muted text. Origin (section 5) is detail-only, with a "View origin activity"
 // link shown ONLY when the origin activity differs from the current one.
 
-const STATUS_TEXT = {
-  PENDING: "Pending",
-  VALIDATED: "Validated",
-  REJECTED: "Rejected",
+// Status → coloured pill (StatusPill): pending = warning, validated = success,
+// rejected = error. role.main text/border on the role.lighter tint.
+const STATUS_PILL = {
+  PENDING: { label: "Pending", role: "warning" },
+  VALIDATED: { label: "Validated", role: "success" },
+  REJECTED: { label: "Rejected", role: "error" },
 };
 
 // Numbered section badge — info palette role (mirror of EditObjectiveContent).
@@ -462,15 +465,19 @@ function ObjectiveDetailView({
   const showOriginLink = Boolean(
     originActivityId && onOpenActivity && originActivityId !== currentActivityId,
   );
-  const statusText = STATUS_TEXT[signal.status] ?? signal.status;
+  const statusPill = STATUS_PILL[signal.status] ?? { label: signal.status, role: "warning" };
 
   return (
     <>
       <Box sx={{ px: 2.5, py: 2, flex: 1, overflow: "auto" }}>
-        {/* Status — muted text (the type is the coque title; no chips). */}
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
-          {statusText}
-        </Typography>
+        {/* Status — coloured pill (the type is the coque title; no type chip). */}
+        <Box sx={{ mb: 1.5 }}>
+          <StatusPill
+            label={statusPill.label}
+            colorText={`${statusPill.role}.main`}
+            colorBg={`${statusPill.role}.lighter`}
+          />
+        </Box>
 
         <SignalIncompleteAlert missingFields={missingFields} />
 
@@ -484,16 +491,14 @@ function ObjectiveDetailView({
           <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
         )}
 
-        {/* Section 1 — What's the goal? The summary reads as a paragraph; the
-            Domain × Dimension are conveyed by the recap only (no separate rows). */}
-        <SectionHeader
-          index={1}
-          title="What's the goal?"
-          subtitle="Describe the objective and pick its canonical axes."
-        />
+        {/* Section 1 — Goal. The summary is the headline (prominent, no label);
+            the Domain × Dimension are conveyed by the recap only. Detail exposes
+            values — no instruction subtitles (those live in the edit). */}
+        <SectionHeader index={1} title="Goal" />
         {signal.summary && (
           <Typography
-            variant="body2"
+            variant="subtitle1"
+            fontWeight={600}
             color="text.primary"
             sx={{ whiteSpace: "pre-line", mb: axisPreview ? 1 : 0 }}
           >
@@ -533,22 +538,14 @@ function ObjectiveDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — Who owns it? */}
-        <SectionHeader
-          index={2}
-          title="Who owns it?"
-          subtitle="Pick the organisational scope driving this goal."
-        />
-        <ReadField label="Scope" value={objectiveScopeLabel(signal)} />
+        {/* Section 2 — Scope */}
+        <SectionHeader index={2} title="Scope" />
+        <ReadField label="Organisational scope" value={objectiveScopeLabel(signal)} />
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — How is success measured? */}
-        <SectionHeader
-          index={3}
-          title="How is success measured?"
-          subtitle="Optional — success criteria, deadline, and notes."
-        />
+        {/* Section 3 — Metrics */}
+        <SectionHeader index={3} title="Metrics" />
         <ReadField label="Success criteria" value={signal.success_criteria} />
         <ReadField label="Target date" value={formatDate(signal.target_date)} />
         <ReadField label="Notes" value={signal.notes} />
@@ -556,11 +553,7 @@ function ObjectiveDetailView({
         <Divider sx={{ my: 2 }} />
 
         {/* Section 4 — Source quote */}
-        <SectionHeader
-          index={4}
-          title="Source quote"
-          subtitle="Where does this signal come from"
-        />
+        <SectionHeader index={4} title="Source quote" />
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
@@ -572,7 +565,7 @@ function ObjectiveDetailView({
         <Divider sx={{ my: 2 }} />
 
         {/* Section 5 — Origin (detail-only, read) */}
-        <SectionHeader index={5} title="Origin" subtitle="Where this signal was captured" />
+        <SectionHeader index={5} title="Origin" />
         {contacts.length > 0 && (
           <Box sx={{ mb: 1.25 }}>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>

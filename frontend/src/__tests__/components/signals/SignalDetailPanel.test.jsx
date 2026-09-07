@@ -8,9 +8,14 @@
 // context when unwrapped; next/navigation is globally mocked in vitest.setup.js).
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
 import { useRouter } from "next/navigation";
+import AphoriqTheme from "../../_utils/aphoriqTheme";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
+
+// The objective detail uses StatusPill (reads theme.aphoriQ) — render under the
+// project theme wrapper so those tokens resolve.
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 afterEach(() => {
   cleanup();
@@ -259,24 +264,28 @@ describe("SignalDetailPanel", () => {
     },
   };
 
-  it("SIG-5e: renders the 5 section headers + subtitles + the Domain × Dimension recap", () => {
+  it("SIG-5e-fix2: 5 short section titles (no instruction subtitles) + the recap", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
-    expect(screen.getByText("What's the goal?")).toBeInTheDocument();
-    expect(screen.getByText("Who owns it?")).toBeInTheDocument();
-    expect(screen.getByText("How is success measured?")).toBeInTheDocument();
+    expect(screen.getByText("Goal")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByText("Metrics")).toBeInTheDocument();
     expect(screen.getByText("Source quote")).toBeInTheDocument();
     expect(screen.getByText("Origin")).toBeInTheDocument();
+    // The edit's instruction subtitles are gone from the detail.
+    expect(
+      screen.queryByText("Describe the objective and pick its canonical axes."),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Operations × Time")).toBeInTheDocument();
     expect(screen.getByText(/canonical_key: objective:OPS:TIME/)).toBeInTheDocument();
   });
 
-  it("SIG-5e: no type chip in the body (type is the coque title); status shown as text", () => {
+  it("SIG-5e-fix2: no type chip in the body; status is a coloured pill", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     // The SignalTypeChip renders the label "Objective"; the new detail drops it
     // (the type is the coque title, absent in this unit render).
     expect(screen.queryByText("Objective")).not.toBeInTheDocument();
-    // Status is muted text.
-    expect(screen.getByText("Validated")).toBeInTheDocument();
+    // Status is a StatusPill (not muted text).
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
   });
 
   it("SIG-5e: 'View origin activity' hidden when the origin IS the current activity", () => {
