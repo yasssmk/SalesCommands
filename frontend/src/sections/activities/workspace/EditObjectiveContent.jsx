@@ -1,22 +1,21 @@
 // frontend/src/sections/activities/workspace/EditObjectiveContent.jsx
 //
-// SIG-5d — the Objective EDIT drawer content on the NEW pattern
-// (DrawerContentLayout + InlineEditableValue + Formik global Save), cloned from
-// EditContactContent. It migrates the old InlineObjectiveForm behaviour and
-// validation; the ONLY functional changes are:
-//   (1) scope → the shared ObjectiveScopePill (SIG-5b): Company / Department
-//       (+ department select). PERSONAL is legacy (kept as-is, never offered).
-//   (2) source_quote is now editable (free text — the transcript block picker is
-//       deferred to the post-deploy roadmap).
+// SIG-5d / SIG-5d-fix — the Objective EDIT drawer content. It reproduces the
+// ORIGINAL InlineObjectiveForm FAITHFULLY (same 3 sections + subtitles, same MUI
+// TextField/Select fields, the "Domain × Dimension" recap, the same Yup
+// validation) — ported onto DrawerContentLayout (global Save/Cancel). Only two
+// things change vs the original:
+//   (a) the scope block → the shared ObjectiveScopePill (Company / Department);
+//       the DEPARTMENT department picker is the ORIGINAL MUI Select, rendered
+//       here next to the pill (not an ad-hoc widget).
+//   (b) source_quote is added as an editable field (free text; the transcript
+//       block picker is deferred to the post-deploy roadmap).
 //
 // Save PATCHes every field via the existing generic updateSignal("objective",
-// id, patch) then snackbars + closes the coque + lets the caller revalidate.
-// The old SignalEditDrawer dialog is no longer opened for Objective (the file
-// stays on disk as dead code for Objective — traced, not deleted).
-//
-// InlineEditableValue supports only text / textarea / select, so target_date is
-// a small native date field here (InlineEditableValue is reused untouched).
-// Theme tokens only — no hardcoded hex/px.
+// id, patch), then snackbars + closes the coque + lets the caller revalidate.
+// The old InlineObjectiveForm / SignalEditDrawer stay on disk (dead for
+// Objective — traced, not deleted). Theme tokens; the only literal px are copied
+// verbatim from the original SectionHeader chip to stay pixel-faithful.
 
 "use client";
 
@@ -27,8 +26,14 @@ import { useFormik } from "formik";
 import * as Yup from "yup";
 
 // MUI
-import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
+import Chip from "@mui/material/Chip";
+import Divider from "@mui/material/Divider";
+import FormControl from "@mui/material/FormControl";
+import FormHelperText from "@mui/material/FormHelperText";
+import InputLabel from "@mui/material/InputLabel";
+import MenuItem from "@mui/material/MenuItem";
+import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -39,9 +44,49 @@ import { updateSignal, useGetSignalChoices } from "api/signals/signals";
 import { useGetContactChoices } from "api/businessData/contacts";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
-import InlineEditableValue from "components/drawer/InlineEditableValue";
 import ObjectiveScopePill from "components/signals/ObjectiveScopePill";
 import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
+
+// ==============================|| HELPERS (reproduced from InlineObjectiveForm) ||=========== //
+
+function resolveLabel(options, value) {
+  if (!value || !options) return null;
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
+function SectionHeader({ index, title, subtitle }) {
+  return (
+    <Stack spacing={0.25}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Chip
+          label={index}
+          size="small"
+          color="info"
+          sx={{
+            height: 18,
+            width: 18,
+            fontSize: "0.65rem",
+            fontWeight: 700,
+            "& .MuiChip-label": { px: 0 },
+          }}
+        />
+        <Typography variant="body2" fontWeight={600}>
+          {title}
+        </Typography>
+      </Stack>
+      {subtitle && (
+        <Typography variant="caption" color="text.secondary" sx={{ pl: 3.25 }}>
+          {subtitle}
+        </Typography>
+      )}
+    </Stack>
+  );
+}
+SectionHeader.propTypes = {
+  index: PropTypes.number.isRequired,
+  title: PropTypes.string.isRequired,
+  subtitle: PropTypes.string,
+};
 
 // ==============================|| VALIDATION (preserved from InlineObjectiveForm) ||=========== //
 
@@ -52,7 +97,8 @@ const validationSchema = Yup.object({
     .required("Summary is required"),
   what: Yup.string().required("Domain is required"),
   dimension: Yup.string().required("Dimension is required"),
-  // Department scope requires a department (mirror of the old form + backend clean()).
+  // DEPARTMENT scope requires a department; every other scope leaves it nullable
+  // (so the error NEVER shows in Company). Mirror of the original + backend clean().
   target_department: Yup.string()
     .nullable()
     .when("scope_level", {
@@ -65,57 +111,6 @@ const validationSchema = Yup.object({
   notes: Yup.string().nullable(),
   source_quote: Yup.string().nullable(),
 });
-
-// ==============================|| SMALL PIECES ||============================== //
-
-function Rule() {
-  const aq = useTheme().aphoriQ;
-  return (
-    <Box
-      sx={{
-        borderTopStyle: "solid",
-        borderTopWidth: aq.border.width.hairline,
-        borderTopColor: aq.border.color,
-      }}
-    />
-  );
-}
-
-function SectionCaption({ children }) {
-  const aq = useTheme().aphoriQ;
-  return (
-    <Typography variant="caption" sx={{ color: aq.text.muted, fontWeight: "bold", display: "block" }}>
-      {children}
-    </Typography>
-  );
-}
-SectionCaption.propTypes = { children: PropTypes.node };
-
-// A small labelled native date field (InlineEditableValue has no date type and
-// is reused untouched). Draft-bound like the inline fields.
-function DateField({ label, value, onChange }) {
-  const aq = useTheme().aphoriQ;
-  return (
-    <Box>
-      <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-        {label}
-      </Typography>
-      <TextField
-        type="date"
-        size="small"
-        fullWidth
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-        inputProps={{ "data-testid": "objective-target-date" }}
-      />
-    </Box>
-  );
-}
-DateField.propTypes = {
-  label: PropTypes.string,
-  value: PropTypes.string,
-  onChange: PropTypes.func.isRequired,
-};
 
 // Normalise a target FK that may arrive as a compact {id,name} object (detail
 // serializer) or a bare id — to the id string the form/patch use.
@@ -186,13 +181,25 @@ export default function EditObjectiveContent({ objective, accountId, onSaved }) 
     },
   });
 
-  const { values, errors, setFieldValue } = formik;
+  // Live "Domain × Dimension" recap (reproduced from the original).
+  const canonicalPreview = useMemo(() => {
+    if (!formik.values.what || !formik.values.dimension) return null;
+    return `objective:${formik.values.what}:${formik.values.dimension}`;
+  }, [formik.values.what, formik.values.dimension]);
 
-  // The scope pill raises a draft patch of scope fields (scope_level,
-  // target_department, target_contact) — apply each to the form draft.
+  const axisPreview = useMemo(() => {
+    const whatLabel = resolveLabel(whatOptions, formik.values.what);
+    const dimensionLabel = resolveLabel(dimensionOptions, formik.values.dimension);
+    if (!whatLabel || !dimensionLabel) return null;
+    return `${whatLabel} × ${dimensionLabel}`;
+  }, [whatOptions, dimensionOptions, formik.values.what, formik.values.dimension]);
+
+  // The scope pill raises a draft patch of scope fields — apply each to the draft.
   const applyScopePatch = (patch) => {
-    Object.entries(patch).forEach(([k, v]) => setFieldValue(k, v));
+    Object.entries(patch).forEach(([k, v]) => formik.setFieldValue(k, v));
   };
+
+  const isDepartment = formik.values.scope_level === OBJECTIVE_SCOPE.DEPARTMENT;
 
   return (
     <DrawerContentLayout
@@ -201,100 +208,245 @@ export default function EditObjectiveContent({ objective, accountId, onSaved }) 
       onCancel={() => closeDrawer()}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
     >
-      <Stack spacing={2}>
-        {/* Goal */}
+      <Stack spacing={2.5}>
+        {/* ---- SECTION 1 — What's the goal? ---- */}
         <Stack spacing={1.5}>
-          <InlineEditableValue
+          <SectionHeader
+            index={1}
+            title="What's the goal?"
+            subtitle="Describe the objective and pick its canonical axes."
+          />
+
+          <TextField
+            fullWidth
+            size="small"
+            id="objective-summary"
             name="summary"
-            label="Summary"
-            type="textarea"
-            value={values.summary}
-            onChange={(v) => setFieldValue("summary", v)}
-            placeholder="Required"
-            error={Boolean(errors.summary)}
-            helperText={errors.summary}
+            label="Summary *"
+            placeholder="e.g. Reduce onboarding time by 30%"
+            multiline
+            minRows={2}
+            value={formik.values.summary}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            error={formik.touched.summary && Boolean(formik.errors.summary)}
+            helperText={formik.touched.summary && formik.errors.summary}
           />
-          <InlineEditableValue
-            name="what"
-            label="Domain"
-            type="select"
-            options={whatOptions}
-            value={values.what}
-            onChange={(v) => setFieldValue("what", v)}
-            placeholder="No domain"
-            disabled={choicesLoading}
-            error={Boolean(errors.what)}
-            helperText={errors.what}
-          />
-          <InlineEditableValue
-            name="dimension"
-            label="Dimension"
-            type="select"
-            options={dimensionOptions}
-            value={values.dimension}
-            onChange={(v) => setFieldValue("dimension", v)}
-            placeholder="No dimension"
-            disabled={choicesLoading}
-            error={Boolean(errors.dimension)}
-            helperText={errors.dimension}
-          />
-        </Stack>
 
-        <Rule />
+          {/* What × Dimension side by side */}
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+            <FormControl
+              fullWidth
+              size="small"
+              error={formik.touched.what && Boolean(formik.errors.what)}
+              disabled={choicesLoading}
+            >
+              <InputLabel id="objective-what-label">Domain *</InputLabel>
+              <Select
+                labelId="objective-what-label"
+                id="objective-what"
+                name="what"
+                value={formik.values.what}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
+                label="Domain *"
+              >
+                {whatOptions.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+              {formik.touched.what && formik.errors.what && (
+                <FormHelperText>{formik.errors.what}</FormHelperText>
+              )}
+            </FormControl>
 
-        {/* Scope — the shared pill (Company / Department) */}
-        <Stack spacing={1}>
-          <SectionCaption>Scope</SectionCaption>
-          <ObjectiveScopePill
-            value={{ scope_level: values.scope_level, target_department: values.target_department }}
-            onChange={applyScopePatch}
-            departmentOptions={departmentOptions}
-          />
-          {errors.target_department && (
-            <Typography variant="caption" color="error">
-              {errors.target_department}
-            </Typography>
+            <FormControl
+              fullWidth
+              size="small"
+              error={formik.touched.dimension && Boolean(formik.errors.dimension)}
+              disabled={choicesLoading}
+            >
+              <InputLabel id="objective-dimension-label">Dimension *</InputLabel>
+              <Select
+                labelId="objective-dimension-label"
+                id="objective-dimension"
+                name="dimension"
+                value={formik.values.dimension}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
+                label="Dimension *"
+              >
+                {dimensionOptions.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+              {formik.touched.dimension && formik.errors.dimension && (
+                <FormHelperText>{formik.errors.dimension}</FormHelperText>
+              )}
+            </FormControl>
+          </Stack>
+
+          {/* Live canonical preview */}
+          {axisPreview && (
+            <Box
+              sx={{
+                px: 1.5,
+                py: 1,
+                bgcolor: "action.hover",
+                borderRadius: 1,
+                borderLeftStyle: "solid",
+                borderLeftWidth: 3,
+                borderLeftColor: "info.main",
+              }}
+            >
+              <Typography variant="caption" color="text.secondary">
+                This is a{" "}
+                <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+                  {axisPreview}
+                </Box>{" "}
+                goal
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                display="block"
+                sx={{ fontFamily: "monospace", fontSize: "0.7rem", mt: 0.25 }}
+              >
+                canonical_key: {canonicalPreview}
+              </Typography>
+            </Box>
           )}
         </Stack>
 
-        <Rule />
+        <Divider />
 
-        {/* Success */}
+        {/* ---- SECTION 2 — Who owns it? (scope → pill + original dept Select) ---- */}
         <Stack spacing={1.5}>
-          <SectionCaption>Success</SectionCaption>
-          <InlineEditableValue
+          <SectionHeader
+            index={2}
+            title="Who owns it?"
+            subtitle="Pick the organisational scope driving this goal."
+          />
+
+          <ObjectiveScopePill
+            value={{ scope_level: formik.values.scope_level }}
+            onChange={applyScopePatch}
+          />
+
+          {/* DEPARTMENT → target_department: the ORIGINAL MUI Select. */}
+          {isDepartment && (
+            <FormControl
+              fullWidth
+              size="small"
+              error={
+                formik.touched.target_department &&
+                Boolean(formik.errors.target_department)
+              }
+            >
+              <InputLabel id="objective-target-dept-label">Target Department *</InputLabel>
+              <Select
+                labelId="objective-target-dept-label"
+                id="objective-target-department"
+                name="target_department"
+                value={formik.values.target_department}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
+                label="Target Department *"
+              >
+                {departmentOptions.map((opt) => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+              {formik.touched.target_department && formik.errors.target_department && (
+                <FormHelperText>{formik.errors.target_department}</FormHelperText>
+              )}
+            </FormControl>
+          )}
+        </Stack>
+
+        <Divider />
+
+        {/* ---- SECTION 3 — How is success measured? ---- */}
+        <Stack spacing={1.5}>
+          <SectionHeader
+            index={3}
+            title="How is success measured?"
+            subtitle="Optional — success criteria, deadline, and notes."
+          />
+
+          <TextField
+            fullWidth
+            size="small"
+            id="objective-success-criteria"
             name="success_criteria"
-            label="Success criteria"
-            type="textarea"
-            value={values.success_criteria}
-            onChange={(v) => setFieldValue("success_criteria", v)}
-            placeholder="No success criteria"
+            label="Success Criteria"
+            placeholder="e.g. Onboarding NPS > 40, measured quarterly"
+            multiline
+            minRows={2}
+            value={formik.values.success_criteria}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            error={formik.touched.success_criteria && Boolean(formik.errors.success_criteria)}
+            helperText={formik.touched.success_criteria && formik.errors.success_criteria}
           />
-          <DateField
-            label="Target date"
-            value={values.target_date}
-            onChange={(v) => setFieldValue("target_date", v)}
+
+          <TextField
+            fullWidth
+            size="small"
+            id="objective-target-date"
+            name="target_date"
+            label="Target Date"
+            type="date"
+            value={formik.values.target_date}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            InputLabelProps={{ shrink: true }}
+            inputProps={{ "data-testid": "objective-target-date" }}
+            error={formik.touched.target_date && Boolean(formik.errors.target_date)}
+            helperText={
+              (formik.touched.target_date && formik.errors.target_date) ||
+              "When the goal should be achieved (optional)."
+            }
           />
-          <InlineEditableValue
+
+          <TextField
+            fullWidth
+            size="small"
+            id="objective-notes"
             name="notes"
             label="Notes"
-            type="textarea"
-            value={values.notes}
-            onChange={(v) => setFieldValue("notes", v)}
-            placeholder="No notes"
+            placeholder="Source quotes, caveats, or anything else worth remembering…"
+            multiline
+            minRows={2}
+            value={formik.values.notes}
+            onChange={formik.handleChange}
+            onBlur={formik.handleBlur}
+            error={formik.touched.notes && Boolean(formik.errors.notes)}
+            helperText={formik.touched.notes && formik.errors.notes}
           />
         </Stack>
 
-        <Rule />
+        <Divider />
 
-        {/* Source quote — now editable (free text). */}
-        <InlineEditableValue
+        {/* ---- Source quote (added, editable free text) ---- */}
+        <TextField
+          fullWidth
+          size="small"
+          id="objective-source-quote"
           name="source_quote"
-          label="Source quote"
-          type="textarea"
-          value={values.source_quote}
-          onChange={(v) => setFieldValue("source_quote", v)}
-          placeholder="No source quote"
+          label="Source Quote"
+          placeholder="The transcript excerpt that supports this objective…"
+          multiline
+          minRows={2}
+          value={formik.values.source_quote}
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
         />
       </Stack>
     </DrawerContentLayout>

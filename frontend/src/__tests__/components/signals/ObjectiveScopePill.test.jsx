@@ -10,15 +10,10 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import AphoriqTheme from "../../_utils/aphoriqTheme";
 import ObjectiveScopePill from "components/signals/ObjectiveScopePill";
 
-const DEPTS = [
-  { value: "d1", label: "Finance" },
-  { value: "d2", label: "Marketing" },
-];
-
 const renderPill = (props) =>
   render(
     <AphoriqTheme>
-      <ObjectiveScopePill departmentOptions={DEPTS} {...props} />
+      <ObjectiveScopePill {...props} />
     </AphoriqTheme>,
   );
 
@@ -74,32 +69,9 @@ describe("ObjectiveScopePill (SIG-5b)", () => {
     });
   });
 
-  it("shows the department select ONLY when Department is active", () => {
-    const { rerender } = renderPill({ value: { scope_level: "BUSINESS" }, onChange: vi.fn() });
+  it("does NOT render a department select (the caller renders the standard MUI Select)", () => {
+    renderPill({ value: { scope_level: "DEPARTMENT", target_department: "d1" }, onChange: vi.fn() });
     expect(screen.queryByTestId("scope-department-select")).not.toBeInTheDocument();
-
-    rerender(
-      <AphoriqTheme>
-        <ObjectiveScopePill
-          departmentOptions={DEPTS}
-          value={{ scope_level: "DEPARTMENT", target_department: "d1" }}
-          onChange={vi.fn()}
-        />
-      </AphoriqTheme>,
-    );
-    expect(screen.getByTestId("scope-department-select")).toBeInTheDocument();
-  });
-
-  it("choosing a department raises a target_department patch", () => {
-    const onChange = vi.fn();
-    renderPill({
-      value: { scope_level: "DEPARTMENT", target_department: "d1" },
-      onChange,
-    });
-    fireEvent.change(screen.getByTestId("scope-department-select"), {
-      target: { value: "d2" },
-    });
-    expect(onChange).toHaveBeenCalledWith({ target_department: "d2" });
   });
 
   it("a legacy PERSONAL objective is shown read-only, not offered, without crashing", () => {

@@ -1,17 +1,18 @@
 // frontend/src/components/signals/ObjectiveScopePill.jsx
 //
-// SIG-5b — the shared Objective "scope pill". A UI surcouche over the EXISTING
-// backend fields (scope_level enum + target_department FK) — zero backend.
+// SIG-5b / SIG-5d-fix — the shared Objective "scope pill". A UI surcouche over
+// the EXISTING backend field scope_level — zero backend.
 //
 // Two offered states: Company (scope_level=BUSINESS) · Department
 // (scope_level=DEPARTMENT). One active, derived from `value.scope_level`.
 // Clicking a pill raises a DRAFT scope patch via onChange (the widget never
-// saves). When Department is active, a department select is shown and its choice
-// raises a `{ target_department }` patch.
+// saves). The DEPARTMENT department picker is NOT here — the caller renders the
+// project's standard department Select next to the pill (SIG-5d-fix: reuse the
+// original InlineObjectiveForm Select instead of an ad-hoc one).
 //
 // PERSONAL is legacy: an objective already stored PERSONAL is shown as a third,
 // read-only (non-clickable) pill so its data is neither hidden nor forced to
-// change; PERSONAL is never offered as a choice. Backend enum keeps PERSONAL.
+// change; PERSONAL is never offered. Backend enum keeps PERSONAL.
 //
 // Theme tokens only (StatusPill + palette paths from constants), no hex/px.
 
@@ -21,9 +22,7 @@ import PropTypes from "prop-types";
 
 // MUI
 import Box from "@mui/material/Box";
-import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";
-import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 
 // Project imports
@@ -39,14 +38,8 @@ import {
 
 // ==============================|| OBJECTIVE SCOPE PILL ||============================== //
 
-export default function ObjectiveScopePill({
-  value,
-  onChange,
-  departmentOptions = [],
-  sx,
-}) {
+export default function ObjectiveScopePill({ value, onChange, sx }) {
   const active = deriveScopeState(value?.scope_level);
-  const isDepartment = active === OBJECTIVE_SCOPE.DEPARTMENT;
   const isLegacyPersonal = active === OBJECTIVE_SCOPE.PERSONAL;
 
   const choose = (key) => onChange?.(scopePatch(key));
@@ -81,8 +74,7 @@ export default function ObjectiveScopePill({
           );
         })}
 
-        {/* Legacy PERSONAL — read-only, never offered. Shown active-styled so the
-            existing scope is visible; not clickable, marked aria-disabled. */}
+        {/* Legacy PERSONAL — read-only, never offered. */}
         {isLegacyPersonal && (
           <StatusPill
             data-testid={`scope-pill-${OBJECTIVE_SCOPE.PERSONAL}`}
@@ -94,33 +86,6 @@ export default function ObjectiveScopePill({
         )}
       </Stack>
 
-      {/* Department select — shown only when Department is active. Native select
-          for a straightforward, testable value change; its choice is a draft
-          target_department patch. */}
-      {isDepartment && (
-        <Box sx={{ mt: 1 }}>
-          <TextField
-            select
-            fullWidth
-            size="small"
-            label="Department"
-            value={value?.target_department ?? ""}
-            onChange={(e) => onChange?.({ target_department: e.target.value })}
-            SelectProps={{ native: true }}
-            inputProps={{ "data-testid": "scope-department-select" }}
-          >
-            <option value="" disabled>
-              Select a department…
-            </option>
-            {departmentOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </TextField>
-        </Box>
-      )}
-
       {isLegacyPersonal && (
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
           Legacy personal objective — scope kept as recorded.
@@ -131,16 +96,11 @@ export default function ObjectiveScopePill({
 }
 
 ObjectiveScopePill.propTypes = {
-  /** The objective's current scope fields: { scope_level, target_department }. */
+  /** The objective's current scope fields — only scope_level is read. */
   value: PropTypes.shape({
     scope_level: PropTypes.string,
-    target_department: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   }),
   /** Raised with a draft patch of scope fields — the widget never saves. */
   onChange: PropTypes.func,
-  /** Department options for the Department select: [{ value, label }]. */
-  departmentOptions: PropTypes.arrayOf(
-    PropTypes.shape({ value: PropTypes.any, label: PropTypes.node }),
-  ),
   sx: PropTypes.object,
 };
