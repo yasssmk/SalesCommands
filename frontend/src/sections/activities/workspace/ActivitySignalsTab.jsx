@@ -42,7 +42,7 @@ import SignalEditDrawer from "components/signals/SignalEditDrawer";
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
 // in their own tab and are excluded.
-const ACTIVITY_FLAT_TYPES = [
+export const ACTIVITY_FLAT_TYPES = [
   "pain",
   "objective",
   "impact",
