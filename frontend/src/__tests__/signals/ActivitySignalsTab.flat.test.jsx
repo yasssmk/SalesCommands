@@ -15,6 +15,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
+// SIG-5d: Objective edit goes to the new drawer content — stub it to assert routing.
+vi.mock("sections/activities/workspace/EditObjectiveContent", () => ({
+  default: () => <div data-testid="edit-objective-stub" />,
+}));
 import { render as rtlRender, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
 
@@ -164,6 +168,16 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
       fireEvent.click(screen.getAllByRole("button", { name: /validate signal/i })[0]);
     });
     expect(displayErrorSnackbar).toHaveBeenCalled();
+  });
+
+  it("edits an Objective via the new EditObjectiveContent drawer (SIG-5d), not the legacy dialog", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    // The objective row lives in the collapsed Validated section — expand it.
+    fireEvent.click(screen.getByText("Validated"));
+    fireEvent.click(await screen.findByText("Objective signal flat"));
+    // Edit in the detail routes objectives to the new drawer content.
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByTestId("edit-objective-stub")).toBeInTheDocument();
   });
 
   it("opens the signal drawer when a row is clicked", () => {

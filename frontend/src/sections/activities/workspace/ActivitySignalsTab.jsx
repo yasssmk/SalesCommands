@@ -38,6 +38,7 @@ import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
+import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -142,11 +143,31 @@ export default function ActivitySignalsTab({
     [mutateAll, mutateCounts],
   );
 
-  const handleEdit = useCallback((signal, signalType) => {
-    setEditSignal(signal);
-    setEditType(signalType);
-    setEditDialogOpen(true);
-  }, []);
+  const handleEdit = useCallback(
+    (signal, signalType) => {
+      // SIG-5d: Objective edits go to the new drawer (DrawerContentLayout +
+      // scope pill + editable source_quote) via the single coque. Every other
+      // type keeps the legacy SignalEditDrawer dialog untouched.
+      if (signalType === "objective") {
+        openDrawer(
+          <EditObjectiveContent
+            objective={signal}
+            accountId={accountId}
+            onSaved={() => {
+              mutateAll();
+              mutateCounts?.();
+            }}
+          />,
+          { title: "Edit objective" },
+        );
+        return;
+      }
+      setEditSignal(signal);
+      setEditType(signalType);
+      setEditDialogOpen(true);
+    },
+    [openDrawer, accountId, mutateAll, mutateCounts],
+  );
 
   // Inject the signal detail into the single coque. Clicking another signal
   // replaces the content (React reconciles the panel in place); the coque owns
