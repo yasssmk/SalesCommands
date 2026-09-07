@@ -95,12 +95,16 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(screen.getByText("We want to cut reporting time by half")).toBeInTheDocument();
   });
 
-  it("target_date uses the project DatePicker (MUI-X), not a text field", () => {
+  it("target_date reveals the project DatePicker only on double-click (✓/✗), like edit scheduled activity", () => {
     renderEdit();
-    // The project date picker exposes an input labelled by its `label`.
+    // Read row by default — the picker is hidden.
+    expect(screen.getByTestId("inline-read-target_date")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Target date")).not.toBeInTheDocument();
+    // Double-click reveals the project DatePicker + confirm/discard controls.
+    fireEvent.doubleClick(screen.getByTestId("inline-read-target_date"));
     expect(screen.getByLabelText("Target date")).toBeInTheDocument();
-    // …and it is NOT the previous inline text row.
-    expect(screen.queryByTestId("inline-read-target_date")).not.toBeInTheDocument();
+    expect(screen.getByTestId("target-date-confirm")).toBeInTheDocument();
+    expect(screen.getByTestId("target-date-cancel")).toBeInTheDocument();
   });
 
   it("keeps the 3 section subtitles and the Domain × Dimension recap", () => {

@@ -24,22 +24,28 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo } from "react";
+import { useMemo, useState, useRef } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
 
 // MUI
+import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import FormHelperText from "@mui/material/FormHelperText";
+import IconButton from "@mui/material/IconButton";
 import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+
+// Icons
+import CheckOutlined from "@ant-design/icons/CheckOutlined";
+import CloseOutlined from "@ant-design/icons/CloseOutlined";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -69,15 +75,18 @@ function SectionHeader({ index, title, subtitle }) {
   return (
     <Stack spacing={0.25}>
       <Stack direction="row" spacing={1} alignItems="center">
+        {/* Numbered badge — muted theme tone (palette text.secondary on the paper
+            ground), not the off-paradigm info blue. No hardcoded colour. */}
         <Chip
           label={index}
           size="small"
-          color="info"
           sx={{
             height: 18,
             width: 18,
             fontSize: "0.65rem",
             fontWeight: 700,
+            bgcolor: "text.secondary",
+            color: "background.paper",
             "& .MuiChip-label": { px: 0 },
           }}
         />
@@ -97,6 +106,90 @@ SectionHeader.propTypes = {
   index: PropTypes.number.isRequired,
   title: PropTypes.string.isRequired,
   subtitle: PropTypes.string,
+};
+
+// Target date — read row that reveals the project DatePicker ONLY on double-click,
+// with ✓ (keep the draft) / ✗ (restore the pre-edit value), same interaction as
+// EditActivityContent's scheduled-date field. Formik keeps the ISO "YYYY-MM-DD"
+// string; the picker reads/writes a dayjs.
+function TargetDateField({ value, onChange }) {
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+  const [editing, setEditing] = useState(false);
+  const startRef = useRef(null);
+
+  const startEdit = () => {
+    startRef.current = value;
+    setEditing(true);
+  };
+  const confirm = () => setEditing(false);
+  const cancel = () => {
+    onChange(startRef.current ?? "");
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <Stack spacing={1}>
+          <DatePicker
+            label="Target date"
+            value={value ? dayjs(value) : null}
+            onChange={(v) => onChange(v && v.isValid() ? v.format("YYYY-MM-DD") : "")}
+            slotProps={{ textField: { fullWidth: true, size: "small" } }}
+          />
+          <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
+            <IconButton
+              size="small"
+              onClick={confirm}
+              data-testid="target-date-confirm"
+              aria-label="Confirm target date"
+              sx={{ color: "success.main" }}
+            >
+              <CheckOutlined style={{ fontSize: theme.iconSizes.sm }} />
+            </IconButton>
+            <IconButton
+              size="small"
+              onClick={cancel}
+              data-testid="target-date-cancel"
+              aria-label="Discard target date"
+              sx={{ color: "error.main" }}
+            >
+              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+            </IconButton>
+          </Stack>
+        </Stack>
+      </LocalizationProvider>
+    );
+  }
+
+  const display = value ? dayjs(value).format("D MMM YYYY") : null;
+  return (
+    <Box>
+      <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+        Target date
+      </Typography>
+      <Box
+        data-testid="inline-read-target_date"
+        onDoubleClick={startEdit}
+        sx={{ cursor: "pointer", py: 0.25 }}
+      >
+        {display ? (
+          <Typography variant="body2" color="text.primary">
+            {display}
+          </Typography>
+        ) : (
+          <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
+            No date set
+          </Typography>
+        )}
+      </Box>
+    </Box>
+  );
+}
+TargetDateField.propTypes = {
+  value: PropTypes.string,
+  onChange: PropTypes.func.isRequired,
 };
 
 // ==============================|| VALIDATION (preserved from InlineObjectiveForm) ||=========== //
@@ -360,18 +453,8 @@ export default function EditObjectiveContent({ objective, accountId, onSaved }) 
             onChange={set("success_criteria")}
             placeholder="No success criteria"
           />
-          {/* Target date — the project's standard MUI-X DatePicker. Formik keeps
-              the ISO "YYYY-MM-DD" string; the picker reads/writes a dayjs. */}
-          <LocalizationProvider dateAdapter={AdapterDayjs}>
-            <DatePicker
-              label="Target date"
-              value={values.target_date ? dayjs(values.target_date) : null}
-              onChange={(v) =>
-                setFieldValue("target_date", v && v.isValid() ? v.format("YYYY-MM-DD") : "")
-              }
-              slotProps={{ textField: { fullWidth: true, size: "small" } }}
-            />
-          </LocalizationProvider>
+          {/* Target date — double-click reveals the project DatePicker (✓/✗). */}
+          <TargetDateField value={values.target_date} onChange={set("target_date")} />
           <InlineEditableValue
             name="notes"
             label="Notes"
