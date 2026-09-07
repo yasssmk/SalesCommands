@@ -135,6 +135,8 @@ export default function SignalLine({
   onSelect,
   showTypeChip = true,
   showScopeChip = true,
+  showNatureChip = true,
+  showStatusChip = true,
 }) {
   const isRejected = signal.status === "REJECTED";
 
@@ -251,8 +253,9 @@ export default function SignalLine({
           </Stack>
         )}
 
-        {/* Nature — constraint classification axis (Constraint only). */}
-        {signalType === "constraints" && signal.nature_display && (
+        {/* Nature — constraint classification axis (Constraint only). Hidden in
+            the validation list (showNatureChip=false); detail lives in drawer. */}
+        {showNatureChip && signalType === "constraints" && signal.nature_display && (
           <Chip
             label={signal.nature_display}
             size="small"
@@ -287,8 +290,10 @@ export default function SignalLine({
         {/* Spacer pushes the status to the right edge of the meta line. */}
         <Box sx={{ flexGrow: 1 }} />
 
-        {/* Light status treatment (DS `light` Chip variant + icon). */}
-        {statusConfig && (
+        {/* Light status treatment (DS `light` Chip variant + icon). Hidden in
+            the validation list (showStatusChip=false): the status section title
+            already names it (a row under "To validate" is Pending). */}
+        {showStatusChip && statusConfig && (
           <Chip
             label={statusConfig.label}
             color={statusConfig.color}
@@ -339,4 +344,8 @@ SignalLine.propTypes = {
   showTypeChip: PropTypes.bool,
   /** Render the scope as an outlined chip (default) or as muted inline text. */
   showScopeChip: PropTypes.bool,
+  /** Show the constraint nature chip (default true; false in the validation list). */
+  showNatureChip: PropTypes.bool,
+  /** Show the status chip (default true; false in the validation list). */
+  showStatusChip: PropTypes.bool,
 };

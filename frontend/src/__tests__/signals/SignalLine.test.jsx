@@ -68,6 +68,38 @@ const MULTI_CONTACT_PAIN = {
   },
 };
 
+const CONSTRAINT = {
+  id: "cn1",
+  status: "PENDING",
+  summary: "Data must stay on-prem",
+  nature_display: "Security",
+  target_department: { id: "d2", name: "IT" },
+  created_at: "2026-05-01T10:00:00Z",
+  source_context: { contacts: [] },
+};
+
+describe("SignalLine — nature & status chip toggles", () => {
+  it("renders the nature chip by DEFAULT for a constraint (DC/Account unchanged)", () => {
+    render(<SignalLine signal={CONSTRAINT} signalType="constraints" />);
+    expect(screen.getByText("Security")).toBeInTheDocument();
+  });
+
+  it("hides the nature chip when showNatureChip=false", () => {
+    render(<SignalLine signal={CONSTRAINT} signalType="constraints" showNatureChip={false} />);
+    expect(screen.queryByText("Security")).not.toBeInTheDocument();
+  });
+
+  it("renders the status chip by DEFAULT (DC/Account unchanged)", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+  });
+
+  it("hides the status chip when showStatusChip=false", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" showStatusChip={false} />);
+    expect(screen.queryByText("Pending")).not.toBeInTheDocument();
+  });
+});
+
 describe("SignalLine — informational content", () => {
   it("renders a DEPARTMENT scope chip with the target department name", () => {
     render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);

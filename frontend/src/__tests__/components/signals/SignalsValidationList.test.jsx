@@ -1,14 +1,16 @@
 // frontend/src/__tests__/components/signals/SignalsValidationList.test.jsx
 //
-// SIG-2 — the flat signal VALIDATION list: 3 stacked status sections
-// (To validate / Validated / Rejected), each grouping its signals BY TYPE
-// behind a coloured SignalTypeHeader, each signal a SignalLine (no type pill —
-// the type is carried by the group header). Row click opens the drawer.
+// SIG-2 / SIG-2-fix2 — the flat signal VALIDATION list: 3 stacked status
+// sections (To validate / Validated / Rejected), each a collapsible strip with a
+// STATUS-coloured title; inside, signals are grouped by TYPE, each group a
+// collapsible strip with the SIG-1 type-coloured title; each signal a SignalLine
+// with no chips (type / scope / nature / status all off — detail lives in the
+// drawer). Default: "To validate" open, "Validated" + "Rejected" collapsed.
 
-import { render, screen, fireEvent, within, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-import AphoriqTheme from "../../_utils/aphoriqTheme";
+import AphoriqTheme, { testTheme } from "../../_utils/aphoriqTheme";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 
 afterEach(() => cleanup());
@@ -29,68 +31,92 @@ function renderList(props = {}) {
   );
 }
 
-describe("SignalsValidationList (SIG-2)", () => {
-  it("renders the 3 status sections in order: To validate → Validated → Rejected", () => {
+const follows = (a, b) =>
+  Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+describe("SignalsValidationList (SIG-2-fix2)", () => {
+  it("renders the 3 status section headers in order", () => {
     renderList();
-    const titles = screen
-      .getAllByTestId("signal-section-title")
-      .map((el) => el.textContent);
-    expect(titles).toEqual(["To validate", "Validated", "Rejected"]);
+    const toV = screen.getByText("To validate");
+    const val = screen.getByText("Validated");
+    const rej = screen.getByText("Rejected");
+    expect(follows(toV, val)).toBe(true);
+    expect(follows(val, rej)).toBe(true);
   });
 
-  it("groups each section by type behind a SignalTypeHeader (type appears once per group)", () => {
+  it("colours each section title by STATUS (To validate = warning, Validated = success)", () => {
     renderList();
-    // Two pain signals in "To validate" → the "Pain" header shows exactly once.
-    expect(screen.getAllByText("Pain")).toHaveLength(1);
-    // Objective is grouped and ordered before Pain (stable type order).
-    const headers = screen
-      .getAllByTestId("signal-type-header")
-      .map((el) => el.textContent);
-    expect(headers.slice(0, 2)).toEqual(["Objective", "Pain"]);
+    expect(screen.getByText("To validate")).toHaveStyle({
+      color: testTheme.palette.warning.main,
+    });
+    expect(screen.getByText("Validated")).toHaveStyle({
+      color: testTheme.palette.success.main,
+    });
   });
 
-  it("renders every signal as a SignalLine row without a type pill", () => {
+  it("defaults to 'To validate' OPEN, 'Validated' + 'Rejected' COLLAPSED", () => {
     renderList();
-    expect(screen.getAllByTestId("signal-line")).toHaveLength(5);
-    // showTypeChip is off → the type is carried by the group header only, so it
-    // is never repeated as a per-row pill ("Pain" appears once, in the header).
-    expect(screen.getAllByText("Pain")).toHaveLength(1);
+    // Pending rows (To validate) are visible…
+    expect(screen.getByText("Manual exports are slow")).toBeInTheDocument();
+    // …validated / rejected bodies are collapsed (unmounted).
+    expect(screen.queryByText("20h/week lost")).not.toBeInTheDocument();
+    expect(screen.queryByText("Legal will block us")).not.toBeInTheDocument();
+  });
+
+  it("expanding a collapsed section reveals its rows", async () => {
+    renderList();
+    fireEvent.click(screen.getByText("Validated"));
+    expect(await screen.findByText("20h/week lost")).toBeInTheDocument();
+  });
+
+  it("groups each section by type, once per type, in stable order (Objective before Pain)", () => {
+    renderList();
     expect(screen.getAllByText("Objective")).toHaveLength(1);
+    expect(screen.getAllByText("Pain")).toHaveLength(1);
+    expect(follows(screen.getByText("Objective"), screen.getByText("Pain"))).toBe(true);
   });
 
-  it("renders row scope as muted text, never a department/scope chip", () => {
-    const { container } = render(
+  it("makes each TYPE group collapsible (clicking its header hides its rows)", async () => {
+    renderList();
+    expect(screen.getByText("Manual exports are slow")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Pain"));
+    await waitFor(() =>
+      expect(screen.queryByText("Manual exports are slow")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("renders rows with NO chip (type / scope / nature / status all off)", () => {
+    render(
       <AphoriqTheme>
         <SignalsValidationList
           signals={[
             {
-              id: "p1",
+              id: "cn1",
               status: "PENDING",
-              summary: "scoped pain",
-              _signalType: "pain",
-              scope_level: "DEPARTMENT",
-              target_department: { id: "d1", name: "Marketing" },
+              summary: "Data must stay on-prem",
+              _signalType: "constraints",
+              nature_display: "Security",
+              target_department: { id: "d2", name: "IT" },
             },
           ]}
           onSelect={vi.fn()}
         />
       </AphoriqTheme>,
     );
-    // Scope shown as text…
-    expect(screen.getByText(/Department · Marketing/)).toBeInTheDocument();
-    // …and NOT inside a chip.
-    const inChip = [...container.querySelectorAll(".MuiChip-root")].find((c) =>
-      /Department · Marketing/.test(c.textContent),
-    );
-    expect(inChip).toBeFalsy();
+    const row = screen.getByTestId("signal-line");
+    expect(screen.getByText("Data must stay on-prem")).toBeInTheDocument();
+    // Scope stays as muted text…
+    expect(screen.getByText(/Department · IT/)).toBeInTheDocument();
+    // …and there is NO chip in the row (nature "Security" + status "Pending" gone).
+    expect(row.querySelector(".MuiChip-root")).toBeNull();
+    expect(screen.queryByText("Security")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pending")).not.toBeInTheDocument();
   });
 
   it("opens the drawer via onSelect when a row is clicked", () => {
     const onSelect = vi.fn();
     renderList({ onSelect });
-    fireEvent.click(screen.getAllByTestId("signal-line")[0]);
-    expect(onSelect).toHaveBeenCalledTimes(1);
-    // first row is the objective (type order), passed with its slug
+    fireEvent.click(screen.getByText("Cut onboarding time"));
     expect(onSelect).toHaveBeenCalledWith(
       expect.objectContaining({ id: "o1" }),
       "objective",
@@ -108,10 +134,9 @@ describe("SignalsValidationList (SIG-2)", () => {
         />
       </AphoriqTheme>,
     );
-    const titles = screen
-      .getAllByTestId("signal-section-title")
-      .map((el) => el.textContent);
-    expect(titles).toEqual(["To validate"]);
+    expect(screen.getByText("To validate")).toBeInTheDocument();
+    expect(screen.queryByText("Validated")).not.toBeInTheDocument();
+    expect(screen.queryByText("Rejected")).not.toBeInTheDocument();
   });
 
   it("shows a 'nothing to validate' empty state when there is no pending signal", () => {
@@ -125,8 +150,7 @@ describe("SignalsValidationList (SIG-2)", () => {
         />
       </AphoriqTheme>,
     );
-    const toValidate = screen.getByTestId("signal-section-to-validate");
-    expect(within(toValidate).getByText(/nothing to validate/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing to validate/i)).toBeInTheDocument();
   });
 
   it("shows the empty message when there are no signals at all", () => {
@@ -136,7 +160,7 @@ describe("SignalsValidationList (SIG-2)", () => {
       </AphoriqTheme>,
     );
     expect(screen.getByText("No signals")).toBeInTheDocument();
-    expect(screen.queryAllByTestId("signal-section-title")).toHaveLength(0);
+    expect(screen.queryByText("To validate")).not.toBeInTheDocument();
   });
 
   it("shows a spinner while loading", () => {

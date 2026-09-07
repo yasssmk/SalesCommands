@@ -85,15 +85,17 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.queryByRole("button", { name: /flat view/i })).not.toBeInTheDocument();
   });
 
-  it("renders the validation list rows straight from the aggregated hook", () => {
+  it("renders the pending rows straight from the aggregated hook (validated collapsed)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    expect(screen.getAllByTestId("signal-line")).toHaveLength(3);
+    // Default: "To validate" open → the 2 pending rows show; "Validated" is
+    // collapsed → its objective row is not mounted.
+    expect(screen.getAllByTestId("signal-line")).toHaveLength(2);
     expect(screen.getByText("Pain signal flat")).toBeInTheDocument();
-    expect(screen.getByText("Objective signal flat")).toBeInTheDocument();
     expect(screen.getByText("Budget frozen flat")).toBeInTheDocument();
+    expect(screen.queryByText("Objective signal flat")).not.toBeInTheDocument();
   });
 
-  it("renders the 3 status sections when all statuses are present", () => {
+  it("renders the 3 status section headers when all statuses are present", () => {
     useAggregatedSignals.mockImplementation(() =>
       flatReturn({
         signals: [
@@ -104,10 +106,10 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
       }),
     );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    const titles = screen
-      .getAllByTestId("signal-section-title")
-      .map((el) => el.textContent);
-    expect(titles).toEqual(["To validate", "Validated", "Rejected"]);
+    // Section headers render even when collapsed.
+    expect(screen.getByText("To validate")).toBeInTheDocument();
+    expect(screen.getByText("Validated")).toBeInTheDocument();
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
   });
 
   it("scopes the call to this activity + flat types, fetches ALL 3 statuses, pageSize 100", () => {
@@ -153,7 +155,9 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
 
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("signal-line"));
+    // The Rejected section is collapsed by default — expand it to reach the row.
+    fireEvent.click(screen.getByText("Rejected"));
+    fireEvent.click(await screen.findByTestId("signal-line"));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /reopen/i }));

@@ -114,6 +114,23 @@ describe("CollapsibleStrip", () => {
     expect(screen.getByText("2 pending")).toBeInTheDocument();
   });
 
+  it("defaults the title to the muted token, but honours an explicit titleColor", () => {
+    render(
+      <ThemeCustomization>
+        <CollapsibleStrip title="Muted band" icon={ExperimentOutlined}>
+          <div>{BODY}</div>
+        </CollapsibleStrip>
+        <CollapsibleStrip title="Coloured band" icon={ExperimentOutlined} titleColor="#123456">
+          <div>{BODY}</div>
+        </CollapsibleStrip>
+      </ThemeCustomization>,
+    );
+    // The explicit colour is applied to the title…
+    expect(screen.getByText("Coloured band")).toHaveStyle({ color: "#123456" });
+    // …while an unspecified titleColor leaves the muted default (not #123456).
+    expect(screen.getByText("Muted band")).not.toHaveStyle({ color: "#123456" });
+  });
+
   it("consumes aphoriQ tokens (border.hairline in emitted CSS, not a hardcoded px)", () => {
     render(
       <ThemeCustomization>

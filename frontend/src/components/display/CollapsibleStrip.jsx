@@ -34,6 +34,7 @@ import Surface from "components/display/Surface";
 export default function CollapsibleStrip({
   title,
   icon: Icon,
+  titleColor,
   defaultExpanded = false,
   disableUnmount = false,
   meta,
@@ -91,7 +92,10 @@ export default function CollapsibleStrip({
           }}
         />
         {Icon && <Icon style={mutedIconStyle} />}
-        <Typography variant="body2" sx={{ color: aq.text.muted }}>
+        {/* Title is muted by default; an explicit titleColor (a palette path
+            like "warning.main" or a resolved colour) overrides it — used by the
+            signal validation list for status- and type-coloured strip titles. */}
+        <Typography variant="body2" sx={{ color: titleColor ?? aq.text.muted }}>
           {title}
         </Typography>
         {meta != null && (
@@ -120,6 +124,8 @@ CollapsibleStrip.propTypes = {
   title: PropTypes.string.isRequired,
   /** Section icon component (e.g. an ant-design icon). Rendered muted. */
   icon: PropTypes.elementType,
+  /** Optional title colour (palette path or resolved colour). Default: muted. */
+  titleColor: PropTypes.string,
   /** Whether the strip starts expanded. */
   defaultExpanded: PropTypes.bool,
   /** Keep the body mounted while collapsed (default: unmount to drop cost). */

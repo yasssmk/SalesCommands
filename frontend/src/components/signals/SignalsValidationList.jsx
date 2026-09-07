@@ -1,15 +1,20 @@
 // frontend/src/components/signals/SignalsValidationList.jsx
 //
-// SIG-2 — the flat signal VALIDATION list. One flat list split into 3 stacked
-// STATUS sections (To validate / Validated / Rejected); inside each section the
-// signals are grouped BY TYPE behind a coloured SignalTypeHeader (SIG-1), and
-// each signal is a compact SignalLine. The type is carried ONCE by the group
-// header, so the rows render with no type pill (showTypeChip=false). Clicking a
-// row calls onSelect so the parent opens the signal drawer (the detail surface).
+// SIG-2 / SIG-2-fix2 — the flat signal VALIDATION list.
 //
-// Generic / reusable on purpose: today it is wired only on the Activity Signals
-// tab, but DC and Account will reuse it for their own flat views once they
-// migrate off the current shared SignalsFlatView (tracked as tech debt).
+// One flat list split into 3 stacked STATUS sections (To validate / Validated /
+// Rejected), each a collapsible strip (CollapsibleStrip) with a STATUS-coloured
+// title. Inside a section the signals are grouped BY TYPE; each type group is
+// ALSO a collapsible strip whose title is the SIG-1 type colour. Each signal is
+// a compact SignalLine carrying NO chips (type / scope / nature / status all
+// off) — just its message + muted meta (date · contact · scope). All detail
+// lives in the drawer, opened by clicking a row (onSelect).
+//
+// Default open state: "To validate" is open (its type groups open); "Validated"
+// and "Rejected" start collapsed. Chevrons expand / collapse both levels.
+//
+// Generic / reusable: wired only on the Activity Signals tab today; DC and
+// Account will reuse it when they migrate off the shared SignalsFlatView (TD-235).
 //
 // Lifecycle actions (validate / reject inline) are NOT here — that is SIG-3.
 
@@ -18,6 +23,7 @@
 import PropTypes from "prop-types";
 
 // MUI
+import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
 import Stack from "@mui/material/Stack";
@@ -27,20 +33,34 @@ import Typography from "@mui/material/Typography";
 import { ThunderboltOutlined } from "@ant-design/icons";
 
 // Project imports
+import CollapsibleStrip from "components/display/CollapsibleStrip";
 import SignalLine from "components/signals/SignalLine";
-import SignalTypeHeader from "components/signals/SignalTypeHeader";
+import { getSignalTypeLabel, getSignalTypeColor } from "utils/signalTypes";
 
-// The 3 status sections, stacked in this order.
+// The 3 status sections, stacked in this order. `titleColor` is a palette path
+// (resolved by MUI sx): a semantic STATUS colour, distinct from the SIG-1 TYPE
+// colours. Rejected stays muted — rejection is a routine outcome, not an error
+// (red is reserved for technical failures across the app).
 const STATUS_SECTIONS = [
   {
     status: "PENDING",
     title: "To validate",
-    testid: "signal-section-to-validate",
+    titleColor: "warning.main",
     emptyText: "Nothing to validate",
-    alwaysShow: true,
+    defaultExpanded: true,
   },
-  { status: "VALIDATED", title: "Validated", testid: "signal-section-validated" },
-  { status: "REJECTED", title: "Rejected", testid: "signal-section-rejected" },
+  {
+    status: "VALIDATED",
+    title: "Validated",
+    titleColor: "success.main",
+    defaultExpanded: false,
+  },
+  {
+    status: "REJECTED",
+    title: "Rejected",
+    titleColor: "text.secondary",
+    defaultExpanded: false,
+  },
 ];
 
 // Stable type order inside every section (PO-validated). Types not listed sort
@@ -74,34 +94,6 @@ function groupByType(signals) {
   return [...byType.entries()].sort((a, b) => typeRank(a[0]) - typeRank(b[0]));
 }
 
-// ==============================|| SIGNAL TYPE GROUP ||============================== //
-
-function TypeGroup({ type, signals, onSelect }) {
-  return (
-    <Box sx={{ mb: 2 }}>
-      <Box sx={{ mb: 0.5 }}>
-        <SignalTypeHeader signalType={type} data-testid="signal-type-header" />
-      </Box>
-      {signals.map((signal) => (
-        <SignalLine
-          key={signal.id}
-          signal={signal}
-          signalType={type}
-          onSelect={onSelect}
-          showTypeChip={false}
-          showScopeChip={false}
-        />
-      ))}
-    </Box>
-  );
-}
-
-TypeGroup.propTypes = {
-  type: PropTypes.string.isRequired,
-  signals: PropTypes.arrayOf(PropTypes.object).isRequired,
-  onSelect: PropTypes.func,
-};
-
 // ==============================|| SIGNALS VALIDATION LIST ||============================== //
 
 export default function SignalsValidationList({
@@ -110,6 +102,8 @@ export default function SignalsValidationList({
   loading = false,
   emptyMessage = "No signals found for this activity",
 }) {
+  const theme = useTheme();
+
   // Loading with nothing to show yet → spinner.
   if (loading && !signals.length) {
     return (
@@ -145,41 +139,57 @@ export default function SignalsValidationList({
   });
 
   return (
-    <Box>
-      {STATUS_SECTIONS.map(({ status, title, testid, emptyText, alwaysShow }) => {
-        const sectionSignals = byStatus[status] ?? [];
-        // Hide an empty section, except the always-on "To validate".
-        if (!sectionSignals.length && !alwaysShow) return null;
+    <Stack spacing={1.5}>
+      {STATUS_SECTIONS.map(
+        ({ status, title, titleColor, emptyText, defaultExpanded }) => {
+          const sectionSignals = byStatus[status] ?? [];
+          const alwaysShow = status === "PENDING";
+          // Hide an empty section, except the always-on "To validate".
+          if (!sectionSignals.length && !alwaysShow) return null;
 
-        return (
-          <Box key={status} data-testid={testid} sx={{ mb: 3 }}>
-            <Typography
-              data-testid="signal-section-title"
-              variant="overline"
-              color="text.secondary"
-              sx={{ display: "block", fontWeight: 600, mb: 1 }}
+          return (
+            <CollapsibleStrip
+              key={status}
+              title={title}
+              titleColor={titleColor}
+              defaultExpanded={defaultExpanded}
+              meta={sectionSignals.length || undefined}
             >
-              {title}
-            </Typography>
-
-            {sectionSignals.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ py: 0.5 }}>
-                {emptyText}
-              </Typography>
-            ) : (
-              groupByType(sectionSignals).map(([type, typeSignals]) => (
-                <TypeGroup
-                  key={type}
-                  type={type}
-                  signals={typeSignals}
-                  onSelect={onSelect}
-                />
-              ))
-            )}
-          </Box>
-        );
-      })}
-    </Box>
+              {sectionSignals.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ py: 0.5 }}>
+                  {emptyText}
+                </Typography>
+              ) : (
+                <Stack spacing={1}>
+                  {groupByType(sectionSignals).map(([type, typeSignals]) => (
+                    <CollapsibleStrip
+                      key={type}
+                      title={getSignalTypeLabel(type) ?? type}
+                      titleColor={getSignalTypeColor(type, theme) ?? undefined}
+                      defaultExpanded
+                      meta={typeSignals.length}
+                    >
+                      {typeSignals.map((signal) => (
+                        <SignalLine
+                          key={signal.id}
+                          signal={signal}
+                          signalType={type}
+                          onSelect={onSelect}
+                          showTypeChip={false}
+                          showScopeChip={false}
+                          showNatureChip={false}
+                          showStatusChip={false}
+                        />
+                      ))}
+                    </CollapsibleStrip>
+                  ))}
+                </Stack>
+              )}
+            </CollapsibleStrip>
+          );
+        },
+      )}
+    </Stack>
   );
 }
 
