@@ -73,6 +73,11 @@ function getMessage(signal, signalType) {
       // summary/notes fallback. (Refined rendering — role/department chips —
       // is deferred to the UX Activity sprint.)
       return signal.full_name || signal.summary || signal.notes || "—";
+    case "competitors":
+      // The competitor's identity is its name — NOT the narrative `summary`,
+      // which carries a technical "competitor: …" prefix. Matches the drawer,
+      // which shows competitor_name.
+      return signal.competitor_name || signal.summary || "—";
     // pain / objective / impact / blockers / constraints
     default:
       return signal.summary || "—";

@@ -109,7 +109,9 @@ describe("ActivityQualificationTab (grouped by type, flat lists)", () => {
     // grouped tab / view. The section + row must render.
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
     expect(screen.getByTestId("section-competitors")).toBeInTheDocument();
-    expect(screen.getByText("Weighing Salesforce instead of us")).toBeInTheDocument();
+    // The competitor row shows the competitor NAME (competitor_name), not the
+    // narrative summary.
+    expect(screen.getByText("Salesforce")).toBeInTheDocument();
   });
 
   it("renders a People section with the people row (grouped default view)", () => {

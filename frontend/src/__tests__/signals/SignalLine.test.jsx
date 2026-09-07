@@ -100,6 +100,24 @@ describe("SignalLine — nature & status chip toggles", () => {
   });
 });
 
+const COMPETITOR = {
+  id: "cp1",
+  status: "PENDING",
+  competitor_name: "Salesforce",
+  // The narrative summary carries a technical prefix — it must NOT be the row text.
+  summary: "competitor: Salesforce",
+  created_at: "2026-05-01T10:00:00Z",
+  source_context: { contacts: [] },
+};
+
+describe("SignalLine — competitor message", () => {
+  it("renders the competitor NAME alone, not the 'competitor:' summary prefix", () => {
+    render(<SignalLine signal={COMPETITOR} signalType="competitors" showTypeChip={false} />);
+    expect(screen.getByText("Salesforce")).toBeInTheDocument();
+    expect(screen.queryByText(/competitor:/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("SignalLine — informational content", () => {
   it("renders a DEPARTMENT scope chip with the target department name", () => {
     render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
