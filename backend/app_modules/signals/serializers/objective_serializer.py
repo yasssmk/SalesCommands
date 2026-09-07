@@ -189,6 +189,8 @@ class ObjectiveSignalListSerializer(_ObjectiveDisplayMixin, BaseSignalListSerial
             'scope_level', 'scope_level_display',
             # Narrative
             'summary',
+            'success_criteria',
+            'notes',
             # Target (conditional on scope_level)
             'target_contact',
             'target_department',
