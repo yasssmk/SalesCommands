@@ -44,6 +44,7 @@ import {
   formatContact,
   getNextStepSummary,
   formatSuggestedContacts,
+  formatTargetDepartments,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // Shared per-type detail blocks — the single rendering of each type's
@@ -123,6 +124,8 @@ function PainDetails({ signal }) {
             : null
         } />
         <DrawerFieldRow label="Scope" value={signal.scope_level_display} />
+        {/* Multi-department scope (M2M): all target_departments, joined. */}
+        <DrawerFieldRow label="Department" value={formatTargetDepartments(signal)} />
         <DrawerFieldRow label="Category" value={signal.signal_category_display} />
       </DrawerSection>
       <PainDetailBlock signal={signal} />
@@ -168,6 +171,8 @@ function ImpactDetails({ signal }) {
             : null
         } />
         <DrawerFieldRow label="Scope" value={signal.scope_level_display} />
+        {/* Multi-department scope (M2M): all target_departments, joined. */}
+        <DrawerFieldRow label="Department" value={formatTargetDepartments(signal)} />
       </DrawerSection>
       <ImpactDetailBlock signal={signal} />
       <DrawerSection title="CONTEXT">
@@ -266,7 +271,9 @@ function ConstraintDetails({ signal }) {
             : null
         } />
         <DrawerFieldRow label="Rigidity" value={signal.rigidity_display} />
-        <DrawerFieldRow label="Department" value={signal.target_department?.name} />
+        {/* Multi-department scope (M2M): all target_departments, joined —
+            the singular target_department FK was dropped for Constraint. */}
+        <DrawerFieldRow label="Department" value={formatTargetDepartments(signal)} />
       </DrawerSection>
       <DrawerSection title="CONTEXT">
         <DrawerFieldRow label="Raised by" value={contactName} />

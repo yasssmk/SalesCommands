@@ -443,3 +443,80 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByRole("button", { name: /validate/i })).toBeDisabled();
   });
 });
+
+// ==============================|| SIG-4 — MULTI-DEPARTMENT SCOPE (M2M) ||============================== //
+//
+// Pain / Impact / Constraint carry `target_departments` (M2M, a list of
+// {id,name}). The detail drawer must show ALL of them, joined "A, B, C" — not a
+// single name read off the removed singular `target_department` FK. Objective /
+// People keep the single FK and are unchanged.
+
+describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
+  const CONSTRAINT_MULTI = {
+    id: "cn-multi",
+    status: "PENDING",
+    summary: "Must comply with SOC2 across teams",
+    nature_display: "Regulatory",
+    rigidity_display: "Firm",
+    target_departments: [
+      { id: "d1", name: "Sales" },
+      { id: "d2", name: "Marketing" },
+      { id: "d3", name: "Finance" },
+    ],
+    source_quote: "We must comply",
+    contact: null,
+    source_context: { contacts: [] },
+  };
+
+  it("Constraint: shows ALL target_departments joined 'A, B, C'", () => {
+    render(<SignalDetailPanel signal={CONSTRAINT_MULTI} signalType="constraints" />);
+    expect(screen.getByText("Sales, Marketing, Finance")).toBeInTheDocument();
+  });
+
+  it("Constraint: a single department shows just its name", () => {
+    const one = { ...CONSTRAINT_MULTI, id: "cn-one", target_departments: [{ id: "d1", name: "Sales" }] };
+    render(<SignalDetailPanel signal={one} signalType="constraints" />);
+    expect(screen.getByText("Sales")).toBeInTheDocument();
+  });
+
+  it("Constraint: an empty department list hides the row (no stray name, no crash)", () => {
+    const none = { ...CONSTRAINT_MULTI, id: "cn-none", target_departments: [] };
+    render(<SignalDetailPanel signal={none} signalType="constraints" />);
+    // The section still renders (rigidity present) but no department text leaks.
+    expect(screen.getByText("Firm")).toBeInTheDocument();
+    expect(screen.queryByText("Sales")).not.toBeInTheDocument();
+  });
+
+  it("Pain: shows ALL target_departments joined", () => {
+    const painMulti = {
+      ...MOCK_PAIN,
+      id: "pn-multi",
+      target_departments: [
+        { id: "d1", name: "Sales" },
+        { id: "d2", name: "Operations" },
+      ],
+    };
+    render(<SignalDetailPanel signal={painMulti} signalType="pain" />);
+    expect(screen.getByText("Sales, Operations")).toBeInTheDocument();
+  });
+
+  it("Impact: shows ALL target_departments joined", () => {
+    const impactMulti = {
+      ...MOCK_IMPACT,
+      id: "im-multi",
+      target_departments: [
+        { id: "d2", name: "Marketing" },
+        { id: "d3", name: "Finance" },
+      ],
+    };
+    render(<SignalDetailPanel signal={impactMulti} signalType="impact" />);
+    expect(screen.getByText("Marketing, Finance")).toBeInTheDocument();
+  });
+
+  it("Objective (mono FK): its single target_department is UNCHANGED (not joined)", () => {
+    // MOCK_OBJECTIVE carries the singular target_department FK ({name:'Finance'})
+    // rendered by ObjectiveDetailBlock's owner line. SIG-4 must not touch it.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText("Department: Finance")).toBeInTheDocument();
+  });
+});

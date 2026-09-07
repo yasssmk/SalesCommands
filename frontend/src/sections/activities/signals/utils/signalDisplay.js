@@ -21,6 +21,19 @@ export function getContact(signal) {
   return signal.contact || signal.source_context?.contacts?.[0] || null;
 }
 
+// Joined display of a signal's MULTI-department scope. Pain / Impact /
+// Constraint carry `target_departments` — an M2M list of {id, name} (the
+// singular target_department FK was dropped for these types, backend migr.
+// 0038/0041). This joins EVERY department name with ", " (e.g. "Sales,
+// Marketing"). Returns null when the list is empty/absent, so a DrawerFieldRow
+// drops the row — same empty-safe contract as formatContact. Objective / People
+// keep the single target_department FK and do NOT use this.
+export function formatTargetDepartments(signal) {
+  const departments = signal?.target_departments;
+  if (!Array.isArray(departments) || departments.length === 0) return null;
+  return departments.map((d) => d?.name).filter(Boolean).join(", ") || null;
+}
+
 export function formatContact(contact) {
   if (!contact) return null;
   const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
