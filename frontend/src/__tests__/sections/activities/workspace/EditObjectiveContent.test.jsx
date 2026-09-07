@@ -1,10 +1,11 @@
 // frontend/src/__tests__/sections/activities/workspace/EditObjectiveContent.test.jsx
 //
-// SIG-5d / SIG-5d-fix — the Objective EDIT drawer reproduces the original
-// InlineObjectiveForm (MUI TextField/Select fields, 3 section subtitles, the
-// Domain × Dimension recap, original department Select) on DrawerContentLayout,
-// changing only: scope → ObjectiveScopePill, and an added editable source_quote.
-// Save PATCHes via the existing generic updateSignal("objective", id, patch).
+// SIG-5d* — the Objective EDIT drawer. Keeps the original form's structure (3
+// section headers + subtitles + the Domain × Dimension recap) but the fields are
+// InlineEditableValue (double-click to edit, uniform with edit-activity /
+// edit-contact). Scope is the pill + the original MUI department Select. The
+// coque owns the "Edit objective" title (no duplicate in the content). source_quote
+// is its own titled section. Save PATCHes via updateSignal("objective", id, patch).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
@@ -65,17 +66,20 @@ const renderEdit = (objective = OBJECTIVE, props = {}) =>
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
-describe("EditObjectiveContent (SIG-5d / SIG-5d-fix)", () => {
-  it("pre-fills the migrated fields (summary, success, notes, source_quote, date)", () => {
+describe("EditObjectiveContent (SIG-5d-fix2)", () => {
+  it("renders the fields as InlineEditableValue (double-click), pre-filled in read mode", () => {
     renderEdit();
-    expect(screen.getByDisplayValue("Reduce reporting time by 50%")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Monthly reports in 2 hours")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Priority for the VP")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("We want to cut reporting time by half")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("2026-12-31")).toBeInTheDocument();
+    // Read rows exist for each editable field…
+    ["summary", "what", "dimension", "success_criteria", "target_date", "notes", "source_quote"].forEach(
+      (name) => expect(screen.getByTestId(`inline-read-${name}`)).toBeInTheDocument(),
+    );
+    // …and show the current values (not open MUI inputs).
+    expect(screen.getByText("Reduce reporting time by 50%")).toBeInTheDocument();
+    expect(screen.getByText("2026-12-31")).toBeInTheDocument();
+    expect(screen.getByText("We want to cut reporting time by half")).toBeInTheDocument();
   });
 
-  it("reproduces the 3 section subtitles and the Domain × Dimension recap", () => {
+  it("keeps the 3 section subtitles and the Domain × Dimension recap", () => {
     renderEdit();
     expect(screen.getByText("Describe the objective and pick its canonical axes.")).toBeInTheDocument();
     expect(screen.getByText("Pick the organisational scope driving this goal.")).toBeInTheDocument();
@@ -84,29 +88,28 @@ describe("EditObjectiveContent (SIG-5d / SIG-5d-fix)", () => {
     expect(screen.getByText("Operations × Time")).toBeInTheDocument();
   });
 
-  it("scope: Department active + the ORIGINAL department Select (no ad-hoc native select)", () => {
+  it("does NOT render its own 'Edit objective' title (the coque owns it — no duplicate)", () => {
+    renderEdit();
+    expect(screen.queryByText("Edit objective")).not.toBeInTheDocument();
+  });
+
+  it("gives source_quote its own titled section", () => {
+    renderEdit();
+    expect(screen.getByText("Source quote")).toBeInTheDocument();
+    expect(screen.getByText("Where does this signal come from")).toBeInTheDocument();
+  });
+
+  it("scope stays a pill + the ORIGINAL department Select (unchanged, mono-department)", () => {
     renderEdit();
     expect(screen.getByTestId("scope-pill-DEPARTMENT")).toHaveAttribute("aria-pressed", "true");
-    // MUI renders the Select label twice (InputLabel + outline legend).
     expect(screen.getAllByText("Target Department *").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("scope-department-select")).not.toBeInTheDocument();
   });
 
-  it("switching to Company hides the dept select and clears it in the save patch", async () => {
+  it("double-click edits summary and Save PATCHes via updateSignal with the full payload", async () => {
     renderEdit();
-    fireEvent.click(screen.getByTestId("scope-pill-BUSINESS"));
-    expect(screen.queryAllByText("Target Department *")).toHaveLength(0);
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /save/i }));
-    });
-    const [, , patch] = updateSignal.mock.calls[0];
-    expect(patch.scope_level).toBe("BUSINESS");
-    expect(patch.target_department).toBeNull();
-  });
-
-  it("edits summary and Save PATCHes via updateSignal with the full payload", async () => {
-    renderEdit();
-    fireEvent.change(screen.getByDisplayValue("Reduce reporting time by 50%"), {
+    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "Reduce reporting time drastically now" },
     });
     await act(async () => {
@@ -129,11 +132,22 @@ describe("EditObjectiveContent (SIG-5d / SIG-5d-fix)", () => {
     });
   });
 
-  it("source_quote is editable (added field)", () => {
+  it("source_quote edits on double-click", () => {
     renderEdit();
-    const sq = screen.getByDisplayValue("We want to cut reporting time by half");
-    fireEvent.change(sq, { target: { value: "A newly picked quote" } });
-    expect(sq).toHaveValue("A newly picked quote");
+    fireEvent.doubleClick(screen.getByTestId("inline-read-source_quote"));
+    expect(screen.getByTestId("inline-input-source_quote")).toBeInTheDocument();
+  });
+
+  it("switching to Company hides the dept select and clears it in the save patch", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("scope-pill-BUSINESS"));
+    expect(screen.queryAllByText("Target Department *")).toHaveLength(0);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    const [, , patch] = updateSignal.mock.calls[0];
+    expect(patch.scope_level).toBe("BUSINESS");
+    expect(patch.target_department).toBeNull();
   });
 
   it("Cancel closes the drawer without saving", () => {
