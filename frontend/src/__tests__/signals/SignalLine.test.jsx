@@ -138,17 +138,13 @@ describe("SignalLine — informational content", () => {
     expect(scopeChip).toBeTruthy();
   });
 
-  it("renders the scope as MUTED TEXT (no chip) when showScopeChip=false", () => {
-    const { container } = render(
-      <SignalLine signal={DEPT_PAIN} signalType="pain" showScopeChip={false} />,
-    );
-    // The scope text is still shown…
-    expect(screen.getByText(/Department · Marketing/)).toBeInTheDocument();
-    // …but not inside any Chip.
-    const inChip = [...container.querySelectorAll(".MuiChip-root")].find(
-      (c) => /Department · Marketing/.test(c.textContent),
-    );
-    expect(inChip).toBeFalsy();
+  it("renders NO signal scope (neither chip nor text) when showScopeChip=false, keeping the contact identity", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" showScopeChip={false} />);
+    // The signal scope is gone entirely — no "Department · …" scope, no "Business".
+    expect(screen.queryByText(/Department · Marketing/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Business")).not.toBeInTheDocument();
+    // The CONTACT identity (name · role · contact department) and date stay.
+    expect(screen.getByText(/Dana Lee · CMO · Marketing/)).toBeInTheDocument();
   });
 
   it("renders tech_name as the message and NO scope chip for tech-stack", () => {

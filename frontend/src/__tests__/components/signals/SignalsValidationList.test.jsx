@@ -145,8 +145,9 @@ describe("SignalsValidationList (SIG-2-fix2)", () => {
     );
     const row = screen.getByTestId("signal-line");
     expect(screen.getByText("Data must stay on-prem")).toBeInTheDocument();
-    // Scope stays as muted text…
-    expect(screen.getByText(/Department · IT/)).toBeInTheDocument();
+    // The signal scope is NOT shown on the row at all (neither chip nor text).
+    expect(screen.queryByText(/Department · IT/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Business")).not.toBeInTheDocument();
     // …and there is NO chip in the row (nature "Security" + status "Pending" gone).
     expect(row.querySelector(".MuiChip-root")).toBeNull();
     expect(screen.queryByText("Security")).not.toBeInTheDocument();

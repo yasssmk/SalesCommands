@@ -270,28 +270,19 @@ export default function SignalLine({
           />
         )}
 
-        {/* Scope — moved here from the message line, where it was cramped.
-            Default: an outlined chip (DC / Account flat views). When
-            showScopeChip is false (the Activity validation list), the scope is
-            plain muted text inline with the rest of the meta — no pill. */}
-        {scopeLabel &&
-          (showScopeChip ? (
-            <Chip
-              label={scopeLabel}
-              size="small"
-              variant="outlined"
-              sx={{ height: 20, fontSize: "0.68rem", flexShrink: 0 }}
-            />
-          ) : (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              noWrap
-              sx={{ flexShrink: 0 }}
-            >
-              {scopeLabel}
-            </Typography>
-          ))}
+        {/* Signal scope — an outlined chip on the DC / Account flat views
+            (default). The Activity validation list passes showScopeChip=false,
+            which drops the signal scope entirely (neither chip nor text — the
+            scope/department lives in the drawer). The CONTACT identity above is
+            unaffected. */}
+        {showScopeChip && scopeLabel && (
+          <Chip
+            label={scopeLabel}
+            size="small"
+            variant="outlined"
+            sx={{ height: 20, fontSize: "0.68rem", flexShrink: 0 }}
+          />
+        )}
 
         {/* Spacer pushes the status to the right edge of the meta line. */}
         <Box sx={{ flexGrow: 1 }} />
@@ -348,7 +339,7 @@ SignalLine.propTypes = {
   onSelect: PropTypes.func,
   /** Hide the type chip when the surrounding section already names the type. */
   showTypeChip: PropTypes.bool,
-  /** Render the scope as an outlined chip (default) or as muted inline text. */
+  /** Show the signal scope as an outlined chip (default true); false → no scope at all. */
   showScopeChip: PropTypes.bool,
   /** Show the constraint nature chip (default true; false in the validation list). */
   showNatureChip: PropTypes.bool,
