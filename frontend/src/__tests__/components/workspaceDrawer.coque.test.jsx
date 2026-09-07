@@ -178,6 +178,33 @@ describe("WorkspaceDrawer coque — optional title on the cross line (Option A, 
   });
 });
 
+describe("WorkspaceDrawer coque — sticky push panel (DRAWER-STICKY)", () => {
+  it("large PUSH: the panel is position:sticky, pinned under the fixed header (top = toolbar height), bounded to the viewport", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const panel = panelOfAncestor(screen.getByTestId("dcontent"));
+    const rule = rulesForElement(panel);
+    // Sticky so it stays visible while the page scrolls behind it.
+    expect(rule).toMatch(/position:\s*sticky/);
+    // Top offset = the fixed app-bar height token (theme.mixins.toolbar.minHeight),
+    // not a magic px.
+    expect(rule).toContain(`top:${testTheme.mixins.toolbar.minHeight}px`);
+    // Height follows content up to the viewport, then scrolls internally.
+    expect(rule).toMatch(/max-height:\s*calc\(100vh/);
+  });
+
+  it("large PUSH: the panel body scrolls internally (overflow-y auto + min-height 0) for a long drawer", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const body = screen.getByTestId("dcontent").parentElement;
+    const rule = rulesForElement(body);
+    expect(rule).toMatch(/overflow-y:\s*auto/);
+    expect(rule).toMatch(/min-height:\s*0/);
+  });
+});
+
 describe("WorkspaceDrawer coque — rounded, detached floating card (SE-a)", () => {
   it("large PUSH: the panel is rounded (radius.lg), has a detachment margin, and a full hairline border", () => {
     renderWorkspace();

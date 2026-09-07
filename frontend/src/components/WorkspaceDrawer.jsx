@@ -84,8 +84,14 @@ CoqueHeader.propTypes = { onClose: PropTypes.func.isRequired, title: PropTypes.s
 function CoquePanel({ content, onClose, title }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
+  // Sticky offset = the height of the FIXED app-bar above the content
+  // (theme.mixins.toolbar.minHeight — the same token the layout's Toolbar spacer
+  // reserves). The breadcrumb below it is in normal flow (it scrolls away), so it
+  // is NOT part of the offset. No magic px: the value comes from the theme token.
+  const headerOffset = theme.mixins.toolbar.minHeight;
   return (
     <Box
+      data-testid="coque-panel"
       sx={{
         width: aq.drawer.width,
         backgroundColor: aq.surface.level2,
@@ -101,10 +107,21 @@ function CoquePanel({ content, onClose, title }) {
         mr: 1.5,
         display: "flex",
         flexDirection: "column",
+        // STICKY: the whole page scrolls in the window; this pins the drawer just
+        // under the fixed header so it stays visible while the content column
+        // scrolls behind it. Height follows the content up to the viewport
+        // (minus the offset + the bottom/right detachment spacing), then the body
+        // scrolls internally. A short drawer stays a small pinned card (no void).
+        position: "sticky",
+        top: headerOffset,
+        alignSelf: "flex-start",
+        maxHeight: `calc(100vh - ${headerOffset}px - ${theme.spacing(3)})`,
       }}
     >
       <CoqueHeader onClose={onClose} title={title} />
-      <Box sx={{ p: 2, overflowY: "auto", flex: 1 }}>{content}</Box>
+      {/* min-height:0 lets this flex child shrink below its content so the
+          internal overflow actually scrolls (header stays pinned). */}
+      <Box sx={{ p: 2, overflowY: "auto", flex: 1, minHeight: 0 }}>{content}</Box>
     </Box>
   );
 }
