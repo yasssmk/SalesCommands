@@ -80,6 +80,27 @@ describe("SignalLine — informational content", () => {
     expect(screen.getByText("Business")).toBeInTheDocument();
   });
 
+  it("renders the scope as an outlined chip by DEFAULT (DC/Account unchanged)", () => {
+    const { container } = render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    const scopeChip = [...container.querySelectorAll(".MuiChip-outlined")].find(
+      (c) => /Department · Marketing/.test(c.textContent),
+    );
+    expect(scopeChip).toBeTruthy();
+  });
+
+  it("renders the scope as MUTED TEXT (no chip) when showScopeChip=false", () => {
+    const { container } = render(
+      <SignalLine signal={DEPT_PAIN} signalType="pain" showScopeChip={false} />,
+    );
+    // The scope text is still shown…
+    expect(screen.getByText(/Department · Marketing/)).toBeInTheDocument();
+    // …but not inside any Chip.
+    const inChip = [...container.querySelectorAll(".MuiChip-root")].find(
+      (c) => /Department · Marketing/.test(c.textContent),
+    );
+    expect(inChip).toBeFalsy();
+  });
+
   it("renders tech_name as the message and NO scope chip for tech-stack", () => {
     render(<SignalLine signal={TECH} signalType="tech-stack" />);
     expect(screen.getByText("Salesforce")).toBeInTheDocument();

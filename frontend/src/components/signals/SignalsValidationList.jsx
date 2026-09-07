@@ -89,6 +89,7 @@ function TypeGroup({ type, signals, onSelect }) {
           signalType={type}
           onSelect={onSelect}
           showTypeChip={false}
+          showScopeChip={false}
         />
       ))}
     </Box>

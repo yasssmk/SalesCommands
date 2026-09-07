@@ -93,16 +93,24 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getByText("Budget frozen flat")).toBeInTheDocument();
   });
 
-  it("renders the 3 status sections", () => {
+  it("renders the 3 status sections when all statuses are present", () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          { id: "p1", status: "PENDING", summary: "Pending pain", _signalType: "pain" },
+          { id: "o1", status: "VALIDATED", summary: "Validated objective", _signalType: "objective" },
+          { id: "r1", status: "REJECTED", summary: "Rejected blocker", _signalType: "blockers" },
+        ],
+      }),
+    );
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     const titles = screen
       .getAllByTestId("signal-section-title")
       .map((el) => el.textContent);
-    // Rejected is empty by default (not fetched) → its section is hidden.
-    expect(titles).toEqual(["To validate", "Validated"]);
+    expect(titles).toEqual(["To validate", "Validated", "Rejected"]);
   });
 
-  it("scopes the aggregated call to this activity, the flat types, and fetches all (pageSize 100)", () => {
+  it("scopes the call to this activity + flat types, fetches ALL 3 statuses, pageSize 100", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     const args = lastHookArgs();
     expect(args.activityId).toBe("act-flat");
@@ -116,31 +124,15 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
       "competitors",
       "people",
     ]);
-    // Rejected excluded by default (structural sections still cover it when opted in).
-    expect(args.statuses).toEqual(["PENDING", "VALIDATED"]);
+    // The validation worklist always loads all 3 statuses (Rejected is part of it).
+    expect(args.statuses).toEqual(["PENDING", "VALIDATED", "REJECTED"]);
     expect(args.pageSize).toBe(100);
   });
 
-  it("shows the filter icon and the sort select", () => {
+  it("has NO filter button and NO sort select (the validation list has neither)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    expect(screen.getByLabelText("Open filters")).toBeInTheDocument();
-    expect(screen.getByLabelText("Sort")).toBeInTheDocument();
-  });
-
-  it("filters by type via the drawer", () => {
-    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    fireEvent.click(screen.getByLabelText("Open filters"));
-    fireEvent.click(screen.getByLabelText("Objective"));
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(lastHookArgs().signalTypes).toEqual(["objective"]);
-  });
-
-  it("adds REJECTED to the statuses arg only when opted in via the drawer", () => {
-    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
-    fireEvent.click(screen.getByLabelText("Open filters"));
-    fireEvent.click(screen.getByLabelText("Include rejected"));
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(lastHookArgs().statuses).toContain("REJECTED");
+    expect(screen.queryByLabelText("Open filters")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Sort")).not.toBeInTheDocument();
   });
 
   it("opens the signal drawer when a row is clicked", () => {

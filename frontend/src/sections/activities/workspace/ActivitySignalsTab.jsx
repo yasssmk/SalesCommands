@@ -1,60 +1,47 @@
 // frontend/src/sections/activities/workspace/ActivitySignalsTab.jsx
 //
-// Activity "Signals" tab — FLAT-FORCED (SIG-2). The Grouped/Flat toggle is gone:
-// this tab is now only the flat validation list (SignalsValidationList), which
-// splits the activity's signals into 3 status sections (To validate / Validated
-// / Rejected), each grouped by type behind a coloured type header. The grouped
-// synthesis still lives in its own place (ActivityQualificationTab, and the
-// shared grouped views on DC / Account) — untouched here.
+// Activity "Signals" tab — FLAT-FORCED validation worklist (SIG-2 / SIG-2-fix).
+// No toggle, NO filter, NO sort: the tab is just the flat SignalsValidationList,
+// which splits the activity's signals into 3 status sections (To validate /
+// Validated / Rejected), each grouped by type behind a coloured type header.
 //
 // The list is fed by the aggregated endpoint (useAggregatedSignals) scoped by
-// activity_id. It fetches the whole matching set in one page (pageSize 100, the
-// endpoint's max) so the 3 sections are coherent — no server pager. Clicking a
-// row injects the signal detail into the single workspace drawer coque.
+// activity_id. It loads ALL 3 statuses (the Rejected section is part of the
+// worklist) and the whole matching set in one page (pageSize 100, the endpoint's
+// max) — no server pager. Clicking a row injects the signal detail into the
+// single workspace drawer coque.
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 // MUI
-import Badge from "@mui/material/Badge";
 import Box from "@mui/material/Box";
-import IconButton from "@mui/material/IconButton";
-import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-
-// icons
-import FilterOutlined from "@ant-design/icons/FilterOutlined";
 
 // Project imports
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import useSignalFilters from "hooks/useSignalFilters";
 import { useGetSignalChoices } from "api/signals/signals";
 import {
   validateSignal,
   rejectSignal,
   reopenSignal,
 } from "api/signals/signals";
-import { useGetContactChoices } from "api/businessData/contacts";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
 
 // Section imports
-import SignalsFilterPanel from "components/signals/SignalsFilterPanel";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
-import SignalsSortSelect from "sections/activities/signals/SignalsSortSelect";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
-// tech-stack, blockers and constraints, competitors and people — next-steps
-// live in their own tab and are excluded. Constraints are activity-scoped
-// provenance here (the DC groups them by nature; the account excludes them).
+// tech-stack, blockers, constraints, competitors and people — next-steps live
+// in their own tab and are excluded.
 const ACTIVITY_FLAT_TYPES = [
   "pain",
   "objective",
@@ -66,9 +53,12 @@ const ACTIVITY_FLAT_TYPES = [
   "people",
 ];
 
+// The validation worklist always loads all 3 statuses — the Rejected section is
+// part of it (no "include rejected" opt-in anymore).
+const STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
+
 // The aggregated endpoint caps page_size at 100 (core StandardResultsSetPagination).
-// One activity's signal set sits well under that, so we fetch it all in one page
-// and render the 3 grouped sections without a pager.
+// One activity's signal set sits well under that, so we fetch it all in one page.
 const PAGE_SIZE = 100;
 
 // ==============================|| ACTIVITY SIGNALS TAB (FLAT) ||============================== //
@@ -84,37 +74,6 @@ export default function ActivitySignalsTab({
   // Choices for edit forms
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // Filter / sort state
-  const [filterPanelOpen, setFilterPanelOpen] = useState(false);
-  const {
-    pending,
-    updatePending,
-    apply,
-    clear,
-    syncPending,
-    statuses,
-    activeTypes,
-    department,
-    contactId,
-    scope,
-    activeCount,
-    hasPendingChanges,
-  } = useSignalFilters();
-
-  // Controlled department list + contact-search scope for the filter drawer.
-  const { standardDepartments } = useGetContactChoices();
-  const departmentOptions = useMemo(
-    () =>
-      (standardDepartments ?? []).map((d) => ({
-        value: d.value ?? d.id,
-        label: d.label ?? d.name,
-      })),
-    [standardDepartments],
-  );
-  const contactFilters = useMemo(() => ({ account_id: accountId }), [accountId]);
-
-  const [sortKey, setSortKey] = useState("date-desc");
-
   // The single workspace drawer coque (B3.5.3): clicking a signal injects its
   // detail via openDrawer; the coque owns open state + close.
   const { openDrawer } = useWorkspaceDrawer();
@@ -124,15 +83,8 @@ export default function ActivitySignalsTab({
   const [editSignal, setEditSignal] = useState(null);
   const [editType, setEditType] = useState(null);
 
-  // One aggregated call, server-driven filter / sort. The filter drawer drives
-  // signal_type (a subset; none selected = all activity types) and status
-  // (default pending+validated, +rejected when opted in — which surfaces the
-  // Rejected section). The whole set comes back in one page (pageSize 100).
-  const signalTypes = useMemo(
-    () => (activeTypes.length ? activeTypes : ACTIVITY_FLAT_TYPES),
-    [activeTypes],
-  );
-
+  // One aggregated call: all flat types, all 3 statuses, whole set in one page,
+  // ordered newest-first (the endpoint default). No filter / sort controls.
   const {
     signals: flatSignals,
     loading,
@@ -140,12 +92,9 @@ export default function ActivitySignalsTab({
     mutate: mutateAll,
   } = useAggregatedSignals({
     activityId,
-    statuses,
-    signalTypes,
-    department,
-    contact: contactId,
-    scope,
-    ordering: sortKey,
+    statuses: STATUSES,
+    signalTypes: ACTIVITY_FLAT_TYPES,
+    ordering: "date-desc",
     page: 1,
     pageSize: PAGE_SIZE,
   });
@@ -230,17 +179,6 @@ export default function ActivitySignalsTab({
     mutateCounts?.();
   }, [mutateAll, mutateCounts]);
 
-  const handleOpenFilters = () => {
-    syncPending();
-    setFilterPanelOpen(true);
-  };
-  const handleApplyFilters = () => {
-    apply();
-  };
-  const handleClearFilters = () => {
-    clear();
-  };
-
   // A fetch can fail while previous data is still shown (SWR keeps the last
   // data). Keep the list and surface the transient failure via the standard
   // error snackbar instead of blanking the view.
@@ -250,23 +188,6 @@ export default function ActivitySignalsTab({
 
   return (
     <Box>
-      {/* Toolbar: sort · filter icon */}
-      <Stack
-        direction="row"
-        justifyContent="flex-end"
-        alignItems="center"
-        sx={{ mb: 2.5, flexWrap: "wrap", gap: 1 }}
-      >
-        <SignalsSortSelect value={sortKey} onChange={setSortKey} />
-        <Tooltip title="Filters">
-          <IconButton onClick={handleOpenFilters} aria-label="Open filters">
-            <Badge badgeContent={activeCount} color="primary">
-              <FilterOutlined />
-            </Badge>
-          </IconButton>
-        </Tooltip>
-      </Stack>
-
       {/* The flat validation list: 3 status sections × type groups. */}
       {error && !flatSignals.length ? (
         <Box
@@ -282,24 +203,9 @@ export default function ActivitySignalsTab({
           signals={flatSignals}
           loading={loading}
           onSelect={handleSelect}
-          emptyMessage="No signals match these filters"
+          emptyMessage="No signals for this activity"
         />
       )}
-
-      {/* Filter drawer (flat mode) — type / department / contact / include-rejected. */}
-      <SignalsFilterPanel
-        open={filterPanelOpen}
-        onClose={() => setFilterPanelOpen(false)}
-        availableTypes={ACTIVITY_FLAT_TYPES}
-        departmentOptions={departmentOptions}
-        contactFilters={contactFilters}
-        pendingFilters={pending}
-        onFilterChange={updatePending}
-        onApply={handleApplyFilters}
-        onClear={handleClearFilters}
-        hasPendingChanges={hasPendingChanges}
-        mode="flat"
-      />
 
       {/* Edit Dialog */}
       <SignalEditDrawer

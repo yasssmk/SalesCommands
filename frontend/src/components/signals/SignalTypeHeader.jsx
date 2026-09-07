@@ -30,11 +30,17 @@ export default function SignalTypeHeader({ signalType, ...rest }) {
 
   const color = getSignalTypeColor(signalType, theme);
 
+  // The type colour is applied via an inline `style` (not `sx`) on purpose: an
+  // inline style is the highest-priority CSS and cannot be overridden by any
+  // class-level rule, so the dedicated type colour always wins on screen. The
+  // value still comes from the SIG-1 source of truth (theme.aphoriQ.signalColors
+  // via getSignalTypeColor) — no colour literal lives here.
   return (
     <Typography
       variant="subtitle2"
       component="div"
-      sx={{ color, fontWeight: 500 }}
+      sx={{ fontWeight: 500 }}
+      style={color ? { color } : undefined}
       {...rest}
     >
       {label}

@@ -58,6 +58,33 @@ describe("SignalsValidationList (SIG-2)", () => {
     expect(screen.getAllByText("Objective")).toHaveLength(1);
   });
 
+  it("renders row scope as muted text, never a department/scope chip", () => {
+    const { container } = render(
+      <AphoriqTheme>
+        <SignalsValidationList
+          signals={[
+            {
+              id: "p1",
+              status: "PENDING",
+              summary: "scoped pain",
+              _signalType: "pain",
+              scope_level: "DEPARTMENT",
+              target_department: { id: "d1", name: "Marketing" },
+            },
+          ]}
+          onSelect={vi.fn()}
+        />
+      </AphoriqTheme>,
+    );
+    // Scope shown as text…
+    expect(screen.getByText(/Department · Marketing/)).toBeInTheDocument();
+    // …and NOT inside a chip.
+    const inChip = [...container.querySelectorAll(".MuiChip-root")].find((c) =>
+      /Department · Marketing/.test(c.textContent),
+    );
+    expect(inChip).toBeFalsy();
+  });
+
   it("opens the drawer via onSelect when a row is clicked", () => {
     const onSelect = vi.fn();
     renderList({ onSelect });
