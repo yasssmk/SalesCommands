@@ -58,6 +58,7 @@ vi.mock("utils/displayError", () => ({
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import ActivityQualificationTab from "sections/activities/workspace/ActivityQualificationTab";
+import useActivityAllSignals from "hooks/useActivityAllSignals";
 import { validateSignal, rejectSignal } from "api/signals/signals";
 import { ACTIVITY_TABS } from "sections/activities/workspace/ActivityTabs";
 
@@ -140,6 +141,34 @@ describe("ActivityQualificationTab (grouped by type, flat lists)", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(screen.getByText("Objective signal B"));
     expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+  });
+
+  it("SIG-5e-fix4: validating an objective from the drawer refreshes it to Validated (stays open)", async () => {
+    // A PENDING objective so the drawer shows the Validate action + Pending pill.
+    useActivityAllSignals.mockReturnValueOnce({
+      qualificationSignals: [
+        {
+          id: "op1", status: "PENDING", summary: "Pending objective",
+          _signalType: "objective", what: "OPS", dimension: "TIME",
+          scope_level: "COMPANY", source_context: { contacts: [] },
+        },
+      ],
+      techStackSignals: [], blockerSignals: [], constraintSignals: [],
+      competitorSignals: [], peopleSignals: [], nextStepSignals: [], allSignals: [],
+      loading: false, error: null, mutateAll: mockMutateAll,
+    });
+    render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(screen.getByText("Pending objective"));
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Pending");
+    // Drawer's Validate action's accessible name ends in "Validate" (icon+label).
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Validate$/ }));
+    });
+    expect(validateSignal).toHaveBeenCalledWith("objective", "op1");
+    // Stays open and returns to the detail, now Validated.
+    expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
+    expect(screen.queryByRole("button", { name: /Validate$/ })).not.toBeInTheDocument();
   });
 
   it("validates from the drawer: click a row → Validate", async () => {

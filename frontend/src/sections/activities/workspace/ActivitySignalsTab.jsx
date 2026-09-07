@@ -14,7 +14,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
@@ -100,6 +100,30 @@ export default function ActivitySignalsTab({
     pageSize: PAGE_SIZE,
   });
 
+  // Re-open the detail in the coque after a status change so the drawer stays
+  // OPEN and RETURNS to the (refreshed) detail instead of showing the stale
+  // pre-action content. The lifecycle handlers are read from a ref to avoid a
+  // circular useCallback dependency (they in turn call this to re-open).
+  const detailHandlersRef = useRef(null);
+  const openSignalDetail = useCallback(
+    (signal, signalType) => {
+      const h = detailHandlersRef.current;
+      openDrawer(
+        <SignalDetailPanel
+          signal={signal}
+          signalType={signalType}
+          onValidate={h.onValidate}
+          onReject={h.onReject}
+          onEdit={h.onEdit}
+          onReopen={h.onReopen}
+          isLocked={isLocked}
+          currentActivityId={activityId}
+        />,
+      );
+    },
+    [openDrawer, isLocked, activityId],
+  );
+
   // Handlers
   const handleValidate = useCallback(
     async (signal, signalType) => {
@@ -108,11 +132,12 @@ export default function ActivitySignalsTab({
         displaySuccessSnackbar("Signal validated");
         mutateAll();
         mutateCounts?.();
+        openSignalDetail({ ...signal, status: "VALIDATED" }, signalType);
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts],
+    [mutateAll, mutateCounts, openSignalDetail],
   );
 
   const handleReject = useCallback(
@@ -122,11 +147,12 @@ export default function ActivitySignalsTab({
         displaySuccessSnackbar("Signal rejected");
         mutateAll();
         mutateCounts?.();
+        openSignalDetail({ ...signal, status: "REJECTED" }, signalType);
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts],
+    [mutateAll, mutateCounts, openSignalDetail],
   );
 
   const handleReopen = useCallback(
@@ -136,11 +162,12 @@ export default function ActivitySignalsTab({
         displaySuccessSnackbar("Signal reopened — now pending");
         mutateAll();
         mutateCounts?.();
+        openSignalDetail({ ...signal, status: "PENDING" }, signalType);
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts],
+    [mutateAll, mutateCounts, openSignalDetail],
   );
 
   const handleEdit = useCallback(
@@ -169,25 +196,22 @@ export default function ActivitySignalsTab({
     [openDrawer, accountId, mutateAll, mutateCounts],
   );
 
+  // Keep the ref pointing at the latest lifecycle handlers so openSignalDetail
+  // (which re-opens the detail after a status change) always wires the current
+  // callbacks without depending on them.
+  detailHandlersRef.current = {
+    onValidate: handleValidate,
+    onReject: handleReject,
+    onEdit: handleEdit,
+    onReopen: handleReopen,
+  };
+
   // Inject the signal detail into the single coque. Clicking another signal
   // replaces the content (React reconciles the panel in place); the coque owns
-  // the close button. Declared after the action handlers it captures.
+  // the close button.
   const handleSelect = useCallback(
-    (signal, signalType) => {
-      openDrawer(
-        <SignalDetailPanel
-          signal={signal}
-          signalType={signalType}
-          onValidate={handleValidate}
-          onReject={handleReject}
-          onEdit={handleEdit}
-          onReopen={handleReopen}
-          isLocked={isLocked}
-          currentActivityId={activityId}
-        />,
-      );
-    },
-    [openDrawer, handleValidate, handleReject, handleEdit, handleReopen, isLocked, activityId],
+    (signal, signalType) => openSignalDetail(signal, signalType),
+    [openSignalDetail],
   );
 
   const handleEditClose = useCallback(() => {

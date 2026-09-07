@@ -187,6 +187,42 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
   });
 
+  it("SIG-5e-fix4: validating from the objective drawer refreshes it to the Validated detail (stays open)", async () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "op1",
+            status: "PENDING",
+            summary: "Pending objective",
+            _signalType: "objective",
+            what: "OPS",
+            dimension: "TIME",
+            scope_level: "COMPANY",
+            source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    // The drawer's Validate action's accessible name ends in "Validate"
+    // (icon + label); the row button is "Validate signal" and the section
+    // toggle is "…To validate 1" — anchoring on the ending targets the drawer.
+    const drawerValidate = { name: /Validate$/ };
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Pending objective"));
+    // The objective detail opens with a Pending pill and a Validate action.
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Pending");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", drawerValidate));
+    });
+    expect(validateSignal).toHaveBeenCalledWith("objective", "op1");
+    // Drawer stays open and RETURNS to the detail, now Validated — the pill
+    // flips and the drawer's Validate action is gone (not stale Pending content).
+    expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
+    expect(screen.queryByRole("button", drawerValidate)).not.toBeInTheDocument();
+  });
+
   it("opens the signal drawer when a row is clicked", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     expect(screen.queryByLabelText("Close drawer")).not.toBeInTheDocument();
