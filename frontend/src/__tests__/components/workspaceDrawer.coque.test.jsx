@@ -179,24 +179,38 @@ describe("WorkspaceDrawer coque — optional title on the cross line (Option A, 
 });
 
 describe("WorkspaceDrawer coque — sticky push panel (DRAWER-STICKY)", () => {
-  it("large PUSH: the panel is position:sticky, pinned under the fixed header (top = toolbar height), bounded to the viewport", () => {
+  // The sticky element must sit OUTSIDE the Collapse: the horizontal Collapse's
+  // Wrapper/WrapperInner have height:100%, so a sticky INSIDE it has a tight
+  // containing block (= panel height) and no room to stick — it scrolls away
+  // (the earlier attempt's bug). Sticky belongs on a wrapper whose containing
+  // block is the tall scrolling row.
+  it("large PUSH: the sticky wrapper is OUTSIDE the Collapse, pinned under the fixed header (top = toolbar token)", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const collapse = document.querySelector(".MuiCollapse-root");
+    expect(collapse).not.toBeNull();
+
+    // The sticky wrapper is the Collapse's PARENT (an ancestor, not a descendant).
+    const stickyWrapper = collapse.parentElement;
+    const rule = rulesForElement(stickyWrapper);
+    expect(rule).toMatch(/position:\s*sticky/);
+    expect(rule).toContain(`top:${testTheme.mixins.toolbar.minHeight}px`);
+    // Sticky is ABOVE the Collapse (so the Collapse's tight box is not its
+    // containing block).
+    expect(collapse.contains(stickyWrapper)).toBe(false);
+
+    // The panel itself is no longer the sticky element.
+    const panel = panelOfAncestor(screen.getByTestId("dcontent"));
+    expect(rulesForElement(panel)).not.toMatch(/position:\s*sticky/);
+  });
+
+  it("large PUSH: the panel is bounded to the viewport (maxHeight) and its body scrolls internally", () => {
     renderWorkspace();
     fireEvent.click(screen.getByRole("button", { name: "open" }));
 
     const panel = panelOfAncestor(screen.getByTestId("dcontent"));
-    const rule = rulesForElement(panel);
-    // Sticky so it stays visible while the page scrolls behind it.
-    expect(rule).toMatch(/position:\s*sticky/);
-    // Top offset = the fixed app-bar height token (theme.mixins.toolbar.minHeight),
-    // not a magic px.
-    expect(rule).toContain(`top:${testTheme.mixins.toolbar.minHeight}px`);
-    // Height follows content up to the viewport, then scrolls internally.
-    expect(rule).toMatch(/max-height:\s*calc\(100vh/);
-  });
-
-  it("large PUSH: the panel body scrolls internally (overflow-y auto + min-height 0) for a long drawer", () => {
-    renderWorkspace();
-    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(rulesForElement(panel)).toMatch(/max-height:\s*calc\(100vh/);
 
     const body = screen.getByTestId("dcontent").parentElement;
     const rule = rulesForElement(body);

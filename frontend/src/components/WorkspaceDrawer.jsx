@@ -107,14 +107,10 @@ function CoquePanel({ content, onClose, title }) {
         mr: 1.5,
         display: "flex",
         flexDirection: "column",
-        // STICKY: the whole page scrolls in the window; this pins the drawer just
-        // under the fixed header so it stays visible while the content column
-        // scrolls behind it. Height follows the content up to the viewport
-        // (minus the offset + the bottom/right detachment spacing), then the body
-        // scrolls internally. A short drawer stays a small pinned card (no void).
-        position: "sticky",
-        top: headerOffset,
-        alignSelf: "flex-start",
+        // The STICKY pin lives on the wrapper OUTSIDE the Collapse (see the push
+        // branch below) — a sticky here is clipped to the Collapse's tight
+        // height wrapper and can't move. This panel only bounds its own height to
+        // the viewport so a long drawer scrolls INTERNALLY (its body, below).
         maxHeight: `calc(100vh - ${headerOffset}px - ${theme.spacing(3)})`,
       }}
     >
@@ -191,9 +187,25 @@ export default function WorkspaceDrawer() {
   // transition from theme.transitions (duration.standard / easing) — no
   // hardcoded duration or easing here. `unmountOnExit` mounts CoquePanel only
   // while open, so a closed coque renders null (and reads no aphoriQ tokens).
+  //
+  // STICKY lives on this WRAPPER, OUTSIDE the Collapse. The whole page scrolls in
+  // the window; this Box is a flex child of the tall content-coque-row, so its
+  // containing block is that row → position:sticky has room to pin the drawer
+  // under the fixed header while the content scrolls behind it. (A sticky INSIDE
+  // the Collapse is clipped by its height:100% wrapper — the earlier bug.)
+  const headerOffset = theme.mixins.toolbar.minHeight;
   return (
-    <Collapse orientation="horizontal" in={isOpen} unmountOnExit sx={{ flexShrink: 0 }}>
-      <CoquePanel content={content} onClose={closeDrawer} title={title} />
-    </Collapse>
+    <Box
+      sx={{
+        position: "sticky",
+        top: headerOffset,
+        alignSelf: "flex-start",
+        flexShrink: 0,
+      }}
+    >
+      <Collapse orientation="horizontal" in={isOpen} unmountOnExit>
+        <CoquePanel content={content} onClose={closeDrawer} title={title} />
+      </Collapse>
+    </Box>
   );
 }
