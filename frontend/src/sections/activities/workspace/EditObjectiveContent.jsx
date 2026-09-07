@@ -51,6 +51,13 @@ import InlineEditableValue from "components/drawer/InlineEditableValue";
 import ObjectiveScopePill from "components/signals/ObjectiveScopePill";
 import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
 
+// Date picker — the project's standard component (@mui/x-date-pickers + dayjs),
+// same as EditActivityContent / OutcomeDrawerContent.
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
+
 // ==============================|| HELPERS (reproduced from InlineObjectiveForm) ||=========== //
 
 function resolveLabel(options, value) {
@@ -353,14 +360,18 @@ export default function EditObjectiveContent({ objective, accountId, onSaved }) 
             onChange={set("success_criteria")}
             placeholder="No success criteria"
           />
-          <InlineEditableValue
-            name="target_date"
-            label="Target date"
-            type="text"
-            value={values.target_date}
-            onChange={set("target_date")}
-            placeholder="YYYY-MM-DD (optional)"
-          />
+          {/* Target date — the project's standard MUI-X DatePicker. Formik keeps
+              the ISO "YYYY-MM-DD" string; the picker reads/writes a dayjs. */}
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DatePicker
+              label="Target date"
+              value={values.target_date ? dayjs(values.target_date) : null}
+              onChange={(v) =>
+                setFieldValue("target_date", v && v.isValid() ? v.format("YYYY-MM-DD") : "")
+              }
+              slotProps={{ textField: { fullWidth: true, size: "small" } }}
+            />
+          </LocalizationProvider>
           <InlineEditableValue
             name="notes"
             label="Notes"

@@ -39,6 +39,23 @@ vi.mock("contexts/WorkspaceDrawerContext", () => ({
   useWorkspaceDrawer: () => ({ closeDrawer, openDrawer: vi.fn() }),
 }));
 
+// x-date-pickers — stubbed in tests (jsdom can't resolve its ESM), same as
+// OutcomeDrawerContent.test. Renders an input labelled by the picker's `label`.
+vi.mock("@mui/x-date-pickers/DatePicker", () => ({
+  DatePicker: ({ label, value }) => (
+    <input
+      aria-label={label}
+      data-testid="objective-target-date"
+      readOnly
+      value={value && value.format ? value.format("YYYY-MM-DD") : ""}
+    />
+  ),
+}));
+vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
+  LocalizationProvider: ({ children }) => children,
+}));
+vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: class {} }));
+
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
 import { updateSignal } from "api/signals/signals";
 
@@ -69,14 +86,21 @@ afterEach(() => cleanup());
 describe("EditObjectiveContent (SIG-5d-fix2)", () => {
   it("renders the fields as InlineEditableValue (double-click), pre-filled in read mode", () => {
     renderEdit();
-    // Read rows exist for each editable field…
-    ["summary", "what", "dimension", "success_criteria", "target_date", "notes", "source_quote"].forEach(
+    // Read rows exist for each editable text/select field…
+    ["summary", "what", "dimension", "success_criteria", "notes", "source_quote"].forEach(
       (name) => expect(screen.getByTestId(`inline-read-${name}`)).toBeInTheDocument(),
     );
     // …and show the current values (not open MUI inputs).
     expect(screen.getByText("Reduce reporting time by 50%")).toBeInTheDocument();
-    expect(screen.getByText("2026-12-31")).toBeInTheDocument();
     expect(screen.getByText("We want to cut reporting time by half")).toBeInTheDocument();
+  });
+
+  it("target_date uses the project DatePicker (MUI-X), not a text field", () => {
+    renderEdit();
+    // The project date picker exposes an input labelled by its `label`.
+    expect(screen.getByLabelText("Target date")).toBeInTheDocument();
+    // …and it is NOT the previous inline text row.
+    expect(screen.queryByTestId("inline-read-target_date")).not.toBeInTheDocument();
   });
 
   it("keeps the 3 section subtitles and the Domain × Dimension recap", () => {
