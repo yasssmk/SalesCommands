@@ -32,6 +32,7 @@ export default function SignalDetailPanel({
   onEdit,
   onReopen,
   isLocked,
+  currentActivityId,
 }) {
   const router = useRouter();
   const { closeDrawer } = useWorkspaceDrawer();
@@ -56,6 +57,7 @@ export default function SignalDetailPanel({
       onReopen={onReopen}
       onOpenActivity={openOriginActivity}
       isLocked={isLocked}
+      currentActivityId={currentActivityId}
     />
   );
 }
@@ -68,4 +70,6 @@ SignalDetailPanel.propTypes = {
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
   isLocked: PropTypes.bool,
+  /** The activity currently being viewed (Activity surface); absent on DC/Account. */
+  currentActivityId: PropTypes.string,
 };

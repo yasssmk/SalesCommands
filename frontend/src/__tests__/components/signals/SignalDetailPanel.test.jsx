@@ -63,6 +63,8 @@ const MOCK_OBJECTIVE = {
   id: "o1",
   status: "VALIDATED",
   summary: "Reduce reporting time by 50%",
+  what: "OPS",
+  dimension: "TIME",
   what_display: "Operations",
   dimension_display: "Time",
   scope_level: "DEPARTMENT",
@@ -235,15 +237,75 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText("Main CRM tool")).toBeInTheDocument();
   });
 
-  it("shows objective-specific fields: success criteria, target date, target contact", () => {
+  it("shows objective fields in the new read layout (success criteria, scope)", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
 
-    // Objective specifics now rendered via the shared ObjectiveDetailBlock.
-    // Owner line follows the card's single-truth logic: DEPARTMENT scope
-    // shows "Department: {name}" (not the target contact).
-    expect(screen.getByText("OBJECTIVE")).toBeInTheDocument();
+    // SIG-5e: read-mirror of the edit — sections + values, no ObjectiveDetailBlock.
     expect(screen.getByText("Monthly reports done in 2 hours")).toBeInTheDocument();
     expect(screen.getByText("Department: Finance")).toBeInTheDocument();
+  });
+
+  // ==== SIG-5e — Objective detail rebuilt as a read mirror of the edit ====
+
+  const OBJ_WITH_ORIGIN = {
+    ...MOCK_OBJECTIVE,
+    id: "o-origin",
+    status: "PENDING",
+    validated_by: undefined,
+    validated_at: undefined,
+    source_context: {
+      activity: { id: "act-9" },
+      contacts: [{ id: "c1", first_name: "Dana", last_name: "Lee", job_title: "CFO" }],
+    },
+  };
+
+  it("SIG-5e: renders the 5 section headers + subtitles + the Domain × Dimension recap", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText("What's the goal?")).toBeInTheDocument();
+    expect(screen.getByText("Who owns it?")).toBeInTheDocument();
+    expect(screen.getByText("How is success measured?")).toBeInTheDocument();
+    expect(screen.getByText("Source quote")).toBeInTheDocument();
+    expect(screen.getByText("Origin")).toBeInTheDocument();
+    expect(screen.getByText("Operations × Time")).toBeInTheDocument();
+    expect(screen.getByText(/canonical_key: objective:OPS:TIME/)).toBeInTheDocument();
+  });
+
+  it("SIG-5e: no type chip in the body (type is the coque title); status shown as text", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    // The SignalTypeChip renders the label "Objective"; the new detail drops it
+    // (the type is the coque title, absent in this unit render).
+    expect(screen.queryByText("Objective")).not.toBeInTheDocument();
+    // Status is muted text.
+    expect(screen.getByText("Validated")).toBeInTheDocument();
+  });
+
+  it("SIG-5e: 'View origin activity' hidden when the origin IS the current activity", () => {
+    render(
+      <SignalDetailPanel signal={OBJ_WITH_ORIGIN} signalType="objective" currentActivityId="act-9" />,
+    );
+    expect(screen.queryByRole("button", { name: /view origin activity/i })).not.toBeInTheDocument();
+  });
+
+  it("SIG-5e: 'View origin activity' shown when the origin differs (DC/Account)", () => {
+    render(
+      <SignalDetailPanel signal={OBJ_WITH_ORIGIN} signalType="objective" currentActivityId="act-OTHER" />,
+    );
+    expect(screen.getByRole("button", { name: /view origin activity/i })).toBeInTheDocument();
+  });
+
+  it("SIG-5e: keeps the bottom actions (Edit; Validate/Reject on a pending objective)", () => {
+    render(
+      <SignalDetailPanel
+        signal={{ ...MOCK_OBJECTIVE, status: "PENDING" }}
+        signalType="objective"
+        onValidate={vi.fn()}
+        onReject={vi.fn()}
+        onEdit={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /validate/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
   });
 
   it("shows validated_by info for validated signals", () => {

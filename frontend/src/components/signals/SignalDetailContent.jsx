@@ -17,6 +17,7 @@ import PropTypes from "prop-types";
 // MUI
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
@@ -359,6 +360,288 @@ ProvenanceSection.propTypes = {
   onOpenActivity: PropTypes.func,
 };
 
+// ==============================|| OBJECTIVE DETAIL VIEW (SIG-5e) ||============================== //
+//
+// The Objective detail is rebuilt as a READ mirror of EditObjectiveContent: the
+// same 5 SectionHeaders + subtitles + the Domain × Dimension recap, values shown
+// (not editable). No type/status chips — the type is the coque title, the status
+// is muted text. Origin (section 5) is detail-only, with a "View origin activity"
+// link shown ONLY when the origin activity differs from the current one.
+
+const STATUS_TEXT = {
+  PENDING: "Pending",
+  VALIDATED: "Validated",
+  REJECTED: "Rejected",
+};
+
+// Numbered section badge — info palette role (mirror of EditObjectiveContent).
+function SectionHeader({ index, title, subtitle }) {
+  return (
+    <Stack spacing={0.25} sx={{ mb: 1 }}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Chip
+          label={index}
+          size="small"
+          color="info"
+          sx={{ height: 18, width: 18, fontSize: "0.65rem", fontWeight: 700, "& .MuiChip-label": { px: 0 } }}
+        />
+        <Typography variant="body2" fontWeight={600}>
+          {title}
+        </Typography>
+      </Stack>
+      {subtitle && (
+        <Typography variant="caption" color="text.secondary" sx={{ pl: 3.25 }}>
+          {subtitle}
+        </Typography>
+      )}
+    </Stack>
+  );
+}
+SectionHeader.propTypes = {
+  index: PropTypes.number.isRequired,
+  title: PropTypes.string.isRequired,
+  subtitle: PropTypes.string,
+};
+
+// Read label for the objective scope (mirrors the pill's Company / Department).
+function objectiveScopeLabel(signal) {
+  if (signal.scope_level === "DEPARTMENT") {
+    const name = signal.target_department?.name;
+    return name ? `Department: ${name}` : "Department";
+  }
+  if (signal.scope_level === "PERSONAL") {
+    const c = signal.target_contact;
+    const name = c ? `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() : "";
+    return name ? `Personal · ${name}` : "Personal";
+  }
+  return "Company";
+}
+
+function ObjectiveDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  isLocked,
+  currentActivityId,
+}) {
+  const isPending = signal.status === "PENDING";
+  const isRejected = signal.status === "REJECTED";
+  const missingFields = isPending ? getMissingFields(signal, "objective") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const axisPreview =
+    signal.what_display && signal.dimension_display
+      ? `${signal.what_display} × ${signal.dimension_display}`
+      : null;
+  const canonicalPreview =
+    signal.what && signal.dimension ? `objective:${signal.what}:${signal.dimension}` : null;
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+  const statusText = STATUS_TEXT[signal.status] ?? signal.status;
+
+  return (
+    <>
+      <Box sx={{ px: 2.5, py: 2, flex: 1, overflow: "auto" }}>
+        {/* Status — muted text (the type is the coque title; no chips). */}
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
+          {statusText}
+        </Typography>
+
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <DrawerFieldRow
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <DrawerFieldRow label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+        {(signal.validated_by || signal.validated_at) && <Box sx={{ mb: 1.5 }} />}
+
+        {/* Section 1 — What's the goal? */}
+        <SectionHeader
+          index={1}
+          title="What's the goal?"
+          subtitle="Describe the objective and pick its canonical axes."
+        />
+        <DrawerFieldRow label="Summary" value={signal.summary} />
+        <DrawerFieldRow label="Domain" value={signal.what_display} />
+        <DrawerFieldRow label="Dimension" value={signal.dimension_display} />
+        {axisPreview && (
+          <Box
+            sx={{
+              mt: 1,
+              px: 1.5,
+              py: 1,
+              bgcolor: "action.hover",
+              borderRadius: 1,
+              borderLeftStyle: "solid",
+              borderLeftWidth: 3,
+              borderLeftColor: "info.main",
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              This is a{" "}
+              <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+                {axisPreview}
+              </Box>{" "}
+              goal
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.disabled"
+              display="block"
+              sx={{ fontFamily: "monospace", fontSize: "0.7rem", mt: 0.25 }}
+            >
+              canonical_key: {canonicalPreview}
+            </Typography>
+          </Box>
+        )}
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Who owns it? */}
+        <SectionHeader
+          index={2}
+          title="Who owns it?"
+          subtitle="Pick the organisational scope driving this goal."
+        />
+        <DrawerFieldRow label="Scope" value={objectiveScopeLabel(signal)} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — How is success measured? */}
+        <SectionHeader
+          index={3}
+          title="How is success measured?"
+          subtitle="Optional — success criteria, deadline, and notes."
+        />
+        <DrawerFieldRow label="Success criteria" value={signal.success_criteria} />
+        <DrawerFieldRow label="Target date" value={formatDate(signal.target_date)} />
+        <DrawerFieldRow label="Notes" value={signal.notes} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Source quote */}
+        <SectionHeader
+          index={4}
+          title="Source quote"
+          subtitle="Where does this signal come from"
+        />
+        {signal.source_quote ? (
+          <SourceQuoteBlock quote={signal.source_quote} />
+        ) : (
+          <Typography variant="body2" color="text.disabled" sx={{ fontStyle: "italic" }}>
+            No source quote
+          </Typography>
+        )}
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 5 — Origin (detail-only, read) */}
+        <SectionHeader index={5} title="Origin" subtitle="Where this signal was captured" />
+        {contacts.length > 0 && (
+          <DrawerFieldRow label={contacts.length > 1 ? "Contacts" : "Contact"}>
+            <Stack spacing={0.25}>
+              {contacts.map((c) => (
+                <Typography key={c.id} variant="body2">
+                  {formatDrawerContact(c)}
+                </Typography>
+              ))}
+            </Stack>
+          </DrawerFieldRow>
+        )}
+        {showOriginLink && (
+          <Button
+            size="small"
+            variant="text"
+            startIcon={<LinkOutlined style={{ fontSize: 13 }} />}
+            onClick={() => onOpenActivity(originActivityId)}
+            sx={{ mt: 0.5, px: 0 }}
+          >
+            View origin activity
+          </Button>
+        )}
+      </Box>
+
+      <Divider />
+
+      {/* Actions — unchanged (Edit ✎ · Reject · Validate · Reopen). */}
+      <Box sx={{ px: 2.5, py: 2 }}>
+        <Stack direction="row" spacing={1} justifyContent="flex-end">
+          {!isLocked && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<EditOutlined style={{ fontSize: 14 }} />}
+              onClick={() => onEdit?.(signal, "objective")}
+            >
+              Edit
+            </Button>
+          )}
+          {isPending && !isLocked && (
+            <>
+              <Button
+                variant="outlined"
+                size="small"
+                color="error"
+                startIcon={<CloseCircleOutlined style={{ fontSize: 14 }} />}
+                onClick={() => onReject?.(signal, "objective")}
+              >
+                Reject
+              </Button>
+              <Tooltip title={validateDisabled ? "Complete missing fields before validating" : ""}>
+                <span>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    color="success"
+                    disabled={validateDisabled}
+                    startIcon={<CheckCircleOutlined style={{ fontSize: 14 }} />}
+                    onClick={() => onValidate?.(signal, "objective")}
+                  >
+                    Validate
+                  </Button>
+                </span>
+              </Tooltip>
+            </>
+          )}
+          {isRejected && !isLocked && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<ReloadOutlined style={{ fontSize: 14 }} />}
+              onClick={() => onReopen?.(signal, "objective")}
+            >
+              Reopen
+            </Button>
+          )}
+        </Stack>
+      </Box>
+    </>
+  );
+}
+ObjectiveDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
 
 /**
@@ -374,10 +657,27 @@ export default function SignalDetailContent({
   onReopen,
   onOpenActivity,
   isLocked,
+  currentActivityId,
   leadingAction,
   trailingAction,
 }) {
   if (!signal) return null;
+
+  // SIG-5e — Objective gets the new read-mirror layout (other types unchanged).
+  if (signalType === "objective") {
+    return (
+      <ObjectiveDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
 
   const isPending = signal.status === "PENDING";
   const isRejected = signal.status === "REJECTED";
@@ -503,6 +803,10 @@ SignalDetailContent.propTypes = {
   onReopen: PropTypes.func,
   onOpenActivity: PropTypes.func,
   isLocked: PropTypes.bool,
+  /** The activity currently being viewed — used to hide the "View origin
+      activity" link when the signal's origin IS that activity. Optional;
+      absent on DC/Account surfaces (link always shown there). */
+  currentActivityId: PropTypes.string,
   leadingAction: PropTypes.node,
   trailingAction: PropTypes.node,
 };

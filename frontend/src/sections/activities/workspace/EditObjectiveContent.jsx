@@ -75,18 +75,16 @@ function SectionHeader({ index, title, subtitle }) {
   return (
     <Stack spacing={0.25}>
       <Stack direction="row" spacing={1} alignItems="center">
-        {/* Numbered badge — muted theme tone (palette text.secondary on the paper
-            ground), not the off-paradigm info blue. No hardcoded colour. */}
+        {/* Numbered badge — info palette role (PO decision). No hardcoded colour. */}
         <Chip
           label={index}
           size="small"
+          color="info"
           sx={{
             height: 18,
             width: 18,
             fontSize: "0.65rem",
             fontWeight: 700,
-            bgcolor: "text.secondary",
-            color: "background.paper",
             "& .MuiChip-label": { px: 0 },
           }}
         />
