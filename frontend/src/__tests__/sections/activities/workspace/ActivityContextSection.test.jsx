@@ -87,9 +87,21 @@ describe("ActivityContextSection — mockup copy", () => {
   it("renders the Context title, Objective placeholder, Scheduled and Description", () => {
     renderCtx(baseActivity);
     expect(screen.getByText("Context")).toBeInTheDocument();
-    expect(screen.getByText("Click to define an objective…")).toBeInTheDocument();
+    // P-PLACEHOLDER: neutral empty state, no "click to edit" invite (editing is
+    // in the edit drawer now).
+    expect(screen.getByText("No objective set")).toBeInTheDocument();
+    expect(screen.queryByText(/Click to/i)).not.toBeInTheDocument();
     expect(screen.getByText("Scheduled")).toBeInTheDocument();
     expect(screen.getByText("Initial outreach call")).toBeInTheDocument();
+  });
+
+  it("P-PLACEHOLDER: the empty placeholder reads in text.secondary (same as its label), not the darker disabled tone", () => {
+    renderCtx(baseActivity); // call_to_action null → the Objective placeholder shows
+    const colorOf = (el) => (rulesForElement(el).match(/color:([^;}]+)/) || [])[1];
+    const ph = colorOf(screen.getByText("No objective set"));
+    const label = colorOf(screen.getByText("Objective")); // label uses text.secondary
+    expect(ph).toBeTruthy();
+    expect(ph).toBe(label);
   });
 
   it("external contact row shows job title between name and department", () => {
@@ -101,7 +113,8 @@ describe("ActivityContextSection — mockup copy", () => {
   it("always shows the Description label, with a placeholder when empty", () => {
     renderCtx({ ...baseActivity, description: null });
     expect(screen.getByText("Description")).toBeInTheDocument();
-    expect(screen.getByText("Click to add a description…")).toBeInTheDocument();
+    expect(screen.getByText("No description")).toBeInTheDocument();
+    expect(screen.queryByText(/Click to/i)).not.toBeInTheDocument();
   });
 
   it("people rows have NO avatar, inline suffixes, no email/phone; names are interactive", () => {

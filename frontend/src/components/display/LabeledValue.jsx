@@ -30,7 +30,9 @@ export default function LabeledValue({ label, value, placeholder, dense = false,
         {label}
       </Typography>
       {isEmpty ? (
-        <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
+        // P-PLACEHOLDER — the empty placeholder reads in the muted info tone
+        // (text.secondary), not the darker disabled tone which was hard to read.
+        <Typography variant="body2" sx={{ color: aq.text.muted, fontStyle: "italic" }}>
           {placeholder}
         </Typography>
       ) : typeof content === "string" ? (

@@ -586,7 +586,7 @@ function ObjectiveDetailView({
             <ReadRow label="Notes" value={signal.notes} />
           </>
         ) : (
-          <Typography variant="body2" color="text.disabled" sx={{ fontStyle: "italic", my: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
             No metrics defined
           </Typography>
         )}
@@ -599,7 +599,7 @@ function ObjectiveDetailView({
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
-          <Typography variant="body2" color="text.disabled" sx={{ fontStyle: "italic" }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
             No source quote
           </Typography>
         )}

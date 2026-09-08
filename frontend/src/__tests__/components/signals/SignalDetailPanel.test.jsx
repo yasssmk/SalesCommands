@@ -391,6 +391,21 @@ describe("SignalDetailPanel", () => {
     expect(rule).not.toContain("border-radius:4px");
   });
 
+  it("P-PLACEHOLDER: objective detail empties (No metrics / No source quote) read in text.secondary, not disabled", () => {
+    const bare = {
+      ...MOCK_OBJECTIVE,
+      id: "o-ph",
+      success_criteria: "",
+      target_date: "",
+      notes: "",
+      source_quote: "",
+    };
+    render(<SignalDetailPanel signal={bare} signalType="objective" />);
+    expect(getComputedStyle(screen.getByText("No metrics defined")).color).toBe(testTheme.palette.text.secondary);
+    expect(getComputedStyle(screen.getByText("No source quote")).color).toBe(testTheme.palette.text.secondary);
+    expect(getComputedStyle(screen.getByText("No metrics defined")).color).not.toBe(testTheme.palette.text.disabled);
+  });
+
   it("UI-9: the low action bar and the content box are rendered by ONE DrawerContentLayout (shared chassis, like the edit drawers)", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     const box = screen.getByTestId("drawer-content-box");
