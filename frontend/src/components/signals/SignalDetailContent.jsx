@@ -17,7 +17,6 @@ import PropTypes from "prop-types";
 // MUI
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
@@ -35,6 +34,7 @@ import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
 import { getSignalTypeLabel } from "utils/signalTypes";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
+import SectionHeader from "components/display/SectionHeader";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
 import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
@@ -356,34 +356,6 @@ ProvenanceSection.propTypes = {
 // link shown ONLY when the origin activity differs from the current one.
 
 // Numbered section badge — info palette role (mirror of EditObjectiveContent).
-function SectionHeader({ index, title, subtitle }) {
-  return (
-    <Stack spacing={0.25} sx={{ mb: 1 }}>
-      <Stack direction="row" spacing={1} alignItems="center">
-        <Chip
-          label={index}
-          size="small"
-          color="info"
-          sx={{ height: 18, width: 18, fontSize: "0.65rem", fontWeight: 700, "& .MuiChip-label": { px: 0 } }}
-        />
-        <Typography variant="body2" fontWeight={600}>
-          {title}
-        </Typography>
-      </Stack>
-      {subtitle && (
-        <Typography variant="caption" color="text.secondary" sx={{ pl: 3.25 }}>
-          {subtitle}
-        </Typography>
-      )}
-    </Stack>
-  );
-}
-SectionHeader.propTypes = {
-  index: PropTypes.number.isRequired,
-  title: PropTypes.string.isRequired,
-  subtitle: PropTypes.string,
-};
-
 // A read-flow field: a discreet muted label ABOVE the value (not a rigid
 // label/value column) — reads like a page, not a form.
 function ReadField({ label, value }) {
@@ -524,7 +496,7 @@ function ObjectiveDetailView({
             values — no instruction subtitles (those live in the edit). */}
         {/* One enclosing Goal box: summary (top) · short centered separator ·
             axis recap (bottom). A single surface tint, no inner accent border. */}
-        <SectionHeader index={1} title="Goal" />
+        <SectionHeader index={1} title="Goal" sx={{ mb: 1 }} />
         {(signal.summary || axisPreview) && (
           <Box
             data-testid="objective-goal-box"
@@ -578,13 +550,13 @@ function ObjectiveDetailView({
         <Divider sx={{ my: 2 }} />
 
         {/* Section 2 — Scope, as a label/value row (value right). */}
-        <SectionHeader index={2} title="Scope" />
+        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
         <ReadRow {...objectiveScopeRow(signal)} />
 
         <Divider sx={{ my: 2 }} />
 
         {/* Section 3 — Metrics (one discreet line when empty). */}
-        <SectionHeader index={3} title="Metrics" />
+        <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
         {hasMetrics ? (
           <>
             <ReadRow label="Success criteria" value={signal.success_criteria} />
@@ -601,7 +573,7 @@ function ObjectiveDetailView({
 
         {/* Section 4 — Source: the quote, who said it, and (conditionally) a link
             to the origin activity. Merges the former Source quote + Origin. */}
-        <SectionHeader index={4} title="Source" />
+        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (

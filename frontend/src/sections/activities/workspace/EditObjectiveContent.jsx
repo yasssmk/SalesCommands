@@ -32,7 +32,6 @@ import * as Yup from "yup";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import FormHelperText from "@mui/material/FormHelperText";
@@ -53,6 +52,7 @@ import { updateSignal, useGetSignalChoices } from "api/signals/signals";
 import { useGetContactChoices } from "api/businessData/contacts";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import ObjectiveScopePill from "components/signals/ObjectiveScopePill";
 import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
@@ -70,41 +70,6 @@ function resolveLabel(options, value) {
   if (!value || !options) return null;
   return options.find((o) => o.value === value)?.label ?? value;
 }
-
-function SectionHeader({ index, title, subtitle }) {
-  return (
-    <Stack spacing={0.25}>
-      <Stack direction="row" spacing={1} alignItems="center">
-        {/* Numbered badge — info palette role (PO decision). No hardcoded colour. */}
-        <Chip
-          label={index}
-          size="small"
-          color="info"
-          sx={{
-            height: 18,
-            width: 18,
-            fontSize: "0.65rem",
-            fontWeight: 700,
-            "& .MuiChip-label": { px: 0 },
-          }}
-        />
-        <Typography variant="body2" fontWeight={600}>
-          {title}
-        </Typography>
-      </Stack>
-      {subtitle && (
-        <Typography variant="caption" color="text.secondary" sx={{ pl: 3.25 }}>
-          {subtitle}
-        </Typography>
-      )}
-    </Stack>
-  );
-}
-SectionHeader.propTypes = {
-  index: PropTypes.number.isRequired,
-  title: PropTypes.string.isRequired,
-  subtitle: PropTypes.string,
-};
 
 // Target date — read row that reveals the project DatePicker ONLY on double-click,
 // with ✓ (keep the draft) / ✗ (restore the pre-edit value), same interaction as
