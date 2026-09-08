@@ -9,7 +9,7 @@
 //     (never recomputed client-side), and the date shown without a −1-day shift.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, renderHook, screen, cleanup } from "@testing-library/react";
+import { render, renderHook, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 afterEach(() => cleanup());
@@ -264,5 +264,40 @@ describe("ActivityHeader — 'N to validate' uses the complete pending count", (
     const { result } = useHeader(base, { pendingCount: 0, counts: { pending: 5 } });
     render(<div>{result.current.infoItems}</div>, { wrapper });
     expect(screen.queryByText(/to validate/)).not.toBeInTheDocument();
+  });
+});
+
+describe("P2 — header signal counter: 'N to validate' (action) vs 'N signals' (info)", () => {
+  it("pending > 0 → 'N to validate' (warning) is CLICKABLE (fires onPendingClick)", () => {
+    const onPendingClick = vi.fn();
+    const { result } = useHeader(base, { pendingCount: 4, totalCount: 9, onPendingClick });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    fireEvent.click(screen.getByText(/4 to validate/));
+    expect(onPendingClick).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/signals/)).not.toBeInTheDocument();
+  });
+
+  it("0 pending & total > 0 → 'N signals' (neutral text.secondary, no alert icon)", () => {
+    const { result } = useHeader(base, { pendingCount: 0, totalCount: 9 });
+    const { container } = render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(screen.getByText(/9 signals/)).toBeInTheDocument();
+    expect(screen.queryByText(/to validate/)).not.toBeInTheDocument();
+    // neutral: no warning alert icon
+    expect(container.querySelector(".anticon-exclamation-circle")).toBeNull();
+  });
+
+  it("0 pending & total > 0 → 'N signals' is NOT clickable (info, no onPendingClick)", () => {
+    const onPendingClick = vi.fn();
+    const { result } = useHeader(base, { pendingCount: 0, totalCount: 9, onPendingClick });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    fireEvent.click(screen.getByText(/9 signals/));
+    expect(onPendingClick).not.toHaveBeenCalled();
+  });
+
+  it("total 0 → renders neither counter", () => {
+    const { result } = useHeader(base, { pendingCount: 0, totalCount: 0 });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(screen.queryByText(/to validate/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/signals/)).not.toBeInTheDocument();
   });
 });

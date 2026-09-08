@@ -125,6 +125,10 @@ export default function useActivityHeaderProps({
   // counts.pending — the by-activity /counts/ endpoint only totals 6 types and
   // would under-state pending. Falls back to counts.pending when not passed.
   pendingCount = null,
+  // Complete signal total (same 8-type aggregate as pendingCount). When there
+  // are 0 pending, the counter falls back to a neutral "N signals" info label
+  // built from this total. Never from counts (6-type). Null → no fallback.
+  totalCount = null,
   onPendingClick,
 }) {
   const theme = useTheme();
@@ -298,33 +302,51 @@ export default function useActivityHeaderProps({
     // Prefer the complete pending count (8-type aggregate) so the header matches
     // the Signals list; fall back to counts.pending (6-type) only when absent.
     const pending = pendingCount != null ? pendingCount : counts?.pending;
-    if (!pending || pending <= 0) return null;
+    const total = totalCount != null ? totalCount : null;
 
-    return (
-      <Stack
-        key="pending-counter"
-        direction="row"
-        spacing={0.75}
-        alignItems="center"
-        onClick={() => onPendingClick?.()}
-        sx={{
-          cursor: onPendingClick ? 'pointer' : 'default',
-          '&:hover .pending-label': onPendingClick ? { textDecoration: 'underline' } : {},
-        }}
-      >
-        <ExclamationCircleOutlined
-          style={{ fontSize: theme.iconSizes.sm, color: theme.palette.warning.main, display: 'flex' }}
-        />
-        <Typography
-          variant="body2"
-          className="pending-label"
-          color="warning.main"
-          sx={{ fontWeight: 'medium' }}
+    // Pending remain → the ACTION badge: "N to validate" (warning), CLICKABLE.
+    if (pending && pending > 0) {
+      return (
+        <Stack
+          key="pending-counter"
+          direction="row"
+          spacing={0.75}
+          alignItems="center"
+          onClick={() => onPendingClick?.()}
+          sx={{
+            cursor: onPendingClick ? 'pointer' : 'default',
+            '&:hover .pending-label': onPendingClick ? { textDecoration: 'underline' } : {},
+          }}
         >
-          {pending} to validate
-        </Typography>
-      </Stack>
-    );
+          <ExclamationCircleOutlined
+            style={{ fontSize: theme.iconSizes.sm, color: theme.palette.warning.main, display: 'flex' }}
+          />
+          <Typography
+            variant="body2"
+            className="pending-label"
+            color="warning.main"
+            sx={{ fontWeight: 'medium' }}
+          >
+            {pending} to validate
+          </Typography>
+        </Stack>
+      );
+    }
+
+    // No pending, but signals exist → the neutral INFO label: "N signals"
+    // (text.secondary, like the AI-run line), NOT clickable (no onClick, no
+    // pointer cursor, no alert icon).
+    if (total && total > 0) {
+      return (
+        <Stack key="signals-counter" direction="row" spacing={0.75} alignItems="center">
+          <Typography variant="body2" color="text.secondary">
+            {total} signals
+          </Typography>
+        </Stack>
+      );
+    }
+
+    return null;
   };
 
   // ==============================|| DATE INFO HELPER ||============================== //

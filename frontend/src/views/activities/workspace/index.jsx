@@ -139,6 +139,9 @@ export default function ActivityWorkspacePage() {
     // types, same aggregate as the Signals list + halo) so header = list; the
     // /counts/ badge source only covered 6 types.
     pendingCount: bandPendingCount,
+    // The neutral "N signals" fallback (shown when 0 pending) reads the same
+    // 8-type aggregate total — never counts (which totals only 6 types).
+    totalCount: bandTotalSignals,
   });
 
   // ==============================|| ADAPTIVE BODY STATE ||============================== //

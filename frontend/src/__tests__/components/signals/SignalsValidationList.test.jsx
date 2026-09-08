@@ -44,6 +44,20 @@ describe("SignalsValidationList (SIG-2-fix2)", () => {
     expect(follows(val, rej)).toBe(true);
   });
 
+  it("P2: hides the 'To validate' section when there are 0 pending signals", () => {
+    renderList({
+      signals: [
+        { id: "v1", status: "VALIDATED", summary: "done", _signalType: "objective" },
+        { id: "r1", status: "REJECTED", summary: "nope", _signalType: "blockers" },
+      ],
+    });
+    // No pending → the always-on exception is gone, "To validate" disappears…
+    expect(screen.queryByText("To validate")).not.toBeInTheDocument();
+    // …while the non-empty Validated / Rejected sections remain.
+    expect(screen.getByText("Validated")).toBeInTheDocument();
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
+  });
+
   it("colours each section title by STATUS (warning / success / error)", () => {
     renderList();
     expect(screen.getByText("To validate")).toHaveStyle({
@@ -208,7 +222,7 @@ describe("SignalsValidationList (SIG-2-fix2)", () => {
     expect(screen.queryByText("Rejected")).not.toBeInTheDocument();
   });
 
-  it("shows a 'nothing to validate' empty state when there is no pending signal", () => {
+  it("P2: with 0 pending, the 'To validate' section is hidden entirely (no empty state)", () => {
     render(
       <AphoriqTheme>
         <SignalsValidationList
@@ -219,7 +233,11 @@ describe("SignalsValidationList (SIG-2-fix2)", () => {
         />
       </AphoriqTheme>,
     );
-    expect(screen.getByText(/nothing to validate/i)).toBeInTheDocument();
+    // The section — and its former "Nothing to validate" placeholder — are gone…
+    expect(screen.queryByText("To validate")).not.toBeInTheDocument();
+    expect(screen.queryByText(/nothing to validate/i)).not.toBeInTheDocument();
+    // …only the non-empty Validated section remains.
+    expect(screen.getByText("Validated")).toBeInTheDocument();
   });
 
   it("shows the empty message when there are no signals at all", () => {

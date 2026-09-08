@@ -146,9 +146,9 @@ export default function SignalsValidationList({
       {STATUS_SECTIONS.map(
         ({ status, title, titleColor, emptyText, defaultExpanded }) => {
           const sectionSignals = byStatus[status] ?? [];
-          const alwaysShow = status === "PENDING";
-          // Hide an empty section, except the always-on "To validate".
-          if (!sectionSignals.length && !alwaysShow) return null;
+          // Hide any empty section — including "To validate" once 0 pending
+          // remain (P2): the worklist then shows only Validated / Rejected.
+          if (!sectionSignals.length) return null;
 
           return (
             <CollapsibleStrip
