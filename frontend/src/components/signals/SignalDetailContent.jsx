@@ -504,7 +504,7 @@ function ObjectiveDetailView({
               my: 1,
               px: 1.5,
               py: 1.25,
-              bgcolor: "action.hover",
+              bgcolor: (theme) => theme.aphoriQ?.surface?.level1,
               borderRadius: 1,
             }}
           >

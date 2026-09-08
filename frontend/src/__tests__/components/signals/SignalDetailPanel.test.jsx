@@ -346,6 +346,17 @@ describe("SignalDetailPanel", () => {
     expect(within(goal).getByTestId("objective-goal-separator")).toBeInTheDocument();
   });
 
+  it("UI-5: the Goal box uses surface.level1 — the same token as the activity header", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const el = screen.getByTestId("objective-goal-box");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    expect(rule).toContain(`background-color:${testTheme.aphoriQ.surface.level1}`);
+    // not the old ad-hoc overlay, nor level2
+    expect(rule).not.toContain(testTheme.aphoriQ.surface.level2);
+  });
+
   it("SIG-5e-fix6: canonical_key is legible — rendered in text.secondary, not disabled", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     const line = screen.getByText(/canonical_key:/);
