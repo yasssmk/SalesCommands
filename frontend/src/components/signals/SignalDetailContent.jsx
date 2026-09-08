@@ -592,9 +592,9 @@ function ObjectiveDetailView({
                 </Typography>
                 <Typography
                   variant="caption"
-                  color="text.disabled"
+                  color="text.secondary"
                   display="block"
-                  sx={{ fontFamily: "monospace", fontSize: "0.7rem", mt: 0.25 }}
+                  sx={{ fontFamily: "monospace", mt: 0.25 }}
                 >
                   canonical_key: {canonicalPreview}
                 </Typography>

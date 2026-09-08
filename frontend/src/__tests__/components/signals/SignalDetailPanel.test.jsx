@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { useRouter } from "next/navigation";
-import AphoriqTheme from "../../_utils/aphoriqTheme";
+import AphoriqTheme, { testTheme } from "../../_utils/aphoriqTheme";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 
 // The objective detail uses StatusPill (reads theme.aphoriQ) — render under the
@@ -344,6 +344,13 @@ describe("SignalDetailPanel", () => {
     expect(within(goal).getByText("Reduce reporting time by 50%")).toBeInTheDocument();
     expect(within(goal).getByText("Operations × Time")).toBeInTheDocument();
     expect(within(goal).getByTestId("objective-goal-separator")).toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix6: canonical_key is legible — rendered in text.secondary, not disabled", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const line = screen.getByText(/canonical_key:/);
+    expect(getComputedStyle(line).color).toBe(testTheme.palette.text.secondary);
+    expect(getComputedStyle(line).color).not.toBe(testTheme.palette.text.disabled);
   });
 
   it("SIG-5e-fix3: empty Metrics renders a single 'No metrics defined' line", () => {

@@ -194,6 +194,31 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(closeDrawer).not.toHaveBeenCalled();
   });
 
+  it("SIG-5e-fix6: the Target Department field is spaced below the scope pills", () => {
+    // OBJECTIVE is DEPARTMENT → the dept field renders with a top margin
+    // (spacing token) so it isn't glued to the pills row.
+    renderEdit();
+    const field = screen.getByTestId("scope-department-field");
+    // Top padding aerates the field from the pills (adds on top of the Stack's
+    // own row spacing, which would override a child margin).
+    expect(getComputedStyle(field).paddingTop).toBe("8px"); // theme.spacing(1)
+  });
+
+  it("SIG-5e-fix6: toggling scope Company↔Department raises no null/uncontrolled input warning", () => {
+    // OBJECTIVE starts DEPARTMENT with a target_department. Toggling to Company
+    // (scopePatch sets target_department:null) then back must not feed the Select
+    // a null value — the source of the React controlled/uncontrolled warning.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderEdit();
+    fireEvent.click(screen.getByTestId("scope-pill-BUSINESS"));
+    fireEvent.click(screen.getByTestId("scope-pill-DEPARTMENT"));
+    const bad = spy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((m) => /should not be null|uncontrolled|changing a controlled/i.test(m));
+    spy.mockRestore();
+    expect(bad).toEqual([]);
+  });
+
   it("SIG-5e-fix5: Save returns to the detail — onSaved receives the updated signal, drawer not closed", async () => {
     const onSaved = vi.fn();
     renderEdit(OBJECTIVE, { onSaved });

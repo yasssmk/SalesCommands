@@ -427,8 +427,12 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
             onChange={applyScopePatch}
           />
 
-          {/* DEPARTMENT → target_department: the ORIGINAL MUI Select (mono). */}
+          {/* DEPARTMENT → target_department: the ORIGINAL MUI Select (mono).
+              Wrapped with extra top padding (spacing token) so it's aerated from
+              the pills row — padding adds ON TOP of the Stack's own row spacing
+              (a child margin would just be overridden by the Stack). */}
           {isDepartment && (
+            <Box data-testid="scope-department-field" sx={{ pt: 1 }}>
             <FormControl
               fullWidth
               size="small"
@@ -439,7 +443,11 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
                 labelId="objective-target-dept-label"
                 id="objective-target-department"
                 name="target_department"
-                value={values.target_department}
+                // Always a defined string: scopePatch(BUSINESS) clears
+                // target_department to null, so guard against null/undefined
+                // (a null `value` makes MUI's Select uncontrolled → the React
+                // "value should not be null / controlled↔uncontrolled" warning).
+                value={values.target_department ?? ""}
                 onChange={formik.handleChange}
                 onBlur={formik.handleBlur}
                 label="Target Department *"
@@ -454,6 +462,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
                 <FormHelperText>{errors.target_department}</FormHelperText>
               )}
             </FormControl>
+            </Box>
           )}
         </Stack>
 
