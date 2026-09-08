@@ -472,7 +472,16 @@ describe("SignalDetailPanel", () => {
     };
     render(<SignalDetailPanel signal={signal} signalType="pain" />);
     expect(screen.getByText("ORIGIN")).toBeInTheDocument();
-    expect(screen.getByText("Dana Lee · CMO · Marketing")).toBeInTheDocument();
+    // SIG-5f: the ORIGIN contact name is bold/primary (the per-type Contact row
+    // also shows the name, so pick the emphasised ContactInline span), with the
+    // job · department in muted (separate spans).
+    const boldName = screen
+      .getAllByText("Dana Lee")
+      .find((n) => getComputedStyle(n).fontWeight === "600");
+    expect(boldName).toBeTruthy();
+    expect(getComputedStyle(boldName).color).toBe(testTheme.palette.text.primary);
+    const meta = screen.getByText(/CMO · Marketing/);
+    expect(getComputedStyle(meta).color).toBe(testTheme.palette.text.secondary);
     expect(screen.getByText("Sam Roe")).toBeInTheDocument();
   });
 

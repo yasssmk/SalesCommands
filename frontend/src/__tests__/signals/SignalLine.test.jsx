@@ -217,8 +217,12 @@ describe("SignalLine — informational content", () => {
     // The signal scope is gone entirely — no "Department · …" scope, no "Business".
     expect(screen.queryByText(/Department · Marketing/)).not.toBeInTheDocument();
     expect(screen.queryByText("Business")).not.toBeInTheDocument();
-    // The CONTACT identity (name · role · contact department) and date stay.
-    expect(screen.getByText(/Dana Lee · CMO · Marketing/)).toBeInTheDocument();
+    // The CONTACT identity stays — SIG-5f: name bold/primary, job · dept muted.
+    const name = screen.getByText("Dana Lee");
+    const meta = screen.getByText(/CMO · Marketing/);
+    expect(getComputedStyle(name).fontWeight).toBe("600");
+    expect(getComputedStyle(name).color).toBe("rgba(0, 0, 0, 0.87)"); // text.primary
+    expect(getComputedStyle(meta).color).toBe("rgba(0, 0, 0, 0.6)"); // text.secondary (muted)
   });
 
   it("renders tech_name as the message and NO scope chip for tech-stack", () => {

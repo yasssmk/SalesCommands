@@ -31,6 +31,7 @@ import {
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
+import ContactInline from "components/signals/ContactInline";
 import { getTechSummary } from "sections/activities/signals/utils/signalDisplay";
 
 const ICON_SIZES = IconSizes();
@@ -115,7 +116,9 @@ function getScopeLabel(signal, signalType) {
   return "Business";
 }
 
-// First activity contact rendered as "First Last · job_title · department".
+// Truthy when the first contact has a displayable identity — guards the meta
+// contact block. The rendering itself is delegated to ContactInline (SIG-5f:
+// name bold/primary, job · department muted).
 function formatOriginContact(contact) {
   if (!contact) return null;
   const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
@@ -281,9 +284,7 @@ export default function SignalLine({
             sx={{ flexShrink: 1, minWidth: 0, maxWidth: 320 }}
           >
             <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {originContact}
-            </Typography>
+            <ContactInline contact={contacts[0]} variant="caption" noWrap />
             {showContactOverflow && extraContacts > 0 && (
               <Chip
                 label={`+${extraContacts}`}

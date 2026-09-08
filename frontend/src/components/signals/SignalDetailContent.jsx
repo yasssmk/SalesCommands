@@ -38,6 +38,7 @@ import {
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
 import StatusPill from "components/chips/StatusPill";
+import ContactInline from "components/signals/ContactInline";
 import { getSignalTypeLabel } from "utils/signalTypes";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
@@ -317,16 +318,6 @@ function renderDetails(signal, signalType) {
 
 // ==============================|| PROVENANCE ||============================== //
 
-function formatDrawerContact(contact) {
-  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
-  const parts = [
-    name || null,
-    contact.job_title || null,
-    contact.department?.name || null,
-  ].filter(Boolean);
-  return parts.join(" · ") || null;
-}
-
 function ProvenanceSection({ signal, onOpenActivity }) {
   const contacts = signal.source_context?.contacts ?? [];
   const activityId = signal.source_context?.activity?.id ?? null;
@@ -338,9 +329,7 @@ function ProvenanceSection({ signal, onOpenActivity }) {
         <DrawerFieldRow label={contacts.length > 1 ? "Contacts" : "Contact"}>
           <Stack spacing={0.25}>
             {contacts.map((c) => (
-              <Typography key={c.id} variant="body2">
-                {formatDrawerContact(c)}
-              </Typography>
+              <ContactInline key={c.id} contact={c} variant="body2" />
             ))}
           </Stack>
         </DrawerFieldRow>
@@ -644,9 +633,7 @@ function ObjectiveDetailView({
             </Typography>
             <Stack spacing={0.25}>
               {contacts.map((c) => (
-                <Typography key={c.id} variant="body2" color="text.primary">
-                  {formatDrawerContact(c)}
-                </Typography>
+                <ContactInline key={c.id} contact={c} variant="body2" />
               ))}
             </Stack>
           </Box>
