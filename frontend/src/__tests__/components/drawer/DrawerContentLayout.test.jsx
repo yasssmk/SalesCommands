@@ -123,7 +123,8 @@ describe("DrawerContentLayout — title + content box + global actions", () => {
 
   // UI-2 — the SAME layout renders the "read signal" action bar when given
   // readActions: Edit (NEUTRE) · Reject (error outline) · Validate (success
-  // contained), gated by status, with Reopen for a rejected signal.
+  // contained), gated by status, with Reopen for a terminal (validated OR
+  // rejected) signal.
   const readActions = (over = {}) => ({
     onEdit: vi.fn(),
     onReject: vi.fn(),
@@ -164,12 +165,13 @@ describe("DrawerContentLayout — title + content box + global actions", () => {
     expect(screen.queryByRole("button", { name: /^validate$/i })).not.toBeInTheDocument();
   });
 
-  it("read mode: a VALIDATED signal shows only Edit (no Reject/Validate/Reopen)", () => {
+  it("P3: read mode: a VALIDATED signal shows Edit + Reopen (terminal status), no Reject/Validate", () => {
     renderRead({ status: "VALIDATED" });
     expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+    // A decision can always be undone: Reopen is offered on validated too, not just rejected.
+    expect(screen.getByRole("button", { name: /reopen/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^validate$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
   });
 
   it("read mode: isLocked hides all read actions; validateDisabled disables Validate", () => {

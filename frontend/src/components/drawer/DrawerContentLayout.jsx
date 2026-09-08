@@ -41,12 +41,14 @@ import {
 
 // The single "read signal" action bar (rule 6): Edit (NEUTRE) · Reject (error
 // outline) · Validate (success contained), gated by status; Reopen (neutral
-// role kept from before) replaces Reject/Validate once the signal is REJECTED.
+// role) replaces Reject/Validate once the signal reaches a TERMINAL status —
+// VALIDATED or REJECTED — so a decision can always be undone back to Pending.
 // Colours are theme ROLES only — never hardcoded. Shares position/size with the
 // edit bar (flex-end, size small).
 function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocked, validateDisabled }) {
   const isPending = status === "PENDING";
-  const isRejected = status === "REJECTED";
+  // Terminal = a decision was made (validated OR rejected) → it can be reopened.
+  const isTerminal = !isPending;
   return (
     <Box data-testid="drawer-actions" sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
       {!isLocked && (
@@ -87,7 +89,7 @@ function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocke
           </Tooltip>
         </>
       )}
-      {isRejected && !isLocked && (
+      {isTerminal && !isLocked && (
         <Button
           variant="outlined"
           size="small"

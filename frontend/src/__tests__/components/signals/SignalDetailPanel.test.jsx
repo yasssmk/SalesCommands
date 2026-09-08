@@ -627,14 +627,34 @@ describe("SignalDetailPanel", () => {
     expect(onReopen).toHaveBeenCalledWith(rejected, "pain");
   });
 
-  it("does NOT show Reopen for PENDING or VALIDATED signals", () => {
-    const { rerender } = render(
-      <SignalDetailPanel signal={MOCK_PAIN} signalType="pain" onReopen={vi.fn()} />,
+  it("P3: shows Reopen for a VALIDATED signal too (terminal status), and fires onReopen", () => {
+    const onReopen = vi.fn();
+    const validated = { ...MOCK_PAIN, status: "VALIDATED" };
+    render(
+      <SignalDetailPanel signal={validated} signalType="pain" onReopen={onReopen} onEdit={vi.fn()} />,
     );
-    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+    const reopen = screen.getByRole("button", { name: /reopen/i });
+    expect(reopen).toBeInTheDocument();
+    // A validated signal offers no Validate/Reject (already validated), just Reopen.
+    expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+    fireEvent.click(reopen);
+    expect(onReopen).toHaveBeenCalledWith(validated, "pain");
+  });
 
-    rerender(
-      <SignalDetailPanel signal={{ ...MOCK_PAIN, status: "VALIDATED" }} signalType="pain" onReopen={vi.fn()} />,
+  it("P3: still does NOT show Reopen for a PENDING signal", () => {
+    render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" onReopen={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+  });
+
+  it("P3: a locked activity shows no Reopen, even on a validated signal", () => {
+    render(
+      <SignalDetailPanel
+        signal={{ ...MOCK_PAIN, status: "VALIDATED" }}
+        signalType="pain"
+        isLocked
+        onReopen={vi.fn()}
+      />,
     );
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
   });
