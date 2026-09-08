@@ -33,6 +33,7 @@ vi.mock("utils/displayError", () => ({
 import SignalClusterDetailDrawer from "sections/accounts/signals/SignalClusterDetailDrawer";
 import { useGetClusterDetail } from "api/signals/signalClusters";
 import { reopenSignal } from "api/signals/signals";
+import AphoriqTheme from "../_utils/aphoriqTheme";
 
 const CLUSTER_SUMMARY = {
   canonical_key: "pain:OPS:TIME",
@@ -177,6 +178,67 @@ describe("SignalClusterDetailDrawer — one drawer, replace + back (C5)", () => 
     expect(screen.getByRole("button", { name: /validate/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+  });
+
+  it("UI-10: a pain member detail is NOT wrapped (display:contents) — its flush layout is untouched", () => {
+    renderDrawer();
+    fireEvent.click(screen.getByText("Pending pain member"));
+    const body = screen.getByTestId("cluster-signal-body");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (body.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    // Transparent wrapper for non-objective types → no coque padding imposed here.
+    expect(rule).toMatch(/display:contents/);
+    expect(rule).not.toMatch(/padding:16px/);
+  });
+});
+
+describe("SignalClusterDetailDrawer — UI-10: the coque pads the objective detail (p:2)", () => {
+  const OBJ_SUMMARY = {
+    ...CLUSTER_SUMMARY,
+    canonical_key: "objective:GROWTH:SCALE",
+    signal_type: "objective",
+  };
+  const OBJ_MEMBER = {
+    id: "om1",
+    status: "PENDING",
+    summary: "Reduce reporting time",
+    what: "OPS",
+    what_display: "Operations",
+    dimension: "TIME",
+    dimension_display: "Time",
+    source_quote: "cut reporting time",
+    source_context: { activity: { id: "act-1" }, contacts: [] },
+  };
+
+  it("wraps the objective member detail in a padded body (p:2 = 16px), so its margins match the edit drawers", () => {
+    useGetClusterDetail.mockReturnValue({
+      cluster: { ...OBJ_SUMMARY, members: [OBJ_MEMBER] },
+      clusterLoading: false,
+      clusterError: null,
+      mutateCluster: vi.fn(),
+    });
+    render(
+      <AphoriqTheme>
+        <SignalClusterDetailDrawer
+          open
+          onClose={vi.fn()}
+          clusterSummary={OBJ_SUMMARY}
+          accountId="acc-1"
+          choices={{}}
+          choicesLoading={false}
+          onClusterChange={vi.fn()}
+        />
+      </AphoriqTheme>,
+    );
+    fireEvent.click(screen.getByText("Reduce reporting time"));
+    const body = screen.getByTestId("cluster-signal-body");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (body.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    // The cluster coque imposes p:2 (16px) around the objective detail (which no
+    // longer self-pads), exactly like the WorkspaceDrawer coque.
+    expect(rule).toMatch(/padding:16px/);
   });
 });
 

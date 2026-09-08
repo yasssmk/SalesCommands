@@ -449,7 +449,12 @@ function ObjectiveDetailView({
 
   return (
     <>
-      <Box sx={{ px: 2.5, py: 2, flex: 1, overflow: "auto" }}>
+      {/* UI-10 — the objective detail carries NO chassis padding of its own. The
+          padding + scroll come from the coque: the WorkspaceDrawer body (p:2,
+          WorkspaceDrawer.jsx) on the Activity surface, and an equivalent p:2 body
+          added around the objective detail in SignalClusterDetailDrawer (DC/Account).
+          So the objective margins match the edit drawers exactly, in both coques. */}
+      <Box data-testid="objective-detail-body">
         {/* In-content header (title · [status pill + close ×]) — used only when
             the coque does NOT own the header (headerInCoque=false; DC/Account).
             On the Activity surface the coque renders title + status pill + × in

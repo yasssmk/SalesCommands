@@ -400,6 +400,17 @@ describe("SignalDetailPanel", () => {
     expect(actions.parentElement).toBe(box.parentElement);
   });
 
+  it("UI-10: the objective detail body no longer self-pads — chassis padding comes from the coque, not the view", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const body = screen.getByTestId("objective-detail-body");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (body.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    // No chassis padding on the view — the WorkspaceDrawer coque (p:2) / the cluster
+    // wrapper provides it, so the objective margins match the edit drawers.
+    expect(rule).not.toMatch(/padding/);
+  });
+
   it("SIG-5e-fix6: canonical_key is legible — rendered in text.secondary, not disabled", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     const line = screen.getByText(/canonical_key:/);
