@@ -139,8 +139,10 @@ export default function DrawerContentLayout({
           data-testid="drawer-content-box"
           sx={{
             backgroundColor: "background.default",
-            borderRadius: `${aq.radius.lg}px`,
-            border: `${aq.border.width.hairline}px solid ${aq.border.color}`,
+            // Optional chaining keeps the shared box safe in theme-less render
+            // contexts (e.g. the signal detail mounted bare in cluster-drawer tests).
+            borderRadius: aq?.radius?.lg && `${aq.radius.lg}px`,
+            border: aq?.border && `${aq.border.width.hairline}px solid ${aq.border.color}`,
             p: 2,
           }}
         >

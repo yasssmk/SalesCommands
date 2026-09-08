@@ -479,23 +479,13 @@ function ObjectiveDetailView({
           </Box>
         )}
 
-        {/* UI-6 — one container box grounds the detail body, mirroring the other
-            drawers' framed content box (DrawerContentLayout's drawer-content-box:
-            background.default + radius.lg + hairline). The Goal box keeps its
-            surface.level1 tint (UI-5) so the highlighted block still reads above
-            this container. Optional chaining keeps it safe in the theme-less
-            cluster-drawer render contexts. */}
-        <Box
-          data-testid="objective-detail-container"
-          sx={{
-            backgroundColor: "background.default",
-            borderRadius: (theme) => theme.aphoriQ?.radius?.lg && `${theme.aphoriQ.radius.lg}px`,
-            border: (theme) =>
-              theme.aphoriQ?.border &&
-              `${theme.aphoriQ.border.width.hairline}px solid ${theme.aphoriQ.border.color}`,
-            p: 2,
-          }}
-        >
+        {/* UI-8 — the detail body is injected into the SHARED DrawerContentLayout
+            box (background.default + radius.lg + p:2 hairline), the single source
+            of the drawer container used by every edit drawer. No hand-rolled box
+            here: detail and edit inherit the exact same container (identical inner
+            padding, guaranteed by one component). The Goal box keeps its
+            surface.level1 tint (UI-5); internal blocks keep radius.md (UI-6). */}
+        <DrawerContentLayout>
         <SignalIncompleteAlert missingFields={missingFields} />
 
         {signal.validated_by && (
@@ -621,7 +611,7 @@ function ObjectiveDetailView({
             View origin activity
           </Button>
         )}
-        </Box>
+        </DrawerContentLayout>
       </Box>
 
       <Divider />

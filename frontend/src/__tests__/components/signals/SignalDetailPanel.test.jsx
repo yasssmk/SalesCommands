@@ -357,18 +357,26 @@ describe("SignalDetailPanel", () => {
     expect(rule).not.toContain(testTheme.aphoriQ.surface.level2);
   });
 
-  it("UI-6: the Objective detail wraps its body in a container box — same fond + radius.lg as the other drawers' box", () => {
+  it("UI-8: the Objective detail body lives in the SHARED drawer-content-box (DrawerContentLayout), not a hand-made container", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
-    const container = screen.getByTestId("objective-detail-container");
+    // The UI-6/7 hand-rolled container is gone — one source of truth for the box.
+    expect(screen.queryByTestId("objective-detail-container")).not.toBeInTheDocument();
+    // The body now sits inside the shared box, which owns the Goal block.
+    const box = screen.getByTestId("drawer-content-box");
+    expect(within(box).getByTestId("objective-goal-box")).toBeInTheDocument();
+  });
+
+  it("UI-8: the detail's shared box carries the same fond + radius.lg + padding as the edit drawers' box (one component)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const box = screen.getByTestId("drawer-content-box");
     const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
-    const classes = (container.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const classes = (box.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
     const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
-    // Same fond as DrawerContentLayout's drawer-content-box (background.default)…
+    // Same fond (background.default), same radius token (lg=12px)…
     expect(rule).toContain(`background-color:${testTheme.palette.background.default}`);
-    // …same radius token as the other container boxes (radius.lg = 12px)…
     expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.lg}px`);
-    // …and the shared hairline border token.
-    expect(rule).toContain(`${testTheme.aphoriQ.border.width.hairline}px`);
+    // …and the same p:2 padding as DrawerContentLayout (16px) — guaranteed by one component.
+    expect(rule).toContain("padding:16px");
   });
 
   it("UI-6: the Goal box uses the radius.md token — one notch smaller than the container (no hardcode)", () => {
