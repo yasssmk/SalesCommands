@@ -12,9 +12,10 @@
 //              useGetDCPeople(activity.decision_cycle)
 //   - Cluster  backend only, unused here.
 //
-// Built on DrawerContentLayout WITHOUT onSave/onCancel → no global action bar
-// (CT-1). The fiche's own actions (Edit + "See signals") live in the BODY and
-// are inert for now (Edit → CT-3; signals → future).
+// Built on DrawerContentLayout in read mode with only onEdit → the shared
+// bottom action bar shows a single Edit button (no Save/Cancel/Validate/Reject),
+// like every other drawer (P-CONTACT-EDIT). "See signals" stays a body link
+// (inert for now).
 //
 // Layout (maquette Drawer_People): identity (avatar + name + job · dept) — rule
 // — coordinates (email / phone / linkedin, a line dropped when empty) —
@@ -30,7 +31,6 @@ import PropTypes from "prop-types";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
-import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -39,7 +39,6 @@ import MailOutlined from "@ant-design/icons/MailOutlined";
 import PhoneOutlined from "@ant-design/icons/PhoneOutlined";
 import LinkedinOutlined from "@ant-design/icons/LinkedinOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
-import EditOutlined from "@ant-design/icons/EditOutlined";
 import { SIGNAL_ICON } from "utils/signalTypes";
 
 // Project
@@ -149,12 +148,17 @@ export default function ContactDrawerContent({ contactId, activity }) {
   const activityCount =
     qualifiedEntry?.activity_count ?? unqualifiedEntry?.activity_count ?? 0;
 
+  // P-CONTACT-EDIT — Edit now lives in the shared bottom action bar (like every
+  // other drawer) instead of an inline ✎ pencil; the action is unchanged.
+  const handleEdit = () =>
+    openDrawer(<EditContactContent contactId={contactId} activity={activity} />, {
+      title: "Edit contact",
+    });
+
   return (
-    <DrawerContentLayout>
+    <DrawerContentLayout readActions={{ onEdit: handleEdit }}>
       <Stack spacing={2}>
-        {/* Identity — avatar | name block (grows) | Edit ✎ (far right).
-            The pencil is a direct child of this flex row and the middle block
-            grows, so the pencil is pushed to the far right. */}
+        {/* Identity — avatar | name block (grows). Edit moved to the bottom bar. */}
         <Stack direction="row" spacing={2} alignItems="center" data-testid="contact-identity-row">
           <Box
             aria-hidden
@@ -184,20 +188,6 @@ export default function ContactDrawerContent({ contactId, activity }) {
               </Typography>
             )}
           </Box>
-          {/* Edit ✎ — inert for now (opens the edit contact drawer in CT-3). */}
-          <IconButton
-            size="small"
-            data-testid="contact-edit"
-            aria-label="Edit contact"
-            onClick={() =>
-              openDrawer(<EditContactContent contactId={contactId} activity={activity} />, {
-                title: "Edit contact",
-              })
-            }
-            sx={{ color: aq.text.muted, flexShrink: 0, alignSelf: "flex-start" }}
-          >
-            <EditOutlined style={{ fontSize: theme.iconSizes.sm }} />
-          </IconButton>
         </Stack>
 
         <Rule />

@@ -48,7 +48,9 @@ import {
 function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocked, validateDisabled }) {
   const isPending = status === "PENDING";
   // Terminal = a decision was made (validated OR rejected) → it can be reopened.
-  const isTerminal = !isPending;
+  // Checked explicitly (not `!isPending`) so a read bar with NO status — e.g. the
+  // contact fiche passing only onEdit — shows Edit alone, no stray Reopen.
+  const isTerminal = status === "VALIDATED" || status === "REJECTED";
   return (
     <Box data-testid="drawer-actions" sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
       {!isLocked && (

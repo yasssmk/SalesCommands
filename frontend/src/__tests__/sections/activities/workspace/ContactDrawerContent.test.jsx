@@ -25,8 +25,9 @@ vi.mock("next/font/google", () => ({
 vi.mock("themes/emotionCache", () => ({
   NextAppDirEmotionCacheProvider: ({ children }) => children,
 }));
+const { openDrawerMock } = vi.hoisted(() => ({ openDrawerMock: vi.fn() }));
 vi.mock("contexts/WorkspaceDrawerContext", () => ({
-  useWorkspaceDrawer: () => ({ closeDrawer: vi.fn(), openDrawer: vi.fn() }),
+  useWorkspaceDrawer: () => ({ closeDrawer: vi.fn(), openDrawer: openDrawerMock }),
 }));
 
 const useGetContact = vi.fn();
@@ -120,6 +121,7 @@ function renderFiche(props = {}) {
 beforeEach(() => {
   useGetContact.mockReset();
   useGetDCPeople.mockReset();
+  openDrawerMock.mockReset();
 });
 
 describe("ContactDrawerContent — identity + coordinates (always shown, 2 columns)", () => {
@@ -165,41 +167,36 @@ describe("ContactDrawerContent — identity + coordinates (always shown, 2 colum
     expect(screen.queryByRole("link", { name: /iki@rr\.com/ })).not.toBeInTheDocument();
   });
 
-  it("renders NO global Save/Cancel action bar (CT-1)", () => {
+  it("has a bottom action bar with Edit ONLY — no Save/Cancel/Validate/Reject (read fiche)", () => {
     mockContact();
     mockDCPeople({ qualified: [], unqualified: [] });
     renderFiche();
-    expect(screen.queryByTestId("drawer-actions")).not.toBeInTheDocument();
+    // Like every other drawer, the fiche now has the shared bottom action bar…
+    expect(screen.getByTestId("drawer-actions")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+    // …but a fiche has no editing/validation actions.
     expect(screen.queryByRole("button", { name: /^save$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^cancel$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
   });
 });
 
-describe("ContactDrawerContent — Edit pencil pushed to the right", () => {
-  it("shows an Edit pencil control (no crash on click; wiring covered separately)", () => {
+describe("ContactDrawerContent — Edit in the bottom action bar (no inline pencil)", () => {
+  it("the inline ✎ pencil is gone; Edit lives in the action bar and opens the edit drawer", () => {
     mockContact();
     mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
     renderFiche();
-    const edit = screen.getByTestId("contact-edit");
-    expect(edit).toBeInTheDocument();
-    fireEvent.click(edit);
-    expect(edit).toBeInTheDocument();
+    // No more inline pencil in the identity header…
+    expect(screen.queryByTestId("contact-edit")).not.toBeInTheDocument();
+    // …Edit is a button in the shared action bar; clicking opens the edit drawer.
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(openDrawerMock).toHaveBeenCalledTimes(1);
+    expect(openDrawerMock.mock.calls[0][1]).toMatchObject({ title: "Edit contact" });
   });
 
-  it("puts the Edit pencil at the far right — last child of the flex identity row", () => {
-    mockContact();
-    mockDCPeople({ qualified: [], unqualified: [] });
-    renderFiche();
-    const edit = screen.getByTestId("contact-edit");
-    const row = screen.getByTestId("contact-identity-row");
-    // the row is a flex row, and the pencil is its LAST child (so the growing
-    // name block pushes it to the far right).
-    const rowRule = rulesForElement(row);
-    expect(rowRule).toMatch(/display:\s*flex/);
-    expect(row.lastElementChild).toBe(edit);
-  });
-
-  it("P-EDIT-GREY: the ✎ uses the standard neutral tone (text.secondary), same as the read-mode Edit button", () => {
+  it("P-EDIT-GREY: the action-bar Edit uses the standard neutral tone (text.secondary)", () => {
     mockContact();
     mockDCPeople({ qualified: [], unqualified: [] });
     render(
@@ -210,7 +207,7 @@ describe("ContactDrawerContent — Edit pencil pushed to the right", () => {
     );
     const secColor = (rulesForElement(screen.getByTestId("secref")).match(/color:([^;}]+)/) || [])[1];
     expect(secColor).toBeTruthy();
-    expect(rulesForElement(screen.getByTestId("contact-edit"))).toContain(`color:${secColor}`);
+    expect(rulesForElement(screen.getByRole("button", { name: /edit/i }))).toContain(`color:${secColor}`);
   });
 });
 
