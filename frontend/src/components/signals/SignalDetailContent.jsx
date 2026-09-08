@@ -96,7 +96,7 @@ function SourceQuoteBlock({ quote }) {
     <Box
       sx={{
         p: 1.5,
-        bgcolor: "grey.50",
+        bgcolor: (theme) => theme.aphoriQ?.surface?.level2,
         borderRadius: 1,
         borderLeft: 3,
         borderColor: "primary.main",
@@ -504,7 +504,7 @@ function ObjectiveDetailView({
               my: 1,
               px: 1.5,
               py: 1.25,
-              bgcolor: "action.hover",
+              bgcolor: (theme) => theme.aphoriQ?.surface?.level2,
               borderRadius: 1,
             }}
           >

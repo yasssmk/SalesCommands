@@ -351,7 +351,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
               sx={{
                 px: 1.5,
                 py: 1,
-                bgcolor: "action.hover",
+                bgcolor: (theme) => theme.aphoriQ?.surface?.level2,
                 borderRadius: 1,
                 borderLeftStyle: "solid",
                 borderLeftWidth: 3,

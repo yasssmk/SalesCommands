@@ -38,7 +38,20 @@ vi.mock("api/accounts/decisionCycles", () => ({
   useGetDCPeople: (...a) => useGetDCPeople(...a),
 }));
 
+import { useTheme } from "@mui/material/styles";
 import ThemeCustomization from "themes/index";
+
+let surf = {};
+function SurfaceProbe() {
+  const t = useTheme();
+  surf = { l1: t.aphoriQ.surface.level1, l2: t.aphoriQ.surface.level2 };
+  return null;
+}
+function ruleOf(el) {
+  const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+  const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+  return classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+}
 import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
 
 function rulesForElement(el) {
@@ -232,6 +245,20 @@ describe("ContactDrawerContent — N activités du deal (qualified OR unqualifie
     renderFiche();
     const encart = screen.getByTestId("contact-activities");
     expect(encart).toHaveTextContent("0");
+  });
+
+  it("UI-4: the « N activities » encart uses surface.level2 (highlighted block in the card), not level1", () => {
+    mockContact();
+    mockDCPeople({ qualified: [], unqualified: [] });
+    render(
+      <ThemeCustomization>
+        <SurfaceProbe />
+        <ContactDrawerContent contactId="c1" activity={activityInDC} />
+      </ThemeCustomization>,
+    );
+    const rule = ruleOf(screen.getByTestId("contact-activities"));
+    expect(rule).toContain(`background-color:${surf.l2}`);
+    expect(rule).not.toContain(`background-color:${surf.l1}`);
   });
 
   it("does NOT show the encart outside a DC (campaign activity)", () => {

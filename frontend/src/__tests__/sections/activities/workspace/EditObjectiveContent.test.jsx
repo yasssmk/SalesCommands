@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
-import AphoriqTheme from "../../../_utils/aphoriqTheme";
+import AphoriqTheme, { testTheme } from "../../../_utils/aphoriqTheme";
 
 // ---- mocks (before importing the component) ----
 vi.mock("api/signals/signals", () => ({
@@ -105,6 +105,16 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(screen.getByLabelText("Target date")).toBeInTheDocument();
     expect(screen.getByTestId("target-date-confirm")).toBeInTheDocument();
     expect(screen.getByTestId("target-date-cancel")).toBeInTheDocument();
+  });
+
+  it("UI-4: the what×dimension recap uses surface.level2 (highlighted block), not level1", () => {
+    renderEdit();
+    const recap = screen.getByText(/This is a/).parentElement;
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (recap.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    expect(rule).toContain(`background-color:${testTheme.aphoriQ.surface.level2}`);
+    expect(rule).not.toContain(`background-color:${testTheme.aphoriQ.surface.level1}`);
   });
 
   it("keeps the 3 section subtitles and the Domain × Dimension recap", () => {

@@ -3,7 +3,7 @@
 // Shared themed collapsible band ("strip") for stacked adaptive workspaces
 // (UX Activity: Preparation / Source / Signals / Next step).
 //
-// Collapsed = a themed strip header: aphoriQ surface.level2 background, hairline
+// Collapsed = a themed strip header: aphoriQ surface.level1 background, hairline
 // border, radius.md, a rotating chevron + a section icon + a muted title, and an
 // optional right-aligned meta. Expanded = the same clickable header (chevron
 // pivoted) followed by the body inside a Surface(level2). Open/close is component
@@ -75,7 +75,7 @@ export default function CollapsibleStrip({
           px: 2,
           py: 1.25,
           cursor: "pointer",
-          backgroundColor: aq.surface.level2,
+          backgroundColor: aq.surface.level1,
           borderStyle: "solid",
           borderWidth: aq.border.width.hairline,
           borderColor: aq.border.color,
@@ -111,7 +111,7 @@ export default function CollapsibleStrip({
         timeout={theme.transitions.duration.standard}
         unmountOnExit={!disableUnmount}
       >
-        <Surface level="level2" sx={{ mt: 1 }}>
+        <Surface level="level1" sx={{ mt: 1 }}>
           {children}
         </Surface>
       </Collapse>

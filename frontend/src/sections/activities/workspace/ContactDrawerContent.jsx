@@ -232,7 +232,7 @@ export default function ContactDrawerContent({ contactId, activity }) {
         {/* Involved in N activities — shown for any contact inside a DC (even
             0). Absent outside a DC (campaign activity → no deal, no count). */}
         {inDC && (
-          <Surface data-testid="contact-activities" level="level1" radius="lg" sx={{ p: 1.5 }}>
+          <Surface data-testid="contact-activities" level="level2" radius="lg" sx={{ p: 1.5 }}>
             <Stack direction="row" spacing={1} alignItems="center">
               <TeamOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
               <Typography variant="body2" color="text.primary">
