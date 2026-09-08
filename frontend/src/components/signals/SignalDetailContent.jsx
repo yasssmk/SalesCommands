@@ -21,18 +21,10 @@ import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  CloseOutlined,
-  EditOutlined,
-  LinkOutlined,
-  ReloadOutlined,
-} from "@ant-design/icons";
+import { CloseOutlined, LinkOutlined } from "@ant-design/icons";
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
@@ -43,6 +35,7 @@ import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
 import { getSignalTypeLabel } from "utils/signalTypes";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
+import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
 import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
 import {
@@ -464,7 +457,6 @@ function ObjectiveDetailView({
   currentActivityId,
 }) {
   const isPending = signal.status === "PENDING";
-  const isRejected = signal.status === "REJECTED";
   const missingFields = isPending ? getMissingFields(signal, "objective") : [];
   const validateDisabled = missingFields.length > 0;
 
@@ -644,57 +636,20 @@ function ObjectiveDetailView({
 
       <Divider />
 
-      {/* Actions — unchanged (Edit ✎ · Reject · Validate · Reopen). */}
+      {/* Actions — the shared read-signal bar (rule 6) via DrawerContentLayout:
+          Edit (neutre) · Reject (error) · Validate (success) · Reopen. */}
       <Box sx={{ px: 2.5, py: 2 }}>
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
-          {!isLocked && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<EditOutlined style={{ fontSize: 14 }} />}
-              onClick={() => onEdit?.(signal, "objective")}
-            >
-              Edit
-            </Button>
-          )}
-          {isPending && !isLocked && (
-            <>
-              <Button
-                variant="outlined"
-                size="small"
-                color="error"
-                startIcon={<CloseCircleOutlined style={{ fontSize: 14 }} />}
-                onClick={() => onReject?.(signal, "objective")}
-              >
-                Reject
-              </Button>
-              <Tooltip title={validateDisabled ? "Complete missing fields before validating" : ""}>
-                <span>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    color="success"
-                    disabled={validateDisabled}
-                    startIcon={<CheckCircleOutlined style={{ fontSize: 14 }} />}
-                    onClick={() => onValidate?.(signal, "objective")}
-                  >
-                    Validate
-                  </Button>
-                </span>
-              </Tooltip>
-            </>
-          )}
-          {isRejected && !isLocked && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<ReloadOutlined style={{ fontSize: 14 }} />}
-              onClick={() => onReopen?.(signal, "objective")}
-            >
-              Reopen
-            </Button>
-          )}
-        </Stack>
+        <DrawerContentLayout
+          readActions={{
+            onEdit: () => onEdit?.(signal, "objective"),
+            onReject: () => onReject?.(signal, "objective"),
+            onValidate: () => onValidate?.(signal, "objective"),
+            onReopen: () => onReopen?.(signal, "objective"),
+            status: signal.status,
+            isLocked,
+            validateDisabled,
+          }}
+        />
       </Box>
     </>
   );
@@ -758,7 +713,6 @@ export default function SignalDetailContent({
   }
 
   const isPending = signal.status === "PENDING";
-  const isRejected = signal.status === "REJECTED";
   const missingFields = isPending ? getMissingFields(signal, signalType) : [];
   const validateDisabled = missingFields.length > 0;
 
@@ -816,57 +770,19 @@ export default function SignalDetailContent({
 
       <Divider />
 
-      {/* Actions */}
+      {/* Actions — shared read-signal bar (rule 6) via DrawerContentLayout. */}
       <Box sx={{ px: 2.5, py: 2 }}>
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
-          {!isLocked && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<EditOutlined style={{ fontSize: 14 }} />}
-              onClick={() => onEdit?.(signal, signalType)}
-            >
-              Edit
-            </Button>
-          )}
-          {isPending && !isLocked && (
-            <>
-              <Button
-                variant="outlined"
-                size="small"
-                color="error"
-                startIcon={<CloseCircleOutlined style={{ fontSize: 14 }} />}
-                onClick={() => onReject?.(signal, signalType)}
-              >
-                Reject
-              </Button>
-              <Tooltip title={validateDisabled ? "Complete missing fields before validating" : ""}>
-                <span>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    color="success"
-                    disabled={validateDisabled}
-                    startIcon={<CheckCircleOutlined style={{ fontSize: 14 }} />}
-                    onClick={() => onValidate?.(signal, signalType)}
-                  >
-                    Validate
-                  </Button>
-                </span>
-              </Tooltip>
-            </>
-          )}
-          {isRejected && !isLocked && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<ReloadOutlined style={{ fontSize: 14 }} />}
-              onClick={() => onReopen?.(signal, signalType)}
-            >
-              Reopen
-            </Button>
-          )}
-        </Stack>
+        <DrawerContentLayout
+          readActions={{
+            onEdit: () => onEdit?.(signal, signalType),
+            onReject: () => onReject?.(signal, signalType),
+            onValidate: () => onValidate?.(signal, signalType),
+            onReopen: () => onReopen?.(signal, signalType),
+            status: signal.status,
+            isLocked,
+            validateDisabled,
+          }}
+        />
       </Box>
     </>
   );
