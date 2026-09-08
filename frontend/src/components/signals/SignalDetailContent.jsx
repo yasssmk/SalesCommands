@@ -479,6 +479,23 @@ function ObjectiveDetailView({
           </Box>
         )}
 
+        {/* UI-6 — one container box grounds the detail body, mirroring the other
+            drawers' framed content box (DrawerContentLayout's drawer-content-box:
+            background.default + radius.lg + hairline). The Goal box keeps its
+            surface.level1 tint (UI-5) so the highlighted block still reads above
+            this container. Optional chaining keeps it safe in the theme-less
+            cluster-drawer render contexts. */}
+        <Box
+          data-testid="objective-detail-container"
+          sx={{
+            backgroundColor: "background.default",
+            borderRadius: (theme) => theme.aphoriQ?.radius?.lg && `${theme.aphoriQ.radius.lg}px`,
+            border: (theme) =>
+              theme.aphoriQ?.border &&
+              `${theme.aphoriQ.border.width.hairline}px solid ${theme.aphoriQ.border.color}`,
+            p: 2,
+          }}
+        >
         <SignalIncompleteAlert missingFields={missingFields} />
 
         {signal.validated_by && (
@@ -505,7 +522,7 @@ function ObjectiveDetailView({
               px: 1.5,
               py: 1.25,
               bgcolor: (theme) => theme.aphoriQ?.surface?.level1,
-              borderRadius: 1,
+              borderRadius: (theme) => theme.aphoriQ?.radius?.md && `${theme.aphoriQ.radius.md}px`,
             }}
           >
             {signal.summary && (
@@ -604,6 +621,7 @@ function ObjectiveDetailView({
             View origin activity
           </Button>
         )}
+        </Box>
       </Box>
 
       <Divider />

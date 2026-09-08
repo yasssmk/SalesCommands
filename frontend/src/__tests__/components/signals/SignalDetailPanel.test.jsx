@@ -357,6 +357,32 @@ describe("SignalDetailPanel", () => {
     expect(rule).not.toContain(testTheme.aphoriQ.surface.level2);
   });
 
+  it("UI-6: the Objective detail wraps its body in a container box — same fond + radius.lg as the other drawers' box", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const container = screen.getByTestId("objective-detail-container");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (container.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    // Same fond as DrawerContentLayout's drawer-content-box (background.default)…
+    expect(rule).toContain(`background-color:${testTheme.palette.background.default}`);
+    // …same radius token as the other container boxes (radius.lg = 12px)…
+    expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.lg}px`);
+    // …and the shared hairline border token.
+    expect(rule).toContain(`${testTheme.aphoriQ.border.width.hairline}px`);
+  });
+
+  it("UI-6: the Goal box uses the radius.md token — one notch smaller than the container (no hardcode)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const goal = screen.getByTestId("objective-goal-box");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (goal.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    // radius.md (8px) — smaller than the container's radius.lg (12px)…
+    expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.md}px`);
+    // …and NOT the old MUI shape hardcode (borderRadius:1 → 4px).
+    expect(rule).not.toContain("border-radius:4px");
+  });
+
   it("SIG-5e-fix6: canonical_key is legible — rendered in text.secondary, not disabled", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     const line = screen.getByText(/canonical_key:/);
