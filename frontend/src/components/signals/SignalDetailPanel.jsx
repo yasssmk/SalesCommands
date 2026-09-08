@@ -33,6 +33,7 @@ export default function SignalDetailPanel({
   onReopen,
   isLocked,
   currentActivityId,
+  inlineClose,
 }) {
   const router = useRouter();
   const { closeDrawer } = useWorkspaceDrawer();
@@ -56,6 +57,7 @@ export default function SignalDetailPanel({
       onEdit={onEdit}
       onReopen={onReopen}
       onOpenActivity={openOriginActivity}
+      onClose={inlineClose ? closeDrawer : undefined}
       isLocked={isLocked}
       currentActivityId={currentActivityId}
     />
@@ -72,4 +74,7 @@ SignalDetailPanel.propTypes = {
   isLocked: PropTypes.bool,
   /** The activity currently being viewed (Activity surface); absent on DC/Account. */
   currentActivityId: PropTypes.string,
+  /** Objective detail on the Activity coque: render the close (×) in the detail
+      header (paired with the coque's `hideClose`). Absent on DC/Account. */
+  inlineClose: PropTypes.bool,
 };

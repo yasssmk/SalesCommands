@@ -109,6 +109,9 @@ export default function ActivityQualificationTab({
   const openSignalDetail = useCallback(
     (signal, signalType) => {
       const h = detailHandlersRef.current;
+      // Objective detail carries its own header (title · pill · ×), so the coque
+      // suppresses its cross (hideClose) and the panel renders the × inline.
+      const isObjective = signalType === "objective";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
@@ -119,7 +122,9 @@ export default function ActivityQualificationTab({
           onReopen={h.onReopen}
           isLocked={isLocked}
           currentActivityId={activityId}
+          inlineClose={isObjective}
         />,
+        isObjective ? { hideClose: true } : undefined,
       );
     },
     [openDrawer, isLocked, activityId],

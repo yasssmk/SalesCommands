@@ -19,7 +19,7 @@ vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
 vi.mock("sections/activities/workspace/EditObjectiveContent", () => ({
   default: () => <div data-testid="edit-objective-stub" />,
 }));
-import { render as rtlRender, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup, act, within } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
 
 // The signal detail lives in the single workspace drawer coque (openDrawer);
@@ -221,6 +221,29 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
     expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
     expect(screen.queryByRole("button", drawerValidate)).not.toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix5: objective drawer shows title+pill+close on ONE header row (coque cross suppressed)", async () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "op2", status: "VALIDATED", summary: "Validated objective",
+            _signalType: "objective", what: "OPS", dimension: "TIME",
+            scope_level: "COMPANY", source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(screen.getByText("Validated"));
+    fireEvent.click(await screen.findByText("Validated objective"));
+    const header = screen.getByTestId("objective-detail-header");
+    expect(within(header).getByTestId("objective-detail-title")).toBeInTheDocument();
+    expect(within(header).getByTestId("status-pill")).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
+    // Exactly one close control — the coque's own cross is suppressed here.
+    expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
   });
 
   it("opens the signal drawer when a row is clicked", () => {

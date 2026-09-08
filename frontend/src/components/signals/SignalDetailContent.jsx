@@ -19,6 +19,7 @@ import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
@@ -27,6 +28,7 @@ import Typography from "@mui/material/Typography";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
+  CloseOutlined,
   EditOutlined,
   LinkOutlined,
   ReloadOutlined,
@@ -474,6 +476,7 @@ function ObjectiveDetailView({
   onEdit,
   onReopen,
   onOpenActivity,
+  onClose,
   isLocked,
   currentActivityId,
 }) {
@@ -501,9 +504,12 @@ function ObjectiveDetailView({
   return (
     <>
       <Box sx={{ px: 2.5, py: 2, flex: 1, overflow: "auto" }}>
-        {/* Title (left) + status pill (right) on one line. The type lives here,
-            not in the coque header, so the pill can sit beside it. */}
+        {/* Title (left) · [status pill + close ×] (right) on ONE line. The type
+            lives here, not in the coque header; when onClose is supplied (the
+            Activity coque suppresses its own cross), the × joins this row so
+            title · pill · × share a single line. */}
         <Box
+          data-testid="objective-detail-header"
           sx={{
             display: "flex",
             alignItems: "center",
@@ -515,11 +521,18 @@ function ObjectiveDetailView({
           <Typography variant="h3" fontWeight="bold" data-testid="objective-detail-title">
             {getSignalTypeLabel("objective")}
           </Typography>
-          <StatusPill
-            label={statusPill.label}
-            colorText={`${statusPill.role}.main`}
-            colorBg={`${statusPill.role}.lighter`}
-          />
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill
+              label={statusPill.label}
+              colorText={`${statusPill.role}.main`}
+              colorBg={`${statusPill.role}.lighter`}
+            />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: 14 }} />
+              </IconButton>
+            )}
+          </Stack>
         </Box>
 
         <SignalIncompleteAlert missingFields={missingFields} />
@@ -537,10 +550,12 @@ function ObjectiveDetailView({
         {/* Section 1 — Goal. The summary is the headline (prominent, no label);
             the Domain × Dimension are conveyed by the recap only. Detail exposes
             values — no instruction subtitles (those live in the edit). */}
+        {/* One enclosing Goal box: summary (top) · short centered separator ·
+            axis recap (bottom). A single surface tint, no inner accent border. */}
         <SectionHeader index={1} title="Goal" />
-        {signal.summary && (
+        {(signal.summary || axisPreview) && (
           <Box
-            data-testid="objective-summary-box"
+            data-testid="objective-goal-box"
             sx={{
               my: 1,
               px: 1.5,
@@ -549,44 +564,42 @@ function ObjectiveDetailView({
               borderRadius: 1,
             }}
           >
-            <Typography
-              variant="body1"
-              fontWeight={500}
-              color="text.primary"
-              sx={{ whiteSpace: "pre-line" }}
-            >
-              {signal.summary}
-            </Typography>
-          </Box>
-        )}
-        {axisPreview && (
-          <Box
-            sx={{
-              mt: 1,
-              px: 1.5,
-              py: 1,
-              bgcolor: "action.hover",
-              borderRadius: 1,
-              borderLeftStyle: "solid",
-              borderLeftWidth: 3,
-              borderLeftColor: "info.main",
-            }}
-          >
-            <Typography variant="caption" color="text.secondary">
-              This is a{" "}
-              <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
-                {axisPreview}
-              </Box>{" "}
-              goal
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.disabled"
-              display="block"
-              sx={{ fontFamily: "monospace", fontSize: "0.7rem", mt: 0.25 }}
-            >
-              canonical_key: {canonicalPreview}
-            </Typography>
+            {signal.summary && (
+              <Typography
+                data-testid="objective-summary-box"
+                variant="body1"
+                fontWeight={500}
+                color="text.primary"
+                sx={{ whiteSpace: "pre-line" }}
+              >
+                {signal.summary}
+              </Typography>
+            )}
+            {signal.summary && axisPreview && (
+              <Divider
+                data-testid="objective-goal-separator"
+                sx={{ width: "40%", mx: "auto", my: 1.5 }}
+              />
+            )}
+            {axisPreview && (
+              <>
+                <Typography variant="caption" color="text.secondary">
+                  This is a{" "}
+                  <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+                    {axisPreview}
+                  </Box>{" "}
+                  goal
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.disabled"
+                  display="block"
+                  sx={{ fontFamily: "monospace", fontSize: "0.7rem", mt: 0.25 }}
+                >
+                  canonical_key: {canonicalPreview}
+                </Typography>
+              </>
+            )}
           </Box>
         )}
 
@@ -715,6 +728,9 @@ ObjectiveDetailView.propTypes = {
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
   onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header (the coque
+      suppresses its own cross). Absent → no in-header close (DC/Account). */
+  onClose: PropTypes.func,
   isLocked: PropTypes.bool,
   currentActivityId: PropTypes.string,
 };
@@ -733,6 +749,7 @@ export default function SignalDetailContent({
   onEdit,
   onReopen,
   onOpenActivity,
+  onClose,
   isLocked,
   currentActivityId,
   leadingAction,
@@ -750,6 +767,7 @@ export default function SignalDetailContent({
         onEdit={onEdit}
         onReopen={onReopen}
         onOpenActivity={onOpenActivity}
+        onClose={onClose}
         isLocked={isLocked}
         currentActivityId={currentActivityId}
       />
@@ -879,6 +897,9 @@ SignalDetailContent.propTypes = {
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
   onOpenActivity: PropTypes.func,
+  /** Objective detail only: when set, renders the close (×) in the detail
+      header (the Activity coque suppresses its own cross). */
+  onClose: PropTypes.func,
   isLocked: PropTypes.bool,
   /** The activity currently being viewed — used to hide the "View origin
       activity" link when the signal's origin IS that activity. Optional;

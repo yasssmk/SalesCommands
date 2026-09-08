@@ -34,6 +34,7 @@ const WorkspaceDrawerContext = createContext({
   isOpen: false,
   content: null,
   title: null,
+  hideClose: false,
   openDrawer: () => {},
   closeDrawer: () => {},
 });
@@ -50,12 +51,16 @@ export function WorkspaceDrawerProvider({ children }) {
   // Optional coque title (Option A): the coque renders it in its header, on the
   // close cross's line. Absent → the coque header shows the cross alone.
   const [title, setTitle] = useState(null);
+  // Optional: when true the coque suppresses its own close cross (the injected
+  // content renders its own — e.g. the Objective detail's in-header ×).
+  const [hideClose, setHideClose] = useState(false);
   const isOpen = content != null;
 
   const openDrawer = useCallback(
     (node, options = {}) => {
       setContent(node ?? null);
       setTitle(options?.title ?? null);
+      setHideClose(Boolean(options?.hideClose));
       // Exclusivity: opening the workspace drawer collapses the left menu.
       handlerDrawerOpen(false);
     },
@@ -65,6 +70,7 @@ export function WorkspaceDrawerProvider({ children }) {
   const closeDrawer = useCallback(() => {
     setContent(null);
     setTitle(null);
+    setHideClose(false);
   }, []);
 
   // Close the drawer on route change: navigating away from the workspace must
@@ -89,13 +95,14 @@ export function WorkspaceDrawerProvider({ children }) {
     if (menuOpen && !prevMenuOpen.current) {
       setContent(null);
       setTitle(null);
+      setHideClose(false);
     }
     prevMenuOpen.current = menuOpen;
   }, [menuOpen]);
 
   const value = useMemo(
-    () => ({ isOpen, content, title, openDrawer, closeDrawer }),
-    [isOpen, content, title, openDrawer, closeDrawer],
+    () => ({ isOpen, content, title, hideClose, openDrawer, closeDrawer }),
+    [isOpen, content, title, hideClose, openDrawer, closeDrawer],
   );
 
   return (

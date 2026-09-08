@@ -8,7 +8,7 @@
 // context when unwrapped; next/navigation is globally mocked in vitest.setup.js).
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { useRouter } from "next/navigation";
 import AphoriqTheme from "../../_utils/aphoriqTheme";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
@@ -318,6 +318,32 @@ describe("SignalDetailPanel", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     expect(screen.getByText("Target date")).toBeInTheDocument();
     expect(screen.getByText("31 Dec 2026")).toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix5: with inlineClose, title + pill + close share ONE header row", () => {
+    // Point 1 — the coque cross is suppressed for the objective drawer and the
+    // close (×) moves into the detail header, on the same row as title + pill.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" inlineClose />);
+    const header = screen.getByTestId("objective-detail-header");
+    expect(within(header).getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    expect(within(header).getByTestId("status-pill")).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix5: without inlineClose there is no in-header close (DC/Account unchanged)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const header = screen.getByTestId("objective-detail-header");
+    expect(within(header).queryByRole("button", { name: /close drawer/i })).not.toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix5: Goal is a single box holding summary + centered separator + axis recap", () => {
+    // Point 2 — one enclosing Goal box wraps the summary, a short centered
+    // separator, and the axis recap (previously two separate backgrounds).
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const goal = screen.getByTestId("objective-goal-box");
+    expect(within(goal).getByText("Reduce reporting time by 50%")).toBeInTheDocument();
+    expect(within(goal).getByText("Operations × Time")).toBeInTheDocument();
+    expect(within(goal).getByTestId("objective-goal-separator")).toBeInTheDocument();
   });
 
   it("SIG-5e-fix3: empty Metrics renders a single 'No metrics defined' line", () => {

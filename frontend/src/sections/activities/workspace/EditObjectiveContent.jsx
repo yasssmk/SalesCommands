@@ -223,7 +223,7 @@ function fkId(v) {
 
 // ==============================|| EDIT OBJECTIVE CONTENT ||============================== //
 
-export default function EditObjectiveContent({ objective, accountId, onSaved }) {
+export default function EditObjectiveContent({ objective, accountId, onSaved, onCancel }) {
   const { closeDrawer } = useWorkspaceDrawer();
   const { choices, choicesLoading } = useGetSignalChoices();
   const { standardDepartments } = useGetContactChoices();
@@ -273,8 +273,32 @@ export default function EditObjectiveContent({ objective, accountId, onSaved }) 
           return;
         }
         displaySuccessSnackbar("Objective updated");
-        onSaved?.();
-        closeDrawer();
+        // Return to the detail with the updated signal instead of closing. Build
+        // a display-friendly merge (re-resolve the axis labels + the department
+        // object) so the read drawer renders the new values immediately.
+        if (onSaved) {
+          const updatedSignal = {
+            ...objective,
+            summary: payload.summary,
+            what: values.what,
+            dimension: values.dimension,
+            what_display: resolveLabel(whatOptions, values.what) ?? objective?.what_display,
+            dimension_display:
+              resolveLabel(dimensionOptions, values.dimension) ?? objective?.dimension_display,
+            scope_level: values.scope_level,
+            target_department: values.target_department
+              ? { id: values.target_department, name: resolveLabel(departmentOptions, values.target_department) }
+              : null,
+            target_contact: values.target_contact ? objective?.target_contact ?? null : null,
+            success_criteria: payload.success_criteria,
+            target_date: payload.target_date,
+            notes: payload.notes,
+            source_quote: payload.source_quote,
+          };
+          onSaved(updatedSignal);
+        } else {
+          closeDrawer();
+        }
       } catch (err) {
         displayErrorSnackbar(err);
       } finally {
@@ -309,7 +333,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved }) 
   return (
     <DrawerContentLayout
       onSave={formik.handleSubmit}
-      onCancel={() => closeDrawer()}
+      onCancel={() => (onCancel ? onCancel() : closeDrawer())}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
     >
       <Stack spacing={2.5}>
@@ -503,6 +527,10 @@ EditObjectiveContent.propTypes = {
   }).isRequired,
   /** Account the objective belongs to (reserved for future scoped pickers). */
   accountId: PropTypes.string,
-  /** Fired after a successful save (before the coque closes) — caller revalidates. */
+  /** Fired after a successful save with the updated signal — the caller
+      revalidates and returns to the detail. Absent → the drawer closes (legacy). */
   onSaved: PropTypes.func,
+  /** Fired on Cancel — the caller returns to the detail without saving.
+      Absent → the drawer closes (legacy). */
+  onCancel: PropTypes.func,
 };

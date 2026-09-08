@@ -178,10 +178,38 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(patch.target_department).toBeNull();
   });
 
-  it("Cancel closes the drawer without saving", () => {
+  it("Cancel with no onCancel falls back to closing the drawer (legacy)", () => {
     renderEdit();
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(closeDrawer).toHaveBeenCalled();
     expect(updateSignal).not.toHaveBeenCalled();
+  });
+
+  it("SIG-5e-fix5: Cancel returns to the detail — onCancel called, no save, drawer not closed", () => {
+    const onCancel = vi.fn();
+    renderEdit(OBJECTIVE, { onCancel });
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(updateSignal).not.toHaveBeenCalled();
+    expect(closeDrawer).not.toHaveBeenCalled();
+  });
+
+  it("SIG-5e-fix5: Save returns to the detail — onSaved receives the updated signal, drawer not closed", async () => {
+    const onSaved = vi.fn();
+    renderEdit(OBJECTIVE, { onSaved });
+    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.change(screen.getByTestId("inline-input-summary"), {
+      target: { value: "Reduce reporting time drastically now" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    // The updated signal carries the edited summary so the detail re-renders it.
+    expect(onSaved.mock.calls[0][0]).toMatchObject({
+      id: "obj-1",
+      summary: "Reduce reporting time drastically now",
+    });
+    expect(closeDrawer).not.toHaveBeenCalled();
   });
 });

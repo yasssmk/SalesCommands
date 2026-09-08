@@ -35,7 +35,7 @@ import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 
 // ==============================|| COQUE HEADER ||============================== //
 
-function CoqueHeader({ onClose, title }) {
+function CoqueHeader({ onClose, title, hideClose }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   return (
@@ -67,23 +67,34 @@ function CoqueHeader({ onClose, title }) {
       ) : (
         <Box />
       )}
-      <IconButton size="small" onClick={onClose} aria-label="Close drawer">
-        <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-      </IconButton>
+      {/* hideClose: the injected content renders its own close (the Objective
+          detail carries the × in its header) — omit the coque's own cross. */}
+      {!hideClose && (
+        <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+          <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+        </IconButton>
+      )}
     </Stack>
   );
 }
 
-CoqueHeader.propTypes = { onClose: PropTypes.func.isRequired, title: PropTypes.string };
+CoqueHeader.propTypes = {
+  onClose: PropTypes.func.isRequired,
+  title: PropTypes.string,
+  hideClose: PropTypes.bool,
+};
 
 // ==============================|| PUSH PANEL (large) ||============================== //
 
 // The push coque body. Extracted so its aphoriQ token reads happen only when it
 // actually MOUNTS — the Collapse below mounts it (via unmountOnExit) solely when
 // the drawer is open, so a closed coque never touches theme.aphoriQ.
-function CoquePanel({ content, onClose, title }) {
+function CoquePanel({ content, onClose, title, hideClose }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
+  // Skip the header row entirely when there's nothing to show in it (cross
+  // suppressed AND no title) — the injected content owns its own header then.
+  const showHeader = !hideClose || Boolean(title);
   // Sticky offset = the height of the FIXED app-bar above the content
   // (theme.mixins.toolbar.minHeight — the same token the layout's Toolbar spacer
   // reserves). The breadcrumb below it is in normal flow (it scrolls away), so it
@@ -114,7 +125,7 @@ function CoquePanel({ content, onClose, title }) {
         maxHeight: `calc(100vh - ${headerOffset}px - ${theme.spacing(3)})`,
       }}
     >
-      <CoqueHeader onClose={onClose} title={title} />
+      {showHeader && <CoqueHeader onClose={onClose} title={title} hideClose={hideClose} />}
       {/* min-height:0 lets this flex child shrink below its content so the
           internal overflow actually scrolls (header stays pinned). */}
       <Box sx={{ p: 2, overflowY: "auto", flex: 1, minHeight: 0 }}>{content}</Box>
@@ -126,6 +137,7 @@ CoquePanel.propTypes = {
   content: PropTypes.node,
   onClose: PropTypes.func.isRequired,
   title: PropTypes.string,
+  hideClose: PropTypes.bool,
 };
 
 // ==============================|| WORKSPACE DRAWER (COQUE) ||============================== //
@@ -134,7 +146,7 @@ export default function WorkspaceDrawer() {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const isNarrow = useMediaQuery(theme.breakpoints.down("lg"));
-  const { isOpen, content, title, closeDrawer } = useWorkspaceDrawer();
+  const { isOpen, content, title, hideClose, closeDrawer } = useWorkspaceDrawer();
 
   // ---- Narrow: OVERLAY (temporary Drawer + backdrop) ----
   // The temporary MUI Drawer slides in/out natively via theme.transitions when
@@ -174,7 +186,9 @@ export default function WorkspaceDrawer() {
             : undefined
         }
       >
-        <CoqueHeader onClose={closeDrawer} title={title} />
+        {(!hideClose || Boolean(title)) && (
+          <CoqueHeader onClose={closeDrawer} title={title} hideClose={hideClose} />
+        )}
         <Box sx={{ p: 2, overflowY: "auto" }}>{content}</Box>
       </Drawer>
     );
@@ -204,7 +218,7 @@ export default function WorkspaceDrawer() {
       }}
     >
       <Collapse orientation="horizontal" in={isOpen} unmountOnExit>
-        <CoquePanel content={content} onClose={closeDrawer} title={title} />
+        <CoquePanel content={content} onClose={closeDrawer} title={title} hideClose={hideClose} />
       </Collapse>
     </Box>
   );

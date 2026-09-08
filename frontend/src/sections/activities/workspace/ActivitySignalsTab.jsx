@@ -108,6 +108,9 @@ export default function ActivitySignalsTab({
   const openSignalDetail = useCallback(
     (signal, signalType) => {
       const h = detailHandlersRef.current;
+      // Objective detail carries its own header (title · pill · ×), so the coque
+      // suppresses its cross (hideClose) and the panel renders the × inline.
+      const isObjective = signalType === "objective";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
@@ -118,7 +121,9 @@ export default function ActivitySignalsTab({
           onReopen={h.onReopen}
           isLocked={isLocked}
           currentActivityId={activityId}
+          inlineClose={isObjective}
         />,
+        isObjective ? { hideClose: true } : undefined,
       );
     },
     [openDrawer, isLocked, activityId],
@@ -180,10 +185,13 @@ export default function ActivitySignalsTab({
           <EditObjectiveContent
             objective={signal}
             accountId={accountId}
-            onSaved={() => {
+            onSaved={(updated) => {
               mutateAll();
               mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "objective");
             }}
+            onCancel={() => openSignalDetail(signal, "objective")}
           />,
           { title: "Edit objective" },
         );
@@ -193,7 +201,7 @@ export default function ActivitySignalsTab({
       setEditType(signalType);
       setEditDialogOpen(true);
     },
-    [openDrawer, accountId, mutateAll, mutateCounts],
+    [openDrawer, accountId, mutateAll, mutateCounts, openSignalDetail],
   );
 
   // Keep the ref pointing at the latest lifecycle handlers so openSignalDetail
