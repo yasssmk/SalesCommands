@@ -231,7 +231,7 @@ export default function ActivityContextSection({ activity }) {
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
 
   return (
-    <Surface level="level1" radius="lg" data-testid="ctx-card" sx={{ p: 2.5 }}>
+    <Surface level="level2" radius="lg" data-testid="ctx-card" sx={{ p: 2.5 }}>
       {/* Card title (bold) */}
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
         <InfoCircleOutlined style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.primary }} />

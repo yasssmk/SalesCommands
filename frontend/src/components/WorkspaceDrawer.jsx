@@ -114,7 +114,7 @@ function CoquePanel({ content, onClose, title, status, statusMap, hideClose }) {
       data-testid="coque-panel"
       sx={{
         width: aq.drawer.width,
-        backgroundColor: aq.surface.level1,
+        backgroundColor: aq.surface.level2,
         // A detached, rounded floating card: the same radius as the page boxes
         // (header, Context card) + a full hairline border, with a bottom/right
         // margin so the rounded corners clear those edges. NO top margin — the
@@ -191,7 +191,7 @@ export default function WorkspaceDrawer() {
             ? {
                 sx: {
                   width: { xs: "100%", sm: aq.drawer.width },
-                  backgroundColor: aq.surface.level1,
+                  backgroundColor: aq.surface.level2,
                   // Match the push card: rounded + full hairline border, detached
                   // with a margin. The paper is full-height, so trim its height by
                   // the top+bottom margin (theme.spacing(3) = 2×1.5) — token math,

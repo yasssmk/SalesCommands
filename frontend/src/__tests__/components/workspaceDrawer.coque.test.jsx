@@ -143,16 +143,16 @@ describe("WorkspaceDrawer coque (B3.5.1)", () => {
 });
 
 describe("WorkspaceDrawer coque — anthracite background (S2c-2)", () => {
-  it("large PUSH: the coque panel background is the aphoriQ surface.level1 token (not level2)", () => {
+  it("large PUSH: the coque panel background is the aphoriQ surface.level2 token (not level1)", () => {
     renderWorkspace();
     fireEvent.click(screen.getByRole("button", { name: "open" }));
 
     const bg = bgOfAncestor(screen.getByTestId("dcontent"));
-    expect(bg).toBe(testTheme.aphoriQ.surface.level1);
-    expect(bg).not.toBe(testTheme.aphoriQ.surface.level2);
+    expect(bg).toBe(testTheme.aphoriQ.surface.level2);
+    expect(bg).not.toBe(testTheme.aphoriQ.surface.level1);
   });
 
-  it("narrow OVERLAY: the temporary Drawer paper background is surface.level1 (not level2)", () => {
+  it("narrow OVERLAY: the temporary Drawer paper background is surface.level2 (not level1)", () => {
     useMediaQuery.mockReturnValue(true); // narrow
     renderWorkspace();
     fireEvent.click(screen.getByRole("button", { name: "open" }));
@@ -160,8 +160,8 @@ describe("WorkspaceDrawer coque — anthracite background (S2c-2)", () => {
     const paper = document.querySelector(".MuiDrawer-paper");
     expect(paper).not.toBeNull();
     const bg = bgOf(paper);
-    expect(bg).toBe(testTheme.aphoriQ.surface.level1);
-    expect(bg).not.toBe(testTheme.aphoriQ.surface.level2);
+    expect(bg).toBe(testTheme.aphoriQ.surface.level2);
+    expect(bg).not.toBe(testTheme.aphoriQ.surface.level1);
   });
 });
 
@@ -270,7 +270,7 @@ describe("WorkspaceDrawer coque — rounded, detached floating card (SE-a)", () 
     // full border (not the old left-only border): a solid border shorthand/side
     expect(rule).toMatch(/border(-top|-right|-bottom)?(-style)?:\s*[^;]*solid|border-width:/);
     // background stays anthracite
-    expect(bgOf(panel)).toBe(testTheme.aphoriQ.surface.level1);
+    expect(bgOf(panel)).toBe(testTheme.aphoriQ.surface.level2);
   });
 
   it("large PUSH: the panel has NO top margin (its top aligns with the header row), keeps bottom+right detachment", () => {
@@ -306,6 +306,6 @@ describe("WorkspaceDrawer coque — rounded, detached floating card (SE-a)", () 
     const rule = rulesForElement(paper);
     expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.lg}px`);
     expect(rule).toMatch(/margin(-top|-right|-bottom|-left)?:/);
-    expect(bgOf(paper)).toBe(testTheme.aphoriQ.surface.level1);
+    expect(bgOf(paper)).toBe(testTheme.aphoriQ.surface.level2);
   });
 });

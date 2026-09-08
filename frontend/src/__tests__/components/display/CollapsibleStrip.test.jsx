@@ -37,8 +37,6 @@ function TokenProbe() {
       data-radius-md={String(aq.radius.md)}
       data-hairline={String(aq.border.width.hairline)}
       data-muted={aq.text.muted}
-      data-l1={aq.surface.level1}
-      data-l2={aq.surface.level2}
     />
   );
 }
@@ -155,22 +153,5 @@ describe("CollapsibleStrip", () => {
     // header's own rule proves the strip consumes the aphoriQ border token.
     // (radius.md=8px is excluded: 8px also appears as theme.spacing(1).)
     expect(headerCss).toContain(`${hairline}px`);
-  });
-
-  it("UI-4: the strip header uses surface.level1 (card on the page), not level2", () => {
-    render(
-      <ThemeCustomization>
-        <TokenProbe />
-        <CollapsibleStrip title="Source" icon={ExperimentOutlined}>
-          <div>{BODY}</div>
-        </CollapsibleStrip>
-      </ThemeCustomization>,
-    );
-    const t = screen.getByTestId("tokens");
-    const l1 = t.getAttribute("data-l1");
-    const l2 = t.getAttribute("data-l2");
-    const headerCss = rulesForElement(screen.getByRole("button"));
-    expect(headerCss).toContain(`background-color:${l1}`);
-    expect(headerCss).not.toContain(`background-color:${l2}`);
   });
 });

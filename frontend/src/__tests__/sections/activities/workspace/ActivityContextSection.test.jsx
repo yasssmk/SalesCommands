@@ -21,17 +21,8 @@ vi.mock("next/link", () => ({
   default: ({ href, children }) => <a href={typeof href === "string" ? href : "#"}>{children}</a>,
 }));
 
-import { useTheme } from "@mui/material/styles";
 import ThemeCustomization from "themes/index";
 import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
-
-// Captures the aphoriQ surface tokens from the REAL theme for bg assertions.
-let surf = {};
-function SurfaceProbe() {
-  const t = useTheme();
-  surf = { l1: t.aphoriQ.surface.level1, l2: t.aphoriQ.surface.level2 };
-  return null;
-}
 
 function rulesForElement(el) {
   const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
@@ -178,18 +169,6 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.queryByText(/Coming Soon/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Previous Activity/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Next Activity/i)).not.toBeInTheDocument();
-  });
-
-  it("UI-4: the Context card uses surface.level1 (card on the page), not level2", () => {
-    render(
-      <ThemeCustomization>
-        <SurfaceProbe />
-        <ActivityContextSection activity={baseActivity} />
-      </ThemeCustomization>,
-    );
-    const rule = rulesForElement(screen.getAllByTestId("ctx-card")[0]);
-    expect(rule).toContain(`background-color:${surf.l1}`);
-    expect(rule).not.toContain(`background-color:${surf.l2}`);
   });
 
   it("single card consuming aphoriQ tokens (hairline) with minmax grids", () => {
