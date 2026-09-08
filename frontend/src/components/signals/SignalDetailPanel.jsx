@@ -34,6 +34,7 @@ export default function SignalDetailPanel({
   isLocked,
   currentActivityId,
   inlineClose,
+  headerInCoque,
 }) {
   const router = useRouter();
   const { closeDrawer } = useWorkspaceDrawer();
@@ -58,6 +59,7 @@ export default function SignalDetailPanel({
       onReopen={onReopen}
       onOpenActivity={openOriginActivity}
       onClose={inlineClose ? closeDrawer : undefined}
+      headerInCoque={headerInCoque}
       isLocked={isLocked}
       currentActivityId={currentActivityId}
     />
@@ -77,4 +79,7 @@ SignalDetailPanel.propTypes = {
   /** Objective detail on the Activity coque: render the close (×) in the detail
       header (paired with the coque's `hideClose`). Absent on DC/Account. */
   inlineClose: PropTypes.bool,
+  /** Objective detail: the coque owns the header (title + pill + ×) — the
+      in-content header is suppressed. Absent on DC/Account. */
+  headerInCoque: PropTypes.bool,
 };

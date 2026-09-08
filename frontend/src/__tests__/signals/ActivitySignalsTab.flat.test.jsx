@@ -180,11 +180,13 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getByTestId("edit-objective-stub")).toBeInTheDocument();
   });
 
-  it("SIG-5e-fix3: opening an Objective shows the in-detail title 'Objective'", async () => {
+  it("UI-1: opening an Objective shows the coque header title 'Objective'", async () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(screen.getByText("Validated"));
     fireEvent.click(await screen.findByText("Objective signal flat"));
-    expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    // The header (title + status pill) is owned by the coque now.
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objective");
+    expect(screen.queryByTestId("objective-detail-title")).not.toBeInTheDocument();
   });
 
   it("SIG-5e-fix4: validating from the objective drawer refreshes it to the Validated detail (stays open)", async () => {
@@ -216,14 +218,15 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
       fireEvent.click(screen.getByRole("button", drawerValidate));
     });
     expect(validateSignal).toHaveBeenCalledWith("objective", "op1");
-    // Drawer stays open and RETURNS to the detail, now Validated — the pill
-    // flips and the drawer's Validate action is gone (not stale Pending content).
-    expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    // Drawer stays open and RETURNS to the detail, now Validated — the coque
+    // header title stays and the coque status pill flips, the drawer's Validate
+    // action is gone (not stale Pending content).
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objective");
     expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
     expect(screen.queryByRole("button", drawerValidate)).not.toBeInTheDocument();
   });
 
-  it("SIG-5e-fix5: objective drawer shows title+pill+close on ONE header row (coque cross suppressed)", async () => {
+  it("UI-1: objective drawer header (title + pill + ×) is owned by the coque, no in-content header", async () => {
     useAggregatedSignals.mockImplementation(() =>
       flatReturn({
         signals: [
@@ -238,12 +241,12 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(screen.getByText("Validated"));
     fireEvent.click(await screen.findByText("Validated objective"));
-    const header = screen.getByTestId("objective-detail-header");
-    expect(within(header).getByTestId("objective-detail-title")).toBeInTheDocument();
-    expect(within(header).getByTestId("status-pill")).toBeInTheDocument();
-    expect(within(header).getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
-    // Exactly one close control — the coque's own cross is suppressed here.
+    // Header lives in the coque: title + status pill + a single close (coque ×).
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objective");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
     expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+    // The in-content objective header is gone (suppressed by headerInCoque).
+    expect(screen.queryByTestId("objective-detail-header")).not.toBeInTheDocument();
   });
 
   it("opens the signal drawer when a row is clicked", () => {

@@ -39,6 +39,7 @@ import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
 import StatusPill from "components/chips/StatusPill";
 import ContactInline from "components/signals/ContactInline";
+import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
 import { getSignalTypeLabel } from "utils/signalTypes";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
@@ -361,14 +362,6 @@ ProvenanceSection.propTypes = {
 // is muted text. Origin (section 5) is detail-only, with a "View origin activity"
 // link shown ONLY when the origin activity differs from the current one.
 
-// Status → coloured pill (StatusPill): pending = warning, validated = success,
-// rejected = error. role.main text/border on the role.lighter tint.
-const STATUS_PILL = {
-  PENDING: { label: "Pending", role: "warning" },
-  VALIDATED: { label: "Validated", role: "success" },
-  REJECTED: { label: "Rejected", role: "error" },
-};
-
 // Numbered section badge — info palette role (mirror of EditObjectiveContent).
 function SectionHeader({ index, title, subtitle }) {
   return (
@@ -466,6 +459,7 @@ function ObjectiveDetailView({
   onReopen,
   onOpenActivity,
   onClose,
+  headerInCoque,
   isLocked,
   currentActivityId,
 }) {
@@ -487,42 +481,39 @@ function ObjectiveDetailView({
   const showOriginLink = Boolean(
     originActivityId && onOpenActivity && originActivityId !== currentActivityId,
   );
-  const statusPill = STATUS_PILL[signal.status] ?? { label: signal.status, role: "warning" };
   const hasMetrics = Boolean(signal.success_criteria || signal.target_date || signal.notes);
 
   return (
     <>
       <Box sx={{ px: 2.5, py: 2, flex: 1, overflow: "auto" }}>
-        {/* Title (left) · [status pill + close ×] (right) on ONE line. The type
-            lives here, not in the coque header; when onClose is supplied (the
-            Activity coque suppresses its own cross), the × joins this row so
-            title · pill · × share a single line. */}
-        <Box
-          data-testid="objective-detail-header"
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 1,
-            mb: 2,
-          }}
-        >
-          <Typography variant="h3" fontWeight="bold" data-testid="objective-detail-title">
-            {getSignalTypeLabel("objective")}
-          </Typography>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <StatusPill
-              label={statusPill.label}
-              colorText={`${statusPill.role}.main`}
-              colorBg={`${statusPill.role}.lighter`}
-            />
-            {onClose && (
-              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
-                <CloseOutlined style={{ fontSize: 14 }} />
-              </IconButton>
-            )}
-          </Stack>
-        </Box>
+        {/* In-content header (title · [status pill + close ×]) — used only when
+            the coque does NOT own the header (headerInCoque=false; DC/Account).
+            On the Activity surface the coque renders title + status pill + × in
+            its own header (UI-1), so this block is suppressed. */}
+        {!headerInCoque && (
+          <Box
+            data-testid="objective-detail-header"
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 1,
+              mb: 2,
+            }}
+          >
+            <Typography variant="h3" fontWeight="bold" data-testid="objective-detail-title">
+              {getSignalTypeLabel("objective")}
+            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+              {onClose && (
+                <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                  <CloseOutlined style={{ fontSize: 14 }} />
+                </IconButton>
+              )}
+            </Stack>
+          </Box>
+        )}
 
         <SignalIncompleteAlert missingFields={missingFields} />
 
@@ -718,6 +709,9 @@ ObjectiveDetailView.propTypes = {
   /** When provided, renders the close (×) inside the detail header (the coque
       suppresses its own cross). Absent → no in-header close (DC/Account). */
   onClose: PropTypes.func,
+  /** When true, the coque owns the header (title + status pill + ×) — the
+      in-content header is suppressed. Absent/false → in-content header. */
+  headerInCoque: PropTypes.bool,
   isLocked: PropTypes.bool,
   currentActivityId: PropTypes.string,
 };
@@ -737,6 +731,7 @@ export default function SignalDetailContent({
   onReopen,
   onOpenActivity,
   onClose,
+  headerInCoque,
   isLocked,
   currentActivityId,
   leadingAction,
@@ -755,6 +750,7 @@ export default function SignalDetailContent({
         onReopen={onReopen}
         onOpenActivity={onOpenActivity}
         onClose={onClose}
+        headerInCoque={headerInCoque}
         isLocked={isLocked}
         currentActivityId={currentActivityId}
       />
@@ -887,6 +883,9 @@ SignalDetailContent.propTypes = {
   /** Objective detail only: when set, renders the close (×) in the detail
       header (the Activity coque suppresses its own cross). */
   onClose: PropTypes.func,
+  /** Objective detail only: when true, the coque owns the header — the
+      in-content title + pill + × are suppressed. */
+  headerInCoque: PropTypes.bool,
   isLocked: PropTypes.bool,
   /** The activity currently being viewed — used to hide the "View origin
       activity" link when the signal's origin IS that activity. Optional;

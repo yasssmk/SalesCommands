@@ -137,10 +137,11 @@ describe("ActivityQualificationTab (grouped by type, flat lists)", () => {
     expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
   });
 
-  it("SIG-5e-fix3: opening an Objective shows the in-detail title 'Objective'", () => {
+  it("UI-1: opening an Objective shows the coque header title 'Objective'", () => {
     render(<ActivityQualificationTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(screen.getByText("Objective signal B"));
-    expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objective");
+    expect(screen.queryByTestId("objective-detail-title")).not.toBeInTheDocument();
   });
 
   it("SIG-5e-fix4: validating an objective from the drawer refreshes it to Validated (stays open)", async () => {
@@ -165,8 +166,8 @@ describe("ActivityQualificationTab (grouped by type, flat lists)", () => {
       fireEvent.click(screen.getByRole("button", { name: /Validate$/ }));
     });
     expect(validateSignal).toHaveBeenCalledWith("objective", "op1");
-    // Stays open and returns to the detail, now Validated.
-    expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    // Stays open and returns to the detail, now Validated (coque header).
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objective");
     expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
     expect(screen.queryByRole("button", { name: /Validate$/ })).not.toBeInTheDocument();
   });

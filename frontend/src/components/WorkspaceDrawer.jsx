@@ -32,10 +32,11 @@ import CloseOutlined from "@ant-design/icons/CloseOutlined";
 
 // project imports
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import StatusPill from "components/chips/StatusPill";
 
 // ==============================|| COQUE HEADER ||============================== //
 
-function CoqueHeader({ onClose, title, hideClose }) {
+function CoqueHeader({ onClose, title, status, statusMap, hideClose }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   return (
@@ -53,7 +54,8 @@ function CoqueHeader({ onClose, title, hideClose }) {
       }}
     >
       {/* Optional title (Option A): shares the cross's line. Absent → an empty
-          spacer keeps the cross flush-right, identical to the title-less coque. */}
+          spacer keeps the [pill · ×] group flush-right, identical to the
+          title-less coque. */}
       {title ? (
         <Typography
           variant="h3"
@@ -67,13 +69,18 @@ function CoqueHeader({ onClose, title, hideClose }) {
       ) : (
         <Box />
       )}
-      {/* hideClose: the injected content renders its own close (the Objective
-          detail carries the × in its header) — omit the coque's own cross. */}
-      {!hideClose && (
-        <IconButton size="small" onClick={onClose} aria-label="Close drawer">
-          <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-        </IconButton>
-      )}
+      {/* Right group: optional status pill (read drawers) + the close cross,
+          on the title's line. */}
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+        {status && statusMap && <StatusPill status={status} statusMap={statusMap} />}
+        {/* hideClose: the injected content renders its own close (a legacy
+            in-content header) — omit the coque's own cross. */}
+        {!hideClose && (
+          <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+            <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+          </IconButton>
+        )}
+      </Stack>
     </Stack>
   );
 }
@@ -81,6 +88,8 @@ function CoqueHeader({ onClose, title, hideClose }) {
 CoqueHeader.propTypes = {
   onClose: PropTypes.func.isRequired,
   title: PropTypes.string,
+  status: PropTypes.string,
+  statusMap: PropTypes.object,
   hideClose: PropTypes.bool,
 };
 
@@ -89,7 +98,7 @@ CoqueHeader.propTypes = {
 // The push coque body. Extracted so its aphoriQ token reads happen only when it
 // actually MOUNTS — the Collapse below mounts it (via unmountOnExit) solely when
 // the drawer is open, so a closed coque never touches theme.aphoriQ.
-function CoquePanel({ content, onClose, title, hideClose }) {
+function CoquePanel({ content, onClose, title, status, statusMap, hideClose }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   // Skip the header row entirely when there's nothing to show in it (cross
@@ -125,7 +134,15 @@ function CoquePanel({ content, onClose, title, hideClose }) {
         maxHeight: `calc(100vh - ${headerOffset}px - ${theme.spacing(3)})`,
       }}
     >
-      {showHeader && <CoqueHeader onClose={onClose} title={title} hideClose={hideClose} />}
+      {showHeader && (
+        <CoqueHeader
+          onClose={onClose}
+          title={title}
+          status={status}
+          statusMap={statusMap}
+          hideClose={hideClose}
+        />
+      )}
       {/* min-height:0 lets this flex child shrink below its content so the
           internal overflow actually scrolls (header stays pinned). */}
       <Box sx={{ p: 2, overflowY: "auto", flex: 1, minHeight: 0 }}>{content}</Box>
@@ -137,6 +154,8 @@ CoquePanel.propTypes = {
   content: PropTypes.node,
   onClose: PropTypes.func.isRequired,
   title: PropTypes.string,
+  status: PropTypes.string,
+  statusMap: PropTypes.object,
   hideClose: PropTypes.bool,
 };
 
@@ -146,7 +165,7 @@ export default function WorkspaceDrawer() {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const isNarrow = useMediaQuery(theme.breakpoints.down("lg"));
-  const { isOpen, content, title, hideClose, closeDrawer } = useWorkspaceDrawer();
+  const { isOpen, content, title, status, statusMap, hideClose, closeDrawer } = useWorkspaceDrawer();
 
   // ---- Narrow: OVERLAY (temporary Drawer + backdrop) ----
   // The temporary MUI Drawer slides in/out natively via theme.transitions when
@@ -187,7 +206,13 @@ export default function WorkspaceDrawer() {
         }
       >
         {(!hideClose || Boolean(title)) && (
-          <CoqueHeader onClose={closeDrawer} title={title} hideClose={hideClose} />
+          <CoqueHeader
+            onClose={closeDrawer}
+            title={title}
+            status={status}
+            statusMap={statusMap}
+            hideClose={hideClose}
+          />
         )}
         <Box sx={{ p: 2, overflowY: "auto" }}>{content}</Box>
       </Drawer>
@@ -218,7 +243,14 @@ export default function WorkspaceDrawer() {
       }}
     >
       <Collapse orientation="horizontal" in={isOpen} unmountOnExit>
-        <CoquePanel content={content} onClose={closeDrawer} title={title} hideClose={hideClose} />
+        <CoquePanel
+          content={content}
+          onClose={closeDrawer}
+          title={title}
+          status={status}
+          statusMap={statusMap}
+          hideClose={hideClose}
+        />
       </Collapse>
     </Box>
   );

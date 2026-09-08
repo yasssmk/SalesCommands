@@ -55,6 +55,7 @@ vi.mock("@mui/material/useMediaQuery", () => ({ default: vi.fn(() => false) }));
 import useMediaQuery from "@mui/material/useMediaQuery";
 
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
 
 // A child (inside the provider) that drives the drawer.
 function Trigger() {
@@ -71,6 +72,17 @@ function Trigger() {
         }
       >
         open-titled
+      </button>
+      <button
+        onClick={() =>
+          openDrawer(<div data-testid="dcontent">drawer body</div>, {
+            title: "Objective",
+            status: "VALIDATED",
+            statusMap: SIGNAL_STATUS_PILL,
+          })
+        }
+      >
+        open-status
       </button>
       <button onClick={closeDrawer}>close</button>
     </div>
@@ -175,6 +187,30 @@ describe("WorkspaceDrawer coque — optional title on the cross line (Option A, 
     renderWorkspace();
     fireEvent.click(screen.getByRole("button", { name: "open-titled" }));
     expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit activity");
+  });
+});
+
+describe("WorkspaceDrawer coque — optional status pill in the header (UI-1)", () => {
+  it("large PUSH: opening WITH { status, statusMap } renders title + status pill + cross on one line", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open-status" }));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objective");
+    // the shared StatusPill resolves the label from the map
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
+    expect(screen.getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
+  });
+
+  it("large PUSH: opening WITHOUT a status shows no pill (edit / status-less drawers unchanged)", () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open-titled" }));
+    expect(screen.queryByTestId("status-pill")).not.toBeInTheDocument();
+  });
+
+  it("narrow OVERLAY: the status pill also renders in the coque header", () => {
+    useMediaQuery.mockReturnValue(true);
+    renderWorkspace();
+    fireEvent.click(screen.getByRole("button", { name: "open-status" }));
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
   });
 });
 

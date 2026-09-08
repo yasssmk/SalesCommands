@@ -36,6 +36,7 @@ import {
 // Section imports
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
+import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
@@ -108,8 +109,9 @@ export default function ActivitySignalsTab({
   const openSignalDetail = useCallback(
     (signal, signalType) => {
       const h = detailHandlersRef.current;
-      // Objective detail carries its own header (title · pill · ×), so the coque
-      // suppresses its cross (hideClose) and the panel renders the × inline.
+      // Objective detail's header (title + status pill + ×) is owned by the COQUE
+      // (UI-1): pass title + status + the shared status map, and tell the panel
+      // to suppress its in-content header.
       const isObjective = signalType === "objective";
       openDrawer(
         <SignalDetailPanel
@@ -121,9 +123,11 @@ export default function ActivitySignalsTab({
           onReopen={h.onReopen}
           isLocked={isLocked}
           currentActivityId={activityId}
-          inlineClose={isObjective}
+          headerInCoque={isObjective}
         />,
-        isObjective ? { hideClose: true } : undefined,
+        isObjective
+          ? { title: "Objective", status: signal.status, statusMap: SIGNAL_STATUS_PILL }
+          : undefined,
       );
     },
     [openDrawer, isLocked, activityId],
