@@ -479,13 +479,23 @@ function ObjectiveDetailView({
           </Box>
         )}
 
-        {/* UI-8 — the detail body is injected into the SHARED DrawerContentLayout
-            box (background.default + radius.lg + p:2 hairline), the single source
-            of the drawer container used by every edit drawer. No hand-rolled box
-            here: detail and edit inherit the exact same container (identical inner
-            padding, guaranteed by one component). The Goal box keeps its
-            surface.level1 tint (UI-5); internal blocks keep radius.md (UI-6). */}
-        <DrawerContentLayout>
+        {/* UI-8/UI-9 — ONE DrawerContentLayout is the whole drawer chassis: it
+            renders the shared content box (background.default + radius.lg + p:2
+            hairline) AND the read-mode action bar (Edit/Reject/Validate/Reopen,
+            UI-2) in the same <Stack>, exactly like the edit drawers. The detail
+            supplies only its business content (the sections). The Goal box keeps
+            its surface.level1 tint (UI-5); internal blocks keep radius.md (UI-6). */}
+        <DrawerContentLayout
+          readActions={{
+            onEdit: () => onEdit?.(signal, "objective"),
+            onReject: () => onReject?.(signal, "objective"),
+            onValidate: () => onValidate?.(signal, "objective"),
+            onReopen: () => onReopen?.(signal, "objective"),
+            status: signal.status,
+            isLocked,
+            validateDisabled,
+          }}
+        >
         <SignalIncompleteAlert missingFields={missingFields} />
 
         {signal.validated_by && (
@@ -612,24 +622,6 @@ function ObjectiveDetailView({
           </Button>
         )}
         </DrawerContentLayout>
-      </Box>
-
-      <Divider />
-
-      {/* Actions — the shared read-signal bar (rule 6) via DrawerContentLayout:
-          Edit (neutre) · Reject (error) · Validate (success) · Reopen. */}
-      <Box sx={{ px: 2.5, py: 2 }}>
-        <DrawerContentLayout
-          readActions={{
-            onEdit: () => onEdit?.(signal, "objective"),
-            onReject: () => onReject?.(signal, "objective"),
-            onValidate: () => onValidate?.(signal, "objective"),
-            onReopen: () => onReopen?.(signal, "objective"),
-            status: signal.status,
-            isLocked,
-            validateDisabled,
-          }}
-        />
       </Box>
     </>
   );

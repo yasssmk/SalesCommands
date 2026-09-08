@@ -391,6 +391,15 @@ describe("SignalDetailPanel", () => {
     expect(rule).not.toContain("border-radius:4px");
   });
 
+  it("UI-9: the low action bar and the content box are rendered by ONE DrawerContentLayout (shared chassis, like the edit drawers)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const box = screen.getByTestId("drawer-content-box");
+    const actions = screen.getByTestId("drawer-actions");
+    // One DrawerContentLayout renders both → they are siblings in its <Stack>.
+    // (Before UI-9 the bar lived in a second, hand-footed DrawerContentLayout call.)
+    expect(actions.parentElement).toBe(box.parentElement);
+  });
+
   it("SIG-5e-fix6: canonical_key is legible — rendered in text.secondary, not disabled", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     const line = screen.getByText(/canonical_key:/);
