@@ -2,7 +2,7 @@
 //
 // UI-3 — the shared numbered SectionHeader (index badge + title + optional
 // subtitle). One component, replacing the inline copies in EditObjectiveContent
-// and SignalDetailContent. Badge = info role; subtitle shows only when passed.
+// and SignalDetailContent. Badge = primary role; subtitle shows only when passed.
 
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
@@ -19,14 +19,15 @@ const renderSH = (props) =>
 afterEach(() => cleanup());
 
 describe("SectionHeader (shared)", () => {
-  it("renders the numbered index badge (info role) + the title", () => {
+  it("renders the numbered index badge (primary role) + the title", () => {
     renderSH({ index: 2, title: "Scope" });
     expect(screen.getByText("Scope")).toBeInTheDocument();
     const badge = screen.getByText("2");
-    // the badge is an info-coloured MUI Chip
+    // the badge is a primary-coloured MUI Chip (P-BADGE-PRIMARY)
     const chipRoot = badge.closest(".MuiChip-root");
     expect(chipRoot).not.toBeNull();
-    expect(chipRoot).toHaveClass("MuiChip-colorInfo");
+    expect(chipRoot).toHaveClass("MuiChip-colorPrimary");
+    expect(chipRoot).not.toHaveClass("MuiChip-colorInfo");
   });
 
   it("renders the subtitle only when provided", () => {

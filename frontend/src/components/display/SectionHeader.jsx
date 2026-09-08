@@ -1,7 +1,7 @@
 // frontend/src/components/display/SectionHeader.jsx
 //
 // UI-3 — the shared numbered section header (contract rule 2): an optional
-// index BADGE (info palette role) + a TITLE, with an optional SUBTITLE below.
+// index BADGE (primary palette role) + a TITLE, with an optional SUBTITLE below.
 // The subtitle renders only when passed — callers add it only where the
 // contract allows (edit / complex signals). Without an `index`, no badge is
 // shown (just the title).
@@ -22,12 +22,12 @@ export default function SectionHeader({ index, title, subtitle, sx }) {
   return (
     <Stack spacing={0.25} sx={sx}>
       <Stack direction="row" spacing={1} alignItems="center">
-        {/* Numbered badge — info palette role (PO decision). No hardcoded colour. */}
+        {/* Numbered badge — primary palette role (PO decision). No hardcoded colour. */}
         {index != null && (
           <Chip
             label={index}
             size="small"
-            color="info"
+            color="primary"
             sx={{
               height: 18,
               width: 18,
