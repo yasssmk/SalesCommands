@@ -555,7 +555,7 @@ export default function useActivityHeaderProps({
             hover, like the Context people names. The name is the link. */}
         <Typography
           variant="body2"
-          color="text.primary"
+          color="text.secondary"
           onClick={handleAccountClick}
           sx={{ fontWeight: "bold", ...interactiveTextSx }}
         >
@@ -579,7 +579,7 @@ export default function useActivityHeaderProps({
               affordance, same as the Context people names). */}
           <Typography
             variant="body2"
-            color="text.primary"
+            color="text.secondary"
             onClick={handleCycleClick}
             sx={{ fontWeight: "bold", ...interactiveTextSx }}
           >

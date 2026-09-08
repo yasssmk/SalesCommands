@@ -346,4 +346,19 @@ describe("P4a — account/DC names: bold neutral at rest, primary + underline on
     expect(baseAndHover(screen.getByText("ACME")).base).toMatch(/cursor:\s*pointer/);
     expect(baseAndHover(screen.getByText("New HQ rollout")).base).toMatch(/cursor:\s*pointer/);
   });
+
+  it("P4a-fix: at rest, account & DC names sit in the INFO-LINE colour (like the step), not text.primary", () => {
+    const fixture = {
+      ...dcBase,
+      decision_step_detail: { name: "Business Case" }, // rendered in the info-line colour
+    };
+    const { result } = useHeader(fixture);
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    // The step crumb is the reference info-line colour (text.secondary).
+    const infoColor = colorOf(baseAndHover(screen.getByText("Business Case")).base);
+    expect(infoColor).toBeTruthy();
+    // Account + DC names match it at rest (muted, just bold) — not the vivid text.primary.
+    expect(colorOf(baseAndHover(screen.getByText("ACME")).base)).toBe(infoColor);
+    expect(colorOf(baseAndHover(screen.getByText("New HQ rollout")).base)).toBe(infoColor);
+  });
 });
