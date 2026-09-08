@@ -38,6 +38,7 @@ vi.mock("api/accounts/decisionCycles", () => ({
   useGetDCPeople: (...a) => useGetDCPeople(...a),
 }));
 
+import Typography from "@mui/material/Typography";
 import ThemeCustomization from "themes/index";
 import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
 
@@ -196,6 +197,20 @@ describe("ContactDrawerContent — Edit pencil pushed to the right", () => {
     const rowRule = rulesForElement(row);
     expect(rowRule).toMatch(/display:\s*flex/);
     expect(row.lastElementChild).toBe(edit);
+  });
+
+  it("P-EDIT-GREY: the ✎ uses the standard neutral tone (text.secondary), same as the read-mode Edit button", () => {
+    mockContact();
+    mockDCPeople({ qualified: [], unqualified: [] });
+    render(
+      <ThemeCustomization>
+        <Typography data-testid="secref" color="text.secondary">ref</Typography>
+        <ContactDrawerContent contactId="c1" activity={activityInDC} />
+      </ThemeCustomization>,
+    );
+    const secColor = (rulesForElement(screen.getByTestId("secref")).match(/color:([^;}]+)/) || [])[1];
+    expect(secColor).toBeTruthy();
+    expect(rulesForElement(screen.getByTestId("contact-edit"))).toContain(`color:${secColor}`);
   });
 });
 

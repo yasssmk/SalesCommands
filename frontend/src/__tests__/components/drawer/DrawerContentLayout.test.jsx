@@ -18,8 +18,11 @@ vi.mock("themes/emotionCache", () => ({
 }));
 
 import { useTheme } from "@mui/material/styles";
+import Typography from "@mui/material/Typography";
 import ThemeCustomization from "themes/index";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+
+const colorOf = (rule) => (rule.match(/color:([^;}]+)/) || [])[1];
 
 function rulesForElement(el) {
   const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
@@ -156,6 +159,20 @@ describe("DrawerContentLayout — title + content box + global actions", () => {
     // Reject error outline, Validate success contained.
     expect(reject).toHaveClass("MuiButton-outlinedError");
     expect(validate).toHaveClass("MuiButton-containedSuccess");
+  });
+
+  it("P-EDIT-GREY: the Edit button sits in the neutral text.secondary tone (not the darker inherited grey)", () => {
+    render(
+      <ThemeCustomization>
+        <Typography data-testid="secref" color="text.secondary">ref</Typography>
+        <DrawerContentLayout readActions={readActions({ status: "PENDING" })} />
+      </ThemeCustomization>,
+    );
+    // The standard neutral tone, resolved from the theme in this same render.
+    const secColor = colorOf(rulesForElement(screen.getByTestId("secref")));
+    expect(secColor).toBeTruthy();
+    // The Edit button pins that exact neutral (was color="inherit" → a darker tone).
+    expect(rulesForElement(screen.getByRole("button", { name: /edit/i }))).toContain(`color:${secColor}`);
   });
 
   it("read mode: a REJECTED signal shows Reopen (not Reject/Validate)", () => {

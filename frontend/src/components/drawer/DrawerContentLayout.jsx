@@ -56,6 +56,11 @@ function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocke
           variant="outlined"
           color="inherit"
           size="small"
+          // P-EDIT-GREY — pin the neutral Edit to the standard muted tone
+          // (text.secondary), the same grey as the contact ✎ and every other
+          // neutral element, instead of the darker inherited body colour. The
+          // outlined border follows currentColor, so it tracks the same tone.
+          sx={{ color: "text.secondary" }}
           startIcon={<EditOutlined style={{ fontSize: 14 }} />}
           onClick={onEdit}
         >
