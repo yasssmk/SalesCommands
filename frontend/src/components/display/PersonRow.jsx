@@ -16,6 +16,9 @@ import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
+// Shared clickable-text affordance (neutral at rest, primary + underline on hover).
+import interactiveTextSx from "components/display/interactiveTextSx";
+
 export default function PersonRow({ name, suffix, interactive = false, onClick, secondary, tertiary }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
@@ -25,9 +28,7 @@ export default function PersonRow({ name, suffix, interactive = false, onClick, 
   // A wired onClick implies the interactive affordance even if the caller did
   // not set `interactive` explicitly.
   const clickable = interactive || Boolean(onClick);
-  const interactiveSx = clickable
-    ? { cursor: "pointer", "&:hover": { color: aq.accent, textDecoration: "underline" } }
-    : undefined;
+  const interactiveSx = clickable ? interactiveTextSx : undefined;
 
   // Keyboard access only when actually actionable.
   const nameProps = onClick

@@ -45,6 +45,9 @@ import {
 
 // Primitives
 import StatusPill from "components/chips/StatusPill";
+// Shared clickable-text affordance (neutral bold at rest, primary + underline on
+// hover) — same as the Context people names (PersonRow).
+import interactiveTextSx from "components/display/interactiveTextSx";
 
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
@@ -540,17 +543,7 @@ export default function useActivityHeaderProps({
   const infoItems = [
     // Account link
     activity.account_detail?.company_name && (
-      <Stack
-        key="account"
-        direction="row"
-        spacing={0.75}
-        alignItems="center"
-        onClick={handleAccountClick}
-        sx={{
-          cursor: "pointer",
-          "&:hover .info-link": { textDecoration: "underline" },
-        }}
-      >
+      <Stack key="account" direction="row" spacing={0.75} alignItems="center">
         <BankOutlined
           style={{
             fontSize: theme.iconSizes.sm,
@@ -558,7 +551,14 @@ export default function useActivityHeaderProps({
             display: "flex",
           }}
         />
-        <Typography variant="body2" color="primary.main" className="info-link">
+        {/* P4a — bold NEUTRAL at rest; the link cue (primary + underline) shows on
+            hover, like the Context people names. The name is the link. */}
+        <Typography
+          variant="body2"
+          color="text.primary"
+          onClick={handleAccountClick}
+          sx={{ fontWeight: "bold", ...interactiveTextSx }}
+        >
           {activity.account_detail.company_name}
         </Typography>
       </Stack>
@@ -575,14 +575,13 @@ export default function useActivityHeaderProps({
           }}
         />
         <Stack direction="row" spacing={0.5} alignItems="center">
+          {/* P4a — bold NEUTRAL at rest; primary + underline on hover (shared
+              affordance, same as the Context people names). */}
           <Typography
             variant="body2"
-            color="primary.main"
+            color="text.primary"
             onClick={handleCycleClick}
-            sx={{
-              cursor: "pointer",
-              "&:hover": { textDecoration: "underline" },
-            }}
+            sx={{ fontWeight: "bold", ...interactiveTextSx }}
           >
             {activity.decision_cycle_detail.name}
           </Typography>

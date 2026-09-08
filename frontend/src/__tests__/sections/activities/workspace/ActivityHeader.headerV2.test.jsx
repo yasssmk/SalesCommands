@@ -301,3 +301,49 @@ describe("P2 — header signal counter: 'N to validate' (action) vs 'N signals' 
     expect(screen.queryByText(/signals/)).not.toBeInTheDocument();
   });
 });
+
+describe("P4a — account/DC names: bold neutral at rest, primary + underline on hover", () => {
+  // Base + :hover emotion rules for an element's own css-* classes.
+  function baseAndHover(el) {
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const base = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    const hover = classes.map((c) => (css.match(new RegExp(`\\.${c}:hover\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    return { base, hover };
+  }
+  const colorOf = (rule) => (rule.match(/color:([^;}]+)/) || [])[1];
+
+  const dcBase = {
+    ...base,
+    decision_cycle: "cyc-9",
+    decision_cycle_detail: { name: "New HQ rollout" },
+  };
+
+  it("account name: bold at rest, and hover recolours (to primary) + underlines", () => {
+    const { result } = useHeader(base);
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    const { base: b, hover: h } = baseAndHover(screen.getByText("ACME"));
+    expect(b).toMatch(/font-weight:\s*(600|700|bold)/); // bold neutral at rest
+    expect(h).toMatch(/text-decoration:\s*underline/); // underline on hover
+    // rest colour differs from hover colour (neutral rest → primary hover)
+    expect(colorOf(h)).toBeTruthy();
+    expect(colorOf(b)).not.toBe(colorOf(h));
+  });
+
+  it("DC name: bold at rest, and hover recolours (to primary) + underlines", () => {
+    const { result } = useHeader(dcBase);
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    const { base: b, hover: h } = baseAndHover(screen.getByText("New HQ rollout"));
+    expect(b).toMatch(/font-weight:\s*(600|700|bold)/);
+    expect(h).toMatch(/text-decoration:\s*underline/);
+    expect(colorOf(h)).toBeTruthy();
+    expect(colorOf(b)).not.toBe(colorOf(h));
+  });
+
+  it("account + DC names keep the clickable affordance (cursor: pointer)", () => {
+    const { result } = useHeader(dcBase);
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(baseAndHover(screen.getByText("ACME")).base).toMatch(/cursor:\s*pointer/);
+    expect(baseAndHover(screen.getByText("New HQ rollout")).base).toMatch(/cursor:\s*pointer/);
+  });
+});
