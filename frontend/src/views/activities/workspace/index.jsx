@@ -16,7 +16,7 @@ import Typography from "@mui/material/Typography";
 // Icons — section markers for the collapsible bands.
 import ExperimentOutlined from "@ant-design/icons/ExperimentOutlined";
 import FileTextOutlined from "@ant-design/icons/FileTextOutlined";
-import RadarChartOutlined from "@ant-design/icons/RadarChartOutlined";
+import { SIGNAL_ICON } from "utils/signalTypes";
 import RightCircleOutlined from "@ant-design/icons/RightCircleOutlined";
 
 // Project imports
@@ -300,7 +300,7 @@ export default function ActivityWorkspacePage() {
           >
             <CollapsibleStrip
               title="Signals"
-              icon={RadarChartOutlined}
+              icon={SIGNAL_ICON}
               defaultExpanded={analyzed}
             >
               <ActivitySignalsTab

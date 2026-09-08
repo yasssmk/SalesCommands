@@ -300,6 +300,20 @@ describe("P2 — header signal counter: 'N to validate' (action) vs 'N signals' 
     expect(screen.queryByText(/to validate/)).not.toBeInTheDocument();
     expect(screen.queryByText(/signals/)).not.toBeInTheDocument();
   });
+
+  it("P4b: 'N to validate' carries the SIGNAL icon (radar-chart, like the band), not an alert/thunderbolt", () => {
+    const { result } = useHeader(base, { pendingCount: 3, totalCount: 5 });
+    const { container } = render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(container.querySelector(".anticon-radar-chart")).toBeTruthy();
+    expect(container.querySelector(".anticon-exclamation-circle")).toBeNull();
+    expect(container.querySelector(".anticon-thunderbolt")).toBeNull();
+  });
+
+  it("P4b: neutral 'N signals' also carries the SIGNAL icon (radar-chart)", () => {
+    const { result } = useHeader(base, { pendingCount: 0, totalCount: 5 });
+    const { container } = render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(container.querySelector(".anticon-radar-chart")).toBeTruthy();
+  });
 });
 
 describe("P4a — account/DC names: bold neutral at rest, primary + underline on hover", () => {

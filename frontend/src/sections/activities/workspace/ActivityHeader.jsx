@@ -48,6 +48,8 @@ import StatusPill from "components/chips/StatusPill";
 // Shared clickable-text affordance (neutral bold at rest, primary + underline on
 // hover) — same as the Context people names (PersonRow).
 import interactiveTextSx from "components/display/interactiveTextSx";
+// The centralized signal glyph — same icon as the Signals band on the page.
+import { SIGNAL_ICON } from "utils/signalTypes";
 
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
@@ -321,7 +323,9 @@ export default function useActivityHeaderProps({
             '&:hover .pending-label': onPendingClick ? { textDecoration: 'underline' } : {},
           }}
         >
-          <ExclamationCircleOutlined
+          {/* P4b — the SIGNAL glyph (same as the Signals band), warning-tinted for
+              the action state; the colour, not the icon, carries "to validate". */}
+          <SIGNAL_ICON
             style={{ fontSize: theme.iconSizes.sm, color: theme.palette.warning.main, display: 'flex' }}
           />
           <Typography
@@ -342,6 +346,10 @@ export default function useActivityHeaderProps({
     if (total && total > 0) {
       return (
         <Stack key="signals-counter" direction="row" spacing={0.75} alignItems="center">
+          {/* P4b — same SIGNAL glyph, in the neutral info-line colour. */}
+          <SIGNAL_ICON
+            style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }}
+          />
           <Typography variant="body2" color="text.secondary">
             {total} signals
           </Typography>

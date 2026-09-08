@@ -6,11 +6,19 @@
 // here — colorKey points into theme.aphoriQ.signalColors.
 
 import { describe, it, expect } from "vitest";
+import RadarChartOutlined from "@ant-design/icons/RadarChartOutlined";
 import {
   SIGNAL_TYPE_META,
   getSignalTypeLabel,
   getSignalTypeColor,
+  SIGNAL_ICON,
 } from "utils/signalTypes";
+
+describe("SIGNAL_ICON — the centralized signal icon (P4b)", () => {
+  it("is the same icon the Signals band uses (RadarChart), one source of truth", () => {
+    expect(SIGNAL_ICON).toBe(RadarChartOutlined);
+  });
+});
 
 // The 9 slugs + their expected V0 English labels (PO-validated).
 const EXPECTED_LABELS = {

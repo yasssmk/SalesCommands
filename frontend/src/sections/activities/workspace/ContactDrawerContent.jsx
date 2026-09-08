@@ -40,7 +40,7 @@ import PhoneOutlined from "@ant-design/icons/PhoneOutlined";
 import LinkedinOutlined from "@ant-design/icons/LinkedinOutlined";
 import TeamOutlined from "@ant-design/icons/TeamOutlined";
 import EditOutlined from "@ant-design/icons/EditOutlined";
-import RadarChartOutlined from "@ant-design/icons/RadarChartOutlined";
+import { SIGNAL_ICON } from "utils/signalTypes";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -289,7 +289,7 @@ export default function ContactDrawerContent({ contactId, activity }) {
             "&:hover": { textDecoration: "underline" },
           }}
         >
-          <RadarChartOutlined style={{ fontSize: theme.iconSizes.sm }} />
+          <SIGNAL_ICON style={{ fontSize: theme.iconSizes.sm }} />
           See signals
         </Box>
       </Stack>

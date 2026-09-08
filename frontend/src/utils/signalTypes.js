@@ -16,6 +16,16 @@
 // theme.aphoriQ.signalColors (themes/aphoriq.js), which is the single place any
 // signal-type colour is defined. getSignalTypeColor() resolves it from a theme.
 
+// ==============================|| SIGNAL ICON (centralized) ||============================== //
+
+// The single signal glyph — the "radar / web" mark used by the Signals band, the
+// header signal counter, and any other signal surface. Centralized here (like
+// the type colours) so every surface renders the SAME icon; components import
+// SIGNAL_ICON instead of pulling the ant-design icon in directly.
+import RadarChartOutlined from "@ant-design/icons/RadarChartOutlined";
+
+export const SIGNAL_ICON = RadarChartOutlined;
+
 // ==============================|| META (9 signal types) ||============================== //
 
 export const SIGNAL_TYPE_META = {
