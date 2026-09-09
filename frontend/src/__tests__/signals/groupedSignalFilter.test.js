@@ -65,6 +65,41 @@ describe("applyGroupedFilters — perimeter (OR)", () => {
   });
 });
 
+// S4 — Pain/Impact/Constraint carry the M2M target_departments ([{id,name}]),
+// not the dropped single-FK target_department. A DEPARTMENT signal must match a
+// department filter when ANY of its M2M departments is selected.
+const painM2M = {
+  id: "pm",
+  status: "PENDING",
+  scope_level: "DEPARTMENT",
+  // Mixed id types on purpose: string "3" + integer 7 (the choices endpoint
+  // emits int ids) — the filter must normalise both sides.
+  target_departments: [
+    { id: "3", name: "Marketing" },
+    { id: 7, name: "Ops" },
+  ],
+  what: "OPS",
+  dimension: "TIME",
+  source_context: { contacts: [{ id: "c9" }] },
+};
+
+describe("applyGroupedFilters — perimeter with M2M target_departments (S4)", () => {
+  it("keeps an M2M signal when the filter matches ANY of its departments", () => {
+    expect(ids(applyGroupedFilters([painM2M], { perimeter: ["3"] }))).toEqual(["pm"]);
+    // Integer id 7 on the signal vs string "7" filter → normalised match.
+    expect(ids(applyGroupedFilters([painM2M], { perimeter: ["7"] }))).toEqual(["pm"]);
+  });
+
+  it("excludes an M2M signal when NO department matches", () => {
+    expect(ids(applyGroupedFilters([painM2M], { perimeter: ["99"] }))).toEqual([]);
+  });
+
+  it("non-regression: an FK-mono signal (Objective/People) still matches on its target_department", () => {
+    // `finance` uses the single-FK target_department id 5.
+    expect(ids(applyGroupedFilters([finance], { perimeter: ["5"] }))).toEqual(["f"]);
+  });
+});
+
 describe("applyGroupedFilters — subject axes + type without field", () => {
   it("what=[DATA] keeps only DATA signals; a type without `what` is excluded", () => {
     const out = applyGroupedFilters(ALL, { whats: ["DATA"] });

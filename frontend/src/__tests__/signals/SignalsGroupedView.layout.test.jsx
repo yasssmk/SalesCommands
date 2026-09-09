@@ -111,7 +111,7 @@ describe("SignalsGroupedView — type sections (Activity)", () => {
     expect(screen.getByText("Business")).toBeInTheDocument();
   });
 
-  it("renders a constraint's department scope when target_department is set", () => {
+  it("renders a constraint's department scope from the M2M target_departments", () => {
     render(
       <SignalsGroupedView
         qualificationSignals={[]}
@@ -120,7 +120,9 @@ describe("SignalsGroupedView — type sections (Activity)", () => {
         constraintSignals={[
           {
             ...makeConstraint("c2", "On-premise deployment required"),
-            target_department: { id: "d1", name: "IT" },
+            // Constraint is M2M — scope carried by target_departments, not the
+            // dropped single-FK target_department.
+            target_departments: [{ id: "d1", name: "IT" }],
           },
         ]}
         onSelect={vi.fn()}
