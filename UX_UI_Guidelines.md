@@ -70,3 +70,62 @@ contexte.
 - **Barre d'actions unique** (jeux de boutons + couleurs fixes par régime).
 - **LabeledValue** (2 colonnes / pleine largeur automatique selon mono- ou
   multi-ligne).
+
+---
+
+## Doctrine couleurs
+
+Doctrine validée au fil du chantier UX Activity. Elle s'applique à **tout**
+nouvel écran : couleur, texte, surfaces, icônes se décident ici, sans re-débat.
+
+### Principe d'or
+Toute couleur vient d'un **RÔLE DE THÈME** (token), **jamais** d'une valeur en
+dur (hex / rgba). Ainsi, quand le branding aphoriQ passera `primary` au bleu,
+**toute l'UI se met à jour** sans retoucher un seul composant.
+
+### Rôles sémantiques
+- **primary** = l'**action principale** d'un écran (Save, Complete, action
+  clé). *Aujourd'hui vert, demain bleu (aphoriQ) — on raisonne en rôle, jamais
+  « vert ».*
+- **success** = la **validation / l'état validé** (bouton Validate, pill
+  « Validated »). Distinct de `primary`.
+- **error** = **problème / rejet / action requise** (Reject, overdue).
+- **warning** = **en attente / à traiter** (Pending, « N to validate »).
+- **text.secondary** (= `aphoriQ.text.muted`) = le **GRIS NEUTRE STANDARD** :
+  texte muted, ligne info, labels, placeholders, bouton **Edit** (lecture),
+  **✎**, éléments secondaires.
+- **text.primary** = **texte principal**.
+
+### Texte & liens
+- Le texte important se met en valeur par le **GRAS** (`fontWeight` bold), pas
+  par une couleur.
+- Les **liens** : **gras neutre au repos** → au **HOVER**, `primary` + souligné
+  (pattern des contacts du Context / noms account-DC du header). Un lien ne se
+  signale **pas** par une couleur au repos.
+
+### Surfaces (fonds)
+- **3 niveaux** : fond de **PAGE** (`background.default`), **CARTES /
+  conteneurs**, **BLOC MIS EN VALEUR**. Tout fond vient d'un **token surface**
+  (`surface.level*`), **JAMAIS** une couleur ad hoc (ex. `action.hover`) qui
+  « ressemble ».
+- Le **padding / les marges** des drawers sont imposés par la **coque** +
+  `DrawerContentLayout`, **jamais** par les vues.
+
+### Icônes
+- Les icônes vivent dans les **CONSTANTES** du module (source unique),
+  importées partout — ex. `SIGNAL_ICON` (`utils/signalTypes.js`) réutilisé par
+  la bande Signals, le header, la fiche contact. **Jamais** d'import d'icône
+  dupliqué en dur dans chaque composant.
+
+### Interdits
+- Pas de couleur **DÉCORATIVE** : une teinte ne s'utilise que pour porter un
+  **SENS** (action, statut, alerte).
+- Pas de couleur / valeur **EN DUR** (hex, px, rem) dans les composants —
+  toujours un token / une constante. Si un token manque, il se **crée dans le
+  thème**, il ne se hardcode pas.
+
+### Exceptions assumées (tracées)
+- Les **9 couleurs de type de signal** (`aphoriQ.signalColors`) sont des hex
+  fixes dédiés, à re-tinter au branding — exception documentée.
+- `background.default` (`grey.A50`) ne s'inverse pas encore proprement
+  clair / sombre → à corriger au sprint aphoriQ.
