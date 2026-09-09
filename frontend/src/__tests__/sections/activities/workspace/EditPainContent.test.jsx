@@ -87,10 +87,8 @@ describe("EditPainContent (S3)", () => {
   it("renders the 4 chassis sections + the Domain × Dimension recap", () => {
     renderEdit();
     expect(screen.getByText("Describe the pain and pick its canonical axes.")).toBeInTheDocument();
-    // S3-fix: the scope section is now the departments-only control (no manual scope).
-    expect(
-      screen.getByText("Pick the departments this pain concerns — leave empty for company-wide."),
-    ).toBeInTheDocument();
+    // S3-fix-2: the scope section is now the explicit Company | Department control.
+    expect(screen.getByText("Company-wide, or one or more departments.")).toBeInTheDocument();
     expect(screen.getByText("Source quote")).toBeInTheDocument();
     expect(screen.getByText(/This is a/)).toBeInTheDocument();
     expect(screen.getByText("Operations × Time")).toBeInTheDocument();
@@ -102,50 +100,59 @@ describe("EditPainContent (S3)", () => {
     expect(screen.queryByText("Edit pain")).not.toBeInTheDocument();
   });
 
-  it("S3-fix: no manual scope control — the ObjectiveScopePill is gone", () => {
-    renderEdit();
-    expect(screen.queryByTestId("scope-pill-BUSINESS")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("scope-pill-DEPARTMENT")).not.toBeInTheDocument();
+  it("S3-fix-2: shows the two explicit scope pills (Company / Department)", () => {
+    renderEdit(); // PAIN carries a department → DEPARTMENT is active
+    expect(screen.getByTestId("scope-pill-BUSINESS")).toBeInTheDocument();
+    expect(screen.getByTestId("scope-pill-DEPARTMENT")).toBeInTheDocument();
+    expect(screen.getByTestId("scope-pill-DEPARTMENT")).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("shows the M2M department multi-select ALWAYS present, pre-filled with the current departments", () => {
+  it("Department scope shows the current departments as pills + a '+ add department' trigger", () => {
     renderEdit();
     const field = screen.getByTestId("pain-departments-field");
-    // Field is present regardless of scope, and the current department is a chip.
-    expect(within(field).getByText("Finance")).toBeInTheDocument();
-    // No Objective-style "Target Department *" mono select.
-    expect(screen.queryByText("Target Department *")).not.toBeInTheDocument();
+    // Committed department pill (Chip).
+    expect(within(field).getByTestId("dept-pill-1")).toHaveTextContent("Finance");
+    // The "+ add department" gesture (picker collapsed).
+    expect(screen.getByTestId("add-department")).toBeInTheDocument();
+    expect(screen.queryByTestId("pain-add-department-picker")).not.toBeInTheDocument();
   });
 
-  it("S3-fix: the department multi-select ACCUMULATES and supports remove via the × chip", () => {
-    renderEdit(); // PAIN starts with Finance (d1)
-    const field = screen.getByTestId("pain-departments-field");
-    expect(within(field).getByText("Finance")).toBeInTheDocument();
+  it("S3-fix-2: '+ add department' grouped picker accumulates chosen departments as pills, × removes one", () => {
+    renderEdit(); // PAIN starts with Finance (id 1)
 
-    // Open the picker and add Marketing — it accumulates (Finance stays).
+    // Open the grouped picker, stage Marketing, then CONFIRM (grouped validation).
+    fireEvent.click(screen.getByTestId("add-department"));
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
+    fireEvent.click(screen.getByTestId("confirm-add-departments"));
+
+    const field = screen.getByTestId("pain-departments-field");
+    // Both pills present (accumulation), picker collapsed.
     expect(within(field).getByText("Finance")).toBeInTheDocument();
     expect(within(field).getByText("Marketing")).toBeInTheDocument();
+    expect(screen.queryByTestId("pain-add-department-picker")).not.toBeInTheDocument();
 
-    // Remove Finance via its × (chip delete) — only Marketing remains.
+    // Remove Finance via its × — only Marketing remains.
     const financeChip = within(field).getByText("Finance").closest(".MuiChip-root");
     fireEvent.click(within(financeChip).getByTestId("CancelIcon"));
     expect(within(field).queryByText("Finance")).not.toBeInTheDocument();
     expect(within(field).getByText("Marketing")).toBeInTheDocument();
   });
 
-  it("Save PATCHes via updateSignal('pain', ...) — target_departments accumulate, scope DEPARTMENT, NO FK", async () => {
+  it("Company pill clears the departments and hides the add gesture", () => {
     renderEdit();
-    // Edit the summary (makes the form dirty + valid).
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
-    fireEvent.change(screen.getByTestId("inline-input-summary"), {
-      target: { value: "Reporting eats a whole day every single week" },
-    });
-    // Add a second department via the pills multi-select (Autocomplete popup —
-    // not a modal, so the Save button stays reachable with it open).
+    fireEvent.click(screen.getByTestId("scope-pill-BUSINESS"));
+    expect(screen.queryByTestId("pain-departments-field")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("add-department")).not.toBeInTheDocument();
+  });
+
+  it("Save PATCHes via updateSignal('pain', ...) — Department + 2 depts → scope DEPARTMENT + [id1,id2], NO FK", async () => {
+    renderEdit();
+    // Add a second department via the grouped picker (makes the form dirty).
+    fireEvent.click(screen.getByTestId("add-department"));
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
+    fireEvent.click(screen.getByTestId("confirm-add-departments"));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -156,38 +163,28 @@ describe("EditPainContent (S3)", () => {
     expect(type).toBe("pain");
     expect(id).toBe("pain-1");
     expect(patch).toMatchObject({
-      summary: "Reporting eats a whole day every single week",
       what: "OPS",
       dimension: "TIME",
-      // scope_level is DERIVED: ≥1 department → DEPARTMENT.
+      // scope_level is EXPLICIT (the Department pill).
       scope_level: "DEPARTMENT",
       notes: "Priority for the VP",
       related_techstack_mention: "Excel",
-      source_quote: "We lose five hours every week",
     });
-    // M2M list of ids (BOTH departments — accumulation), NO singular FK fields.
+    // Ids extracted from the stored {value,label} objects (both departments).
     expect(patch.target_departments).toEqual(["1", "2"]);
     expect(patch).not.toHaveProperty("target_department");
     expect(patch).not.toHaveProperty("target_contact");
   });
 
-  it("derived scope: removing every department saves scope_level BUSINESS + empty list", async () => {
-    renderEdit(); // PAIN starts with Finance (d1)
-    const field = screen.getByTestId("pain-departments-field");
-    // Remove the only department via its ×.
-    const financeChip = within(field).getByText("Finance").closest(".MuiChip-root");
-    fireEvent.click(within(financeChip).getByTestId("CancelIcon"));
-    // Make the form dirty via summary so Save is enabled.
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
-    fireEvent.change(screen.getByTestId("inline-input-summary"), {
-      target: { value: "Company-wide reporting overhead across teams" },
-    });
+  it("Save PATCHes — Company scope → scope BUSINESS + empty list, NO FK", async () => {
+    renderEdit();
+    // Switch to Company (explicit): clears departments, derives BUSINESS.
+    fireEvent.click(screen.getByTestId("scope-pill-BUSINESS"));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));
     });
     expect(updateSignal).toHaveBeenCalledTimes(1);
     const [, , patch] = updateSignal.mock.calls[0];
-    // 0 departments → BUSINESS (derived), empty list, still no FK.
     expect(patch.scope_level).toBe("BUSINESS");
     expect(patch.target_departments).toEqual([]);
     expect(patch).not.toHaveProperty("target_department");

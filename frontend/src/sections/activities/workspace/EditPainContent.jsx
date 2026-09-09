@@ -8,28 +8,39 @@
 // payload); onSaved(updatedSignal) returns to the Pain detail.
 //
 // The ONE structural difference vs Objective: the department scope is a
-// MULTI-department M2M (target_departments, a list of ids), NOT a single FK.
-// Scope model (Option A): there is NO manual scope control — the SINGLE control
-// is the department multi-select (MultiSelectFilter, deletable pills), ALWAYS
-// present and NEVER required. scope_level is DERIVED at save time: at least one
-// department → DEPARTMENT, none → BUSINESS. The payload never carries a
-// target_department / target_contact FK (those fields do not exist on Pain).
+// MULTI-department M2M (target_departments), NOT a single FK. Scope model:
+//   - two EXPLICIT scope pills Company | Department (ObjectiveScopePill, consuming
+//     ONLY scope_level from its patch — its FK emissions are ignored, those fields
+//     do not exist on Pain);
+//   - Company  → scope_level BUSINESS, target_departments cleared;
+//   - Department → a "+ add department" trigger (same gesture as EditActivityContent's
+//     "+ add contact") opens a grouped multi-select; on confirm the chosen
+//     departments join a row of deletable Chip-pills (× removes one).
+// Selected departments are stored as {value,label} OBJECTS (the ids are extracted
+// only at payload time) to avoid the int(option)/string(id) type mismatch. The
+// payload never carries a target_department / target_contact FK.
 //
 // Theme tokens only. InlineEditableValue supports text / textarea / select.
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
 
 // MUI
+import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
+
+// Icons
+import PlusOutlined from "@ant-design/icons/PlusOutlined";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -40,6 +51,7 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import MultiSelectFilter from "components/filters/MultiSelectFilter";
+import ObjectiveScopePill from "components/signals/ObjectiveScopePill";
 import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
 
 // ==============================|| HELPERS ||============================== //
@@ -50,10 +62,16 @@ function resolveLabel(options, value) {
 }
 
 // Normalise the detail payload's target_departments ([{id,name}] | [id]) to the
-// list of id strings the form + PATCH use.
-function toDepartmentIds(list) {
+// list of {value,label} OBJECTS the form holds (ids kept as strings — str(d.id)).
+function toDepartmentObjects(list) {
   if (!Array.isArray(list)) return [];
-  return list.map((d) => String(typeof d === "object" ? d?.id : d)).filter(Boolean);
+  return list
+    .map((d) =>
+      typeof d === "object"
+        ? { value: String(d?.id), label: d?.name ?? String(d?.id) }
+        : { value: String(d), label: String(d) },
+    )
+    .filter((d) => d.value && d.value !== "undefined");
 }
 
 // ==============================|| VALIDATION ||============================== //
@@ -69,7 +87,7 @@ const validationSchema = Yup.object({
     .required("Summary is required"),
   what: Yup.string().required("Domain is required"),
   dimension: Yup.string().required("Dimension is required"),
-  target_departments: Yup.array().of(Yup.string()).nullable(),
+  target_departments: Yup.array().nullable(),
   notes: Yup.string().nullable(),
   related_techstack_mention: Yup.string().nullable(),
   source_quote: Yup.string().nullable(),
@@ -101,21 +119,27 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
     [standardDepartments],
   );
 
-  const initialValues = useMemo(
-    () => ({
+  const initialValues = useMemo(() => {
+    const departments = toDepartmentObjects(pain?.target_departments);
+    // Explicit scope from the signal; default DEPARTMENT when it already carries
+    // departments, else BUSINESS.
+    const scope_level =
+      pain?.scope_level === OBJECTIVE_SCOPE.DEPARTMENT || departments.length > 0
+        ? OBJECTIVE_SCOPE.DEPARTMENT
+        : OBJECTIVE_SCOPE.BUSINESS;
+    return {
       summary: pain?.summary || "",
       what: pain?.what || "",
       dimension: pain?.dimension || "",
-      // scope_level is DERIVED at save time from the departments (Option A): it is
-      // not an editable field here, so it is not part of the form state.
-      target_departments: toDepartmentIds(pain?.target_departments),
+      scope_level,
+      // Stored as {value,label} objects (ids extracted only at payload time).
+      target_departments: departments,
       notes: pain?.notes || "",
       related_techstack_mention: pain?.related_techstack_mention || "",
       source_quote: pain?.source_quote || "",
-    }),
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pain?.id],
-  );
+  }, [pain?.id]);
 
   const formik = useFormik({
     enableReinitialize: true,
@@ -123,22 +147,20 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
     initialValues,
     onSubmit: async (values, { setSubmitting }) => {
       // Only Pain's writable fields (PainSignalUpdateSerializer). NO FK fields
-      // (target_department / target_contact do not exist on Pain). Always emit
-      // target_departments so an edit that clears every department replaces the
-      // set on the backend (mirror of TechStack usage_departments).
+      // (target_department / target_contact do not exist on Pain).
       //
-      // scope_level is DERIVED (Option A): at least one department → DEPARTMENT,
-      // none → BUSINESS. No manual scope control in the UI.
-      const departmentIds = Array.isArray(values.target_departments)
-        ? values.target_departments
+      // scope_level is EXPLICIT (the chosen pill). Extract the department ids from
+      // the stored {value,label} objects; Company (BUSINESS) always sends [] so an
+      // edit that switches to company-wide replaces the set on the backend.
+      const isDepartment = values.scope_level === OBJECTIVE_SCOPE.DEPARTMENT;
+      const departmentIds = isDepartment
+        ? (values.target_departments || []).map((d) => d.value)
         : [];
-      const scope_level =
-        departmentIds.length > 0 ? OBJECTIVE_SCOPE.DEPARTMENT : OBJECTIVE_SCOPE.BUSINESS;
       const payload = {
         summary: values.summary.trim(),
         what: values.what,
         dimension: values.dimension,
-        scope_level,
+        scope_level: values.scope_level,
         target_departments: departmentIds,
         notes: values.notes || "",
         related_techstack_mention: values.related_techstack_mention || "",
@@ -188,6 +210,64 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
 
   const { values, errors, setFieldValue } = formik;
   const set = (name) => (v) => setFieldValue(name, v);
+
+  const theme = useTheme();
+  const isDepartment = values.scope_level === OBJECTIVE_SCOPE.DEPARTMENT;
+
+  // "+ add department" gesture state: the trigger opens a grouped multi-select
+  // whose staged ids are committed as pills on confirm.
+  const [adding, setAdding] = useState(false);
+  const [staged, setStaged] = useState([]);
+
+  // The scope pills raise a draft patch; consume ONLY scope_level (the pill's FK
+  // emissions are for Objective and are intentionally ignored on Pain).
+  const applyScope = (patch) => {
+    const next = patch?.scope_level;
+    if (!next) return;
+    setFieldValue("scope_level", next);
+    if (next === OBJECTIVE_SCOPE.BUSINESS) {
+      // Company-wide → no departments.
+      setFieldValue("target_departments", []);
+      setStaged([]);
+      setAdding(false);
+    }
+  };
+
+  // Local "+ add" trigger — same gesture/tokens as EditActivityContent's
+  // "+ add contact" (text button + PlusOutlined, accent colour).
+  const addButton = (onClick, testId, label) => (
+    <Button
+      variant="text"
+      size="small"
+      onClick={onClick}
+      data-testid={testId}
+      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+      sx={{ color: theme.aphoriQ?.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
+    >
+      {label}
+    </Button>
+  );
+
+  // Commit the staged ids as {value,label} objects (dedup by value), then close.
+  const commitStaged = () => {
+    const chosen = departmentOptions.filter((o) => staged.includes(o.value));
+    const existing = values.target_departments || [];
+    const merged = [...existing];
+    chosen.forEach((o) => {
+      if (!merged.some((d) => d.value === o.value)) {
+        merged.push({ value: o.value, label: o.label });
+      }
+    });
+    setFieldValue("target_departments", merged);
+    setStaged([]);
+    setAdding(false);
+  };
+
+  const removeDept = (value) =>
+    setFieldValue(
+      "target_departments",
+      (values.target_departments || []).filter((d) => d.value !== value),
+    );
 
   // Live "Domain × Dimension" recap (guidance, mirror of Objective).
   const canonicalPreview = useMemo(() => {
@@ -283,27 +363,81 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
 
         <Divider />
 
-        {/* ---- SECTION 2 — Departments (scope_level is DERIVED from them) ---- */}
+        {/* ---- SECTION 2 — Which scope? (explicit Company | Department) ---- */}
         <Stack spacing={1.5}>
           <SectionHeader
             index={2}
-            title="Which departments?"
-            subtitle="Pick the departments this pain concerns — leave empty for company-wide."
+            title="Which scope?"
+            subtitle="Company-wide, or one or more departments."
           />
 
-          {/* The SINGLE scope control (Option A): a multi-select of departments as
-              deletable pills (×). ALWAYS present, NEVER required (independent M2M).
-              scope_level is derived at save time (≥1 → DEPARTMENT, 0 → BUSINESS). */}
-          <Box data-testid="pain-departments-field">
-            <MultiSelectFilter
-              label="Department(s)"
-              options={departmentOptions}
-              value={values.target_departments}
-              onChange={(ids) => setFieldValue("target_departments", ids)}
-              placeholder="No departments (company-wide)"
-              size="small"
-            />
-          </Box>
+          {/* Two explicit scope pills (Company / Department). We consume only
+              scope_level from the pill patch. */}
+          <ObjectiveScopePill value={{ scope_level: values.scope_level }} onChange={applyScope} />
+
+          {/* Department scope → the "+ add department" gesture + the chosen
+              departments as deletable Chip-pills. NEVER required. */}
+          {isDepartment && (
+            <Box data-testid="pain-departments-field" sx={{ pt: 1 }}>
+              {values.target_departments.length > 0 && (
+                <Stack
+                  direction="row"
+                  spacing={0.5}
+                  flexWrap="wrap"
+                  useFlexGap
+                  sx={{ mb: 1 }}
+                  data-testid="pain-department-pills"
+                >
+                  {values.target_departments.map((d) => (
+                    <Chip
+                      key={d.value}
+                      label={d.label}
+                      size="small"
+                      onDelete={() => removeDept(d.value)}
+                      data-testid={`dept-pill-${d.value}`}
+                    />
+                  ))}
+                </Stack>
+              )}
+
+              {adding ? (
+                <Box data-testid="pain-add-department-picker">
+                  <MultiSelectFilter
+                    label="Departments"
+                    options={departmentOptions}
+                    value={staged}
+                    onChange={setStaged}
+                    placeholder="Select departments…"
+                    size="small"
+                  />
+                  <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      onClick={commitStaged}
+                      disabled={staged.length === 0}
+                      data-testid="confirm-add-departments"
+                    >
+                      Add
+                    </Button>
+                    <Button
+                      variant="text"
+                      size="small"
+                      onClick={() => {
+                        setStaged([]);
+                        setAdding(false);
+                      }}
+                      data-testid="cancel-add-departments"
+                    >
+                      Cancel
+                    </Button>
+                  </Stack>
+                </Box>
+              ) : (
+                addButton(() => setAdding(true), "add-department", "Add department")
+              )}
+            </Box>
+          )}
         </Stack>
 
         <Divider />
