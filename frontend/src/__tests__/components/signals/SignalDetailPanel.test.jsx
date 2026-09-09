@@ -212,16 +212,49 @@ describe("SignalDetailPanel", () => {
   it("shows pain-specific fields: theme, scope, notes, related tool", () => {
     render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
 
-    expect(screen.getByText("CLASSIFICATION")).toBeInTheDocument();
+    // TD-238: Pain moved onto the standard chassis — the section title is the
+    // numbered SectionHeader "Classification" (was the flush DrawerSection
+    // "CLASSIFICATION").
+    expect(screen.getByText("Classification")).toBeInTheDocument();
     expect(screen.getByText("Data × Time")).toBeInTheDocument();
     expect(screen.getByText("Business")).toBeInTheDocument();
-    // related_techstack_mention now rendered via the shared PainDetailBlock
+    // related_techstack_mention still rendered via the shared PainDetailBlock
     expect(screen.getByText("RELATED TOOL")).toBeInTheDocument();
     expect(screen.getByText("Excel")).toBeInTheDocument();
     expect(screen.getByText("Critical for Q3")).toBeInTheDocument();
-    // Pierre Dupont now appears both as the per-type Contact row and in the
-    // ORIGIN provenance contact list.
+    // Pierre Dupont appears as the origin contact in the Source section.
     expect(screen.getAllByText("Pierre Dupont").length).toBeGreaterThanOrEqual(1);
+  });
+
+  // ==== TD-238 — Pain detail migrated onto the standard drawer chassis ====
+
+  const MOCK_PAIN_CHASSIS = {
+    ...MOCK_PAIN,
+    id: "pain-chassis",
+    scope_level: "DEPARTMENT",
+    scope_level_display: "Department",
+    // M2M multi-department (Pain dropped the singular target_department FK).
+    target_departments: [
+      { id: "dep-sales", name: "Sales" },
+      { id: "dep-mkt", name: "Marketing" },
+    ],
+  };
+
+  it("TD-238: renders Pain on the chassis (numbered sections + M2M departments + summary)", () => {
+    render(<SignalDetailPanel signal={MOCK_PAIN_CHASSIS} signalType="pain" />);
+
+    // Chassis marker — the flush branch has no such body testid.
+    expect(screen.getByTestId("pain-detail-body")).toBeInTheDocument();
+    // Numbered SectionHeaders (title case), not the flush uppercase DrawerSections.
+    expect(screen.getByText("Classification")).toBeInTheDocument();
+    expect(screen.getByText("Diagnostic")).toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Multi-value M2M departments joined by the shared helper.
+    expect(screen.getByText("Sales, Marketing")).toBeInTheDocument();
+    // The summary is the Diagnostic headline.
+    expect(screen.getByText(/Lost 5h\/week/)).toBeInTheDocument();
+    // Flush section titles are gone for Pain.
+    expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
   });
 
   it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
@@ -536,11 +569,14 @@ describe("SignalDetailPanel", () => {
 
   // === ORIGIN provenance (B1) ===
 
+  // TD-238: Pain moved onto the chassis (its provenance is now the "Source"
+  // section). This guards the generic flush ProvenanceSection + ContactInline
+  // treatment via a type still on the flush branch (impact).
   it("renders the full contact list with job_title + department in ORIGIN", () => {
     const signal = {
       id: "pd1",
       status: "PENDING",
-      summary: "Dept-scoped pain",
+      summary: "Dept-scoped impact",
       source_quote: "quote",
       source_context: {
         activity: { id: "act-1", subject: "Discovery call" },
@@ -550,7 +586,7 @@ describe("SignalDetailPanel", () => {
         ],
       },
     };
-    render(<SignalDetailPanel signal={signal} signalType="pain" />);
+    render(<SignalDetailPanel signal={signal} signalType="impact" />);
     expect(screen.getByText("ORIGIN")).toBeInTheDocument();
     // SIG-5f: the ORIGIN contact name is bold/primary (the per-type Contact row
     // also shows the name, so pick the emphasised ContactInline span), with the
