@@ -17,8 +17,24 @@ import PropTypes from "prop-types";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 
-export default function StatusPill({ label, colorText, colorBg, sx, ...rest }) {
+export default function StatusPill({ status, statusMap, label, colorText, colorBg, sx, ...rest }) {
   const aq = useTheme().aphoriQ;
+
+  // Status-aware mode: when a `status` + `statusMap` are given, the label and
+  // the colours are resolved from the shared mapping ({ label, role }) — text +
+  // border on `${role}.main`, background on `${role}.lighter`. An unknown status
+  // renders nothing (mirrors SignalStatusChip). Otherwise the generic mode uses
+  // the explicit label / colorText / colorBg.
+  let resolvedLabel = label;
+  let resolvedText = colorText;
+  let resolvedBg = colorBg;
+  if (status !== undefined) {
+    const cfg = statusMap?.[status];
+    if (!cfg) return null;
+    resolvedLabel = cfg.label;
+    resolvedText = `${cfg.role}.main`;
+    resolvedBg = `${cfg.role}.lighter`;
+  }
 
   return (
     <Box
@@ -34,9 +50,9 @@ export default function StatusPill({ label, colorText, colorBg, sx, ...rest }) {
         borderRadius: `${aq.radius.pill}px`,
         borderStyle: "solid",
         borderWidth: aq.border.width.thin,
-        borderColor: colorText, // CONTOUR = colorText
-        bgcolor: colorBg, // FOND = colorBg
-        color: colorText, // TEXTE = colorText
+        borderColor: resolvedText, // CONTOUR = colorText
+        bgcolor: resolvedBg, // FOND = colorBg
+        color: resolvedText, // TEXTE = colorText
         typography: "caption",
         fontWeight: "medium",
         lineHeight: 1.6,
@@ -44,13 +60,18 @@ export default function StatusPill({ label, colorText, colorBg, sx, ...rest }) {
         ...sx,
       }}
     >
-      {label}
+      {resolvedLabel}
     </Box>
   );
 }
 
 StatusPill.propTypes = {
-  /** Pill label. */
+  /** Status-aware mode: a key into `statusMap`. When set, label + colours come
+      from the map and the generic label/colorText/colorBg are ignored. */
+  status: PropTypes.string,
+  /** Status → { label, role } mapping (e.g. SIGNAL_STATUS_PILL). Used with `status`. */
+  statusMap: PropTypes.object,
+  /** Pill label (generic mode). */
   label: PropTypes.node,
   /** Colour of the TEXT and the BORDER (a theme token / palette path or raw value). */
   colorText: PropTypes.string,

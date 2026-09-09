@@ -45,6 +45,14 @@ import {
 
 // Primitives
 import StatusPill from "components/chips/StatusPill";
+// Shared clickable-text affordance (neutral bold at rest, primary + underline on
+// hover) — same as the Context people names (PersonRow).
+import interactiveTextSx from "components/display/interactiveTextSx";
+// The centralized signal glyph — same icon as the Signals band on the page.
+import { SIGNAL_ICON } from "utils/signalTypes";
+// The centralized activity-type glyph + its uniform primary colour role (P5) —
+// one source of truth for every activity surface, no local map.
+import { getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR } from "utils/activityTypes";
 
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
@@ -69,13 +77,6 @@ import {
   CloseCircleOutlined,
   ReloadOutlined,
   DeleteOutlined,
-  PhoneOutlined,
-  MailOutlined,
-  TeamOutlined,
-  DesktopOutlined,
-  CheckSquareOutlined,
-  LinkedinOutlined,
-  QuestionCircleOutlined,
   CalendarOutlined,
   ClockCircleOutlined,
   BankOutlined,
@@ -86,28 +87,6 @@ import {
   ExclamationCircleOutlined,
   LoadingOutlined,
 } from "@ant-design/icons";
-
-// ==============================|| TYPE CONFIGURATION ||============================== //
-
-const TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  DEMO: DesktopOutlined,
-  TASK: CheckSquareOutlined,
-  LINKEDIN: LinkedinOutlined,
-  OTHER: QuestionCircleOutlined,
-};
-
-const TYPE_AVATAR_COLORS = {
-  CALL: "info.main",
-  EMAIL: "warning.main",
-  MEETING: "success.main",
-  DEMO: "error.main",
-  TASK: "secondary.main",
-  LINKEDIN: "primary.main",
-  OTHER: "grey.500",
-};
 
 // ==============================|| ACTIVITY HEADER PROPS HOOK ||============================== //
 
@@ -120,6 +99,15 @@ export default function useActivityHeaderProps({
   pipelineState = PIPELINE_STATE.IDLE,
   lastRun = null,
   counts = null,
+  // Complete pending count (the 8 validable types of the Signals list). When
+  // provided it is the source of truth for the "N to validate" badge, replacing
+  // counts.pending — the by-activity /counts/ endpoint only totals 6 types and
+  // would under-state pending. Falls back to counts.pending when not passed.
+  pendingCount = null,
+  // Complete signal total (same 8-type aggregate as pendingCount). When there
+  // are 0 pending, the counter falls back to a neutral "N signals" info label
+  // built from this total. Never from counts (6-type). Null → no fallback.
+  totalCount = null,
   onPendingClick,
 }) {
   const theme = useTheme();
@@ -146,8 +134,10 @@ export default function useActivityHeaderProps({
 
   // ==============================|| DERIVED VALUES ||============================== //
 
-  const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
-  const avatarColor = TYPE_AVATAR_COLORS[activity.activity_type] || "grey.500";
+  // P5 — the type glyph comes from the single source; the tile is PRIMARY UNI
+  // for every type (no per-type rainbow), the glyph drawn in the role's
+  // contrastText.
+  const TypeIcon = getActivityTypeIcon(activity.activity_type);
 
   // Status → semantic colour role and label come from the front activities
   // constants (ACTIVITY_STATUS_COLORS / ACTIVITY_STATUS_LABELS), never hardcoded.
@@ -290,34 +280,60 @@ export default function useActivityHeaderProps({
   // ==============================|| PENDING COUNTER HELPER ||============================== //
 
   const renderPendingCounter = () => {
-    const pending = counts?.pending;
-    if (!pending || pending <= 0) return null;
+    // Prefer the complete pending count (8-type aggregate) so the header matches
+    // the Signals list; fall back to counts.pending (6-type) only when absent.
+    const pending = pendingCount != null ? pendingCount : counts?.pending;
+    const total = totalCount != null ? totalCount : null;
 
-    return (
-      <Stack
-        key="pending-counter"
-        direction="row"
-        spacing={0.75}
-        alignItems="center"
-        onClick={() => onPendingClick?.()}
-        sx={{
-          cursor: onPendingClick ? 'pointer' : 'default',
-          '&:hover .pending-label': onPendingClick ? { textDecoration: 'underline' } : {},
-        }}
-      >
-        <ExclamationCircleOutlined
-          style={{ fontSize: theme.iconSizes.sm, color: theme.palette.warning.main, display: 'flex' }}
-        />
-        <Typography
-          variant="body2"
-          className="pending-label"
-          color="warning.main"
-          sx={{ fontWeight: 'medium' }}
+    // Pending remain → the ACTION badge: "N to validate" (warning), CLICKABLE.
+    if (pending && pending > 0) {
+      return (
+        <Stack
+          key="pending-counter"
+          direction="row"
+          spacing={0.75}
+          alignItems="center"
+          onClick={() => onPendingClick?.()}
+          sx={{
+            cursor: onPendingClick ? 'pointer' : 'default',
+            '&:hover .pending-label': onPendingClick ? { textDecoration: 'underline' } : {},
+          }}
         >
-          {pending} to validate
-        </Typography>
-      </Stack>
-    );
+          {/* P4b — the SIGNAL glyph (same as the Signals band), warning-tinted for
+              the action state; the colour, not the icon, carries "to validate". */}
+          <SIGNAL_ICON
+            style={{ fontSize: theme.iconSizes.sm, color: theme.palette.warning.main, display: 'flex' }}
+          />
+          <Typography
+            variant="body2"
+            className="pending-label"
+            color="warning.main"
+            sx={{ fontWeight: 'medium' }}
+          >
+            {pending} to validate
+          </Typography>
+        </Stack>
+      );
+    }
+
+    // No pending, but signals exist → the neutral INFO label: "N signals"
+    // (text.secondary, like the AI-run line), NOT clickable (no onClick, no
+    // pointer cursor, no alert icon).
+    if (total && total > 0) {
+      return (
+        <Stack key="signals-counter" direction="row" spacing={0.75} alignItems="center">
+          {/* P4b — same SIGNAL glyph, in the neutral info-line colour. */}
+          <SIGNAL_ICON
+            style={{ fontSize: theme.iconSizes.sm, color: theme.palette.text.secondary, display: 'flex' }}
+          />
+          <Typography variant="body2" color="text.secondary">
+            {total} signals
+          </Typography>
+        </Stack>
+      );
+    }
+
+    return null;
   };
 
   // ==============================|| DATE INFO HELPER ||============================== //
@@ -414,7 +430,9 @@ export default function useActivityHeaderProps({
       sx={{
         width: tileIconSize * 2,
         height: tileIconSize * 2,
-        bgcolor: avatarColor,
+        // P5 — PRIMARY UNI for every type (no rainbow); glyph in contrastText.
+        bgcolor: ACTIVITY_TYPE_ICON_COLOR,
+        color: "primary.contrastText",
         fontSize: tileIconSize,
         borderRadius: `${theme.aphoriQ.radius.md}px`,
       }}
@@ -511,17 +529,7 @@ export default function useActivityHeaderProps({
   const infoItems = [
     // Account link
     activity.account_detail?.company_name && (
-      <Stack
-        key="account"
-        direction="row"
-        spacing={0.75}
-        alignItems="center"
-        onClick={handleAccountClick}
-        sx={{
-          cursor: "pointer",
-          "&:hover .info-link": { textDecoration: "underline" },
-        }}
-      >
+      <Stack key="account" direction="row" spacing={0.75} alignItems="center">
         <BankOutlined
           style={{
             fontSize: theme.iconSizes.sm,
@@ -529,7 +537,14 @@ export default function useActivityHeaderProps({
             display: "flex",
           }}
         />
-        <Typography variant="body2" color="primary.main" className="info-link">
+        {/* P4a — bold NEUTRAL at rest; the link cue (primary + underline) shows on
+            hover, like the Context people names. The name is the link. */}
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          onClick={handleAccountClick}
+          sx={{ fontWeight: "bold", ...interactiveTextSx }}
+        >
           {activity.account_detail.company_name}
         </Typography>
       </Stack>
@@ -546,14 +561,13 @@ export default function useActivityHeaderProps({
           }}
         />
         <Stack direction="row" spacing={0.5} alignItems="center">
+          {/* P4a — bold NEUTRAL at rest; primary + underline on hover (shared
+              affordance, same as the Context people names). */}
           <Typography
             variant="body2"
-            color="primary.main"
+            color="text.secondary"
             onClick={handleCycleClick}
-            sx={{
-              cursor: "pointer",
-              "&:hover": { textDecoration: "underline" },
-            }}
+            sx={{ fontWeight: "bold", ...interactiveTextSx }}
           >
             {activity.decision_cycle_detail.name}
           </Typography>

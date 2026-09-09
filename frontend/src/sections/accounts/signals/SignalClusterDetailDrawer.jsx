@@ -1243,6 +1243,16 @@ export default function SignalClusterDetailDrawer({
           // Signal detail — REPLACES the cluster content in the same drawer.
           // A Back affordance returns to the cluster view; the shared
           // SignalDetailContent carries the actions (validate/reject/edit/reopen).
+          //
+          // UI-10 — this coque pads the objective detail's body itself (p:2, like
+          // the WorkspaceDrawer coque), because the objective detail carries no
+          // chassis padding of its own → its margins match the edit drawers in both
+          // coques. Other types keep their own flush layout untouched (the wrapper
+          // is display:contents = layout-transparent for them).
+          <Box
+            data-testid="cluster-signal-body"
+            sx={activeMember.signalType === "objective" ? { p: 2 } : { display: "contents" }}
+          >
           <SignalDetailContent
             signal={activeMember.signal}
             signalType={activeMember.signalType}
@@ -1280,6 +1290,7 @@ export default function SignalClusterDetailDrawer({
               </IconButton>
             }
           />
+          </Box>
         ) : (
           <>
             {renderHeader()}

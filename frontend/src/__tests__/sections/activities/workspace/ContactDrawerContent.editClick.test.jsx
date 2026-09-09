@@ -1,8 +1,8 @@
 // frontend/src/__tests__/sections/activities/workspace/ContactDrawerContent.editClick.test.jsx
 //
-// CT-3 — the ✎ on the read-only Contact fiche opens the edit drawer:
+// CT-3 / P-CONTACT-EDIT — the Edit button on the read-only Contact fiche (now in
+// the shared bottom action bar, not an inline ✎) opens the edit drawer:
 // openDrawer(<EditContactContent contactId … />, { title: "Edit contact" }).
-// It was inert before CT-3.
 
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
@@ -42,7 +42,7 @@ beforeEach(() => {
   useGetDCPeople.mockReturnValue({ people: { qualified: [], unqualified: [] } });
 });
 
-describe("ContactDrawerContent — the ✎ opens the edit drawer", () => {
+describe("ContactDrawerContent — the Edit action opens the edit drawer", () => {
   it("openDrawer(EditContactContent contactId, {title:'Edit contact'})", () => {
     render(
       <ThemeCustomization>
@@ -50,7 +50,7 @@ describe("ContactDrawerContent — the ✎ opens the edit drawer", () => {
       </ThemeCustomization>,
     );
 
-    fireEvent.click(screen.getByTestId("contact-edit"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
 
     expect(openDrawer).toHaveBeenCalledTimes(1);
     const node = openDrawer.mock.calls[0][0];

@@ -249,7 +249,7 @@ export default function ActivityContextSection({ activity }) {
               strong
               label="Objective"
               value={activity.call_to_action}
-              placeholder="Click to define an objective…"
+              placeholder="No objective set"
             />
             <Box sx={{ textAlign: { md: "right" } }}>
               <LabeledValue dense strong label={schedule.label} value={schedule.value} />
@@ -260,7 +260,7 @@ export default function ActivityContextSection({ activity }) {
             strong
             label="Description"
             value={activity.description}
-            placeholder="Click to add a description…"
+            placeholder="No description"
           />
         </Stack>
 

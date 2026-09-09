@@ -39,12 +39,9 @@ import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
 import UndoOutlined from '@ant-design/icons/UndoOutlined';
-import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
-import MailOutlined from '@ant-design/icons/MailOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
-import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
-import LinkedinOutlined from '@ant-design/icons/LinkedinOutlined';
-import QuestionCircleOutlined from '@ant-design/icons/QuestionCircleOutlined';
+
+// Centralized activity-type glyph + uniform primary colour role (P5).
+import { getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR } from 'utils/activityTypes';
 
 // ==============================|| SORT FIELD MAPPING ||============================== //
 
@@ -57,17 +54,6 @@ const COLUMN_TO_BACKEND_FIELD = {
   owner: 'owner__last_name',
   account: 'account__company_name',
   updated_at: 'updated_at'
-};
-
-// ==============================|| TYPE ICONS ||============================== //
-
-const TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  TASK: CheckSquareOutlined,
-  LINKEDIN: LinkedinOutlined,
-  OTHER: QuestionCircleOutlined
 };
 
 // ==============================|| ACTIVITY TABLE ||============================== //
@@ -155,7 +141,7 @@ export default function ActivityTable({
         accessorKey: 'title',
         cell: ({ row }) => {
           const type = row.original.activity_type;
-          const TypeIcon = TYPE_ICONS[type] || QuestionCircleOutlined;
+          const TypeIcon = getActivityTypeIcon(type);
           
           return (
             <Stack direction="row" alignItems="center" spacing={1.5}>
@@ -168,7 +154,8 @@ export default function ActivityTable({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    bgcolor: 'action.hover'
+                    bgcolor: 'action.hover',
+                    color: ACTIVITY_TYPE_ICON_COLOR
                   }}
                 >
                   <TypeIcon style={{ fontSize: 16 }} />

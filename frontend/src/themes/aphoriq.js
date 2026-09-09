@@ -89,5 +89,29 @@ export default function AphoriQ(theme) {
     },
     accent: palette.primary.main,
     warningTint: palette.warning.lighter,
+
+    // --- Signal type colours — the DEDICATED palette for the 9 signal types
+    //     (slugs aligned with api/signals/signals.js:30-40).
+    //
+    //     DELIBERATE EXCEPTION to the "reference a palette token, never a frozen
+    //     hex" rule above: the app palette carries only 6 semantic roles
+    //     (primary/secondary/error/warning/info/success — themes/theme/default.js)
+    //     while the signals need 9 DISTINCT type identities. A signal type's
+    //     colour is a stable SEMANTIC identity (a Pain is "Pain-coloured" in both
+    //     modes), so this group is defined as FIXED hex — identical in light and
+    //     dark — and lives ONLY here as the single source of truth. Components
+    //     never hardcode these; they read them through utils/signalTypes.js.
+    //     Provisional values, to be re-tinted to the brand at the UI sprint.
+    signalColors: {
+      pain: "#e5484d", // coral red
+      objective: "#3e63dd", // blue
+      impact: "#8e4ec6", // violet
+      "tech-stack": "#0891b2", // cyan
+      blockers: "#d97706", // amber (Objection)
+      "next-steps": "#059669", // emerald
+      people: "#db2777", // magenta
+      constraints: "#0d9488", // teal
+      competitors: "#64748b", // slate (neutral)
+    },
   };
 }

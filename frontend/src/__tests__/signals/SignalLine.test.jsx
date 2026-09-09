@@ -68,6 +68,130 @@ const MULTI_CONTACT_PAIN = {
   },
 };
 
+const CONSTRAINT = {
+  id: "cn1",
+  status: "PENDING",
+  summary: "Data must stay on-prem",
+  nature_display: "Security",
+  target_department: { id: "d2", name: "IT" },
+  created_at: "2026-05-01T10:00:00Z",
+  source_context: { contacts: [] },
+};
+
+describe("SignalLine — nature & status chip toggles", () => {
+  it("renders the nature chip by DEFAULT for a constraint (DC/Account unchanged)", () => {
+    render(<SignalLine signal={CONSTRAINT} signalType="constraints" />);
+    expect(screen.getByText("Security")).toBeInTheDocument();
+  });
+
+  it("hides the nature chip when showNatureChip=false", () => {
+    render(<SignalLine signal={CONSTRAINT} signalType="constraints" showNatureChip={false} />);
+    expect(screen.queryByText("Security")).not.toBeInTheDocument();
+  });
+
+  it("renders the status chip by DEFAULT (DC/Account unchanged)", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+  });
+
+  it("hides the status chip when showStatusChip=false", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" showStatusChip={false} />);
+    expect(screen.queryByText("Pending")).not.toBeInTheDocument();
+  });
+});
+
+const COMPETITOR = {
+  id: "cp1",
+  status: "PENDING",
+  competitor_name: "Salesforce",
+  // The narrative summary carries a technical prefix — it must NOT be the row text.
+  summary: "competitor: Salesforce",
+  created_at: "2026-05-01T10:00:00Z",
+  source_context: { contacts: [] },
+};
+
+describe("SignalLine — competitor message", () => {
+  it("renders the competitor NAME alone, not the 'competitor:' summary prefix", () => {
+    render(<SignalLine signal={COMPETITOR} signalType="competitors" showTypeChip={false} />);
+    expect(screen.getByText("Salesforce")).toBeInTheDocument();
+    expect(screen.queryByText(/competitor:/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("SignalLine — inline validate/reject actions (SIG-3)", () => {
+  it("renders NO action buttons by default (DC/Account unchanged)", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    expect(screen.queryByRole("button", { name: /validate signal/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject signal/i })).not.toBeInTheDocument();
+  });
+
+  it("renders ✓ Validate and ✗ Reject on a PENDING row when handlers are provided", () => {
+    render(
+      <SignalLine signal={DEPT_PAIN} signalType="pain" onValidate={vi.fn()} onReject={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: /validate signal/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reject signal/i })).toBeInTheDocument();
+  });
+
+  it("shows NO inline actions on a non-pending row (validated/rejected are done)", () => {
+    const validated = { ...DEPT_PAIN, status: "VALIDATED" };
+    render(
+      <SignalLine signal={validated} signalType="pain" onValidate={vi.fn()} onReject={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button", { name: /validate signal/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject signal/i })).not.toBeInTheDocument();
+  });
+
+  it("clicking ✓ calls onValidate(signal, type) and NOT onSelect (stopPropagation)", () => {
+    const onValidate = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <SignalLine
+        signal={DEPT_PAIN}
+        signalType="pain"
+        onValidate={onValidate}
+        onReject={vi.fn()}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /validate signal/i }));
+    expect(onValidate).toHaveBeenCalledWith(DEPT_PAIN, "pain");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("clicking ✗ calls onReject(signal, type) and NOT onSelect", () => {
+    const onReject = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <SignalLine
+        signal={DEPT_PAIN}
+        signalType="pain"
+        onValidate={vi.fn()}
+        onReject={onReject}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reject signal/i }));
+    expect(onReject).toHaveBeenCalledWith(DEPT_PAIN, "pain");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("clicking the message (not the actions) still opens the drawer via onSelect", () => {
+    const onSelect = vi.fn();
+    render(
+      <SignalLine
+        signal={DEPT_PAIN}
+        signalType="pain"
+        onValidate={vi.fn()}
+        onReject={vi.fn()}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByText("Marketing data is unreliable"));
+    expect(onSelect).toHaveBeenCalledWith(DEPT_PAIN, "pain");
+  });
+});
+
 describe("SignalLine — informational content", () => {
   it("renders a DEPARTMENT scope chip with the target department name", () => {
     render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
@@ -78,6 +202,27 @@ describe("SignalLine — informational content", () => {
   it("renders a Business scope chip for a BUSINESS-scoped pain", () => {
     render(<SignalLine signal={BUSINESS_PAIN} signalType="pain" />);
     expect(screen.getByText("Business")).toBeInTheDocument();
+  });
+
+  it("renders the scope as an outlined chip by DEFAULT (DC/Account unchanged)", () => {
+    const { container } = render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
+    const scopeChip = [...container.querySelectorAll(".MuiChip-outlined")].find(
+      (c) => /Department · Marketing/.test(c.textContent),
+    );
+    expect(scopeChip).toBeTruthy();
+  });
+
+  it("renders NO signal scope (neither chip nor text) when showScopeChip=false, keeping the contact identity", () => {
+    render(<SignalLine signal={DEPT_PAIN} signalType="pain" showScopeChip={false} />);
+    // The signal scope is gone entirely — no "Department · …" scope, no "Business".
+    expect(screen.queryByText(/Department · Marketing/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Business")).not.toBeInTheDocument();
+    // The CONTACT identity stays — SIG-5f: name bold/primary, job · dept muted.
+    const name = screen.getByText("Dana Lee");
+    const meta = screen.getByText(/CMO · Marketing/);
+    expect(getComputedStyle(name).fontWeight).toBe("600");
+    expect(getComputedStyle(name).color).toBe("rgba(0, 0, 0, 0.87)"); // text.primary
+    expect(getComputedStyle(meta).color).toBe("rgba(0, 0, 0, 0.6)"); // text.secondary (muted)
   });
 
   it("renders tech_name as the message and NO scope chip for tech-stack", () => {
@@ -92,19 +237,27 @@ describe("SignalLine — informational content", () => {
     expect(screen.getByText(/Dana Lee/)).toBeInTheDocument();
     expect(screen.getByText("+2")).toBeInTheDocument();
   });
+
+  it("hides the +N contact-overflow chip when showContactOverflow=false", () => {
+    render(<SignalLine signal={MULTI_CONTACT_PAIN} signalType="pain" showContactOverflow={false} />);
+    // The first contact still shows…
+    expect(screen.getByText(/Dana Lee/)).toBeInTheDocument();
+    // …but the "+2" overflow chip is gone.
+    expect(screen.queryByText("+2")).not.toBeInTheDocument();
+  });
 });
 
 describe("SignalLine — no action buttons (actions live in the drawer)", () => {
   // The row is purely informational: it must render NO lifecycle action
   // button for any status, even when legacy action handlers are still
   // passed by a not-yet-cleaned parent (extra props are ignored).
-  it("renders no validate / reject / edit / reopen / delete button on a PENDING row", () => {
+  it("renders no edit / reopen / delete button inline (those live in the drawer)", () => {
+    // edit / reopen are ignored inline (drawer-only); validate/reject are inline
+    // only when their handlers are wired (SIG-3) — none here → no buttons at all.
     render(
       <SignalLine
         signal={DEPT_PAIN}
         signalType="pain"
-        onValidate={vi.fn()}
-        onReject={vi.fn()}
         onEdit={vi.fn()}
         onReopen={vi.fn()}
       />,
@@ -166,7 +319,9 @@ describe("SignalLine — visual polish (C-polish)", () => {
   it("puts the scope on the meta line (line 2), not before the message (line 1)", () => {
     render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
     const row = screen.getByTestId("signal-line");
-    const [line1, line2] = row.children;
+    // The row now wraps its two lines in a content column (actions sit beside it).
+    const content = row.children[0];
+    const [line1, line2] = content.children;
     expect(line1).not.toHaveTextContent(/Department · Marketing/);
     expect(line2).toHaveTextContent(/Department · Marketing/);
   });

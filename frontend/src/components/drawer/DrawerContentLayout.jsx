@@ -26,7 +26,98 @@ import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+
+// Icons
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  EditOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
+
+// ==============================|| READ-SIGNAL ACTION BAR (UI-2) ||============================== //
+
+// The single "read signal" action bar (rule 6): Edit (NEUTRE) · Reject (error
+// outline) · Validate (success contained), gated by status; Reopen (neutral
+// role) replaces Reject/Validate once the signal reaches a TERMINAL status —
+// VALIDATED or REJECTED — so a decision can always be undone back to Pending.
+// Colours are theme ROLES only — never hardcoded. Shares position/size with the
+// edit bar (flex-end, size small).
+function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocked, validateDisabled }) {
+  const isPending = status === "PENDING";
+  // Terminal = a decision was made (validated OR rejected) → it can be reopened.
+  // Checked explicitly (not `!isPending`) so a read bar with NO status — e.g. the
+  // contact fiche passing only onEdit — shows Edit alone, no stray Reopen.
+  const isTerminal = status === "VALIDATED" || status === "REJECTED";
+  return (
+    <Box data-testid="drawer-actions" sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+      {!isLocked && (
+        <Button
+          variant="outlined"
+          color="inherit"
+          size="small"
+          // P-EDIT-GREY — pin the neutral Edit to the standard muted tone
+          // (text.secondary), the same grey as the contact ✎ and every other
+          // neutral element, instead of the darker inherited body colour. The
+          // outlined border follows currentColor, so it tracks the same tone.
+          sx={{ color: "text.secondary" }}
+          startIcon={<EditOutlined style={{ fontSize: 14 }} />}
+          onClick={onEdit}
+        >
+          Edit
+        </Button>
+      )}
+      {isPending && !isLocked && (
+        <>
+          <Button
+            variant="outlined"
+            color="error"
+            size="small"
+            startIcon={<CloseCircleOutlined style={{ fontSize: 14 }} />}
+            onClick={onReject}
+          >
+            Reject
+          </Button>
+          <Tooltip title={validateDisabled ? "Complete missing fields before validating" : ""}>
+            <span>
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                disabled={validateDisabled}
+                startIcon={<CheckCircleOutlined style={{ fontSize: 14 }} />}
+                onClick={onValidate}
+              >
+                Validate
+              </Button>
+            </span>
+          </Tooltip>
+        </>
+      )}
+      {isTerminal && !isLocked && (
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<ReloadOutlined style={{ fontSize: 14 }} />}
+          onClick={onReopen}
+        >
+          Reopen
+        </Button>
+      )}
+    </Box>
+  );
+}
+ReadActionBar.propTypes = {
+  onEdit: PropTypes.func,
+  onReject: PropTypes.func,
+  onValidate: PropTypes.func,
+  onReopen: PropTypes.func,
+  status: PropTypes.string,
+  isLocked: PropTypes.bool,
+  validateDisabled: PropTypes.bool,
+};
 
 export default function DrawerContentLayout({
   title,
@@ -35,6 +126,7 @@ export default function DrawerContentLayout({
   saveDisabled = false,
   saveLabel = "Save",
   cancelLabel = "Cancel",
+  readActions,
   children,
 }) {
   const aq = useTheme().aphoriQ;
@@ -49,36 +141,46 @@ export default function DrawerContentLayout({
         </Typography>
       ) : null}
 
-      <Box
-        data-testid="drawer-content-box"
-        sx={{
-          backgroundColor: "background.default",
-          borderRadius: `${aq.radius.lg}px`,
-          border: `${aq.border.width.hairline}px solid ${aq.border.color}`,
-          p: 2,
-        }}
-      >
-        {children}
-      </Box>
-
-      {/* The global action row is OPTIONAL: a read-only content (e.g. the
-          Contact fiche, whose actions live in the body) passes neither handler
-          and gets the content alone. Rendered as soon as onSave OR onCancel is
-          provided — the current callers (edit activity, outcome) pass both, so
-          they render exactly as before. */}
-      {(onSave || onCancel) && (
-        <Box data-testid="drawer-actions" sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
-          {onCancel && (
-            <Button variant="text" color="inherit" onClick={onCancel}>
-              {cancelLabel}
-            </Button>
-          )}
-          {onSave && (
-            <Button variant="contained" onClick={onSave} disabled={saveDisabled}>
-              {saveLabel}
-            </Button>
-          )}
+      {/* The content box is OPTIONAL — a bar-only call (readActions with no
+          children, e.g. the signal detail) renders just the action row. */}
+      {children != null && (
+        <Box
+          data-testid="drawer-content-box"
+          sx={{
+            backgroundColor: "background.default",
+            // Optional chaining keeps the shared box safe in theme-less render
+            // contexts (e.g. the signal detail mounted bare in cluster-drawer tests).
+            borderRadius: aq?.radius?.lg && `${aq.radius.lg}px`,
+            border: aq?.border && `${aq.border.width.hairline}px solid ${aq.border.color}`,
+            p: 2,
+          }}
+        >
+          {children}
         </Box>
+      )}
+
+      {/* One action bar, two regimes:
+          - read signal (readActions): Edit / Reject / Validate / Reopen;
+          - edit (onSave/onCancel): Cancel / Save|Complete.
+          A read-only content (e.g. the Contact fiche) passes none and gets the
+          content alone. */}
+      {readActions ? (
+        <ReadActionBar {...readActions} />
+      ) : (
+        (onSave || onCancel) && (
+          <Box data-testid="drawer-actions" sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+            {onCancel && (
+              <Button variant="text" color="inherit" onClick={onCancel}>
+                {cancelLabel}
+              </Button>
+            )}
+            {onSave && (
+              <Button variant="contained" onClick={onSave} disabled={saveDisabled}>
+                {saveLabel}
+              </Button>
+            )}
+          </Box>
+        )
       )}
     </Stack>
   );
@@ -96,6 +198,18 @@ DrawerContentLayout.propTypes = {
   saveDisabled: PropTypes.bool,
   saveLabel: PropTypes.string,
   cancelLabel: PropTypes.string,
+  /** Read-signal action bar (rule 6): { onEdit, onReject, onValidate, onReopen,
+      status, isLocked, validateDisabled }. When set, the layout renders the read
+      bar instead of the edit (Save/Cancel) bar. */
+  readActions: PropTypes.shape({
+    onEdit: PropTypes.func,
+    onReject: PropTypes.func,
+    onValidate: PropTypes.func,
+    onReopen: PropTypes.func,
+    status: PropTypes.string,
+    isLocked: PropTypes.bool,
+    validateDisabled: PropTypes.bool,
+  }),
   /** The field groups (the single content box's children). */
   children: PropTypes.node,
 };

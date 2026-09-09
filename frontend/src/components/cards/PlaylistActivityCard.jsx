@@ -26,33 +26,13 @@ import Typography from "@mui/material/Typography";
 import { OUTCOME_CONFIG } from "sections/campaigns/constants/campaignOutcomes";
 
 // icons
-import PhoneOutlined from "@ant-design/icons/PhoneOutlined";
-import MailOutlined from "@ant-design/icons/MailOutlined";
-import TeamOutlined from "@ant-design/icons/TeamOutlined";
-import CheckSquareOutlined from "@ant-design/icons/CheckSquareOutlined";
-import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
 import ClockCircleOutlined from "@ant-design/icons/ClockCircleOutlined";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 
+// Centralized activity-type glyph (P5) — one source, correct 7-type mapping.
+import { getActivityTypeIcon } from "utils/activityTypes";
+
 // ==============================|| ACTIVITY TYPE CONFIG ||============================== //
-
-const ACTIVITY_TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  TASK: CheckSquareOutlined,
-  LINKEDIN: MailOutlined,
-  OTHER: CalendarOutlined,
-};
-
-const ACTIVITY_TYPE_COLORS = {
-  CALL: "info",
-  EMAIL: "warning",
-  MEETING: "success",
-  TASK: "secondary",
-  LINKEDIN: "primary",
-  OTHER: "default",
-};
 
 // Activity types that complete in 1 click ("sent" semantics)
 const ONE_CLICK_TYPES = ["EMAIL", "LINKEDIN"];
@@ -104,9 +84,9 @@ export default function PlaylistActivityCard({
     router.push(`/activities/${activity.id}`);
   };
 
-  const TypeIcon =
-    ACTIVITY_TYPE_ICONS[activity.activity_type] || CalendarOutlined;
-  const typeColor = ACTIVITY_TYPE_COLORS[activity.activity_type] || "default";
+  const TypeIcon = getActivityTypeIcon(activity.activity_type);
+  // P5 — the type chip is PRIMARY for every type (no per-type rainbow).
+  const typeColor = "primary";
   const isCompleted = activity.status === "COMPLETED";
   const isCancelled = activity.status === "CANCELLED";
   const isOnHold = activity.status === "ON_HOLD";

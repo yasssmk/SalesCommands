@@ -76,6 +76,11 @@ vi.mock("api/signals/signalCounts", () => ({
   })),
 }));
 
+// The Signals-band halo reads the complete aggregate at the page level.
+vi.mock("api/signals/aggregatedSignals", () => ({
+  default: vi.fn(() => ({ signals: [] })),
+}));
+
 vi.mock("hooks/usePipelineRunner", () => ({
   default: vi.fn(() => ({
     run: vi.fn(),
@@ -111,6 +116,16 @@ vi.mock("sections/activities/workspace/ActivityNotesTab", () => ({
 }));
 vi.mock("sections/activities/workspace/ActivitySignalsTab", () => ({
   default: () => <div data-testid="body-signals">Signals Content</div>,
+  ACTIVITY_FLAT_TYPES: [
+    "pain",
+    "objective",
+    "impact",
+    "tech-stack",
+    "blockers",
+    "constraints",
+    "competitors",
+    "people",
+  ],
 }));
 vi.mock("sections/activities/workspace/ActivityNextStepsTab", () => ({
   default: () => <div data-testid="body-next-steps">Next Steps Content</div>,
@@ -120,6 +135,7 @@ vi.mock("sections/activities/workspace/ActivityNextStepsTab", () => ({
 
 import { useGetActivity } from "api/accounts/activities";
 import { useGetLastExtractionRun } from "api/aiPipelines/lastRun";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
 import ThemeCustomization from "themes/index";
 import ActivityWorkspacePage from "views/activities/workspace";
 
@@ -214,7 +230,13 @@ function bandTitlesInOrder() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: no signals → no halo. Halo tests override this.
+  vi.mocked(useAggregatedSignals).mockReturnValue({ signals: [] });
 });
+
+function setBandSignals(signals) {
+  vi.mocked(useAggregatedSignals).mockReturnValue({ signals });
+}
 
 afterEach(() => {
   cleanup();
@@ -291,6 +313,32 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
     expect(screen.getByTestId("body-next-steps")).toBeInTheDocument();
     expect(screen.queryByTestId("body-preparation")).not.toBeInTheDocument();
     expect(screen.queryByTestId("body-source")).not.toBeInTheDocument();
+  });
+
+  // --- Signals band halo (SIG-HALO) ---
+
+  it("wraps the Signals band in a halo with a coloured glow while pending remain — EVEN COLLAPSED", () => {
+    setupRouter();
+    setActivityType("CALL");
+    setAnalyzed(false); // Signals band is collapsed in the not-analysed state
+    setBandSignals([
+      { id: "p1", status: "PENDING", _signalType: "pain" },
+      { id: "v1", status: "VALIDATED", _signalType: "objective" },
+    ]);
+    renderPage();
+
+    // Band collapsed → its body is unmounted…
+    expect(screen.queryByTestId("body-signals")).not.toBeInTheDocument();
+    // …but the halo wrapper is present and carries a (non-none) glow.
+    expect(screen.getByTestId("signals-halo")).not.toHaveStyle({ boxShadow: "none" });
+  });
+
+  it("shows NO halo (box-shadow none) when the activity has no signals", () => {
+    setupRouter();
+    setActivityType("CALL");
+    setBandSignals([]);
+    renderPage();
+    expect(screen.getByTestId("signals-halo")).toHaveStyle({ boxShadow: "none" });
   });
 
   // --- states unrelated to tabs, preserved ---

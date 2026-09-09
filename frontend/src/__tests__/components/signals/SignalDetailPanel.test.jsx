@@ -8,9 +8,14 @@
 // context when unwrapped; next/navigation is globally mocked in vitest.setup.js).
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { useRouter } from "next/navigation";
+import AphoriqTheme, { testTheme } from "../../_utils/aphoriqTheme";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
+
+// The objective detail uses StatusPill (reads theme.aphoriQ) — render under the
+// project theme wrapper so those tokens resolve.
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 afterEach(() => {
   cleanup();
@@ -63,6 +68,8 @@ const MOCK_OBJECTIVE = {
   id: "o1",
   status: "VALIDATED",
   summary: "Reduce reporting time by 50%",
+  what: "OPS",
+  dimension: "TIME",
   what_display: "Operations",
   dimension_display: "Time",
   scope_level: "DEPARTMENT",
@@ -235,15 +242,243 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText("Main CRM tool")).toBeInTheDocument();
   });
 
-  it("shows objective-specific fields: success criteria, target date, target contact", () => {
+  it("shows objective fields in the new read layout (success criteria, scope)", () => {
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
 
-    // Objective specifics now rendered via the shared ObjectiveDetailBlock.
-    // Owner line follows the card's single-truth logic: DEPARTMENT scope
-    // shows "Department: {name}" (not the target contact).
-    expect(screen.getByText("OBJECTIVE")).toBeInTheDocument();
+    // SIG-5e: read-mirror of the edit — sections + values, no ObjectiveDetailBlock.
+    // SIG-5e-fix4: scope reads as a label/value row (label 'Department' / value 'Finance').
     expect(screen.getByText("Monthly reports done in 2 hours")).toBeInTheDocument();
-    expect(screen.getByText("Department: Finance")).toBeInTheDocument();
+    expect(screen.getByText("Department")).toBeInTheDocument();
+    expect(screen.getByText("Finance")).toBeInTheDocument();
+  });
+
+  // ==== SIG-5e — Objective detail rebuilt as a read mirror of the edit ====
+
+  const OBJ_WITH_ORIGIN = {
+    ...MOCK_OBJECTIVE,
+    id: "o-origin",
+    status: "PENDING",
+    validated_by: undefined,
+    validated_at: undefined,
+    source_context: {
+      activity: { id: "act-9" },
+      contacts: [{ id: "c1", first_name: "Dana", last_name: "Lee", job_title: "CFO" }],
+    },
+  };
+
+  it("SIG-5e-fix3: 4 short sections (Goal/Scope/Metrics/Source) — quote+origin merged", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText("Goal")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByText("Metrics")).toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Merged: the old separate "Source quote" and "Origin" headers are gone.
+    expect(screen.queryByText("Source quote")).not.toBeInTheDocument();
+    expect(screen.queryByText("Origin")).not.toBeInTheDocument();
+    // No instruction subtitles; the recap conveys the axes.
+    expect(
+      screen.queryByText("Describe the objective and pick its canonical axes."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Operations × Time")).toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix3: title 'Objective' + status pill on the same header line", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Validated");
+  });
+
+  it("SIG-5e-fix4: the 'Objective' title is rendered at the large (h3) heading size", () => {
+    // Point 3 — the in-detail title matches the edit drawer title (coque h3
+    // bold), not the previous h6. MUI maps variant h3 to an <h3> element.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByTestId("objective-detail-title").tagName).toBe("H3");
+  });
+
+  it("SIG-5e-fix4: the summary sits in a posed background box", () => {
+    // Point 4 — the summary is posed on a subtle background box so it stands
+    // out, rather than being a bare paragraph.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByTestId("objective-summary-box")).toHaveTextContent(
+      "Reduce reporting time by 50%",
+    );
+  });
+
+  it("SIG-5e-fix4: scope is a label/value row — 'Department' and 'Finance' are separate", () => {
+    // Point 5 — scope reads as a 2-column label(left)/value(right) row, not the
+    // old combined "Department: Finance" string.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText("Department")).toBeInTheDocument();
+    expect(screen.getByText("Finance")).toBeInTheDocument();
+    expect(screen.queryByText("Department: Finance")).not.toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix4: target date reads as a label/value row ('Target date' / value)", () => {
+    // Point 6 — target date is a label(left)/value(right) row in Metrics.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText("Target date")).toBeInTheDocument();
+    expect(screen.getByText("31 Dec 2026")).toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix5: with inlineClose, title + pill + close share ONE header row", () => {
+    // Point 1 — the coque cross is suppressed for the objective drawer and the
+    // close (×) moves into the detail header, on the same row as title + pill.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" inlineClose />);
+    const header = screen.getByTestId("objective-detail-header");
+    expect(within(header).getByTestId("objective-detail-title")).toHaveTextContent("Objective");
+    expect(within(header).getByTestId("status-pill")).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: /close drawer/i })).toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix5: without inlineClose there is no in-header close (DC/Account unchanged)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const header = screen.getByTestId("objective-detail-header");
+    expect(within(header).queryByRole("button", { name: /close drawer/i })).not.toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix5: Goal is a single box holding summary + centered separator + axis recap", () => {
+    // Point 2 — one enclosing Goal box wraps the summary, a short centered
+    // separator, and the axis recap (previously two separate backgrounds).
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const goal = screen.getByTestId("objective-goal-box");
+    expect(within(goal).getByText("Reduce reporting time by 50%")).toBeInTheDocument();
+    expect(within(goal).getByText("Operations × Time")).toBeInTheDocument();
+    expect(within(goal).getByTestId("objective-goal-separator")).toBeInTheDocument();
+  });
+
+  it("UI-5: the Goal box uses surface.level1 — the same token as the activity header", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const el = screen.getByTestId("objective-goal-box");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    expect(rule).toContain(`background-color:${testTheme.aphoriQ.surface.level1}`);
+    // not the old ad-hoc overlay, nor level2
+    expect(rule).not.toContain(testTheme.aphoriQ.surface.level2);
+  });
+
+  it("UI-8: the Objective detail body lives in the SHARED drawer-content-box (DrawerContentLayout), not a hand-made container", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    // The UI-6/7 hand-rolled container is gone — one source of truth for the box.
+    expect(screen.queryByTestId("objective-detail-container")).not.toBeInTheDocument();
+    // The body now sits inside the shared box, which owns the Goal block.
+    const box = screen.getByTestId("drawer-content-box");
+    expect(within(box).getByTestId("objective-goal-box")).toBeInTheDocument();
+  });
+
+  it("UI-8: the detail's shared box carries the same fond + radius.lg + padding as the edit drawers' box (one component)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const box = screen.getByTestId("drawer-content-box");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (box.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    // Same fond (background.default), same radius token (lg=12px)…
+    expect(rule).toContain(`background-color:${testTheme.palette.background.default}`);
+    expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.lg}px`);
+    // …and the same p:2 padding as DrawerContentLayout (16px) — guaranteed by one component.
+    expect(rule).toContain("padding:16px");
+  });
+
+  it("UI-6: the Goal box uses the radius.md token — one notch smaller than the container (no hardcode)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const goal = screen.getByTestId("objective-goal-box");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (goal.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    // radius.md (8px) — smaller than the container's radius.lg (12px)…
+    expect(rule).toContain(`border-radius:${testTheme.aphoriQ.radius.md}px`);
+    // …and NOT the old MUI shape hardcode (borderRadius:1 → 4px).
+    expect(rule).not.toContain("border-radius:4px");
+  });
+
+  it("P-PLACEHOLDER: objective detail empties (No metrics / No source quote) read in text.secondary, not disabled", () => {
+    const bare = {
+      ...MOCK_OBJECTIVE,
+      id: "o-ph",
+      success_criteria: "",
+      target_date: "",
+      notes: "",
+      source_quote: "",
+    };
+    render(<SignalDetailPanel signal={bare} signalType="objective" />);
+    expect(getComputedStyle(screen.getByText("No metrics defined")).color).toBe(testTheme.palette.text.secondary);
+    expect(getComputedStyle(screen.getByText("No source quote")).color).toBe(testTheme.palette.text.secondary);
+    expect(getComputedStyle(screen.getByText("No metrics defined")).color).not.toBe(testTheme.palette.text.disabled);
+  });
+
+  it("UI-9: the low action bar and the content box are rendered by ONE DrawerContentLayout (shared chassis, like the edit drawers)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const box = screen.getByTestId("drawer-content-box");
+    const actions = screen.getByTestId("drawer-actions");
+    // One DrawerContentLayout renders both → they are siblings in its <Stack>.
+    // (Before UI-9 the bar lived in a second, hand-footed DrawerContentLayout call.)
+    expect(actions.parentElement).toBe(box.parentElement);
+  });
+
+  it("UI-10: the objective detail body no longer self-pads — chassis padding comes from the coque, not the view", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const body = screen.getByTestId("objective-detail-body");
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (body.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const rule = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    // No chassis padding on the view — the WorkspaceDrawer coque (p:2) / the cluster
+    // wrapper provides it, so the objective margins match the edit drawers.
+    expect(rule).not.toMatch(/padding/);
+  });
+
+  it("SIG-5e-fix6: canonical_key is legible — rendered in text.secondary, not disabled", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    const line = screen.getByText(/canonical_key:/);
+    expect(getComputedStyle(line).color).toBe(testTheme.palette.text.secondary);
+    expect(getComputedStyle(line).color).not.toBe(testTheme.palette.text.disabled);
+  });
+
+  it("SIG-5e-fix3: empty Metrics renders a single 'No metrics defined' line", () => {
+    const noMetrics = { ...MOCK_OBJECTIVE, id: "o-nm", success_criteria: "", target_date: "", notes: "" };
+    render(<SignalDetailPanel signal={noMetrics} signalType="objective" />);
+    expect(screen.getByText("No metrics defined")).toBeInTheDocument();
+    expect(screen.queryByText("Success criteria")).not.toBeInTheDocument();
+    expect(screen.queryByText("Target date")).not.toBeInTheDocument();
+  });
+
+  it("SIG-5e: 'View origin activity' hidden when the origin IS the current activity", () => {
+    render(
+      <SignalDetailPanel signal={OBJ_WITH_ORIGIN} signalType="objective" currentActivityId="act-9" />,
+    );
+    expect(screen.queryByRole("button", { name: /view origin activity/i })).not.toBeInTheDocument();
+  });
+
+  it("SIG-5e: 'View origin activity' shown when the origin differs (DC/Account)", () => {
+    render(
+      <SignalDetailPanel signal={OBJ_WITH_ORIGIN} signalType="objective" currentActivityId="act-OTHER" />,
+    );
+    expect(screen.getByRole("button", { name: /view origin activity/i })).toBeInTheDocument();
+  });
+
+  it("SIG-5e-fix: summary reads as a paragraph; no Domain/Dimension rows (recap only)", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    // Summary is a plain paragraph — no "Summary" column label.
+    expect(screen.getByText("Reduce reporting time by 50%")).toBeInTheDocument();
+    expect(screen.queryByText("Summary")).not.toBeInTheDocument();
+    // Domain / Dimension separate rows are gone — the recap conveys them.
+    expect(screen.queryByText("Domain")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dimension")).not.toBeInTheDocument();
+    expect(screen.getByText("Operations × Time")).toBeInTheDocument();
+  });
+
+  it("SIG-5e: keeps the bottom actions (Edit; Validate/Reject on a pending objective)", () => {
+    render(
+      <SignalDetailPanel
+        signal={{ ...MOCK_OBJECTIVE, status: "PENDING" }}
+        signalType="objective"
+        onValidate={vi.fn()}
+        onReject={vi.fn()}
+        onEdit={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /validate/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
   });
 
   it("shows validated_by info for validated signals", () => {
@@ -317,7 +552,16 @@ describe("SignalDetailPanel", () => {
     };
     render(<SignalDetailPanel signal={signal} signalType="pain" />);
     expect(screen.getByText("ORIGIN")).toBeInTheDocument();
-    expect(screen.getByText("Dana Lee · CMO · Marketing")).toBeInTheDocument();
+    // SIG-5f: the ORIGIN contact name is bold/primary (the per-type Contact row
+    // also shows the name, so pick the emphasised ContactInline span), with the
+    // job · department in muted (separate spans).
+    const boldName = screen
+      .getAllByText("Dana Lee")
+      .find((n) => getComputedStyle(n).fontWeight === "600");
+    expect(boldName).toBeTruthy();
+    expect(getComputedStyle(boldName).color).toBe(testTheme.palette.text.primary);
+    const meta = screen.getByText(/CMO · Marketing/);
+    expect(getComputedStyle(meta).color).toBe(testTheme.palette.text.secondary);
     expect(screen.getByText("Sam Roe")).toBeInTheDocument();
   });
 
@@ -398,14 +642,34 @@ describe("SignalDetailPanel", () => {
     expect(onReopen).toHaveBeenCalledWith(rejected, "pain");
   });
 
-  it("does NOT show Reopen for PENDING or VALIDATED signals", () => {
-    const { rerender } = render(
-      <SignalDetailPanel signal={MOCK_PAIN} signalType="pain" onReopen={vi.fn()} />,
+  it("P3: shows Reopen for a VALIDATED signal too (terminal status), and fires onReopen", () => {
+    const onReopen = vi.fn();
+    const validated = { ...MOCK_PAIN, status: "VALIDATED" };
+    render(
+      <SignalDetailPanel signal={validated} signalType="pain" onReopen={onReopen} onEdit={vi.fn()} />,
     );
-    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+    const reopen = screen.getByRole("button", { name: /reopen/i });
+    expect(reopen).toBeInTheDocument();
+    // A validated signal offers no Validate/Reject (already validated), just Reopen.
+    expect(screen.queryByRole("button", { name: /validate/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+    fireEvent.click(reopen);
+    expect(onReopen).toHaveBeenCalledWith(validated, "pain");
+  });
 
-    rerender(
-      <SignalDetailPanel signal={{ ...MOCK_PAIN, status: "VALIDATED" }} signalType="pain" onReopen={vi.fn()} />,
+  it("P3: still does NOT show Reopen for a PENDING signal", () => {
+    render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" onReopen={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
+  });
+
+  it("P3: a locked activity shows no Reopen, even on a validated signal", () => {
+    render(
+      <SignalDetailPanel
+        signal={{ ...MOCK_PAIN, status: "VALIDATED" }}
+        signalType="pain"
+        isLocked
+        onReopen={vi.fn()}
+      />,
     );
     expect(screen.queryByRole("button", { name: /reopen/i })).not.toBeInTheDocument();
   });
@@ -441,5 +705,82 @@ describe("SignalDetailPanel", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /validate/i })).toBeDisabled();
+  });
+});
+
+// ==============================|| SIG-4 — MULTI-DEPARTMENT SCOPE (M2M) ||============================== //
+//
+// Pain / Impact / Constraint carry `target_departments` (M2M, a list of
+// {id,name}). The detail drawer must show ALL of them, joined "A, B, C" — not a
+// single name read off the removed singular `target_department` FK. Objective /
+// People keep the single FK and are unchanged.
+
+describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
+  const CONSTRAINT_MULTI = {
+    id: "cn-multi",
+    status: "PENDING",
+    summary: "Must comply with SOC2 across teams",
+    nature_display: "Regulatory",
+    rigidity_display: "Firm",
+    target_departments: [
+      { id: "d1", name: "Sales" },
+      { id: "d2", name: "Marketing" },
+      { id: "d3", name: "Finance" },
+    ],
+    source_quote: "We must comply",
+    contact: null,
+    source_context: { contacts: [] },
+  };
+
+  it("Constraint: shows ALL target_departments joined 'A, B, C'", () => {
+    render(<SignalDetailPanel signal={CONSTRAINT_MULTI} signalType="constraints" />);
+    expect(screen.getByText("Sales, Marketing, Finance")).toBeInTheDocument();
+  });
+
+  it("Constraint: a single department shows just its name", () => {
+    const one = { ...CONSTRAINT_MULTI, id: "cn-one", target_departments: [{ id: "d1", name: "Sales" }] };
+    render(<SignalDetailPanel signal={one} signalType="constraints" />);
+    expect(screen.getByText("Sales")).toBeInTheDocument();
+  });
+
+  it("Constraint: an empty department list hides the row (no stray name, no crash)", () => {
+    const none = { ...CONSTRAINT_MULTI, id: "cn-none", target_departments: [] };
+    render(<SignalDetailPanel signal={none} signalType="constraints" />);
+    // The section still renders (rigidity present) but no department text leaks.
+    expect(screen.getByText("Firm")).toBeInTheDocument();
+    expect(screen.queryByText("Sales")).not.toBeInTheDocument();
+  });
+
+  it("Pain: shows ALL target_departments joined", () => {
+    const painMulti = {
+      ...MOCK_PAIN,
+      id: "pn-multi",
+      target_departments: [
+        { id: "d1", name: "Sales" },
+        { id: "d2", name: "Operations" },
+      ],
+    };
+    render(<SignalDetailPanel signal={painMulti} signalType="pain" />);
+    expect(screen.getByText("Sales, Operations")).toBeInTheDocument();
+  });
+
+  it("Impact: shows ALL target_departments joined", () => {
+    const impactMulti = {
+      ...MOCK_IMPACT,
+      id: "im-multi",
+      target_departments: [
+        { id: "d2", name: "Marketing" },
+        { id: "d3", name: "Finance" },
+      ],
+    };
+    render(<SignalDetailPanel signal={impactMulti} signalType="impact" />);
+    expect(screen.getByText("Marketing, Finance")).toBeInTheDocument();
+  });
+
+  it("Objective (mono FK): its single target_department is UNCHANGED (not joined)", () => {
+    // MOCK_OBJECTIVE carries the singular target_department FK ({name:'Finance'})
+    // rendered in the Scope label/value row. SIG-4 must not touch it.
+    render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText("Finance")).toBeInTheDocument();
   });
 });

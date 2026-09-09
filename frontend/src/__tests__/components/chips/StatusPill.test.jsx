@@ -19,6 +19,7 @@ vi.mock("themes/emotionCache", () => ({
 
 import ThemeCustomization from "themes/index";
 import StatusPill from "components/chips/StatusPill";
+import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
 
 function rulesForElement(el) {
   const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
@@ -60,5 +61,22 @@ describe("StatusPill — generic 3-part chip", () => {
   it("passes through extra props (e.g. data-*) onto the pill element", () => {
     renderPill({ label: "X", colorText: "error.main", colorBg: "grey.900", "data-status-color": "error" });
     expect(screen.getByTestId("status-pill").getAttribute("data-status-color")).toBe("error");
+  });
+
+  // UI-1 — status-aware mode: label + colours resolved from a status map, so
+  // callers pass a status + the shared mapping instead of hardcoding colours.
+  it("resolves the label from a status map when given status + statusMap", () => {
+    renderPill({ status: "VALIDATED", statusMap: SIGNAL_STATUS_PILL });
+    const pill = screen.getByTestId("status-pill");
+    expect(pill).toHaveTextContent("Validated");
+    // still a real pill (solid border + pill radius) — colours come from the role
+    const rule = rulesForElement(pill);
+    expect(rule).toMatch(/border-radius:\s*999px/);
+    expect(rule).toMatch(/border-style:\s*solid/);
+  });
+
+  it("renders nothing for a status absent from the map", () => {
+    const { container } = renderPill({ status: "UNKNOWN", statusMap: SIGNAL_STATUS_PILL });
+    expect(container.querySelector('[data-testid="status-pill"]')).toBeNull();
   });
 });

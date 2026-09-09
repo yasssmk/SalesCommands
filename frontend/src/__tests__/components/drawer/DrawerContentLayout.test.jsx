@@ -18,8 +18,11 @@ vi.mock("themes/emotionCache", () => ({
 }));
 
 import { useTheme } from "@mui/material/styles";
+import Typography from "@mui/material/Typography";
 import ThemeCustomization from "themes/index";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+
+const colorOf = (rule) => (rule.match(/color:([^;}]+)/) || [])[1];
 
 function rulesForElement(el) {
   const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
@@ -119,6 +122,96 @@ describe("DrawerContentLayout — title + content box + global actions", () => {
     expect(screen.queryByTestId("drawer-actions")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /save/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+  });
+
+  // UI-2 — the SAME layout renders the "read signal" action bar when given
+  // readActions: Edit (NEUTRE) · Reject (error outline) · Validate (success
+  // contained), gated by status, with Reopen for a terminal (validated OR
+  // rejected) signal.
+  const readActions = (over = {}) => ({
+    onEdit: vi.fn(),
+    onReject: vi.fn(),
+    onValidate: vi.fn(),
+    onReopen: vi.fn(),
+    status: "PENDING",
+    isLocked: false,
+    validateDisabled: false,
+    ...over,
+  });
+
+  function renderRead(over = {}) {
+    return render(
+      <ThemeCustomization>
+        <DrawerContentLayout readActions={readActions(over)} />
+      </ThemeCustomization>,
+    );
+  }
+
+  it("read mode: a PENDING signal shows Edit (neutral) · Reject (error) · Validate (success)", () => {
+    renderRead({ status: "PENDING" });
+    const edit = screen.getByRole("button", { name: /edit/i });
+    const reject = screen.getByRole("button", { name: /reject/i });
+    const validate = screen.getByRole("button", { name: /validate/i });
+    // Edit is NEUTRAL — not success (the bug), not primary.
+    expect(edit).toHaveClass("MuiButton-outlinedInherit");
+    expect(edit).not.toHaveClass("MuiButton-outlinedSuccess");
+    expect(edit).not.toHaveClass("MuiButton-outlinedPrimary");
+    // Reject error outline, Validate success contained.
+    expect(reject).toHaveClass("MuiButton-outlinedError");
+    expect(validate).toHaveClass("MuiButton-containedSuccess");
+  });
+
+  it("P-EDIT-GREY: the Edit button sits in the neutral text.secondary tone (not the darker inherited grey)", () => {
+    render(
+      <ThemeCustomization>
+        <Typography data-testid="secref" color="text.secondary">ref</Typography>
+        <DrawerContentLayout readActions={readActions({ status: "PENDING" })} />
+      </ThemeCustomization>,
+    );
+    // The standard neutral tone, resolved from the theme in this same render.
+    const secColor = colorOf(rulesForElement(screen.getByTestId("secref")));
+    expect(secColor).toBeTruthy();
+    // The Edit button pins that exact neutral (was color="inherit" → a darker tone).
+    expect(rulesForElement(screen.getByRole("button", { name: /edit/i }))).toContain(`color:${secColor}`);
+  });
+
+  it("read mode: a REJECTED signal shows Reopen (not Reject/Validate)", () => {
+    renderRead({ status: "REJECTED" });
+    expect(screen.getByRole("button", { name: /reopen/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^validate$/i })).not.toBeInTheDocument();
+  });
+
+  it("P3: read mode: a VALIDATED signal shows Edit + Reopen (terminal status), no Reject/Validate", () => {
+    renderRead({ status: "VALIDATED" });
+    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument();
+    // A decision can always be undone: Reopen is offered on validated too, not just rejected.
+    expect(screen.getByRole("button", { name: /reopen/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^validate$/i })).not.toBeInTheDocument();
+  });
+
+  it("read mode: isLocked hides all read actions; validateDisabled disables Validate", () => {
+    const { unmount } = renderRead({ status: "PENDING", isLocked: true });
+    expect(screen.queryByRole("button", { name: /edit/i })).not.toBeInTheDocument();
+    unmount();
+    renderRead({ status: "PENDING", validateDisabled: true });
+    expect(screen.getByRole("button", { name: /validate/i })).toBeDisabled();
+  });
+
+  it("read mode: the read actions fire their handlers", () => {
+    const acts = readActions({ status: "PENDING" });
+    render(
+      <ThemeCustomization>
+        <DrawerContentLayout readActions={acts} />
+      </ThemeCustomization>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByRole("button", { name: /reject/i }));
+    fireEvent.click(screen.getByRole("button", { name: /validate/i }));
+    expect(acts.onEdit).toHaveBeenCalledTimes(1);
+    expect(acts.onReject).toHaveBeenCalledTimes(1);
+    expect(acts.onValidate).toHaveBeenCalledTimes(1);
   });
 
   it("renders the action bar as soon as onSave (or onCancel) is provided", () => {

@@ -49,11 +49,13 @@ const COMPETITOR = {
 };
 
 describe("SignalLine — competitor row (muted type, no scope)", () => {
-  it("renders the summary and a 'Competitor' type label", () => {
+  it("renders the competitor NAME (not the narrative summary) and a 'Competitor' type label", () => {
     render(<SignalLine signal={COMPETITOR} signalType="competitors" />);
+    // The row message is the competitor identity (competitor_name), not summary.
+    expect(screen.getByText("Salesforce")).toBeInTheDocument();
     expect(
-      screen.getByText("Prospect is weighing Salesforce against us"),
-    ).toBeInTheDocument();
+      screen.queryByText("Prospect is weighing Salesforce against us"),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Competitor")).toBeInTheDocument();
   });
 

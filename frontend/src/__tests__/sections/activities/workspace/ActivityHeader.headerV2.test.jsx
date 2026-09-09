@@ -9,7 +9,7 @@
 //     (never recomputed client-side), and the date shown without a −1-day shift.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, renderHook, screen, cleanup } from "@testing-library/react";
+import { render, renderHook, screen, cleanup, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 afterEach(() => cleanup());
@@ -247,5 +247,132 @@ describe("ActivityHeader V2 — R2 Overdue from backend is_overdue", () => {
     const { result } = useHeader({ ...base, scheduled_date: "2026-09-03", is_overdue: false });
     render(<div>{result.current.infoItems}</div>, { wrapper });
     expect(screen.getByText(/Sep 3, 2026/)).toBeInTheDocument();
+  });
+});
+
+describe("ActivityHeader — 'N to validate' uses the complete pending count", () => {
+  it("renders the passed pendingCount (complete 8-type source), not counts.pending", () => {
+    // The by-activity /counts/ endpoint only totals 6 types, so it would
+    // under-state pending. The page passes the complete count from the aggregate.
+    const { result } = useHeader(base, { pendingCount: 7, counts: { pending: 3 } });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(screen.getByText(/7 to validate/)).toBeInTheDocument();
+    expect(screen.queryByText(/3 to validate/)).not.toBeInTheDocument();
+  });
+
+  it("hides the counter when the complete pending count is 0 (even if counts.pending > 0)", () => {
+    const { result } = useHeader(base, { pendingCount: 0, counts: { pending: 5 } });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(screen.queryByText(/to validate/)).not.toBeInTheDocument();
+  });
+});
+
+describe("P2 — header signal counter: 'N to validate' (action) vs 'N signals' (info)", () => {
+  it("pending > 0 → 'N to validate' (warning) is CLICKABLE (fires onPendingClick)", () => {
+    const onPendingClick = vi.fn();
+    const { result } = useHeader(base, { pendingCount: 4, totalCount: 9, onPendingClick });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    fireEvent.click(screen.getByText(/4 to validate/));
+    expect(onPendingClick).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/signals/)).not.toBeInTheDocument();
+  });
+
+  it("0 pending & total > 0 → 'N signals' (neutral text.secondary, no alert icon)", () => {
+    const { result } = useHeader(base, { pendingCount: 0, totalCount: 9 });
+    const { container } = render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(screen.getByText(/9 signals/)).toBeInTheDocument();
+    expect(screen.queryByText(/to validate/)).not.toBeInTheDocument();
+    // neutral: no warning alert icon
+    expect(container.querySelector(".anticon-exclamation-circle")).toBeNull();
+  });
+
+  it("0 pending & total > 0 → 'N signals' is NOT clickable (info, no onPendingClick)", () => {
+    const onPendingClick = vi.fn();
+    const { result } = useHeader(base, { pendingCount: 0, totalCount: 9, onPendingClick });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    fireEvent.click(screen.getByText(/9 signals/));
+    expect(onPendingClick).not.toHaveBeenCalled();
+  });
+
+  it("total 0 → renders neither counter", () => {
+    const { result } = useHeader(base, { pendingCount: 0, totalCount: 0 });
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(screen.queryByText(/to validate/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/signals/)).not.toBeInTheDocument();
+  });
+
+  it("P4b: 'N to validate' carries the SIGNAL icon (radar-chart, like the band), not an alert/thunderbolt", () => {
+    const { result } = useHeader(base, { pendingCount: 3, totalCount: 5 });
+    const { container } = render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(container.querySelector(".anticon-radar-chart")).toBeTruthy();
+    expect(container.querySelector(".anticon-exclamation-circle")).toBeNull();
+    expect(container.querySelector(".anticon-thunderbolt")).toBeNull();
+  });
+
+  it("P4b: neutral 'N signals' also carries the SIGNAL icon (radar-chart)", () => {
+    const { result } = useHeader(base, { pendingCount: 0, totalCount: 5 });
+    const { container } = render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(container.querySelector(".anticon-radar-chart")).toBeTruthy();
+  });
+});
+
+describe("P4a — account/DC names: bold neutral at rest, primary + underline on hover", () => {
+  // Base + :hover emotion rules for an element's own css-* classes.
+  function baseAndHover(el) {
+    const css = Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+    const classes = (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+    const base = classes.map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    const hover = classes.map((c) => (css.match(new RegExp(`\\.${c}:hover\\s*\\{[^}]*\\}`, "g")) || []).join("")).join("");
+    return { base, hover };
+  }
+  const colorOf = (rule) => (rule.match(/color:([^;}]+)/) || [])[1];
+
+  const dcBase = {
+    ...base,
+    decision_cycle: "cyc-9",
+    decision_cycle_detail: { name: "New HQ rollout" },
+  };
+
+  it("account name: bold at rest, and hover recolours (to primary) + underlines", () => {
+    const { result } = useHeader(base);
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    const { base: b, hover: h } = baseAndHover(screen.getByText("ACME"));
+    expect(b).toMatch(/font-weight:\s*(600|700|bold)/); // bold neutral at rest
+    expect(h).toMatch(/text-decoration:\s*underline/); // underline on hover
+    // rest colour differs from hover colour (neutral rest → primary hover)
+    expect(colorOf(h)).toBeTruthy();
+    expect(colorOf(b)).not.toBe(colorOf(h));
+  });
+
+  it("DC name: bold at rest, and hover recolours (to primary) + underlines", () => {
+    const { result } = useHeader(dcBase);
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    const { base: b, hover: h } = baseAndHover(screen.getByText("New HQ rollout"));
+    expect(b).toMatch(/font-weight:\s*(600|700|bold)/);
+    expect(h).toMatch(/text-decoration:\s*underline/);
+    expect(colorOf(h)).toBeTruthy();
+    expect(colorOf(b)).not.toBe(colorOf(h));
+  });
+
+  it("account + DC names keep the clickable affordance (cursor: pointer)", () => {
+    const { result } = useHeader(dcBase);
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    expect(baseAndHover(screen.getByText("ACME")).base).toMatch(/cursor:\s*pointer/);
+    expect(baseAndHover(screen.getByText("New HQ rollout")).base).toMatch(/cursor:\s*pointer/);
+  });
+
+  it("P4a-fix: at rest, account & DC names sit in the INFO-LINE colour (like the step), not text.primary", () => {
+    const fixture = {
+      ...dcBase,
+      decision_step_detail: { name: "Business Case" }, // rendered in the info-line colour
+    };
+    const { result } = useHeader(fixture);
+    render(<div>{result.current.infoItems}</div>, { wrapper });
+    // The step crumb is the reference info-line colour (text.secondary).
+    const infoColor = colorOf(baseAndHover(screen.getByText("Business Case")).base);
+    expect(infoColor).toBeTruthy();
+    // Account + DC names match it at rest (muted, just bold) — not the vivid text.primary.
+    expect(colorOf(baseAndHover(screen.getByText("ACME")).base)).toBe(infoColor);
+    expect(colorOf(baseAndHover(screen.getByText("New HQ rollout")).base)).toBe(infoColor);
   });
 });

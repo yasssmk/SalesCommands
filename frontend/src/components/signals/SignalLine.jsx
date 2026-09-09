@@ -3,12 +3,20 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useState } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+
+// Icon size token (the project's iconSizes source — used directly so the row
+// needs no theme wrapper). sm = 14px.
+import IconSizes from "themes/iconSizes";
 
 // Icons
 import {
@@ -16,12 +24,17 @@ import {
   CalendarOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
+  CheckOutlined,
+  CloseOutlined,
   StopOutlined,
 } from "@ant-design/icons";
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
+import ContactInline from "components/signals/ContactInline";
 import { getTechSummary } from "sections/activities/signals/utils/signalDisplay";
+
+const ICON_SIZES = IconSizes();
 
 // Light status treatment — reuses the design-system `light` Chip variant
 // (tinted background + light border, see themes/overrides/Chip.js) with a
@@ -73,6 +86,11 @@ function getMessage(signal, signalType) {
       // summary/notes fallback. (Refined rendering — role/department chips —
       // is deferred to the UX Activity sprint.)
       return signal.full_name || signal.summary || signal.notes || "—";
+    case "competitors":
+      // The competitor's identity is its name — NOT the narrative `summary`,
+      // which carries a technical "competitor: …" prefix. Matches the drawer,
+      // which shows competitor_name.
+      return signal.competitor_name || signal.summary || "—";
     // pain / objective / impact / blockers / constraints
     default:
       return signal.summary || "—";
@@ -98,7 +116,9 @@ function getScopeLabel(signal, signalType) {
   return "Business";
 }
 
-// First activity contact rendered as "First Last · job_title · department".
+// Truthy when the first contact has a displayable identity — guards the meta
+// contact block. The rendering itself is delegated to ContactInline (SIG-5f:
+// name bold/primary, job · department muted).
 function formatOriginContact(contact) {
   if (!contact) return null;
   const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
@@ -133,7 +153,13 @@ export default function SignalLine({
   signal,
   signalType,
   onSelect,
+  onValidate,
+  onReject,
   showTypeChip = true,
+  showScopeChip = true,
+  showNatureChip = true,
+  showStatusChip = true,
+  showContactOverflow = true,
 }) {
   const isRejected = signal.status === "REJECTED";
 
@@ -145,6 +171,25 @@ export default function SignalLine({
   const contacts = signal.source_context?.contacts ?? [];
   const originContact = formatOriginContact(contacts[0]);
   const extraContacts = contacts.length > 1 ? contacts.length - 1 : 0;
+
+  // Inline validate / reject — only on a PENDING row, and only when a caller
+  // wires the handlers (the Activity validation list). DC/Account pass none →
+  // no inline actions (unchanged). "Always clickable" = no missing-field guard;
+  // a business error (e.g. incomplete signal → 400) surfaces via the caller's
+  // snackbar. `busy` blocks a double-click during the async call.
+  const canAct = signal.status === "PENDING" && Boolean(onValidate || onReject);
+  const [busy, setBusy] = useState(null); // "validate" | "reject" | null
+
+  const runAction = async (kind, fn, e) => {
+    e.stopPropagation(); // never bubble to the row → drawer
+    if (busy || !fn) return;
+    setBusy(kind);
+    try {
+      await fn(signal, signalType);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <Box
@@ -161,8 +206,9 @@ export default function SignalLine({
       }}
       sx={{
         display: "flex",
-        flexDirection: "column",
-        gap: 0.75,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 1,
         width: "100%",
         border: 1,
         borderColor: "divider",
@@ -176,6 +222,8 @@ export default function SignalLine({
         "&:hover": { bgcolor: "action.hover" },
       }}
     >
+      {/* Content column (message + meta) — flex-grows; actions sit to its right. */}
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0.75 }}>
       {/* Line 1: [type chip] · full message (wraps, no truncation) */}
       <Stack
         direction="row"
@@ -236,10 +284,8 @@ export default function SignalLine({
             sx={{ flexShrink: 1, minWidth: 0, maxWidth: 320 }}
           >
             <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {originContact}
-            </Typography>
-            {extraContacts > 0 && (
+            <ContactInline contact={contacts[0]} variant="caption" noWrap />
+            {showContactOverflow && extraContacts > 0 && (
               <Chip
                 label={`+${extraContacts}`}
                 size="small"
@@ -250,8 +296,9 @@ export default function SignalLine({
           </Stack>
         )}
 
-        {/* Nature — constraint classification axis (Constraint only). */}
-        {signalType === "constraints" && signal.nature_display && (
+        {/* Nature — constraint classification axis (Constraint only). Hidden in
+            the validation list (showNatureChip=false); detail lives in drawer. */}
+        {showNatureChip && signalType === "constraints" && signal.nature_display && (
           <Chip
             label={signal.nature_display}
             size="small"
@@ -260,8 +307,12 @@ export default function SignalLine({
           />
         )}
 
-        {/* Scope — moved here from the message line, where it was cramped. */}
-        {scopeLabel && (
+        {/* Signal scope — an outlined chip on the DC / Account flat views
+            (default). The Activity validation list passes showScopeChip=false,
+            which drops the signal scope entirely (neither chip nor text — the
+            scope/department lives in the drawer). The CONTACT identity above is
+            unaffected. */}
+        {showScopeChip && scopeLabel && (
           <Chip
             label={scopeLabel}
             size="small"
@@ -273,8 +324,10 @@ export default function SignalLine({
         {/* Spacer pushes the status to the right edge of the meta line. */}
         <Box sx={{ flexGrow: 1 }} />
 
-        {/* Light status treatment (DS `light` Chip variant + icon). */}
-        {statusConfig && (
+        {/* Light status treatment (DS `light` Chip variant + icon). Hidden in
+            the validation list (showStatusChip=false): the status section title
+            already names it (a row under "To validate" is Pending). */}
+        {showStatusChip && statusConfig && (
           <Chip
             label={statusConfig.label}
             color={statusConfig.color}
@@ -285,6 +338,56 @@ export default function SignalLine({
           />
         )}
       </Stack>
+      </Box>
+
+      {/* Inline actions (validation worklist) — ✓ validate / ✗ reject, to the
+          right of the row. stopPropagation keeps them from opening the drawer;
+          clicking the rest of the row still does. Colours via palette roles
+          (success / error), size via the iconSizes token. */}
+      {canAct && (
+        <Stack
+          direction="row"
+          spacing={0.25}
+          alignItems="center"
+          sx={{ flexShrink: 0 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Tooltip title="Validate">
+            <span>
+              <IconButton
+                size="small"
+                color="success"
+                aria-label="Validate signal"
+                disabled={Boolean(busy)}
+                onClick={(e) => runAction("validate", onValidate, e)}
+              >
+                {busy === "validate" ? (
+                  <CircularProgress size={ICON_SIZES.sm} color="inherit" />
+                ) : (
+                  <CheckOutlined style={{ fontSize: ICON_SIZES.sm }} />
+                )}
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Reject">
+            <span>
+              <IconButton
+                size="small"
+                color="error"
+                aria-label="Reject signal"
+                disabled={Boolean(busy)}
+                onClick={(e) => runAction("reject", onReject, e)}
+              >
+                {busy === "reject" ? (
+                  <CircularProgress size={ICON_SIZES.sm} color="inherit" />
+                ) : (
+                  <CloseOutlined style={{ fontSize: ICON_SIZES.sm }} />
+                )}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
+      )}
     </Box>
   );
 }
@@ -321,6 +424,18 @@ SignalLine.propTypes = {
     "competitors",
   ]).isRequired,
   onSelect: PropTypes.func,
+  /** Inline validate — (signal, type) => Promise. Shown on PENDING rows only. */
+  onValidate: PropTypes.func,
+  /** Inline reject — (signal, type) => Promise. Shown on PENDING rows only. */
+  onReject: PropTypes.func,
   /** Hide the type chip when the surrounding section already names the type. */
   showTypeChip: PropTypes.bool,
+  /** Show the signal scope as an outlined chip (default true); false → no scope at all. */
+  showScopeChip: PropTypes.bool,
+  /** Show the constraint nature chip (default true; false in the validation list). */
+  showNatureChip: PropTypes.bool,
+  /** Show the status chip (default true; false in the validation list). */
+  showStatusChip: PropTypes.bool,
+  /** Show the "+N" contact-overflow chip (default true; false in the validation list). */
+  showContactOverflow: PropTypes.bool,
 };

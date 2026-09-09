@@ -18,24 +18,24 @@ import PropTypes from "prop-types";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import {
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  EditOutlined,
-  LinkOutlined,
-  ReloadOutlined,
-} from "@ant-design/icons";
+import { CloseOutlined, LinkOutlined } from "@ant-design/icons";
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import SignalStatusChip from "components/chips/SignalStatusChip";
+import StatusPill from "components/chips/StatusPill";
+import ContactInline from "components/signals/ContactInline";
+import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
+import { getSignalTypeLabel } from "utils/signalTypes";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
+import SectionHeader from "components/display/SectionHeader";
+import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
 import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
 import {
@@ -44,6 +44,7 @@ import {
   formatContact,
   getNextStepSummary,
   formatSuggestedContacts,
+  formatTargetDepartments,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // Shared per-type detail blocks — the single rendering of each type's
@@ -123,6 +124,8 @@ function PainDetails({ signal }) {
             : null
         } />
         <DrawerFieldRow label="Scope" value={signal.scope_level_display} />
+        {/* Multi-department scope (M2M): all target_departments, joined. */}
+        <DrawerFieldRow label="Department" value={formatTargetDepartments(signal)} />
         <DrawerFieldRow label="Category" value={signal.signal_category_display} />
       </DrawerSection>
       <PainDetailBlock signal={signal} />
@@ -168,6 +171,8 @@ function ImpactDetails({ signal }) {
             : null
         } />
         <DrawerFieldRow label="Scope" value={signal.scope_level_display} />
+        {/* Multi-department scope (M2M): all target_departments, joined. */}
+        <DrawerFieldRow label="Department" value={formatTargetDepartments(signal)} />
       </DrawerSection>
       <ImpactDetailBlock signal={signal} />
       <DrawerSection title="CONTEXT">
@@ -266,7 +271,9 @@ function ConstraintDetails({ signal }) {
             : null
         } />
         <DrawerFieldRow label="Rigidity" value={signal.rigidity_display} />
-        <DrawerFieldRow label="Department" value={signal.target_department?.name} />
+        {/* Multi-department scope (M2M): all target_departments, joined —
+            the singular target_department FK was dropped for Constraint. */}
+        <DrawerFieldRow label="Department" value={formatTargetDepartments(signal)} />
       </DrawerSection>
       <DrawerSection title="CONTEXT">
         <DrawerFieldRow label="Raised by" value={contactName} />
@@ -305,16 +312,6 @@ function renderDetails(signal, signalType) {
 
 // ==============================|| PROVENANCE ||============================== //
 
-function formatDrawerContact(contact) {
-  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
-  const parts = [
-    name || null,
-    contact.job_title || null,
-    contact.department?.name || null,
-  ].filter(Boolean);
-  return parts.join(" · ") || null;
-}
-
 function ProvenanceSection({ signal, onOpenActivity }) {
   const contacts = signal.source_context?.contacts ?? [];
   const activityId = signal.source_context?.activity?.id ?? null;
@@ -326,9 +323,7 @@ function ProvenanceSection({ signal, onOpenActivity }) {
         <DrawerFieldRow label={contacts.length > 1 ? "Contacts" : "Contact"}>
           <Stack spacing={0.25}>
             {contacts.map((c) => (
-              <Typography key={c.id} variant="body2">
-                {formatDrawerContact(c)}
-              </Typography>
+              <ContactInline key={c.id} contact={c} variant="body2" />
             ))}
           </Stack>
         </DrawerFieldRow>
@@ -352,6 +347,307 @@ ProvenanceSection.propTypes = {
   onOpenActivity: PropTypes.func,
 };
 
+// ==============================|| OBJECTIVE DETAIL VIEW (SIG-5e) ||============================== //
+//
+// The Objective detail is rebuilt as a READ mirror of EditObjectiveContent: the
+// same 5 SectionHeaders + subtitles + the Domain × Dimension recap, values shown
+// (not editable). No type/status chips — the type is the coque title, the status
+// is muted text. Origin (section 5) is detail-only, with a "View origin activity"
+// link shown ONLY when the origin activity differs from the current one.
+
+// Numbered section badge — info palette role (mirror of EditObjectiveContent).
+// A read-flow field: a discreet muted label ABOVE the value (not a rigid
+// label/value column) — reads like a page, not a form.
+function ReadField({ label, value }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <Box sx={{ mb: 1.25 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+        {label}
+      </Typography>
+      <Typography variant="body2" color="text.primary" sx={{ whiteSpace: "pre-line" }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+ReadField.propTypes = { label: PropTypes.string, value: PropTypes.node };
+
+// A label/value ROW: muted label on the LEFT, value on the RIGHT (2-column,
+// value right-aligned). Used for scope + metrics, where each field is a short
+// scalar read as "Label ………… Value".
+function ReadRow({ label, value }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "baseline",
+        justifyContent: "space-between",
+        gap: 2,
+        mb: 1,
+      }}
+    >
+      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+        {label}
+      </Typography>
+      <Typography
+        variant="body2"
+        color="text.primary"
+        sx={{ textAlign: "right", whiteSpace: "pre-line" }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+ReadRow.propTypes = { label: PropTypes.string, value: PropTypes.node };
+
+// Read scope as a label/value pair (mirrors the pill's Company / Department).
+function objectiveScopeRow(signal) {
+  if (signal.scope_level === "DEPARTMENT") {
+    return { label: "Department", value: signal.target_department?.name || "—" };
+  }
+  if (signal.scope_level === "PERSONAL") {
+    const c = signal.target_contact;
+    const name = c ? `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() : "";
+    return { label: "Contact", value: name || "—" };
+  }
+  return { label: "Scope", value: "Company" };
+}
+
+function ObjectiveDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "objective") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const axisPreview =
+    signal.what_display && signal.dimension_display
+      ? `${signal.what_display} × ${signal.dimension_display}`
+      : null;
+  const canonicalPreview =
+    signal.what && signal.dimension ? `objective:${signal.what}:${signal.dimension}` : null;
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+  const hasMetrics = Boolean(signal.success_criteria || signal.target_date || signal.notes);
+
+  return (
+    <>
+      {/* UI-10 — the objective detail carries NO chassis padding of its own. The
+          padding + scroll come from the coque: the WorkspaceDrawer body (p:2,
+          WorkspaceDrawer.jsx) on the Activity surface, and an equivalent p:2 body
+          added around the objective detail in SignalClusterDetailDrawer (DC/Account).
+          So the objective margins match the edit drawers exactly, in both coques. */}
+      <Box data-testid="objective-detail-body">
+        {/* In-content header (title · [status pill + close ×]) — used only when
+            the coque does NOT own the header (headerInCoque=false; DC/Account).
+            On the Activity surface the coque renders title + status pill + × in
+            its own header (UI-1), so this block is suppressed. */}
+        {!headerInCoque && (
+          <Box
+            data-testid="objective-detail-header"
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 1,
+              mb: 2,
+            }}
+          >
+            <Typography variant="h3" fontWeight="bold" data-testid="objective-detail-title">
+              {getSignalTypeLabel("objective")}
+            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+              {onClose && (
+                <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                  <CloseOutlined style={{ fontSize: 14 }} />
+                </IconButton>
+              )}
+            </Stack>
+          </Box>
+        )}
+
+        {/* UI-8/UI-9 — ONE DrawerContentLayout is the whole drawer chassis: it
+            renders the shared content box (background.default + radius.lg + p:2
+            hairline) AND the read-mode action bar (Edit/Reject/Validate/Reopen,
+            UI-2) in the same <Stack>, exactly like the edit drawers. The detail
+            supplies only its business content (the sections). The Goal box keeps
+            its surface.level1 tint (UI-5); internal blocks keep radius.md (UI-6). */}
+        <DrawerContentLayout
+          readActions={{
+            onEdit: () => onEdit?.(signal, "objective"),
+            onReject: () => onReject?.(signal, "objective"),
+            onValidate: () => onValidate?.(signal, "objective"),
+            onReopen: () => onReopen?.(signal, "objective"),
+            status: signal.status,
+            isLocked,
+            validateDisabled,
+          }}
+        >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Goal. The summary is the headline (prominent, no label);
+            the Domain × Dimension are conveyed by the recap only. Detail exposes
+            values — no instruction subtitles (those live in the edit). */}
+        {/* One enclosing Goal box: summary (top) · short centered separator ·
+            axis recap (bottom). A single surface tint, no inner accent border. */}
+        <SectionHeader index={1} title="Goal" sx={{ mb: 1 }} />
+        {(signal.summary || axisPreview) && (
+          <Box
+            data-testid="objective-goal-box"
+            sx={{
+              my: 1,
+              px: 1.5,
+              py: 1.25,
+              bgcolor: (theme) => theme.aphoriQ?.surface?.level1,
+              borderRadius: (theme) => theme.aphoriQ?.radius?.md && `${theme.aphoriQ.radius.md}px`,
+            }}
+          >
+            {signal.summary && (
+              <Typography
+                data-testid="objective-summary-box"
+                variant="body1"
+                fontWeight={500}
+                color="text.primary"
+                sx={{ whiteSpace: "pre-line" }}
+              >
+                {signal.summary}
+              </Typography>
+            )}
+            {signal.summary && axisPreview && (
+              <Divider
+                data-testid="objective-goal-separator"
+                sx={{ width: "40%", mx: "auto", my: 1.5 }}
+              />
+            )}
+            {axisPreview && (
+              <>
+                <Typography variant="caption" color="text.secondary">
+                  This is a{" "}
+                  <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
+                    {axisPreview}
+                  </Box>{" "}
+                  goal
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  display="block"
+                  sx={{ fontFamily: "monospace", mt: 0.25 }}
+                >
+                  canonical_key: {canonicalPreview}
+                </Typography>
+              </>
+            )}
+          </Box>
+        )}
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Scope, as a label/value row (value right). */}
+        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
+        <ReadRow {...objectiveScopeRow(signal)} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Metrics (one discreet line when empty). */}
+        <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
+        {hasMetrics ? (
+          <>
+            <ReadRow label="Success criteria" value={signal.success_criteria} />
+            <ReadRow label="Target date" value={formatDate(signal.target_date)} />
+            <ReadRow label="Notes" value={signal.notes} />
+          </>
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
+            No metrics defined
+          </Typography>
+        )}
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Source: the quote, who said it, and (conditionally) a link
+            to the origin activity. Merges the former Source quote + Origin. */}
+        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        {signal.source_quote ? (
+          <SourceQuoteBlock quote={signal.source_quote} />
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            No source quote
+          </Typography>
+        )}
+        {contacts.length > 0 && (
+          <Box sx={{ mt: 1.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              {contacts.length > 1 ? "Contacts" : "Contact"}
+            </Typography>
+            <Stack spacing={0.25}>
+              {contacts.map((c) => (
+                <ContactInline key={c.id} contact={c} variant="body2" />
+              ))}
+            </Stack>
+          </Box>
+        )}
+        {showOriginLink && (
+          <Button
+            size="small"
+            variant="text"
+            startIcon={<LinkOutlined style={{ fontSize: 13 }} />}
+            onClick={() => onOpenActivity(originActivityId)}
+            sx={{ mt: 0.5, px: 0 }}
+          >
+            View origin activity
+          </Button>
+        )}
+        </DrawerContentLayout>
+      </Box>
+    </>
+  );
+}
+ObjectiveDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header (the coque
+      suppresses its own cross). Absent → no in-header close (DC/Account). */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header (title + status pill + ×) — the
+      in-content header is suppressed. Absent/false → in-content header. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
 
 /**
@@ -366,14 +662,34 @@ export default function SignalDetailContent({
   onEdit,
   onReopen,
   onOpenActivity,
+  onClose,
+  headerInCoque,
   isLocked,
+  currentActivityId,
   leadingAction,
   trailingAction,
 }) {
   if (!signal) return null;
 
+  // SIG-5e — Objective gets the new read-mirror layout (other types unchanged).
+  if (signalType === "objective") {
+    return (
+      <ObjectiveDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
   const isPending = signal.status === "PENDING";
-  const isRejected = signal.status === "REJECTED";
   const missingFields = isPending ? getMissingFields(signal, signalType) : [];
   const validateDisabled = missingFields.length > 0;
 
@@ -431,57 +747,19 @@ export default function SignalDetailContent({
 
       <Divider />
 
-      {/* Actions */}
+      {/* Actions — shared read-signal bar (rule 6) via DrawerContentLayout. */}
       <Box sx={{ px: 2.5, py: 2 }}>
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
-          {!isLocked && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<EditOutlined style={{ fontSize: 14 }} />}
-              onClick={() => onEdit?.(signal, signalType)}
-            >
-              Edit
-            </Button>
-          )}
-          {isPending && !isLocked && (
-            <>
-              <Button
-                variant="outlined"
-                size="small"
-                color="error"
-                startIcon={<CloseCircleOutlined style={{ fontSize: 14 }} />}
-                onClick={() => onReject?.(signal, signalType)}
-              >
-                Reject
-              </Button>
-              <Tooltip title={validateDisabled ? "Complete missing fields before validating" : ""}>
-                <span>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    color="success"
-                    disabled={validateDisabled}
-                    startIcon={<CheckCircleOutlined style={{ fontSize: 14 }} />}
-                    onClick={() => onValidate?.(signal, signalType)}
-                  >
-                    Validate
-                  </Button>
-                </span>
-              </Tooltip>
-            </>
-          )}
-          {isRejected && !isLocked && (
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<ReloadOutlined style={{ fontSize: 14 }} />}
-              onClick={() => onReopen?.(signal, signalType)}
-            >
-              Reopen
-            </Button>
-          )}
-        </Stack>
+        <DrawerContentLayout
+          readActions={{
+            onEdit: () => onEdit?.(signal, signalType),
+            onReject: () => onReject?.(signal, signalType),
+            onValidate: () => onValidate?.(signal, signalType),
+            onReopen: () => onReopen?.(signal, signalType),
+            status: signal.status,
+            isLocked,
+            validateDisabled,
+          }}
+        />
       </Box>
     </>
   );
@@ -495,7 +773,17 @@ SignalDetailContent.propTypes = {
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
   onOpenActivity: PropTypes.func,
+  /** Objective detail only: when set, renders the close (×) in the detail
+      header (the Activity coque suppresses its own cross). */
+  onClose: PropTypes.func,
+  /** Objective detail only: when true, the coque owns the header — the
+      in-content title + pill + × are suppressed. */
+  headerInCoque: PropTypes.bool,
   isLocked: PropTypes.bool,
+  /** The activity currently being viewed — used to hide the "View origin
+      activity" link when the signal's origin IS that activity. Optional;
+      absent on DC/Account surfaces (link always shown there). */
+  currentActivityId: PropTypes.string,
   leadingAction: PropTypes.node,
   trailingAction: PropTypes.node,
 };

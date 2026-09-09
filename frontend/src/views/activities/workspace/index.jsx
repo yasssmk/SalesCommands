@@ -16,7 +16,7 @@ import Typography from "@mui/material/Typography";
 // Icons — section markers for the collapsible bands.
 import ExperimentOutlined from "@ant-design/icons/ExperimentOutlined";
 import FileTextOutlined from "@ant-design/icons/FileTextOutlined";
-import RadarChartOutlined from "@ant-design/icons/RadarChartOutlined";
+import { SIGNAL_ICON } from "utils/signalTypes";
 import RightCircleOutlined from "@ant-design/icons/RightCircleOutlined";
 
 // Project imports
@@ -27,6 +27,7 @@ import { useBreadcrumb } from "contexts/BreadcrumbContext";
 import { useGetActivity, updateActivity } from "api/accounts/activities";
 import { useGetLastExtractionRun } from "api/aiPipelines/lastRun";
 import { useActivitySignalCounts } from "api/signals/signalCounts";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
 import usePipelineRunner from "hooks/usePipelineRunner";
 import {
   displaySuccessSnackbar,
@@ -42,8 +43,14 @@ import { getVisibleTabs } from "sections/activities/workspace/ActivityTabs";
 import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
-import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
+import ActivitySignalsTab, {
+  ACTIVITY_FLAT_TYPES,
+} from "sections/activities/workspace/ActivitySignalsTab";
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
+import SignalsHaloBox from "components/signals/SignalsHaloBox";
+
+// The Signals band halo reads the COMPLETE validable set (all 3 statuses).
+const HALO_STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
 
 // ==============================|| ACTIVITY WORKSPACE PAGE ||============================== //
 
@@ -64,6 +71,27 @@ export default function ActivityWorkspacePage() {
 
   // Signal counts for the header pending badge.
   const { counts, mutateCounts } = useActivitySignalCounts(activityId);
+
+  // Signals band HALO (SIG-HALO). The halo must show even when the band is
+  // COLLAPSED, so the count is fetched HERE (always mounted) — not inside
+  // ActivitySignalsTab, which CollapsibleStrip unmounts while collapsed. The
+  // by-activity /counts/ endpoint only covers 6 types (it excludes people /
+  // constraint / competitor), so it would MIS-state "pending"; the halo instead
+  // reads the COMPLETE aggregate — the same 8 validable types the validation
+  // list shows, all 3 statuses — SWR-deduped with the list's own fetch.
+  const { signals: bandSignals } = useAggregatedSignals({
+    activityId,
+    statuses: HALO_STATUSES,
+    signalTypes: ACTIVITY_FLAT_TYPES,
+    ordering: "date-desc",
+    page: 1,
+    pageSize: 100,
+  });
+  const bandPendingCount = useMemo(
+    () => bandSignals.filter((s) => s.status === "PENDING").length,
+    [bandSignals],
+  );
+  const bandTotalSignals = bandSignals.length;
 
   // Pipeline runner — owned here so pipelineState is accessible to header (F4)
   const pipelineRunner = usePipelineRunner({
@@ -107,6 +135,13 @@ export default function ActivityWorkspacePage() {
     pipelineState: pipelineRunner.state,
     lastRun,
     counts,
+    // The "N to validate" badge reads the COMPLETE pending count (8 validable
+    // types, same aggregate as the Signals list + halo) so header = list; the
+    // /counts/ badge source only covered 6 types.
+    pendingCount: bandPendingCount,
+    // The neutral "N signals" fallback (shown when 0 pending) reads the same
+    // 8-type aggregate total — never counts (which totals only 6 types).
+    totalCount: bandTotalSignals,
   });
 
   // ==============================|| ADAPTIVE BODY STATE ||============================== //
@@ -255,18 +290,26 @@ export default function ActivityWorkspacePage() {
             />
           </CollapsibleStrip>
 
-          {/* Signals — open when analysed */}
-          <CollapsibleStrip
-            title="Signals"
-            icon={RadarChartOutlined}
-            defaultExpanded={analyzed}
+          {/* Signals — open when analysed. Wrapped in the validation-state
+              halo (SIG-HALO): amber when signals remain to validate, primary
+              when all are processed, none when there are no signals. The halo
+              sits on the wrapper so it shows even while the band is collapsed. */}
+          <SignalsHaloBox
+            pendingCount={bandPendingCount}
+            totalSignals={bandTotalSignals}
           >
-            <ActivitySignalsTab
-              activity={activity}
-              isLocked={isLocked}
-              mutateCounts={mutateCounts}
-            />
-          </CollapsibleStrip>
+            <CollapsibleStrip
+              title="Signals"
+              icon={SIGNAL_ICON}
+              defaultExpanded={analyzed}
+            >
+              <ActivitySignalsTab
+                activity={activity}
+                isLocked={isLocked}
+                mutateCounts={mutateCounts}
+              />
+            </CollapsibleStrip>
+          </SignalsHaloBox>
 
           {/* Next step — open when analysed */}
           <CollapsibleStrip
