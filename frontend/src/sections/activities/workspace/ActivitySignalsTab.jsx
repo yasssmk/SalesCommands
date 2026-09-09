@@ -37,6 +37,7 @@ import {
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
+import { getSignalTypeLabel } from "utils/signalTypes";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
@@ -109,10 +110,11 @@ export default function ActivitySignalsTab({
   const openSignalDetail = useCallback(
     (signal, signalType) => {
       const h = detailHandlersRef.current;
-      // Objective detail's header (title + status pill + ×) is owned by the COQUE
-      // (UI-1): pass title + status + the shared status map, and tell the panel
-      // to suppress its in-content header.
-      const isObjective = signalType === "objective";
+      // Standard-chassis types (Objective, Pain) have their header (title +
+      // status pill + ×) owned by the COQUE (UI-1): pass title + status + the
+      // shared status map, and tell the panel to suppress its in-content header.
+      // Other types keep the panel's own (flush) header.
+      const coqueOwnsHeader = signalType === "objective" || signalType === "pain";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
@@ -123,10 +125,10 @@ export default function ActivitySignalsTab({
           onReopen={h.onReopen}
           isLocked={isLocked}
           currentActivityId={activityId}
-          headerInCoque={isObjective}
+          headerInCoque={coqueOwnsHeader}
         />,
-        isObjective
-          ? { title: "Objective", status: signal.status, statusMap: SIGNAL_STATUS_PILL }
+        coqueOwnsHeader
+          ? { title: getSignalTypeLabel(signalType), status: signal.status, statusMap: SIGNAL_STATUS_PILL }
           : undefined,
       );
     },

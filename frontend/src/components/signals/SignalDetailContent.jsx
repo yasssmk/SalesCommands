@@ -54,6 +54,7 @@ import ImpactDetailBlock from "components/signals/detail/ImpactDetailBlock";
 import ObjectiveDetailBlock from "components/signals/detail/ObjectiveDetailBlock";
 import TechDetailBlock from "components/signals/detail/TechDetailBlock";
 import PainDetailBlock from "components/signals/detail/PainDetailBlock";
+import SignalSummaryBox from "components/signals/detail/SignalSummaryBox";
 
 function formatDate(dateStr) {
   if (!dateStr) return null;
@@ -520,55 +521,15 @@ function ObjectiveDetailView({
         {/* One enclosing Goal box: summary (top) · short centered separator ·
             axis recap (bottom). A single surface tint, no inner accent border. */}
         <SectionHeader index={1} title="Goal" sx={{ mb: 1 }} />
-        {(signal.summary || axisPreview) && (
-          <Box
-            data-testid="objective-goal-box"
-            sx={{
-              my: 1,
-              px: 1.5,
-              py: 1.25,
-              bgcolor: (theme) => theme.aphoriQ?.surface?.level1,
-              borderRadius: (theme) => theme.aphoriQ?.radius?.md && `${theme.aphoriQ.radius.md}px`,
-            }}
-          >
-            {signal.summary && (
-              <Typography
-                data-testid="objective-summary-box"
-                variant="body1"
-                fontWeight={500}
-                color="text.primary"
-                sx={{ whiteSpace: "pre-line" }}
-              >
-                {signal.summary}
-              </Typography>
-            )}
-            {signal.summary && axisPreview && (
-              <Divider
-                data-testid="objective-goal-separator"
-                sx={{ width: "40%", mx: "auto", my: 1.5 }}
-              />
-            )}
-            {axisPreview && (
-              <>
-                <Typography variant="caption" color="text.secondary">
-                  This is a{" "}
-                  <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
-                    {axisPreview}
-                  </Box>{" "}
-                  goal
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                  sx={{ fontFamily: "monospace", mt: 0.25 }}
-                >
-                  canonical_key: {canonicalPreview}
-                </Typography>
-              </>
-            )}
-          </Box>
-        )}
+        <SignalSummaryBox
+          summary={signal.summary}
+          axisPreview={axisPreview}
+          axisNoun="goal"
+          canonicalKey={canonicalPreview}
+          boxTestId="objective-goal-box"
+          summaryTestId="objective-summary-box"
+          separatorTestId="objective-goal-separator"
+        />
 
         <Divider sx={{ my: 2 }} />
 
@@ -651,19 +612,20 @@ ObjectiveDetailView.propTypes = {
 
 // ==============================|| PAIN DETAIL VIEW (TD-238) ||============================== //
 //
-// The Pain detail migrated onto the standard drawer chassis, mirroring
-// ObjectiveDetailView: numbered SectionHeaders + ReadField/ReadRow + the shared
-// DrawerContentLayout read-action bar (Edit/Reject/Validate/Reopen). Three
-// read-flow sections adapted to Pain:
-//   1. Classification — Theme (what × dimension), Scope, Department(s) (M2M),
-//      Category.
-//   2. Diagnostic     — the summary (the "why") as a tinted headline box, notes,
-//      and the related-tool mention (reused PainDetailBlock).
-//   3. Source         — the source quote + the origin contact(s), same
-//      bold/muted treatment as the Objective detail.
-// Department(s) reads the M2M via formatTargetDepartments (Pain dropped the
-// singular target_department FK). The Edit button is present but its wiring
-// stays the legacy path until the Pain edit lands (S3).
+// The Pain detail on the standard drawer chassis, a STRICT mirror of
+// ObjectiveDetailView (same header mechanism, same shared SignalSummaryBox,
+// same numbered SectionHeaders + ReadRow + DrawerContentLayout read-action bar).
+// Only the surface differs: routed here on the Activity coque ONLY — in the
+// DC/Account cluster drawer Pain stays on the generic flush branch (the routing
+// gate lives in SignalDetailContent). Sections:
+//   1. Diagnosis — the shared summary box (summary + "{what} × {dimension}"
+//      recap + canonical_key). The theme lives in the recap, so there is NO
+//      separate Theme row (mirror of Objective, which has no Theme row).
+//   2. Scope     — Scope + Department(s) (M2M, the sole legitimate difference vs
+//      Objective) + Category + the optional related-tool mention.
+//   3. Source    — the source quote + origin contact(s), bold/muted like Objective.
+// Pain has NO Metrics section (that is Impact). The Edit button is present but
+// its wiring stays the legacy path until the Pain edit lands (S3).
 function PainDetailView({
   signal,
   onValidate,
@@ -675,8 +637,6 @@ function PainDetailView({
   headerInCoque,
   isLocked,
   currentActivityId,
-  leadingAction,
-  trailingAction,
 }) {
   const theme = useTheme();
 
@@ -688,6 +648,8 @@ function PainDetailView({
     signal.what_display && signal.dimension_display
       ? `${signal.what_display} × ${signal.dimension_display}`
       : null;
+  const canonicalPreview =
+    signal.what && signal.dimension ? `pain:${signal.what}:${signal.dimension}` : null;
   const departments = formatTargetDepartments(signal);
 
   const contacts = signal.source_context?.contacts ?? [];
@@ -697,63 +659,34 @@ function PainDetailView({
     originActivityId && onOpenActivity && originActivityId !== currentActivityId,
   );
 
-  // The header adapts to the coque:
-  //   - cluster/quick coque (DC/Account) passes leadingAction (Back) +
-  //     trailingAction (Close): render the chip header carrying them (same
-  //     contract as the generic flush branch — no theme.aphoriQ dependency).
-  //   - Activity coque passes headerInCoque/onClose: render the title + status
-  //     pill header (mirror of ObjectiveDetailView), suppressed when the coque
-  //     owns the header.
-  const hasCoqueActions = Boolean(leadingAction || trailingAction);
-
   return (
     <Box data-testid="pain-detail-body">
-      {hasCoqueActions ? (
-        <>
-          <Box
-            data-testid="pain-detail-header"
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 1,
-              mb: 1,
-            }}
-          >
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-              {leadingAction}
-              <SignalTypeChip signalType="pain" size="small" />
-              <SignalStatusChip status={signal.status} size="small" />
-            </Stack>
-            {trailingAction}
-          </Box>
-          <Divider sx={{ mb: 1 }} />
-        </>
-      ) : (
-        !headerInCoque && (
-          <Box
-            data-testid="pain-detail-header"
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 1,
-              mb: 2,
-            }}
-          >
-            <Typography variant="h3" fontWeight="bold" data-testid="pain-detail-title">
-              {getSignalTypeLabel("pain")}
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
-              {onClose && (
-                <IconButton size="small" onClick={onClose} aria-label="Close drawer">
-                  <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-                </IconButton>
-              )}
-            </Stack>
-          </Box>
-        )
+      {/* In-content header (title · [status pill + close ×]) — suppressed when the
+          coque owns the header (headerInCoque; the Activity coque does). Mirror of
+          ObjectiveDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="pain-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="pain-detail-title">
+            {getSignalTypeLabel("pain")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
       )}
 
       <DrawerContentLayout
@@ -779,45 +712,29 @@ function PainDetailView({
           <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
         )}
 
-        {/* Section 1 — Classification */}
-        <SectionHeader index={1} title="Classification" sx={{ mb: 1 }} />
-        <ReadRow label="Theme" value={axisPreview} />
-        <ReadRow label="Scope" value={signal.scope_level_display} />
-        <ReadRow label="Department(s)" value={departments} />
-        <ReadRow label="Category" value={signal.signal_category_display} />
+        {/* Section 1 — Diagnosis: the shared summary box (summary + recap +
+            canonical_key). The theme lives in the recap — no separate Theme row. */}
+        <SectionHeader index={1} title="Diagnosis" sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={signal.summary}
+          axisPreview={axisPreview}
+          axisNoun="pain"
+          canonicalKey={canonicalPreview}
+          boxTestId="pain-summary-box"
+          summaryTestId="pain-summary-text"
+          separatorTestId="pain-summary-separator"
+        />
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — Diagnostic: the summary is the "why" headline, then notes
-            and the optional related-tool mention (shared PainDetailBlock). */}
-        <SectionHeader index={2} title="Diagnostic" sx={{ mb: 1 }} />
-        {signal.summary ? (
-          <Box
-            data-testid="pain-summary-box"
-            sx={{
-              my: 1,
-              px: 1.5,
-              py: 1.25,
-              bgcolor: (t) => t.aphoriQ?.surface?.level1,
-              borderRadius: (t) => t.aphoriQ?.radius?.md && `${t.aphoriQ.radius.md}px`,
-            }}
-          >
-            <Typography
-              variant="body1"
-              fontWeight={500}
-              color="text.primary"
-              sx={{ whiteSpace: "pre-line" }}
-            >
-              {signal.summary}
-            </Typography>
-          </Box>
-        ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
-            No diagnosis recorded
-          </Typography>
-        )}
+        {/* Section 2 — Scope + Department(s) (M2M, the sole difference vs Objective)
+            + Category + optional related tool. */}
+        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
+        <ReadRow label="Scope level" value={signal.scope_level_display} />
+        <ReadRow label="Department(s)" value={departments} />
+        <ReadRow label="Category" value={signal.signal_category_display} />
+        <ReadRow label="Related tool" value={signal.related_techstack_mention} />
         <ReadRow label="Notes" value={signal.notes} />
-        <PainDetailBlock signal={signal} />
 
         <Divider sx={{ my: 2 }} />
 
@@ -847,7 +764,7 @@ function PainDetailView({
           <Button
             size="small"
             variant="text"
-            startIcon={<LinkOutlined />}
+            startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
             onClick={() => onOpenActivity(originActivityId)}
             sx={{ mt: 0.5, px: 0 }}
           >
@@ -871,10 +788,6 @@ PainDetailView.propTypes = {
   headerInCoque: PropTypes.bool,
   isLocked: PropTypes.bool,
   currentActivityId: PropTypes.string,
-  /** Coque-provided header slots (DC/Account cluster drawer): a Back button and
-      a Close button. When present, the chip header carries them. */
-  leadingAction: PropTypes.node,
-  trailingAction: PropTypes.node,
 };
 
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
@@ -918,9 +831,12 @@ export default function SignalDetailContent({
     );
   }
 
-  // TD-238 — Pain migrated onto the standard chassis (other types still on the
-  // generic flush branch below).
-  if (signalType === "pain") {
+  // TD-238 — Pain uses the standard chassis on the ACTIVITY surface only. The
+  // DC/Account cluster drawer passes leadingAction (Back) + trailingAction
+  // (Close); their presence marks the cluster coque, where Pain stays on the
+  // generic flush branch below (deferred migration). The Activity coque passes
+  // neither, so Pain routes to the chassis here.
+  if (signalType === "pain" && !leadingAction && !trailingAction) {
     return (
       <PainDetailView
         signal={signal}
@@ -933,8 +849,6 @@ export default function SignalDetailContent({
         headerInCoque={headerInCoque}
         isLocked={isLocked}
         currentActivityId={currentActivityId}
-        leadingAction={leadingAction}
-        trailingAction={trailingAction}
       />
     );
   }

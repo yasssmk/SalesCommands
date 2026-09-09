@@ -209,52 +209,73 @@ describe("SignalDetailPanel", () => {
 
   // === Enriched detail fields ===
 
-  it("shows pain-specific fields: theme, scope, notes, related tool", () => {
+  it("shows pain detail on the standard chassis (summary box + scope + source)", () => {
     render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
 
-    // TD-238: Pain moved onto the standard chassis — the section title is the
-    // numbered SectionHeader "Classification" (was the flush DrawerSection
-    // "CLASSIFICATION").
-    expect(screen.getByText("Classification")).toBeInTheDocument();
+    // TD-238/S2-fix: Pain mirrors Objective — the summary OPENS the detail in the
+    // shared SignalSummaryBox (section 1 "Diagnosis"), with the theme conveyed by
+    // the "{what} × {dimension}" recap + canonical_key. NO separate Theme row and
+    // NO flush "CLASSIFICATION" section.
+    expect(screen.getByTestId("pain-summary-box")).toBeInTheDocument();
+    expect(screen.getByText(/Lost 5h\/week/)).toBeInTheDocument();
     expect(screen.getByText("Data × Time")).toBeInTheDocument();
+    expect(screen.getByText(/pain:DATA:TIME/)).toBeInTheDocument();
+    expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
+    // Section 2 (Scope) fields.
     expect(screen.getByText("Business")).toBeInTheDocument();
-    // related_techstack_mention still rendered via the shared PainDetailBlock
-    expect(screen.getByText("RELATED TOOL")).toBeInTheDocument();
     expect(screen.getByText("Excel")).toBeInTheDocument();
     expect(screen.getByText("Critical for Q3")).toBeInTheDocument();
-    // Pierre Dupont appears as the origin contact in the Source section.
+    // Section 3 (Source) — the origin contact.
     expect(screen.getAllByText("Pierre Dupont").length).toBeGreaterThanOrEqual(1);
   });
 
-  // ==== TD-238 — Pain detail migrated onto the standard drawer chassis ====
+  it("Pain detail uses the standard title header, suppressed when the coque owns it", () => {
+    // Panel default (no headerInCoque): Pain renders its own title + status pill
+    // header (mirror of Objective).
+    const { unmount } = render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
+    expect(screen.getByTestId("pain-detail-title")).toHaveTextContent("Pain");
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+    unmount();
+
+    // With headerInCoque (Activity coque owns title + pill + ×): the in-content
+    // header is suppressed so it is NOT duplicated below the coque cross.
+    render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" headerInCoque />);
+    expect(screen.queryByTestId("pain-detail-title")).not.toBeInTheDocument();
+    // The summary box still opens the detail.
+    expect(screen.getByTestId("pain-summary-box")).toBeInTheDocument();
+  });
+
+  // ==== TD-238 / S2-fix — Pain detail is a mirror of the Objective chassis ====
 
   const MOCK_PAIN_CHASSIS = {
     ...MOCK_PAIN,
     id: "pain-chassis",
     scope_level: "DEPARTMENT",
     scope_level_display: "Department",
-    // M2M multi-department (Pain dropped the singular target_department FK).
+    // M2M multi-department (Pain dropped the singular target_department FK) — the
+    // sole legitimate structural difference vs Objective.
     target_departments: [
       { id: "dep-sales", name: "Sales" },
       { id: "dep-mkt", name: "Marketing" },
     ],
   };
 
-  it("TD-238: renders Pain on the chassis (numbered sections + M2M departments + summary)", () => {
+  it("TD-238: renders Pain on the chassis (shared summary box + M2M departments)", () => {
     render(<SignalDetailPanel signal={MOCK_PAIN_CHASSIS} signalType="pain" />);
 
-    // Chassis marker — the flush branch has no such body testid.
+    // Chassis marker + the SHARED summary box (same component as Objective).
     expect(screen.getByTestId("pain-detail-body")).toBeInTheDocument();
-    // Numbered SectionHeaders (title case), not the flush uppercase DrawerSections.
-    expect(screen.getByText("Classification")).toBeInTheDocument();
-    expect(screen.getByText("Diagnostic")).toBeInTheDocument();
+    expect(screen.getByTestId("pain-summary-box")).toBeInTheDocument();
+    // Mirror sections: Diagnosis (1) / Scope (2) / Source (3), no Metrics.
+    expect(screen.getByText("Diagnosis")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
     expect(screen.getByText("Source")).toBeInTheDocument();
+    expect(screen.queryByText("Metrics")).not.toBeInTheDocument();
     // Multi-value M2M departments joined by the shared helper.
     expect(screen.getByText("Sales, Marketing")).toBeInTheDocument();
-    // The summary is the Diagnostic headline.
-    expect(screen.getByText(/Lost 5h\/week/)).toBeInTheDocument();
-    // Flush section titles are gone for Pain.
-    expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
+    // Recap conveys the axes (no separate Theme row) + canonical_key.
+    expect(screen.getByText("Data × Time")).toBeInTheDocument();
+    expect(screen.getByText(/pain:DATA:TIME/)).toBeInTheDocument();
   });
 
   it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
