@@ -41,6 +41,7 @@ import { getSignalTypeLabel } from "utils/signalTypes";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
+import EditPainContent from "sections/activities/workspace/EditPainContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -200,6 +201,26 @@ export default function ActivitySignalsTab({
             onCancel={() => openSignalDetail(signal, "objective")}
           />,
           { title: "Edit objective" },
+        );
+        return;
+      }
+      // S3: Pain edits go to the new chassis drawer (mirror of Objective) — the
+      // M2M department multi-select lives inside. Other types stay on the legacy
+      // SignalEditDrawer dialog below.
+      if (signalType === "pain") {
+        openDrawer(
+          <EditPainContent
+            pain={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "pain");
+            }}
+            onCancel={() => openSignalDetail(signal, "pain")}
+          />,
+          { title: "Edit pain" },
         );
         return;
       }

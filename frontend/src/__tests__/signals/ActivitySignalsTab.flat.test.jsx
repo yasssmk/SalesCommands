@@ -19,6 +19,10 @@ vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
 vi.mock("sections/activities/workspace/EditObjectiveContent", () => ({
   default: () => <div data-testid="edit-objective-stub" />,
 }));
+// S3: Pain edit goes to the new chassis drawer content — stub it to assert routing.
+vi.mock("sections/activities/workspace/EditPainContent", () => ({
+  default: () => <div data-testid="edit-pain-stub" />,
+}));
 import { render as rtlRender, screen, fireEvent, cleanup, act, within } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
 
@@ -178,6 +182,15 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     // Edit in the detail routes objectives to the new drawer content.
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
     expect(screen.getByTestId("edit-objective-stub")).toBeInTheDocument();
+  });
+
+  it("edits a Pain via the new EditPainContent drawer (S3), not the legacy dialog", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    // The pain row is PENDING → in the open "To validate" section. Open its detail.
+    fireEvent.click(await screen.findByText("Pain signal flat"));
+    // Edit in the detail routes Pain to the new chassis drawer content.
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByTestId("edit-pain-stub")).toBeInTheDocument();
   });
 
   it("UI-1: opening an Objective shows the coque header title 'Objective'", async () => {
