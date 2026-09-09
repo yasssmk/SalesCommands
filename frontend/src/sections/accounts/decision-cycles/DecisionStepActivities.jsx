@@ -28,13 +28,10 @@ import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseCircleOutlined from '@ant-design/icons/CloseCircleOutlined';
 import EditOutlined from '@ant-design/icons/EditOutlined';
 import DeleteOutlined from '@ant-design/icons/DeleteOutlined';
-import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
-import MailOutlined from '@ant-design/icons/MailOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
-import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
-import LinkedinOutlined from '@ant-design/icons/LinkedinOutlined';
-import QuestionCircleOutlined from '@ant-design/icons/QuestionCircleOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
+
+// Centralized activity-type glyph + uniform primary colour role (P5).
+import { getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR } from 'utils/activityTypes';
 
 // project imports
 import ActivityModal from 'sections/accounts/activities/ActivityModal';
@@ -52,21 +49,12 @@ import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError
 
 // ==============================|| TYPE ICONS ||============================== //
 
-const TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  TASK: CheckSquareOutlined,
-  LINKEDIN: LinkedinOutlined,
-  OTHER: QuestionCircleOutlined
-};
-
 // ==============================|| ACTIVITY ITEM ||============================== //
 
 function ActivityItem({ activity, onEdit, onDelete, onComplete, onCancel }) {
   const theme = useTheme();
   
-  const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
+  const TypeIcon = getActivityTypeIcon(activity.activity_type);
   const isCompleted = activity.status === 'COMPLETED';
   const isCancelled = activity.status === 'CANCELLED';
   const canComplete = !isCompleted && !isCancelled;
@@ -96,7 +84,8 @@ function ActivityItem({ activity, onEdit, onDelete, onComplete, onCancel }) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              bgcolor: 'action.hover'
+              bgcolor: 'action.hover',
+              color: ACTIVITY_TYPE_ICON_COLOR
             }}
           >
             <TypeIcon style={{ fontSize: theme.iconSizes.sm }} />

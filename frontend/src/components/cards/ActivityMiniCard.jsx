@@ -26,25 +26,12 @@ import Typography from '@mui/material/Typography';
 import RemovableCard from './RemovableCard';
 
 // Icons
-import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
-import MailOutlined from '@ant-design/icons/MailOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
-import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
-import LinkedinOutlined from '@ant-design/icons/LinkedinOutlined';
-import QuestionCircleOutlined from '@ant-design/icons/QuestionCircleOutlined';
 import LinkOutlined from '@ant-design/icons/LinkOutlined';
-import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
+
+// Centralized activity-type glyph + uniform primary colour role (P5).
+import { getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR } from 'utils/activityTypes';
 
 // ==============================|| CONSTANTS ||============================== //
-
-const TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  TASK: CheckSquareOutlined,
-  LINKEDIN: LinkedinOutlined,
-  OTHER: QuestionCircleOutlined
-};
 
 const TYPE_LABELS = {
   CALL: 'Call',
@@ -133,8 +120,8 @@ export default function ActivityMiniCard({
 
   const config = sizeConfig[size];
 
-  // Get icon component
-  const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
+  // Get icon component (centralized source; fallback → OTHER)
+  const TypeIcon = getActivityTypeIcon(activity.activity_type);
 
   // Format date
   const formatDate = (dateStr) => {
@@ -188,7 +175,7 @@ export default function ActivityMiniCard({
         }}
       >
         {/* Type Icon */}
-        <Box sx={{ display: 'flex', color: 'warning.main' }}>
+        <Box sx={{ display: 'flex', color: ACTIVITY_TYPE_ICON_COLOR }}>
           <TypeIcon style={{ fontSize: 12 }} />
         </Box>
         
@@ -252,9 +239,9 @@ export default function ActivityMiniCard({
         {showTypeIcon ? (
           <Box 
             sx={{ 
-              display: 'flex', 
+              display: 'flex',
               alignItems: 'center',
-              color: 'warning.main'
+              color: ACTIVITY_TYPE_ICON_COLOR
             }}
           >
             <TypeIcon style={{ fontSize: config.iconSize }} />

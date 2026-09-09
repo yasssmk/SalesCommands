@@ -50,6 +50,9 @@ import StatusPill from "components/chips/StatusPill";
 import interactiveTextSx from "components/display/interactiveTextSx";
 // The centralized signal glyph — same icon as the Signals band on the page.
 import { SIGNAL_ICON } from "utils/signalTypes";
+// The centralized activity-type glyph + its uniform primary colour role (P5) —
+// one source of truth for every activity surface, no local map.
+import { getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR } from "utils/activityTypes";
 
 // Pipeline state
 import { PIPELINE_STATE } from "hooks/usePipelineRunner";
@@ -74,13 +77,6 @@ import {
   CloseCircleOutlined,
   ReloadOutlined,
   DeleteOutlined,
-  PhoneOutlined,
-  MailOutlined,
-  TeamOutlined,
-  DesktopOutlined,
-  CheckSquareOutlined,
-  LinkedinOutlined,
-  QuestionCircleOutlined,
   CalendarOutlined,
   ClockCircleOutlined,
   BankOutlined,
@@ -91,28 +87,6 @@ import {
   ExclamationCircleOutlined,
   LoadingOutlined,
 } from "@ant-design/icons";
-
-// ==============================|| TYPE CONFIGURATION ||============================== //
-
-const TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  DEMO: DesktopOutlined,
-  TASK: CheckSquareOutlined,
-  LINKEDIN: LinkedinOutlined,
-  OTHER: QuestionCircleOutlined,
-};
-
-const TYPE_AVATAR_COLORS = {
-  CALL: "info.main",
-  EMAIL: "warning.main",
-  MEETING: "success.main",
-  DEMO: "error.main",
-  TASK: "secondary.main",
-  LINKEDIN: "primary.main",
-  OTHER: "grey.500",
-};
 
 // ==============================|| ACTIVITY HEADER PROPS HOOK ||============================== //
 
@@ -160,8 +134,10 @@ export default function useActivityHeaderProps({
 
   // ==============================|| DERIVED VALUES ||============================== //
 
-  const TypeIcon = TYPE_ICONS[activity.activity_type] || QuestionCircleOutlined;
-  const avatarColor = TYPE_AVATAR_COLORS[activity.activity_type] || "grey.500";
+  // P5 — the type glyph comes from the single source; the tile is PRIMARY UNI
+  // for every type (no per-type rainbow), the glyph drawn in the role's
+  // contrastText.
+  const TypeIcon = getActivityTypeIcon(activity.activity_type);
 
   // Status → semantic colour role and label come from the front activities
   // constants (ACTIVITY_STATUS_COLORS / ACTIVITY_STATUS_LABELS), never hardcoded.
@@ -454,7 +430,9 @@ export default function useActivityHeaderProps({
       sx={{
         width: tileIconSize * 2,
         height: tileIconSize * 2,
-        bgcolor: avatarColor,
+        // P5 — PRIMARY UNI for every type (no rainbow); glyph in contrastText.
+        bgcolor: ACTIVITY_TYPE_ICON_COLOR,
+        color: "primary.contrastText",
         fontSize: tileIconSize,
         borderRadius: `${theme.aphoriQ.radius.md}px`,
       }}

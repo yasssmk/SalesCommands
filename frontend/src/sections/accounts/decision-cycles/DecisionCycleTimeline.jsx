@@ -58,12 +58,10 @@ import PauseCircleOutlined from '@ant-design/icons/PauseCircleOutlined';
 import MinusCircleOutlined from '@ant-design/icons/MinusCircleOutlined';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
 import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
-import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
-import MailOutlined from '@ant-design/icons/MailOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
 import ApartmentOutlined from '@ant-design/icons/ApartmentOutlined';
-import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
 import SettingOutlined from '@ant-design/icons/SettingOutlined';
+// Centralized activity-type glyph (P5) — one source, correct 7-type mapping.
+import { getActivityTypeIcon } from 'utils/activityTypes';
 import EyeOutlined from '@ant-design/icons/EyeOutlined';
 import EyeInvisibleOutlined from '@ant-design/icons/EyeInvisibleOutlined';
 import UserOutlined from '@ant-design/icons/UserOutlined';
@@ -175,16 +173,7 @@ const STATUS_CONFIG = {
   } 
 };
 
-// ==============================|| ACTIVITY TYPE ICONS ||============================== //
-
-const ACTIVITY_TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  TASK: CheckSquareOutlined,
-  LINKEDIN: MailOutlined,
-  OTHER: CalendarOutlined
-};
+// The activity-type glyph is centralized (P5) — see getActivityTypeIcon import.
 
 // ==============================|| ACTIVITY CARD ||============================== //
 
@@ -227,7 +216,7 @@ const ACTIVITY_OUTCOME_CONFIG = {
 function ActivityCard({ activity, onClick }) {
   const theme = useTheme();
   
-  const TypeIcon = ACTIVITY_TYPE_ICONS[activity.activity_type] || CalendarOutlined;
+  const TypeIcon = getActivityTypeIcon(activity.activity_type);
   const statusConfig = ACTIVITY_STATUS_CONFIG[activity.status] || ACTIVITY_STATUS_CONFIG.PLANNED;
   const outcomeConfig = activity.outcome ? ACTIVITY_OUTCOME_CONFIG[activity.outcome] : null;
   
@@ -333,9 +322,11 @@ function ActivityCard({ activity, onClick }) {
                 justifyContent: 'center'
               }}
             >
-              <TypeIcon style={{ 
-                fontSize: theme.iconSizes.sm, 
-                color: isOverdue ? theme.palette.error.main : theme.palette.text.secondary 
+              <TypeIcon style={{
+                fontSize: theme.iconSizes.sm,
+                // P5 — type glyph is primary; EXCEPTION: overdue stays error (a
+                // STATUS signal, not a type colour).
+                color: isOverdue ? theme.palette.error.main : theme.palette.primary.main
               }} />
             </Box>
           </Tooltip>

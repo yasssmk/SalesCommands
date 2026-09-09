@@ -40,18 +40,9 @@ export const ACTIVITY_TYPE_LABELS = {
   OTHER: "Other",
 };
 
-/**
- * Activity type icons mapping (icon component names from ant-design)
- */
-export const ACTIVITY_TYPE_ICONS = {
-  CALL: "PhoneOutlined",
-  EMAIL: "MailOutlined",
-  MEETING: "TeamOutlined",
-  DEMO: "DesktopOutlined",
-  TASK: "CheckSquareOutlined",
-  LINKEDIN: "LinkedinOutlined",
-  OTHER: "QuestionCircleOutlined",
-};
+// Activity-type ICONS are not defined here: the single source of truth is the
+// component map ACTIVITY_TYPE_ICON in utils/activityTypes.js (P5). This module
+// stays free of ant-design imports.
 
 /**
  * Activity statuses (matching backend ActivityStatus choices)

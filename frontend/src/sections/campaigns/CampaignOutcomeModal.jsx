@@ -51,10 +51,9 @@ import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 
 // icons
 import PhoneOutlined from "@ant-design/icons/PhoneOutlined";
-import MailOutlined from "@ant-design/icons/MailOutlined";
-import TeamOutlined from "@ant-design/icons/TeamOutlined";
-import LinkedinOutlined from "@ant-design/icons/LinkedinOutlined";
-import CalendarOutlined from "@ant-design/icons/CalendarOutlined";
+
+// Centralized activity-type glyph (P5) — one source, correct 7-type mapping.
+import { getActivityTypeIcon } from "utils/activityTypes";
 import CheckCircleOutlined from "@ant-design/icons/CheckCircleOutlined";
 import CloseCircleOutlined from "@ant-design/icons/CloseCircleOutlined";
 import ClockCircleOutlined from "@ant-design/icons/ClockCircleOutlined";
@@ -138,14 +137,6 @@ const FAIL_OPTIONS = [
   { value: "WRONG_EMAIL", label: "Wrong Email" },
   { value: "INVALID_PHONE_NUMBER", label: "Invalid Phone Number" },
 ];
-
-const ACTIVITY_TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  LINKEDIN: LinkedinOutlined,
-  OTHER: CalendarOutlined,
-};
 
 const STEP_TITLES = {
   [STEP.CONTACT]: "Who answered?",
@@ -388,8 +379,7 @@ function StepActivity({
       <Stack spacing={1}>
         {filtered.map((a) => {
           const isSelected = selectedActivityId === a.id;
-          const TypeIcon =
-            ACTIVITY_TYPE_ICONS[a.activity_type] || CalendarOutlined;
+          const TypeIcon = getActivityTypeIcon(a.activity_type);
           return (
             <Paper
               key={a.id}
@@ -421,7 +411,7 @@ function StepActivity({
                     <TypeIcon
                       style={{
                         fontSize: 14,
-                        color: theme.palette.text.secondary,
+                        color: theme.palette.primary.main,
                       }}
                     />
                     <Box sx={{ flex: 1 }}>

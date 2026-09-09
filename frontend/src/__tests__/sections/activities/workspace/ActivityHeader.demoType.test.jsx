@@ -21,8 +21,14 @@ import AphoriQ from "themes/aphoriq";
 import {
   ACTIVITY_TYPES,
   ACTIVITY_TYPE_LABELS,
-  ACTIVITY_TYPE_ICONS,
 } from "api/accounts/activities";
+// P5 — the type glyph is centralized in utils/activityTypes (not a string map
+// in the api module anymore); the tile colour is one uniform primary role.
+import {
+  ACTIVITY_TYPE_ICON,
+  ACTIVITY_TYPE_ICON_COLOR,
+} from "utils/activityTypes";
+import DesktopOutlined from "@ant-design/icons/DesktopOutlined";
 
 // next/font is not available in the test env — stub it like the sibling tests.
 vi.mock("next/font/google", () => ({
@@ -71,11 +77,36 @@ afterEach(() => {
   cleanup();
 });
 
-describe("Activity type maps — DEMO (api/accounts/activities.js)", () => {
-  it("exposes DEMO in the type, label and icon maps", () => {
+// The emotion rule text for an element's own css-* classes (scoped).
+function rulesForElement(el) {
+  const css = Array.from(document.querySelectorAll("style"))
+    .map((s) => s.textContent || "")
+    .join("");
+  const classes = (el.getAttribute("class") || "")
+    .split(/\s+/)
+    .filter((c) => c.startsWith("css-"));
+  return classes
+    .map((c) => (css.match(new RegExp(`\\.${c}\\s*\\{[^}]*\\}`, "g")) || []).join(""))
+    .join("");
+}
+
+const bgColor = (rule) => (rule.match(/background-color:\s*([^;}]+)/) || [])[1]?.trim();
+
+const avatarFor = (activity_type) => {
+  const { result } = renderHook(
+    () => useActivityHeaderProps({ activity: { ...demoActivity, activity_type } }),
+    { wrapper },
+  );
+  const { container } = render(<div>{result.current.avatar}</div>, { wrapper });
+  return container.querySelector(".MuiAvatar-root");
+};
+
+describe("Activity type maps — DEMO (centralized in utils/activityTypes)", () => {
+  it("exposes DEMO in the type, label and centralized icon maps", () => {
     expect(ACTIVITY_TYPES.DEMO).toBe("DEMO");
     expect(ACTIVITY_TYPE_LABELS.DEMO).toBe("Demo");
-    expect(ACTIVITY_TYPE_ICONS.DEMO).toBe("DesktopOutlined");
+    // the glyph is now a component reference in the single source of truth.
+    expect(ACTIVITY_TYPE_ICON.DEMO).toBe(DesktopOutlined);
   });
 });
 
@@ -96,5 +127,23 @@ describe("ActivityHeader — DEMO activity type", () => {
     // …in a rounded tile (not a circular avatar).
     expect(container.querySelector(".MuiAvatar-rounded")).toBeTruthy();
     expect(container.querySelector(".MuiAvatar-circular")).toBeFalsy();
+  });
+});
+
+describe("ActivityHeader — tile is PRIMARY UNI, not a per-type rainbow (P5)", () => {
+  it("the colour constant is the primary theme role (no hex)", () => {
+    expect(ACTIVITY_TYPE_ICON_COLOR).toBe("primary.main");
+  });
+
+  it("CALL, DEMO and MEETING tiles share ONE background colour (rainbow gone)", () => {
+    // Before P5 these were info / error(red) / success respectively.
+    const call = bgColor(rulesForElement(avatarFor("CALL")));
+    cleanup();
+    const demo = bgColor(rulesForElement(avatarFor("DEMO")));
+    cleanup();
+    const meeting = bgColor(rulesForElement(avatarFor("MEETING")));
+    expect(call).toBeTruthy();
+    expect(demo).toBe(call);
+    expect(meeting).toBe(call);
   });
 });

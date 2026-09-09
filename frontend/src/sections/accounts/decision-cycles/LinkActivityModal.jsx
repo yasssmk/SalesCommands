@@ -32,16 +32,14 @@ import Typography from '@mui/material/Typography';
 import { alpha, useTheme } from '@mui/material/styles';
 
 // ant-design icons
-import CalendarOutlined from '@ant-design/icons/CalendarOutlined';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
 import LinkOutlined from '@ant-design/icons/LinkOutlined';
-import MailOutlined from '@ant-design/icons/MailOutlined';
-import PhoneOutlined from '@ant-design/icons/PhoneOutlined';
 import SearchOutlined from '@ant-design/icons/SearchOutlined';
-import TeamOutlined from '@ant-design/icons/TeamOutlined';
-import CheckSquareOutlined from '@ant-design/icons/CheckSquareOutlined';
 import InboxOutlined from '@ant-design/icons/InboxOutlined';
+
+// Centralized activity-type glyph (P5) — one source, correct 7-type mapping.
+import { getActivityTypeIcon } from 'utils/activityTypes';
 
 // project imports
 import MainCard from 'components/MainCard';
@@ -54,22 +52,11 @@ import {
 } from 'api/accounts/activities';
 import { displayErrorSnackbar, displaySuccessSnackbar } from 'utils/displayError';
 
-// ==============================|| CONSTANTS ||============================== //
-
-const ACTIVITY_TYPE_ICONS = {
-  CALL: PhoneOutlined,
-  EMAIL: MailOutlined,
-  MEETING: TeamOutlined,
-  TASK: CheckSquareOutlined,
-  LINKEDIN: MailOutlined,
-  OTHER: CalendarOutlined
-};
-
 // ==============================|| ACTIVITY LIST ITEM ||============================== //
 
 function ActivityListItem({ activity, selected, onToggle }) {
   const theme = useTheme();
-  const TypeIcon = ACTIVITY_TYPE_ICONS[activity.activity_type] || CalendarOutlined;
+  const TypeIcon = getActivityTypeIcon(activity.activity_type);
   
   const formatDate = (dateStr) => {
     if (!dateStr) return null;
@@ -114,7 +101,7 @@ function ActivityListItem({ activity, selected, onToggle }) {
               justifyContent: 'center'
             }}
           >
-            <TypeIcon style={{ fontSize: theme.iconSizes.md, color: theme.palette.text.secondary }} />
+            <TypeIcon style={{ fontSize: theme.iconSizes.md, color: theme.palette.primary.main }} />
           </Box>
         </ListItemIcon>
         
