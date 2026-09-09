@@ -229,6 +229,23 @@ describe("SignalDetailPanel", () => {
     expect(screen.getAllByText("Pierre Dupont").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("S3-fix: the related tool is shown on the detail when present, hidden when empty", () => {
+    // Present → the "Related tool" row and its value render (detail/edit parity).
+    const { unmount } = render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
+    expect(screen.getByText("Related tool")).toBeInTheDocument();
+    expect(screen.getByText("Excel")).toBeInTheDocument();
+    unmount();
+
+    // Empty → the row is hidden (ReadRow drops empty values).
+    render(
+      <SignalDetailPanel
+        signal={{ ...MOCK_PAIN, related_techstack_mention: "" }}
+        signalType="pain"
+      />,
+    );
+    expect(screen.queryByText("Related tool")).not.toBeInTheDocument();
+  });
+
   it("Pain detail uses the standard title header, suppressed when the coque owns it", () => {
     // Panel default (no headerInCoque): Pain renders its own title + status pill
     // header (mirror of Objective).
