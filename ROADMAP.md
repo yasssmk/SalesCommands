@@ -1223,6 +1223,32 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 
 ---
 
+### Sprint Section Signals + Homogénéisation UI ✅ (chantier UX Activity — EN COURS) — Section Signals (Activity) + Objective détail/edit + homogénéisation drawers & couleurs (branche `claude/activity-signals-audit-jn6zur`, `c949bf37`→`c7dba6a9`, 52 commits)
+⚠️ **Sections Signals + Objective + Homogénéisation seulement — le chantier UX Activity N'EST PAS clos.** Restent les types de signaux 2→7 (détail+edit) et les sections **Next step → Transcript/notes → Preparation**.
+- **Objectif** : livrer la **section Signals** de l'Activity (liste de validation), refaire **Objective** (1ᵉʳ type) en détail + edit sur le châssis standard, et **homogénéiser** les drawers et les couleurs de tout le chantier (contrat UI + doctrine couleurs figés).
+- **Livré** (chaque sous-étape : reproduction ROUGE par le vrai chemin + non-vacuité par édition ciblée, STOP + validation PO) :
+  - **① Section Signals (Activity)**
+    - Liste **flat en 3 sections d'état** (To validate / Validated / Rejected), groupées par type ; couleurs de type dédiées (`aphoriQ.signalColors`, 9 hex en réserve) + util `utils/signalTypes.js` (SIG-1) ; passage **flat-forcé** (toggle/branche grouped retirés de l'onglet, SIG-2).
+    - Actions **Validate / Reject inline** sur les lignes pending (SIG-3) ; **validate/reject garde le drawer ouvert** sur le détail rafraîchi.
+    - **Halo d'état** autour de la bande Signals (`HaloBox` générique + couleurs/seuils dans `constants/signalsHalo.js`, SIG-HALO/arch) ; **drawer sticky** qui suit le scroll (hors Collapse).
+    - Fix **M2M** : affichage de **tous les départements** (Pain/Impact/Constraint) dans le détail (SIG-4) ; fix **competitor** (nom, pas le summary « competitor: … ») ; **scope retiré** de la ligne.
+    - **Header** : compteur signals — **« N to validate »** (warning, cliquable) sinon **« N signals »** (neutre, non cliquable) sur l'agrégat 8 types (P2) ; **icône signal centralisée** (`SIGNAL_ICON`, P4b) ; liste **« To validate » masquée si 0 pending** ; **Reopen** offert aussi sur un signal **validé** (pas seulement rejeté, P3).
+  - **② Objective (détail + edit)** — 1ᵉʳ type refait sur le nouveau pattern :
+    - **Edit** : `DrawerContentLayout` + `InlineEditableValue` + `ObjectiveScopePill` (Company/Department) + `source_quote` éditable + **DatePicker double-clic** (SIG-5d).
+    - **Détail** : lecture narrative (sections, summary posé, scope, metrics, source fusionnée quote+contact, contact **gras/muted**), retour au détail après edit (SIG-5e).
+    - **Backend** : `success_criteria` + `notes` exposés sur le payload **LIST** Objective (`objective_serializer.py`, SIG-5e-fix4 P1). *(Widget `TranscriptQuotePicker` ABANDONNÉ → `source_quote` reste texte manuel, roadmap post-déploiement. Changement de type de signal EN PAUSE — perte de champs à repenser.)*
+  - **③ Homogénéisation drawers & couleurs**
+    - **Contrat UI drawers figé** (`UX_UI_Guidelines.md`, 7 règles + navigation) ; **en-tête unifié dans la coque** (titre + pill statut + ×, UI-1) ; **StatusPill** standardisé ; **barre d'actions unique** (`DrawerContentLayout`, 2 modes : édition Save/Cancel — lecture Edit-neutre/Reject/Validate/Reopen, UI-2) ; **SectionHeader partagé** (badge **primary**, UI-3 / P-BADGE-PRIMARY) ; **box conteneur + padding/marges centralisés** dans la coque + `DrawerContentLayout` (une source, les 2 coques cohérentes, UI-6→UI-10) ; **LabeledValue** 2-col/pleine-largeur.
+    - **Fiche contact** : barre d'actions **Edit** (✎ inline retiré, P-CONTACT-EDIT) ; **noms account/DC** gras neutre + hover primary souligné (P4a) ; **placeholders neutres lisibles** (P-PLACEHOLDER) ; **bouton Edit** au gris standard `text.secondary` (P-EDIT-GREY).
+    - **Doctrine couleurs figée** (`UX_UI_Guidelines.md`) ; **icônes de type d'activité centralisées** (`utils/activityTypes.js`) + **tuile header primary uni** (plus de rainbow) + **2 bugs corrigés** (LinkedIn→Linkedin, DEMO ajouté, P5).
+- **Migrations** : **aucune** (front + 2 lignes de serializer Objective, aucun changement de schéma).
+- **Validation** : `vitest` **1358 passed (182 fichiers)**, 0 erreur ; backend : test `test_objective_list_exposes_success_criteria_notes.py` (payload LIST Objective), **VERT lancé par le PO**. **Smoke PO OK.**
+- **Dette fermée** : **aucune** (voir « Dette ajoutée / MAJ »).
+- **Dette ajoutée / MAJ** : **TD-236** (`#faad14` icône lien MiniCard), **TD-237** (`background.default` clair/sombre), **TD-238** (migrer la branche générique `SignalDetailContent`), **TD-239** (badges de section dans tous les edits — reporté PO), **TD-240** (esthétique boutons d'action — attente PO). **MAJ** : TD-235/TD-206 (code mort grouped non balayé + empty-state `SignalsValidationList`), TD-232 (« See signals » inerte), TD-233 (tenantKey), TD-234 (useGetUser), TD-186 (dualité flat/grouped résolue **côté Activity**), TD-204/TD-205 (homogénéisation & modaux Edit — Objective fait, 7 types restants), TD-223/TD-224 (icônes type centralisées ≠ résolution).
+- **Prochain jalon** : les **7 autres types** (Pain → Impact → Constraint → Objection → People → TechStack → Competitor), détail + edit sur le châssis standard ; **la branche générique de `SignalDetailContent` migre en faisant Pain** (TD-238). **UX Activity reste OUVERT.**
+
+---
+
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
 
 > **Réorganisation PO (2026-08-15).** Le PO a redéfini l'ORDRE des sprints à
