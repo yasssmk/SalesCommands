@@ -110,11 +110,48 @@ describe("EditPainContent (S3)", () => {
   it("Department scope shows the current departments as pills + a '+ add department' trigger", () => {
     renderEdit();
     const field = screen.getByTestId("pain-departments-field");
-    // Committed department pill (Chip).
+    // Committed department pill.
     expect(within(field).getByTestId("dept-pill-1")).toHaveTextContent("Finance");
     // The "+ add department" gesture (picker collapsed).
     expect(screen.getByTestId("add-department")).toBeInTheDocument();
     expect(screen.queryByTestId("pain-add-department-picker")).not.toBeInTheDocument();
+  });
+
+  it("S3-fix-3: Company/Department are EXCLUSIVE — exactly one pill pressed at a time", () => {
+    renderEdit(); // DEPARTMENT active initially (PAIN has a department)
+    const company = () => screen.getByTestId("scope-pill-BUSINESS");
+    const dept = () => screen.getByTestId("scope-pill-DEPARTMENT");
+    const pressedCount = () =>
+      [company(), dept()].filter((el) => el.getAttribute("aria-pressed") === "true").length;
+
+    expect(pressedCount()).toBe(1);
+    fireEvent.click(company());
+    expect(company()).toHaveAttribute("aria-pressed", "true");
+    expect(dept()).toHaveAttribute("aria-pressed", "false");
+    expect(pressedCount()).toBe(1);
+    fireEvent.click(dept());
+    expect(dept()).toHaveAttribute("aria-pressed", "true");
+    expect(company()).toHaveAttribute("aria-pressed", "false");
+    expect(pressedCount()).toBe(1);
+  });
+
+  it("S3-fix-3: chosen departments render as real pills (StatusPill + ×), not rectangular Chips", () => {
+    renderEdit();
+    const pill = screen.getByTestId("dept-pill-1");
+    expect(pill).toHaveTextContent("Finance");
+    // NOT a MUI Chip (rectangular) — it is the shared StatusPill.
+    expect(pill.closest(".MuiChip-root")).toBeNull();
+    // Carries its own remove × affordance.
+    expect(within(pill).getByTestId("remove-dept-1")).toBeInTheDocument();
+  });
+
+  it("S3-fix-3: the '+ add department' menu EXCLUDES already-chosen departments", () => {
+    renderEdit(); // Finance (id 1) already chosen
+    fireEvent.click(screen.getByTestId("add-department"));
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    // Finance is already chosen → not re-proposed; Marketing is still offered.
+    expect(screen.queryByRole("option", { name: "Finance" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Marketing" })).toBeInTheDocument();
   });
 
   it("S3-fix-2: '+ add department' grouped picker accumulates chosen departments as pills, × removes one", () => {
@@ -132,9 +169,8 @@ describe("EditPainContent (S3)", () => {
     expect(within(field).getByText("Marketing")).toBeInTheDocument();
     expect(screen.queryByTestId("pain-add-department-picker")).not.toBeInTheDocument();
 
-    // Remove Finance via its × — only Marketing remains.
-    const financeChip = within(field).getByText("Finance").closest(".MuiChip-root");
-    fireEvent.click(within(financeChip).getByTestId("CancelIcon"));
+    // Remove Finance via its × (StatusPill pill) — only Marketing remains.
+    fireEvent.click(within(field).getByTestId("remove-dept-1"));
     expect(within(field).queryByText("Finance")).not.toBeInTheDocument();
     expect(within(field).getByText("Marketing")).toBeInTheDocument();
   });

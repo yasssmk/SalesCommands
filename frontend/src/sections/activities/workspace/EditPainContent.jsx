@@ -9,13 +9,15 @@
 //
 // The ONE structural difference vs Objective: the department scope is a
 // MULTI-department M2M (target_departments), NOT a single FK. Scope model:
-//   - two EXPLICIT scope pills Company | Department (ObjectiveScopePill, consuming
-//     ONLY scope_level from its patch — its FK emissions are ignored, those fields
-//     do not exist on Pain);
+//   - two EXCLUSIVE scope pills Company | Department, rendered locally with the
+//     shared StatusPill + objectiveScope tokens (ObjectiveScopePill itself is NOT
+//     used/modified here — Objective keeps it). scope_level is a single value, so
+//     exactly one pill is pressed;
 //   - Company  → scope_level BUSINESS, target_departments cleared;
 //   - Department → a "+ add department" trigger (same gesture as EditActivityContent's
-//     "+ add contact") opens a grouped multi-select; on confirm the chosen
-//     departments join a row of deletable Chip-pills (× removes one).
+//     "+ add contact") opens a grouped multi-select whose options EXCLUDE the
+//     already-chosen departments; on confirm the chosen departments join a row of
+//     real pills (StatusPill), each with a × to remove it.
 // Selected departments are stored as {value,label} OBJECTS (the ids are extracted
 // only at payload time) to avoid the int(option)/string(id) type mismatch. The
 // payload never carries a target_department / target_contact FK.
@@ -34,13 +36,13 @@ import * as Yup from "yup";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
+import CloseOutlined from "@ant-design/icons/CloseOutlined";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -51,8 +53,10 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import MultiSelectFilter from "components/filters/MultiSelectFilter";
-import ObjectiveScopePill from "components/signals/ObjectiveScopePill";
-import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
+import StatusPill from "components/chips/StatusPill";
+// Reuse the SHARED scope constants + pill colour tokens (objectiveScope is NOT
+// modified — ObjectiveScopePill/Objective keep using them unchanged).
+import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS, SCOPE_PILL_COLORS } from "utils/objectiveScope";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -219,19 +223,23 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
   const [adding, setAdding] = useState(false);
   const [staged, setStaged] = useState([]);
 
-  // The scope pills raise a draft patch; consume ONLY scope_level (the pill's FK
-  // emissions are for Objective and are intentionally ignored on Pain).
-  const applyScope = (patch) => {
-    const next = patch?.scope_level;
-    if (!next) return;
-    setFieldValue("scope_level", next);
-    if (next === OBJECTIVE_SCOPE.BUSINESS) {
+  // Exclusive scope choice: scope_level is a single value, so exactly one pill is
+  // pressed. Clicking a pill selects it (and clears departments for Company).
+  const chooseScope = (key) => {
+    if (!key || key === values.scope_level) return;
+    setFieldValue("scope_level", key);
+    if (key === OBJECTIVE_SCOPE.BUSINESS) {
       // Company-wide → no departments.
       setFieldValue("target_departments", []);
       setStaged([]);
       setAdding(false);
     }
   };
+
+  // The "+ add department" menu never re-proposes an already-chosen department.
+  const availableOptions = departmentOptions.filter(
+    (o) => !(values.target_departments || []).some((d) => d.value === o.value),
+  );
 
   // Local "+ add" trigger — same gesture/tokens as EditActivityContent's
   // "+ add contact" (text button + PlusOutlined, accent colour).
@@ -371,12 +379,40 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
             subtitle="Company-wide, or one or more departments."
           />
 
-          {/* Two explicit scope pills (Company / Department). We consume only
-              scope_level from the pill patch. */}
-          <ObjectiveScopePill value={{ scope_level: values.scope_level }} onChange={applyScope} />
+          {/* Two EXCLUSIVE scope pills (Company | Department) — same StatusPill as
+              the department pills below. scope_level is a single value, so exactly
+              one is pressed. Rendered locally (ObjectiveScopePill is untouched and
+              still used by Objective); we reuse its shared options + colour tokens. */}
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap data-testid="pain-scope-pills">
+            {SCOPE_PILL_OPTIONS.map(({ key, label }) => {
+              const isActive = values.scope_level === key;
+              const c = isActive ? SCOPE_PILL_COLORS.active : SCOPE_PILL_COLORS.inactive;
+              return (
+                <StatusPill
+                  key={key}
+                  data-testid={`scope-pill-${key}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isActive}
+                  onClick={() => chooseScope(key)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      chooseScope(key);
+                    }
+                  }}
+                  label={label}
+                  colorText={c.colorText}
+                  colorBg={c.colorBg}
+                  sx={{ cursor: "pointer" }}
+                />
+              );
+            })}
+          </Stack>
 
-          {/* Department scope → the "+ add department" gesture + the chosen
-              departments as deletable Chip-pills. NEVER required. */}
+          {/* Department scope → the chosen departments as REAL pills (StatusPill,
+              each with a × to remove it) + the "+ add department" gesture. NEVER
+              required. */}
           {isDepartment && (
             <Box data-testid="pain-departments-field" sx={{ pt: 1 }}>
               {values.target_departments.length > 0 && (
@@ -389,12 +425,33 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
                   data-testid="pain-department-pills"
                 >
                   {values.target_departments.map((d) => (
-                    <Chip
+                    <StatusPill
                       key={d.value}
-                      label={d.label}
-                      size="small"
-                      onDelete={() => removeDept(d.value)}
                       data-testid={`dept-pill-${d.value}`}
+                      colorText={SCOPE_PILL_COLORS.active.colorText}
+                      colorBg={SCOPE_PILL_COLORS.active.colorBg}
+                      label={
+                        <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
+                          {d.label}
+                          <Box
+                            component="span"
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`Remove ${d.label}`}
+                            data-testid={`remove-dept-${d.value}`}
+                            onClick={() => removeDept(d.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                removeDept(d.value);
+                              }
+                            }}
+                            sx={{ display: "inline-flex", cursor: "pointer" }}
+                          >
+                            <CloseOutlined style={{ fontSize: theme.iconSizes.xs }} />
+                          </Box>
+                        </Box>
+                      }
                     />
                   ))}
                 </Stack>
@@ -402,9 +459,10 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
 
               {adding ? (
                 <Box data-testid="pain-add-department-picker">
+                  {/* Options EXCLUDE already-chosen departments (no duplicates). */}
                   <MultiSelectFilter
                     label="Departments"
-                    options={departmentOptions}
+                    options={availableOptions}
                     value={staged}
                     onChange={setStaged}
                     placeholder="Select departments…"
