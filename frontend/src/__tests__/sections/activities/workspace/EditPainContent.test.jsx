@@ -175,11 +175,48 @@ describe("EditPainContent (S3)", () => {
     expect(within(field).getByText("Marketing")).toBeInTheDocument();
   });
 
-  it("Company pill clears the departments and hides the add gesture", () => {
+  it("Company pill MASKS the departments field + add gesture (does not clear)", () => {
     renderEdit();
     fireEvent.click(screen.getByTestId("scope-pill-BUSINESS"));
+    // The department field + the "+ add" gesture are hidden under Company.
     expect(screen.queryByTestId("pain-departments-field")).not.toBeInTheDocument();
     expect(screen.queryByTestId("add-department")).not.toBeInTheDocument();
+  });
+
+  it("S3-fix-5: toggling Company then back to Department KEEPS the chosen departments", () => {
+    renderEdit(); // PAIN starts with Finance (id 1), scope DEPARTMENT
+    // Add Marketing → 2 departments.
+    fireEvent.click(screen.getByTestId("add-department"));
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
+    fireEvent.click(screen.getByTestId("confirm-add-departments"));
+    expect(within(screen.getByTestId("pain-departments-field")).getByText("Finance")).toBeInTheDocument();
+    expect(within(screen.getByTestId("pain-departments-field")).getByText("Marketing")).toBeInTheDocument();
+
+    // Toggle to Company (departments masked) …
+    fireEvent.click(screen.getByTestId("scope-pill-BUSINESS"));
+    expect(screen.queryByTestId("pain-departments-field")).not.toBeInTheDocument();
+
+    // … then back to Department → the 2 departments are STILL there (not cleared).
+    fireEvent.click(screen.getByTestId("scope-pill-DEPARTMENT"));
+    const field = screen.getByTestId("pain-departments-field");
+    expect(within(field).getByText("Finance")).toBeInTheDocument();
+    expect(within(field).getByText("Marketing")).toBeInTheDocument();
+  });
+
+  it("S3-fix-5: a Company save sends [] even though departments stay in form memory", async () => {
+    renderEdit(); // PAIN has Finance in Department
+    // Switch to Company WITHOUT removing any department via ×.
+    fireEvent.click(screen.getByTestId("scope-pill-BUSINESS"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    const [, , patch] = updateSignal.mock.calls[0];
+    // The masked-but-memorised department does NOT leak into a Company save.
+    expect(patch.scope_level).toBe("BUSINESS");
+    expect(patch.target_departments).toEqual([]);
+    expect(patch).not.toHaveProperty("target_department");
+    expect(patch).not.toHaveProperty("target_contact");
   });
 
   it("Save PATCHes via updateSignal('pain', ...) — Department + 2 depts → scope DEPARTMENT + [id1,id2], NO FK", async () => {

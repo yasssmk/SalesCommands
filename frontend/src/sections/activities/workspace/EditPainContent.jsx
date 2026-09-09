@@ -13,7 +13,9 @@
 //     shared StatusPill + objectiveScope tokens (ObjectiveScopePill itself is NOT
 //     used/modified here — Objective keeps it). scope_level is a single value, so
 //     exactly one pill is pressed;
-//   - Company  → scope_level BUSINESS, target_departments cleared;
+//   - Company  → scope_level BUSINESS; the departments are MASKED (not cleared)
+//     so switching back to Department restores them; the payload sends [] for
+//     Company regardless (derived from scope_level);
 //   - Department → a "+ add department" trigger (same gesture as EditActivityContent's
 //     "+ add contact") opens a grouped multi-select whose options EXCLUDE the
 //     already-chosen departments; on confirm the chosen departments join a row of
@@ -224,13 +226,16 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
   const [staged, setStaged] = useState([]);
 
   // Exclusive scope choice: scope_level is a single value, so exactly one pill is
-  // pressed. Clicking a pill selects it (and clears departments for Company).
+  // pressed. Company MASKS the departments (the pills + "+ add" block only render
+  // for DEPARTMENT) but does NOT clear them from the form — re-selecting Department
+  // brings them back untouched. The × on a pill stays the only way to remove one.
+  // The payload derives target_departments from scope_level (Company → []), so the
+  // memorised-but-hidden list never leaks into a Company save.
   const chooseScope = (key) => {
     if (!key || key === values.scope_level) return;
     setFieldValue("scope_level", key);
     if (key === OBJECTIVE_SCOPE.BUSINESS) {
-      // Company-wide → no departments.
-      setFieldValue("target_departments", []);
+      // Collapse the (now hidden) "+ add" picker UI — but keep the departments.
       setStaged([]);
       setAdding(false);
     }
