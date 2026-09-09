@@ -421,7 +421,9 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
                   spacing={0.5}
                   flexWrap="wrap"
                   useFlexGap
-                  sx={{ mb: 1 }}
+                  // Section-consistent vertical gap (matches the §scope Stack
+                  // spacing) between the chosen department pills and the selector.
+                  sx={{ mb: 1.5 }}
                   data-testid="pain-department-pills"
                 >
                   {values.target_departments.map((d) => (
