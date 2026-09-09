@@ -42,6 +42,8 @@ from rest_framework import serializers
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
+from app_modules.core_modules.models import StandardDepartment
+
 from ..models import PainSignal
 from .base_serializer import (
     BaseSignalListSerializer,
@@ -207,6 +209,19 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
 
     signal_type = serializers.HiddenField(default='pain')
 
+    # WHO the pain concerns — multi-department M2M, written as a list of
+    # StandardDepartment ids. PrimaryKeyRelatedField(many=True) validates each
+    # id and hands SignalManager.create a list of instances, applied via .set()
+    # after the row is saved (M2M can't be set pre-save). Same write shape as
+    # ConstraintSignal.target_departments / TechStackSignal.usage_departments.
+    # Optional — [] means no department. The read {id,name} block stays on the
+    # List/Detail serializers (_PainDisplayMixin.get_target_departments).
+    target_departments = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=StandardDepartment.objects.all(),
+    )
+
     class Meta(BaseSignalCreateSerializer.Meta):
         model = PainSignal
         fields = BaseSignalCreateSerializer.Meta.fields + [
@@ -214,6 +229,7 @@ class PainSignalCreateSerializer(BaseSignalCreateSerializer):
             'dimension',
             'scope_level',
             'summary',
+            'target_departments',
             'notes',
             # Cross-reference — TechStack
             'related_techstack_mention',
@@ -288,6 +304,16 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
     own CRUD endpoints at /module-signals/impact/.
     """
 
+    # Multi-department scope, writable via a list of StandardDepartment ids
+    # (same shape as Create). Applied via .set() by SignalManager on update;
+    # PATCH { target_departments: [] } clears the set. The read {id,name} block
+    # stays on the List/Detail serializers (_PainDisplayMixin).
+    target_departments = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=StandardDepartment.objects.all(),
+    )
+
     class Meta(BaseSignalUpdateSerializer.Meta):
         model = PainSignal
         fields = BaseSignalUpdateSerializer.Meta.fields + [
@@ -295,6 +321,7 @@ class PainSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'dimension',
             'scope_level',
             'summary',
+            'target_departments',
             'notes',
             # Cross-reference — TechStack
             'related_techstack_mention',

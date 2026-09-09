@@ -203,3 +203,78 @@ class TestObjectiveNotAffected:
         assert resp.status_code == status.HTTP_200_OK
         ids = {str(r.get('id')) for r in _results(resp.json())}
         assert str(o.id) in ids
+
+
+PAIN_URL = '/module-signals/pain/'
+
+
+def _pain_detail_departments(authed_api, pain_id):
+    """Re-read a PainSignal through the REAL detail endpoint and return the
+    set of target_departments display names it exposes ([{id,name}] block)."""
+    resp = authed_api.get(f'{PAIN_URL}{pain_id}/')
+    assert resp.status_code == status.HTTP_200_OK
+    payload = resp.json()
+    payload = payload.get('data', payload) if isinstance(payload, dict) else payload
+    return {d['name'] for d in payload['target_departments']}
+
+
+@pytest.mark.django_db
+class TestPainSerializerWriteM2M:
+    """Sub-step 2 (edit) — target_departments becomes WRITABLE on Pain via the
+    real create/PATCH endpoints, mirroring ConstraintSerializerWriteM2M. RED
+    while the field is read-only (SerializerMethodField only), GREEN once the
+    write PrimaryKeyRelatedField(many=True) is added to Create + Update."""
+
+    def test_create_accepts_target_departments_list(
+        self, authed_api_a, account, activity,
+    ):
+        fin, it = _dept('Finance'), _dept('IT')
+        payload = {
+            'signal_type': 'pain',
+            'source': 'MANUAL',
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'what': SignalWhat.OPS,
+            'dimension': SignalDimension.TIME,
+            'summary': 'Reporting is painful',
+            'target_departments': [str(fin.id), str(it.id)],
+        }
+        resp = authed_api_a.post(PAIN_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_201_CREATED
+        pk = resp.json()['data']['id']
+
+        sig = PainSignal.objects.get(pk=pk)
+        assert set(sig.target_departments.values_list('id', flat=True)) == {fin.id, it.id}
+
+    def test_patch_sets_target_departments(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        # Start with NO department, then PATCH two in via the real endpoint.
+        p = _mk_pain(account, activity, user_a, [])
+        fin, it = _dept('Finance'), _dept('IT')
+
+        resp = authed_api_a.patch(
+            f'{PAIN_URL}{p.id}/',
+            {'target_departments': [str(fin.id), str(it.id)]},
+            format='json',
+        )
+        assert resp.status_code == status.HTTP_200_OK
+
+        # Re-read through the API detail — the [{id,name}] block reflects both.
+        assert _pain_detail_departments(authed_api_a, p.id) == {
+            fin.get_name_display(), it.get_name_display(),
+        }
+
+    def test_patch_empty_list_clears_departments(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        fin, it = _dept('Finance'), _dept('IT')
+        p = _mk_pain(account, activity, user_a, [fin, it])
+
+        resp = authed_api_a.patch(
+            f'{PAIN_URL}{p.id}/',
+            {'target_departments': []},
+            format='json',
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert _pain_detail_departments(authed_api_a, p.id) == set()
