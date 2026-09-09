@@ -8,13 +8,12 @@
 // payload); onSaved(updatedSignal) returns to the Pain detail.
 //
 // The ONE structural difference vs Objective: the department scope is a
-// MULTI-department M2M (target_departments, a list of ids), NOT a single FK. So:
-//   - the ObjectiveScopePill drives ONLY scope_level (Company / Department) — its
-//     FK emissions (target_department / target_contact) are ignored (those fields
-//     do not exist on Pain);
-//   - the department picker is the TechStack-style Select-multiple, ALWAYS present
-//     and NEVER required (target_departments is independent of scope_level, like
-//     TechStackSignal.usage_departments). No .when() conditional on the scope.
+// MULTI-department M2M (target_departments, a list of ids), NOT a single FK.
+// Scope model (Option A): there is NO manual scope control — the SINGLE control
+// is the department multi-select (MultiSelectFilter, deletable pills), ALWAYS
+// present and NEVER required. scope_level is DERIVED at save time: at least one
+// department → DEPARTMENT, none → BUSINESS. The payload never carries a
+// target_department / target_contact FK (those fields do not exist on Pain).
 //
 // Theme tokens only. InlineEditableValue supports text / textarea / select.
 
@@ -28,13 +27,7 @@ import * as Yup from "yup";
 
 // MUI
 import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
 import Divider from "@mui/material/Divider";
-import FormControl from "@mui/material/FormControl";
-import FormHelperText from "@mui/material/FormHelperText";
-import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -46,7 +39,7 @@ import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
-import ObjectiveScopePill from "components/signals/ObjectiveScopePill";
+import MultiSelectFilter from "components/filters/MultiSelectFilter";
 import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
 
 // ==============================|| HELPERS ||============================== //
@@ -93,13 +86,17 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
   const dimensionOptions = choices?.signal_dimensions ?? [];
   const scopeLevelOptions = choices?.scope_levels ?? [];
 
-  // Same source + normalisation as InlineTechStackForm's usage_departments: the
-  // choices endpoint mixes {value,label} and {id,name}, so map to {value,label}.
+  // Options for the department multi-select. The choices endpoint mixes
+  // {value,label} and {id,name}, and — crucially — emits the id as an INTEGER
+  // (backend contacts choices: {'value': dept.id}) while the signal payload
+  // carries department ids as STRINGS (str(d.id)). MultiSelectFilter matches by
+  // strict value identity, so BOTH sides must be the same type: stringify the
+  // option value (and label) so they line up with the string form ids.
   const departmentOptions = useMemo(
     () =>
       (standardDepartments ?? []).map((d) => ({
-        value: d.value ?? d.id,
-        label: d.label ?? d.name,
+        value: String(d.value ?? d.id),
+        label: String(d.label ?? d.name),
       })),
     [standardDepartments],
   );
@@ -109,7 +106,8 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
       summary: pain?.summary || "",
       what: pain?.what || "",
       dimension: pain?.dimension || "",
-      scope_level: pain?.scope_level || OBJECTIVE_SCOPE.BUSINESS,
+      // scope_level is DERIVED at save time from the departments (Option A): it is
+      // not an editable field here, so it is not part of the form state.
       target_departments: toDepartmentIds(pain?.target_departments),
       notes: pain?.notes || "",
       related_techstack_mention: pain?.related_techstack_mention || "",
@@ -128,14 +126,20 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
       // (target_department / target_contact do not exist on Pain). Always emit
       // target_departments so an edit that clears every department replaces the
       // set on the backend (mirror of TechStack usage_departments).
+      //
+      // scope_level is DERIVED (Option A): at least one department → DEPARTMENT,
+      // none → BUSINESS. No manual scope control in the UI.
+      const departmentIds = Array.isArray(values.target_departments)
+        ? values.target_departments
+        : [];
+      const scope_level =
+        departmentIds.length > 0 ? OBJECTIVE_SCOPE.DEPARTMENT : OBJECTIVE_SCOPE.BUSINESS;
       const payload = {
         summary: values.summary.trim(),
         what: values.what,
         dimension: values.dimension,
-        scope_level: values.scope_level,
-        target_departments: Array.isArray(values.target_departments)
-          ? values.target_departments
-          : [],
+        scope_level,
+        target_departments: departmentIds,
         notes: values.notes || "",
         related_techstack_mention: values.related_techstack_mention || "",
         source_quote: values.source_quote || "",
@@ -159,9 +163,9 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
             what_display: resolveLabel(whatOptions, values.what) ?? pain?.what_display,
             dimension_display:
               resolveLabel(dimensionOptions, values.dimension) ?? pain?.dimension_display,
-            scope_level: values.scope_level,
+            scope_level: payload.scope_level,
             scope_level_display:
-              resolveLabel(scopeLevelOptions, values.scope_level) ?? pain?.scope_level_display,
+              resolveLabel(scopeLevelOptions, payload.scope_level) ?? pain?.scope_level_display,
             target_departments: payload.target_departments.map((id) => ({
               id,
               name: resolveLabel(departmentOptions, id),
@@ -197,12 +201,6 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
     if (!whatLabel || !dimensionLabel) return null;
     return `${whatLabel} × ${dimensionLabel}`;
   }, [whatOptions, dimensionOptions, values.what, values.dimension]);
-
-  // The scope pill raises a draft patch; on Pain we consume ONLY scope_level from
-  // it (its FK emissions are for Objective and are intentionally ignored).
-  const applyScope = (patch) => {
-    if (patch?.scope_level != null) setFieldValue("scope_level", patch.scope_level);
-  };
 
   return (
     <DrawerContentLayout
@@ -285,57 +283,26 @@ export default function EditPainContent({ pain, accountId, onSaved, onCancel }) 
 
         <Divider />
 
-        {/* ---- SECTION 2 — Which scope? (scope_level pill + M2M departments) ---- */}
+        {/* ---- SECTION 2 — Departments (scope_level is DERIVED from them) ---- */}
         <Stack spacing={1.5}>
           <SectionHeader
             index={2}
-            title="Which scope?"
-            subtitle="Pick the organisational scope, and the departments this pain concerns."
+            title="Which departments?"
+            subtitle="Pick the departments this pain concerns — leave empty for company-wide."
           />
 
-          {/* The pill drives ONLY scope_level (Company / Department). */}
-          <ObjectiveScopePill
-            value={{ scope_level: values.scope_level }}
-            onChange={applyScope}
-          />
-
-          {/* Departments — ALWAYS present, NEVER required (independent M2M). The
-              TechStack usage_departments pattern: Select multiple + chips. */}
-          <Box data-testid="pain-departments-field" sx={{ pt: 1 }}>
-            <FormControl
-              fullWidth
+          {/* The SINGLE scope control (Option A): a multi-select of departments as
+              deletable pills (×). ALWAYS present, NEVER required (independent M2M).
+              scope_level is derived at save time (≥1 → DEPARTMENT, 0 → BUSINESS). */}
+          <Box data-testid="pain-departments-field">
+            <MultiSelectFilter
+              label="Department(s)"
+              options={departmentOptions}
+              value={values.target_departments}
+              onChange={(ids) => setFieldValue("target_departments", ids)}
+              placeholder="No departments (company-wide)"
               size="small"
-              error={formik.touched.target_departments && Boolean(errors.target_departments)}
-            >
-              <InputLabel id="pain-target-depts-label">Department(s)</InputLabel>
-              <Select
-                multiple
-                labelId="pain-target-depts-label"
-                id="pain-target-departments"
-                name="target_departments"
-                value={values.target_departments}
-                onChange={(e) => setFieldValue("target_departments", e.target.value)}
-                onBlur={formik.handleBlur}
-                label="Department(s)"
-                renderValue={(selected) => (
-                  <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                    {selected.map((val) => {
-                      const opt = departmentOptions.find((o) => o.value === val);
-                      return <Chip key={val} size="small" label={opt ? opt.label : val} />;
-                    })}
-                  </Stack>
-                )}
-              >
-                {departmentOptions.map((opt) => (
-                  <MenuItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </MenuItem>
-                ))}
-              </Select>
-              {formik.touched.target_departments && errors.target_departments && (
-                <FormHelperText>{errors.target_departments}</FormHelperText>
-              )}
-            </FormControl>
+            />
           </Box>
         </Stack>
 
