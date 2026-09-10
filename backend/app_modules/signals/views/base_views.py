@@ -45,6 +45,8 @@ from ..constants import (
     SignalDimension,
     ScopeLevel,
     UsageScope,
+    ImpactType,
+    HumanImpactType,
 )
 
 from ..filters import SignalFilter
@@ -514,9 +516,10 @@ class SignalChoicesView(APIView):
         "signal_category":   [...],
         "signal_whats":      [...],   # shared across Pain, Objective and Impact
         "signal_dimensions": [...],   # shared across Pain, Objective and Impact
-        "human_impacts":     [...],
         "scope_levels":      [...],   # Pain, Objective and Impact scope axis
         "usage_scopes":      [...],   # TechStackSignal usage scope axis
+        "impact_types":      [...],   # ImpactSignal impact_type axis (required)
+        "human_impacts":     [...],   # ImpactSignal human_impact qualifier (optional)
       }
     }
 
@@ -543,5 +546,7 @@ class SignalChoicesView(APIView):
                 'signal_dimensions': _choices(SignalDimension),
                 'scope_levels':      _choices(ScopeLevel),
                 'usage_scopes':      _choices(UsageScope),
+                'impact_types':      _choices(ImpactType),
+                'human_impacts':     _choices(HumanImpactType),
             },
         })

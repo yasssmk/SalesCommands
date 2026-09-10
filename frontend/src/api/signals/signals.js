@@ -481,13 +481,14 @@ export function useGetSignalsByActivity(activityId, signalType, options = {}) {
  *                                                   shared Pain, Objective, Impact)
  *   signal_dimensions: [...],   // SignalDimension (2nd axis of canonical_key —
  *                                                   same shared scope)
- *   human_impacts:     [...],   // HumanImpact     (orthogonal axis on ImpactSignal)
  *   scope_levels:      [...],   // ScopeLevel      (BUSINESS / DEPARTMENT /
  *                                                   PERSONAL — drives Pain,
  *                                                   Objective and Impact
  *                                                   scope_level)
  *   usage_scopes:      [...],   // UsageScope      (TechStackSignal — TEAM /
  *                                                   DEPARTMENT / COMPANY / UNKNOWN)
+ *   impact_types:      [...],   // ImpactType      (required axis on ImpactSignal)
+ *   human_impacts:     [...],   // HumanImpactType (optional axis on ImpactSignal)
  * }
  *
  * Notes:
