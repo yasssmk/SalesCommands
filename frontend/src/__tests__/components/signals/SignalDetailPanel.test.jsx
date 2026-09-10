@@ -12,6 +12,9 @@ import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testin
 import { useRouter } from "next/navigation";
 import AphoriqTheme, { testTheme } from "../../_utils/aphoriqTheme";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
+// The cluster/flush branch is reached by rendering the shared content directly
+// with leadingAction/trailingAction (the DC/Account cluster coque passes them).
+import SignalDetailContent from "components/signals/SignalDetailContent";
 
 // The objective detail uses StatusPill (reads theme.aphoriQ) — render under the
 // project theme wrapper so those tokens resolve.
@@ -293,6 +296,74 @@ describe("SignalDetailPanel", () => {
     // Recap conveys the axes (no separate Theme row) + canonical_key.
     expect(screen.getByText("Data × Time")).toBeInTheDocument();
     expect(screen.getByText(/pain:DATA:TIME/)).toBeInTheDocument();
+  });
+
+  // ==== TD-238 / S2 — Impact detail on the standard chassis (Activity) ====
+
+  const MOCK_IMPACT_CHASSIS = {
+    ...MOCK_IMPACT,
+    id: "impact-chassis",
+    what: "DATA",
+    dimension: "TIME",
+    what_display: "Data",
+    dimension_display: "Time",
+    scope_level: "DEPARTMENT",
+    scope_level_display: "Department",
+    // Raw impact_type (required) so getMissingFields returns [] — no incomplete
+    // alert. The display label is impact_type_display.
+    impact_type: "TIME",
+    impact_type_display: "Time impact",
+    metric_text: "5 hours per week",
+    human_impact_display: "Frustration",
+    // M2M multi-department (Impact dropped the singular FK).
+    target_departments: [
+      { id: "dep-sales", name: "Sales" },
+      { id: "dep-mkt", name: "Marketing" },
+    ],
+  };
+
+  it("TD-238: renders Impact on the chassis (Diagnosis/Scope/Metrics/Source, M2M departments, no Category)", () => {
+    render(<SignalDetailPanel signal={MOCK_IMPACT_CHASSIS} signalType="impact" />);
+
+    // Chassis marker + the SHARED summary box (same component as Pain/Objective).
+    expect(screen.getByTestId("impact-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("impact-summary-box")).toBeInTheDocument();
+    // PO section order: Diagnosis (1) / Scope (2) / Metrics (3) / Source (4).
+    expect(screen.getByText("Diagnosis")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByText("Metrics")).toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Metrics fields.
+    expect(screen.getByText("Impact type")).toBeInTheDocument();
+    expect(screen.getByText("Time impact")).toBeInTheDocument();
+    expect(screen.getByText("5 hours per week")).toBeInTheDocument();
+    expect(screen.getByText("Frustration")).toBeInTheDocument();
+    // Impact has NO Category row (shadow-override) and no flush CLASSIFICATION.
+    expect(screen.queryByText("Category")).not.toBeInTheDocument();
+    expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
+    expect(screen.queryByText("IMPACT EVIDENCE")).not.toBeInTheDocument();
+    // Multi-value M2M departments joined by the shared helper.
+    expect(screen.getByText("Sales, Marketing")).toBeInTheDocument();
+    // Recap conveys the axes (no separate Theme row) + canonical_key.
+    expect(screen.getByText("Data × Time")).toBeInTheDocument();
+    expect(screen.getByText(/impact:DATA:TIME/)).toBeInTheDocument();
+  });
+
+  it("Impact chassis: impact_type always shown; metric_text + human_impact masked when empty", () => {
+    const bare = {
+      ...MOCK_IMPACT_CHASSIS,
+      id: "impact-bare",
+      metric_text: "",
+      human_impact_display: null,
+    };
+    render(<SignalDetailPanel signal={bare} signalType="impact" />);
+
+    // impact_type is required → its row is always present.
+    expect(screen.getByText("Impact type")).toBeInTheDocument();
+    expect(screen.getByText("Time impact")).toBeInTheDocument();
+    // Optional Metrics fields are masked (ReadRow returns null on empty).
+    expect(screen.queryByText("Metric")).not.toBeInTheDocument();
+    expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
   });
 
   it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
@@ -596,25 +667,36 @@ describe("SignalDetailPanel", () => {
 
   // === Shared-block composition (B1.2.1) ===
 
-  it("composes the shared ImpactDetailBlock (IMPACT EVIDENCE section)", () => {
-    // The 'IMPACT EVIDENCE' section heading is produced ONLY by the shared
-    // ImpactDetailBlock — its presence proves the panel composes the block
-    // rather than keeping its own per-type copy.
-    render(<SignalDetailPanel signal={MOCK_IMPACT} signalType="impact" />);
+  it("cluster/flush branch (leadingAction/trailingAction): Impact stays flush and composes ImpactDetailBlock", () => {
+    // TD-238: Impact moved onto the chassis on the ACTIVITY surface only. In the
+    // DC/Account cluster drawer (leadingAction/trailingAction present) it stays
+    // on the generic flush branch — the 'IMPACT EVIDENCE' heading, produced ONLY
+    // by the shared ImpactDetailBlock, proves the flush branch still composes it
+    // (no chassis body).
+    render(
+      <SignalDetailContent
+        signal={MOCK_IMPACT}
+        signalType="impact"
+        leadingAction={<span>back</span>}
+        trailingAction={<span>close</span>}
+      />,
+    );
     expect(screen.getByText("IMPACT EVIDENCE")).toBeInTheDocument();
     expect(screen.getByText("Time impact")).toBeInTheDocument();
+    // Flush, not the chassis — the chassis body marker is absent.
+    expect(screen.queryByTestId("impact-detail-body")).not.toBeInTheDocument();
   });
 
   // === ORIGIN provenance (B1) ===
 
-  // TD-238: Pain moved onto the chassis (its provenance is now the "Source"
-  // section). This guards the generic flush ProvenanceSection + ContactInline
-  // treatment via a type still on the flush branch (impact).
+  // TD-238: Pain AND Impact moved onto the chassis (their provenance is now the
+  // "Source" section). This guards the generic flush ProvenanceSection +
+  // ContactInline treatment via a type still on the flush branch (constraints).
   it("renders the full contact list with job_title + department in ORIGIN", () => {
     const signal = {
       id: "pd1",
       status: "PENDING",
-      summary: "Dept-scoped impact",
+      summary: "Dept-scoped constraint",
       source_quote: "quote",
       source_context: {
         activity: { id: "act-1", subject: "Discovery call" },
@@ -624,7 +706,7 @@ describe("SignalDetailPanel", () => {
         ],
       },
     };
-    render(<SignalDetailPanel signal={signal} signalType="impact" />);
+    render(<SignalDetailPanel signal={signal} signalType="constraints" />);
     expect(screen.getByText("ORIGIN")).toBeInTheDocument();
     // SIG-5f: the ORIGIN contact name is bold/primary (the per-type Contact row
     // also shows the name, so pick the emphasised ContactInline span), with the
