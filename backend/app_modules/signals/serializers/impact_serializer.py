@@ -51,6 +51,7 @@ ImpactSignal.clean() stance.
 
 from rest_framework import serializers
 
+from app_modules.core_modules.models import StandardDepartment
 from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
@@ -249,6 +250,18 @@ class ImpactSignalCreateSerializer(BaseSignalCreateSerializer):
 
     signal_type = serializers.HiddenField(default='impact')
 
+    # Multi-department scope (M2M), writable via a list of StandardDepartment
+    # ids. PrimaryKeyRelatedField(many=True) validates each id and is applied
+    # via .set() by SignalManager (type-agnostic) — mirror of
+    # PainSignal.target_departments / ConstraintSignal.target_departments. The
+    # read {id,name} block stays on the List/Detail serializers
+    # (_ImpactDisplayMixin.get_target_departments).
+    target_departments = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=StandardDepartment.objects.all(),
+    )
+
     class Meta(BaseSignalCreateSerializer.Meta):
         model = ImpactSignal
         # Strip signal_category from the inherited base fields —
@@ -264,6 +277,7 @@ class ImpactSignalCreateSerializer(BaseSignalCreateSerializer):
             'summary',
             'metric_text',
             'human_impact',
+            'target_departments',
         ]
         # Filter signal_category from the inherited extra_kwargs so
         # DRF does not try to apply rules to a non-existent field.
@@ -339,6 +353,16 @@ class ImpactSignalUpdateSerializer(BaseSignalUpdateSerializer):
     therefore filtered out of the inherited base fields.
     """
 
+    # Multi-department scope, writable via a list of StandardDepartment ids
+    # (same shape as Create). Applied via .set() by SignalManager on update;
+    # PATCH { target_departments: [] } clears the set. The read {id,name} block
+    # stays on the List/Detail serializers (_ImpactDisplayMixin).
+    target_departments = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=StandardDepartment.objects.all(),
+    )
+
     class Meta(BaseSignalUpdateSerializer.Meta):
         model = ImpactSignal
         # Strip signal_category from the inherited base fields —
@@ -354,6 +378,7 @@ class ImpactSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'summary',
             'metric_text',
             'human_impact',
+            'target_departments',
         ]
         extra_kwargs = {
             k: v

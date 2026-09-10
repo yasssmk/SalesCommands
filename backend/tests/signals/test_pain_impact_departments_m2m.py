@@ -278,3 +278,83 @@ class TestPainSerializerWriteM2M:
         )
         assert resp.status_code == status.HTTP_200_OK
         assert _pain_detail_departments(authed_api_a, p.id) == set()
+
+
+IMPACT_URL = '/module-signals/impact/'
+
+
+def _impact_detail_departments(authed_api, impact_id):
+    """Re-read an ImpactSignal through the REAL detail endpoint and return the
+    set of target_departments display names it exposes ([{id,name}] block)."""
+    resp = authed_api.get(f'{IMPACT_URL}{impact_id}/')
+    assert resp.status_code == status.HTTP_200_OK
+    payload = resp.json()
+    payload = payload.get('data', payload) if isinstance(payload, dict) else payload
+    return {d['name'] for d in payload['target_departments']}
+
+
+@pytest.mark.django_db
+class TestImpactSerializerWriteM2M:
+    """S1a (Impact edit) — target_departments becomes WRITABLE on Impact via the
+    real create/PATCH endpoints, mirroring TestPainSerializerWriteM2M. RED while
+    the field is read-only (SerializerMethodField only on List/Detail), GREEN once
+    the write PrimaryKeyRelatedField(many=True) is added to Create + Update.
+
+    Impact's REQUIRED create fields (ImpactSignal model + Create serializer):
+    what, dimension, scope_level, impact_type, summary."""
+
+    def test_create_accepts_target_departments_list(
+        self, authed_api_a, account, activity,
+    ):
+        fin, it = _dept('Finance'), _dept('IT')
+        payload = {
+            'signal_type': 'impact',
+            'source': 'MANUAL',
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'what': SignalWhat.OPS,
+            'dimension': SignalDimension.TIME,
+            'scope_level': ScopeLevel.DEPARTMENT,
+            'impact_type': ImpactType.FINANCIAL,
+            'summary': 'Onboarding costs 30k/month',
+            'target_departments': [str(fin.id), str(it.id)],
+        }
+        resp = authed_api_a.post(IMPACT_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_201_CREATED
+        pk = resp.json()['data']['id']
+
+        sig = ImpactSignal.objects.get(pk=pk)
+        assert set(sig.target_departments.values_list('id', flat=True)) == {fin.id, it.id}
+
+    def test_patch_sets_target_departments(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        # Start with NO department, then PATCH two in via the real endpoint.
+        i = _mk_impact(account, activity, user_a, [])
+        fin, it = _dept('Finance'), _dept('IT')
+
+        resp = authed_api_a.patch(
+            f'{IMPACT_URL}{i.id}/',
+            {'target_departments': [str(fin.id), str(it.id)]},
+            format='json',
+        )
+        assert resp.status_code == status.HTTP_200_OK
+
+        # Re-read through the API detail — the [{id,name}] block reflects both.
+        assert _impact_detail_departments(authed_api_a, i.id) == {
+            fin.get_name_display(), it.get_name_display(),
+        }
+
+    def test_patch_empty_list_clears_departments(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        fin, it = _dept('Finance'), _dept('IT')
+        i = _mk_impact(account, activity, user_a, [fin, it])
+
+        resp = authed_api_a.patch(
+            f'{IMPACT_URL}{i.id}/',
+            {'target_departments': []},
+            format='json',
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert _impact_detail_departments(authed_api_a, i.id) == set()
