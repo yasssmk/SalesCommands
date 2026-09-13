@@ -124,22 +124,43 @@ describe("EditImpactContent (S3)", () => {
     expect(screen.getByText("5 hours per week")).toBeInTheDocument();
   });
 
-  it("S3-fix (a/b): impact_type is OPTIONAL — Save allowed with impact_type empty; the key is OMITTED from the PATCH (never impact_type: '')", async () => {
-    renderEdit({ ...IMPACT, impact_type: "" });
-    // Make the form dirty WITHOUT setting impact_type (add a department).
-    fireEvent.click(screen.getByTestId("add-department"));
-    fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
-    fireEvent.click(screen.getByTestId("confirm-add-departments"));
+  it("S5b (Voie B): the impact_type select carries an empty option '—' to clear it", () => {
+    renderEdit();
+    fireEvent.doubleClick(screen.getByTestId("inline-read-impact_type"));
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    expect(screen.getByRole("option", { name: "—" })).toBeInTheDocument();
+    // Enum options still offered alongside the empty one.
+    expect(screen.getByRole("option", { name: "Financial" })).toBeInTheDocument();
+  });
+
+  it("S5b (Voie B): clearing impact_type to '—' SENDS impact_type: '' (real clearing, not omitted)", async () => {
+    renderEdit(); // IMPACT starts with impact_type "TIME"
+    // Enter edit on impact_type, open the select, pick the empty option.
+    fireEvent.doubleClick(screen.getByTestId("inline-read-impact_type"));
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("option", { name: "—" }));
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));
     });
-    // Save is NOT blocked (impact_type optional) → the PATCH goes out …
     expect(updateSignal).toHaveBeenCalledTimes(1);
     const [, , patch] = updateSignal.mock.calls[0];
-    // … WITHOUT the impact_type key (Voie A: omit-if-empty, never send "").
-    expect(patch).not.toHaveProperty("impact_type");
+    // Voie B: the key IS present and empty (real clearing), never omitted.
+    expect(patch).toHaveProperty("impact_type", "");
+  });
+
+  it("S5b: onSaved reflects the cleared impact_type (empty display) for the detail's 'No metric defined'", async () => {
+    const onSaved = vi.fn();
+    renderEdit(IMPACT, { onSaved });
+    fireEvent.doubleClick(screen.getByTestId("inline-read-impact_type"));
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByRole("option", { name: "—" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved.mock.calls[0][0].impact_type).toBe("");
+    expect(onSaved.mock.calls[0][0].impact_type_display).toBeNull();
   });
 
   it("human_impact select carries an empty option so it can be cleared", () => {

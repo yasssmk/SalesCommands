@@ -17,9 +17,10 @@
 // int(option)/string(id) type mismatch. The payload never carries a FK.
 //
 // Deltas vs Pain: NO notes, NO related_techstack_mention (absent on Impact).
-// Adds the Metrics section — impact_type (select, OPTIONAL since S3-fix; omitted
-// from the PATCH when empty, Voie A), metric_text (textarea, optional),
-// human_impact (select, optional with an empty option).
+// Adds the Metrics section — impact_type (select, OPTIONAL & CLEARABLE since S5b
+// Voie B; the empty "—" option sends impact_type: "" to clear it, migration 0043
+// + serializers allow_blank), metric_text (textarea, optional), human_impact
+// (select, optional with an empty option).
 //
 // Theme tokens only. InlineEditableValue supports text / textarea / select.
 
@@ -108,7 +109,12 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
   const whatOptions = choices?.signal_whats ?? [];
   const dimensionOptions = choices?.signal_dimensions ?? [];
   const scopeLevelOptions = choices?.scope_levels ?? [];
-  const impactTypeOptions = choices?.impact_types ?? [];
+  // impact_type is optional & clearable (Voie B) → prepend an empty option so a
+  // rep can clear a mis-categorised value (mirror of human_impact below).
+  const impactTypeOptions = useMemo(
+    () => [{ value: "", label: "—" }, ...(choices?.impact_types ?? [])],
+    [choices?.impact_types],
+  );
   // human_impact is optional → prepend an empty option so it can be cleared.
   const humanImpactOptions = useMemo(
     () => [{ value: "", label: "—" }, ...(choices?.human_impacts ?? [])],
@@ -180,14 +186,10 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
         human_impact: values.human_impact || "",
         source_quote: values.source_quote || "",
       };
-      // impact_type is OPTIONAL (Voie A, no migration): the backend model + Create
-      // serializer still require it and the Update field is NOT allow_blank, so a
-      // PATCH with impact_type: "" would 400. OMIT the key when empty (an omitted
-      // key leaves the stored value untouched — an existing impact_type cannot be
-      // cleared this way, an accepted Voie-A limitation).
-      if (values.impact_type) {
-        payload.impact_type = values.impact_type;
-      }
+      // impact_type is OPTIONAL & CLEARABLE (Voie B, migration 0043 + serializers
+      // allow_blank). ALWAYS send it — an empty "" is a real clearing (the backend
+      // accepts blank), so a rep can fix a mis-categorised impact_type.
+      payload.impact_type = values.impact_type ?? "";
       try {
         const result = await updateSignal("impact", impact.id, payload);
         if (!result?.success) {
@@ -214,13 +216,13 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
               id,
               name: resolveLabel(departmentOptions, id),
             })),
-            // Voie A: an empty impact_type is OMITTED from the PATCH, so the DB
-            // keeps its previous value — reflect that (fall back to the original)
-            // rather than showing it as cleared.
-            impact_type: values.impact_type || impact?.impact_type || "",
-            impact_type_display: values.impact_type
-              ? resolveLabel(impactTypeOptions, values.impact_type) ?? impact?.impact_type_display
-              : impact?.impact_type_display ?? null,
+            // Voie B: impact_type is sent verbatim (incl. "") — reflect the real
+            // saved value so an empty impact_type renders "No metric defined" on
+            // the detail (no fallback to the pre-edit value).
+            impact_type: payload.impact_type,
+            impact_type_display: payload.impact_type
+              ? resolveLabel(impactTypeOptions, payload.impact_type) ?? impact?.impact_type_display
+              : null,
             metric_text: payload.metric_text,
             human_impact: payload.human_impact,
             human_impact_display: payload.human_impact
@@ -547,7 +549,7 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
             options={impactTypeOptions}
             value={values.impact_type}
             onChange={set("impact_type")}
-            placeholder="Required"
+            placeholder="No impact type"
             disabled={choicesLoading}
             error={Boolean(errors.impact_type)}
             helperText={errors.impact_type}
