@@ -169,6 +169,7 @@ class ConstraintSignal(BaseSignal):
     rigidity = models.CharField(
         max_length=20,
         choices=Rigidity.choices,
+        blank=True,
         verbose_name=_('Rigidity'),
         help_text=_(
             'Whether this constraint is non-negotiable (FIRM) or a '

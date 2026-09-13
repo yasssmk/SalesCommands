@@ -32,7 +32,7 @@ import {
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
 import ContactInline from "components/signals/ContactInline";
-import { getTechSummary } from "sections/activities/signals/utils/signalDisplay";
+import { getTechSummary, formatTargetDepartments } from "sections/activities/signals/utils/signalDisplay";
 
 const ICON_SIZES = IconSizes();
 
@@ -97,21 +97,32 @@ function getMessage(signal, signalType) {
   }
 }
 
-// Scope chip label: "Business" by default, "Department · {name}" for a
+// Signal types whose department scope is the MULTI-department M2M
+// `target_departments` ([{id,name}]). The legacy single-FK `target_department`
+// was dropped for these (backend migr. 0038/0041). Objective / People keep the
+// single FK and are read via `target_department`.
+const M2M_DEPT_TYPES = new Set(["pain", "impact", "constraints"]);
+
+// Scope chip label: "Business" by default, "Department · {names}" for a
 // department-scoped signal. Returns null when the type carries no scope
 // or the scope has not been set yet.
 function getScopeLabel(signal, signalType) {
   if (!SCOPE_TYPES.has(signalType)) return null;
   // Constraint has NO scope_level column (detached from the axes) — its scope
-  // is carried by target_department alone: DEPARTMENT when set, else BUSINESS.
+  // is carried by the M2M target_departments alone: DEPARTMENT when set, else
+  // BUSINESS.
   if (signalType === "constraints") {
-    return signal.target_department?.name
-      ? `Department · ${signal.target_department.name}`
-      : "Business";
+    const names = formatTargetDepartments(signal);
+    return names ? `Department · ${names}` : "Business";
   }
   if (!signal.scope_level) return null;
   if (signal.scope_level === "DEPARTMENT") {
-    return `Department · ${signal.target_department?.name ?? "—"}`;
+    // M2M types (Pain / Impact) read the joined department list; FK-mono types
+    // (Objective / People) keep reading the single target_department.
+    const names = M2M_DEPT_TYPES.has(signalType)
+      ? formatTargetDepartments(signal)
+      : signal.target_department?.name;
+    return `Department · ${names ?? "—"}`;
   }
   return "Business";
 }

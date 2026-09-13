@@ -15,6 +15,7 @@
 import PropTypes from "prop-types";
 
 // MUI
+import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Divider from "@mui/material/Divider";
@@ -53,6 +54,7 @@ import ImpactDetailBlock from "components/signals/detail/ImpactDetailBlock";
 import ObjectiveDetailBlock from "components/signals/detail/ObjectiveDetailBlock";
 import TechDetailBlock from "components/signals/detail/TechDetailBlock";
 import PainDetailBlock from "components/signals/detail/PainDetailBlock";
+import SignalSummaryBox from "components/signals/detail/SignalSummaryBox";
 
 function formatDate(dateStr) {
   if (!dateStr) return null;
@@ -519,55 +521,15 @@ function ObjectiveDetailView({
         {/* One enclosing Goal box: summary (top) · short centered separator ·
             axis recap (bottom). A single surface tint, no inner accent border. */}
         <SectionHeader index={1} title="Goal" sx={{ mb: 1 }} />
-        {(signal.summary || axisPreview) && (
-          <Box
-            data-testid="objective-goal-box"
-            sx={{
-              my: 1,
-              px: 1.5,
-              py: 1.25,
-              bgcolor: (theme) => theme.aphoriQ?.surface?.level1,
-              borderRadius: (theme) => theme.aphoriQ?.radius?.md && `${theme.aphoriQ.radius.md}px`,
-            }}
-          >
-            {signal.summary && (
-              <Typography
-                data-testid="objective-summary-box"
-                variant="body1"
-                fontWeight={500}
-                color="text.primary"
-                sx={{ whiteSpace: "pre-line" }}
-              >
-                {signal.summary}
-              </Typography>
-            )}
-            {signal.summary && axisPreview && (
-              <Divider
-                data-testid="objective-goal-separator"
-                sx={{ width: "40%", mx: "auto", my: 1.5 }}
-              />
-            )}
-            {axisPreview && (
-              <>
-                <Typography variant="caption" color="text.secondary">
-                  This is a{" "}
-                  <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
-                    {axisPreview}
-                  </Box>{" "}
-                  goal
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                  sx={{ fontFamily: "monospace", mt: 0.25 }}
-                >
-                  canonical_key: {canonicalPreview}
-                </Typography>
-              </>
-            )}
-          </Box>
-        )}
+        <SignalSummaryBox
+          summary={signal.summary}
+          axisPreview={axisPreview}
+          axisNoun="goal"
+          canonicalKey={canonicalPreview}
+          boxTestId="objective-goal-box"
+          summaryTestId="objective-summary-box"
+          separatorTestId="objective-goal-separator"
+        />
 
         <Divider sx={{ my: 2 }} />
 
@@ -648,6 +610,587 @@ ObjectiveDetailView.propTypes = {
   currentActivityId: PropTypes.string,
 };
 
+// ==============================|| PAIN DETAIL VIEW (TD-238) ||============================== //
+//
+// The Pain detail on the standard drawer chassis, a STRICT mirror of
+// ObjectiveDetailView (same header mechanism, same shared SignalSummaryBox,
+// same numbered SectionHeaders + ReadRow + DrawerContentLayout read-action bar).
+// Only the surface differs: routed here on the Activity coque ONLY — in the
+// DC/Account cluster drawer Pain stays on the generic flush branch (the routing
+// gate lives in SignalDetailContent). Sections:
+//   1. Diagnosis — the shared summary box (summary + "{what} × {dimension}"
+//      recap + canonical_key). The theme lives in the recap, so there is NO
+//      separate Theme row (mirror of Objective, which has no Theme row).
+//   2. Scope     — Scope + Department(s) (M2M, the sole legitimate difference vs
+//      Objective) + Category + the optional related-tool mention.
+//   3. Source    — the source quote + origin contact(s), bold/muted like Objective.
+// Pain has NO Metrics section (that is Impact). The Edit button is present but
+// its wiring stays the legacy path until the Pain edit lands (S3).
+function PainDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "pain") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const axisPreview =
+    signal.what_display && signal.dimension_display
+      ? `${signal.what_display} × ${signal.dimension_display}`
+      : null;
+  const canonicalPreview =
+    signal.what && signal.dimension ? `pain:${signal.what}:${signal.dimension}` : null;
+  const departments = formatTargetDepartments(signal);
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+
+  return (
+    <Box data-testid="pain-detail-body">
+      {/* In-content header (title · [status pill + close ×]) — suppressed when the
+          coque owns the header (headerInCoque; the Activity coque does). Mirror of
+          ObjectiveDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="pain-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="pain-detail-title">
+            {getSignalTypeLabel("pain")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "pain"),
+          onReject: () => onReject?.(signal, "pain"),
+          onValidate: () => onValidate?.(signal, "pain"),
+          onReopen: () => onReopen?.(signal, "pain"),
+          status: signal.status,
+          isLocked,
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Diagnosis: the shared summary box (summary + recap +
+            canonical_key). The theme lives in the recap — no separate Theme row. */}
+        <SectionHeader index={1} title="Diagnosis" sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={signal.summary}
+          axisPreview={axisPreview}
+          axisNoun="pain"
+          canonicalKey={canonicalPreview}
+          boxTestId="pain-summary-box"
+          summaryTestId="pain-summary-text"
+          separatorTestId="pain-summary-separator"
+        />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Scope + Department(s) (M2M, the sole difference vs Objective)
+            + Category + optional related tool. */}
+        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
+        <ReadRow label="Scope level" value={signal.scope_level_display} />
+        <ReadRow label="Department(s)" value={departments} />
+        <ReadRow label="Category" value={signal.signal_category_display} />
+        <ReadRow label="Related tool" value={signal.related_techstack_mention} />
+        <ReadRow label="Notes" value={signal.notes} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Source: the quote + who said it, with an optional link to
+            the origin activity. Same treatment as the Objective detail. */}
+        <SectionHeader index={3} title="Source" sx={{ mb: 1 }} />
+        {signal.source_quote ? (
+          <SourceQuoteBlock quote={signal.source_quote} />
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            No source quote
+          </Typography>
+        )}
+        {contacts.length > 0 && (
+          <Box sx={{ mt: 1.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              {contacts.length > 1 ? "Contacts" : "Contact"}
+            </Typography>
+            <Stack spacing={0.25}>
+              {contacts.map((c) => (
+                <ContactInline key={c.id} contact={c} variant="body2" />
+              ))}
+            </Stack>
+          </Box>
+        )}
+        {showOriginLink && (
+          <Button
+            size="small"
+            variant="text"
+            startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+            onClick={() => onOpenActivity(originActivityId)}
+            sx={{ mt: 0.5, px: 0 }}
+          >
+            View origin activity
+          </Button>
+        )}
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+PainDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
+// ==============================|| IMPACT DETAIL VIEW (TD-238) ||============================== //
+//
+// The Impact detail on the standard drawer chassis, a mirror of PainDetailView
+// (same header mechanism, same shared SignalSummaryBox, same numbered
+// SectionHeaders + ReadRow + DrawerContentLayout read-action bar). Routed here
+// on the Activity coque ONLY — in the DC/Account cluster drawer Impact stays on
+// the generic flush branch (the routing gate lives in SignalDetailContent).
+// Sections (PO order): Diagnosis → Scope → Metrics → Source.
+//   1. Diagnosis — the shared summary box (summary + "{what} × {dimension}"
+//      recap + canonical_key). The theme lives in the recap, so there is NO
+//      separate Theme row (mirror of Pain / Objective).
+//   2. Scope     — Scope level + Department(s) (M2M). Impact has NO Category
+//      (shadow-override), NO Notes, NO Related tool (proven absent on Impact).
+//   3. Metrics   — impact_type (always shown, required) + metric_text +
+//      human_impact (both masked when empty, PO decision). Rendered with the
+//      chassis ReadRow (NOT ImpactDetailBlock, which is the flush-branch block).
+//   4. Source    — the source quote + origin contact(s), like Pain / Objective.
+// The Edit button routes through onEdit; its wiring stays the legacy path until
+// the Impact edit lands (S3).
+function ImpactDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "impact") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const axisPreview =
+    signal.what_display && signal.dimension_display
+      ? `${signal.what_display} × ${signal.dimension_display}`
+      : null;
+  const canonicalPreview =
+    signal.what && signal.dimension ? `impact:${signal.what}:${signal.dimension}` : null;
+  const departments = formatTargetDepartments(signal);
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+
+  return (
+    <Box data-testid="impact-detail-body">
+      {/* In-content header — suppressed when the coque owns the header
+          (headerInCoque; the Activity coque does). Mirror of PainDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="impact-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="impact-detail-title">
+            {getSignalTypeLabel("impact")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "impact"),
+          onReject: () => onReject?.(signal, "impact"),
+          onValidate: () => onValidate?.(signal, "impact"),
+          onReopen: () => onReopen?.(signal, "impact"),
+          status: signal.status,
+          isLocked,
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Diagnosis: the shared summary box (summary + recap +
+            canonical_key). The theme lives in the recap — no separate Theme row. */}
+        <SectionHeader index={1} title="Diagnosis" sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={signal.summary}
+          axisPreview={axisPreview}
+          axisNoun="impact"
+          canonicalKey={canonicalPreview}
+          boxTestId="impact-summary-box"
+          summaryTestId="impact-summary-text"
+          separatorTestId="impact-summary-separator"
+        />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Scope + Department(s) (M2M). Impact has no Category /
+            Notes / Related tool. */}
+        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
+        <ReadRow label="Scope level" value={signal.scope_level_display} />
+        <ReadRow label="Department(s)" value={departments} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Metrics: impact_type is OPTIONAL (S3-fix). When absent →
+            a single "No metric defined" line (no orphan metric / human rows).
+            When present → impact_type + metric_text (masked if empty) + human_impact
+            shown ONLY for impact_type === "HUMAN" (ImpactType.HUMAN enum value). */}
+        <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
+        {signal.impact_type ? (
+          <>
+            <ReadRow label="Impact type" value={signal.impact_type_display} />
+            <ReadRow label="Metric" value={signal.metric_text} />
+            {signal.impact_type === "HUMAN" && (
+              <ReadRow label="Human impact" value={signal.human_impact_display} />
+            )}
+          </>
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
+            No metric defined
+          </Typography>
+        )}
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Source: the quote + who said it, with an optional link to
+            the origin activity. Same treatment as the Pain detail. */}
+        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        {signal.source_quote ? (
+          <SourceQuoteBlock quote={signal.source_quote} />
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            No source quote
+          </Typography>
+        )}
+        {contacts.length > 0 && (
+          <Box sx={{ mt: 1.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              {contacts.length > 1 ? "Contacts" : "Contact"}
+            </Typography>
+            <Stack spacing={0.25}>
+              {contacts.map((c) => (
+                <ContactInline key={c.id} contact={c} variant="body2" />
+              ))}
+            </Stack>
+          </Box>
+        )}
+        {showOriginLink && (
+          <Button
+            size="small"
+            variant="text"
+            startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+            onClick={() => onOpenActivity(originActivityId)}
+            sx={{ mt: 0.5, px: 0 }}
+          >
+            View origin activity
+          </Button>
+        )}
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+ImpactDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
+// ==============================|| CONSTRAINT DETAIL VIEW (TD-238) ||============================== //
+//
+// The Constraint detail on the standard drawer chassis, structural mirror of
+// Pain/Impact DetailView (same header mechanism, numbered SectionHeaders +
+// ReadRow + DrawerContentLayout read-action bar), routed here on the ACTIVITY
+// coque ONLY. Constraint has strong deltas from Pain/Impact:
+//   - NO canonical_key / NO what×dimension axis (what/dimension are legacy
+//     nullable, NOT authored/shown). It DOES reuse SignalSummaryBox (fond
+//     distinct, homogeneous with Pain/Impact), but with a Constraint meta and
+//     NO canonical_key: recap = "This is an {nature} constraint · Rigidity:
+//     {rigidity}" (nature bold via axisPreview + article="an"; rigidity a plain
+//     suffix via recapSuffix, omitted when empty).
+//   - NO scope_level (the scope IS the presence/absence of target_departments)
+//     → §2 Scope has no "Scope level" row, only Department(s).
+//   - signal_category shadow-overridden to None → NO Category row.
+//   - nature (required) + rigidity (optional/clearable since S1a) live in the
+//     box meta, NOT a separate Classification section.
+// PO section order (4): Summary (box) → Scope → Notes → Source.
+function ConstraintDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "constraints") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const departments = formatTargetDepartments(signal);
+
+  // Recap meta for the shared summary box: "This is an {nature} constraint ·
+  // Rigidity: {rigidity}" — nature in bold (axisPreview), rigidity as a plain
+  // suffix AFTER "constraint" (omitted when empty). NO canonical_key.
+  const natureRecap = signal.nature_display || null;
+  const rigiditySuffix = signal.rigidity_display
+    ? ` · Rigidity: ${signal.rigidity_display}`
+    : undefined;
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+
+  return (
+    <Box data-testid="constraint-detail-body">
+      {/* In-content header — suppressed when the coque owns the header
+          (headerInCoque; the Activity coque does). Mirror of ImpactDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="constraint-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="constraint-detail-title">
+            {getSignalTypeLabel("constraints")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "constraints"),
+          onReject: () => onReject?.(signal, "constraints"),
+          onValidate: () => onValidate?.(signal, "constraints"),
+          onReopen: () => onReopen?.(signal, "constraints"),
+          status: signal.status,
+          isLocked,
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Summary: the SHARED summary box (same fond distinct as
+            Pain/Impact). Meta = "This is an {nature} constraint · Rigidity: {rigidity}"
+            (nature/rigidity in bold, article "an"). NO canonical_key (Constraint
+            has none) — the box omits it when canonicalKey is absent. */}
+        <SectionHeader index={1} title="Summary" sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={signal.summary}
+          axisPreview={natureRecap}
+          axisNoun="constraint"
+          article="an"
+          recapSuffix={rigiditySuffix}
+          boxTestId="constraint-summary-box"
+          summaryTestId="constraint-summary-text"
+          separatorTestId="constraint-summary-separator"
+        />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Scope: Department(s) (M2M). Constraint has no scope_level. */}
+        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
+        <ReadRow label="Department(s)" value={departments} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Notes (masked when empty). The section header already
+            labels it, so render the value plainly (no redundant "Notes" label). */}
+        <SectionHeader index={3} title="Notes" sx={{ mb: 1 }} />
+        {signal.notes ? (
+          <Typography
+            variant="body2"
+            color="text.primary"
+            data-testid="constraint-notes-text"
+            sx={{ whiteSpace: "pre-line" }}
+          >
+            {signal.notes}
+          </Typography>
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            No notes
+          </Typography>
+        )}
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Source: the quote + who said it, with an optional link to
+            the origin activity. Same treatment as the Pain/Impact detail. */}
+        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        {signal.source_quote ? (
+          <SourceQuoteBlock quote={signal.source_quote} />
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            No source quote
+          </Typography>
+        )}
+        {contacts.length > 0 && (
+          <Box sx={{ mt: 1.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              {contacts.length > 1 ? "Contacts" : "Contact"}
+            </Typography>
+            <Stack spacing={0.25}>
+              {contacts.map((c) => (
+                <ContactInline key={c.id} contact={c} variant="body2" />
+              ))}
+            </Stack>
+          </Box>
+        )}
+        {showOriginLink && (
+          <Button
+            size="small"
+            variant="text"
+            startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+            onClick={() => onOpenActivity(originActivityId)}
+            sx={{ mt: 0.5, px: 0 }}
+          >
+            View origin activity
+          </Button>
+        )}
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+ConstraintDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
 
 /**
@@ -675,6 +1218,70 @@ export default function SignalDetailContent({
   if (signalType === "objective") {
     return (
       <ObjectiveDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
+  // TD-238 — Pain uses the standard chassis on the ACTIVITY surface only. The
+  // DC/Account cluster drawer passes leadingAction (Back) + trailingAction
+  // (Close); their presence marks the cluster coque, where Pain stays on the
+  // generic flush branch below (deferred migration). The Activity coque passes
+  // neither, so Pain routes to the chassis here.
+  if (signalType === "pain" && !leadingAction && !trailingAction) {
+    return (
+      <PainDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
+  // TD-238 — Impact uses the standard chassis on the ACTIVITY surface only,
+  // exact mirror of the Pain gate. The DC/Account cluster drawer passes
+  // leadingAction/trailingAction; their presence keeps Impact on the generic
+  // flush branch below (deferred migration). The Activity coque passes neither.
+  if (signalType === "impact" && !leadingAction && !trailingAction) {
+    return (
+      <ImpactDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
+  // TD-238 — Constraint uses the standard chassis on the ACTIVITY surface only,
+  // exact mirror of the Pain/Impact gate. The DC/Account cluster drawer passes
+  // leadingAction/trailingAction; their presence keeps Constraint on the generic
+  // flush branch below (deferred migration). The Activity coque passes neither.
+  if (signalType === "constraints" && !leadingAction && !trailingAction) {
+    return (
+      <ConstraintDetailView
         signal={signal}
         onValidate={onValidate}
         onReject={onReject}

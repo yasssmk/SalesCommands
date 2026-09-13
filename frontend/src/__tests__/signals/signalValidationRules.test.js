@@ -22,11 +22,11 @@ describe("getRequiredFields", () => {
   it("returns impact required fields", () => {
     const fields = getRequiredFields("impact");
     const keys = fields.map((f) => f.key);
+    // S3-fix (PO Voie A): impact_type is OPTIONAL — no longer a required field.
     expect(keys).toEqual([
       "what",
       "dimension",
       "scope_level",
-      "impact_type",
       "summary",
     ]);
   });
@@ -36,6 +36,13 @@ describe("getRequiredFields", () => {
     expect(fields).toEqual([
       { key: "tech_name", label: "Tool name" },
     ]);
+  });
+
+  it("returns constraints required fields (nature + summary only — S2)", () => {
+    // Constraint is classified on nature (required); rigidity is optional
+    // (S1a Voie B) and what/dimension are legacy — none of them gate completeness.
+    const keys = getRequiredFields("constraints").map((f) => f.key);
+    expect(keys).toEqual(["nature", "summary"]);
   });
 
   it("returns blockers required fields", () => {

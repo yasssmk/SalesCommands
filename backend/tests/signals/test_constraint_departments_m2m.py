@@ -169,3 +169,69 @@ class TestConstraintAggregatedFilterM2M:
             assert resp.status_code == status.HTTP_200_OK
             ids = {str(row.get('id')) for row in _results(resp.json())}
             assert str(sig.id) in ids, f"constraint not matched on department {dept.name}"
+
+
+def _constraint_detail_field(authed_api, constraint_id, field):
+    """Re-read a ConstraintSignal through the REAL detail endpoint; return one field."""
+    resp = authed_api.get(f'{CONSTRAINT_URL}{constraint_id}/')
+    assert resp.status_code == status.HTTP_200_OK
+    payload = resp.json()
+    payload = payload.get('data', payload) if isinstance(payload, dict) else payload
+    return payload.get(field)
+
+
+@pytest.mark.django_db
+class TestConstraintRigidityOptional:
+    """S1a (Voie B) — rigidity is OPTIONAL & CLEARABLE (blank=True + serializers
+    allow_blank). nature STAYS required. RED before the change (PATCH "" -> 400;
+    create without rigidity -> 400 required)."""
+
+    def test_patch_clears_rigidity_to_empty(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        # Starts FIRM (via _mk_constraint_m2m), then CLEAR it.
+        sig = _mk_constraint_m2m(account, activity, user_a, [])
+        assert sig.rigidity == Rigidity.FIRM
+
+        resp = authed_api_a.patch(
+            f'{CONSTRAINT_URL}{sig.id}/',
+            {'rigidity': ''},
+            format='json',
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        assert _constraint_detail_field(authed_api_a, sig.id, 'rigidity') in ('', None)
+        sig.refresh_from_db()
+        assert sig.rigidity == ''
+
+    def test_create_without_rigidity_succeeds(
+        self, authed_api_a, account, activity,
+    ):
+        payload = {
+            'signal_type': 'constraint',
+            'source': 'MANUAL',
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'nature': ConstraintNature.TECHNICAL,
+            'summary': 'Must integrate with the existing SAP install',
+            # NO rigidity on purpose.
+        }
+        resp = authed_api_a.post(CONSTRAINT_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_201_CREATED
+        pk = resp.json()['data']['id']
+        assert ConstraintSignal.objects.get(pk=pk).rigidity == ''
+
+    def test_create_without_nature_still_fails(
+        self, authed_api_a, account, activity,
+    ):
+        # GUARD: nature stays REQUIRED — a create without it must be rejected.
+        payload = {
+            'signal_type': 'constraint',
+            'source': 'MANUAL',
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'summary': 'A constraint with no nature',
+            'rigidity': Rigidity.FIRM,
+            # NO nature on purpose.
+        }
+        resp = authed_api_a.post(CONSTRAINT_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST

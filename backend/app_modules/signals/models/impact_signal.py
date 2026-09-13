@@ -221,6 +221,7 @@ class ImpactSignal(BaseSignal):
     impact_type = models.CharField(
         max_length=20,
         choices=ImpactType.choices,
+        blank=True,
         verbose_name=_('Impact Type'),
         help_text=_(
             'Nature of the impact observation — FINANCIAL, TIME, '

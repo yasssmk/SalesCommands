@@ -19,7 +19,9 @@ const DEPT_PAIN = {
   dimension: "QUALITY",
   summary: "Marketing data is unreliable",
   scope_level: "DEPARTMENT",
-  target_department: { id: "d1", name: "Marketing" },
+  // Pain is M2M: the scope is carried by target_departments ([{id,name}]),
+  // NOT the dropped single-FK target_department.
+  target_departments: [{ id: "d1", name: "Marketing" }],
   created_at: "2026-05-01T10:00:00Z",
   source_context: {
     activity: { id: "a1", subject: "Discovery call" },
@@ -73,7 +75,44 @@ const CONSTRAINT = {
   status: "PENDING",
   summary: "Data must stay on-prem",
   nature_display: "Security",
-  target_department: { id: "d2", name: "IT" },
+  // Constraint is M2M too (no scope_level column; scope = target_departments).
+  target_departments: [{ id: "d2", name: "IT" }],
+  created_at: "2026-05-01T10:00:00Z",
+  source_context: { contacts: [] },
+};
+
+// M2M multi-department Pain (two departments) + an Impact, and the FK-mono
+// Objective (Objective keeps the single target_department — non-regression).
+const MULTI_DEPT_PAIN = {
+  ...DEPT_PAIN,
+  id: "p-multi",
+  target_departments: [
+    { id: "d3", name: "Sales" },
+    { id: "d1", name: "Marketing" },
+  ],
+};
+
+const DEPT_IMPACT = {
+  id: "i1",
+  status: "PENDING",
+  what: "OPS",
+  dimension: "TIME",
+  summary: "5h/week lost",
+  scope_level: "DEPARTMENT",
+  target_departments: [{ id: "d2", name: "IT" }],
+  created_at: "2026-05-01T10:00:00Z",
+  source_context: { contacts: [] },
+};
+
+const DEPT_OBJECTIVE = {
+  id: "o1",
+  status: "PENDING",
+  what: "GROWTH",
+  dimension: "SCALE",
+  summary: "Grow Finance headcount",
+  scope_level: "DEPARTMENT",
+  // Objective keeps the single-FK target_department (legitimate — NOT migrated).
+  target_department: { id: "d4", name: "Finance" },
   created_at: "2026-05-01T10:00:00Z",
   source_context: { contacts: [] },
 };
@@ -197,6 +236,26 @@ describe("SignalLine — informational content", () => {
     render(<SignalLine signal={DEPT_PAIN} signalType="pain" />);
     expect(screen.getByText(/Department · Marketing/)).toBeInTheDocument();
     expect(screen.getByText("Marketing data is unreliable")).toBeInTheDocument();
+  });
+
+  it("S4: a multi-department Pain shows ALL its M2M departments", () => {
+    render(<SignalLine signal={MULTI_DEPT_PAIN} signalType="pain" />);
+    expect(screen.getByText(/Department · Sales, Marketing/)).toBeInTheDocument();
+  });
+
+  it("S4: an Impact reads the M2M target_departments (not the dropped FK)", () => {
+    render(<SignalLine signal={DEPT_IMPACT} signalType="impact" />);
+    expect(screen.getByText(/Department · IT/)).toBeInTheDocument();
+  });
+
+  it("S4: a Constraint reads the M2M target_departments", () => {
+    render(<SignalLine signal={CONSTRAINT} signalType="constraints" />);
+    expect(screen.getByText(/Department · IT/)).toBeInTheDocument();
+  });
+
+  it("S4 non-regression: an Objective keeps reading its single-FK target_department", () => {
+    render(<SignalLine signal={DEPT_OBJECTIVE} signalType="objective" />);
+    expect(screen.getByText(/Department · Finance/)).toBeInTheDocument();
   });
 
   it("renders a Business scope chip for a BUSINESS-scoped pain", () => {

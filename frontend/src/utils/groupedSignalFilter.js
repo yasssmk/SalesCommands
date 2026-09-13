@@ -18,8 +18,9 @@ const DEFAULT_STATUSES = ["PENDING", "VALIDATED"];
 
 /**
  * @param {Object} signal - A signal object from the per-type list serializer
- *   (carries scope_level, target_department {id,name}|null, what, dimension,
- *   status, source_context.contacts[]).
+ *   (carries scope_level, the M2M target_departments [{id,name}] for
+ *   Pain/Impact/Constraint OR the single FK target_department {id,name}|null for
+ *   Objective/People, what, dimension, status, source_context.contacts[]).
  * @param {Object} filters - { perimeter, whats, dimensions, contacts, statuses }.
  * @returns {boolean}
  */
@@ -37,18 +38,29 @@ export function matchesGroupedFilters(signal, filters = {}) {
   const effectiveStatuses = statuses.length ? statuses : DEFAULT_STATUSES;
   if (!effectiveStatuses.includes(signal.status)) return false;
 
-  // Perimeter (OR) — scope=BUSINESS OR target_department in the selected ids.
+  // Perimeter (OR) — scope=BUSINESS OR one of the signal's departments is in the
+  // selected ids. Gather the signal's department ids from BOTH the M2M list
+  // (target_departments — Pain / Impact / Constraint) AND the single FK
+  // (target_department — Objective / People). Ids are normalised to String on
+  // both sides (the choices endpoint emits int ids, the payload strings).
   if (perimeter.length) {
     const wantBusiness = perimeter.includes("BUSINESS");
     const deptIds = perimeter.filter((p) => p !== "BUSINESS").map(String);
     const isBusiness = signal.scope_level === "BUSINESS";
-    const deptId =
-      signal.target_department?.id != null
-        ? String(signal.target_department.id)
-        : null;
+
+    const signalDeptIds = [];
+    if (Array.isArray(signal.target_departments)) {
+      signal.target_departments.forEach((d) => {
+        if (d?.id != null) signalDeptIds.push(String(d.id));
+      });
+    }
+    if (signal.target_department?.id != null) {
+      signalDeptIds.push(String(signal.target_department.id));
+    }
+
     const matchesPerimeter =
       (wantBusiness && isBusiness) ||
-      (deptIds.length > 0 && deptId !== null && deptIds.includes(deptId));
+      (deptIds.length > 0 && signalDeptIds.some((id) => deptIds.includes(id)));
     if (!matchesPerimeter) return false;
   }
 

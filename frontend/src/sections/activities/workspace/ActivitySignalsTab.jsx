@@ -37,9 +37,13 @@ import {
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
+import { getSignalTypeLabel } from "utils/signalTypes";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
+import EditPainContent from "sections/activities/workspace/EditPainContent";
+import EditImpactContent from "sections/activities/workspace/EditImpactContent";
+import EditConstraintContent from "sections/activities/workspace/EditConstraintContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -109,10 +113,15 @@ export default function ActivitySignalsTab({
   const openSignalDetail = useCallback(
     (signal, signalType) => {
       const h = detailHandlersRef.current;
-      // Objective detail's header (title + status pill + ×) is owned by the COQUE
-      // (UI-1): pass title + status + the shared status map, and tell the panel
-      // to suppress its in-content header.
-      const isObjective = signalType === "objective";
+      // Standard-chassis types (Objective, Pain) have their header (title +
+      // status pill + ×) owned by the COQUE (UI-1): pass title + status + the
+      // shared status map, and tell the panel to suppress its in-content header.
+      // Other types keep the panel's own (flush) header.
+      const coqueOwnsHeader =
+        signalType === "objective" ||
+        signalType === "pain" ||
+        signalType === "impact" ||
+        signalType === "constraints";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
@@ -123,10 +132,10 @@ export default function ActivitySignalsTab({
           onReopen={h.onReopen}
           isLocked={isLocked}
           currentActivityId={activityId}
-          headerInCoque={isObjective}
+          headerInCoque={coqueOwnsHeader}
         />,
-        isObjective
-          ? { title: "Objective", status: signal.status, statusMap: SIGNAL_STATUS_PILL }
+        coqueOwnsHeader
+          ? { title: getSignalTypeLabel(signalType), status: signal.status, statusMap: SIGNAL_STATUS_PILL }
           : undefined,
       );
     },
@@ -198,6 +207,65 @@ export default function ActivitySignalsTab({
             onCancel={() => openSignalDetail(signal, "objective")}
           />,
           { title: "Edit objective" },
+        );
+        return;
+      }
+      // S3: Pain edits go to the new chassis drawer (mirror of Objective) — the
+      // M2M department multi-select lives inside. Other types stay on the legacy
+      // SignalEditDrawer dialog below.
+      if (signalType === "pain") {
+        openDrawer(
+          <EditPainContent
+            pain={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "pain");
+            }}
+            onCancel={() => openSignalDetail(signal, "pain")}
+          />,
+          { title: "Edit pain" },
+        );
+        return;
+      }
+      // S3: Impact edits go to the new chassis drawer (mirror of Pain) — the
+      // Metrics fields + M2M department multi-select live inside. Other types
+      // stay on the legacy SignalEditDrawer dialog below.
+      if (signalType === "impact") {
+        openDrawer(
+          <EditImpactContent
+            impact={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "impact");
+            }}
+            onCancel={() => openSignalDetail(signal, "impact")}
+          />,
+          { title: "Edit impact" },
+        );
+        return;
+      }
+      // S3: Constraint edits go to the new chassis drawer (mirror of Pain/Impact)
+      // — nature/rigidity + the M2M department scope affordance live inside.
+      if (signalType === "constraints") {
+        openDrawer(
+          <EditConstraintContent
+            constraint={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "constraints");
+            }}
+            onCancel={() => openSignalDetail(signal, "constraints")}
+          />,
+          { title: "Edit constraint" },
         );
         return;
       }

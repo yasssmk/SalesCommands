@@ -23,7 +23,7 @@ const REQUIRED_FIELDS = {
     { key: "what", label: "What" },
     { key: "dimension", label: "Dimension" },
     { key: "scope_level", label: "Scope level" },
-    { key: "impact_type", label: "Impact type" },
+    // impact_type is OPTIONAL (S3-fix, PO Voie A) — no longer a required field.
     { key: "summary", label: "Summary" },
   ],
   "tech-stack": [{ key: "tech_name", label: "Tool name" }],
@@ -36,10 +36,11 @@ const REQUIRED_FIELDS = {
     { key: "role", label: "Role" },
   ],
   constraints: [
-    { key: "what", label: "What" },
-    { key: "dimension", label: "Dimension" },
+    // Constraint is classified on `nature` (required) — NOT the legacy what ×
+    // dimension axes (nullable, no longer authored). rigidity is optional/
+    // clearable (S1a Voie B), so it is not a completeness gate.
+    { key: "nature", label: "Nature" },
     { key: "summary", label: "Summary" },
-    { key: "rigidity", label: "Rigidity" },
   ],
   competitors: [
     { key: "competitor_name", label: "Competitor name" },

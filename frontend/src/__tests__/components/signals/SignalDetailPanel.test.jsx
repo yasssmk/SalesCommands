@@ -12,6 +12,9 @@ import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testin
 import { useRouter } from "next/navigation";
 import AphoriqTheme, { testTheme } from "../../_utils/aphoriqTheme";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
+// The cluster/flush branch is reached by rendering the shared content directly
+// with leadingAction/trailingAction (the DC/Account cluster coque passes them).
+import SignalDetailContent from "components/signals/SignalDetailContent";
 
 // The objective detail uses StatusPill (reads theme.aphoriQ) — render under the
 // project theme wrapper so those tokens resolve.
@@ -100,6 +103,9 @@ const MOCK_IMPACT = {
   summary: "5h/week lost on manual consolidation",
   what_display: "Operations",
   dimension_display: "Time",
+  // Raw impact_type (non-HUMAN) drives the chassis Metrics gate: type + metric
+  // show, but human_impact is hidden (only shown for impact_type === "HUMAN").
+  impact_type: "TIME",
   impact_type_display: "Time impact",
   scope_level_display: "Business",
   metric_text: "5 hours per week",
@@ -209,19 +215,210 @@ describe("SignalDetailPanel", () => {
 
   // === Enriched detail fields ===
 
-  it("shows pain-specific fields: theme, scope, notes, related tool", () => {
+  it("shows pain detail on the standard chassis (summary box + scope + source)", () => {
     render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
 
-    expect(screen.getByText("CLASSIFICATION")).toBeInTheDocument();
+    // TD-238/S2-fix: Pain mirrors Objective — the summary OPENS the detail in the
+    // shared SignalSummaryBox (section 1 "Diagnosis"), with the theme conveyed by
+    // the "{what} × {dimension}" recap + canonical_key. NO separate Theme row and
+    // NO flush "CLASSIFICATION" section.
+    expect(screen.getByTestId("pain-summary-box")).toBeInTheDocument();
+    expect(screen.getByText(/Lost 5h\/week/)).toBeInTheDocument();
     expect(screen.getByText("Data × Time")).toBeInTheDocument();
+    expect(screen.getByText(/pain:DATA:TIME/)).toBeInTheDocument();
+    expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
+    // Section 2 (Scope) fields.
     expect(screen.getByText("Business")).toBeInTheDocument();
-    // related_techstack_mention now rendered via the shared PainDetailBlock
-    expect(screen.getByText("RELATED TOOL")).toBeInTheDocument();
     expect(screen.getByText("Excel")).toBeInTheDocument();
     expect(screen.getByText("Critical for Q3")).toBeInTheDocument();
-    // Pierre Dupont now appears both as the per-type Contact row and in the
-    // ORIGIN provenance contact list.
+    // Section 3 (Source) — the origin contact.
     expect(screen.getAllByText("Pierre Dupont").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("S3-fix: the related tool is shown on the detail when present, hidden when empty", () => {
+    // Present → the "Related tool" row and its value render (detail/edit parity).
+    const { unmount } = render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
+    expect(screen.getByText("Related tool")).toBeInTheDocument();
+    expect(screen.getByText("Excel")).toBeInTheDocument();
+    unmount();
+
+    // Empty → the row is hidden (ReadRow drops empty values).
+    render(
+      <SignalDetailPanel
+        signal={{ ...MOCK_PAIN, related_techstack_mention: "" }}
+        signalType="pain"
+      />,
+    );
+    expect(screen.queryByText("Related tool")).not.toBeInTheDocument();
+  });
+
+  it("Pain detail uses the standard title header, suppressed when the coque owns it", () => {
+    // Panel default (no headerInCoque): Pain renders its own title + status pill
+    // header (mirror of Objective).
+    const { unmount } = render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
+    expect(screen.getByTestId("pain-detail-title")).toHaveTextContent("Pain");
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+    unmount();
+
+    // With headerInCoque (Activity coque owns title + pill + ×): the in-content
+    // header is suppressed so it is NOT duplicated below the coque cross.
+    render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" headerInCoque />);
+    expect(screen.queryByTestId("pain-detail-title")).not.toBeInTheDocument();
+    // The summary box still opens the detail.
+    expect(screen.getByTestId("pain-summary-box")).toBeInTheDocument();
+  });
+
+  // ==== TD-238 / S2-fix — Pain detail is a mirror of the Objective chassis ====
+
+  const MOCK_PAIN_CHASSIS = {
+    ...MOCK_PAIN,
+    id: "pain-chassis",
+    scope_level: "DEPARTMENT",
+    scope_level_display: "Department",
+    // M2M multi-department (Pain dropped the singular target_department FK) — the
+    // sole legitimate structural difference vs Objective.
+    target_departments: [
+      { id: "dep-sales", name: "Sales" },
+      { id: "dep-mkt", name: "Marketing" },
+    ],
+  };
+
+  it("TD-238: renders Pain on the chassis (shared summary box + M2M departments)", () => {
+    render(<SignalDetailPanel signal={MOCK_PAIN_CHASSIS} signalType="pain" />);
+
+    // Chassis marker + the SHARED summary box (same component as Objective).
+    expect(screen.getByTestId("pain-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("pain-summary-box")).toBeInTheDocument();
+    // Mirror sections: Diagnosis (1) / Scope (2) / Source (3), no Metrics.
+    expect(screen.getByText("Diagnosis")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    expect(screen.queryByText("Metrics")).not.toBeInTheDocument();
+    // Multi-value M2M departments joined by the shared helper.
+    expect(screen.getByText("Sales, Marketing")).toBeInTheDocument();
+    // Recap conveys the axes (no separate Theme row) + canonical_key.
+    expect(screen.getByText("Data × Time")).toBeInTheDocument();
+    expect(screen.getByText(/pain:DATA:TIME/)).toBeInTheDocument();
+  });
+
+  // ==== TD-238 / S2 — Impact detail on the standard chassis (Activity) ====
+
+  const MOCK_IMPACT_CHASSIS = {
+    ...MOCK_IMPACT,
+    id: "impact-chassis",
+    what: "DATA",
+    dimension: "TIME",
+    what_display: "Data",
+    dimension_display: "Time",
+    scope_level: "DEPARTMENT",
+    scope_level_display: "Department",
+    // Raw impact_type (required) so getMissingFields returns [] — no incomplete
+    // alert. The display label is impact_type_display.
+    impact_type: "TIME",
+    impact_type_display: "Time impact",
+    metric_text: "5 hours per week",
+    human_impact_display: "Frustration",
+    // M2M multi-department (Impact dropped the singular FK).
+    target_departments: [
+      { id: "dep-sales", name: "Sales" },
+      { id: "dep-mkt", name: "Marketing" },
+    ],
+  };
+
+  it("TD-238: renders Impact on the chassis (Diagnosis/Scope/Metrics/Source, M2M departments, no Category)", () => {
+    render(<SignalDetailPanel signal={MOCK_IMPACT_CHASSIS} signalType="impact" />);
+
+    // Chassis marker + the SHARED summary box (same component as Pain/Objective).
+    expect(screen.getByTestId("impact-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("impact-summary-box")).toBeInTheDocument();
+    // PO section order: Diagnosis (1) / Scope (2) / Metrics (3) / Source (4).
+    expect(screen.getByText("Diagnosis")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByText("Metrics")).toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Metrics fields (impact_type present, non-HUMAN → no Human impact row).
+    expect(screen.getByText("Impact type")).toBeInTheDocument();
+    expect(screen.getByText("Time impact")).toBeInTheDocument();
+    expect(screen.getByText("5 hours per week")).toBeInTheDocument();
+    expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
+    expect(screen.queryByText("No metric defined")).not.toBeInTheDocument();
+    // Impact has NO Category row (shadow-override) and no flush CLASSIFICATION.
+    expect(screen.queryByText("Category")).not.toBeInTheDocument();
+    expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
+    expect(screen.queryByText("IMPACT EVIDENCE")).not.toBeInTheDocument();
+    // Multi-value M2M departments joined by the shared helper.
+    expect(screen.getByText("Sales, Marketing")).toBeInTheDocument();
+    // Recap conveys the axes (no separate Theme row) + canonical_key.
+    expect(screen.getByText("Data × Time")).toBeInTheDocument();
+    expect(screen.getByText(/impact:DATA:TIME/)).toBeInTheDocument();
+  });
+
+  it("S3-fix: impact_type present (non-HUMAN) — type + metric shown, metric masked when empty, human hidden", () => {
+    const bare = {
+      ...MOCK_IMPACT_CHASSIS,
+      id: "impact-bare",
+      impact_type: "TIME",
+      impact_type_display: "Time impact",
+      metric_text: "",
+      human_impact_display: "Frustration",
+    };
+    render(<SignalDetailPanel signal={bare} signalType="impact" />);
+
+    // impact_type present → its row shows; NOT the "No metric defined" line.
+    expect(screen.getByText("Impact type")).toBeInTheDocument();
+    expect(screen.getByText("Time impact")).toBeInTheDocument();
+    expect(screen.queryByText("No metric defined")).not.toBeInTheDocument();
+    // metric_text masked when empty.
+    expect(screen.queryByText("Metric")).not.toBeInTheDocument();
+    // human_impact hidden because impact_type !== "HUMAN" (even though present).
+    expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
+    expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
+  });
+
+  it("S3-fix (a/c): impact_type EMPTY → 'No metric defined', metric_text + human_impact ABSENT", () => {
+    const noType = {
+      ...MOCK_IMPACT_CHASSIS,
+      id: "impact-no-type",
+      impact_type: "",
+      impact_type_display: null,
+      metric_text: "5 hours per week",
+      human_impact_display: "Frustration",
+    };
+    render(<SignalDetailPanel signal={noType} signalType="impact" />);
+
+    expect(screen.getByText("No metric defined")).toBeInTheDocument();
+    // No orphan metric / human rows.
+    expect(screen.queryByText("Impact type")).not.toBeInTheDocument();
+    expect(screen.queryByText("5 hours per week")).not.toBeInTheDocument();
+    expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
+  });
+
+  it("S3-fix (d): impact_type != HUMAN with human_impact set → human_impact HIDDEN", () => {
+    const nonHuman = {
+      ...MOCK_IMPACT_CHASSIS,
+      id: "impact-nonhuman",
+      impact_type: "FINANCIAL",
+      impact_type_display: "Financial",
+      human_impact_display: "Frustration",
+    };
+    render(<SignalDetailPanel signal={nonHuman} signalType="impact" />);
+    expect(screen.getByText("Financial")).toBeInTheDocument();
+    expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
+    expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
+  });
+
+  it("S3-fix (e): impact_type == HUMAN with human_impact set → human_impact VISIBLE", () => {
+    const human = {
+      ...MOCK_IMPACT_CHASSIS,
+      id: "impact-human",
+      impact_type: "HUMAN",
+      impact_type_display: "Human impact",
+      human_impact_display: "Frustration",
+    };
+    render(<SignalDetailPanel signal={human} signalType="impact" />);
+    // The human_impact VALUE renders (the discriminating proof — "Human impact"
+    // itself is ambiguous here since it is also the HUMAN impact_type label).
+    expect(screen.getByText("Frustration")).toBeInTheDocument();
   });
 
   it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
@@ -494,12 +691,14 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText(/Our budget is completely frozen/)).toBeInTheDocument();
   });
 
-  it("shows impact-specific fields: impact type, metric, human impact", () => {
+  it("shows impact-specific fields on the chassis: impact type + metric (human hidden for non-HUMAN)", () => {
+    // MOCK_IMPACT is a non-HUMAN (TIME) impact → on the Activity chassis the
+    // impact_type + metric show, but human_impact is gated out (S3-fix).
     render(<SignalDetailPanel signal={MOCK_IMPACT} signalType="impact" />);
 
     expect(screen.getByText("Time impact")).toBeInTheDocument();
     expect(screen.getByText("5 hours per week")).toBeInTheDocument();
-    expect(screen.getByText("Frustration")).toBeInTheDocument();
+    expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
 
   it("shows next-step-specific fields: type, due date, contacts", () => {
@@ -525,22 +724,36 @@ describe("SignalDetailPanel", () => {
 
   // === Shared-block composition (B1.2.1) ===
 
-  it("composes the shared ImpactDetailBlock (IMPACT EVIDENCE section)", () => {
-    // The 'IMPACT EVIDENCE' section heading is produced ONLY by the shared
-    // ImpactDetailBlock — its presence proves the panel composes the block
-    // rather than keeping its own per-type copy.
-    render(<SignalDetailPanel signal={MOCK_IMPACT} signalType="impact" />);
+  it("cluster/flush branch (leadingAction/trailingAction): Impact stays flush and composes ImpactDetailBlock", () => {
+    // TD-238: Impact moved onto the chassis on the ACTIVITY surface only. In the
+    // DC/Account cluster drawer (leadingAction/trailingAction present) it stays
+    // on the generic flush branch — the 'IMPACT EVIDENCE' heading, produced ONLY
+    // by the shared ImpactDetailBlock, proves the flush branch still composes it
+    // (no chassis body).
+    render(
+      <SignalDetailContent
+        signal={MOCK_IMPACT}
+        signalType="impact"
+        leadingAction={<span>back</span>}
+        trailingAction={<span>close</span>}
+      />,
+    );
     expect(screen.getByText("IMPACT EVIDENCE")).toBeInTheDocument();
     expect(screen.getByText("Time impact")).toBeInTheDocument();
+    // Flush, not the chassis — the chassis body marker is absent.
+    expect(screen.queryByTestId("impact-detail-body")).not.toBeInTheDocument();
   });
 
   // === ORIGIN provenance (B1) ===
 
+  // TD-238: Pain, Impact AND Constraint moved onto the chassis (their provenance
+  // is now the "Source" section). This guards the generic flush ProvenanceSection
+  // + ContactInline treatment via a type still on the flush branch (blockers).
   it("renders the full contact list with job_title + department in ORIGIN", () => {
     const signal = {
       id: "pd1",
       status: "PENDING",
-      summary: "Dept-scoped pain",
+      summary: "Dept-scoped blocker",
       source_quote: "quote",
       source_context: {
         activity: { id: "act-1", subject: "Discovery call" },
@@ -550,7 +763,7 @@ describe("SignalDetailPanel", () => {
         ],
       },
     };
-    render(<SignalDetailPanel signal={signal} signalType="pain" />);
+    render(<SignalDetailPanel signal={signal} signalType="blockers" />);
     expect(screen.getByText("ORIGIN")).toBeInTheDocument();
     // SIG-5f: the ORIGIN contact name is bold/primary (the per-type Contact row
     // also shows the name, so pick the emphasised ContactInline span), with the
@@ -746,8 +959,11 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
   it("Constraint: an empty department list hides the row (no stray name, no crash)", () => {
     const none = { ...CONSTRAINT_MULTI, id: "cn-none", target_departments: [] };
     render(<SignalDetailPanel signal={none} signalType="constraints" />);
-    // The section still renders (rigidity present) but no department text leaks.
-    expect(screen.getByText("Firm")).toBeInTheDocument();
+    // The detail still renders (summary box present, meta carries the nature)
+    // but no department text leaks.
+    expect(screen.getByTestId("constraint-summary-box")).toHaveTextContent(
+      /This is an\s+Regulatory\s+constraint · Rigidity: Firm/,
+    );
     expect(screen.queryByText("Sales")).not.toBeInTheDocument();
   });
 
@@ -782,5 +998,90 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
     // rendered in the Scope label/value row. SIG-4 must not touch it.
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     expect(screen.getByText("Finance")).toBeInTheDocument();
+  });
+});
+
+// ==== TD-238 / S2-fix — Constraint detail on the standard chassis (Activity) ====
+// Uses the SHARED SignalSummaryBox (fond distinct, homogeneous with Pain/Impact)
+// with a Constraint meta ("This is an {nature} · {rigidity} constraint") and NO
+// canonical_key. NO separate Classification section. No scope_level. 4 sections.
+describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", () => {
+  const MOCK_CONSTRAINT_CHASSIS = {
+    id: "constraint-chassis",
+    status: "PENDING",
+    summary: "Must comply with SOC 2 across all customer-facing teams",
+    // Raw values (drive gates) + display labels.
+    nature: "SECURITY",
+    nature_display: "Security",
+    rigidity: "FIRM",
+    rigidity_display: "Firm",
+    notes: "Auditors arrive in Q3.",
+    target_departments: [
+      { id: "d1", name: "IT" },
+      { id: "d2", name: "Security & Risk" },
+    ],
+    source_quote: "We can't move forward without SOC 2.",
+    source_context: { contacts: [] },
+  };
+
+  it("S2-fix: renders Constraint on the shared summary box (nature·rigidity meta, article 'an', NO canonical / NO Classification)", () => {
+    render(<SignalDetailPanel signal={MOCK_CONSTRAINT_CHASSIS} signalType="constraints" />);
+
+    // Chassis marker + the SHARED summary box (same component as Pain/Impact).
+    expect(screen.getByTestId("constraint-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("constraint-summary-box")).toBeInTheDocument();
+    expect(screen.getByTestId("constraint-summary-text")).toBeInTheDocument();
+    // Meta recap: "This is an {nature} constraint · Rigidity: {rigidity}"
+    // (nature in bold; rigidity a plain suffix after "constraint").
+    const box = screen.getByTestId("constraint-summary-box");
+    expect(box).toHaveTextContent(/This is an\s+Security\s+constraint · Rigidity: Firm/);
+    // nature carried in the box meta as the bold node.
+    expect(screen.getByText("Security")).toBeInTheDocument();
+    // 4 sections: Summary → Scope → Notes → Source. NO Classification.
+    expect(screen.getByText("Summary")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByText("Notes")).toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    expect(screen.queryByText("Classification")).not.toBeInTheDocument();
+    // Scope: M2M departments joined.
+    expect(screen.getByText("IT, Security & Risk")).toBeInTheDocument();
+    // Deltas: NO Category, NO legacy Theme, NO canonical_key, no flush CLASSIFICATION,
+    // no "Scope level" row.
+    expect(screen.queryByText("Category")).not.toBeInTheDocument();
+    expect(screen.queryByText("Theme")).not.toBeInTheDocument();
+    expect(screen.queryByText(/canonical_key/)).not.toBeInTheDocument();
+    expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
+    expect(screen.queryByText("Scope level")).not.toBeInTheDocument();
+  });
+
+  it("S2-fix-2: rigidity empty → meta 'This is an {nature} constraint' (no '· Rigidity:' suffix)", () => {
+    const noRig = { ...MOCK_CONSTRAINT_CHASSIS, id: "c-norig", rigidity: "", rigidity_display: null };
+    render(<SignalDetailPanel signal={noRig} signalType="constraints" />);
+    const box = screen.getByTestId("constraint-summary-box");
+    expect(box).toHaveTextContent(/This is an\s+Security\s+constraint/);
+    expect(box).not.toHaveTextContent("Rigidity:");
+    expect(box).not.toHaveTextContent("·");
+    expect(screen.queryByText("Firm")).not.toBeInTheDocument();
+  });
+
+  it("S2: notes masked when empty → 'No notes'", () => {
+    const noNotes = { ...MOCK_CONSTRAINT_CHASSIS, id: "c-nonotes", notes: "" };
+    render(<SignalDetailPanel signal={noNotes} signalType="constraints" />);
+    expect(screen.getByText("No notes")).toBeInTheDocument();
+    expect(screen.queryByText("Auditors arrive in Q3.")).not.toBeInTheDocument();
+  });
+
+  it("cluster/flush branch (leadingAction/trailingAction): Constraint stays flush (CLASSIFICATION), not the chassis", () => {
+    render(
+      <SignalDetailContent
+        signal={MOCK_CONSTRAINT_CHASSIS}
+        signalType="constraints"
+        leadingAction={<span>back</span>}
+        trailingAction={<span>close</span>}
+      />,
+    );
+    // Flush CLASSIFICATION section (generic ConstraintDetails), no chassis body.
+    expect(screen.getByText("CLASSIFICATION")).toBeInTheDocument();
+    expect(screen.queryByTestId("constraint-detail-body")).not.toBeInTheDocument();
   });
 });
