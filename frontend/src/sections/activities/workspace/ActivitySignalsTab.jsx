@@ -43,6 +43,7 @@ import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
 import EditPainContent from "sections/activities/workspace/EditPainContent";
 import EditImpactContent from "sections/activities/workspace/EditImpactContent";
+import EditConstraintContent from "sections/activities/workspace/EditConstraintContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -246,6 +247,25 @@ export default function ActivitySignalsTab({
             onCancel={() => openSignalDetail(signal, "impact")}
           />,
           { title: "Edit impact" },
+        );
+        return;
+      }
+      // S3: Constraint edits go to the new chassis drawer (mirror of Pain/Impact)
+      // — nature/rigidity + the M2M department scope affordance live inside.
+      if (signalType === "constraints") {
+        openDrawer(
+          <EditConstraintContent
+            constraint={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "constraints");
+            }}
+            onCancel={() => openSignalDetail(signal, "constraints")}
+          />,
+          { title: "Edit constraint" },
         );
         return;
       }

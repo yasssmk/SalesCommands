@@ -27,6 +27,10 @@ vi.mock("sections/activities/workspace/EditPainContent", () => ({
 vi.mock("sections/activities/workspace/EditImpactContent", () => ({
   default: () => <div data-testid="edit-impact-stub" />,
 }));
+// S3: Constraint edit goes to the new chassis drawer content — stub it to assert routing.
+vi.mock("sections/activities/workspace/EditConstraintContent", () => ({
+  default: () => <div data-testid="edit-constraint-stub" />,
+}));
 import { render as rtlRender, screen, fireEvent, cleanup, act, within } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
 
@@ -212,6 +216,21 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     // Edit in the detail routes Impact to the new chassis drawer content.
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
     expect(screen.getByTestId("edit-impact-stub")).toBeInTheDocument();
+  });
+
+  it("edits a Constraint via the new EditConstraintContent drawer (S3), not the legacy dialog", async () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          { id: "cn1", status: "PENDING", summary: "Constraint signal flat", _signalType: "constraints" },
+        ],
+        count: 1,
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Constraint signal flat"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByTestId("edit-constraint-stub")).toBeInTheDocument();
   });
 
   it("UI-1: opening an Objective shows the coque header title 'Objective'", async () => {
