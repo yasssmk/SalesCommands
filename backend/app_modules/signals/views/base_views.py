@@ -47,6 +47,8 @@ from ..constants import (
     UsageScope,
     ImpactType,
     HumanImpactType,
+    ConstraintNature,
+    Rigidity,
 )
 
 from ..filters import SignalFilter
@@ -520,6 +522,8 @@ class SignalChoicesView(APIView):
         "usage_scopes":      [...],   # TechStackSignal usage scope axis
         "impact_types":      [...],   # ImpactSignal impact_type axis (required)
         "human_impacts":     [...],   # ImpactSignal human_impact qualifier (optional)
+        "constraint_natures": [...],  # ConstraintSignal nature axis (required)
+        "rigidities":        [...],   # ConstraintSignal rigidity (optional/clearable)
       }
     }
 
@@ -548,5 +552,7 @@ class SignalChoicesView(APIView):
                 'usage_scopes':      _choices(UsageScope),
                 'impact_types':      _choices(ImpactType),
                 'human_impacts':     _choices(HumanImpactType),
+                'constraint_natures': _choices(ConstraintNature),
+                'rigidities':        _choices(Rigidity),
             },
         })

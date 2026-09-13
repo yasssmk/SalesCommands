@@ -13,7 +13,12 @@ shape InlineEditableValue(type="select") consumes verbatim.
 import pytest
 from django.urls import reverse
 
-from app_modules.signals.constants import ImpactType, HumanImpactType
+from app_modules.signals.constants import (
+    ImpactType,
+    HumanImpactType,
+    ConstraintNature,
+    Rigidity,
+)
 
 
 def _choices_data(authed_api):
@@ -43,3 +48,25 @@ class TestChoicesEndpointImpactAxes:
         assert isinstance(got, list) and len(got) > 0
         assert all(set(o.keys()) == {'value', 'label'} for o in got)
         assert [(o['value'], o['label']) for o in got] == list(HumanImpactType.choices)
+
+
+@pytest.mark.django_db
+class TestChoicesEndpointConstraintAxes:
+    """S1b — constraint_natures + rigidities served as [{value,label}], matching
+    the enums, so the front Constraint edit form can populate its two selects."""
+
+    def test_constraint_natures_present_and_match_enum(self, authed_api_a):
+        data = _choices_data(authed_api_a)
+        assert 'constraint_natures' in data
+        got = data['constraint_natures']
+        assert isinstance(got, list) and len(got) > 0
+        assert all(set(o.keys()) == {'value', 'label'} for o in got)
+        assert [(o['value'], o['label']) for o in got] == list(ConstraintNature.choices)
+
+    def test_rigidities_present_and_match_enum(self, authed_api_a):
+        data = _choices_data(authed_api_a)
+        assert 'rigidities' in data
+        got = data['rigidities']
+        assert isinstance(got, list) and len(got) > 0
+        assert all(set(o.keys()) == {'value', 'label'} for o in got)
+        assert [(o['value'], o['label']) for o in got] == list(Rigidity.choices)
