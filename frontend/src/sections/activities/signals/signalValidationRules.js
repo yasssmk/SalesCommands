@@ -36,10 +36,11 @@ const REQUIRED_FIELDS = {
     { key: "role", label: "Role" },
   ],
   constraints: [
-    { key: "what", label: "What" },
-    { key: "dimension", label: "Dimension" },
+    // Constraint is classified on `nature` (required) — NOT the legacy what ×
+    // dimension axes (nullable, no longer authored). rigidity is optional/
+    // clearable (S1a Voie B), so it is not a completeness gate.
+    { key: "nature", label: "Nature" },
     { key: "summary", label: "Summary" },
-    { key: "rigidity", label: "Rigidity" },
   ],
   competitors: [
     { key: "competitor_name", label: "Competitor name" },

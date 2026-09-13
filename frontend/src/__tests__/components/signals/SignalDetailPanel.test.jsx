@@ -746,14 +746,14 @@ describe("SignalDetailPanel", () => {
 
   // === ORIGIN provenance (B1) ===
 
-  // TD-238: Pain AND Impact moved onto the chassis (their provenance is now the
-  // "Source" section). This guards the generic flush ProvenanceSection +
-  // ContactInline treatment via a type still on the flush branch (constraints).
+  // TD-238: Pain, Impact AND Constraint moved onto the chassis (their provenance
+  // is now the "Source" section). This guards the generic flush ProvenanceSection
+  // + ContactInline treatment via a type still on the flush branch (blockers).
   it("renders the full contact list with job_title + department in ORIGIN", () => {
     const signal = {
       id: "pd1",
       status: "PENDING",
-      summary: "Dept-scoped constraint",
+      summary: "Dept-scoped blocker",
       source_quote: "quote",
       source_context: {
         activity: { id: "act-1", subject: "Discovery call" },
@@ -763,7 +763,7 @@ describe("SignalDetailPanel", () => {
         ],
       },
     };
-    render(<SignalDetailPanel signal={signal} signalType="constraints" />);
+    render(<SignalDetailPanel signal={signal} signalType="blockers" />);
     expect(screen.getByText("ORIGIN")).toBeInTheDocument();
     // SIG-5f: the ORIGIN contact name is bold/primary (the per-type Contact row
     // also shows the name, so pick the emphasised ContactInline span), with the
@@ -995,5 +995,88 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
     // rendered in the Scope label/value row. SIG-4 must not touch it.
     render(<SignalDetailPanel signal={MOCK_OBJECTIVE} signalType="objective" />);
     expect(screen.getByText("Finance")).toBeInTheDocument();
+  });
+});
+
+// ==== TD-238 / S2 — Constraint detail on the standard chassis (Activity) ====
+// Strong deltas vs Pain/Impact: no what×dimension axis / no canonical_key (no
+// SignalSummaryBox), no scope_level (scope = departments), signal_category None
+// (no Category), own fields nature (required) + rigidity (optional) + notes.
+describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2)", () => {
+  const MOCK_CONSTRAINT_CHASSIS = {
+    id: "constraint-chassis",
+    status: "PENDING",
+    summary: "Must comply with SOC 2 across all customer-facing teams",
+    // Raw values (drive gates) + display labels.
+    nature: "SECURITY",
+    nature_display: "Security",
+    rigidity: "FIRM",
+    rigidity_display: "Firm",
+    notes: "Auditors arrive in Q3.",
+    target_departments: [
+      { id: "d1", name: "IT" },
+      { id: "d2", name: "Security & Risk" },
+    ],
+    source_quote: "We can't move forward without SOC 2.",
+    source_context: { contacts: [] },
+  };
+
+  it("TD-238: renders Constraint on the chassis (Summary/Classification/Scope/Notes/Source, nature shown, M2M depts, NO Category/Theme/SummaryBox)", () => {
+    render(<SignalDetailPanel signal={MOCK_CONSTRAINT_CHASSIS} signalType="constraints" />);
+
+    // Chassis marker.
+    expect(screen.getByTestId("constraint-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("constraint-summary-text")).toBeInTheDocument();
+    // PO section order.
+    expect(screen.getByText("Summary")).toBeInTheDocument();
+    expect(screen.getByText("Classification")).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
+    expect(screen.getByText("Notes")).toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Classification: nature always shown + rigidity.
+    expect(screen.getByText("Nature")).toBeInTheDocument();
+    expect(screen.getByText("Security")).toBeInTheDocument();
+    expect(screen.getByText("Rigidity")).toBeInTheDocument();
+    expect(screen.getByText("Firm")).toBeInTheDocument();
+    // Scope: M2M departments joined.
+    expect(screen.getByText("IT, Security & Risk")).toBeInTheDocument();
+    // Deltas: NO Category, NO legacy Theme, NO SummaryBox / canonical_key, no flush CLASSIFICATION.
+    expect(screen.queryByText("Category")).not.toBeInTheDocument();
+    expect(screen.queryByText("Theme")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("constraint-summary-box")).not.toBeInTheDocument();
+    expect(screen.queryByText(/constraint:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
+    // No "Scope level" row (Constraint has no scope_level).
+    expect(screen.queryByText("Scope level")).not.toBeInTheDocument();
+  });
+
+  it("S2: rigidity masked when empty (nature still shown)", () => {
+    const noRig = { ...MOCK_CONSTRAINT_CHASSIS, id: "c-norig", rigidity: "", rigidity_display: null };
+    render(<SignalDetailPanel signal={noRig} signalType="constraints" />);
+    expect(screen.getByText("Nature")).toBeInTheDocument();
+    expect(screen.getByText("Security")).toBeInTheDocument();
+    expect(screen.queryByText("Rigidity")).not.toBeInTheDocument();
+    expect(screen.queryByText("Firm")).not.toBeInTheDocument();
+  });
+
+  it("S2: notes masked when empty → 'No notes'", () => {
+    const noNotes = { ...MOCK_CONSTRAINT_CHASSIS, id: "c-nonotes", notes: "" };
+    render(<SignalDetailPanel signal={noNotes} signalType="constraints" />);
+    expect(screen.getByText("No notes")).toBeInTheDocument();
+    expect(screen.queryByText("Auditors arrive in Q3.")).not.toBeInTheDocument();
+  });
+
+  it("cluster/flush branch (leadingAction/trailingAction): Constraint stays flush (CLASSIFICATION), not the chassis", () => {
+    render(
+      <SignalDetailContent
+        signal={MOCK_CONSTRAINT_CHASSIS}
+        signalType="constraints"
+        leadingAction={<span>back</span>}
+        trailingAction={<span>close</span>}
+      />,
+    );
+    // Flush CLASSIFICATION section (generic ConstraintDetails), no chassis body.
+    expect(screen.getByText("CLASSIFICATION")).toBeInTheDocument();
+    expect(screen.queryByTestId("constraint-detail-body")).not.toBeInTheDocument();
   });
 });

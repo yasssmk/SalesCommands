@@ -990,6 +990,206 @@ ImpactDetailView.propTypes = {
   currentActivityId: PropTypes.string,
 };
 
+// ==============================|| CONSTRAINT DETAIL VIEW (TD-238) ||============================== //
+//
+// The Constraint detail on the standard drawer chassis, structural mirror of
+// Pain/Impact DetailView (same header mechanism, numbered SectionHeaders +
+// ReadRow + DrawerContentLayout read-action bar), routed here on the ACTIVITY
+// coque ONLY. Constraint has strong deltas from Pain/Impact:
+//   - NO canonical_key / NO what×dimension axis (what/dimension are legacy
+//     nullable, NOT authored/shown) → SignalSummaryBox does NOT apply. §1 is a
+//     plain summary narrative.
+//   - NO scope_level (the scope IS the presence/absence of target_departments)
+//     → §3 has no "Scope level" row, only Department(s).
+//   - signal_category shadow-overridden to None → NO Category row.
+//   - Own fields: nature (required, always shown) + rigidity (optional/clearable
+//     since S1a → masked when empty) + notes (masked when empty).
+// PO section order: Summary → Classification → Scope → Notes → Source.
+function ConstraintDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "constraints") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const departments = formatTargetDepartments(signal);
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+
+  return (
+    <Box data-testid="constraint-detail-body">
+      {/* In-content header — suppressed when the coque owns the header
+          (headerInCoque; the Activity coque does). Mirror of ImpactDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="constraint-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="constraint-detail-title">
+            {getSignalTypeLabel("constraints")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "constraints"),
+          onReject: () => onReject?.(signal, "constraints"),
+          onValidate: () => onValidate?.(signal, "constraints"),
+          onReopen: () => onReopen?.(signal, "constraints"),
+          status: signal.status,
+          isLocked,
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Summary: the plain narrative. NO SignalSummaryBox
+            (Constraint has no what×dimension axis / canonical_key). */}
+        <SectionHeader index={1} title="Summary" sx={{ mb: 1 }} />
+        {signal.summary ? (
+          <Typography
+            variant="body2"
+            color="text.primary"
+            data-testid="constraint-summary-text"
+            sx={{ whiteSpace: "pre-line" }}
+          >
+            {signal.summary}
+          </Typography>
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            No summary
+          </Typography>
+        )}
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Classification: nature (required, always shown) + rigidity
+            (optional → masked when empty). NO Category, NO legacy Theme. */}
+        <SectionHeader index={2} title="Classification" sx={{ mb: 1 }} />
+        <ReadRow label="Nature" value={signal.nature_display} />
+        <ReadRow label="Rigidity" value={signal.rigidity_display} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Scope: Department(s) (M2M). Constraint has no scope_level. */}
+        <SectionHeader index={3} title="Scope" sx={{ mb: 1 }} />
+        <ReadRow label="Department(s)" value={departments} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Notes (masked when empty). The section header already
+            labels it, so render the value plainly (no redundant "Notes" label). */}
+        <SectionHeader index={4} title="Notes" sx={{ mb: 1 }} />
+        {signal.notes ? (
+          <Typography
+            variant="body2"
+            color="text.primary"
+            data-testid="constraint-notes-text"
+            sx={{ whiteSpace: "pre-line" }}
+          >
+            {signal.notes}
+          </Typography>
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            No notes
+          </Typography>
+        )}
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 5 — Source: the quote + who said it, with an optional link to
+            the origin activity. Same treatment as the Pain/Impact detail. */}
+        <SectionHeader index={5} title="Source" sx={{ mb: 1 }} />
+        {signal.source_quote ? (
+          <SourceQuoteBlock quote={signal.source_quote} />
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            No source quote
+          </Typography>
+        )}
+        {contacts.length > 0 && (
+          <Box sx={{ mt: 1.25 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+              {contacts.length > 1 ? "Contacts" : "Contact"}
+            </Typography>
+            <Stack spacing={0.25}>
+              {contacts.map((c) => (
+                <ContactInline key={c.id} contact={c} variant="body2" />
+              ))}
+            </Stack>
+          </Box>
+        )}
+        {showOriginLink && (
+          <Button
+            size="small"
+            variant="text"
+            startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+            onClick={() => onOpenActivity(originActivityId)}
+            sx={{ mt: 0.5, px: 0 }}
+          >
+            View origin activity
+          </Button>
+        )}
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+ConstraintDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
 
 /**
@@ -1060,6 +1260,27 @@ export default function SignalDetailContent({
   if (signalType === "impact" && !leadingAction && !trailingAction) {
     return (
       <ImpactDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
+  // TD-238 — Constraint uses the standard chassis on the ACTIVITY surface only,
+  // exact mirror of the Pain/Impact gate. The DC/Account cluster drawer passes
+  // leadingAction/trailingAction; their presence keeps Constraint on the generic
+  // flush branch below (deferred migration). The Activity coque passes neither.
+  if (signalType === "constraints" && !leadingAction && !trailingAction) {
+    return (
+      <ConstraintDetailView
         signal={signal}
         onValidate={onValidate}
         onReject={onReject}

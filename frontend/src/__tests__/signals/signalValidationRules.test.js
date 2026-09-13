@@ -38,6 +38,13 @@ describe("getRequiredFields", () => {
     ]);
   });
 
+  it("returns constraints required fields (nature + summary only — S2)", () => {
+    // Constraint is classified on nature (required); rigidity is optional
+    // (S1a Voie B) and what/dimension are legacy — none of them gate completeness.
+    const keys = getRequiredFields("constraints").map((f) => f.key);
+    expect(keys).toEqual(["nature", "summary"]);
+  });
+
   it("returns blockers required fields", () => {
     const fields = getRequiredFields("blockers");
     expect(fields).toEqual([{ key: "summary", label: "Summary" }]);

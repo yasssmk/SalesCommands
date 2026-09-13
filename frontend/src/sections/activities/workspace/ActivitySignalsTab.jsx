@@ -117,7 +117,10 @@ export default function ActivitySignalsTab({
       // shared status map, and tell the panel to suppress its in-content header.
       // Other types keep the panel's own (flush) header.
       const coqueOwnsHeader =
-        signalType === "objective" || signalType === "pain" || signalType === "impact";
+        signalType === "objective" ||
+        signalType === "pain" ||
+        signalType === "impact" ||
+        signalType === "constraints";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
