@@ -22,6 +22,7 @@ export default function SignalSummaryBox({
   summary,
   axisPreview,
   axisNoun,
+  article = "a",
   canonicalKey,
   boxTestId,
   summaryTestId,
@@ -60,20 +61,22 @@ export default function SignalSummaryBox({
       {axisPreview && (
         <>
           <Typography variant="caption" color="text.secondary">
-            This is a{" "}
+            This is {article}{" "}
             <Box component="span" sx={{ fontWeight: 600, color: "text.primary" }}>
               {axisPreview}
             </Box>{" "}
             {axisNoun}
           </Typography>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            display="block"
-            sx={{ fontFamily: "monospace", mt: 0.25 }}
-          >
-            canonical_key: {canonicalKey}
-          </Typography>
+          {canonicalKey && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              display="block"
+              sx={{ fontFamily: "monospace", mt: 0.25 }}
+            >
+              canonical_key: {canonicalKey}
+            </Typography>
+          )}
         </>
       )}
     </Box>
@@ -87,7 +90,9 @@ SignalSummaryBox.propTypes = {
   axisPreview: PropTypes.string,
   /** The type noun closing the recap sentence ("goal" / "pain"). */
   axisNoun: PropTypes.string,
-  /** The canonical_key string shown under the recap. */
+  /** Indefinite article before the recap ("a" default, "an" for Constraint). */
+  article: PropTypes.string,
+  /** The canonical_key string shown under the recap (line omitted when absent). */
   canonicalKey: PropTypes.string,
   /** Optional test id for the enclosing box (kept per-type for existing tests). */
   boxTestId: PropTypes.string,

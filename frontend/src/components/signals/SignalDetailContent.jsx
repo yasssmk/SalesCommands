@@ -997,14 +997,16 @@ ImpactDetailView.propTypes = {
 // ReadRow + DrawerContentLayout read-action bar), routed here on the ACTIVITY
 // coque ONLY. Constraint has strong deltas from Pain/Impact:
 //   - NO canonical_key / NO what×dimension axis (what/dimension are legacy
-//     nullable, NOT authored/shown) → SignalSummaryBox does NOT apply. §1 is a
-//     plain summary narrative.
+//     nullable, NOT authored/shown). It DOES reuse SignalSummaryBox (fond
+//     distinct, homogeneous with Pain/Impact), but with a Constraint meta and
+//     NO canonical_key: recap = "This is an {nature} · {rigidity} constraint"
+//     (rigidity omitted when empty), via axisPreview + article="an".
 //   - NO scope_level (the scope IS the presence/absence of target_departments)
-//     → §3 has no "Scope level" row, only Department(s).
+//     → §2 Scope has no "Scope level" row, only Department(s).
 //   - signal_category shadow-overridden to None → NO Category row.
-//   - Own fields: nature (required, always shown) + rigidity (optional/clearable
-//     since S1a → masked when empty) + notes (masked when empty).
-// PO section order: Summary → Classification → Scope → Notes → Source.
+//   - nature (required) + rigidity (optional/clearable since S1a) live in the
+//     box meta, NOT a separate Classification section.
+// PO section order (4): Summary (box) → Scope → Notes → Source.
 function ConstraintDetailView({
   signal,
   onValidate,
@@ -1024,6 +1026,12 @@ function ConstraintDetailView({
   const validateDisabled = missingFields.length > 0;
 
   const departments = formatTargetDepartments(signal);
+
+  // Recap meta for the shared summary box: "This is an {nature} · {rigidity}
+  // constraint" — rigidity omitted (no orphan " · ") when empty. NO canonical_key.
+  const natureRecap = signal.nature_display
+    ? `${signal.nature_display}${signal.rigidity_display ? ` · ${signal.rigidity_display}` : ""}`
+    : null;
 
   const contacts = signal.source_context?.contacts ?? [];
   const originActivityId = signal.source_context?.activity?.id ?? null;
@@ -1084,43 +1092,32 @@ function ConstraintDetailView({
           <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
         )}
 
-        {/* Section 1 — Summary: the plain narrative. NO SignalSummaryBox
-            (Constraint has no what×dimension axis / canonical_key). */}
+        {/* Section 1 — Summary: the SHARED summary box (same fond distinct as
+            Pain/Impact). Meta = "This is an {nature} · {rigidity} constraint"
+            (nature/rigidity in bold, article "an"). NO canonical_key (Constraint
+            has none) — the box omits it when canonicalKey is absent. */}
         <SectionHeader index={1} title="Summary" sx={{ mb: 1 }} />
-        {signal.summary ? (
-          <Typography
-            variant="body2"
-            color="text.primary"
-            data-testid="constraint-summary-text"
-            sx={{ whiteSpace: "pre-line" }}
-          >
-            {signal.summary}
-          </Typography>
-        ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No summary
-          </Typography>
-        )}
+        <SignalSummaryBox
+          summary={signal.summary}
+          axisPreview={natureRecap}
+          axisNoun="constraint"
+          article="an"
+          boxTestId="constraint-summary-box"
+          summaryTestId="constraint-summary-text"
+          separatorTestId="constraint-summary-separator"
+        />
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — Classification: nature (required, always shown) + rigidity
-            (optional → masked when empty). NO Category, NO legacy Theme. */}
-        <SectionHeader index={2} title="Classification" sx={{ mb: 1 }} />
-        <ReadRow label="Nature" value={signal.nature_display} />
-        <ReadRow label="Rigidity" value={signal.rigidity_display} />
-
-        <Divider sx={{ my: 2 }} />
-
-        {/* Section 3 — Scope: Department(s) (M2M). Constraint has no scope_level. */}
-        <SectionHeader index={3} title="Scope" sx={{ mb: 1 }} />
+        {/* Section 2 — Scope: Department(s) (M2M). Constraint has no scope_level. */}
+        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
         <ReadRow label="Department(s)" value={departments} />
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 4 — Notes (masked when empty). The section header already
+        {/* Section 3 — Notes (masked when empty). The section header already
             labels it, so render the value plainly (no redundant "Notes" label). */}
-        <SectionHeader index={4} title="Notes" sx={{ mb: 1 }} />
+        <SectionHeader index={3} title="Notes" sx={{ mb: 1 }} />
         {signal.notes ? (
           <Typography
             variant="body2"
@@ -1138,9 +1135,9 @@ function ConstraintDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 5 — Source: the quote + who said it, with an optional link to
+        {/* Section 4 — Source: the quote + who said it, with an optional link to
             the origin activity. Same treatment as the Pain/Impact detail. */}
-        <SectionHeader index={5} title="Source" sx={{ mb: 1 }} />
+        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (

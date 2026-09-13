@@ -959,8 +959,9 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
   it("Constraint: an empty department list hides the row (no stray name, no crash)", () => {
     const none = { ...CONSTRAINT_MULTI, id: "cn-none", target_departments: [] };
     render(<SignalDetailPanel signal={none} signalType="constraints" />);
-    // The section still renders (rigidity present) but no department text leaks.
-    expect(screen.getByText("Firm")).toBeInTheDocument();
+    // The detail still renders (summary box present, meta carries nature·rigidity)
+    // but no department text leaks.
+    expect(screen.getByText("Regulatory · Firm")).toBeInTheDocument();
     expect(screen.queryByText("Sales")).not.toBeInTheDocument();
   });
 
@@ -998,11 +999,11 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
   });
 });
 
-// ==== TD-238 / S2 — Constraint detail on the standard chassis (Activity) ====
-// Strong deltas vs Pain/Impact: no what×dimension axis / no canonical_key (no
-// SignalSummaryBox), no scope_level (scope = departments), signal_category None
-// (no Category), own fields nature (required) + rigidity (optional) + notes.
-describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2)", () => {
+// ==== TD-238 / S2-fix — Constraint detail on the standard chassis (Activity) ====
+// Uses the SHARED SignalSummaryBox (fond distinct, homogeneous with Pain/Impact)
+// with a Constraint meta ("This is an {nature} · {rigidity} constraint") and NO
+// canonical_key. NO separate Classification section. No scope_level. 4 sections.
+describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", () => {
   const MOCK_CONSTRAINT_CHASSIS = {
     id: "constraint-chassis",
     status: "PENDING",
@@ -1021,41 +1022,41 @@ describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2)", () => 
     source_context: { contacts: [] },
   };
 
-  it("TD-238: renders Constraint on the chassis (Summary/Classification/Scope/Notes/Source, nature shown, M2M depts, NO Category/Theme/SummaryBox)", () => {
+  it("S2-fix: renders Constraint on the shared summary box (nature·rigidity meta, article 'an', NO canonical / NO Classification)", () => {
     render(<SignalDetailPanel signal={MOCK_CONSTRAINT_CHASSIS} signalType="constraints" />);
 
-    // Chassis marker.
+    // Chassis marker + the SHARED summary box (same component as Pain/Impact).
     expect(screen.getByTestId("constraint-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("constraint-summary-box")).toBeInTheDocument();
     expect(screen.getByTestId("constraint-summary-text")).toBeInTheDocument();
-    // PO section order.
+    // Meta recap: "This is an {nature} · {rigidity} constraint" (article "an").
+    const box = screen.getByTestId("constraint-summary-box");
+    expect(box).toHaveTextContent(/This is an\s+Security · Firm\s+constraint/);
+    // nature·rigidity carried in the box meta (bold middle).
+    expect(screen.getByText("Security · Firm")).toBeInTheDocument();
+    // 4 sections: Summary → Scope → Notes → Source. NO Classification.
     expect(screen.getByText("Summary")).toBeInTheDocument();
-    expect(screen.getByText("Classification")).toBeInTheDocument();
     expect(screen.getByText("Scope")).toBeInTheDocument();
     expect(screen.getByText("Notes")).toBeInTheDocument();
     expect(screen.getByText("Source")).toBeInTheDocument();
-    // Classification: nature always shown + rigidity.
-    expect(screen.getByText("Nature")).toBeInTheDocument();
-    expect(screen.getByText("Security")).toBeInTheDocument();
-    expect(screen.getByText("Rigidity")).toBeInTheDocument();
-    expect(screen.getByText("Firm")).toBeInTheDocument();
+    expect(screen.queryByText("Classification")).not.toBeInTheDocument();
     // Scope: M2M departments joined.
     expect(screen.getByText("IT, Security & Risk")).toBeInTheDocument();
-    // Deltas: NO Category, NO legacy Theme, NO SummaryBox / canonical_key, no flush CLASSIFICATION.
+    // Deltas: NO Category, NO legacy Theme, NO canonical_key, no flush CLASSIFICATION,
+    // no "Scope level" row.
     expect(screen.queryByText("Category")).not.toBeInTheDocument();
     expect(screen.queryByText("Theme")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("constraint-summary-box")).not.toBeInTheDocument();
-    expect(screen.queryByText(/constraint:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/canonical_key/)).not.toBeInTheDocument();
     expect(screen.queryByText("CLASSIFICATION")).not.toBeInTheDocument();
-    // No "Scope level" row (Constraint has no scope_level).
     expect(screen.queryByText("Scope level")).not.toBeInTheDocument();
   });
 
-  it("S2: rigidity masked when empty (nature still shown)", () => {
+  it("S2-fix: rigidity empty → meta 'This is an {nature} constraint' (no orphan ' · ')", () => {
     const noRig = { ...MOCK_CONSTRAINT_CHASSIS, id: "c-norig", rigidity: "", rigidity_display: null };
     render(<SignalDetailPanel signal={noRig} signalType="constraints" />);
-    expect(screen.getByText("Nature")).toBeInTheDocument();
-    expect(screen.getByText("Security")).toBeInTheDocument();
-    expect(screen.queryByText("Rigidity")).not.toBeInTheDocument();
+    const box = screen.getByTestId("constraint-summary-box");
+    expect(box).toHaveTextContent(/This is an\s+Security\s+constraint/);
+    expect(box).not.toHaveTextContent("·");
     expect(screen.queryByText("Firm")).not.toBeInTheDocument();
   });
 
