@@ -23,6 +23,7 @@ export default function SignalSummaryBox({
   axisPreview,
   axisNoun,
   article = "a",
+  recapSuffix,
   canonicalKey,
   boxTestId,
   summaryTestId,
@@ -66,6 +67,7 @@ export default function SignalSummaryBox({
               {axisPreview}
             </Box>{" "}
             {axisNoun}
+            {recapSuffix}
           </Typography>
           {canonicalKey && (
             <Typography
@@ -92,6 +94,8 @@ SignalSummaryBox.propTypes = {
   axisNoun: PropTypes.string,
   /** Indefinite article before the recap ("a" default, "an" for Constraint). */
   article: PropTypes.string,
+  /** Optional plain-style text appended AFTER axisNoun (e.g. " · Rigidity: Firm"). */
+  recapSuffix: PropTypes.string,
   /** The canonical_key string shown under the recap (line omitted when absent). */
   canonicalKey: PropTypes.string,
   /** Optional test id for the enclosing box (kept per-type for existing tests). */

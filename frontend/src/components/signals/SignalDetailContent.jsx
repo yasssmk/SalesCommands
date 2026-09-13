@@ -999,8 +999,9 @@ ImpactDetailView.propTypes = {
 //   - NO canonical_key / NO what×dimension axis (what/dimension are legacy
 //     nullable, NOT authored/shown). It DOES reuse SignalSummaryBox (fond
 //     distinct, homogeneous with Pain/Impact), but with a Constraint meta and
-//     NO canonical_key: recap = "This is an {nature} · {rigidity} constraint"
-//     (rigidity omitted when empty), via axisPreview + article="an".
+//     NO canonical_key: recap = "This is an {nature} constraint · Rigidity:
+//     {rigidity}" (nature bold via axisPreview + article="an"; rigidity a plain
+//     suffix via recapSuffix, omitted when empty).
 //   - NO scope_level (the scope IS the presence/absence of target_departments)
 //     → §2 Scope has no "Scope level" row, only Department(s).
 //   - signal_category shadow-overridden to None → NO Category row.
@@ -1027,11 +1028,13 @@ function ConstraintDetailView({
 
   const departments = formatTargetDepartments(signal);
 
-  // Recap meta for the shared summary box: "This is an {nature} · {rigidity}
-  // constraint" — rigidity omitted (no orphan " · ") when empty. NO canonical_key.
-  const natureRecap = signal.nature_display
-    ? `${signal.nature_display}${signal.rigidity_display ? ` · ${signal.rigidity_display}` : ""}`
-    : null;
+  // Recap meta for the shared summary box: "This is an {nature} constraint ·
+  // Rigidity: {rigidity}" — nature in bold (axisPreview), rigidity as a plain
+  // suffix AFTER "constraint" (omitted when empty). NO canonical_key.
+  const natureRecap = signal.nature_display || null;
+  const rigiditySuffix = signal.rigidity_display
+    ? ` · Rigidity: ${signal.rigidity_display}`
+    : undefined;
 
   const contacts = signal.source_context?.contacts ?? [];
   const originActivityId = signal.source_context?.activity?.id ?? null;
@@ -1093,7 +1096,7 @@ function ConstraintDetailView({
         )}
 
         {/* Section 1 — Summary: the SHARED summary box (same fond distinct as
-            Pain/Impact). Meta = "This is an {nature} · {rigidity} constraint"
+            Pain/Impact). Meta = "This is an {nature} constraint · Rigidity: {rigidity}"
             (nature/rigidity in bold, article "an"). NO canonical_key (Constraint
             has none) — the box omits it when canonicalKey is absent. */}
         <SectionHeader index={1} title="Summary" sx={{ mb: 1 }} />
@@ -1102,6 +1105,7 @@ function ConstraintDetailView({
           axisPreview={natureRecap}
           axisNoun="constraint"
           article="an"
+          recapSuffix={rigiditySuffix}
           boxTestId="constraint-summary-box"
           summaryTestId="constraint-summary-text"
           separatorTestId="constraint-summary-separator"

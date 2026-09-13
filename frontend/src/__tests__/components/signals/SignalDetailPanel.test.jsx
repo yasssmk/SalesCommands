@@ -959,9 +959,11 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
   it("Constraint: an empty department list hides the row (no stray name, no crash)", () => {
     const none = { ...CONSTRAINT_MULTI, id: "cn-none", target_departments: [] };
     render(<SignalDetailPanel signal={none} signalType="constraints" />);
-    // The detail still renders (summary box present, meta carries nature·rigidity)
+    // The detail still renders (summary box present, meta carries the nature)
     // but no department text leaks.
-    expect(screen.getByText("Regulatory · Firm")).toBeInTheDocument();
+    expect(screen.getByTestId("constraint-summary-box")).toHaveTextContent(
+      /This is an\s+Regulatory\s+constraint · Rigidity: Firm/,
+    );
     expect(screen.queryByText("Sales")).not.toBeInTheDocument();
   });
 
@@ -1029,11 +1031,12 @@ describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", ()
     expect(screen.getByTestId("constraint-detail-body")).toBeInTheDocument();
     expect(screen.getByTestId("constraint-summary-box")).toBeInTheDocument();
     expect(screen.getByTestId("constraint-summary-text")).toBeInTheDocument();
-    // Meta recap: "This is an {nature} · {rigidity} constraint" (article "an").
+    // Meta recap: "This is an {nature} constraint · Rigidity: {rigidity}"
+    // (nature in bold; rigidity a plain suffix after "constraint").
     const box = screen.getByTestId("constraint-summary-box");
-    expect(box).toHaveTextContent(/This is an\s+Security · Firm\s+constraint/);
-    // nature·rigidity carried in the box meta (bold middle).
-    expect(screen.getByText("Security · Firm")).toBeInTheDocument();
+    expect(box).toHaveTextContent(/This is an\s+Security\s+constraint · Rigidity: Firm/);
+    // nature carried in the box meta as the bold node.
+    expect(screen.getByText("Security")).toBeInTheDocument();
     // 4 sections: Summary → Scope → Notes → Source. NO Classification.
     expect(screen.getByText("Summary")).toBeInTheDocument();
     expect(screen.getByText("Scope")).toBeInTheDocument();
@@ -1051,11 +1054,12 @@ describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", ()
     expect(screen.queryByText("Scope level")).not.toBeInTheDocument();
   });
 
-  it("S2-fix: rigidity empty → meta 'This is an {nature} constraint' (no orphan ' · ')", () => {
+  it("S2-fix-2: rigidity empty → meta 'This is an {nature} constraint' (no '· Rigidity:' suffix)", () => {
     const noRig = { ...MOCK_CONSTRAINT_CHASSIS, id: "c-norig", rigidity: "", rigidity_display: null };
     render(<SignalDetailPanel signal={noRig} signalType="constraints" />);
     const box = screen.getByTestId("constraint-summary-box");
     expect(box).toHaveTextContent(/This is an\s+Security\s+constraint/);
+    expect(box).not.toHaveTextContent("Rigidity:");
     expect(box).not.toHaveTextContent("·");
     expect(screen.queryByText("Firm")).not.toBeInTheDocument();
   });
