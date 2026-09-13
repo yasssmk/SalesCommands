@@ -258,7 +258,7 @@ class ConstraintSignalCreateSerializer(BaseSignalCreateSerializer):
             **_base_extra_kwargs,
             'nature':            {'required': True},
             'summary':           {'required': True},
-            'rigidity':          {'required': True},
+            'rigidity':          {'required': False, 'allow_blank': True},
             'notes':             {'required': False, 'allow_blank': True},
         }
 
@@ -329,6 +329,6 @@ class ConstraintSignalUpdateSerializer(BaseSignalUpdateSerializer):
             **_base_extra_kwargs,
             'nature':            {'required': False},
             'summary':           {'required': False},
-            'rigidity':          {'required': False},
+            'rigidity':          {'required': False, 'allow_blank': True},
             'notes':             {'required': False, 'allow_blank': True},
         }
