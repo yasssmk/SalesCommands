@@ -358,3 +358,58 @@ class TestImpactSerializerWriteM2M:
         )
         assert resp.status_code == status.HTTP_200_OK
         assert _impact_detail_departments(authed_api_a, i.id) == set()
+
+
+def _impact_detail_field(authed_api, impact_id, field):
+    """Re-read an ImpactSignal through the REAL detail endpoint and return one
+    field off the payload."""
+    resp = authed_api.get(f'{IMPACT_URL}{impact_id}/')
+    assert resp.status_code == status.HTTP_200_OK
+    payload = resp.json()
+    payload = payload.get('data', payload) if isinstance(payload, dict) else payload
+    return payload.get(field)
+
+
+@pytest.mark.django_db
+class TestImpactTypeOptional:
+    """S5 (Voie B) — impact_type is OPTIONAL & CLEARABLE. Model gains blank=True,
+    Create/Update serializers gain required=False + allow_blank=True. RED before
+    the change (PATCH "" → 400 "may not be blank"; create without impact_type →
+    400 required)."""
+
+    def test_patch_clears_impact_type_to_empty(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        # Start with a real impact_type (FINANCIAL, via _mk_impact), then CLEAR it.
+        i = _mk_impact(account, activity, user_a, [])
+        assert i.impact_type == ImpactType.FINANCIAL
+
+        resp = authed_api_a.patch(
+            f'{IMPACT_URL}{i.id}/',
+            {'impact_type': ''},
+            format='json',
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        # Real clearing — the detail re-read shows an empty impact_type.
+        assert _impact_detail_field(authed_api_a, i.id, 'impact_type') in ('', None)
+        i.refresh_from_db()
+        assert i.impact_type == ''
+
+    def test_create_without_impact_type_succeeds(
+        self, authed_api_a, account, activity,
+    ):
+        payload = {
+            'signal_type': 'impact',
+            'source': 'MANUAL',
+            'account': str(account.id),
+            'source_activity': str(activity.id),
+            'what': SignalWhat.OPS,
+            'dimension': SignalDimension.TIME,
+            'scope_level': ScopeLevel.DEPARTMENT,
+            'summary': 'Onboarding is slow and painful for the team',
+            # NO impact_type on purpose.
+        }
+        resp = authed_api_a.post(IMPACT_URL, payload, format='json')
+        assert resp.status_code == status.HTTP_201_CREATED
+        pk = resp.json()['data']['id']
+        assert ImpactSignal.objects.get(pk=pk).impact_type == ''
