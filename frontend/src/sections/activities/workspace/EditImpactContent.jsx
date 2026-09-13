@@ -17,8 +17,9 @@
 // int(option)/string(id) type mismatch. The payload never carries a FK.
 //
 // Deltas vs Pain: NO notes, NO related_techstack_mention (absent on Impact).
-// Adds the Metrics section — impact_type (select, REQUIRED), metric_text
-// (textarea, optional), human_impact (select, optional with an empty option).
+// Adds the Metrics section — impact_type (select, OPTIONAL since S3-fix; omitted
+// from the PATCH when empty, Voie A), metric_text (textarea, optional),
+// human_impact (select, optional with an empty option).
 //
 // Theme tokens only. InlineEditableValue supports text / textarea / select.
 
@@ -78,8 +79,8 @@ function toDepartmentObjects(list) {
 
 // ==============================|| VALIDATION ||============================== //
 //
-// Mirror of Pain for the shared fields, plus impact_type REQUIRED. metric_text
-// and human_impact are optional. The DEPARTMENTS are deliberately NOT validated
+// Mirror of Pain for the shared fields. impact_type / metric_text / human_impact
+// are all OPTIONAL (S3-fix). The DEPARTMENTS are deliberately NOT validated
 // against the scope: target_departments is an independent M2M (never required),
 // so there is NO .when() on scope_level here.
 
@@ -90,7 +91,7 @@ const validationSchema = Yup.object({
     .required("Summary is required"),
   what: Yup.string().required("Domain is required"),
   dimension: Yup.string().required("Dimension is required"),
-  impact_type: Yup.string().required("Impact type is required"),
+  impact_type: Yup.string().nullable(),
   metric_text: Yup.string().nullable(),
   human_impact: Yup.string().nullable(),
   target_departments: Yup.array().nullable(),
@@ -175,11 +176,18 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
         dimension: values.dimension,
         scope_level: values.scope_level,
         target_departments: departmentIds,
-        impact_type: values.impact_type,
         metric_text: values.metric_text || "",
         human_impact: values.human_impact || "",
         source_quote: values.source_quote || "",
       };
+      // impact_type is OPTIONAL (Voie A, no migration): the backend model + Create
+      // serializer still require it and the Update field is NOT allow_blank, so a
+      // PATCH with impact_type: "" would 400. OMIT the key when empty (an omitted
+      // key leaves the stored value untouched — an existing impact_type cannot be
+      // cleared this way, an accepted Voie-A limitation).
+      if (values.impact_type) {
+        payload.impact_type = values.impact_type;
+      }
       try {
         const result = await updateSignal("impact", impact.id, payload);
         if (!result?.success) {
@@ -206,9 +214,13 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
               id,
               name: resolveLabel(departmentOptions, id),
             })),
-            impact_type: payload.impact_type,
-            impact_type_display:
-              resolveLabel(impactTypeOptions, payload.impact_type) ?? impact?.impact_type_display,
+            // Voie A: an empty impact_type is OMITTED from the PATCH, so the DB
+            // keeps its previous value — reflect that (fall back to the original)
+            // rather than showing it as cleared.
+            impact_type: values.impact_type || impact?.impact_type || "",
+            impact_type_display: values.impact_type
+              ? resolveLabel(impactTypeOptions, values.impact_type) ?? impact?.impact_type_display
+              : impact?.impact_type_display ?? null,
             metric_text: payload.metric_text,
             human_impact: payload.human_impact,
             human_impact_display: payload.human_impact

@@ -23,7 +23,7 @@ const REQUIRED_FIELDS = {
     { key: "what", label: "What" },
     { key: "dimension", label: "Dimension" },
     { key: "scope_level", label: "Scope level" },
-    { key: "impact_type", label: "Impact type" },
+    // impact_type is OPTIONAL (S3-fix, PO Voie A) — no longer a required field.
     { key: "summary", label: "Summary" },
   ],
   "tech-stack": [{ key: "tech_name", label: "Tool name" }],

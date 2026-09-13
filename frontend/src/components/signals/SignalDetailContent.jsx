@@ -917,12 +917,24 @@ function ImpactDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Metrics: impact_type (required, always shown) + metric_text
-            + human_impact (both masked when empty by ReadRow). */}
+        {/* Section 3 — Metrics: impact_type is OPTIONAL (S3-fix). When absent →
+            a single "No metric defined" line (no orphan metric / human rows).
+            When present → impact_type + metric_text (masked if empty) + human_impact
+            shown ONLY for impact_type === "HUMAN" (ImpactType.HUMAN enum value). */}
         <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
-        <ReadRow label="Impact type" value={signal.impact_type_display} />
-        <ReadRow label="Metric" value={signal.metric_text} />
-        <ReadRow label="Human impact" value={signal.human_impact_display} />
+        {signal.impact_type ? (
+          <>
+            <ReadRow label="Impact type" value={signal.impact_type_display} />
+            <ReadRow label="Metric" value={signal.metric_text} />
+            {signal.impact_type === "HUMAN" && (
+              <ReadRow label="Human impact" value={signal.human_impact_display} />
+            )}
+          </>
+        ) : (
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
+            No metric defined
+          </Typography>
+        )}
 
         <Divider sx={{ my: 2 }} />
 

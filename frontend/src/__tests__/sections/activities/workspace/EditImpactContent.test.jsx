@@ -124,9 +124,9 @@ describe("EditImpactContent (S3)", () => {
     expect(screen.getByText("5 hours per week")).toBeInTheDocument();
   });
 
-  it("Metrics: impact_type is REQUIRED — an impact with no impact_type cannot be saved (Yup blocks the PATCH)", async () => {
+  it("S3-fix (a/b): impact_type is OPTIONAL — Save allowed with impact_type empty; the key is OMITTED from the PATCH (never impact_type: '')", async () => {
     renderEdit({ ...IMPACT, impact_type: "" });
-    // Make the form dirty WITHOUT fixing impact_type (add a department).
+    // Make the form dirty WITHOUT setting impact_type (add a department).
     fireEvent.click(screen.getByTestId("add-department"));
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
@@ -135,8 +135,11 @@ describe("EditImpactContent (S3)", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));
     });
-    // Yup (impact_type required) blocks submit → no PATCH is sent.
-    expect(updateSignal).not.toHaveBeenCalled();
+    // Save is NOT blocked (impact_type optional) → the PATCH goes out …
+    expect(updateSignal).toHaveBeenCalledTimes(1);
+    const [, , patch] = updateSignal.mock.calls[0];
+    // … WITHOUT the impact_type key (Voie A: omit-if-empty, never send "").
+    expect(patch).not.toHaveProperty("impact_type");
   });
 
   it("human_impact select carries an empty option so it can be cleared", () => {

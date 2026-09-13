@@ -22,11 +22,11 @@ describe("getRequiredFields", () => {
   it("returns impact required fields", () => {
     const fields = getRequiredFields("impact");
     const keys = fields.map((f) => f.key);
+    // S3-fix (PO Voie A): impact_type is OPTIONAL — no longer a required field.
     expect(keys).toEqual([
       "what",
       "dimension",
       "scope_level",
-      "impact_type",
       "summary",
     ]);
   });
