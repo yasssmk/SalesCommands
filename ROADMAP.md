@@ -1263,6 +1263,26 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Dette ajoutée / MAJ** : **NOUVEAU TD-241** (défaut latent int/string TechStack `usage_departments`), **TD-242** (besoin produit « multi-scope Company + départements » REFUSÉ en V1 → sprint backend), **TD-243** (smoke filtre département DC/Account). **MAJ** : **TD-238** (Pain fait détail+edit ; migration = **Activity only** ; **6 types restants**, **non fermée**), **TD-204** (rendu Pain sur châssis Activity ; « même UI Activity/DC » **rescopé Activity-first**), **TD-205** (edit Pain livré ; **6 types restants**).
 - **Prochain jalon** : **Impact** (3ᵉ type), détail + edit sur le châssis standard, même discipline E2E ; puis Constraint → Objection → People → TechStack → Competitor. **UX Activity reste OUVERT** ; **branche `feat/ux-activity-signal-types` non mergée.**
 
+### Sprint types M2M : Impact + Constraint (détail + edit sur le châssis) 🚧 (chantier UX Activity — EN COURS, branche OUVERTE) — Impact & Constraint détail+edit sur le châssis Activity + backend éditable (branche `feat/ux-activity-signal-types`, `e3a01318`→`2cc74cfa`, 13 commits — **NON mergée**)
+⚠️ **Impact + Constraint (3ᵉ et 4ᵉ types M2M après Pain) — branche NON mergée, chantier UX Activity NON clos.** Restent **4 types FK mono** (Objection → People → TechStack → Competitor).
+- **Objectif** : dérouler **Impact** puis **Constraint** en détail + edit sur le châssis standard, **surface Activity uniquement**, en réutilisant le gabarit Pain (SignalSummaryBox, geste scope M2M, DrawerContentLayout).
+- **IMPACT — livré** :
+  - **S1 backend** : `target_departments` writable (Create+Update) ; choices `impact_types` + `human_impacts` exposés au choices endpoint.
+  - **S2 détail** : `ImpactDetailView` sur le châssis (Activity) ; ordre **Diagnosis → Scope → Metrics → Source** ; section **Metrics** (impact_type / metric_text / human_impact).
+  - **S3 edit** : `EditImpactContent` (geste scope M2M identique à Pain) + widgets Metrics.
+  - **S3-fix** : `impact_type` **OPTIONNEL** → « No metric defined » si vide ; `human_impact` affiché **seulement si `impact_type === "HUMAN"`**.
+  - **S5 (Voie B)** : `impact_type` **EFFAÇABLE** — **migration 0043** (`blank=True`) + serializers Create/Update `allow_blank` + front (option vide « — », envoi `""` au vidage). Extraction non touchée ; `impact_type` hors canonical_key.
+- **CONSTRAINT — livré** :
+  - **S1a backend** : `rigidity` **OPTIONNELLE + EFFAÇABLE** — **migration 0044** (`blank=True` rigidity) + serializers Create/Update `allow_blank`+`required:False` (**`nature` reste requise**). **S1b** : choices `constraint_natures` + `rigidities` exposés. `target_departments` était déjà writable.
+  - **S2 détail** : `ConstraintDetailView` sur le châssis (Activity), réutilisant la **boîte résumé partagée** avec méta adaptée **« This is an {nature} constraint · Rigidity: {rigidity} »** (`SignalSummaryBox` étendu : props `recapSuffix` + `article` + canonical **conditionnel**, rétro-compat Pain/Impact/Objective). Sections **Summary → Scope → Notes → Source** (pas de Category, pas de Theme legacy).
+  - **S3 edit** : `EditConstraintContent` (`nature` requise / `rigidity` effaçable via « — ») ; **SCOPE en PURE AFFORDANCE UI** (pills Company/Department **non persistées** — Constraint n'a pas de `scope_level` ; payload = `target_departments` seul).
+- **Migrations** : **0043** (`impact_type` blank), **0044** (`rigidity` blank) — 2 `AlterField` purs, zéro donnée, réversibles.
+- **Validation** : `vitest` **185 fichiers / 1422 tests** verts, lint propre ; backend (lancé PO) : `TestImpactTypeOptional`, `TestConstraintRigidityOptional`, `test_choices_endpoint` verts, migrations `--check` clean. **Smoke PO OK** (détail + edit Impact & Constraint, surface Activity).
+- **Portée assumée** : migration châssis = **surface Activity UNIQUEMENT** ; **DC/Account restent flush** (déféré). Constraint : scope **exclusif via affordance** (pas de `scope_level` backend) ; multi-scope Company+départements toujours **refusé** (TD-242).
+- **Correction** : `getMissingFields("constraints")` corrigé — il validait sur `what`/`dimension` **legacy** (nullable, non autorisés) et **omettait `nature`** (le vrai axe requis) → **filtre de validation fantôme supprimé** ; il vaut désormais `[nature, summary]`.
+- **Dette ajoutée / MAJ** : **NOUVEAU TD-244** (helper « select avec option vide » à factoriser). **MAJ** TD-238 (Impact + Constraint faits ; restent **4 types**), TD-204 (détail Impact+Constraint sur châssis Activity ; DC/Account différé), TD-205 (edit Impact+Constraint livrés ; restent **4 types**). **TD-241** (int/string TechStack) **reste OUVERT** (TechStack pas encore migré).
+- **Prochain jalon** : les **4 types FK mono** — **Objection → People → TechStack → Competitor**, détail + edit sur le châssis, même discipline E2E. **UX Activity reste OUVERT** ; **branche non mergée.**
+
 ---
 
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
