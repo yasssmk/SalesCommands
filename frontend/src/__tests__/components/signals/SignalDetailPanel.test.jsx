@@ -103,8 +103,8 @@ const MOCK_IMPACT = {
   summary: "5h/week lost on manual consolidation",
   what_display: "Operations",
   dimension_display: "Time",
-  // Raw impact_type (non-HUMAN) drives the chassis Metrics gate: type + metric
-  // show, but human_impact is hidden (only shown for impact_type === "HUMAN").
+  // Raw impact_type drives the chassis Metrics gate: type + metric show;
+  // human_impact is never rendered on the Activity chassis.
   impact_type: "TIME",
   impact_type_display: "Time impact",
   scope_level_display: "Business",
@@ -336,10 +336,13 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText("Scope")).toBeInTheDocument();
     expect(screen.getByText("Metrics")).toBeInTheDocument();
     expect(screen.getByText("Source")).toBeInTheDocument();
-    // Metrics fields (impact_type present, non-HUMAN → no Human impact row).
+    // Metrics fields (impact_type present; human_impact never rendered).
     expect(screen.getByText("Impact type")).toBeInTheDocument();
     expect(screen.getByText("Time impact")).toBeInTheDocument();
     expect(screen.getByText("5 hours per week")).toBeInTheDocument();
+    // (c) the metric_text row is labelled "Impact description" (not "Metric").
+    expect(screen.getByText("Impact description")).toBeInTheDocument();
+    expect(screen.queryByText("Metric")).not.toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
     expect(screen.queryByText("No metric defined")).not.toBeInTheDocument();
     // Impact has NO Category row (shadow-override) and no flush CLASSIFICATION.
@@ -353,7 +356,7 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText(/impact:DATA:TIME/)).toBeInTheDocument();
   });
 
-  it("S3-fix: impact_type present (non-HUMAN) — type + metric shown, metric masked when empty, human hidden", () => {
+  it("S3-fix: impact_type present — type + metric shown, metric masked when empty, human never shown", () => {
     const bare = {
       ...MOCK_IMPACT_CHASSIS,
       id: "impact-bare",
@@ -369,8 +372,8 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText("Time impact")).toBeInTheDocument();
     expect(screen.queryByText("No metric defined")).not.toBeInTheDocument();
     // metric_text masked when empty.
-    expect(screen.queryByText("Metric")).not.toBeInTheDocument();
-    // human_impact hidden because impact_type !== "HUMAN" (even though present).
+    expect(screen.queryByText("Impact description")).not.toBeInTheDocument();
+    // human_impact is never rendered on the Activity chassis.
     expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
@@ -393,7 +396,7 @@ describe("SignalDetailPanel", () => {
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
 
-  it("S3-fix (d): impact_type != HUMAN with human_impact set → human_impact HIDDEN", () => {
+  it("Metrics simplify: impact_type != HUMAN with human_impact set → human_impact ABSENT", () => {
     const nonHuman = {
       ...MOCK_IMPACT_CHASSIS,
       id: "impact-nonhuman",
@@ -407,18 +410,23 @@ describe("SignalDetailPanel", () => {
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
 
-  it("S3-fix (e): impact_type == HUMAN with human_impact set → human_impact VISIBLE", () => {
+  it("Metrics simplify (c): impact_type == HUMAN with human_impact set → human_impact row ABSENT", () => {
     const human = {
       ...MOCK_IMPACT_CHASSIS,
       id: "impact-human",
       impact_type: "HUMAN",
-      impact_type_display: "Human impact",
+      // Distinct label so "Human impact" can only come from the human_impact row.
+      impact_type_display: "Human",
+      human_impact: "FRUSTRATION",
       human_impact_display: "Frustration",
     };
     render(<SignalDetailPanel signal={human} signalType="impact" />);
-    // The human_impact VALUE renders (the discriminating proof — "Human impact"
-    // itself is ambiguous here since it is also the HUMAN impact_type label).
-    expect(screen.getByText("Frustration")).toBeInTheDocument();
+    // impact_type + Impact description still render.
+    expect(screen.getByText("Human")).toBeInTheDocument();
+    expect(screen.getByText("Impact description")).toBeInTheDocument();
+    // No human_impact row, even for HUMAN (Activity surface).
+    expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
+    expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
 
   it("shows tech-stack-specific fields: tool, qualification, scope, cost", () => {
@@ -691,9 +699,9 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText(/Our budget is completely frozen/)).toBeInTheDocument();
   });
 
-  it("shows impact-specific fields on the chassis: impact type + metric (human hidden for non-HUMAN)", () => {
-    // MOCK_IMPACT is a non-HUMAN (TIME) impact → on the Activity chassis the
-    // impact_type + metric show, but human_impact is gated out (S3-fix).
+  it("shows impact-specific fields on the chassis: impact type + metric (no human_impact)", () => {
+    // On the Activity chassis impact_type + metric show; human_impact is never
+    // rendered (Metrics simplify).
     render(<SignalDetailPanel signal={MOCK_IMPACT} signalType="impact" />);
 
     expect(screen.getByText("Time impact")).toBeInTheDocument();

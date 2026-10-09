@@ -75,6 +75,15 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
 describe("EditPainContent (S3)", () => {
+  it("retro-compat witness: an opened field (notes) has NO input placeholder (no inputPlaceholder passed)", () => {
+    renderEdit({ ...PAIN, notes: "" });
+    // The read placeholder still shows while closed…
+    expect(screen.getByText("No notes")).toBeInTheDocument();
+    // …but the opened textarea carries no placeholder attribute.
+    fireEvent.doubleClick(screen.getByTestId("inline-read-notes"));
+    expect(screen.getByTestId("inline-input-notes")).not.toHaveAttribute("placeholder");
+  });
+
   it("renders the editable fields as InlineEditableValue, pre-filled in read mode", () => {
     renderEdit();
     ["summary", "what", "dimension", "related_techstack_mention", "notes", "source_quote"].forEach(

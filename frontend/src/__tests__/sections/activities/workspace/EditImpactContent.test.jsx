@@ -5,8 +5,10 @@
 // Pain: two EXCLUSIVE pills Company | Department, "+ add department" multi-select
 // (deletable pills), scope_level EXPLICIT, payload derives target_departments
 // from scope (Company → []). Save PATCHes via updateSignal("impact", id, payload)
-// with ONLY Impact's writable fields — Metrics (impact_type/metric_text/
-// human_impact), NO FK, NO notes / related_techstack_mention.
+// with ONLY Impact's writable fields — Metrics (impact_type/metric_text), NO FK,
+// NO notes / related_techstack_mention. human_impact is no longer edited on the
+// Activity surface and is OMITTED from the payload (non-destructive: the stored
+// value is left untouched).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act, within } from "@testing-library/react";
@@ -73,6 +75,8 @@ const IMPACT = {
   source_quote: "We lose five hours every week",
 };
 
+const HELP = "Be specific about the consequences, with numbers whenever possible";
+
 const renderEdit = (impact = IMPACT, props = {}) =>
   render(
     <AphoriqTheme>
@@ -86,7 +90,7 @@ afterEach(() => cleanup());
 describe("EditImpactContent (S3)", () => {
   it("renders the editable fields as InlineEditableValue, pre-filled in read mode", () => {
     renderEdit();
-    ["summary", "what", "dimension", "impact_type", "metric_text", "human_impact", "source_quote"].forEach(
+    ["summary", "what", "dimension", "impact_type", "metric_text", "source_quote"].forEach(
       (name) => expect(screen.getByTestId(`inline-read-${name}`)).toBeInTheDocument(),
     );
     expect(screen.getByText("Five hours a week lost to manual consolidation")).toBeInTheDocument();
@@ -102,7 +106,7 @@ describe("EditImpactContent (S3)", () => {
     expect(screen.getByText("Company-wide, or one or more departments.")).toBeInTheDocument();
     // The Metrics section (Impact-specific).
     expect(screen.getByText("Metrics")).toBeInTheDocument();
-    expect(screen.getByText("The nature of the impact, its metric, and any human dimension.")).toBeInTheDocument();
+    expect(screen.getByText("The type of impact and its concrete consequences.")).toBeInTheDocument();
     expect(screen.getByText("Source quote")).toBeInTheDocument();
     expect(screen.getByText("Operations × Time")).toBeInTheDocument();
     expect(screen.getByText(/impact:OPS:TIME/)).toBeInTheDocument();
@@ -119,8 +123,6 @@ describe("EditImpactContent (S3)", () => {
     renderEdit();
     // impact_type "TIME" → label "Time impact" from the choices mock.
     expect(within(screen.getByTestId("inline-read-impact_type")).getByText("Time impact")).toBeInTheDocument();
-    // human_impact "FRUSTRATION" → "Frustration".
-    expect(within(screen.getByTestId("inline-read-human_impact")).getByText("Frustration")).toBeInTheDocument();
     expect(screen.getByText("5 hours per week")).toBeInTheDocument();
   });
 
@@ -163,13 +165,51 @@ describe("EditImpactContent (S3)", () => {
     expect(onSaved.mock.calls[0][0].impact_type_display).toBeNull();
   });
 
-  it("human_impact select carries an empty option so it can be cleared", () => {
-    renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-human_impact"));
-    // Open the MUI select dropdown to inspect the options.
-    fireEvent.mouseDown(screen.getByRole("combobox"));
-    expect(screen.getByRole("option", { name: "—" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Frustration" })).toBeInTheDocument();
+  it("Metrics simplify: NO human_impact field; metric_text is labelled 'Describe the impact'", () => {
+    renderEdit(); // IMPACT carries human_impact "FRUSTRATION" — still not rendered.
+    expect(screen.queryByTestId("inline-read-human_impact")).not.toBeInTheDocument();
+    expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
+    expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
+    // metric_text relabelled.
+    expect(screen.getByText("Describe the impact")).toBeInTheDocument();
+    expect(screen.queryByText("Metric")).not.toBeInTheDocument();
+  });
+
+  it("Help as placeholder (a): the OPEN metric_text textarea carries the help as its placeholder", () => {
+    renderEdit({ ...IMPACT, metric_text: "" });
+    fireEvent.doubleClick(screen.getByTestId("inline-read-metric_text"));
+    expect(screen.getByTestId("inline-input-metric_text")).toHaveAttribute("placeholder", HELP);
+  });
+
+  it("Help as placeholder (read): an EMPTY closed metric_text shows the help as its read placeholder", () => {
+    renderEdit({ ...IMPACT, metric_text: "" });
+    expect(
+      within(screen.getByTestId("inline-read-metric_text")).getByText(HELP),
+    ).toBeInTheDocument();
+  });
+
+  it("Help as placeholder (b): NO help caption under the metric_text field", () => {
+    renderEdit(); // metric_text filled → the read placeholder is not shown either
+    expect(screen.queryByTestId("metric-text-help")).not.toBeInTheDocument();
+    expect(screen.queryByText(HELP)).not.toBeInTheDocument();
+  });
+
+  it("Metrics simplify (b): Save OMITS human_impact from the payload (non-destructive)", async () => {
+    renderEdit(); // IMPACT carries human_impact "FRUSTRATION"
+    // Dirty the form (Save is disabled on a pristine form).
+    fireEvent.doubleClick(screen.getByTestId("inline-read-metric_text"));
+    fireEvent.change(screen.getByTestId("inline-input-metric_text"), {
+      target: { value: "5 hours per week — 260 hours a year" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledTimes(1);
+    const [type, , patch] = updateSignal.mock.calls[0];
+    expect(type).toBe("impact");
+    expect(patch).not.toHaveProperty("human_impact");
+    // metric_text still sent.
+    expect(patch).toHaveProperty("metric_text", "5 hours per week — 260 hours a year");
   });
 
   // ==== Scope gesture (identical to Pain) ====
@@ -252,8 +292,8 @@ describe("EditImpactContent (S3)", () => {
       scope_level: "DEPARTMENT",
       impact_type: "TIME",
       metric_text: "5 hours per week",
-      human_impact: "FRUSTRATION",
     });
+    expect(patch).not.toHaveProperty("human_impact");
     expect(patch.target_departments).toEqual(["1", "2"]);
     // No FK, no Pain-only fields.
     expect(patch).not.toHaveProperty("target_department");
@@ -291,7 +331,9 @@ describe("EditImpactContent (S3)", () => {
       summary: "Ten hours a week vanish into manual consolidation work",
       impact_type: "TIME",
       impact_type_display: "Time impact",
-      human_impact_display: "Frustration",
+      // human_impact is not edited here → the pre-edit value is carried through
+      // untouched by the spread (non-destructive).
+      human_impact: "FRUSTRATION",
     });
     expect(onSaved.mock.calls[0][0].target_departments).toEqual([{ id: "1", name: "Finance" }]);
     expect(closeDrawer).not.toHaveBeenCalled();

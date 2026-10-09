@@ -31,6 +31,7 @@ export default function InlineEditableValue({
   type = "text",
   options = [],
   placeholder = "—",
+  inputPlaceholder,
   error = false,
   helperText,
   disabled = false,
@@ -86,6 +87,9 @@ export default function InlineEditableValue({
           onBlur={commit}
           error={error}
           helperText={error ? helperText : undefined}
+          // Opt-in: only callers that pass inputPlaceholder get one on the open
+          // input; otherwise undefined (no placeholder, the historical behaviour).
+          placeholder={inputPlaceholder}
           inputProps={{ "data-testid": `inline-input-${name}` }}
         >
           {type === "select" &&
@@ -144,6 +148,8 @@ InlineEditableValue.propTypes = {
   options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.any, label: PropTypes.node })),
   /** Muted italic text shown when the value is empty. */
   placeholder: PropTypes.string,
+  /** Optional placeholder of the OPEN input (edit mode only). Absent → none. */
+  inputPlaceholder: PropTypes.string,
   error: PropTypes.bool,
   helperText: PropTypes.string,
   disabled: PropTypes.bool,

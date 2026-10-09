@@ -1283,6 +1283,15 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Dette ajoutée / MAJ** : **NOUVEAU TD-244** (helper « select avec option vide » à factoriser). **MAJ** TD-238 (Impact + Constraint faits ; restent **4 types**), TD-204 (détail Impact+Constraint sur châssis Activity ; DC/Account différé), TD-205 (edit Impact+Constraint livrés ; restent **4 types**). **TD-241** (int/string TechStack) **reste OUVERT** (TechStack pas encore migré).
 - **Prochain jalon** : les **4 types FK mono** — **Objection → People → TechStack → Competitor**, détail + edit sur le châssis, même discipline E2E. **UX Activity reste OUVERT** ; **branche non mergée.**
 
+### Fix — Simplification section Metrics de l'Impact (post-merge, surface Activity) 🚧 (branche `fix/impact-metrics-simplify`, NON mergée)
+- **Déclencheur** : smoke PO — `human_impact` restait éditable quel que soit `impact_type`, alors qu'au détail il ne s'affichait que pour `HUMAN` (incohérence détail/edit).
+- **Livré** (surface Activity uniquement, front-only, zéro backend/migration) :
+  - `human_impact` RETIRÉ de l'edit ET du détail Impact. **Non-destructif** : clé omise du payload, la valeur posée par le LLM reste en base.
+  - `metric_text` devient le champ descriptif libre : label edit « Describe the impact » + placeholder d'aide « Be specific about the consequences, with numbers whenever possible » (nouveau prop `inputPlaceholder` sur `InlineEditableValue`, rétro-compat 6 écrans) ; label détail « Impact description ». Subtitle section Metrics mis à jour (retrait de « human dimension »).
+- **Non touché** : backend (modèle/serializer/choices/extraction), `ImpactDetailBlock` (flush/cluster DC/Account garde `human_impact`).
+- **Validation** : `vitest` 185 fichiers / 1429 tests verts, non-vacuité faite, témoins rétro-compat verts.
+- **Dette** : **NOUVEAU TD-245** (`human_impact` dormant). **MAJ TD-244** (`human_impact` retiré de EditImpactContent).
+
 ---
 
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)

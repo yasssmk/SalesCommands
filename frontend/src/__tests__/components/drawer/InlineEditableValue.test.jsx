@@ -99,3 +99,19 @@ describe("InlineEditableValue — double-click to edit (draft, no PATCH)", () =>
     await waitFor(() => expect(screen.queryByRole("textbox")).not.toBeInTheDocument());
   });
 });
+
+describe("InlineEditableValue — inputPlaceholder (opt-in edit placeholder)", () => {
+  it("passes inputPlaceholder to the OPEN input; the read placeholder is unchanged", () => {
+    renderField({ value: "", type: "textarea", placeholder: "No title", inputPlaceholder: "Type a title" });
+    // Read mode still shows the read placeholder.
+    expect(screen.getByText("No title")).toBeInTheDocument();
+    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    expect(screen.getByTestId("inline-input-title")).toHaveAttribute("placeholder", "Type a title");
+  });
+
+  it("without inputPlaceholder the OPEN input has NO placeholder (retro-compat)", () => {
+    renderField({ value: "", type: "text", placeholder: "No title" });
+    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    expect(screen.getByTestId("inline-input-title")).not.toHaveAttribute("placeholder");
+  });
+});
