@@ -803,9 +803,10 @@ PainDetailView.propTypes = {
 //      separate Theme row (mirror of Pain / Objective).
 //   2. Scope     — Scope level + Department(s) (M2M). Impact has NO Category
 //      (shadow-override), NO Notes, NO Related tool (proven absent on Impact).
-//   3. Metrics   — impact_type (always shown, required) + metric_text +
-//      human_impact (both masked when empty, PO decision). Rendered with the
-//      chassis ReadRow (NOT ImpactDetailBlock, which is the flush-branch block).
+//   3. Metrics   — impact_type + metric_text (masked when empty). human_impact
+//      is NOT rendered on this surface (PO decision). Rendered with the chassis
+//      ReadRow (NOT ImpactDetailBlock, which is the flush-branch block and keeps
+//      human_impact).
 //   4. Source    — the source quote + origin contact(s), like Pain / Objective.
 // The Edit button routes through onEdit; its wiring stays the legacy path until
 // the Impact edit lands (S3).
@@ -918,17 +919,13 @@ function ImpactDetailView({
         <Divider sx={{ my: 2 }} />
 
         {/* Section 3 — Metrics: impact_type is OPTIONAL (S3-fix). When absent →
-            a single "No metric defined" line (no orphan metric / human rows).
-            When present → impact_type + metric_text (masked if empty) + human_impact
-            shown ONLY for impact_type === "HUMAN" (ImpactType.HUMAN enum value). */}
+            a single "No metric defined" line (no orphan metric row). When present
+            → impact_type + metric_text (masked if empty). */}
         <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
         {signal.impact_type ? (
           <>
             <ReadRow label="Impact type" value={signal.impact_type_display} />
             <ReadRow label="Metric" value={signal.metric_text} />
-            {signal.impact_type === "HUMAN" && (
-              <ReadRow label="Human impact" value={signal.human_impact_display} />
-            )}
           </>
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>

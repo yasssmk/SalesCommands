@@ -19,8 +19,10 @@
 // Deltas vs Pain: NO notes, NO related_techstack_mention (absent on Impact).
 // Adds the Metrics section — impact_type (select, OPTIONAL & CLEARABLE since S5b
 // Voie B; the empty "—" option sends impact_type: "" to clear it, migration 0043
-// + serializers allow_blank), metric_text (textarea, optional), human_impact
-// (select, optional with an empty option).
+// + serializers allow_blank) and metric_text (textarea, optional, labelled
+// "Describe the impact" with a persistent help caption). human_impact is NOT
+// edited on this surface and is OMITTED from the payload (non-destructive: the
+// stored value is left untouched).
 //
 // Theme tokens only. InlineEditableValue supports text / textarea / select.
 
@@ -80,8 +82,8 @@ function toDepartmentObjects(list) {
 
 // ==============================|| VALIDATION ||============================== //
 //
-// Mirror of Pain for the shared fields. impact_type / metric_text / human_impact
-// are all OPTIONAL (S3-fix). The DEPARTMENTS are deliberately NOT validated
+// Mirror of Pain for the shared fields. impact_type / metric_text are both
+// OPTIONAL (S3-fix). The DEPARTMENTS are deliberately NOT validated
 // against the scope: target_departments is an independent M2M (never required),
 // so there is NO .when() on scope_level here.
 
@@ -94,7 +96,6 @@ const validationSchema = Yup.object({
   dimension: Yup.string().required("Dimension is required"),
   impact_type: Yup.string().nullable(),
   metric_text: Yup.string().nullable(),
-  human_impact: Yup.string().nullable(),
   target_departments: Yup.array().nullable(),
   source_quote: Yup.string().nullable(),
 });
@@ -110,15 +111,10 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
   const dimensionOptions = choices?.signal_dimensions ?? [];
   const scopeLevelOptions = choices?.scope_levels ?? [];
   // impact_type is optional & clearable (Voie B) → prepend an empty option so a
-  // rep can clear a mis-categorised value (mirror of human_impact below).
+  // rep can clear a mis-categorised value.
   const impactTypeOptions = useMemo(
     () => [{ value: "", label: "—" }, ...(choices?.impact_types ?? [])],
     [choices?.impact_types],
-  );
-  // human_impact is optional → prepend an empty option so it can be cleared.
-  const humanImpactOptions = useMemo(
-    () => [{ value: "", label: "—" }, ...(choices?.human_impacts ?? [])],
-    [choices?.human_impacts],
   );
 
   // Options for the department multi-select. The choices endpoint mixes
@@ -154,7 +150,6 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
       // Metrics — raw values (not *_display).
       impact_type: impact?.impact_type || "",
       metric_text: impact?.metric_text || "",
-      human_impact: impact?.human_impact || "",
       source_quote: impact?.source_quote || "",
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,7 +162,8 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
     onSubmit: async (values, { setSubmitting }) => {
       // Only Impact's writable fields (ImpactSignalUpdateSerializer). NO FK
       // fields (target_department / target_contact do not exist on Impact); NO
-      // notes / related_techstack_mention (absent on Impact).
+      // notes / related_techstack_mention (absent on Impact). human_impact is
+      // deliberately OMITTED (not sent as "") so the stored value is untouched.
       //
       // scope_level is EXPLICIT (the chosen pill). Extract the department ids from
       // the stored {value,label} objects; Company (BUSINESS) always sends [] so an
@@ -183,7 +179,6 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
         scope_level: values.scope_level,
         target_departments: departmentIds,
         metric_text: values.metric_text || "",
-        human_impact: values.human_impact || "",
         source_quote: values.source_quote || "",
       };
       // impact_type is OPTIONAL & CLEARABLE (Voie B, migration 0043 + serializers
@@ -224,10 +219,6 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
               ? resolveLabel(impactTypeOptions, payload.impact_type) ?? impact?.impact_type_display
               : null,
             metric_text: payload.metric_text,
-            human_impact: payload.human_impact,
-            human_impact_display: payload.human_impact
-              ? resolveLabel(humanImpactOptions, payload.human_impact)
-              : null,
             source_quote: payload.source_quote,
           };
           onSaved(updatedSignal);
@@ -540,7 +531,7 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
           <SectionHeader
             index={3}
             title="Metrics"
-            subtitle="The nature of the impact, its metric, and any human dimension."
+            subtitle="The type of impact and its concrete consequences."
           />
           <InlineEditableValue
             name="impact_type"
@@ -554,24 +545,26 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
             error={Boolean(errors.impact_type)}
             helperText={errors.impact_type}
           />
-          <InlineEditableValue
-            name="metric_text"
-            label="Metric"
-            type="textarea"
-            value={values.metric_text}
-            onChange={set("metric_text")}
-            placeholder="No metric"
-          />
-          <InlineEditableValue
-            name="human_impact"
-            label="Human impact"
-            type="select"
-            options={humanImpactOptions}
-            value={values.human_impact}
-            onChange={set("human_impact")}
-            placeholder="No human impact"
-            disabled={choicesLoading}
-          />
+          {/* metric_text — free description. The guidance is a PERSISTENT caption
+              under the field (read AND edit): InlineEditableValue's helperText is
+              error-only, so it is not reused for descriptive help. */}
+          <Box>
+            <InlineEditableValue
+              name="metric_text"
+              label="Describe the impact"
+              type="textarea"
+              value={values.metric_text}
+              onChange={set("metric_text")}
+              placeholder="No description"
+            />
+            <Typography
+              variant="caption"
+              data-testid="metric-text-help"
+              sx={{ color: theme.aphoriQ?.text?.muted, display: "block", mt: 0.5 }}
+            >
+              Be specific about the consequences, with numbers whenever possible
+            </Typography>
+          </Box>
         </Stack>
 
         <Divider />
@@ -608,7 +601,6 @@ EditImpactContent.propTypes = {
     target_departments: PropTypes.array,
     impact_type: PropTypes.string,
     metric_text: PropTypes.string,
-    human_impact: PropTypes.string,
     source_quote: PropTypes.string,
   }).isRequired,
   /** Account the impact belongs to (reserved for future scoped pickers). */
