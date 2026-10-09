@@ -317,6 +317,82 @@ def decision_cycle(db, account, user_a):
 
 
 # =============================================================================
+# TENANT-ISOLATION FIXTURES — cross-tenant / cross-account FK targets
+# =============================================================================
+# Used by test_signals_tenant_isolation.py. Each fixture is a strict clone of
+# an existing one above, re-pointed at a different tenant or account:
+#   other_tenant_contact        ← contact          (tenant B, other_tenant_account)
+#   other_tenant_decision_cycle ← decision_cycle   (tenant B, other_tenant_account)
+#   other_account               ← account          (tenant A, SECOND account)
+#   other_account_activity      ← activity         (tenant A, other_account)
+#   other_account_contact       ← contact          (tenant A, other_account)
+
+@pytest.fixture
+def other_tenant_contact(db, other_tenant_account, user_b):
+    from app_modules.contacts.models import Contact
+    c = Contact(
+        account=other_tenant_account,
+        first_name='Hank',
+        last_name='Scorpio',
+        job_title='CEO',
+    )
+    c.save(user=user_b, client_id=other_tenant_account.client_id)
+    return c
+
+
+@pytest.fixture
+def other_tenant_decision_cycle(db, other_tenant_account, user_b):
+    from app_modules.decision_cycles.models import DecisionCycle
+    dc = DecisionCycle(
+        account=other_tenant_account,
+        owner=user_b,
+        name='Globex Cycle',
+        is_active=True,
+    )
+    dc.save(user=user_b, client_id=other_tenant_account.client_id)
+    return dc
+
+
+@pytest.fixture
+def other_account(db, client_account_a, user_a):
+    from app_modules.accounts.models import CompanyAccount
+    acc = CompanyAccount(
+        company_name='Initech',
+        has_buying_decision=True,
+    )
+    acc.save(user=user_a, client_id=client_account_a.id)
+    return acc
+
+
+@pytest.fixture
+def other_account_activity(db, other_account, user_a):
+    from app_modules.activities.models import Activity
+    from app_modules.activities.constants import ActivityType, ActivityStatus
+    a = Activity(
+        title='Discovery call with Initech',
+        activity_type=ActivityType.MEETING,
+        status=ActivityStatus.COMPLETED,
+        account=other_account,
+        owner=user_a,
+    )
+    a.save(user=user_a, client_id=other_account.client_id)
+    return a
+
+
+@pytest.fixture
+def other_account_contact(db, other_account, user_a):
+    from app_modules.contacts.models import Contact
+    c = Contact(
+        account=other_account,
+        first_name='Bill',
+        last_name='Lumbergh',
+        job_title='VP Ops',
+    )
+    c.save(user=user_a, client_id=other_account.client_id)
+    return c
+
+
+# =============================================================================
 # API CLIENT
 # =============================================================================
 
