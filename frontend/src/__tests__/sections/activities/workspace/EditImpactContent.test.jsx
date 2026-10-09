@@ -75,6 +75,8 @@ const IMPACT = {
   source_quote: "We lose five hours every week",
 };
 
+const HELP = "Be specific about the consequences, with numbers whenever possible";
+
 const renderEdit = (impact = IMPACT, props = {}) =>
   render(
     <AphoriqTheme>
@@ -163,23 +165,33 @@ describe("EditImpactContent (S3)", () => {
     expect(onSaved.mock.calls[0][0].impact_type_display).toBeNull();
   });
 
-  it("Metrics simplify (a): NO human_impact field; metric_text is 'Describe the impact' + persistent help", () => {
+  it("Metrics simplify: NO human_impact field; metric_text is labelled 'Describe the impact'", () => {
     renderEdit(); // IMPACT carries human_impact "FRUSTRATION" — still not rendered.
     expect(screen.queryByTestId("inline-read-human_impact")).not.toBeInTheDocument();
     expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
-    // metric_text relabelled + a persistent descriptive help (not an error).
+    // metric_text relabelled.
     expect(screen.getByText("Describe the impact")).toBeInTheDocument();
-    expect(
-      screen.getByText("Be specific about the consequences, with numbers whenever possible"),
-    ).toBeInTheDocument();
     expect(screen.queryByText("Metric")).not.toBeInTheDocument();
-    // The help stays visible while editing the field.
+  });
+
+  it("Help as placeholder (a): the OPEN metric_text textarea carries the help as its placeholder", () => {
+    renderEdit({ ...IMPACT, metric_text: "" });
     fireEvent.doubleClick(screen.getByTestId("inline-read-metric_text"));
-    expect(screen.getByTestId("inline-input-metric_text")).toBeInTheDocument();
+    expect(screen.getByTestId("inline-input-metric_text")).toHaveAttribute("placeholder", HELP);
+  });
+
+  it("Help as placeholder (read): an EMPTY closed metric_text shows the help as its read placeholder", () => {
+    renderEdit({ ...IMPACT, metric_text: "" });
     expect(
-      screen.getByText("Be specific about the consequences, with numbers whenever possible"),
+      within(screen.getByTestId("inline-read-metric_text")).getByText(HELP),
     ).toBeInTheDocument();
+  });
+
+  it("Help as placeholder (b): NO help caption under the metric_text field", () => {
+    renderEdit(); // metric_text filled → the read placeholder is not shown either
+    expect(screen.queryByTestId("metric-text-help")).not.toBeInTheDocument();
+    expect(screen.queryByText(HELP)).not.toBeInTheDocument();
   });
 
   it("Metrics simplify (b): Save OMITS human_impact from the payload (non-destructive)", async () => {

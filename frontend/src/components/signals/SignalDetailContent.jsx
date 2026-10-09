@@ -925,7 +925,7 @@ function ImpactDetailView({
         {signal.impact_type ? (
           <>
             <ReadRow label="Impact type" value={signal.impact_type_display} />
-            <ReadRow label="Metric" value={signal.metric_text} />
+            <ReadRow label="Impact description" value={signal.metric_text} />
           </>
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>

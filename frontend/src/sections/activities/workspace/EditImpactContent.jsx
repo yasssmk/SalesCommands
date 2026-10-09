@@ -20,7 +20,7 @@
 // Adds the Metrics section — impact_type (select, OPTIONAL & CLEARABLE since S5b
 // Voie B; the empty "—" option sends impact_type: "" to clear it, migration 0043
 // + serializers allow_blank) and metric_text (textarea, optional, labelled
-// "Describe the impact" with a persistent help caption). human_impact is NOT
+// "Describe the impact"; the help is its placeholder, read AND edit). human_impact is NOT
 // edited on this surface and is OMITTED from the payload (non-destructive: the
 // stored value is left untouched).
 //
@@ -545,26 +545,17 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
             error={Boolean(errors.impact_type)}
             helperText={errors.impact_type}
           />
-          {/* metric_text — free description. The guidance is a PERSISTENT caption
-              under the field (read AND edit): InlineEditableValue's helperText is
-              error-only, so it is not reused for descriptive help. */}
-          <Box>
-            <InlineEditableValue
-              name="metric_text"
-              label="Describe the impact"
-              type="textarea"
-              value={values.metric_text}
-              onChange={set("metric_text")}
-              placeholder="No description"
-            />
-            <Typography
-              variant="caption"
-              data-testid="metric-text-help"
-              sx={{ color: theme.aphoriQ?.text?.muted, display: "block", mt: 0.5 }}
-            >
-              Be specific about the consequences, with numbers whenever possible
-            </Typography>
-          </Box>
+          {/* metric_text — free description. The guidance is the placeholder in
+              BOTH modes: read (empty, closed) and edit (the open textarea). */}
+          <InlineEditableValue
+            name="metric_text"
+            label="Describe the impact"
+            type="textarea"
+            value={values.metric_text}
+            onChange={set("metric_text")}
+            placeholder="Be specific about the consequences, with numbers whenever possible"
+            inputPlaceholder="Be specific about the consequences, with numbers whenever possible"
+          />
         </Stack>
 
         <Divider />

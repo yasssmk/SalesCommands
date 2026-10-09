@@ -340,6 +340,9 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText("Impact type")).toBeInTheDocument();
     expect(screen.getByText("Time impact")).toBeInTheDocument();
     expect(screen.getByText("5 hours per week")).toBeInTheDocument();
+    // (c) the metric_text row is labelled "Impact description" (not "Metric").
+    expect(screen.getByText("Impact description")).toBeInTheDocument();
+    expect(screen.queryByText("Metric")).not.toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
     expect(screen.queryByText("No metric defined")).not.toBeInTheDocument();
     // Impact has NO Category row (shadow-override) and no flush CLASSIFICATION.
@@ -369,7 +372,7 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText("Time impact")).toBeInTheDocument();
     expect(screen.queryByText("No metric defined")).not.toBeInTheDocument();
     // metric_text masked when empty.
-    expect(screen.queryByText("Metric")).not.toBeInTheDocument();
+    expect(screen.queryByText("Impact description")).not.toBeInTheDocument();
     // human_impact is never rendered on the Activity chassis.
     expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
@@ -418,9 +421,9 @@ describe("SignalDetailPanel", () => {
       human_impact_display: "Frustration",
     };
     render(<SignalDetailPanel signal={human} signalType="impact" />);
-    // impact_type + Metric still render.
+    // impact_type + Impact description still render.
     expect(screen.getByText("Human")).toBeInTheDocument();
-    expect(screen.getByText("Metric")).toBeInTheDocument();
+    expect(screen.getByText("Impact description")).toBeInTheDocument();
     // No human_impact row, even for HUMAN (Activity surface).
     expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
