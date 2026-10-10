@@ -19,9 +19,15 @@ computed projection.
 Authentication & scoping
 ------------------------
 All four views use CustomJWTAuthentication + IsAuthenticated +
-ScopedPermission with module = 'signals'. Tenant isolation is enforced
-through ClientScopeManager.ViewMixin (via BaseAPIView) for every DB
-write or read against SignalClusterArchival.
+ScopedPermission with module = 'signals'. ScopedPermission only checks the
+role's CRUD right; it does NOT scope the data. SignalClusterService filters
+by account only (never by client), so tenant isolation rests on the single
+entry point `_parse_account_id`: every view passes the current client
+(ClientScopeManager.ViewMixin.get_client_id, via BaseAPIView) and the
+requested account must exist in that tenant (scoped CompanyAccount lookup).
+A malformed id or an account of another tenant → 400 OBJECT_NOT_FOUND,
+indistinguishable from a non-existent id. Archive / unarchive additionally
+stamp / filter SignalClusterArchival rows with that client_id.
 
 Cache invalidation
 ------------------
@@ -40,7 +46,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from core.apps_shared_methods import BaseAPIView
 from core.cache_utils import invalidate_tag
-from core.error_messages import SignalErrorMessages
+from app_modules.accounts.models import CompanyAccount
+from core.error_messages import CoreErrorMessages, SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 from core.jwt_helpers import CustomJWTAuthentication
 from core.logging import get_logger, ctx_from_request
@@ -93,19 +100,24 @@ def _invalidate_signal_caches(client_id):
 # HELPERS — query / body parsing
 # =============================================================================
 
-def _parse_account_id(request, *, source='query'):
+def _parse_account_id(request, *, client_id, source='query'):
     """
-    Extract the 'account' identifier from the request.
+    Extract the 'account' identifier from the request and check it belongs
+    to the current tenant — the single tenant-isolation point of the cluster
+    endpoints (SignalClusterService filters by account only).
 
     Args:
-        request: DRF request.
-        source:  'query' for GET endpoints, 'body' for POST endpoints.
+        request:   DRF request.
+        client_id: current tenant (view.get_client_id()).
+        source:    'query' for GET endpoints, 'body' for POST endpoints.
 
     Returns:
-        The account UUID (as string).
+        The account UUID (as received, unchanged).
 
     Raises:
-        StandardizedValidationError if 'account' is missing or empty.
+        StandardizedValidationError if 'account' is missing or empty
+        (CLUSTER_ACCOUNT_REQUIRED), malformed or not an account of the
+        current tenant (OBJECT_NOT_FOUND).
     """
     container = request.query_params if source == 'query' else request.data
     account_id = container.get('account')
@@ -113,6 +125,11 @@ def _parse_account_id(request, *, source='query'):
         raise StandardizedValidationError(
             SignalErrorMessages.CLUSTER_ACCOUNT_REQUIRED
         )
+    try:
+        uuid.UUID(str(account_id))
+        CompanyAccount.objects.get(id=account_id, client_id=client_id)
+    except (ValueError, TypeError, AttributeError, CompanyAccount.DoesNotExist):
+        raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
     return account_id
 
 
@@ -388,7 +405,9 @@ class SignalClusterListView(BaseAPIView):
         ctx = ctx_from_request(request)
         logger.info('signal_cluster_list_requested', extra=ctx)
 
-        account_id         = _parse_account_id(request, source='query')
+        account_id         = _parse_account_id(
+            request, client_id=self.get_client_id(), source='query',
+        )
         # List accepts either a single signal_type or a CSV list so the
         # frontend can fetch mixed Pain+Objective clusters in one call.
         # SignalClusterService.list_clusters_for_account is the final
@@ -453,7 +472,9 @@ class SignalClusterDetailView(BaseAPIView):
                 SignalErrorMessages.CLUSTER_CANONICAL_KEY_REQUIRED
             )
 
-        account_id  = _parse_account_id(request, source='query')
+        account_id  = _parse_account_id(
+            request, client_id=self.get_client_id(), source='query',
+        )
         signal_type = _parse_signal_type(request, source='query')
         # Optional DC scope — only the constraint cluster (DC-scoped) uses it;
         # the other types ignore it. Lets a nature cluster stay bounded to its
@@ -505,7 +526,9 @@ class SignalClusterArchiveView(BaseAPIView):
     @transaction.atomic
     def post(self, request, *args, **kwargs):
         ctx           = ctx_from_request(request)
-        account_id    = _parse_account_id(request, source='body')
+        account_id    = _parse_account_id(
+            request, client_id=self.get_client_id(), source='body',
+        )
         signal_type   = _parse_signal_type(request, source='body')
         canonical_key = request.data.get('canonical_key')
 
@@ -610,7 +633,9 @@ class SignalClusterUnarchiveView(BaseAPIView):
     @transaction.atomic
     def post(self, request, *args, **kwargs):
         ctx           = ctx_from_request(request)
-        account_id    = _parse_account_id(request, source='body')
+        account_id    = _parse_account_id(
+            request, client_id=self.get_client_id(), source='body',
+        )
         signal_type   = _parse_signal_type(request, source='body')
         canonical_key = request.data.get('canonical_key')
 
