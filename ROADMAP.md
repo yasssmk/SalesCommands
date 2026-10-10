@@ -25,6 +25,10 @@ résultats et causalité), sans sur-structurer pour un usage hypothétique.
 ## Principes transverses (appliqués à chaque sprint)
 - **Audit d'abord** : avant tout code, auditer l'existant. Ne rien
   supposer ("NE SUPPOSE RIEN").
+- **Isolation tenant à l'écriture (règle permanente de la méthode d'audit,
+  2026-10)** : tout audit de sprint vérifie que **chaque FK écrite** (FK et M2M
+  reçues dans un payload) est **contrôlée tenant + account**, sur le pattern
+  des modules de base (voir TD-246).
 - **Citer l'existant avant de coder** : ouvrir le fichier de référence, le
   citer, mesurer l'écart, PUIS coder. Ne pas réinventer un pattern qui
   existe.
@@ -829,7 +833,10 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
   Tech/Objection en placeholders) — se ferme en **deux temps** (Objection au
   sprint Objection, Tech au sprint Competitors).
 - **⏸️ REPORTÉ — à NE PAS considérer comme livré** :
-  - **Routage des 3 booléens de rôle** — `is_integration` → signal `constraint`
+  - **Routage des 3 booléens de rôle** — _(⤷ **OBSOLÈTE (2026-10)** pour la partie
+    `is_integration` : livrée au sprint Contrainte — re-routage en contrainte
+    TECHNICAL — et colonne droppée au sprint Competitors, migration 0034 ; SANS
+    OBJET pour le sprint Objection. Texte d'origine conservé.)_ `is_integration` → signal `constraint`
     (**l'extraction `constraint` N'EXISTE PAS aujourd'hui — à CONSTRUIRE**, pas
     un simple routage) au **sprint Objection** ; `is_competitor` (routage au
     point central `SignalManager.create`) + **SUPPRESSION du champ
@@ -843,7 +850,9 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
     cluster** de fin de bloc Signaux (TD-199).
 - **Prochain jalon** (ordre cible) : suite du **Bloc « Commandes IA » (#4)** —
   **Objection** (inclut `is_integration` → signal `constraint` « must
-  integrate » — extraction constraint à CONSTRUIRE).
+  integrate » — extraction constraint à CONSTRUIRE). _(⤷ **OBSOLÈTE (2026-10)** :
+  le routage `is_integration` → constraint est livré au sprint Contrainte et la
+  colonne droppée (0034) — sans objet pour le sprint Objection.)_
 
 ---
 
@@ -1247,8 +1256,8 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Dette ajoutée / MAJ** : **TD-236** (`#faad14` icône lien MiniCard), **TD-237** (`background.default` clair/sombre), **TD-238** (migrer la branche générique `SignalDetailContent`), **TD-239** (badges de section dans tous les edits — reporté PO), **TD-240** (esthétique boutons d'action — attente PO). **MAJ** : TD-235/TD-206 (code mort grouped non balayé + empty-state `SignalsValidationList`), TD-232 (« See signals » inerte), TD-233 (tenantKey), TD-234 (useGetUser), TD-186 (dualité flat/grouped résolue **côté Activity**), TD-204/TD-205 (homogénéisation & modaux Edit — Objective fait, 7 types restants), TD-223/TD-224 (icônes type centralisées ≠ résolution).
 - **Prochain jalon** : les **7 autres types** (Pain → Impact → Constraint → Objection → People → TechStack → Competitor), détail + edit sur le châssis standard ; **la branche générique de `SignalDetailContent` migre en faisant Pain** (TD-238). **UX Activity reste OUVERT.**
 
-### Sprint Signal PAIN (détail + edit sur le châssis) 🚧 (chantier UX Activity — EN COURS, branche OUVERTE) — Pain détail+edit sur le châssis standard + backend M2M writable + recâblage M2M front (branche `feat/ux-activity-signal-types`, `af42a154`→`e66c8363`, 12 commits — **NON mergée**)
-⚠️ **Pain seulement (2ᵉ type sur 7) — branche NON mergée, chantier UX Activity NON clos.** Restent **6 types** (Impact → Constraint → Objection → People → TechStack → Competitor) en détail+edit, puis les sections **Next step → Transcript/notes → Preparation**.
+### Sprint Signal PAIN (détail + edit sur le châssis) ✅ (chantier UX Activity — EN COURS) — Pain détail+edit sur le châssis standard + backend M2M writable + recâblage M2M front (branche `feat/ux-activity-signal-types`, `af42a154`→`e66c8363`, 12 commits — **✅ livré + MERGÉ, PR #154**, merge `56fcad76`)
+⚠️ **Pain seulement (2ᵉ type sur 7) — branche mergée (PR #154), chantier UX Activity NON clos.** Restent **6 types** (Impact → Constraint → Objection → People → TechStack → Competitor) en détail+edit, puis les sections **Next step → Transcript/notes → Preparation**.
 - **Objectif** : dérouler **Pain** (2ᵉ type après Objective) en **détail + edit** sur le châssis standard, **surface Activity uniquement** ; rendre le backend `target_departments` **writable** ; solder la dette de lecture M2M front branchée sur Pain.
 - **Livré** (chaque sous-étape : premisses prouvées file:line, RED prouvé par le vrai chemin + non-vacuité par mutation ciblée, 0 hex/px en dur, commit fichier-par-fichier, STOP + validation PO) :
   - **S1 — Backend M2M writable** : `PainSignalCreate/UpdateSerializer.target_departments` (`PrimaryKeyRelatedField(many=True)`, PATCH `[]` vide) ; tests write M2M via l'endpoint réel `/module-signals/pain/` (`pain_serializer.py`, `test_pain_impact_departments_m2m.py`).
@@ -1261,10 +1270,10 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Portée assumée** : migration châssis = **surface Activity UNIQUEMENT** ; **DC/Account restent flush** (déféré). Le recâblage M2M du filtre périmètre (`groupedSignalFilter`, S4) **n'est pas smoke-able sur Activity** (pas de filtre département sur cette surface) → **à smoker sur DC/Account** (voir TD-243).
 - **Dette fermée** : **aucune** (TD-238 **reste OUVERTE**).
 - **Dette ajoutée / MAJ** : **NOUVEAU TD-241** (défaut latent int/string TechStack `usage_departments`), **TD-242** (besoin produit « multi-scope Company + départements » REFUSÉ en V1 → sprint backend), **TD-243** (smoke filtre département DC/Account). **MAJ** : **TD-238** (Pain fait détail+edit ; migration = **Activity only** ; **6 types restants**, **non fermée**), **TD-204** (rendu Pain sur châssis Activity ; « même UI Activity/DC » **rescopé Activity-first**), **TD-205** (edit Pain livré ; **6 types restants**).
-- **Prochain jalon** : **Impact** (3ᵉ type), détail + edit sur le châssis standard, même discipline E2E ; puis Constraint → Objection → People → TechStack → Competitor. **UX Activity reste OUVERT** ; **branche `feat/ux-activity-signal-types` non mergée.**
+- **Prochain jalon** : **Impact** (3ᵉ type), détail + edit sur le châssis standard, même discipline E2E ; puis Constraint → Objection → People → TechStack → Competitor. **UX Activity reste OUVERT** ; branche `feat/ux-activity-signal-types` **mergée (PR #154)**.
 
-### Sprint types M2M : Impact + Constraint (détail + edit sur le châssis) 🚧 (chantier UX Activity — EN COURS, branche OUVERTE) — Impact & Constraint détail+edit sur le châssis Activity + backend éditable (branche `feat/ux-activity-signal-types`, `e3a01318`→`2cc74cfa`, 13 commits — **NON mergée**)
-⚠️ **Impact + Constraint (3ᵉ et 4ᵉ types M2M après Pain) — branche NON mergée, chantier UX Activity NON clos.** Restent **4 types FK mono** (Objection → People → TechStack → Competitor).
+### Sprint types M2M : Impact + Constraint (détail + edit sur le châssis) ✅ (chantier UX Activity — EN COURS) — Impact & Constraint détail+edit sur le châssis Activity + backend éditable (branche `feat/ux-activity-signal-types`, `e3a01318`→`2cc74cfa`, 13 commits — **✅ livré + MERGÉ, PR #154**, merge `56fcad76`)
+⚠️ **Impact + Constraint (3ᵉ et 4ᵉ types M2M après Pain) — branche mergée (PR #154), chantier UX Activity NON clos.** Restent **4 types FK mono** (Objection → People → TechStack → Competitor).
 - **Objectif** : dérouler **Impact** puis **Constraint** en détail + edit sur le châssis standard, **surface Activity uniquement**, en réutilisant le gabarit Pain (SignalSummaryBox, geste scope M2M, DrawerContentLayout).
 - **IMPACT — livré** :
   - **S1 backend** : `target_departments` writable (Create+Update) ; choices `impact_types` + `human_impacts` exposés au choices endpoint.
@@ -1281,9 +1290,9 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Portée assumée** : migration châssis = **surface Activity UNIQUEMENT** ; **DC/Account restent flush** (déféré). Constraint : scope **exclusif via affordance** (pas de `scope_level` backend) ; multi-scope Company+départements toujours **refusé** (TD-242).
 - **Correction** : `getMissingFields("constraints")` corrigé — il validait sur `what`/`dimension` **legacy** (nullable, non autorisés) et **omettait `nature`** (le vrai axe requis) → **filtre de validation fantôme supprimé** ; il vaut désormais `[nature, summary]`.
 - **Dette ajoutée / MAJ** : **NOUVEAU TD-244** (helper « select avec option vide » à factoriser). **MAJ** TD-238 (Impact + Constraint faits ; restent **4 types**), TD-204 (détail Impact+Constraint sur châssis Activity ; DC/Account différé), TD-205 (edit Impact+Constraint livrés ; restent **4 types**). **TD-241** (int/string TechStack) **reste OUVERT** (TechStack pas encore migré).
-- **Prochain jalon** : les **4 types FK mono** — **Objection → People → TechStack → Competitor**, détail + edit sur le châssis, même discipline E2E. **UX Activity reste OUVERT** ; **branche non mergée.**
+- **Prochain jalon** : les **4 types FK mono** — **Objection → People → TechStack → Competitor**, détail + edit sur le châssis, même discipline E2E. **UX Activity reste OUVERT** ; branche **mergée (PR #154)**.
 
-### Fix — Simplification section Metrics de l'Impact (post-merge, surface Activity) 🚧 (branche `fix/impact-metrics-simplify`, NON mergée)
+### Fix — Simplification section Metrics de l'Impact (post-merge, surface Activity) ✅ (branche `fix/impact-metrics-simplify` — **✅ livré + MERGÉ, PR #155**, merge `d2086a1d`)
 - **Déclencheur** : smoke PO — `human_impact` restait éditable quel que soit `impact_type`, alors qu'au détail il ne s'affichait que pour `HUMAN` (incohérence détail/edit).
 - **Livré** (surface Activity uniquement, front-only, zéro backend/migration) :
   - `human_impact` RETIRÉ de l'edit ET du détail Impact. **Non-destructif** : clé omise du payload, la valeur posée par le LLM reste en base.
@@ -1291,6 +1300,32 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Non touché** : backend (modèle/serializer/choices/extraction), `ImpactDetailBlock` (flush/cluster DC/Account garde `human_impact`).
 - **Validation** : `vitest` 185 fichiers / 1429 tests verts, non-vacuité faite, témoins rétro-compat verts.
 - **Dette** : **NOUVEAU TD-245** (`human_impact` dormant). **MAJ TD-244** (`human_impact` retiré de EditImpactContent).
+
+### Fix — Isolation tenant du module signals (écriture + clusters) ✅ LIVRÉ (branche `fix/signals-tenant-scope`, `499163b3`→`1e065729` + commit doc de clôture)
+- **Déclencheur** : l'audit du sprint Objection a révélé que les **FK écrites par les serializers signals n'étaient JAMAIS contrôlées** (tenant ni account) — champs DRF auto sur `Model.objects.all()`, `BaseSignalCreateSerializer.validate` n'injectait que `client_id`, `BaseSignalUpdateSerializer` sans `validate` — et que les **endpoints clusters étaient lisibles ET archivables cross-tenant** (`_parse_account_id` lisait l'account de la query/du body sans vérification ; `SignalClusterService` ne filtre jamais par client). Les modules de BASE (accounts, contacts, activities, decision_cycles, campaigns) contrôlent déjà leurs FK dans leurs serializers (`activities/serializers.py:939` + `:954-960`, `campaigns/serializers/campaign_contact_serializer.py:237-244`, `decision_cycles/serializers.py:1346-1350`, `contacts/serializers.py:224-226`) ; signals ne l'avait jamais recopié.
+- **Livré** (chaque sous-étape : repro ROUGE par le vrai chemin API d'abord, puis non-vacuité par édition ciblée, jamais `git checkout`) :
+  - **S1 — repros** : `tests/signals/test_signals_tenant_isolation.py` (**27 tests** : R1–R9 écriture, R11–R12 clusters, C1–C3 contrôles positifs anti sur-blocage) + **5 fixtures** clonées dans `tests/signals/conftest.py` (`other_tenant_contact`, `other_tenant_decision_cycle`, `other_account`, `other_account_activity`, `other_account_contact`).
+  - **S2 — écriture** : helper unique `_validate_fk_scope` (`signals/serializers/base_serializer.py`), appelé par `BaseSignalCreateSerializer.validate` et par un NOUVEAU `BaseSignalUpdateSerializer.validate` ; **règle tenant d'abord** (toute instance portant `client_id`, M2M compris) **puis règle account** (toute instance portant `account_id` ≠ account du signal). **Aucun serializer concret modifié** (les 9 Create appellent déjà `super().validate()` ; en Update, Objective/People/TechStack aussi, les 6 autres héritent directement). `StandardDepartment` (global, sans `client_id`) hors contrôle par construction. **Chemin LLM non concerné** (extracteurs → `SignalManager.create` directement, FK dérivées de l'activité scopée).
+  - **S3 — clusters** : `_parse_account_id` (`signals/views/cluster_views.py`) = **lookup scopé `CompanyAccount.objects.get(id=…, client_id=…)`** (pattern `activities/serializers.py:939`), **point d'entrée unique des 4 endpoints** (liste, détail, archive, désarchive), client courant via `ClientScopeManager.ViewMixin.get_client_id` ; **id mal formé → 400** (était **500**, cf. TD-248) ; service clusters inchangé ; docstring d'isolation corrigée.
+- **Contrat** : FK d'un **autre tenant** (y compris l'account d'un cluster) → **400 `CoreErrorMessages.OBJECT_NOT_FOUND`** (indiscernable d'un id inexistant) ; FK du même tenant mais d'un **autre account** → **400 `ContactErrorMessages.INVALID_ACCOUNT`** ; erreurs via `StandardizedValidationError` → `custom_exception_handler`.
+- **Migrations** : **aucune**.
+- **Validation (PO, base Supabase)** : suite d'isolation **27 passed** ; régression `tests/signals` + `tests/ai_pipelines` = **1 seul échec, PRÉ-EXISTANT** (`test_create_requires_rigidity`, → **TD-247**) ; **SELECT archives cross-tenant = 0** (aucune archive créée via le trou) ; **smoke PO OK** (edit signal, next step avec contact, clusters affichage / archive / désarchive, extraction LLM).
+- **Dette ajoutée** : **TD-246** (⚠️ URGENT pré-déploiement : isolation tenant à l'écriture des AUTRES modules), **TD-247** (test rigidity obsolète), **TD-248** (`custom_exception_handler` 500 sur `ValidationError` non-dict), **TD-249** (`clean()` des signaux jamais exécuté), **TD-250** (mécanismes de scope morts / `action_policies` inertes / commentaires périmés), **TD-256** (`/module-signals/all/` > 1 s au smoke).
+- **Prochain jalon** : reprise **Objection S1** (détail Activity) — voir la fiche « Sprint Objection (Blocker) — EN PAUSE » ci-dessous.
+
+### Sprint Objection (Blocker) ⏸️ EN PAUSE — audit fait, front non commencé (chantier UX Activity — EN COURS)
+⚠️ **Mis en pause** pour traiter le Fix isolation tenant (ci-dessus), révélé par son audit. **Aucun code Objection écrit.**
+- **Identité** : Objection = **`BlockerSignal`**, clé front **`"blockers"`** (pluriel ; `"blocker"` singulier côté backend / `SignalManager` / counts). Champs propres : **`summary`** (requis) + **`contact`** (FK Contact nullable, **jamais posé par le LLM** — TD-6). **Pas de scope** (ni FK, ni M2M, ni `scope_level` — TD-41), **pas de `notes`**, **pas d'enum**, **pas de `canonical_key`** (forcé à None). La prémisse « type **FK mono** » (fiches Impact+Constraint ci-dessus) est **FAUSSE** : sa seule FK est une attribution, pas un scope.
+- **Lien `is_integration` → constraint : SANS OBJET** pour ce sprint — **livré au sprint Contrainte** (« `is_integration` RE-ROUTÉ en contrainte TECHNICAL ») et **colonne droppée** (migration **0034**, sprint Competitors). Les mentions « au sprint Objection » des fiches Tech Stack et de la séquence PO 2026-08-27 sont marquées **obsolètes**.
+- **Décisions PO verrouillées** :
+  - **Surface Activity UNIQUEMENT** — l'Objection vit sur Activity et DC, **jamais sur Account** ; DC/Account **non touchés**.
+  - **Garde de routage** = condition Constraint (`!leadingAction && !trailingAction`) **+ `currentActivityId`** (sinon les vues DC Flat / section Objections DC passeraient aussi sur le châssis — cf. TD-253).
+  - **Détail** : §1 **Summary** (`SignalSummaryBox`, summary seul, sans axe) → §2 **Raised by** (`signal.contact` **seul**, **AUCUN repli** participant, **masqué si null** — cf. TD-254) → §3 **Source** (quote + participants + lien d'origine).
+  - **Contact manuel** (attribution LLM = **TD-6**) ; **`source_quote` éditable** ; **libellé unique « Objection »** (chip / dialog / filtre disent aujourd'hui « Blocker ») ; **`confidence` non affiché**.
+- **Plan** : **S1** détail sur le châssis → **S2** edit sur le châssis (picker `AsyncContactSelect`, signature `(_e, contact)`, `filters={{account_id}}`) → **S3** libellé unifié + bug `BlockerEditForm` (**commit séparé**, TD-251).
+- **Règle de construction** : **homogénéité des PATTERNS** (mêmes briques que les types finis : `DrawerContentLayout`, `SectionHeader`, `SignalSummaryBox`, `InlineEditableValue`, branche `handleEdit` + `onSaved`/`onCancel`), **pas des surfaces**.
+- **À FAIRE (to-do)** : rattrapage **« cohérence chaîne LLM → front »** pour les 4 types finis (**Objective, Pain, Impact, Constraint**) — **audit read-only dédié** (écarts déjà relevés en **TD-255**).
+- **Prochain jalon** : **reprise Objection S1 (détail Activity)**.
 
 ---
 
@@ -1363,6 +1398,13 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 ### 🚀 Jalon LAUNCH (frontière pré / post déploiement)
 
 **PRÉ-LAUNCH — bloquant AVANT déploiement :**
+- ⚠️ **URGENT AVANT DÉPLOIEMENT — Isolation tenant à l'ÉCRITURE dans TOUS les
+  modules** (NOUVEAU 2026-10) : vérifier que le contrôle **tenant + account des
+  FK reçues** en écriture est présent dans **TOUS** les modules — **audit
+  read-only** puis **fix au point central par module**, sur le pattern des
+  modules de base (`activities`, `campaigns`, `decision_cycles`, `contacts`).
+  Le module **signals** est corrigé (fiche « Fix — Isolation tenant du module
+  signals ✅ ») ; les autres modules ne sont PAS prouvés. Dette : **TD-246**.
 - **Gestion des erreurs** (#5 ci-dessus) — audit complet des vues d'erreur.
 - **Doublons de requêtes + efficacité cache** — TD principal existant, déjà
   marqué « pré-launch » dans sa fiche (« Sprint — Doublons de requêtes +
@@ -1407,7 +1449,9 @@ possibles) :
   **read-time**, drawer + ligne épurée, colonne droite branchée sur le pipeline
   cluster, fix 500 sentinel de tri. Voir la fiche « Sprint Bloc IA / Tech Stack
   ✅ » ci-dessus. **Ferme TD-190.**
-- **1. Objection** — inclut le routage `is_integration` → signal `constraint`
+- **1. Objection** — _(⤷ **OBSOLÈTE (2026-10)** pour la partie `is_integration` :
+  livrée au sprint Contrainte, colonne droppée en 0034 — sans objet pour le sprint
+  Objection.)_ inclut le routage `is_integration` → signal `constraint`
   « must integrate ». **NB : l'extraction `constraint` N'EXISTE PAS aujourd'hui
   — à CONSTRUIRE (nouvelle émission d'extraction), PAS un simple routage de
   booléen.**
@@ -1512,7 +1556,9 @@ possibles) :
      breadcrumb commun — voir la fiche « Sprint Bloc IA / Fondations UX Activity ✅ »
      ci-dessus) ; **contenu Activity section par section EN COURS** — chantier UX
      Activity **NON clos**.
-  2. **Blocker (Objection)**.
+  2. **Blocker (Objection)** — ⏸️ **EN PAUSE** (audit fait, front non commencé ;
+     voir la fiche « Sprint Objection (Blocker) — EN PAUSE »). Inséré AVANT sa
+     reprise : **Fix isolation tenant du module signals ✅**.
   - [+ suites déjà cadrées : **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]
