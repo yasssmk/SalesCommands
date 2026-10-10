@@ -1188,6 +1188,176 @@ ConstraintDetailView.propTypes = {
   currentActivityId: PropTypes.string,
 };
 
+// ==============================|| OBJECTION DETAIL VIEW (Objection S1) ||============================== //
+//
+// The Objection (BlockerSignal, front key "blockers") detail on the standard
+// drawer chassis, cloned from ConstraintDetailView (same header mechanism,
+// numbered SectionHeaders + DrawerContentLayout read-action bar), routed here
+// on the ACTIVITY coque ONLY. Deltas from Constraint:
+//   - NO scope / NO notes / NO enum / NO canonical_key → the shared summary box
+//     carries the summary ALONE (no recap meta).
+//   - §2 Raised by = signal.contact ONLY — NO fallback on the participants
+//     (no getContact, cf. TD-254); placeholder when null (Constraint pattern).
+//     The participants stay in the Source section.
+// PO section order (3): Summary (box) → Raised by → Source.
+function ObjectionDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "blockers") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+
+  return (
+    <Box data-testid="objection-detail-body">
+      {/* In-content header — suppressed when the coque owns the header
+          (headerInCoque; the Activity coque does). Mirror of ConstraintDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="objection-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="objection-detail-title">
+            {getSignalTypeLabel("blockers")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "blockers"),
+          onReject: () => onReject?.(signal, "blockers"),
+          onValidate: () => onValidate?.(signal, "blockers"),
+          onReopen: () => onReopen?.(signal, "blockers"),
+          status: signal.status,
+          isLocked,
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Summary: the SHARED summary box, summary ONLY (Objection
+            has no axis / recap / canonical_key — the box omits them when absent). */}
+        <SectionHeader index={1} title="Summary" sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={signal.summary}
+          boxTestId="objection-summary-box"
+          summaryTestId="objection-summary-text"
+        />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Raised by: signal.contact ONLY (manual attribution, never
+            set by the LLM). NO participant fallback (TD-254). Placeholder when
+            empty — same treatment as Constraint's empty Notes. */}
+        <SectionHeader index={2} title="Raised by" sx={{ mb: 1 }} />
+        <Box data-testid="objection-raised-by">
+          {signal.contact ? (
+            <ContactInline contact={signal.contact} variant="body2" />
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No contact attributed
+            </Typography>
+          )}
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Source: the quote + who said it, with an optional link to
+            the origin activity. Same treatment as the Constraint detail. */}
+        <SectionHeader index={3} title="Source" sx={{ mb: 1 }} />
+        <Box data-testid="objection-source">
+          {signal.source_quote ? (
+            <SourceQuoteBlock quote={signal.source_quote} />
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No source quote
+            </Typography>
+          )}
+          {contacts.length > 0 && (
+            <Box sx={{ mt: 1.25 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {contacts.length > 1 ? "Contacts" : "Contact"}
+              </Typography>
+              <Stack spacing={0.25}>
+                {contacts.map((c) => (
+                  <ContactInline key={c.id} contact={c} variant="body2" />
+                ))}
+              </Stack>
+            </Box>
+          )}
+          {showOriginLink && (
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+              onClick={() => onOpenActivity(originActivityId)}
+              sx={{ mt: 0.5, px: 0 }}
+            >
+              View origin activity
+            </Button>
+          )}
+        </Box>
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+ObjectionDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
 
 /**
@@ -1279,6 +1449,27 @@ export default function SignalDetailContent({
   if (signalType === "constraints" && !leadingAction && !trailingAction) {
     return (
       <ConstraintDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
+  // Objection S1 — Objection (blockers) uses the standard chassis on the
+  // ACTIVITY surface only: the Constraint gate PLUS currentActivityId, which only
+  // the Activity coque passes. DC/Account Flat (no currentActivityId) and the
+  // cluster drawer (leadingAction/trailingAction) keep the generic flush branch.
+  if (signalType === "blockers" && currentActivityId && !leadingAction && !trailingAction) {
+    return (
+      <ObjectionDetailView
         signal={signal}
         onValidate={onValidate}
         onReject={onReject}

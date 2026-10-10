@@ -302,6 +302,17 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.queryByTestId("objective-detail-header")).not.toBeInTheDocument();
   });
 
+  it("Objection S1 (R4): opening a blocker shows the coque header 'Objection' + status pill on the chassis", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Budget frozen flat"));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objection");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Pending");
+    expect(screen.getByTestId("objection-detail-body")).toBeInTheDocument();
+    // Header owned by the coque: no in-content header, a single close (coque ×).
+    expect(screen.queryByTestId("objection-detail-header")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
   it("opens the signal drawer when a row is clicked", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     expect(screen.queryByLabelText("Close drawer")).not.toBeInTheDocument();

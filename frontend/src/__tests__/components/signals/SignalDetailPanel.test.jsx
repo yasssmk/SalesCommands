@@ -1093,3 +1093,96 @@ describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", ()
     expect(screen.queryByTestId("constraint-detail-body")).not.toBeInTheDocument();
   });
 });
+
+// ==== Objection S1 — Objection (blockers) detail on the standard chassis (Activity) ====
+// Clone of the Constraint chassis, Activity ONLY: the gate adds currentActivityId
+// (only the Activity coque passes it) so DC/Account Flat keep the flush branch.
+// 3 sections: Summary (box, summary only) → Raised by (signal.contact ONLY, no
+// participant fallback — TD-254; placeholder when null, Constraint pattern) → Source.
+describe("SignalDetailPanel — Objection on the chassis (Activity, S1)", () => {
+  const MOCK_OBJECTION_CHASSIS = {
+    id: "objection-chassis",
+    status: "PENDING",
+    summary: "Budget frozen until Q2 for every new tool",
+    source_quote: "Our budget is completely frozen until Q2.",
+    contact: null,
+    source_context: {
+      contacts: [{ id: "p1", first_name: "Paula", last_name: "Participant" }],
+    },
+  };
+
+  it("R1: blocker + currentActivityId (no leading/trailing) → objection chassis, 3 sections", () => {
+    render(
+      <SignalDetailPanel signal={MOCK_OBJECTION_CHASSIS} signalType="blockers" currentActivityId="act-1" />,
+    );
+    expect(screen.getByTestId("objection-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("objection-summary-box")).toBeInTheDocument();
+    expect(screen.getByText("Summary")).toBeInTheDocument();
+    expect(screen.getByText("Raised by")).toBeInTheDocument();
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Summary box carries the summary ONLY (no recap / no canonical).
+    expect(screen.getByTestId("objection-summary-box")).not.toHaveTextContent(/This is/);
+    expect(screen.queryByText(/canonical_key/)).not.toBeInTheDocument();
+    // Flush markers absent.
+    expect(screen.queryByText("CONTEXT")).not.toBeInTheDocument();
+    expect(screen.queryByText("ORIGIN")).not.toBeInTheDocument();
+  });
+
+  it("R2: blocker WITHOUT currentActivityId (DC/Account Flat) → flush branch unchanged", () => {
+    render(<SignalDetailPanel signal={MOCK_OBJECTION_CHASSIS} signalType="blockers" />);
+    expect(screen.queryByTestId("objection-detail-body")).not.toBeInTheDocument();
+    expect(screen.getByText("CONTEXT")).toBeInTheDocument();
+    expect(screen.getByText("SOURCE QUOTE")).toBeInTheDocument();
+  });
+
+  it("R3: blocker + currentActivityId + leading/trailing (cluster coque) → flush branch", () => {
+    render(
+      <SignalDetailContent
+        signal={MOCK_OBJECTION_CHASSIS}
+        signalType="blockers"
+        currentActivityId="act-1"
+        leadingAction={<span>back</span>}
+        trailingAction={<span>close</span>}
+      />,
+    );
+    expect(screen.queryByTestId("objection-detail-body")).not.toBeInTheDocument();
+    expect(screen.getByText("CONTEXT")).toBeInTheDocument();
+  });
+
+  it("R5: contact null + participants → 'Raised by' placeholder, participant ONLY in Source", () => {
+    render(
+      <SignalDetailPanel signal={MOCK_OBJECTION_CHASSIS} signalType="blockers" currentActivityId="act-1" />,
+    );
+    const raisedBy = screen.getByTestId("objection-raised-by");
+    expect(raisedBy).toHaveTextContent("No contact attributed");
+    expect(raisedBy).not.toHaveTextContent("Paula Participant");
+    // The participant shows exactly once — in the Source section.
+    expect(screen.getAllByText("Paula Participant")).toHaveLength(1);
+    expect(within(screen.getByTestId("objection-source")).getByText("Paula Participant")).toBeInTheDocument();
+  });
+
+  it("R6: contact set → 'Raised by' shows name + job_title", () => {
+    const withContact = {
+      ...MOCK_OBJECTION_CHASSIS,
+      id: "objection-contact",
+      contact: { id: "c9", first_name: "Sophie", last_name: "Martin", job_title: "CFO" },
+    };
+    render(<SignalDetailPanel signal={withContact} signalType="blockers" currentActivityId="act-1" />);
+    const raisedBy = screen.getByTestId("objection-raised-by");
+    expect(within(raisedBy).getByText("Sophie Martin")).toBeInTheDocument();
+    expect(raisedBy).toHaveTextContent("CFO");
+    expect(raisedBy).not.toHaveTextContent("No contact attributed");
+  });
+
+  it("R7: summary and source_quote from the payload shown verbatim, in the right section", () => {
+    render(
+      <SignalDetailPanel signal={MOCK_OBJECTION_CHASSIS} signalType="blockers" currentActivityId="act-1" />,
+    );
+    expect(screen.getByTestId("objection-summary-text")).toHaveTextContent(
+      MOCK_OBJECTION_CHASSIS.summary,
+    );
+    expect(screen.getByTestId("objection-source")).toHaveTextContent(
+      MOCK_OBJECTION_CHASSIS.source_quote,
+    );
+  });
+});

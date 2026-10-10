@@ -121,7 +121,8 @@ export default function ActivitySignalsTab({
         signalType === "objective" ||
         signalType === "pain" ||
         signalType === "impact" ||
-        signalType === "constraints";
+        signalType === "constraints" ||
+        signalType === "blockers";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
