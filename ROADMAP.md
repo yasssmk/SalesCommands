@@ -1313,19 +1313,28 @@ manager (fenêtres glissantes overdue/today/7j/4s), API BI scope-bornée.
 - **Dette ajoutée** : **TD-246** (⚠️ URGENT pré-déploiement : isolation tenant à l'écriture des AUTRES modules), **TD-247** (test rigidity obsolète), **TD-248** (`custom_exception_handler` 500 sur `ValidationError` non-dict), **TD-249** (`clean()` des signaux jamais exécuté), **TD-250** (mécanismes de scope morts / `action_policies` inertes / commentaires périmés), **TD-256** (`/module-signals/all/` > 1 s au smoke).
 - **Prochain jalon** : reprise **Objection S1** (détail Activity) — voir la fiche « Sprint Objection (Blocker) — EN PAUSE » ci-dessous.
 
-### Sprint Objection (Blocker) ⏸️ EN PAUSE — audit fait, front non commencé (chantier UX Activity — EN COURS)
-⚠️ **Mis en pause** pour traiter le Fix isolation tenant (ci-dessus), révélé par son audit. **Aucun code Objection écrit.**
-- **Identité** : Objection = **`BlockerSignal`**, clé front **`"blockers"`** (pluriel ; `"blocker"` singulier côté backend / `SignalManager` / counts). Champs propres : **`summary`** (requis) + **`contact`** (FK Contact nullable, **jamais posé par le LLM** — TD-6). **Pas de scope** (ni FK, ni M2M, ni `scope_level` — TD-41), **pas de `notes`**, **pas d'enum**, **pas de `canonical_key`** (forcé à None). La prémisse « type **FK mono** » (fiches Impact+Constraint ci-dessus) est **FAUSSE** : sa seule FK est une attribution, pas un scope.
+### Sprint Objection (Blocker) ✅ LIVRÉ (chantier UX Activity — EN COURS) — Objection détail + edit sur le châssis Activity + attribution « Raised by » par le LLM + libellé unique (branche `feat/ux-activity-objection`, `6f8d9a89`→`3b7be2cb` + commit doc de clôture)
+_Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), puis repris et livré._
+- **Identité** : Objection = **`BlockerSignal`**, clé front **`"blockers"`** (pluriel ; `"blocker"` singulier côté backend / `SignalManager` / counts). Champs propres : **`summary`** (requis) + **`contact`** (FK Contact nullable — **désormais attribuée par le LLM**, S3, TD-6 RESOLVED). **Pas de scope** (ni FK, ni M2M, ni `scope_level` — TD-41), **pas de `notes`**, **pas d'enum**, **pas de `canonical_key`** (forcé à None). La prémisse « type **FK mono** » (fiches Impact+Constraint ci-dessus) est **FAUSSE** : sa seule FK est une attribution, pas un scope.
 - **Lien `is_integration` → constraint : SANS OBJET** pour ce sprint — **livré au sprint Contrainte** (« `is_integration` RE-ROUTÉ en contrainte TECHNICAL ») et **colonne droppée** (migration **0034**, sprint Competitors). Les mentions « au sprint Objection » des fiches Tech Stack et de la séquence PO 2026-08-27 sont marquées **obsolètes**.
 - **Décisions PO verrouillées** :
-  - **Surface Activity UNIQUEMENT** — l'Objection vit sur Activity et DC, **jamais sur Account** ; DC/Account **non touchés**.
-  - **Garde de routage** = condition Constraint (`!leadingAction && !trailingAction`) **+ `currentActivityId`** (sinon les vues DC Flat / section Objections DC passeraient aussi sur le châssis — cf. TD-253).
-  - **Détail** : §1 **Summary** (`SignalSummaryBox`, summary seul, sans axe) → §2 **Raised by** (`signal.contact` **seul**, **AUCUN repli** participant, **masqué si null** — cf. TD-254) → §3 **Source** (quote + participants + lien d'origine).
-  - **Contact manuel** (attribution LLM = **TD-6**) ; **`source_quote` éditable** ; **libellé unique « Objection »** (chip / dialog / filtre disent aujourd'hui « Blocker ») ; **`confidence` non affiché**.
-- **Plan** : **S1** détail sur le châssis → **S2** edit sur le châssis (picker `AsyncContactSelect`, signature `(_e, contact)`, `filters={{account_id}}`) → **S3** libellé unifié + bug `BlockerEditForm` (**commit séparé**, TD-251).
+  - **Surface Activity UNIQUEMENT** pour le détail + edit châssis — l'Objection vit sur Activity et DC, **jamais sur Account** ; DC/Account restent sur la branche générique flush.
+  - **Garde de routage** = condition Constraint (`!leadingAction && !trailingAction`) **+ `currentActivityId`** (sinon les vues DC Flat / section Objections DC passeraient aussi sur le châssis — cf. TD-253). Gardes des 4 types finis non touchées.
+  - **Détail** : §1 **Summary** (`SignalSummaryBox`, summary seul, sans axe) → §2 **Raised by** (`signal.contact` **seul**, **AUCUN repli** participant — cf. TD-254) → §3 **Source** (quote + participants + lien d'origine). **DÉCISION PO MODIFIÉE (S1)** : contact null → **placeholder « No contact attributed »** (pattern Constraint, numérotation fixe) — **remplace « masqué si null »**.
+  - **Contact** : attribué par le **LLM** (S3) et **éditable** par le commercial (S2) ; **`source_quote` éditable** ; **libellé unique « Objection »** ; **`confidence` non affiché**.
+  - **Asymétrie assumée** : le LLM ne peut attribuer qu'un **participant de l'activité** (filtré tenant + account) ; le commercial choisit **librement parmi les contacts de l'account**.
 - **Règle de construction** : **homogénéité des PATTERNS** (mêmes briques que les types finis : `DrawerContentLayout`, `SectionHeader`, `SignalSummaryBox`, `InlineEditableValue`, branche `handleEdit` + `onSaved`/`onCancel`), **pas des surfaces**.
+- **Livré** (chaque sous-étape : ROUGE par le vrai chemin d'abord, puis VERT, non-vacuité par édition ciblée, régression) :
+  - **S1 — détail** (`6f8d9a89`) : `ObjectionDetailView` dans `components/signals/SignalDetailContent.jsx`, **clone de `ConstraintDetailView`** (en-tête suppressible `headerInCoque`, `DrawerContentLayout` + barre d'actions, `SignalIncompleteAlert`, Validated by/at) ; garde `signalType === "blockers" && currentActivityId && !leadingAction && !trailingAction` ; `"blockers"` ajouté à `coqueOwnsHeader` (`ActivitySignalsTab`) → coque titrée « Objection » + pill de statut. DC/Account **inchangés** (branche flush, `BlockerDetails`).
+  - **S2 — edit** (`a8035848`) : `EditObjectionContent` (**clone d'`EditConstraintContent`**) : §1 summary (Yup identique), §2 « Who raised it? » = `AsyncContactSelect` (`onChange(_event, contact)`, `filters={{ account_id }}` de l'activité, effaçable → null), §3 source quote ; payload **`{ summary, contact: uuid|null, source_quote }`** ; `onSaved` reçoit le signal reconstruit (contact compact) ; branche `"blockers"` de `handleEdit` clonée de Constraint → retour au détail Objection (Save / Cancel).
+  - **S3 — attribution LLM** (`e58a9f2c`, backend) : NOUVEAU `ai_pipelines/services/participant_refs.py` — `ordered_participants(activity)` (`activity.contacts` filtrés **tenant + account**, tri `last_name, first_name, id` = **source unique** de la numérotation) + `resolve_participant_ref(ref, activity)` (seul un `P<n>` valide dans la liste résout) ; repères **`P1`, `P2`…** dans le bloc de contexte **PARTAGÉ** (`CONTEXT_VERSION` **v2**, donc visibles par les **7 prompts** : 6 stages signaux + next_steps) ; prompt blocker **v2** avec champ **`raised_by`** + règles d'attribution ; `_build_blocker_data` résout — **le serveur ne force jamais** ; repère absent/null/invalide → **signal conservé**, `contact` vide, `logger.warning`.
+  - **S4 — libellé + fix legacy** (`e7017de5`, `3b7be2cb`) : libellé unique **« Objection »** via la constante centrale `getSignalTypeLabel("blockers")` (`utils/signalTypes.js`) sur le chip (`SignalTypeChip`), le titre du drawer legacy (`SignalEditDrawer`, « Edit Objection Signal ») et le filtre de type (`SignalsFilterPanel`) — titres de section / pluriels non touchés ; **fix `BlockerEditForm`** (TD-251, commit séparé) : contact via `(_event, contact)`, picker filtré `filters={{ account_id }}`, fin du warning React `accountId`.
+- **Migrations** : **aucune**.
+- **Validation (PO)** : smokes **S1→S4 OK** ; **pytest (base Supabase)** : **41 tests ciblés S3 verts**, régression `tests/ai_pipelines` + `tests/signals` = **1 seul échec, PRÉ-EXISTANT** (`test_create_requires_rigidity`, **TD-247**) ; **vitest 187 fichiers / 1452 tests verts** ; lint sans erreur.
+- **Dette** : **RESOLVED TD-6** (attribution LLM du contact), **TD-251** (`BlockerEditForm`) ; **MAJ TD-254** (Activity corrigé, DC garde le repli → OPEN), **TD-7** (helper réutilisable, variante liste à faire) ; **NOUVEAUX TD-257** (⚠️ `create_with_entities` : contacts non filtrés par account — relié TD-246), **TD-258** (`RunAIWizard` types en dur), **TD-259** (placeholders en dur), **TD-260** (versionnage des prompts + docstring Performance obsolète), **TD-261** (commentaires périmés front signaux). **TD-247** inchangé (OPEN).
 - **À FAIRE (to-do)** : rattrapage **« cohérence chaîne LLM → front »** pour les 4 types finis (**Objective, Pain, Impact, Constraint**) — **audit read-only dédié** (écarts déjà relevés en **TD-255**).
-- **Prochain jalon** : **reprise Objection S1 (détail Activity)**.
+- **Jalon (décision PO) — FIN DU MODULE SIGNALS** : **test global sur transcriptions réelles + fine-tuning des prompts**, incluant : vérifier que les **repères `P1`…** du bloc de contexte partagé n'ont **pas dégradé les autres stages** (pain_impact, objective, techstack, constraint, competitor, next_steps), et mesurer le **comportement réel de `raised_by`** (taux d'attribution, erreurs).
+- **Prochain jalon** : **PEOPLE** (détail + edit sur le châssis Activity) — **audit read-only d'abord**, incluant la **cohérence chaîne LLM → front** et la règle **« chaque FK écrite contrôlée tenant + account »**.
 
 ---
 
@@ -1556,9 +1565,11 @@ possibles) :
      breadcrumb commun — voir la fiche « Sprint Bloc IA / Fondations UX Activity ✅ »
      ci-dessus) ; **contenu Activity section par section EN COURS** — chantier UX
      Activity **NON clos**.
-  2. **Blocker (Objection)** — ⏸️ **EN PAUSE** (audit fait, front non commencé ;
-     voir la fiche « Sprint Objection (Blocker) — EN PAUSE »). Inséré AVANT sa
-     reprise : **Fix isolation tenant du module signals ✅**.
+  2. **Blocker (Objection)** — ✅ **LIVRÉ** (`feat/ux-activity-objection` —
+     voir la fiche « Sprint Objection (Blocker) ✅ LIVRÉ »). Inséré AVANT sa
+     reprise : **Fix isolation tenant du module signals ✅**. Suite : **People**
+     (audit read-only d'abord), puis jalon **FIN DU MODULE SIGNALS** (test global
+     sur transcriptions réelles + fine-tuning).
   - [+ suites déjà cadrées : **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]
