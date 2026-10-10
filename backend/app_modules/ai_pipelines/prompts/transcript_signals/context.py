@@ -11,7 +11,12 @@ What this layer carries
   - Tenant display name (from ClientAccount.name).
   - Prospect commercial identity (company_name, industry, classification).
   - Activity metadata (type, date).
-  - Contacts on the activity: first_name + job_title + department only.
+  - Contacts on the activity: first_name + job_title + department only,
+    each prefixed with its participant reference ("P1", "P2", ...) so a
+    stage can attribute a signal to a participant (Blocker `raised_by`,
+    Objection S3). Numbering + scope (tenant AND account) come from
+    services/participant_refs.py -- the same list the extractor resolves
+    against.
   - Canonical enum values per target stage.
 
 No longer carried (S10)
@@ -72,10 +77,16 @@ from app_modules.signals.constants import (
 )
 from end_users.models import ClientAccount
 
+from app_modules.ai_pipelines.services.participant_refs import (
+    format_participant_ref,
+    ordered_participants,
+)
+
 
 logger = logging.getLogger(__name__)
 
-CONTEXT_VERSION = 'v1'
+# v2 (Objection S3): participant lines carry their reference ("P1 — ...").
+CONTEXT_VERSION = 'v2'
 
 _SUPPORTED_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
@@ -236,7 +247,12 @@ def _build_contact_lines(activity):
     """
     Render one descriptor per contact attached to the activity.
 
-    Format per descriptor: "<first_name> (<job_title>, <department>)"
+    Format per descriptor: "<ref> — <first_name> (<job_title>, <department>)"
+        - <ref> --> the participant reference ("P1", "P2", ...) from
+          services/participant_refs.py. The list is ordered_participants():
+          filtered on the activity's tenant AND account, ordered
+          last_name, first_name, id -- the extractor resolves a returned
+          reference against this exact list.
         - Missing first_name --> "Contact" placeholder.
         - Missing job_title --> "role unknown" placeholder.
         - Missing department --> dropped from the parenthesis.
@@ -248,7 +264,8 @@ def _build_contact_lines(activity):
         "Prospect contacts" line entirely in that case).
     """
     descriptors = []
-    for contact in activity.contacts.all():
+    for index, contact in enumerate(ordered_participants(activity)):
+        ref = format_participant_ref(index)
         name = (contact.first_name or '').strip() or 'Contact'
         job = (contact.job_title or '').strip() or 'role unknown'
 
@@ -260,9 +277,9 @@ def _build_contact_lines(activity):
             department = contact.standard_department.get_name_display()
 
         if department:
-            descriptors.append(f'{name} ({job}, {department})')
+            descriptors.append(f'{ref} — {name} ({job}, {department})')
         else:
-            descriptors.append(f'{name} ({job})')
+            descriptors.append(f'{ref} — {name} ({job})')
     return descriptors
 
 
