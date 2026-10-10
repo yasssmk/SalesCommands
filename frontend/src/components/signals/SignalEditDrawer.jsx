@@ -44,6 +44,7 @@ import {
 } from "utils/displayError";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
 import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
+import { getSignalTypeLabel } from "utils/signalTypes";
 
 // --- Activity form tree (implicit source; the superset of types) ---
 import { buildEditInitialValues as buildActivityInitialValues } from "sections/activities/signals/wizard/forms/buildEditInitialValues";
@@ -68,7 +69,8 @@ const TYPE_LABELS = {
   objective: "Objective Signal",
   impact: "Impact Signal",
   "tech-stack": "Tech Stack Signal",
-  blockers: "Blocker Signal",
+  // Objection S4: the type label reads the central constant ("Objection").
+  blockers: `${getSignalTypeLabel("blockers")} Signal`,
   "next-steps": "Next Step Suggestion",
 };
 

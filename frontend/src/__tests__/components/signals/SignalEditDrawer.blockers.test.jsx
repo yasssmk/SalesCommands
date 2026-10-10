@@ -64,7 +64,8 @@ describe("SignalEditDrawer — blockers type", () => {
       />,
     );
 
-    expect(screen.getByText("Edit Blocker Signal")).toBeInTheDocument();
+    // Objection S4: the title reads the canonical type label (central constant).
+    expect(screen.getByText("Edit Objection Signal")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Budget frozen until Q1")).toBeInTheDocument();
     expect(screen.getByTestId("contact-select")).toBeInTheDocument();
   });

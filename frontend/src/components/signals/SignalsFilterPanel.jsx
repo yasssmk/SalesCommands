@@ -32,6 +32,7 @@ import Typography from "@mui/material/Typography";
 
 // project imports
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
+import { getSignalTypeLabel } from "utils/signalTypes";
 
 // icons
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
@@ -50,7 +51,8 @@ export const SIGNAL_TYPE_OPTIONS = [
   { value: "objective", label: "Objective" },
   { value: "impact", label: "Impact" },
   { value: "tech-stack", label: "Tech Stack" },
-  { value: "blockers", label: "Blocker" },
+  // Objection S4: the type label reads the central constant ("Objection").
+  { value: "blockers", label: getSignalTypeLabel("blockers") },
   { value: "next-steps", label: "Next Step" },
   { value: "people", label: "People" },
   { value: "constraints", label: "Constraint" },
