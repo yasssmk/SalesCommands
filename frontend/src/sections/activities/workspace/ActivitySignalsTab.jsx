@@ -44,6 +44,7 @@ import EditObjectiveContent from "sections/activities/workspace/EditObjectiveCon
 import EditPainContent from "sections/activities/workspace/EditPainContent";
 import EditImpactContent from "sections/activities/workspace/EditImpactContent";
 import EditConstraintContent from "sections/activities/workspace/EditConstraintContent";
+import EditObjectionContent from "sections/activities/workspace/EditObjectionContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -121,7 +122,8 @@ export default function ActivitySignalsTab({
         signalType === "objective" ||
         signalType === "pain" ||
         signalType === "impact" ||
-        signalType === "constraints";
+        signalType === "constraints" ||
+        signalType === "blockers";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
@@ -266,6 +268,25 @@ export default function ActivitySignalsTab({
             onCancel={() => openSignalDetail(signal, "constraints")}
           />,
           { title: "Edit constraint" },
+        );
+        return;
+      }
+      // Objection S2: Objection (blockers) edits go to the new chassis drawer
+      // (mirror of Constraint) — the account-scoped contact picker lives inside.
+      if (signalType === "blockers") {
+        openDrawer(
+          <EditObjectionContent
+            objection={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "blockers");
+            }}
+            onCancel={() => openSignalDetail(signal, "blockers")}
+          />,
+          { title: "Edit objection" },
         );
         return;
       }

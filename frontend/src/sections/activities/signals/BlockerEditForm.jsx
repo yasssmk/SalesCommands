@@ -80,10 +80,15 @@ export default function BlockerEditForm({
               required
             />
 
+            {/* TD-251: AsyncContactSelect calls onChange(event, contact) — store
+                the contact (or null when cleared), never the event. Scope the
+                picker with filters={{ account_id }} (same usage as
+                EditActivityContent / EditObjectionContent); an `accountId` prop
+                would be spread to the DOM. */}
             <AsyncContactSelect
               value={values.contact}
-              onChange={(val) => setFieldValue("contact", val)}
-              accountId={accountId}
+              onChange={(_event, contact) => setFieldValue("contact", contact ?? null)}
+              filters={{ account_id: accountId }}
               label="Contact (optional)"
               placeholder="Search contacts..."
             />

@@ -66,9 +66,47 @@ class TestBuildBlockerDataHappyPath:
         assert data['source_quote']    == 'We have no budget for this in Q4'
         assert data['confidence']      == pytest.approx(0.85)
         assert data['is_inferred']     is False
-        # contact attribution deferred to validation UI -- TD-6. The
-        # builder must not set the field (model default = None).
+        # Objection S3: no `raised_by` emitted -> no attribution, the
+        # builder leaves the field unset (model default = None).
         assert 'contact' not in data
+
+    def test_builder_sets_contact_from_valid_raised_by(
+        self, activity, contact, contact_extra,
+    ):
+        # Objection S3: a valid participant reference resolves to the
+        # Contact (Doe = P1, Smith = P2).
+        activity.contacts.add(contact, contact_extra)
+        extractor = TranscriptSignalExtractor()
+        raw = {
+            'summary':      'No Q4 budget',
+            'source_quote': 'We have no budget for this in Q4',
+            'confidence':   0.85,
+            'is_inferred':  False,
+            'raised_by':    'P1',
+        }
+        data = extractor._build_blocker_data(raw, activity)
+        assert data['contact'] == contact
+
+    def test_builder_invalid_raised_by_keeps_signal_without_contact(
+        self, activity, contact, caplog,
+    ):
+        # Objection S3: an invalid reference never drops the signal.
+        activity.contacts.add(contact)
+        extractor = TranscriptSignalExtractor()
+        raw = {
+            'summary':      'No Q4 budget',
+            'source_quote': 'We have no budget for this in Q4',
+            'confidence':   0.85,
+            'is_inferred':  False,
+            'raised_by':    'P7',
+        }
+        with caplog.at_level('WARNING'):
+            data = extractor._build_blocker_data(raw, activity)
+        assert data is not None
+        assert 'contact' not in data
+        assert any(
+            r.getMessage() == 'blocker_raised_by_unresolved' for r in caplog.records
+        )
 
 
 # =============================================================================

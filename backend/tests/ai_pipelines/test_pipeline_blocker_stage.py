@@ -8,8 +8,9 @@ Covers the Blocker stage end-to-end through the pipeline:
     BlockerSignal row in PENDING status with the expected field
     mapping (summary, source_quote, confidence, is_inferred, source =
     LLM_EXTRACTED).
-  * `contact` stays None (v1 defers attribution to the validation UI
-    -- TD-6).
+  * `contact` stays None when the LLM emits no participant reference
+    (`raised_by`); a valid reference is resolved -- see
+    TestBlockerRaisedByAttribution (Objection S3).
   * `canonical_key` stays None (BlockerSignal does not cluster).
   * Multiple distinct blockers on the same transcript persist as
     separate rows (no clustering / dedup at this layer).
@@ -33,6 +34,13 @@ from app_modules.signals.models import (
 )
 
 from .conftest import CANNED_REPLIES_HAPPY
+
+# Cross-account fixtures (tenant A, second account) -- re-used from the
+# signals conftest, same re-export pattern as tests/ai_pipelines/conftest.py.
+from tests.signals.conftest import (  # noqa: F401
+    other_account,
+    other_account_contact,
+)
 
 
 pytestmark = pytest.mark.django_db
@@ -83,7 +91,7 @@ class TestBlockerStagePersistence:
         assert signal.status       == SignalStatus.PENDING
         assert signal.account_id   == account.id
         assert signal.source_activity_id == activity.id
-        # contact attribution deferred -- TD-6.
+        # No `raised_by` emitted -> no attribution (Objection S3).
         assert signal.contact_id   is None
         # BlockerSignal never clusters.
         assert signal.canonical_key is None
@@ -150,6 +158,90 @@ class TestBlockerStagePersistence:
         )
         assert blocker_sub['error'] is None
         assert blocker_sub['emitted_count'] == 0
+
+
+# =============================================================================
+# RAISED BY -- LLM participant reference resolved to a Contact (Objection S3)
+# =============================================================================
+
+def _blocker_reply(raised_by_json):
+    """One blocker signal whose `raised_by` is the given JSON literal."""
+    return (
+        '{"signals": [{'
+        '"summary": "No budget allocated for Q4", '
+        '"source_quote": "We have no budget for this in Q4", '
+        '"confidence": 0.85, '
+        '"is_inferred": false, '
+        f'"raised_by": {raised_by_json}'
+        '}]}'
+    )
+
+
+class TestBlockerRaisedByAttribution:
+    """
+    The context numbers the activity's participants (P1, P2...); the LLM
+    returns the reference in `raised_by`; the server resolves it among the
+    participants (tenant + account filtered). An absent / null / invalid
+    reference leaves contact None -- the signal is ALWAYS persisted.
+    """
+
+    def _run(self, account, activity, user_a, fake_provider, raised_by_json):
+        from app_modules.ai_pipelines.pipelines.transcript_signals import (
+            QualificationSignalsPipeline,
+        )
+        fake_provider.replies = {'blocker': _blocker_reply(raised_by_json)}
+        result = QualificationSignalsPipeline().run(
+            transcript='Discovery call with Acme. Budget came up at the end.',
+            activity=activity,
+            user=user_a,
+            client_id=account.client_id,
+        )
+        blockers = result['signals_by_stage']['blocker']
+        # Never lost because of the attribution.
+        assert len(blockers) == 1
+        return blockers[0], fake_provider
+
+    def test_ref_p2_resolves_to_second_participant(
+        self, account, activity, user_a, contact, contact_extra,
+        fake_provider, patch_active_provider,
+    ):
+        # Doe = P1, Smith = P2 (last_name order).
+        activity.contacts.add(contact, contact_extra)
+        signal, provider = self._run(account, activity, user_a, fake_provider, '"P2"')
+        signal.refresh_from_db()
+        assert signal.contact_id == contact_extra.id
+        # The blocker prompt carried the numbered participants.
+        blocker_prompt = provider.calls_for('blocker')[0]['user']
+        assert 'P1 — Jane (VP Engineering)' in blocker_prompt
+        assert 'P2 — John (CTO)' in blocker_prompt
+
+    def test_null_ref_leaves_contact_none(
+        self, account, activity, user_a, contact, contact_extra,
+        fake_provider, patch_active_provider,
+    ):
+        activity.contacts.add(contact, contact_extra)
+        signal, _ = self._run(account, activity, user_a, fake_provider, 'null')
+        assert signal.contact_id is None
+
+    @pytest.mark.parametrize('raised_by_json', ['"P9"', '"Jane"'])
+    def test_invalid_ref_contact_none_signal_persisted(
+        self, account, activity, user_a, contact, contact_extra,
+        fake_provider, patch_active_provider, raised_by_json,
+    ):
+        activity.contacts.add(contact, contact_extra)
+        signal, _ = self._run(account, activity, user_a, fake_provider, raised_by_json)
+        assert signal.contact_id is None
+        assert BlockerSignal.objects.filter(id=signal.id).exists()
+
+    def test_ref_to_other_account_participant_is_none(
+        self, account, activity, user_a, contact, other_account_contact,
+        fake_provider, patch_active_provider,
+    ):
+        # Unfiltered numbering would be Doe = P1, Lumbergh = P2. Filtered on
+        # the activity's account, Lumbergh is not a participant: P2 is invalid.
+        activity.contacts.add(contact, other_account_contact)
+        signal, _ = self._run(account, activity, user_a, fake_provider, '"P2"')
+        assert signal.contact_id is None
 
 
 # =============================================================================

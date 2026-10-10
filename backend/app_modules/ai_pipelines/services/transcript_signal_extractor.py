@@ -110,6 +110,7 @@ from app_modules.signals.models import TechStackSignal
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
+from .participant_refs import resolve_participant_ref
 from .safety_filter import passes_safety_filter, safe_float
 
 
@@ -906,15 +907,18 @@ class TranscriptSignalExtractor:
 
         Schema requirements (from blocker_v1.py):
             summary, source_quote, confidence, is_inferred
+            (+ optional raised_by)
 
-        v1 deliberately omits `contact` attribution
-        ---------------------------------------------
-        BlockerSignal.contact (FK Contact, nullable) is NOT extracted in
-        v1 -- the LLM may not reliably map "the CFO" / "Jane" to a
-        Contact UUID from free text. Rep attributes during validation
-        in the Activity workspace. Mirror of Impact v1 which defers
-        metric_text and human_impact for the same robustness reason.
-        Tracked as TD-6 in TECH_DEBT.md.
+        `contact` attribution (blocker_v2 -- Objection S3)
+        --------------------------------------------------
+        The LLM returns `raised_by`, the REFERENCE ("P1", ...) of a
+        participant from the closed list rendered by the context layer.
+        It is resolved via services/participant_refs.py against the same
+        list (tenant + account filtered) -- never by name, never guessed
+        (mirror of the department resolver above). Resolved -> `contact`
+        is set. Absent / null / invalid -> `contact` stays unset (model
+        default None), a warning is logged on a non-null reference that
+        does not resolve, and the signal is NEVER dropped for this reason.
 
         Other deferred BlockerSignal fields
         -----------------------------------
@@ -940,7 +944,7 @@ class TranscriptSignalExtractor:
         if not summary or not source_quote:
             return None
 
-        return {
+        data = {
             'signal_type':     'blocker',
             'account':         activity.account,
             'source_activity': activity,
@@ -950,10 +954,25 @@ class TranscriptSignalExtractor:
             'source_quote':    source_quote,
             'confidence':      self._safe_float(raw.get('confidence')),
             'is_inferred':     bool(raw.get('is_inferred')),
-
-            # v1: contact attribution deferred to validation UI -- TD-6.
-            # Field stays at model default (None).
         }
+
+        # Objection S3: resolve the participant reference. The server never
+        # forces an attribution; an unresolved reference keeps the signal.
+        raised_by = raw.get('raised_by')
+        contact = resolve_participant_ref(raised_by, activity)
+        if contact is not None:
+            data['contact'] = contact
+        elif raised_by is not None:
+            logger.warning(
+                'blocker_raised_by_unresolved',
+                extra={
+                    'raised_by': str(raised_by),
+                    'activity_id': str(activity.id),
+                    'event': 'ai_pipeline_persist',
+                },
+            )
+
+        return data
 
     # ---------------------- Constraint ----------------------
 

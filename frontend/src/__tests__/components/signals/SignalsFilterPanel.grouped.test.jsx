@@ -76,3 +76,15 @@ describe("SignalsFilterPanel — secondary filters visibility", () => {
     });
   });
 });
+
+// Objection S4 — the Type filter shows the canonical "Objection" label for
+// blockers (central constant), not "Blocker".
+describe("SignalsFilterPanel — blockers type label", () => {
+  it("lists blockers as 'Objection'", () => {
+    render(
+      <SignalsFilterPanel {...BASE} availableTypes={["pain", "blockers"]} mode="flat" />,
+    );
+    expect(screen.getByLabelText("Objection")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Blocker")).not.toBeInTheDocument();
+  });
+});

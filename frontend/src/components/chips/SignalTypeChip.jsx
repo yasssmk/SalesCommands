@@ -17,12 +17,16 @@ import {
   SafetyOutlined,
 } from "@ant-design/icons";
 
+// Project imports
+import { getSignalTypeLabel } from "utils/signalTypes";
+
 const TYPE_CONFIG = {
   pain: { color: "error", label: "Pain", Icon: WarningOutlined },
   objective: { color: "info", label: "Objective", Icon: AimOutlined },
   impact: { color: "warning", label: "Impact", Icon: ThunderboltOutlined },
   "tech-stack": { color: "primary", label: "Tech Stack", Icon: ToolOutlined },
-  blockers: { color: "default", label: "Blocker", Icon: StopOutlined },
+  // Objection S4: the type label reads the central constant ("Objection").
+  blockers: { color: "default", label: getSignalTypeLabel("blockers"), Icon: StopOutlined },
   "next-steps": { color: "secondary", label: "Next Step", Icon: ScheduleOutlined },
   people: { color: "success", label: "People", Icon: TeamOutlined },
   constraints: { color: "default", label: "Constraint", Icon: SafetyOutlined },
