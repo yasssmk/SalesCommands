@@ -14,7 +14,25 @@
 //   - opens the signal drawer on row click and reopens a rejected signal there.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
+// The legacy dialog renders a marker ONLY when opened, so a test can prove a
+// type does NOT fall back to it.
+vi.mock("components/signals/SignalEditDrawer", () => ({
+  default: ({ open }) => (open ? <div data-testid="legacy-edit-dialog" /> : null),
+}));
+// Objection S2: EditObjectionContent renders for real; stub only its contact
+// picker (AsyncContactSelect signature: onChange(event, contact)).
+vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
+  default: (props) => (
+    <button
+      type="button"
+      onClick={(e) =>
+        props.onChange(e, { id: "c-new", first_name: "Nina", last_name: "Newman", job_title: "COO" })
+      }
+    >
+      pick contact
+    </button>
+  ),
+}));
 // SIG-5d: Objective edit goes to the new drawer content — stub it to assert routing.
 vi.mock("sections/activities/workspace/EditObjectiveContent", () => ({
   default: () => <div data-testid="edit-objective-stub" />,
@@ -47,6 +65,7 @@ vi.mock("api/signals/signals", () => ({
   validateSignal: vi.fn(() => Promise.resolve({ success: true })),
   rejectSignal: vi.fn(() => Promise.resolve({ success: true })),
   reopenSignal: vi.fn(() => Promise.resolve({ success: true })),
+  updateSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
 vi.mock("utils/displayError", () => ({
@@ -58,7 +77,7 @@ vi.mock("utils/displayError", () => ({
 
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import { reopenSignal, validateSignal, rejectSignal } from "api/signals/signals";
+import { reopenSignal, validateSignal, rejectSignal, updateSignal } from "api/signals/signals";
 import { displayErrorSnackbar } from "utils/displayError";
 
 const MOCK_ACTIVITY = { id: "act-flat", account: "acc-1" };
@@ -231,6 +250,42 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     fireEvent.click(await screen.findByText("Constraint signal flat"));
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
     expect(screen.getByTestId("edit-constraint-stub")).toBeInTheDocument();
+  });
+
+  it("Objection S2 (E1): Edit from the Objection detail → EditObjectionContent in the coque, NOT the legacy dialog", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Budget frozen flat"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit objection");
+    expect(screen.getByText("What's the objection?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "pick contact" })).toBeInTheDocument();
+    expect(screen.queryByTestId("legacy-edit-dialog")).not.toBeInTheDocument();
+  });
+
+  it("Objection S2 (E6): pick a contact → Save → back to the Objection detail, 'Raised by' shows that contact", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Budget frozen flat"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledWith("blockers", "b1", expect.objectContaining({ contact: "c-new" }));
+    expect(screen.getByTestId("objection-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Objection");
+    expect(within(screen.getByTestId("objection-raised-by")).getByText("Nina Newman")).toBeInTheDocument();
+  });
+
+  it("Objection S2 (E7): Cancel → back to the Objection detail unchanged, no API call", async () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Budget frozen flat"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(updateSignal).not.toHaveBeenCalled();
+    expect(screen.getByTestId("objection-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("objection-raised-by")).toHaveTextContent("No contact attributed");
+    expect(screen.getByTestId("objection-summary-text")).toHaveTextContent("Budget frozen flat");
   });
 
   it("UI-1: opening an Objective shows the coque header title 'Objective'", async () => {
