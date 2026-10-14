@@ -368,6 +368,28 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
   });
 
+  it("People S2 (P4): opening a people signal shows the coque header 'People' + status pill on the chassis", async () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "pe1", status: "PENDING", _signalType: "people",
+            full_name: "Marc Dubois", role: "ECONOMIC_BUYER", role_display: "Economic Buyer",
+            target_contact: null, target_department: null, source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Marc Dubois"));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("People");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Pending");
+    expect(screen.getByTestId("people-detail-body")).toBeInTheDocument();
+    // Header owned by the coque: no in-content header, a single close (coque ×).
+    expect(screen.queryByTestId("people-detail-header")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
   it("opens the signal drawer when a row is clicked", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     expect(screen.queryByLabelText("Close drawer")).not.toBeInTheDocument();

@@ -46,6 +46,7 @@ import {
   getNextStepSummary,
   formatSuggestedContacts,
   formatTargetDepartments,
+  getPeopleHeadline,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // Shared per-type detail blocks — the single rendering of each type's
@@ -1358,6 +1359,218 @@ ObjectionDetailView.propTypes = {
   currentActivityId: PropTypes.string,
 };
 
+// ==============================|| PEOPLE DETAIL VIEW (People S2) ||============================== //
+//
+// The People (PeopleSignal, front key "people") detail on the standard drawer
+// chassis, cloned from ObjectionDetailView (same header mechanism, numbered
+// SectionHeaders + DrawerContentLayout read-action bar, same Activity-only gate).
+// Deltas from Objection:
+//   - NO summary on People → the shared summary box carries the person headline
+//     "Name — Role (Department)" (getPeopleHeadline).
+//   - §2 Role: role / influence / why (notes = the LLM's justification of the
+//     role); placeholders when empty (Constraint pattern).
+//   - §3 Contact: target_contact ONLY — NO fallback on the participants (as
+//     Objection "Raised by"); placeholder when null. Department below it.
+// PO section order (4): Person (box) → Role → Contact → Source.
+function PeopleDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "people") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+
+  const placeholder = (text) => (
+    <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
+      {text}
+    </Box>
+  );
+
+  return (
+    <Box data-testid="people-detail-body">
+      {/* In-content header — suppressed when the coque owns the header
+          (headerInCoque; the Activity coque does). Mirror of ObjectionDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="people-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="people-detail-title">
+            {getSignalTypeLabel("people")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "people"),
+          onReject: () => onReject?.(signal, "people"),
+          onValidate: () => onValidate?.(signal, "people"),
+          onReopen: () => onReopen?.(signal, "people"),
+          status: signal.status,
+          isLocked,
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Person: the SHARED summary box, carrying the headline
+            "Name — Role (Department)" (People has no summary / axis / canonical_key). */}
+        <SectionHeader index={1} title="Person" sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={getPeopleHeadline(signal)}
+          boxTestId="people-summary-box"
+          summaryTestId="people-summary-text"
+        />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Role: role, influence (placeholder when not assessed) and
+            why (the LLM's justification; placeholder when empty, Constraint pattern). */}
+        <SectionHeader index={2} title="Role" sx={{ mb: 1 }} />
+        <Box data-testid="people-role">
+          <ReadRow label="Role" value={signal.role_display || signal.role} />
+          <ReadRow
+            label="Influence"
+            value={signal.influence_display || placeholder("Not assessed")}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+            Why
+          </Typography>
+          {signal.notes ? (
+            <Typography
+              variant="body2"
+              color="text.primary"
+              data-testid="people-notes-text"
+              sx={{ whiteSpace: "pre-line" }}
+            >
+              {signal.notes}
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No notes
+            </Typography>
+          )}
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Contact: target_contact ONLY. NO participant fallback (as
+            Objection "Raised by", TD-254). Placeholder when empty. Department below. */}
+        <SectionHeader index={3} title="Contact" sx={{ mb: 1 }} />
+        <Box data-testid="people-contact">
+          <Box sx={{ mb: 1 }}>
+            {signal.target_contact ? (
+              <ContactInline contact={signal.target_contact} variant="body2" />
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                No contact linked
+              </Typography>
+            )}
+          </Box>
+          <ReadRow
+            label="Department"
+            value={signal.target_department?.name || placeholder("No department")}
+          />
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Source: the quote + who said it, with an optional link to
+            the origin activity. Same treatment as the Objection detail. */}
+        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        <Box data-testid="people-source">
+          {signal.source_quote ? (
+            <SourceQuoteBlock quote={signal.source_quote} />
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No source quote
+            </Typography>
+          )}
+          {contacts.length > 0 && (
+            <Box sx={{ mt: 1.25 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {contacts.length > 1 ? "Contacts" : "Contact"}
+              </Typography>
+              <Stack spacing={0.25}>
+                {contacts.map((c) => (
+                  <ContactInline key={c.id} contact={c} variant="body2" />
+                ))}
+              </Stack>
+            </Box>
+          )}
+          {showOriginLink && (
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+              onClick={() => onOpenActivity(originActivityId)}
+              sx={{ mt: 0.5, px: 0 }}
+            >
+              View origin activity
+            </Button>
+          )}
+        </Box>
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+PeopleDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
 
 /**
@@ -1470,6 +1683,27 @@ export default function SignalDetailContent({
   if (signalType === "blockers" && currentActivityId && !leadingAction && !trailingAction) {
     return (
       <ObjectionDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
+  // People S2 — People uses the standard chassis on the ACTIVITY surface only,
+  // exact mirror of the Objection gate: currentActivityId (only the Activity
+  // coque passes it) + no leading/trailing action. DC/Account Flat and the
+  // cluster drawer keep the generic flush branch (PeopleDetails).
+  if (signalType === "people" && currentActivityId && !leadingAction && !trailingAction) {
+    return (
+      <PeopleDetailView
         signal={signal}
         onValidate={onValidate}
         onReject={onReject}
