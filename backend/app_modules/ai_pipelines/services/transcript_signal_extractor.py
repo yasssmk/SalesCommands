@@ -422,6 +422,40 @@ def resolve_scope_and_departments(raw):
     return ScopeLevel.DEPARTMENT, departments
 
 
+def resolve_person_department(name):
+    """
+    Resolve the SINGLE department of a person cited in the transcript
+    (People stage) from the LLM-emitted department name.
+
+    PeopleSignal.target_department is a single FK (a person belongs to one
+    department) with no scope_level, so neither resolve_scope_and_department
+    (needs scope_level=DEPARTMENT) nor resolve_constraint_departments (a list)
+    fits. Same controlled vocabulary and the same two resolution layers as
+    resolve_tech_usage_departments / resolve_constraint_departments, via the
+    shared _build_department_resolution_index:
+
+      1. case-insensitive EXACT match on the department name;
+      2. else a case-insensitive UNAMBIGUOUS single-word match (a word shared
+         by several departments never resolves — no over-correction).
+
+    Unlike the scope resolvers, "General Management" is KEPT: a CEO / managing
+    director legitimately belongs to it — the company-wide reading those
+    resolvers guard against does not apply to a person.
+
+    Returns:
+        StandardDepartment | None — None for a missing / non-string / blank /
+        unresolved name (never invented).
+    """
+    if not name or not isinstance(name, str):
+        return None
+    key = name.strip().lower()
+    if not key:
+        return None
+
+    by_value, by_word = _build_department_resolution_index()
+    return by_value.get(key) or by_word.get(key)
+
+
 class TranscriptSignalExtractor:
     """
     Stage-by-stage persistence for the TranscriptSignalsPipeline.
