@@ -68,6 +68,11 @@ vi.mock("api/signals/signals", () => ({
   updateSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
+// People S3: EditPeopleContent renders for real — stub its department choices.
+vi.mock("api/businessData/contacts", () => ({
+  useGetContactChoices: vi.fn(() => ({ standardDepartments: [] })),
+}));
+
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(),
   displayErrorSnackbar: vi.fn(),
@@ -388,6 +393,51 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     // Header owned by the coque: no in-content header, a single close (coque ×).
     expect(screen.queryByTestId("people-detail-header")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
+  const PEOPLE_ROW = {
+    id: "pe2", status: "PENDING", _signalType: "people",
+    full_name: "Marc Dubois", role: "ECONOMIC_BUYER", role_display: "Economic Buyer",
+    target_contact: null, target_department: null, notes: "", source_quote: "Marc decides.",
+    source_context: { contacts: [] },
+  };
+
+  it("People S3 (E1): Edit from the People detail → EditPeopleContent in the coque, NOT the legacy dialog", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Marc Dubois"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit people");
+    expect(screen.getByText("Who is this person?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "pick contact" })).toBeInTheDocument();
+    expect(screen.queryByTestId("legacy-edit-dialog")).not.toBeInTheDocument();
+  });
+
+  it("People S3 (E7): pick a contact → Save → back to the People detail showing that contact", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Marc Dubois"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledWith("people", "pe2", expect.objectContaining({ target_contact: "c-new" }));
+    expect(screen.getByTestId("people-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("People");
+    expect(within(screen.getByTestId("people-contact")).getByText("Nina Newman")).toBeInTheDocument();
+  });
+
+  it("People S3 (E7b): Cancel → back to the People detail unchanged, no API call", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Marc Dubois"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(updateSignal).not.toHaveBeenCalled();
+    expect(screen.getByTestId("people-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("people-contact")).toHaveTextContent("No contact linked");
   });
 
   it("opens the signal drawer when a row is clicked", () => {
