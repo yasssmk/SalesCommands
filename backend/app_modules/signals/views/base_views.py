@@ -48,6 +48,8 @@ from ..constants import (
     ImpactType,
     HumanImpactType,
     ConstraintNature,
+    InfluenceLevel,
+    PeopleRole,
     Rigidity,
 )
 
@@ -524,6 +526,9 @@ class SignalChoicesView(APIView):
         "human_impacts":     [...],   # ImpactSignal human_impact qualifier (optional)
         "constraint_natures": [...],  # ConstraintSignal nature axis (required)
         "rigidities":        [...],   # ConstraintSignal rigidity (optional/clearable)
+        "people_roles":      [...],   # PeopleSignal role (required)
+        "people_influences": [...],   # PeopleSignal influence (optional/clearable) —
+                                      # the SIGNAL InfluenceLevel, not contacts'
       }
     }
 
@@ -554,5 +559,7 @@ class SignalChoicesView(APIView):
                 'human_impacts':     _choices(HumanImpactType),
                 'constraint_natures': _choices(ConstraintNature),
                 'rigidities':        _choices(Rigidity),
+                'people_roles':      _choices(PeopleRole),
+                'people_influences': _choices(InfluenceLevel),
             },
         })
