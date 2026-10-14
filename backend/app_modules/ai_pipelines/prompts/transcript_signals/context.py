@@ -95,7 +95,10 @@ from app_modules.ai_pipelines.services.identified_people import (
 logger = logging.getLogger(__name__)
 
 # v2 (Objection S3): participant lines carry their reference ("P1 — ...").
-CONTEXT_VERSION = 'v2'
+# v3 (People S1 / S1-bis): People stage only -- People taxonomy under its own
+# header (no "or OMIT the signal") + the "already identified in this deal"
+# block. The other stages' context is byte-identical to v2.
+CONTEXT_VERSION = 'v3'
 
 _SUPPORTED_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
@@ -394,10 +397,19 @@ def _build_taxonomy_block(target_stage):
       * Impact:    scope_level forced to BUSINESS; metric_text and
                    human_impact left empty.
     """
-    lines = [
-        'CANONICAL TAXONOMY '
-        '(pick exactly one value from each list, or OMIT the signal)'
-    ]
+    if target_stage == 'people':
+        # People has its own header: only `role` must be picked from its list;
+        # influence / department may be null, so the canonical header's
+        # "or OMIT the signal" (which made the model drop persons) is not used.
+        lines = [
+            'PEOPLE TAXONOMY '
+            '(pick `role` from its list; influence and department may be null)'
+        ]
+    else:
+        lines = [
+            'CANONICAL TAXONOMY '
+            '(pick exactly one value from each list, or OMIT the signal)'
+        ]
 
     if target_stage == 'pain_impact':
         # Merged pain + impact stage: the union of the pain axes and the
@@ -477,8 +489,8 @@ def _build_taxonomy_block(target_stage):
         # target_department). The department vocab is injected as a list of
         # valid names, cloning the constraint branch above; the extractor
         # resolves it by exact / unambiguous-word match (resolve_person_department).
-        # influence and department are nullable: the header's "or OMIT the
-        # signal" is explicitly overridden for them.
+        # influence and department are nullable (people-specific header above,
+        # restated below).
         from app_modules.core_modules.models import StandardDepartment
         lines.append(
             '- role (the person\'s part in the buying decision; pick EXACTLY '

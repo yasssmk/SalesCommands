@@ -1,6 +1,7 @@
 # app_modules/ai_pipelines/prompts/transcript_signals/people_v1.py
 """
-Request layer for People signal extraction (v1 -- UX Activity, People S1).
+Request layer for People signal extraction (UX Activity, People S1;
+v2 -- People S1-bis: unlisted prospect speakers + explicit seller side).
 
 This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
@@ -74,7 +75,10 @@ from app_modules.signals.constants import PeopleRole
 __all__ = ['PEOPLE_PROMPT_VERSION', 'build_people_request']
 
 
-PEOPLE_PROMPT_VERSION = 'v1'
+# v2 (People S1-bis): a prospect who SPEAKS without being a listed contact is
+# extracted (participant_ref null, name from the speaker label); the seller
+# side is defined by who presents / sells the solution. File name unchanged.
+PEOPLE_PROMPT_VERSION = 'v2'
 
 # Reference shapes rendered in the prompt, derived from the single
 # definition in participant_refs.py ("P<n>", "P1").
@@ -109,9 +113,13 @@ in the buying decision and/or embodies a step the deal must clear (an
 approval, a sign-off, a validation, a meeting to hold with them).
 
 WHO TO EXTRACT
-- Persons PRESENT in the conversation (the prospect contacts listed in the
-  SESSION CONTEXT) AND persons only CITED but absent ("our CFO Marc will
-  decide").
+- Persons PRESENT in the conversation: every PROSPECT-side person who SPEAKS
+  in the transcript (a speaker label such as "Claire Dubois: ...") OR who is
+  listed as a prospect contact in the SESSION CONTEXT.
+- A prospect speaker NOT listed in the SESSION CONTEXT is STILL extracted:
+  participant_ref = null and full_name = the name exactly as written in the
+  speaker label.
+- Persons only CITED but absent ("our CFO Marc will decide").
 - A cited person without a name ("our CFO") is STILL extracted:
   full_name = null, with the department when it can be identified.
 - Examples:
@@ -125,7 +133,9 @@ WHO TO EXTRACT
 DO NOT emit
 - Anyone from the SELLER organization named in the SESSION CONTEXT (the
   seller's account executive, colleagues, solution engineers, managers):
-  prospect side ONLY.
+  prospect side ONLY. The person who presents or sells the solution, and
+  their colleagues, are on the SELLER side even when their organization is
+  not named next to their name.
 - Any person listed under PEOPLE ALREADY IDENTIFIED IN THIS DEAL in the
   context: they already have their role -- never emit them again.
 - A person with no observable weight in the decision and no step to clear.
@@ -173,8 +183,9 @@ ATTRIBUTION RULES (participant_ref)
   each prefixed with a reference ({_REF_SHAPE}).
 - When the person is one of the listed participants, set `participant_ref`
   to that participant's reference (e.g. "{_FIRST_REF}").
-- When the person is only cited (absent from the list), set
-  `participant_ref` to null.
+- When the person is only cited (absent from the list), or is a prospect
+  speaker who is NOT a listed participant, set `participant_ref` to null and
+  give the name in `full_name`.
 - `participant_ref` MUST be one of the listed references, copied exactly.
   NEVER output a name, an email, a job title, or a reference that is not in
   the list. NEVER invent a reference.

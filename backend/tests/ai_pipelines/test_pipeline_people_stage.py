@@ -101,7 +101,8 @@ class TestPeoplePersistence:
     ):
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
-        assert result['run'].prompt_versions['people'] == 'v1'
+        assert result['run'].prompt_versions['people'] == 'v2'
+        assert result['run'].prompt_versions['context'] == 'v3'
         assert result['run'].status == AIPipelineStatus.SUCCESS
         people_prompt = fake_provider.calls_for('people')[0]['user']
         assert 'Extract PEOPLE signals' in people_prompt
@@ -390,6 +391,60 @@ class TestPeopleDeduplication:
         ])
 
         assert len(_people(result)) == 2
+
+
+# =============================================================================
+# PROMPT v2 — unlisted prospect speakers + seller side + no-omission taxonomy
+# =============================================================================
+
+class TestPeoplePromptV2:
+
+    def _prompt(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            build_people_request,
+        )
+        # Whitespace collapsed: the rules wrap over several prompt lines.
+        return ' '.join(
+            build_people_request('Claire Dubois: we need the CFO on board.').split()
+        )
+
+    def test_unlisted_prospect_speaker_rule_present(self):
+        prompt = self._prompt()
+        assert 'SPEAKS in the transcript' in prompt
+        assert 'speaker label' in prompt
+        assert 'NOT listed in the SESSION CONTEXT' in prompt
+
+    def test_seller_side_rule_present(self):
+        prompt = self._prompt()
+        assert 'presents or sells the solution' in prompt
+        assert 'even when their organization is not named' in prompt
+
+    def test_unlisted_speaker_attribution_rule(self):
+        prompt = self._prompt()
+        assert 'speaker who is NOT a listed participant' in prompt
+
+    def test_people_taxonomy_header_has_no_omission_rule(self, activity):
+        from app_modules.ai_pipelines.prompts.transcript_signals.context import (
+            build_context_layer,
+        )
+        context = build_context_layer(activity, 'people')
+        assert 'PEOPLE TAXONOMY' in context
+        assert 'OMIT' not in context
+        assert 'CANONICAL TAXONOMY' not in context
+
+    def test_unlisted_speaker_emitted_without_ref_is_created_without_contact(
+        self, account, activity, user_a, contact,
+        fake_provider, patch_active_provider,
+    ):
+        activity.contacts.add(contact)
+
+        result = _run(account, activity, user_a, fake_provider, [
+            _person(participant_ref=None, full_name='Claire Dubois'),
+        ])
+
+        [signal] = _people(result)
+        assert signal.target_contact_id is None
+        assert signal.full_name == 'Claire Dubois'
 
 
 # =============================================================================
