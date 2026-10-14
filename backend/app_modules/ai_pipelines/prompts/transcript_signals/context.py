@@ -39,10 +39,8 @@ What this layer deliberately omits (RGPD / data minimization)
   - Contact last names
         --> first_name + job_title disambiguates contacts within one
             activity. The transcript itself carries last names verbatim;
-            this layer does not re-emit them in the session block.
-            Exception: the People stage's "already identified" block names
-            the persons already on the deal (full name), since that name is
-            what identifies them.
+            this layer does not re-emit them in the context (session block
+            and People "already identified" block alike).
 
 The transcript itself is sent verbatim by the pipeline orchestrator.
 That exposure is covered legally (DPA with the LLM provider) -- not
@@ -319,10 +317,11 @@ def _build_identified_people_block(activity):
         - <ref>  --> the participant reference ("P1", ...) when the person is
           a participant of THIS activity (same numbering as the session
           block, from ordered_participants).
-        - <name> --> the signal's full_name, else the linked contact's
-          first + last name, else "Unnamed person". Last names are carried
-          here (unlike the session block) because they are what identifies
-          a person already on the deal.
+        - <name> --> a person linked to a contact: the contact's FIRST name
+          only (same data-minimisation rule as the session block -- the
+          stored full_name may carry the last name); a person without
+          contact: the full_name as stated in the transcript; else
+          "Unnamed person".
     """
     if not activity.decision_cycle_id:
         return ''
@@ -354,9 +353,10 @@ def _build_identified_people_block(activity):
     ]
     for signal in signals:
         contact = signal.target_contact
-        name = (signal.full_name or '').strip()
-        if not name and contact:
-            name = f'{contact.first_name or ""} {contact.last_name or ""}'.strip()
+        if contact:
+            name = (contact.first_name or '').strip()
+        else:
+            name = (signal.full_name or '').strip()
         name = name or 'Unnamed person'
 
         descriptor = f'{name} — role {signal.role}'

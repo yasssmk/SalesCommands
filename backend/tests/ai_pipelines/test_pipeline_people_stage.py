@@ -348,6 +348,37 @@ class TestPeopleDeduplication:
         assert signal.full_name == 'Marc'
         assert signal.metadata['additional_quotes'] == ['Ask Marc.']
 
+    def test_same_name_different_departments_are_two_signals(
+        self, account, activity, user_a, fake_provider, patch_active_provider,
+    ):
+        # Identity of a cited person = normalised name + department (the DC
+        # cluster rule): Marc / Finance and Marc / IT are two persons.
+        _dept('Finance')
+        _dept('IT')
+
+        result = _run(account, activity, user_a, fake_provider, [
+            _person(full_name='Marc', department='Finance', source_quote='Marc decides.'),
+            _person(full_name='Marc', department='IT', source_quote='Marc from IT.'),
+        ])
+
+        people = _people(result)
+        assert len(people) == 2
+        assert {p.target_department.name for p in people} == {'Finance', 'IT'}
+
+    def test_same_name_same_department_twice_is_one_signal(
+        self, account, activity, user_a, fake_provider, patch_active_provider,
+    ):
+        _dept('Finance')
+
+        result = _run(account, activity, user_a, fake_provider, [
+            _person(full_name='Marc', department='Finance', source_quote='Marc decides.'),
+            _person(full_name='marc', department='Finance', source_quote='Ask Marc.'),
+        ])
+
+        [signal] = _people(result)
+        assert signal.target_department.name == 'Finance'
+        assert signal.metadata['additional_quotes'] == ['Ask Marc.']
+
     def test_two_unnamed_persons_are_never_merged(
         self, account, activity, user_a, fake_provider, patch_active_provider,
     ):

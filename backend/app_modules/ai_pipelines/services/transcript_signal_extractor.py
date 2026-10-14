@@ -109,6 +109,7 @@ from app_modules.signals.constants import (
     SignalStatus,
 )
 from app_modules.signals.models import PeopleSignal, TechStackSignal
+from app_modules.signals.services.signal_cluster_service import SignalClusterService
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
@@ -509,16 +510,25 @@ def _techstack_dedup_key(data):
 
 def _people_dedup_key(data):
     """
-    People grouping key: the resolved contact, else the normalised full_name
-    (PeopleSignal._normalize_full_name -- the very rule save() applies). A
-    person with neither contact nor name (e.g. "our CFO") returns None and is
-    never merged: two unnamed persons are not known to be the same one.
+    People grouping key: the SAME per-person identity as the DC People
+    cluster (SignalClusterService._people_cluster_key), computed on a
+    transient, never-saved PeopleSignal built from the candidate:
+
+      * a resolved contact -> 'contact:<id>';
+      * else a name -> 'name:<normalised full_name>|dept:<department id>'
+        ("Marc / Finance" and "Marc / IT" are two persons); the name is
+        normalised with PeopleSignal._normalize_full_name, the rule save()
+        applies;
+      * else -> 'signal:<id>' with the transient instance's fresh uuid, i.e.
+        a key unique to the candidate: a person with neither contact nor
+        name ("our CFO") is never merged.
     """
-    contact = data.get('target_contact')
-    if contact is not None:
-        return f'contact:{contact.pk}'
-    name = PeopleSignal._normalize_full_name(data.get('full_name'))
-    return f'name:{name}' if name else None
+    candidate = PeopleSignal(
+        target_contact=data.get('target_contact'),
+        target_department=data.get('target_department'),
+        full_name_normalized=PeopleSignal._normalize_full_name(data.get('full_name')),
+    )
+    return SignalClusterService._people_cluster_key(candidate)
 
 
 # Stage -> grouping key of the in-extraction deduplication.

@@ -163,7 +163,38 @@ class TestIdentifiedPeopleBlock:
 
         context = build_context_layer(activity, 'people')
 
-        assert '- P2 — John Smith — role DECISION_MAKER' in context
+        # RGPD: the contact's FIRST name only (the session-block rule).
+        assert '- P2 — John — role DECISION_MAKER' in context
+        assert 'Smith' not in context
+
+    def test_contact_first_name_only_even_when_full_name_stored(
+        self, activity, user_a, decision_cycle, contact_extra,  # noqa: F811
+    ):
+        # The S1 builder stores full_name = contact first + last name; the
+        # block must still send the first name only (non-participant here).
+        _attach_cycle(activity, decision_cycle)
+        _mk_people(
+            activity, user_a, role=PeopleRole.ECONOMIC_BUYER,
+            contact=contact_extra, full_name='John Smith', cycle=decision_cycle,
+        )
+
+        context = build_context_layer(activity, 'people')
+
+        assert '- John — role ECONOMIC_BUYER' in context
+        assert 'Smith' not in context
+
+    def test_cited_person_without_contact_keeps_stated_name(
+        self, activity, user_a, decision_cycle,  # noqa: F811
+    ):
+        _attach_cycle(activity, decision_cycle)
+        _mk_people(
+            activity, user_a, role=PeopleRole.CHAMPION,
+            full_name='Marc Dubois', cycle=decision_cycle,
+        )
+
+        context = build_context_layer(activity, 'people')
+
+        assert '- Marc Dubois — role CHAMPION' in context
 
     def test_unnamed_person_listed_with_role_and_department(
         self, activity, user_a, decision_cycle,  # noqa: F811
