@@ -78,7 +78,6 @@ from app_modules.signals.constants import (
     InfluenceLevel,
     PeopleRole,
     SignalDimension,
-    SignalStatus,
     SignalWhat,
     UsageScope,
 )
@@ -87,6 +86,9 @@ from end_users.models import ClientAccount
 from app_modules.ai_pipelines.services.participant_refs import (
     format_participant_ref,
     ordered_participants,
+)
+from app_modules.ai_pipelines.services.identified_people import (
+    identified_people_in_deal,
 )
 
 
@@ -323,22 +325,8 @@ def _build_identified_people_block(activity):
           contact: the full_name as stated in the transcript; else
           "Unnamed person".
     """
-    if not activity.decision_cycle_id:
-        return ''
-
-    from app_modules.signals.models import PeopleSignal
-
-    signals = (
-        PeopleSignal.objects
-        .filter(
-            client_id=activity.client_id,
-            account_id=activity.account_id,
-            decision_cycle_id=activity.decision_cycle_id,
-        )
-        .exclude(status=SignalStatus.REJECTED)
-        .select_related('target_contact', 'target_department')
-        .order_by('created_at', 'id')
-    )
+    # Shared with the extractor's server-side safety net (same set).
+    signals = identified_people_in_deal(activity)
     if not signals:
         return ''
 

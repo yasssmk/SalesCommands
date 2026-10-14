@@ -113,6 +113,7 @@ from app_modules.signals.services.signal_cluster_service import SignalClusterSer
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
+from .identified_people import identified_people_in_deal
 from .participant_refs import resolve_participant_ref
 from .safety_filter import passes_safety_filter, safe_float
 
@@ -531,6 +532,60 @@ def _people_dedup_key(data):
     return SignalClusterService._people_cluster_key(candidate)
 
 
+def _loggable_identity_key(key):
+    """
+    An identity key safe for the logs: the contact / signal id is kept, the
+    normalised NAME (which may carry a last name) is redacted.
+    """
+    if key.startswith('name:'):
+        _name, _sep, dept = key.partition('|')
+        return f'name:[redacted]|{dept}'
+    return key
+
+
+def _drop_people_already_in_deal(candidates, activity):
+    """
+    Server-side safety net of the People stage: drop every candidate whose
+    identity (the SAME key as the in-extraction dedup, _people_dedup_key ->
+    SignalClusterService._people_cluster_key) matches a person ALREADY
+    identified in the activity's deal (identified_people_in_deal -- the very
+    set the context lists to the LLM). The LLM is told not to re-emit them but
+    does not always comply.
+
+    No decision cycle -> no filter. A candidate with neither contact nor name
+    gets a unique 'signal:<uuid>' key and is therefore never filtered (the
+    "to identify" rule).
+
+    Returns:
+        tuple (kept_candidates, dropped_count)
+    """
+    existing = {
+        SignalClusterService._people_cluster_key(signal): signal
+        for signal in identified_people_in_deal(activity)
+    }
+    if not existing:
+        return candidates, 0
+
+    kept = []
+    for data in candidates:
+        key = _people_dedup_key(data)
+        match = existing.get(key)
+        if match is None:
+            kept.append(data)
+            continue
+        logger.warning(
+            'people_already_identified_in_dc',
+            extra={
+                'identity_key': _loggable_identity_key(key),
+                'existing_signal_id': str(match.id),
+                'decision_cycle_id': str(activity.decision_cycle_id),
+                'activity_id': str(activity.id),
+                'event': 'ai_pipeline_persist',
+            },
+        )
+    return kept, len(candidates) - len(kept)
+
+
 # Stage -> grouping key of the in-extraction deduplication.
 _DEDUP_KEY_BY_STAGE = {
     'techstack': _techstack_dedup_key,
@@ -643,6 +698,14 @@ class TranscriptSignalExtractor:
             before = len(candidates)
             candidates = _deduplicate_candidates(candidates, dedup_key)
             dropped_count += before - len(candidates)
+
+        # --- Phase 1.6: People only — never recreate a person already
+        # identified in the activity's deal (server-side safety net) ---
+        if stage == 'people' and candidates:
+            candidates, already_identified = _drop_people_already_in_deal(
+                candidates, activity,
+            )
+            dropped_count += already_identified
 
         # --- Phase 2: Persist surviving candidates ---
         for data in candidates:
