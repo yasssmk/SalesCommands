@@ -55,7 +55,9 @@ Safety filter
     CONFIDENCE_MIN = 0.5   -- drop LLM signals with self-declared
                               confidence below this threshold.
     DROP_INFERRED  = True  -- drop signals where the LLM self-declared
-                              is_inferred=true (verbatim-anchored only).
+                              is_inferred=true (verbatim-anchored only),
+                              except for DROP_INFERRED_EXEMPT_STAGES
+                              (people: inferred roles are kept).
 
 The filter itself is applied by TranscriptSignalExtractor, per stage.
 The pipeline only OWNS the thresholds and propagates them
@@ -159,6 +161,10 @@ from ..prompts.transcript_signals.competitor_v1 import (
     build_competitor_request,
     COMPETITOR_PROMPT_VERSION,
 )
+from ..prompts.transcript_signals.people_v1 import (
+    build_people_request,
+    PEOPLE_PROMPT_VERSION,
+)
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -200,6 +206,11 @@ _STAGES = [
     # the seller's solution, distinct from used tools (techstack) and
     # integration requirements (constraint TECHNICAL).
     ('competitor', build_competitor_request),
+    # People is LAST (UX Activity -- People S1): the prospect-side persons
+    # who weigh in the decision or embody a step to clear, with their role.
+    # Its context also lists the persons already identified in the deal so
+    # they are not emitted again (one role per person per decision cycle).
+    ('people', build_people_request),
 ]
 
 
@@ -219,6 +230,7 @@ class QualificationSignalsPipeline(BasePipeline):
         'blocker':     BLOCKER_PROMPT_VERSION,
         'constraint':  CONSTRAINT_PROMPT_VERSION,
         'competitor':  COMPETITOR_PROMPT_VERSION,
+        'people':      PEOPLE_PROMPT_VERSION,
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.TRANSCRIPT_SIGNALS]
@@ -228,6 +240,10 @@ class QualificationSignalsPipeline(BasePipeline):
     # we want verbatim-anchored signals only.
     CONFIDENCE_MIN = 0.5
     DROP_INFERRED = True
+    # Stages exempt from the DROP_INFERRED drop (the confidence floor still
+    # applies). People: an inferred role is a legitimate observation (a
+    # champion is rarely stated) that the rep validates -- PO decision.
+    DROP_INFERRED_EXEMPT_STAGES = frozenset({'people'})
 
     # =========================================================================
     # MAIN ENTRY
@@ -253,6 +269,9 @@ class QualificationSignalsPipeline(BasePipeline):
                     'impact':    list[ImpactSignal],
                     'techstack': list[TechStackSignal],
                     'blocker':   list[BlockerSignal],
+                    'constraint': list[ConstraintSignal],
+                    'competitor': list[CompetitorSignal],
+                    'people':    list[PeopleSignal],
                 },
             }
         """
@@ -365,7 +384,10 @@ class QualificationSignalsPipeline(BasePipeline):
                                 user=user,
                                 client_id=client_id,
                                 confidence_min=self.CONFIDENCE_MIN,
-                                drop_inferred=self.DROP_INFERRED,
+                                drop_inferred=(
+                                    self.DROP_INFERRED
+                                    and stage_name not in self.DROP_INFERRED_EXEMPT_STAGES
+                                ),
                                 source_run=run,
                             )
 

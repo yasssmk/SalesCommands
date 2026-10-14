@@ -101,12 +101,14 @@ from django.utils import timezone
 
 from app_modules.signals.constants import (
     ConstraintNature,
+    InfluenceLevel,
+    PeopleRole,
     Rigidity,
     ScopeLevel,
     SignalSource,
     SignalStatus,
 )
-from app_modules.signals.models import TechStackSignal
+from app_modules.signals.models import PeopleSignal, TechStackSignal
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
@@ -456,6 +458,80 @@ def resolve_person_department(name):
     return by_value.get(key) or by_word.get(key)
 
 
+# =============================================================================
+# IN-EXTRACTION DEDUPLICATION (shared by TechStack and People)
+# =============================================================================
+
+def _deduplicate_candidates(candidates, key_fn):
+    """
+    Merge the candidates of ONE extraction that share a grouping key.
+
+    For each group the FIRST candidate wins (all its fields kept); the
+    source_quote of every later member is appended to the winner's
+    metadata.additional_quotes for traceability. A candidate whose key is
+    None is NEVER merged (kept as is). Order of first occurrence preserved.
+
+    Args:
+        candidates: list[dict] -- data dicts built for SignalManager.create().
+        key_fn:     callable(dict) -> hashable | None -- the grouping key.
+
+    Returns:
+        list[dict] -- the surviving candidates.
+    """
+    groups = {}
+    survivors = []
+
+    for data in candidates:
+        key = key_fn(data)
+        if key is None:
+            survivors.append(data)
+            continue
+
+        if key not in groups:
+            groups[key] = data
+            survivors.append(data)
+        else:
+            winner = groups[key]
+            extra_quote = data.get('source_quote')
+            if extra_quote:
+                if not winner.get('metadata'):
+                    winner['metadata'] = {}
+                additional = winner['metadata'].setdefault('additional_quotes', [])
+                additional.append(extra_quote)
+
+    return survivors
+
+
+def _techstack_dedup_key(data):
+    """TechStack grouping key: the normalised tech name (S10)."""
+    return TechStackSignal._normalize_tech_name(data.get('tech_name'))
+
+
+def _people_dedup_key(data):
+    """
+    People grouping key: the resolved contact, else the normalised full_name
+    (PeopleSignal._normalize_full_name -- the very rule save() applies). A
+    person with neither contact nor name (e.g. "our CFO") returns None and is
+    never merged: two unnamed persons are not known to be the same one.
+    """
+    contact = data.get('target_contact')
+    if contact is not None:
+        return f'contact:{contact.pk}'
+    name = PeopleSignal._normalize_full_name(data.get('full_name'))
+    return f'name:{name}' if name else None
+
+
+# Stage -> grouping key of the in-extraction deduplication.
+_DEDUP_KEY_BY_STAGE = {
+    'techstack': _techstack_dedup_key,
+    'people':    _people_dedup_key,
+}
+
+# PeopleSignal.full_name column width -- an over-long LLM name is truncated
+# rather than failing the insert inside the pipeline transaction.
+_PEOPLE_FULL_NAME_MAX_LENGTH = PeopleSignal._meta.get_field('full_name').max_length
+
+
 class TranscriptSignalExtractor:
     """
     Stage-by-stage persistence for the TranscriptSignalsPipeline.
@@ -493,7 +569,8 @@ class TranscriptSignalExtractor:
         Apply safety filter + persist surviving signals for one stage.
 
         Args:
-            stage:           'pain' | 'objective' | 'impact' | 'techstack' | 'blocker' | 'constraint'.
+            stage:           'pain' | 'objective' | 'impact' | 'techstack' | 'blocker' |
+                             'constraint' | 'competitor' | 'people'.
             raw_signals:     list[dict] -- the LLM's emitted signals.
             activity:        app_modules.activities.Activity -- source activity.
             user:            end_users.User -- the rep who triggered the run.
@@ -550,10 +627,11 @@ class TranscriptSignalExtractor:
 
             candidates.append(data)
 
-        # --- Phase 1.5: Deduplicate TechStack candidates ---
-        if stage == 'techstack' and len(candidates) > 1:
+        # --- Phase 1.5: Deduplicate candidates (TechStack, People) ---
+        dedup_key = _DEDUP_KEY_BY_STAGE.get(stage)
+        if dedup_key is not None and len(candidates) > 1:
             before = len(candidates)
-            candidates = self._deduplicate_techstack(candidates)
+            candidates = _deduplicate_candidates(candidates, dedup_key)
             dropped_count += before - len(candidates)
 
         # --- Phase 2: Persist surviving candidates ---
@@ -616,40 +694,17 @@ class TranscriptSignalExtractor:
         """
         Merge multiple TechStack candidates that refer to the same tool.
 
-        Grouping key (S10): the NORMALISED tech name. The key is computed
-        with TechStackSignal._normalize_tech_name -- the very function
-        the model's save() uses -- so a batch groups on exactly the same
-        rule the persisted `tech_name_normalized` column will carry.
-        Duplicating the lower/strip/collapse logic here would let the two
-        drift apart silently.
+        Grouping key (S10): the NORMALISED tech name, computed with
+        TechStackSignal._normalize_tech_name -- the very function the
+        model's save() uses -- so a batch groups on exactly the same rule
+        the persisted `tech_name_normalized` column will carry.
 
-        This replaces the previous key (catalog entry id, falling back to
-        metadata.pending_tech_name): the extractor no longer resolves a
-        catalogue entry, and the raw name now lives on `tech_name`.
-
-        For each group the FIRST candidate wins -- including its
-        qualification booleans. Additional source_quote values are stored
-        in metadata.additional_quotes for traceability.
+        Delegates to the shared _deduplicate_candidates (also used by the
+        People stage): the FIRST candidate wins -- including its
+        qualification booleans -- and additional source_quote values are
+        stored in metadata.additional_quotes for traceability.
         """
-        groups = {}
-        order = []
-
-        for data in candidates:
-            key = TechStackSignal._normalize_tech_name(data.get('tech_name'))
-
-            if key not in groups:
-                groups[key] = data
-                order.append(key)
-            else:
-                winner = groups[key]
-                extra_quote = data.get('source_quote')
-                if extra_quote:
-                    if not winner.get('metadata'):
-                        winner['metadata'] = {}
-                    additional = winner['metadata'].setdefault('additional_quotes', [])
-                    additional.append(extra_quote)
-
-        return [groups[k] for k in order]
+        return _deduplicate_candidates(candidates, _techstack_dedup_key)
 
     # =========================================================================
     # DATA-DICT BUILDERS
@@ -676,6 +731,8 @@ class TranscriptSignalExtractor:
             return self._build_constraint_data(raw, activity)
         if stage == 'competitor':
             return self._build_competitor_data(raw, activity)
+        if stage == 'people':
+            return self._build_people_data(raw, activity)
 
         logger.warning(
             'persist_stage_unknown_stage',
@@ -1135,6 +1192,116 @@ class TranscriptSignalExtractor:
             # NEVER nature/rigidity/scope_level/target_department/what/dimension
             # (detached). canonical_key is forced to None and
             # competitor_name_normalized is derived by CompetitorSignal.save().
+        }
+
+    # ---------------------- People ----------------------
+
+    def _build_people_data(self, raw, activity):
+        """
+        Build SignalManager.create() data for a People signal.
+
+        Schema requirements (from people_v1.py):
+            role, source_quote, confidence, is_inferred
+            (+ optional participant_ref, full_name, influence, department,
+            notes).
+
+        Drop / fold rules (mirror of the existing builders):
+          * blank / missing source_quote -> DROPPED (as blocker / constraint);
+          * role absent or out of PeopleRole -> DROPPED + warning, never
+            coerced (as constraint `nature`);
+          * influence out of the SIGNAL InfluenceLevel -> None (nullable
+            column, so no default is forced -- unlike constraint `rigidity`);
+          * participant_ref resolved via services/participant_refs.py
+            (tenant + account filtered, never by name). Resolved -> contact
+            set, full_name DERIVED from the contact (first + last name) and
+            department = the contact's standard_department when set, else
+            the extracted one. Non-null but unresolved -> signal KEPT without
+            contact + warning (as blocker `raised_by`); full_name and
+            department then come from the extraction;
+          * no contact, no name and no department after resolution ->
+            DROPPED + warning. Checked HERE: persist_stage feeds
+            SignalManager.create directly -- neither the People serializer
+            nor PeopleSignal.clean() runs on this path (TD-249).
+
+        decision_cycle / campaign are auto-propagated from source_activity
+        by SignalManager._propagate_activity_context -- not by this builder.
+        """
+        raw_quote = raw.get('source_quote')
+        source_quote = str(raw_quote).strip() if raw_quote is not None else ''
+        if not source_quote:
+            return None
+
+        role = raw.get('role')
+        if role not in PeopleRole.values:
+            logger.warning(
+                'people_role_out_of_taxonomy',
+                extra={
+                    'event': 'ai_pipeline_persist',
+                    'raw_role': role,
+                    'source_activity_id': str(getattr(activity, 'id', '')),
+                },
+            )
+            return None
+
+        influence = raw.get('influence')
+        if influence not in InfluenceLevel.values:
+            influence = None
+
+        participant_ref = raw.get('participant_ref')
+        contact = resolve_participant_ref(participant_ref, activity)
+        if contact is not None:
+            full_name = f'{contact.first_name or ""} {contact.last_name or ""}'.strip()
+            department = (
+                contact.standard_department
+                or resolve_person_department(raw.get('department'))
+            )
+        else:
+            if participant_ref is not None:
+                logger.warning(
+                    'people_participant_ref_unresolved',
+                    extra={
+                        'participant_ref': str(participant_ref),
+                        'activity_id': str(activity.id),
+                        'event': 'ai_pipeline_persist',
+                    },
+                )
+            raw_name = raw.get('full_name')
+            full_name = raw_name.strip() if isinstance(raw_name, str) else ''
+            department = resolve_person_department(raw.get('department'))
+
+        full_name = full_name[:_PEOPLE_FULL_NAME_MAX_LENGTH]
+
+        if contact is None and department is None and not full_name:
+            logger.warning(
+                'people_no_identity',
+                extra={
+                    'activity_id': str(activity.id),
+                    'event': 'ai_pipeline_persist',
+                },
+            )
+            return None
+
+        raw_notes = raw.get('notes')
+        notes = raw_notes.strip() if isinstance(raw_notes, str) else ''
+
+        return {
+            'signal_type':       'people',
+            'account':           activity.account,
+            'source_activity':   activity,
+            'source':            SignalSource.LLM_EXTRACTED,
+            'status':            SignalStatus.PENDING,
+            'role':              role,
+            'influence':         influence,
+            'full_name':         full_name,
+            'target_contact':    contact,
+            'target_department': department,
+            'notes':             notes,
+            'source_quote':      source_quote,
+            'confidence':        self._safe_float(raw.get('confidence')),
+            'is_inferred':       bool(raw.get('is_inferred')),
+
+            # canonical_key is forced to None and full_name_normalized is
+            # derived by PeopleSignal.save().
         }
 
     # =========================================================================
