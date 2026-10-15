@@ -52,6 +52,8 @@ blocker stage (no axes) and on the constraint stage (constraint carries a
 
 Safety filter
 -------------
+Values in constants.py (PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED
+[TRANSCRIPT_SIGNALS], TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES):
     CONFIDENCE_MIN = 0.5   -- drop LLM signals with self-declared
                               confidence below this threshold.
     DROP_INFERRED  = True  -- drop signals where the LLM self-declared
@@ -127,7 +129,14 @@ an import cycle if a future refactor has F.3 reading pipeline class
 attributes.
 """
 
-from ..constants import AIPipelineStatus, AIPipelineType, PIPELINE_TEMPERATURES
+from ..constants import (
+    AIPipelineStatus,
+    AIPipelineType,
+    PIPELINE_CONFIDENCE_MIN,
+    PIPELINE_DROP_INFERRED,
+    PIPELINE_TEMPERATURES,
+    TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES,
+)
 from ..prompts.base import PromptParseError
 from ..prompts.transcript_signals.system import (
     SYSTEM_PROMPT,
@@ -238,12 +247,13 @@ class QualificationSignalsPipeline(BasePipeline):
     # Safety filter knobs -- read by TranscriptSignalExtractor.persist_stage().
     # Strict defaults for signal extraction (vs. e.g. sentiment analysis):
     # we want verbatim-anchored signals only.
-    CONFIDENCE_MIN = 0.5
-    DROP_INFERRED = True
+    # Values live in constants.py (S5); the class attributes point to them so
+    # the `self.X` reads and any subclass override keep working.
+    CONFIDENCE_MIN = PIPELINE_CONFIDENCE_MIN[AIPipelineType.TRANSCRIPT_SIGNALS]
+    DROP_INFERRED = PIPELINE_DROP_INFERRED[AIPipelineType.TRANSCRIPT_SIGNALS]
     # Stages exempt from the DROP_INFERRED drop (the confidence floor still
-    # applies). People: an inferred role is a legitimate observation (a
-    # champion is rarely stated) that the rep validates -- PO decision.
-    DROP_INFERRED_EXEMPT_STAGES = frozenset({'people'})
+    # applies) -- see TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES.
+    DROP_INFERRED_EXEMPT_STAGES = TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES
 
     # =========================================================================
     # MAIN ENTRY

@@ -30,6 +30,9 @@ A subclass MAY override:
   * DROP_INFERRED       -- if True, drop signals where is_inferred is
                            true. Default False; extraction pipelines
                            override per stance.
+  The extraction pipelines' values live in constants.py
+  (PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED, one entry per
+  pipeline type); their class attributes point to them.
 
 These two filter knobs are READ by downstream services that persist
 signals (see TranscriptSignalExtractor). BasePipeline does
