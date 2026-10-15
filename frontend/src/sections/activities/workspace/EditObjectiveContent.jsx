@@ -3,7 +3,7 @@
 // SIG-5d* — the Objective EDIT drawer content. It keeps the ORIGINAL
 // InlineObjectiveForm structure — the 3 SectionHeaders with their exact
 // subtitles and the "Domain × Dimension" recap — but the fields are
-// InlineEditableValue (read → double-click → inline edit, uniform with
+// InlineEditableValue (read → click → inline edit, uniform with
 // edit-activity / edit-contact), on DrawerContentLayout (global Save/Cancel).
 //
 // Differences vs the original form:
@@ -33,12 +33,7 @@ import * as Yup from "yup";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
-import FormControl from "@mui/material/FormControl";
-import FormHelperText from "@mui/material/FormHelperText";
 import IconButton from "@mui/material/IconButton";
-import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -71,7 +66,7 @@ function resolveLabel(options, value) {
   return options.find((o) => o.value === value)?.label ?? value;
 }
 
-// Target date — read row that reveals the project DatePicker ONLY on double-click,
+// Target date — read row that reveals the project DatePicker ONLY on a click,
 // with ✓ (keep the draft) / ✗ (restore the pre-edit value), same interaction as
 // EditActivityContent's scheduled-date field. Formik keeps the ISO "YYYY-MM-DD"
 // string; the picker reads/writes a dayjs.
@@ -134,7 +129,7 @@ function TargetDateField({ value, onChange }) {
       </Typography>
       <Box
         data-testid="inline-read-target_date"
-        onDoubleClick={startEdit}
+        onClick={startEdit}
         sx={{ cursor: "pointer", py: 0.25 }}
       >
         {display ? (
@@ -195,7 +190,16 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
 
   const whatOptions = choices?.signal_whats ?? [];
   const dimensionOptions = choices?.signal_dimensions ?? [];
-  const departmentOptions = standardDepartments || [];
+  // Stringified so they line up with the STRING id of the signal payload (the
+  // contacts choices emit INT values — TD-241), same as EditPeopleContent.
+  const departmentOptions = useMemo(
+    () =>
+      (standardDepartments ?? []).map((d) => ({
+        value: String(d.value ?? d.id),
+        label: String(d.label ?? d.name),
+      })),
+    [standardDepartments],
+  );
 
   const initialValues = useMemo(
     () => ({
@@ -379,7 +383,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
 
         <Divider />
 
-        {/* ---- SECTION 2 — Who owns it? (scope → pill + original dept Select) ---- */}
+        {/* ---- SECTION 2 — Who owns it? (scope → pill + department select) ---- */}
         <Stack spacing={1.5}>
           <SectionHeader
             index={2}
@@ -392,41 +396,23 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
             onChange={applyScopePatch}
           />
 
-          {/* DEPARTMENT → target_department: the ORIGINAL MUI Select (mono).
-              Wrapped with extra top padding (spacing token) so it's aerated from
-              the pills row — padding adds ON TOP of the Stack's own row spacing
-              (a child margin would just be overridden by the Stack). */}
+          {/* DEPARTMENT → target_department: an InlineEditableValue select (mono,
+              click-to-edit). Wrapped with extra top padding (spacing token) so
+              it's aerated from the pills row — padding adds ON TOP of the
+              Stack's own row spacing (a child margin would just be overridden
+              by the Stack). */}
           {isDepartment && (
             <Box data-testid="scope-department-field" sx={{ pt: 1 }}>
-            <FormControl
-              fullWidth
-              size="small"
-              error={formik.touched.target_department && Boolean(errors.target_department)}
-            >
-              <InputLabel id="objective-target-dept-label">Target Department *</InputLabel>
-              <Select
-                labelId="objective-target-dept-label"
-                id="objective-target-department"
+              <InlineEditableValue
                 name="target_department"
-                // Always a defined string: scopePatch(BUSINESS) clears
-                // target_department to null, so guard against null/undefined
-                // (a null `value` makes MUI's Select uncontrolled → the React
-                // "value should not be null / controlled↔uncontrolled" warning).
-                value={values.target_department ?? ""}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
                 label="Target Department *"
-              >
-                {departmentOptions.map((opt) => (
-                  <MenuItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </MenuItem>
-                ))}
-              </Select>
-              {formik.touched.target_department && errors.target_department && (
-                <FormHelperText>{errors.target_department}</FormHelperText>
-              )}
-            </FormControl>
+                type="select"
+                value={values.target_department ?? ""}
+                options={departmentOptions}
+                onChange={set("target_department")}
+                error={formik.touched.target_department && Boolean(errors.target_department)}
+                helperText={errors.target_department}
+              />
             </Box>
           )}
         </Stack>
@@ -449,7 +435,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
             onChange={set("success_criteria")}
             placeholder="No success criteria"
           />
-          {/* Target date — double-click reveals the project DatePicker (✓/✗). */}
+          {/* Target date — a click reveals the project DatePicker (✓/✗). */}
           <TargetDateField value={values.target_date} onChange={set("target_date")} />
           <InlineEditableValue
             name="notes"

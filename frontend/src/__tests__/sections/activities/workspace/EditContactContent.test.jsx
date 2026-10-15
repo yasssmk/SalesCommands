@@ -1,7 +1,7 @@
 // frontend/src/__tests__/sections/activities/workspace/EditContactContent.test.jsx
 //
 // CT-3 — the Contact EDIT drawer, cloned from EditActivityContent: Formik +
-// DrawerContentLayout (global Save/Cancel) + InlineEditableValue (double-click
+// DrawerContentLayout (global Save/Cancel) + InlineEditableValue (click
 // to edit). Identity + coordinates + department (a bounded select). Save PATCHes
 // via updateContact; first/last are required; the payload never carries
 // account_id and trims phone/linkedin.
@@ -103,7 +103,7 @@ function renderEdit(props = {}) {
 }
 
 function editField(name, value) {
-  fireEvent.doubleClick(screen.getByTestId(`inline-read-${name}`));
+  fireEvent.click(screen.getByTestId(`inline-read-${name}`));
   const input = screen.getByTestId(`inline-input-${name}`);
   fireEvent.change(input, { target: { value } });
   return input;
@@ -134,19 +134,19 @@ describe("EditContactContent — fields", () => {
     expect(screen.queryByTestId("inline-read-department")).not.toBeInTheDocument();
   });
 
-  it("edits a field on double-click (input appears)", () => {
+  it("edits a field on click (input appears)", () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-job_title"));
+    fireEvent.click(screen.getByTestId("inline-read-job_title"));
     expect(screen.getByTestId("inline-input-job_title")).toBeInTheDocument();
   });
 
   it("edits the department as a select (combobox) carrying the department options", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-standard_department_id"));
+    fireEvent.click(screen.getByTestId("inline-read-standard_department_id"));
     // A MUI select renders a combobox (a text field would be a plain textbox).
-    const combobox = screen.getByRole("combobox");
+    // Its menu opens with the field, which aria-hides the rest → `hidden: true`.
+    const combobox = screen.getByRole("combobox", { hidden: true });
     expect(combobox).toBeInTheDocument();
-    fireEvent.mouseDown(combobox);
     expect(await screen.findByRole("option", { name: "Sales" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Marketing" })).toBeInTheDocument();
   });
@@ -275,8 +275,7 @@ describe("EditContactContent — role in the decision (DC only)", () => {
     mockDCPeople({ qualified: [QUALIFIED], unqualified: [] });
     renderEdit({ activity: DC_ACTIVITY });
 
-    fireEvent.doubleClick(screen.getByTestId("inline-read-role"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByTestId("inline-read-role"));
     fireEvent.click(await screen.findByRole("option", { name: "Decision Maker" }));
 
     fireEvent.click(screen.getByRole("button", { name: /save/i }));

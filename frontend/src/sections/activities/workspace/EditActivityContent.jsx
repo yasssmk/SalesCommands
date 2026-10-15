@@ -3,7 +3,7 @@
 // SE-b — the Activity EDIT drawer, rebuilt on the shared DrawerContentLayout +
 // InlineEditableValue. It is a SHELL-LESS node injected into the WorkspaceDrawer
 // coque. ONE content box holds the field groups, separated by internal hairline
-// filets; each field edits on DOUBLE-CLICK (no textual "Edit", no per-group
+// filets; each field edits on a single CLICK (no textual "Edit", no per-group
 // title). A single GLOBAL Save PATCHes the modified CONTENT fields via
 // updateActivity; Cancel closes the coque.
 //
@@ -125,7 +125,7 @@ function LockedHint() {
 
 // ==============================|| DATE GROUP ||============================== //
 
-// Read: label ("Scheduled" / "Due date") + the current date (+time). DOUBLE-CLICK
+// Read: label ("Scheduled" / "Due date") + the current date (+time). A single CLICK
 // flips to an inline toggle (scheduled|due, exclusive) + the active picker(s).
 // Switching the toggle clears the OTHER date (and scheduled_time when leaving
 // scheduled) — mechanics cloned from UnifiedDateSection.
@@ -252,7 +252,7 @@ function DateGroup({ values, setFieldValue, locked = false }) {
       </Typography>
       <Box
         data-testid="inline-read-date"
-        onDoubleClick={startEdit}
+        onClick={startEdit}
         sx={{ cursor: locked ? "default" : "pointer", py: 0.25 }}
       >
         {display ? (

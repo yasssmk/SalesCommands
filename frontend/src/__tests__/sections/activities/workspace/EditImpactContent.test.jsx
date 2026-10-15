@@ -1,7 +1,7 @@
 // frontend/src/__tests__/sections/activities/workspace/EditImpactContent.test.jsx
 //
 // S3 — the Impact EDIT drawer, a mirror of EditPainContent on the standard
-// chassis. Fields are InlineEditableValue (double-click). Scope is IDENTICAL to
+// chassis. Fields are InlineEditableValue (click). Scope is IDENTICAL to
 // Pain: two EXCLUSIVE pills Company | Department, "+ add department" multi-select
 // (deletable pills), scope_level EXPLICIT, payload derives target_departments
 // from scope (Company → []). Save PATCHes via updateSignal("impact", id, payload)
@@ -128,8 +128,7 @@ describe("EditImpactContent (S3)", () => {
 
   it("S5b (Voie B): the impact_type select carries an empty option '—' to clear it", () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-impact_type"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByTestId("inline-read-impact_type"));
     expect(screen.getByRole("option", { name: "—" })).toBeInTheDocument();
     // Enum options still offered alongside the empty one.
     expect(screen.getByRole("option", { name: "Financial" })).toBeInTheDocument();
@@ -137,9 +136,8 @@ describe("EditImpactContent (S3)", () => {
 
   it("S5b (Voie B): clearing impact_type to '—' SENDS impact_type: '' (real clearing, not omitted)", async () => {
     renderEdit(); // IMPACT starts with impact_type "TIME"
-    // Enter edit on impact_type, open the select, pick the empty option.
-    fireEvent.doubleClick(screen.getByTestId("inline-read-impact_type"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
+    // Enter edit on impact_type (the menu opens with it), pick the empty option.
+    fireEvent.click(screen.getByTestId("inline-read-impact_type"));
     fireEvent.click(screen.getByRole("option", { name: "—" }));
 
     await act(async () => {
@@ -154,8 +152,7 @@ describe("EditImpactContent (S3)", () => {
   it("S5b: onSaved reflects the cleared impact_type (empty display) for the detail's 'No metric defined'", async () => {
     const onSaved = vi.fn();
     renderEdit(IMPACT, { onSaved });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-impact_type"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(screen.getByTestId("inline-read-impact_type"));
     fireEvent.click(screen.getByRole("option", { name: "—" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -177,7 +174,7 @@ describe("EditImpactContent (S3)", () => {
 
   it("Help as placeholder (a): the OPEN metric_text textarea carries the help as its placeholder", () => {
     renderEdit({ ...IMPACT, metric_text: "" });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-metric_text"));
+    fireEvent.click(screen.getByTestId("inline-read-metric_text"));
     expect(screen.getByTestId("inline-input-metric_text")).toHaveAttribute("placeholder", HELP);
   });
 
@@ -197,7 +194,7 @@ describe("EditImpactContent (S3)", () => {
   it("Metrics simplify (b): Save OMITS human_impact from the payload (non-destructive)", async () => {
     renderEdit(); // IMPACT carries human_impact "FRUSTRATION"
     // Dirty the form (Save is disabled on a pristine form).
-    fireEvent.doubleClick(screen.getByTestId("inline-read-metric_text"));
+    fireEvent.click(screen.getByTestId("inline-read-metric_text"));
     fireEvent.change(screen.getByTestId("inline-input-metric_text"), {
       target: { value: "5 hours per week — 260 hours a year" },
     });
@@ -318,7 +315,7 @@ describe("EditImpactContent (S3)", () => {
   it("Save returns to the detail — onSaved gets the updated signal (rebuilt departments + metric displays), drawer not closed", async () => {
     const onSaved = vi.fn();
     renderEdit(IMPACT, { onSaved });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "Ten hours a week vanish into manual consolidation work" },
     });

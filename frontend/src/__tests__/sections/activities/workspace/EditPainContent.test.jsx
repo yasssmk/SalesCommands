@@ -1,7 +1,7 @@
 // frontend/src/__tests__/sections/activities/workspace/EditPainContent.test.jsx
 //
 // S3 / S3-fix — the Pain EDIT drawer, a mirror of EditObjectiveContent on the
-// standard chassis. Fields are InlineEditableValue (double-click). Scope (Option
+// standard chassis. Fields are InlineEditableValue (click). Scope (Option
 // A): NO manual scope control — the single control is the department multi-select
 // (MultiSelectFilter, deletable pills), ALWAYS present, NEVER required;
 // scope_level is DERIVED at save (≥1 → DEPARTMENT, 0 → BUSINESS). Save PATCHes via
@@ -80,7 +80,7 @@ describe("EditPainContent (S3)", () => {
     // The read placeholder still shows while closed…
     expect(screen.getByText("No notes")).toBeInTheDocument();
     // …but the opened textarea carries no placeholder attribute.
-    fireEvent.doubleClick(screen.getByTestId("inline-read-notes"));
+    fireEvent.click(screen.getByTestId("inline-read-notes"));
     expect(screen.getByTestId("inline-input-notes")).not.toHaveAttribute("placeholder");
   });
 
@@ -276,7 +276,7 @@ describe("EditPainContent (S3)", () => {
   it("Save returns to the detail — onSaved receives the updated signal, drawer not closed", async () => {
     const onSaved = vi.fn();
     renderEdit(PAIN, { onSaved });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "Reporting eats a whole day every single week" },
     });

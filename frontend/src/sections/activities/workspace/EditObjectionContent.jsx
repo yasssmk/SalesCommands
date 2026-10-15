@@ -36,6 +36,7 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
+import { formatContact } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -157,13 +158,30 @@ export default function EditObjectionContent({ objection, accountId, onSaved, on
             title="Who raised it?"
             subtitle="Optional — a contact of this account."
           />
-          <AsyncContactSelect
-            data-testid="objection-contact-select"
+          {/* Contact on the click-to-edit pattern: name in read → one click →
+              focused search with the list open → a choice (or Clear, which
+              unlinks) returns to read. */}
+          <InlineEditableValue
+            name="contact"
+            label="Contact"
             value={values.contact}
-            onChange={(_event, contact) => setFieldValue("contact", contact ?? null)}
-            filters={{ account_id: accountId }}
-            label=""
-            placeholder="Search contacts…"
+            onChange={(contact) => setFieldValue("contact", contact ?? null)}
+            formatValue={formatContact}
+            renderEditor={({ value, onChange, commit }) => (
+              <AsyncContactSelect
+                data-testid="objection-contact-select"
+                value={value}
+                onChange={(_event, contact) => {
+                  onChange(contact ?? null);
+                  commit();
+                }}
+                filters={{ account_id: accountId }}
+                label=""
+                placeholder="Search contacts…"
+                autoFocus
+                openOnFocus
+              />
+            )}
           />
         </Stack>
 

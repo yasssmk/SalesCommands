@@ -2,7 +2,7 @@
 //
 // S3 — the Pain EDIT drawer content, on the standard chassis, a mirror of
 // EditObjectiveContent: numbered SectionHeaders + InlineEditableValue
-// (read → double-click → inline edit) on DrawerContentLayout (global Save/Cancel).
+// (read → click → inline edit) on DrawerContentLayout (global Save/Cancel).
 // The coque owns the "Edit pain" title (passed to openDrawer), so this content
 // sets no DrawerContentLayout title. Save PATCHes via updateSignal("pain", id,
 // payload); onSaved(updatedSignal) returns to the Pain detail.

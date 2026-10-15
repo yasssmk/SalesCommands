@@ -8,7 +8,7 @@
 // department, else Save disabled with a warning help message.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, act, within } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act, waitFor } from "@testing-library/react";
 import AphoriqTheme from "../../../_utils/aphoriqTheme";
 
 // ---- mocks (before importing the component) ----
@@ -100,14 +100,9 @@ const save = async () => {
   });
 };
 
-// The open InlineEditableValue select: its combobox sits next to the hidden
-// native input carrying the inline-input test id (the department Select is a
-// second, always-visible combobox).
+// An InlineEditableValue select opens WITH its menu already open: one click.
 const openInlineSelect = (name) => {
-  fireEvent.doubleClick(screen.getByTestId(`inline-read-${name}`));
-  fireEvent.mouseDown(
-    within(screen.getByTestId(`inline-input-${name}`).parentElement).getByRole("combobox"),
-  );
+  fireEvent.click(screen.getByTestId(`inline-read-${name}`));
 };
 
 const pickSelect = (name, optionName) => {
@@ -115,10 +110,14 @@ const pickSelect = (name, optionName) => {
   fireEvent.click(screen.getByRole("option", { name: optionName }));
 };
 
+// The department is an InlineEditableValue select too: one click opens its menu.
 const pickDepartment = (optionName) => {
-  fireEvent.mouseDown(screen.getByRole("combobox", { name: /department/i }));
+  fireEvent.click(screen.getByTestId("inline-read-department"));
   fireEvent.click(screen.getByRole("option", { name: optionName }));
 };
+
+// The contact is click-to-edit: one click on its value reveals the picker.
+const openContact = () => fireEvent.click(screen.getByTestId("inline-read-contact"));
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
@@ -129,10 +128,10 @@ describe("EditPeopleContent (People S3)", () => {
     expect(screen.getByText("Who is this person?")).toBeInTheDocument();
     expect(screen.getByText("What is their role?")).toBeInTheDocument();
     expect(screen.getByText("Source quote")).toBeInTheDocument();
-    expect(screen.getByTestId("people-contact-value")).toHaveTextContent("Sophie Martin");
+    expect(screen.getByTestId("inline-read-contact")).toHaveTextContent("Sophie Martin");
     expect(screen.getByTestId("inline-read-full_name")).toHaveTextContent("Sophie Martin");
     // int choices vs string payload id lined up → the department shows.
-    expect(screen.getByRole("combobox", { name: /department/i })).toHaveTextContent("Finance");
+    expect(screen.getByTestId("inline-read-department")).toHaveTextContent("Finance");
     expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Economic Buyer");
     expect(screen.getByTestId("inline-read-influence")).toHaveTextContent("High");
     expect(screen.getByText(PEOPLE.notes)).toBeInTheDocument();
@@ -142,6 +141,7 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E2: picking a contact → PATCH updateSignal('people', id, {target_contact: <uuid>})", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "pick" }));
     await save();
     expect(updateSignal).toHaveBeenCalledTimes(1);
@@ -153,6 +153,7 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E3: the picker is scoped to the activity's account — filters={{ account_id }}", () => {
     renderEdit();
+    openContact();
     expect(JSON.parse(screen.getByTestId("people-contact-select").dataset.filters)).toEqual({
       account_id: "acc-1",
     });
@@ -160,6 +161,7 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E4: clearing contact, department and influence → null in the payload (name kept)", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "clear" }));
     pickDepartment("—");
     pickSelect("influence", "—");
@@ -182,6 +184,31 @@ describe("EditPeopleContent (People S3)", () => {
     expect(updateSignal.mock.calls[0][2].role).toBe("CHAMPION");
   });
 
+  it("select, one click: clicking the role opens the field WITH its menu already open", () => {
+    renderEdit();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-role"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("select: picking an option returns to READ showing the new value; Save sends it", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-role"));
+    fireEvent.click(screen.getByRole("option", { name: "Champion" }));
+    await waitFor(() => expect(screen.queryByTestId("inline-input-role")).not.toBeInTheDocument());
+    expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Champion");
+    await save();
+    expect(updateSignal.mock.calls[0][2].role).toBe("CHAMPION");
+  });
+
+  it("select: Escape with the menu open returns to READ with the original value", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-role"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("inline-input-role")).not.toBeInTheDocument());
+    expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Economic Buyer");
+  });
+
   it("E5b: exact payload keys {role, influence, target_contact, target_department, full_name, notes, source_quote}", async () => {
     renderEdit();
     pickDepartment("Marketing");
@@ -199,9 +226,10 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E6: contact, name AND department empty → Save disabled + warning help, no PATCH", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "clear" }));
     pickDepartment("—");
-    fireEvent.doubleClick(screen.getByTestId("inline-read-full_name"));
+    fireEvent.click(screen.getByTestId("inline-read-full_name"));
     fireEvent.change(screen.getByTestId("inline-input-full_name"), { target: { value: "  " } });
     await act(async () => {});
     expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
@@ -210,8 +238,16 @@ describe("EditPeopleContent (People S3)", () => {
     expect(updateSignal).not.toHaveBeenCalled();
   });
 
+  it("single click on the name opens its input (real form, one click everywhere)", () => {
+    renderEdit();
+    expect(screen.queryByTestId("inline-input-full_name")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-full_name"));
+    expect(screen.getByTestId("inline-input-full_name")).toBeInTheDocument();
+  });
+
   it("E6b: any one identity (name only) → Save enabled, no warning", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "clear" }));
     pickDepartment("—");
     await act(async () => {});
@@ -222,6 +258,7 @@ describe("EditPeopleContent (People S3)", () => {
   it("Save returns to the detail — onSaved gets the rebuilt signal (displays + compact FKs)", async () => {
     const onSaved = vi.fn();
     renderEdit(PEOPLE, { onSaved });
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "pick" }));
     pickDepartment("Marketing");
     pickSelect("role", "Champion");
@@ -243,5 +280,32 @@ describe("EditPeopleContent (People S3)", () => {
       job_title: "CTO",
     });
     expect(closeDrawer).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditPeopleContent — department on the click-to-edit pattern (one click)", () => {
+  it("no department combobox at render; the read row shows the LABEL (int choices vs string id)", () => {
+    renderEdit();
+    expect(screen.queryByRole("combobox", { name: /department/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("inline-read-department")).toHaveTextContent("Finance");
+  });
+
+  it("one click opens the menu; a choice returns to READ with the new label; Save sends its id", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-department"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
+    await waitFor(() => expect(screen.queryByTestId("inline-input-department")).not.toBeInTheDocument());
+    expect(screen.getByTestId("inline-read-department")).toHaveTextContent("Marketing");
+    await save();
+    expect(updateSignal.mock.calls[0][2].target_department).toBe("2");
+  });
+
+  it("the empty option '—' clears it → payload target_department null", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-department"));
+    fireEvent.click(screen.getByRole("option", { name: "—" }));
+    await save();
+    expect(updateSignal.mock.calls[0][2].target_department).toBeNull();
   });
 });

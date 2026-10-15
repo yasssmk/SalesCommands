@@ -66,6 +66,7 @@ function AsyncSelect({
   disabled,              // Disabled state
   error,                 // Error state
   helperText,            // Helper text
+  autoFocus = false,     // Focus the search input on mount (inline editors)
   
   // Advanced
   pageSize = 20,         // Nombre de résultats par recherche
@@ -186,6 +187,7 @@ function AsyncSelect({
           placeholder={placeholder}
           error={error}
           helperText={helperText}
+          autoFocus={autoFocus}
           InputProps={{
             ...params.InputProps,
             endAdornment: (
@@ -222,6 +224,7 @@ AsyncSelect.propTypes = {
   disabled: PropTypes.bool,
   error: PropTypes.bool,
   helperText: PropTypes.string,
+  autoFocus: PropTypes.bool,
   
   // Advanced
   pageSize: PropTypes.number,

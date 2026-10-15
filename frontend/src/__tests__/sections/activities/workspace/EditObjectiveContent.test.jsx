@@ -2,13 +2,13 @@
 //
 // SIG-5d* — the Objective EDIT drawer. Keeps the original form's structure (3
 // section headers + subtitles + the Domain × Dimension recap) but the fields are
-// InlineEditableValue (double-click to edit, uniform with edit-activity /
+// InlineEditableValue (click to edit, uniform with edit-activity /
 // edit-contact). Scope is the pill + the original MUI department Select. The
 // coque owns the "Edit objective" title (no duplicate in the content). source_quote
 // is its own titled section. Save PATCHes via updateSignal("objective", id, patch).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act, waitFor } from "@testing-library/react";
 import AphoriqTheme from "../../../_utils/aphoriqTheme";
 
 // ---- mocks (before importing the component) ----
@@ -58,6 +58,7 @@ vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: class {} }));
 
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
 import { updateSignal } from "api/signals/signals";
+import { useGetContactChoices } from "api/businessData/contacts";
 
 const OBJECTIVE = {
   id: "obj-1",
@@ -84,7 +85,7 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
 describe("EditObjectiveContent (SIG-5d-fix2)", () => {
-  it("renders the fields as InlineEditableValue (double-click), pre-filled in read mode", () => {
+  it("renders the fields as InlineEditableValue (click), pre-filled in read mode", () => {
     renderEdit();
     // Read rows exist for each editable text/select field…
     ["summary", "what", "dimension", "success_criteria", "notes", "source_quote"].forEach(
@@ -95,13 +96,22 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(screen.getByText("We want to cut reporting time by half")).toBeInTheDocument();
   });
 
-  it("target_date reveals the project DatePicker only on double-click (✓/✗), like edit scheduled activity", () => {
+  it("target_date reveals the project DatePicker only on click (✓/✗), like edit scheduled activity", () => {
     renderEdit();
     // Read row by default — the picker is hidden.
     expect(screen.getByTestId("inline-read-target_date")).toBeInTheDocument();
     expect(screen.queryByLabelText("Target date")).not.toBeInTheDocument();
-    // Double-click reveals the project DatePicker + confirm/discard controls.
-    fireEvent.doubleClick(screen.getByTestId("inline-read-target_date"));
+    // A click reveals the project DatePicker + confirm/discard controls.
+    fireEvent.click(screen.getByTestId("inline-read-target_date"));
+    expect(screen.getByLabelText("Target date")).toBeInTheDocument();
+    expect(screen.getByTestId("target-date-confirm")).toBeInTheDocument();
+    expect(screen.getByTestId("target-date-cancel")).toBeInTheDocument();
+  });
+
+  it("a single click on target_date reveals the DatePicker (✓/✗ kept)", () => {
+    renderEdit();
+    expect(screen.queryByLabelText("Target date")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-target_date"));
     expect(screen.getByLabelText("Target date")).toBeInTheDocument();
     expect(screen.getByTestId("target-date-confirm")).toBeInTheDocument();
     expect(screen.getByTestId("target-date-cancel")).toBeInTheDocument();
@@ -134,9 +144,9 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(screen.queryByTestId("scope-department-select")).not.toBeInTheDocument();
   });
 
-  it("double-click edits summary and Save PATCHes via updateSignal with the full payload", async () => {
+  it("click edits summary and Save PATCHes via updateSignal with the full payload", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "Reduce reporting time drastically now" },
     });
@@ -160,9 +170,9 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     });
   });
 
-  it("source_quote edits on double-click", () => {
+  it("source_quote edits on click", () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-source_quote"));
+    fireEvent.click(screen.getByTestId("inline-read-source_quote"));
     expect(screen.getByTestId("inline-input-source_quote")).toBeInTheDocument();
   });
 
@@ -222,7 +232,7 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
   it("SIG-5e-fix5: Save returns to the detail — onSaved receives the updated signal, drawer not closed", async () => {
     const onSaved = vi.fn();
     renderEdit(OBJECTIVE, { onSaved });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "Reduce reporting time drastically now" },
     });
@@ -236,5 +246,41 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
       summary: "Reduce reporting time drastically now",
     });
     expect(closeDrawer).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditObjectiveContent — department on the click-to-edit pattern (one click, TD-241)", () => {
+  // REAL shapes: the contacts choices carry INT ids (contacts/views/views.py
+  // `dept.id`) while the objective serializer sends the id as a STRING
+  // (objective_serializer.py `str(d.id)`).
+  const REAL_DEPARTMENTS = { standardDepartments: [{ value: 3, label: "Finance" }, { value: 4, label: "Marketing" }] };
+  const DEPT_OBJECTIVE = { ...OBJECTIVE, target_department: { id: "3", name: "Finance" } };
+  let defaultImpl;
+  beforeEach(() => {
+    defaultImpl = useGetContactChoices.getMockImplementation();
+    useGetContactChoices.mockImplementation(() => REAL_DEPARTMENTS);
+  });
+  afterEach(() => useGetContactChoices.mockImplementation(defaultImpl));
+
+  it("no department combobox at render; the read row shows the LABEL, not the raw id", () => {
+    renderEdit(DEPT_OBJECTIVE);
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inline-read-target_department")).toHaveTextContent("Finance");
+  });
+
+  it("one click opens the menu; a choice returns to READ with the new label; Save sends the id", async () => {
+    renderEdit(DEPT_OBJECTIVE);
+    fireEvent.click(screen.getByTestId("inline-read-target_department"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("inline-input-target_department")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("inline-read-target_department")).toHaveTextContent("Marketing");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledTimes(1);
+    expect(updateSignal.mock.calls[0][2].target_department).toBe("4");
   });
 });
