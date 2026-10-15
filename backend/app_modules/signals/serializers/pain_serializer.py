@@ -128,6 +128,7 @@ class PainSignalListSerializer(_PainDisplayMixin, BaseSignalListSerializer):
             'target_departments',
             # Narrative
             'summary',
+            'notes',
             # Cross-reference — TechStack
             'related_techstack_mention',
         ]

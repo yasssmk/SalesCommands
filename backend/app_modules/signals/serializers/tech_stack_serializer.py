@@ -226,6 +226,8 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
             'cost_description',
             'is_discontinued',
             'discontinued_date',
+            # Narrative
+            'notes',
         ]
         read_only_fields = fields
 
