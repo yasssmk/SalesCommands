@@ -1,7 +1,7 @@
 // frontend/src/__tests__/components/drawer/InlineEditableValue.test.jsx
 //
-// SE-b — the shared double-click-to-edit field. Read by default (label + value,
-// placeholder when empty); DOUBLE-CLICK the value flips it to an inline themed
+// SE-b — the shared click-to-edit field. Read by default (label + value,
+// placeholder when empty); a single CLICK on the value flips it to an inline themed
 // input; typing calls onChange (a draft raised to the parent — NO per-field
 // PATCH); Enter/blur returns to read (value kept), Escape reverts the in-flight
 // edit. Reusable by every edit drawer.
@@ -52,20 +52,18 @@ describe("InlineEditableValue — read mode", () => {
   });
 });
 
-describe("InlineEditableValue — double-click to edit (draft, no PATCH)", () => {
-  it("enters edit mode on DOUBLE-CLICK (not single click)", () => {
+describe("InlineEditableValue — single click to edit (draft, no PATCH)", () => {
+  it("enters edit mode on a SINGLE click (PO decision: one click, everywhere)", () => {
     renderField({ value: "Discovery call" });
-    const read = screen.getByTestId("inline-read-title");
-    fireEvent.click(read);
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument(); // single click does nothing
-    fireEvent.doubleClick(read);
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument(); // read by default
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("typing raises onChange with the new value (a draft) and never triggers a save", async () => {
     const onChange = vi.fn();
     renderField({ value: "Discovery call", onChange });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "Discovery call!" } });
     await waitFor(() => expect(onChange).toHaveBeenCalledWith("Discovery call!"));
@@ -74,7 +72,7 @@ describe("InlineEditableValue — double-click to edit (draft, no PATCH)", () =>
   it("Enter returns to read mode keeping the value", async () => {
     const onChange = vi.fn();
     const { rerender } = renderField({ value: "A", onChange });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "AB" } });
     // parent would push the new value back down; simulate that
     rerender(
@@ -90,7 +88,7 @@ describe("InlineEditableValue — double-click to edit (draft, no PATCH)", () =>
   it("Escape reverts the in-flight edit to the value at edit start", async () => {
     const onChange = vi.fn();
     renderField({ value: "Original", onChange });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Changed" } });
     onChange.mockClear();
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
@@ -105,13 +103,13 @@ describe("InlineEditableValue — inputPlaceholder (opt-in edit placeholder)", (
     renderField({ value: "", type: "textarea", placeholder: "No title", inputPlaceholder: "Type a title" });
     // Read mode still shows the read placeholder.
     expect(screen.getByText("No title")).toBeInTheDocument();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     expect(screen.getByTestId("inline-input-title")).toHaveAttribute("placeholder", "Type a title");
   });
 
   it("without inputPlaceholder the OPEN input has NO placeholder (retro-compat)", () => {
     renderField({ value: "", type: "text", placeholder: "No title" });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     expect(screen.getByTestId("inline-input-title")).not.toHaveAttribute("placeholder");
   });
 });

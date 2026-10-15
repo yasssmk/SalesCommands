@@ -2,7 +2,7 @@
 //
 // CT-3 / CT-4 — the Contact EDIT drawer content, cloned from EditActivityContent
 // (Formik + DrawerContentLayout global Save/Cancel + InlineEditableValue,
-// double-click to edit). Opened by the ✎ of the read-only Contact fiche.
+// click to edit). Opened by the ✎ of the read-only Contact fiche.
 //
 // Sectioned like the edit-activity drawer:
 //   • Identity — first_name*, last_name*, then job_title + department (select).

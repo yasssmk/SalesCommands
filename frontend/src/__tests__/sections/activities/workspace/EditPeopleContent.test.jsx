@@ -104,7 +104,7 @@ const save = async () => {
 // native input carrying the inline-input test id (the department Select is a
 // second, always-visible combobox).
 const openInlineSelect = (name) => {
-  fireEvent.doubleClick(screen.getByTestId(`inline-read-${name}`));
+  fireEvent.click(screen.getByTestId(`inline-read-${name}`));
   fireEvent.mouseDown(
     within(screen.getByTestId(`inline-input-${name}`).parentElement).getByRole("combobox"),
   );
@@ -201,13 +201,20 @@ describe("EditPeopleContent (People S3)", () => {
     renderEdit();
     fireEvent.click(screen.getByRole("button", { name: "clear" }));
     pickDepartment("—");
-    fireEvent.doubleClick(screen.getByTestId("inline-read-full_name"));
+    fireEvent.click(screen.getByTestId("inline-read-full_name"));
     fireEvent.change(screen.getByTestId("inline-input-full_name"), { target: { value: "  " } });
     await act(async () => {});
     expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
     expect(screen.getByTestId("people-identity-warning")).toBeInTheDocument();
     await save();
     expect(updateSignal).not.toHaveBeenCalled();
+  });
+
+  it("single click on the name opens its input (real form, one click everywhere)", () => {
+    renderEdit();
+    expect(screen.queryByTestId("inline-input-full_name")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-full_name"));
+    expect(screen.getByTestId("inline-input-full_name")).toBeInTheDocument();
   });
 
   it("E6b: any one identity (name only) → Save enabled, no warning", async () => {

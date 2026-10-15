@@ -93,7 +93,7 @@ describe("EditConstraintContent (S3)", () => {
 
   it("rigidity select carries an empty option '—' to clear it", () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-rigidity"));
+    fireEvent.click(screen.getByTestId("inline-read-rigidity"));
     fireEvent.mouseDown(screen.getByRole("combobox"));
     expect(screen.getByRole("option", { name: "—" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Flexible" })).toBeInTheDocument();
@@ -167,7 +167,7 @@ describe("EditConstraintContent (S3)", () => {
 
   it("rigidity cleared via '—' → payload rigidity: '' (real clearing)", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-rigidity"));
+    fireEvent.click(screen.getByTestId("inline-read-rigidity"));
     fireEvent.mouseDown(screen.getByRole("combobox"));
     fireEvent.click(screen.getByRole("option", { name: "—" }));
     await act(async () => {
@@ -193,7 +193,7 @@ describe("EditConstraintContent (S3)", () => {
   it("Save returns to the detail — onSaved gets the updated signal (rebuilt departments + displays)", async () => {
     const onSaved = vi.fn();
     renderEdit(CONSTRAINT, { onSaved });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "Must run entirely on the on-premise SAP estate, no cloud" },
     });

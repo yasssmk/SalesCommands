@@ -2,7 +2,7 @@
 //
 // S3 — the Impact EDIT drawer content, on the standard chassis, a mirror of
 // EditPainContent: numbered SectionHeaders + InlineEditableValue (read →
-// double-click → inline edit) on DrawerContentLayout (global Save/Cancel). The
+// click → inline edit) on DrawerContentLayout (global Save/Cancel). The
 // coque owns the "Edit impact" title (passed to openDrawer), so this content
 // sets no DrawerContentLayout title. Save PATCHes via updateSignal("impact",
 // id, payload); onSaved(updatedSignal) returns to the Impact detail.

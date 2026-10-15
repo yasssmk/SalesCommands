@@ -113,11 +113,11 @@ describe("EditObjectionContent (Objection S2)", () => {
 
   it("E5: summary + source_quote edits are in the payload {summary, contact, source_quote} only", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "No budget before the next fiscal year" },
     });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-source_quote"));
+    fireEvent.click(screen.getByTestId("inline-read-source_quote"));
     fireEvent.change(screen.getByTestId("inline-input-source_quote"), {
       target: { value: "Nothing gets signed before April." },
     });
@@ -131,7 +131,7 @@ describe("EditObjectionContent (Objection S2)", () => {
 
   it("E5: summary < 10 characters → Save disabled, no PATCH", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), { target: { value: "Too short" } });
     // Validation is async (Yup) — let it settle.
     await act(async () => {});

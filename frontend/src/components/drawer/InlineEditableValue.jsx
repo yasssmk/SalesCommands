@@ -1,8 +1,8 @@
 // frontend/src/components/drawer/InlineEditableValue.jsx
 //
-// SE-b — a SHARED double-click-to-edit field for drawer content. Read by default
-// (a muted label + the value, or an italic placeholder when empty). DOUBLE-CLICK
-// the value flips it to an inline, aphoriQ-themed input (text / textarea /
+// SE-b — a SHARED click-to-edit field for drawer content. Read by default
+// (a muted label + the value, or an italic placeholder when empty). A single
+// CLICK on the value flips it to an inline, aphoriQ-themed input (text / textarea /
 // select). Typing raises onChange(newValue) so the PARENT holds the draft — this
 // field never PATCHes on its own. Enter (or blur) returns to read keeping the
 // value; Escape reverts the in-flight edit to the value captured at edit start.
@@ -115,7 +115,7 @@ export default function InlineEditableValue({
       {labelNode}
       <Box
         data-testid={`inline-read-${name}`}
-        onDoubleClick={startEdit}
+        onClick={startEdit}
         sx={{ cursor: disabled ? "default" : "pointer", py: 0.25 }}
       >
         {isEmpty ? (

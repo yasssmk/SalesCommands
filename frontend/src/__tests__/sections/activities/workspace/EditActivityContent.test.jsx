@@ -3,7 +3,7 @@
 // SE-b — the Activity EDIT drawer rebuilt on the shared DrawerContentLayout +
 // InlineEditableValue. ONE content box; field groups separated by internal
 // hairline filets; NO literal group titles, NO textual "Edit" — a field edits on
-// DOUBLE-CLICK. A single global Save PATCHes via updateActivity; Cancel closes.
+// a single CLICK. A single global Save PATCHes via updateActivity; Cancel closes.
 // The Date group toggles scheduled|due exclusively (switching clears the other).
 // People is a read-only placeholder here (made editable in SE-c).
 
@@ -169,10 +169,10 @@ describe("EditActivityContent — SE-b structure", () => {
   });
 });
 
-describe("EditActivityContent — double-click edit + global save", () => {
-  it("edits the title on double-click and saves via updateActivity (global Save)", async () => {
+describe("EditActivityContent — click edit + global save", () => {
+  it("edits the title on click and saves via updateActivity (global Save)", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "New title" } });
 
     const save = screen.getByRole("button", { name: /save/i });
@@ -205,7 +205,7 @@ describe("EditActivityContent — double-click edit + global save", () => {
 
   it("disables Save when the title is cleared (title required)", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "" } });
     const save = screen.getByRole("button", { name: /save/i });
     await waitFor(() => expect(save).toBeDisabled());
@@ -213,10 +213,17 @@ describe("EditActivityContent — double-click edit + global save", () => {
 });
 
 describe("EditActivityContent — date toggle exclusivity (cloned mechanics)", () => {
+  it("a single click on the Scheduled date opens the date editor (toggle + picker)", () => {
+    renderEdit();
+    expect(screen.queryByRole("button", { name: /due date/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-date"));
+    expect(screen.getByRole("button", { name: /due date/i })).toBeInTheDocument();
+  });
+
   it("switching to Due Date clears the scheduled date+time (exclusive)", async () => {
     renderEdit();
     // enter date edit
-    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    fireEvent.click(screen.getByTestId("inline-read-date"));
     // toggle to Due Date
     fireEvent.click(screen.getByRole("button", { name: /due date/i }));
     // set a due date via the stubbed picker
@@ -236,7 +243,7 @@ describe("EditActivityContent — date toggle exclusivity (cloned mechanics)", (
 describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATCH)", () => {
   it("edit mode shows ✓ and ✗; ✓ returns to READ keeping the draft, no updateActivity", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    fireEvent.click(screen.getByTestId("inline-read-date"));
     // in edit: confirm + cancel controls present
     expect(screen.getByTestId("date-confirm")).toBeInTheDocument();
     expect(screen.getByTestId("date-cancel")).toBeInTheDocument();
@@ -253,7 +260,7 @@ describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATC
 
   it("✗ returns to READ restoring the date/time/mode from before editing", async () => {
     renderEdit(); // scheduled 2026-09-10 14:30
-    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    fireEvent.click(screen.getByTestId("inline-read-date"));
     // switch to Due Date and pick a due date
     fireEvent.click(screen.getByRole("button", { name: /due date/i }));
     fireEvent.click(screen.getByTestId("pick-Due date"));
@@ -269,7 +276,7 @@ describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATC
 
   it("✓ keeps the draft so the GLOBAL Save then PATCHes the confirmed date", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    fireEvent.click(screen.getByTestId("inline-read-date"));
     fireEvent.click(screen.getByTestId("pick-Scheduled date"));
     fireEvent.click(screen.getByTestId("date-confirm"));
     const save = screen.getByRole("button", { name: /save/i });
@@ -386,9 +393,9 @@ describe("EditActivityContent — no duplicate user/contact (exclusion + dedup)"
 describe("EditActivityContent — campaign activity locks date/people (COND-1)", () => {
   const CAMPAIGN = { ...ACTIVITY, campaign_detail: { id: "camp-1", name: "Q2" } };
 
-  it("date is read-only on a campaign activity (double-click does not open edit)", () => {
+  it("date is read-only on a campaign activity (a click does not open edit)", () => {
     renderEdit(CAMPAIGN);
-    fireEvent.doubleClick(screen.getByTestId("inline-read-date"));
+    fireEvent.click(screen.getByTestId("inline-read-date"));
     expect(screen.queryByTestId("date-confirm")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /due date/i })).not.toBeInTheDocument();
     expect(screen.getByText(/Sep 10, 2026/)).toBeInTheDocument(); // value still shown
@@ -407,13 +414,13 @@ describe("EditActivityContent — campaign activity locks date/people (COND-1)",
 
   it("title / type / objective / description stay editable on a campaign activity", () => {
     renderEdit(CAMPAIGN);
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     expect(screen.getByTestId("inline-input-title")).toBeInTheDocument();
   });
 
   it("Save payload excludes the campaign-locked fields (date/owner/invited/contacts)", async () => {
     renderEdit(CAMPAIGN);
-    fireEvent.doubleClick(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByTestId("inline-read-title"));
     fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "New" } });
     const save = screen.getByRole("button", { name: /save/i });
     await waitFor(() => expect(save).not.toBeDisabled());

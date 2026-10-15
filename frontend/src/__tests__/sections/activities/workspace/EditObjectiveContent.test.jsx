@@ -2,7 +2,7 @@
 //
 // SIG-5d* — the Objective EDIT drawer. Keeps the original form's structure (3
 // section headers + subtitles + the Domain × Dimension recap) but the fields are
-// InlineEditableValue (double-click to edit, uniform with edit-activity /
+// InlineEditableValue (click to edit, uniform with edit-activity /
 // edit-contact). Scope is the pill + the original MUI department Select. The
 // coque owns the "Edit objective" title (no duplicate in the content). source_quote
 // is its own titled section. Save PATCHes via updateSignal("objective", id, patch).
@@ -84,7 +84,7 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
 describe("EditObjectiveContent (SIG-5d-fix2)", () => {
-  it("renders the fields as InlineEditableValue (double-click), pre-filled in read mode", () => {
+  it("renders the fields as InlineEditableValue (click), pre-filled in read mode", () => {
     renderEdit();
     // Read rows exist for each editable text/select field…
     ["summary", "what", "dimension", "success_criteria", "notes", "source_quote"].forEach(
@@ -95,13 +95,22 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(screen.getByText("We want to cut reporting time by half")).toBeInTheDocument();
   });
 
-  it("target_date reveals the project DatePicker only on double-click (✓/✗), like edit scheduled activity", () => {
+  it("target_date reveals the project DatePicker only on click (✓/✗), like edit scheduled activity", () => {
     renderEdit();
     // Read row by default — the picker is hidden.
     expect(screen.getByTestId("inline-read-target_date")).toBeInTheDocument();
     expect(screen.queryByLabelText("Target date")).not.toBeInTheDocument();
-    // Double-click reveals the project DatePicker + confirm/discard controls.
-    fireEvent.doubleClick(screen.getByTestId("inline-read-target_date"));
+    // A click reveals the project DatePicker + confirm/discard controls.
+    fireEvent.click(screen.getByTestId("inline-read-target_date"));
+    expect(screen.getByLabelText("Target date")).toBeInTheDocument();
+    expect(screen.getByTestId("target-date-confirm")).toBeInTheDocument();
+    expect(screen.getByTestId("target-date-cancel")).toBeInTheDocument();
+  });
+
+  it("a single click on target_date reveals the DatePicker (✓/✗ kept)", () => {
+    renderEdit();
+    expect(screen.queryByLabelText("Target date")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-target_date"));
     expect(screen.getByLabelText("Target date")).toBeInTheDocument();
     expect(screen.getByTestId("target-date-confirm")).toBeInTheDocument();
     expect(screen.getByTestId("target-date-cancel")).toBeInTheDocument();
@@ -134,9 +143,9 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(screen.queryByTestId("scope-department-select")).not.toBeInTheDocument();
   });
 
-  it("double-click edits summary and Save PATCHes via updateSignal with the full payload", async () => {
+  it("click edits summary and Save PATCHes via updateSignal with the full payload", async () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "Reduce reporting time drastically now" },
     });
@@ -160,9 +169,9 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     });
   });
 
-  it("source_quote edits on double-click", () => {
+  it("source_quote edits on click", () => {
     renderEdit();
-    fireEvent.doubleClick(screen.getByTestId("inline-read-source_quote"));
+    fireEvent.click(screen.getByTestId("inline-read-source_quote"));
     expect(screen.getByTestId("inline-input-source_quote")).toBeInTheDocument();
   });
 
@@ -222,7 +231,7 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
   it("SIG-5e-fix5: Save returns to the detail — onSaved receives the updated signal, drawer not closed", async () => {
     const onSaved = vi.fn();
     renderEdit(OBJECTIVE, { onSaved });
-    fireEvent.doubleClick(screen.getByTestId("inline-read-summary"));
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
     fireEvent.change(screen.getByTestId("inline-input-summary"), {
       target: { value: "Reduce reporting time drastically now" },
     });
