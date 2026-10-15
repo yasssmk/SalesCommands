@@ -69,6 +69,18 @@ const STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
 // One activity's signal set sits well under that, so we fetch it all in one page.
 const PAGE_SIZE = 100;
 
+// The detail injected into the single workspace coque. The coque renders the
+// node it was given, so a value passed at openDrawer() time would be FROZEN:
+// opened before the choices loaded, the labels would only show on reopen. This
+// wrapper reads the choices itself (SWR-cached, the same call the tab makes), so
+// the open detail re-renders the moment they arrive. Kept here — the Activity
+// tab is the only caller — so SignalDetailPanel / SignalDetailContent stay free
+// of any data hook.
+function ActivitySignalDetail(props) {
+  const { choices } = useGetSignalChoices();
+  return <SignalDetailPanel {...props} choices={choices} />;
+}
+
 // ==============================|| ACTIVITY SIGNALS TAB (FLAT) ||============================== //
 
 export default function ActivitySignalsTab({
@@ -128,10 +140,9 @@ export default function ActivitySignalsTab({
         signalType === "people" ||
         signalType === "tech-stack";
       openDrawer(
-        <SignalDetailPanel
+        <ActivitySignalDetail
           signal={signal}
           signalType={signalType}
-          choices={choices}
           onValidate={h.onValidate}
           onReject={h.onReject}
           onEdit={h.onEdit}
@@ -145,7 +156,7 @@ export default function ActivitySignalsTab({
           : undefined,
       );
     },
-    [openDrawer, isLocked, activityId, choices],
+    [openDrawer, isLocked, activityId],
   );
 
   // Handlers

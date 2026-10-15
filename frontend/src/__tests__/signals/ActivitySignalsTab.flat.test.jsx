@@ -13,7 +13,7 @@
 //   - drives the status / type filters server-side,
 //   - opens the signal drawer on row click and reopens a rejected signal there.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 // The legacy dialog renders a marker ONLY when opened, so a test can prove a
 // type does NOT fall back to it.
 vi.mock("components/signals/SignalEditDrawer", () => ({
@@ -82,7 +82,14 @@ vi.mock("utils/displayError", () => ({
 
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import { reopenSignal, validateSignal, rejectSignal, updateSignal } from "api/signals/signals";
+import {
+  reopenSignal,
+  validateSignal,
+  rejectSignal,
+  updateSignal,
+  useGetSignalChoices,
+} from "api/signals/signals";
+import { useSyncExternalStore } from "react";
 import { displayErrorSnackbar } from "utils/displayError";
 
 const MOCK_ACTIVITY = { id: "act-flat", account: "acc-1" };
@@ -418,6 +425,60 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     // Header owned by the coque: no in-content header, a single close (coque ×).
     expect(screen.queryByTestId("techstack-detail-header")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
+  it("TechStack T2a: choices arriving AFTER the drawer opened reach the open detail (no reopen)", async () => {
+    // A tiny SWR-like store: the choices arrive asynchronously and every hook
+    // consumer re-renders on its own (no parent re-render, no reopen).
+    let current = { choices: null, choicesLoading: true };
+    const listeners = new Set();
+    const choicesStore = {
+      subscribe: (fn) => {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      get: () => current,
+      load: (choices) => {
+        current = { choices, choicesLoading: false };
+        listeners.forEach((fn) => fn());
+      },
+    };
+    vi.mocked(useGetSignalChoices).mockImplementation(() =>
+      useSyncExternalStore(choicesStore.subscribe, choicesStore.get),
+    );
+    // vi.clearAllMocks (beforeEach) keeps implementations — restore the module
+    // default after this test so the store never leaks into later tests.
+    onTestFinished(() =>
+      vi.mocked(useGetSignalChoices).mockImplementation(() => ({ choices: {}, choicesLoading: false })),
+    );
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "ts2", status: "PENDING", _signalType: "tech-stack",
+            tech_name: "Datadog", usage_scope: "UNKNOWN", usage_departments: [],
+            source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+
+    // Drawer opened BEFORE the choices are loaded → no label yet.
+    fireEvent.click(await screen.findByText("Datadog"));
+    expect(screen.getByTestId("techstack-usage")).not.toHaveTextContent("Unknown");
+
+    // The choices arrive → the open detail shows "Unknown" without a reopen.
+    act(() =>
+      choicesStore.load({
+        usage_scopes: [
+          { value: "DEPARTMENT", label: "Department" },
+          { value: "COMPANY", label: "Company" },
+          { value: "UNKNOWN", label: "Unknown" },
+        ],
+      }),
+    );
+    expect(screen.getByTestId("techstack-usage")).toHaveTextContent("Unknown");
   });
 
   const PEOPLE_ROW = {
