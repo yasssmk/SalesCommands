@@ -398,6 +398,28 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
   });
 
+  it("TechStack T1: opening a tech-stack signal shows the coque header 'Tech Stack' + status pill on the chassis", async () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "ts1", status: "PENDING", _signalType: "tech-stack",
+            tech_name: "HubSpot", usage_scope: "UNKNOWN", usage_departments: [],
+            source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("HubSpot"));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Tech Stack");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Pending");
+    expect(screen.getByTestId("techstack-detail-body")).toBeInTheDocument();
+    // Header owned by the coque: no in-content header, a single close (coque ×).
+    expect(screen.queryByTestId("techstack-detail-header")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
   const PEOPLE_ROW = {
     id: "pe2", status: "PENDING", _signalType: "people",
     full_name: "Marc Dubois", role: "ECONOMIC_BUYER", role_display: "Economic Buyer",

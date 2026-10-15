@@ -17,6 +17,40 @@ export function getTechSummary(signal) {
   return { name: signal?.tech_name?.trim() || "Unknown tool" };
 }
 
+// Backend TechStack UsageScope values (backend constants.py UsageScope — three
+// cases since Sprint TechStack T0). Kept as a named map so callers never
+// inline the raw strings (mirror of utils/objectiveScope OBJECTIVE_SCOPE).
+export const USAGE_SCOPE = {
+  DEPARTMENT: "DEPARTMENT",
+  COMPANY: "COMPANY",
+  UNKNOWN: "UNKNOWN",
+};
+
+// A TechStack signal's usage, with the PO rule "the departments PRIME over the
+// scale": when at least one usage department is designated, the department
+// names are the usage and the scale is not shown. Shared by TechDetailBlock
+// (DC / Account) and the Activity chassis detail so the rule lives once.
+//   departmentNames — names of the usage departments ([] when none);
+//   usageScope / usageScopeDisplay — the scale, ONLY when no department.
+export function getTechUsage(signal) {
+  const departments = Array.isArray(signal?.usage_departments)
+    ? signal.usage_departments
+    : [];
+  const departmentNames = departments.map((d) => d && d.name).filter(Boolean);
+  const hasDepartments = departmentNames.length > 0;
+  return {
+    departmentNames,
+    usageScope: hasDepartments ? null : (signal?.usage_scope ?? null),
+    usageScopeDisplay: hasDepartments ? null : (signal?.usage_scope_display ?? null),
+  };
+}
+
+// The label of a usage scope value, read from the /signals/choices/
+// usage_scopes list. Returns null when the choices are not loaded.
+export function getUsageScopeLabel(value, choices) {
+  return choices?.usage_scopes?.find((o) => o.value === value)?.label ?? null;
+}
+
 export function getContact(signal) {
   return signal.contact || signal.source_context?.contacts?.[0] || null;
 }

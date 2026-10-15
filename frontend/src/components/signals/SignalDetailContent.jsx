@@ -47,6 +47,9 @@ import {
   formatSuggestedContacts,
   formatTargetDepartments,
   getPeopleHeadline,
+  getTechUsage,
+  getUsageScopeLabel,
+  USAGE_SCOPE,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // Shared per-type detail blocks — the single rendering of each type's
@@ -1571,6 +1574,230 @@ PeopleDetailView.propTypes = {
   currentActivityId: PropTypes.string,
 };
 
+// ==============================|| TECHSTACK DETAIL VIEW (Sprint TechStack T1) ||============================== //
+//
+// The TechStack (TechStackSignal, front key "tech-stack") detail on the standard
+// drawer chassis, skeleton of PeopleDetailView (same header mechanism, numbered
+// SectionHeaders + DrawerContentLayout read-action bar, same Activity-only gate).
+// PO section order (5): Technology → Usage → Lifecycle → Notes → Source (LAST).
+//   - §1 Technology: the tool name only, in the shared summary box. NO
+//     "To replace" (is_to_replace stays in the DB, out of the UI).
+//   - §2 Usage, three cases: the departments when designated (they PRIME over
+//     the scale — getTechUsage, shared with TechDetailBlock); else the scale
+//     label read from the choices; UNKNOWN or null → "Unknown" in full, never a
+//     "—" placeholder (usage not said is information, not a blank).
+//   - §3 Lifecycle: start year / renewal / cost → the same "Unknown" label when
+//     empty; the discontinuation line ONLY when is_discontinued.
+//   - §4 Notes: the neutral "No notes" placeholder when empty (not "Unknown").
+//   - §5 Source: quote + participants + origin link (People treatment).
+//   - NO "Mentioned by" (Objection treatment: no participant fallback).
+// `choices` = the /signals/choices/ payload (labels); passed down by the
+// Activity tab, which already loads it.
+function TechStackDetailView({
+  signal,
+  choices,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "tech-stack") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+
+  // "Unknown" = the backend label of the UNKNOWN usage scope (not said).
+  const unknownLabel = getUsageScopeLabel(USAGE_SCOPE.UNKNOWN, choices);
+
+  const { departmentNames, usageScope, usageScopeDisplay } = getTechUsage(signal);
+  const scopeValue = usageScope ?? USAGE_SCOPE.UNKNOWN;
+  const scopeLabel = getUsageScopeLabel(scopeValue, choices) ?? usageScopeDisplay;
+
+  const renewal = formatDate(signal.renewal_date);
+  const discontinuedDate = formatDate(signal.discontinued_date);
+
+  return (
+    <Box data-testid="techstack-detail-body">
+      {/* In-content header — suppressed when the coque owns the header
+          (headerInCoque; the Activity coque does). Mirror of PeopleDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="techstack-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="techstack-detail-title">
+            {getSignalTypeLabel("tech-stack")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "tech-stack"),
+          onReject: () => onReject?.(signal, "tech-stack"),
+          onValidate: () => onValidate?.(signal, "tech-stack"),
+          onReopen: () => onReopen?.(signal, "tech-stack"),
+          status: signal.status,
+          isLocked,
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Technology: the tool name only (shared summary box). */}
+        <SectionHeader index={1} title="Technology" sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={getTechSummary(signal).name}
+          boxTestId="techstack-summary-box"
+          summaryTestId="techstack-summary-text"
+        />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Usage: departments (they prime) else the scale label;
+            not said → "Unknown" in full. */}
+        <SectionHeader index={2} title="Usage" sx={{ mb: 1 }} />
+        <Box data-testid="techstack-usage">
+          {departmentNames.length > 0 ? (
+            <ReadRow
+              label={departmentNames.length > 1 ? "Departments" : "Department"}
+              value={departmentNames.join(", ")}
+            />
+          ) : (
+            <ReadRow label="Usage" value={scopeLabel} />
+          )}
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Lifecycle: "Unknown" when not said; the discontinuation
+            line only when the tool is discontinued. */}
+        <SectionHeader index={3} title="Lifecycle" sx={{ mb: 1 }} />
+        <Box data-testid="techstack-lifecycle">
+          <ReadRow
+            label="Used since"
+            value={signal.usage_start_year ? String(signal.usage_start_year) : unknownLabel}
+          />
+          <ReadRow label="Renewal date" value={renewal || unknownLabel} />
+          <ReadRow label="Cost" value={signal.cost_description || unknownLabel} />
+          {signal.is_discontinued && (
+            <Typography variant="body2" color="error.main">
+              {discontinuedDate ? `Discontinued on ${discontinuedDate}` : "Discontinued"}
+            </Typography>
+          )}
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Notes: neutral placeholder when empty (Constraint pattern). */}
+        <SectionHeader index={4} title="Notes" sx={{ mb: 1 }} />
+        <Box data-testid="techstack-notes">
+          {signal.notes ? (
+            <Typography variant="body2" color="text.primary" sx={{ whiteSpace: "pre-line" }}>
+              {signal.notes}
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No notes
+            </Typography>
+          )}
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 5 — Source (LAST): the quote + who said it, with an optional
+            link to the origin activity. Same treatment as the People detail. */}
+        <SectionHeader index={5} title="Source" sx={{ mb: 1 }} />
+        <Box data-testid="techstack-source">
+          {signal.source_quote ? (
+            <SourceQuoteBlock quote={signal.source_quote} />
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No source quote
+            </Typography>
+          )}
+          {contacts.length > 0 && (
+            <Box sx={{ mt: 1.25 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {contacts.length > 1 ? "Contacts" : "Contact"}
+              </Typography>
+              <Stack spacing={0.25}>
+                {contacts.map((c) => (
+                  <ContactInline key={c.id} contact={c} variant="body2" />
+                ))}
+              </Stack>
+            </Box>
+          )}
+          {showOriginLink && (
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+              onClick={() => onOpenActivity(originActivityId)}
+              sx={{ mt: 0.5, px: 0 }}
+            >
+              View origin activity
+            </Button>
+          )}
+        </Box>
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+TechStackDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  /** The /signals/choices/ payload — usage_scopes labels. */
+  choices: PropTypes.object,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
 
 /**
@@ -1580,6 +1807,7 @@ PeopleDetailView.propTypes = {
 export default function SignalDetailContent({
   signal,
   signalType,
+  choices,
   onValidate,
   onReject,
   onEdit,
@@ -1718,6 +1946,28 @@ export default function SignalDetailContent({
     );
   }
 
+  // Sprint TechStack T1 — TechStack uses the standard chassis on the ACTIVITY
+  // surface only, exact mirror of the People gate: currentActivityId (only the
+  // Activity coque passes it) + no leading/trailing action. DC/Account Flat and
+  // the cluster drawer keep the generic flush branch (TechStackDetails).
+  if (signalType === "tech-stack" && currentActivityId && !leadingAction && !trailingAction) {
+    return (
+      <TechStackDetailView
+        signal={signal}
+        choices={choices}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
   const isPending = signal.status === "PENDING";
   const missingFields = isPending ? getMissingFields(signal, signalType) : [];
   const validateDisabled = missingFields.length > 0;
@@ -1797,6 +2047,9 @@ export default function SignalDetailContent({
 SignalDetailContent.propTypes = {
   signal: PropTypes.object,
   signalType: PropTypes.string,
+  /** The /signals/choices/ payload (labels) — read by the TechStack chassis
+      detail. Optional; absent on DC/Account. */
+  choices: PropTypes.object,
   onValidate: PropTypes.func,
   onReject: PropTypes.func,
   onEdit: PropTypes.func,

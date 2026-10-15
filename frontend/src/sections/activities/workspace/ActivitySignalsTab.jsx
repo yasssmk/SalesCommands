@@ -125,11 +125,13 @@ export default function ActivitySignalsTab({
         signalType === "impact" ||
         signalType === "constraints" ||
         signalType === "blockers" ||
-        signalType === "people";
+        signalType === "people" ||
+        signalType === "tech-stack";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
           signalType={signalType}
+          choices={choices}
           onValidate={h.onValidate}
           onReject={h.onReject}
           onEdit={h.onEdit}
@@ -143,7 +145,7 @@ export default function ActivitySignalsTab({
           : undefined,
       );
     },
-    [openDrawer, isLocked, activityId],
+    [openDrawer, isLocked, activityId, choices],
   );
 
   // Handlers
