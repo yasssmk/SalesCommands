@@ -98,7 +98,10 @@ logger = logging.getLogger(__name__)
 # v3 (People S1 / S1-bis): People stage only -- People taxonomy under its own
 # header (no "or OMIT the signal") + the "already identified in this deal"
 # block. The other stages' context is byte-identical to v2.
-CONTEXT_VERSION = 'v3'
+# v4 (Sprint TechStack T0): TechStack usage in three cases -- the usage_scope
+# taxonomy lists DEPARTMENT / COMPANY / UNKNOWN (TEAM retired). The other
+# stages' context is byte-identical to v3.
+CONTEXT_VERSION = 'v4'
 
 _SUPPORTED_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
@@ -444,15 +447,16 @@ def _build_taxonomy_block(target_stage):
         lines.extend(_scope_taxonomy_lines())
 
     elif target_stage == 'techstack':
-        # usage_scope = SCALE axis (how widely). usage_departments = WHO
-        # axis (which departments use the tool, multi-department). Both are
-        # emitted per tool; the department list is drawn from the
+        # usage_scope = how the tool is used, three cases (DEPARTMENT /
+        # COMPANY / UNKNOWN). usage_departments = which departments use it
+        # (multi-department, filled iff DEPARTMENT). Both are emitted per
+        # tool; the department list is drawn from the
         # StandardDepartment controlled vocabulary so the extractor resolves
         # each name by exact match (no fuzzy matching), same contract as the
         # shared scope block for pain/objective/impact/constraint.
         from app_modules.core_modules.models import StandardDepartment
         lines.append(
-            '- usage_scope (SCALE -- how widely the prospect uses the tool): '
+            '- usage_scope (how the prospect uses the tool -- one value): '
             + _enum_json_array(UsageScope)
         )
         lines.append(

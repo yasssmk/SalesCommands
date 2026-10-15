@@ -102,7 +102,9 @@ class TestPeoplePersistence:
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
         assert result['run'].prompt_versions['people'] == 'v3'
-        assert result['run'].prompt_versions['context'] == 'v3'
+        # v4 = Sprint TechStack T0 (techstack usage taxonomy); the People
+        # stage's context is byte-identical to v3.
+        assert result['run'].prompt_versions['context'] == 'v4'
         assert result['run'].status == AIPipelineStatus.SUCCESS
         people_prompt = fake_provider.calls_for('people')[0]['user']
         assert 'Extract PEOPLE signals' in people_prompt

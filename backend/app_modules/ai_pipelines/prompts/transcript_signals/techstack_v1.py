@@ -22,10 +22,11 @@ array of tech-stack observations. Each observation has exactly 8 fields:
                                             REQUIRED. See the TOOL NAME
                                             section of the request below.
     is_to_replace          boolean      -- the prospect intends to move off it.
-    usage_scope            string|null  -- SCALE: "TEAM" | "COMPANY" |
-                                            "UNKNOWN", or null when not
-                                            discussed. HOW WIDELY the tool
-                                            is used.
+    usage_scope            string       -- three cases: "DEPARTMENT" (one
+                                            or more departments designated
+                                            as users) | "COMPANY" (company-
+                                            wide) | "UNKNOWN" (not said).
+                                            Never null (v2).
     usage_departments      string[]     -- WHO: the department(s) that USE
                                             the tool, drawn from the
                                             StandardDepartment vocabulary in
@@ -64,35 +65,35 @@ data anymore.
 
 Empty result is represented by {"signals": []}.
 
-Two orthogonal axes: SCALE (usage_scope) and WHO (usage_departments)
--------------------------------------------------------------------
-`usage_scope` answers HOW WIDELY the tool is used (TEAM / COMPANY /
-UNKNOWN) -- a scale, unchanged by this revision. `usage_departments`
-answers WHO uses it: the specific department(s), multi-valued. The two
-are independent and both are emitted per tool:
+Usage in three cases (v2): usage_scope + usage_departments
+-----------------------------------------------------------
+PO rule (Sprint TechStack): at the prospect we speak of DEPARTMENTS, never
+of teams. Usage is exactly one of three cases:
+
+  * DEPARTMENT -- one or more departments are designated as users; they
+                  are listed in `usage_departments`.
+  * COMPANY    -- used company-wide, no department designated.
+  * UNKNOWN    -- usage not said. "Not said" is UNKNOWN, never null.
 
   * "everyone here is on Slack"          -> usage_scope="COMPANY",
-                                            usage_departments=[]
-                                            (company-wide, no single dept
-                                            designated).
-  * "the marketing team lives in HubSpot"-> usage_scope="TEAM",
+                                            usage_departments=[].
+  * "the marketing team lives in HubSpot"-> usage_scope="DEPARTMENT",
                                             usage_departments=["Marketing"].
-  * "Sales and Marketing both use X"      -> usage_scope="TEAM",
+  * "Sales and Marketing both use X"      -> usage_scope="DEPARTMENT",
                                             usage_departments=["Sales",
                                             "Marketing"].
+  * "we use Datadog" (nothing more)       -> usage_scope="UNKNOWN",
+                                            usage_departments=[].
+
+DEPARTMENT <=> at least one department: the backend derives the final
+usage_scope from the RESOLVED departments (_techstack_usage_scope in the
+extractor), so an unresolvable department name falls back to UNKNOWN.
 
 Department names are drawn from the StandardDepartment vocabulary injected
 in the context layer; the backend resolves each by EXACT name match (no
 fuzzy matching) to a StandardDepartment row and assigns them to the
 multi-department M2M TechStackSignal.usage_departments. An unresolved or
 "General Management" name is dropped by the backend, never invented.
-
-Why usage_scope="DEPARTMENT" is still NOT emitted
--------------------------------------------------
-The scale axis keeps only TEAM / COMPANY / UNKNOWN. "which department"
-is no longer a scale value -- it moved to the dedicated multi-valued
-`usage_departments` field above. So the model never emits
-usage_scope="DEPARTMENT".
 
 Why is_discontinued / cost_description / renewal_date are NOT extracted
 ----------------------------------------------------------------------
@@ -143,7 +144,9 @@ mapped to a new TechStackSignal row:
     -------------------------------    --------------------------------
     tech_name                     ->  tech_name (verbatim)
     is_to_replace                 ->  is_to_replace
-    usage_scope                   ->  usage_scope (NULL when null/missing)
+    usage_scope                   ->  usage_scope (three cases; DEPARTMENT
+                                       iff departments resolved, else
+                                       COMPANY when emitted, else UNKNOWN)
     usage_departments             ->  usage_departments (M2M; each name
                                        resolved by exact match to a
                                        StandardDepartment row via
@@ -199,13 +202,17 @@ Versioning
 TECHSTACK_PROMPT_VERSION is captured in AIPipelineRun.prompt_versions
 so the exact prompt revision used for any persisted signal can be
 retrieved later for quality measurement and debugging.
+
+  v1 -- S10 free-text identity + usage_departments (Tech scope sprint).
+  v2 -- Sprint TechStack T0: usage in three cases (DEPARTMENT / COMPANY /
+        UNKNOWN), TEAM retired, "not said" = UNKNOWN (never null).
 """
 
 
 __all__ = ['TECHSTACK_PROMPT_VERSION', 'build_techstack_request']
 
 
-TECHSTACK_PROMPT_VERSION = 'v1'
+TECHSTACK_PROMPT_VERSION = 'v2'
 
 
 def build_techstack_request(transcript):
@@ -319,7 +326,7 @@ Return a single JSON object with this exact shape:
     {{
       "tech_name":       "<canonical product name -- see TOOL NAME: official stable spelling, verbatim when the tool is unknown or ambiguous>",
       "is_to_replace":   <boolean, see QUALIFICATION>,
-      "usage_scope":     "<TEAM | COMPANY | UNKNOWN, or null when scope was not discussed>",
+      "usage_scope":     "<DEPARTMENT | COMPANY | UNKNOWN>",
       "usage_departments": ["<zero or more department names from the CANONICAL TAXONOMY usage_departments list -- see USAGE DEPARTMENTS; [] when none is explicitly designated>"],
       "source_quote":    "<verbatim excerpt from the transcript supporting this tool observation>",
       "confidence":      <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
@@ -328,19 +335,18 @@ Return a single JSON object with this exact shape:
   ]
 }}
 
-USAGE SCOPE GUIDANCE (SCALE -- how widely, one value)
-- "TEAM"     -- the tool is used by a single team inside a department
-                (e.g. "the SDR team uses Outreach").
-- "COMPANY"  -- the tool is used company-wide across multiple departments
-                (e.g. "everyone here uses Slack").
-- "UNKNOWN"  -- usage scope was discussed but not clarified.
-- null       -- usage scope was not discussed at all.
+USAGE (exactly one of three cases)
+At the prospect we speak of DEPARTMENTS, never of teams.
+- "DEPARTMENT" -- one or more departments are explicitly designated as
+                  users of the tool; list them in `usage_departments`
+                  (e.g. "the SDR team in Sales uses Outreach" -> Sales).
+- "COMPANY"    -- the tool is used company-wide, no department designated
+                  (e.g. "everyone here uses Slack").
+- "UNKNOWN"    -- how the tool is used is not said. Usage not said is
+                  UNKNOWN, never null and never a guess.
 
-Never emit "DEPARTMENT" for usage_scope -- it is a SCALE, not a WHO.
-"which department uses it" is captured separately and multi-valued in
-`usage_departments` (next section). usage_scope stays the scale even when
-one or more departments are named (e.g. "the marketing team is on HubSpot"
--> usage_scope="TEAM", usage_departments=["Marketing"]).
+"DEPARTMENT" always comes with at least one department in
+`usage_departments`; "COMPANY" and "UNKNOWN" always come with [].
 
 USAGE DEPARTMENTS (WHO -- which department(s) USE the tool; multi-valued)
 Emit in `usage_departments` every department that is EXPLICITLY DESIGNATED
@@ -358,7 +364,8 @@ constraint scope guard):
   lead saying "everyone uses Slack" does not make it an IT tool.
 - When NO department is explicitly designated as a user, emit an EMPTY
   list []. NEVER invent or guess a department. A company-wide tool with no
-  single owner is []  (with usage_scope="COMPANY").
+  single owner is []  (with usage_scope="COMPANY"); a tool whose usage is
+  not said is []  (with usage_scope="UNKNOWN").
 - Use the exact StandardDepartment strings from the taxonomy list; a name
   not in that list, or a company-wide / "General Management" catch-all, is
   dropped downstream -- so prefer [] over a non-listed guess.
@@ -366,20 +373,21 @@ constraint scope guard):
 USAGE DEPARTMENTS EXAMPLES (designation decides -- not the speaker, not a
 technical word):
 - "the marketing team has been on HubSpot for three years"
-      -> usage_scope="TEAM", usage_departments=["Marketing"]
+      -> usage_scope="DEPARTMENT", usage_departments=["Marketing"]
          (one department explicitly designated as the user).
 - "both Sales and Marketing run their pipeline in the CRM"
-      -> usage_scope="TEAM", usage_departments=["Sales", "Marketing"]
+      -> usage_scope="DEPARTMENT", usage_departments=["Sales", "Marketing"]
          (two departments explicitly designated -- multi-valued).
 - "honestly everyone in the company is on Slack"
       -> usage_scope="COMPANY", usage_departments=[]
          (company-wide, no single department designated -- empty, not a guess).
 - "we use Zendesk for support tickets"
-      -> usage_scope="TEAM", usage_departments=["Customer Support"]
+      -> usage_scope="DEPARTMENT", usage_departments=["Customer Support"]
          (the support function is designated as the user).
 - "our CTO mentioned we run Datadog"
-      -> usage_departments=[]  (the SPEAKER's role does not designate a
-         using department; nobody is named as the user).
+      -> usage_scope="UNKNOWN", usage_departments=[]  (the SPEAKER's role
+         does not designate a using department; nobody is named as the user
+         and the usage is not said).
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of

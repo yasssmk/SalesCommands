@@ -5,8 +5,12 @@ Tech scope (usage) finition — the MANUAL entry path writes the M2M.
 The legacy single FK usage_department is gone. Creating or editing a
 TechStackSignal by hand (the Create / Update serializers behind the REST
 API and the wizard) now writes the multi-department usage_departments M2M:
-a list of StandardDepartment ids, several accepted, independent of
-usage_scope.
+a list of StandardDepartment ids, several accepted.
+
+Sprint TechStack T0: usage has three cases and DEPARTMENT <=> at least one
+department, so every payload carrying departments says
+usage_scope='DEPARTMENT' (the rule itself is proven in
+test_techstack_usage_three_cases.py).
 
 Real path: POST / PATCH on /module-signals/tech-stack/ through the same
 authed harness the other tech API tests use.
@@ -75,7 +79,10 @@ class TestManualCreateWritesM2M:
     ):
         resp = authed_api_a.post(
             _url_list(),
-            _payload(account, activity, usage_departments=[dept_marketing.id]),
+            _payload(
+                account, activity,
+                usage_scope='DEPARTMENT', usage_departments=[dept_marketing.id],
+            ),
             format='json',
         )
         assert resp.status_code == status.HTTP_201_CREATED, resp.data
@@ -90,6 +97,7 @@ class TestManualCreateWritesM2M:
             _url_list(),
             _payload(
                 account, activity,
+                usage_scope='DEPARTMENT',
                 usage_departments=[dept_sales.id, dept_marketing.id],
             ),
             format='json',
@@ -109,12 +117,13 @@ class TestManualCreateWritesM2M:
         sig = TechStackSignal.objects.get(account=account)
         assert _names(sig) == set()
 
-    def test_departments_are_independent_of_usage_scope(
+    def test_departments_require_the_department_scope(
         self, authed_api_a, account, activity, dept_marketing,
     ):
         """
-        No scope↔department conditional remains: a COMPANY-scale tool may
-        still carry designated departments (the old FK rule forbade this).
+        Sprint TechStack T0 (supersedes the former "independent of
+        usage_scope" rule): departments only come with DEPARTMENT, so a
+        COMPANY tool carrying departments is refused.
         """
         resp = authed_api_a.post(
             _url_list(),
@@ -125,17 +134,18 @@ class TestManualCreateWritesM2M:
             ),
             format='json',
         )
-        assert resp.status_code == status.HTTP_201_CREATED, resp.data
-        sig = TechStackSignal.objects.get(account=account)
-        assert sig.usage_scope == 'COMPANY'
-        assert _names(sig) == {'Marketing'}
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert not TechStackSignal.objects.filter(account=account).exists()
 
     def test_the_dropped_singular_key_is_not_exposed_on_read(
         self, authed_api_a, account, activity, dept_marketing,
     ):
         authed_api_a.post(
             _url_list(),
-            _payload(account, activity, usage_departments=[dept_marketing.id]),
+            _payload(
+                account, activity,
+                usage_scope='DEPARTMENT', usage_departments=[dept_marketing.id],
+            ),
             format='json',
         )
         resp = authed_api_a.get(_url_list())
@@ -160,6 +170,7 @@ class TestManualUpdateWritesM2M:
             tech_name='HubSpot',
             source=SignalSource.MANUAL,
             source_quote='We use HubSpot',
+            usage_scope='DEPARTMENT' if depts else 'UNKNOWN',
         )
         sig.save(user=user, client_id=account.client_id)
         if depts:
@@ -188,7 +199,7 @@ class TestManualUpdateWritesM2M:
 
         resp = authed_api_a.patch(
             _url_detail(sig.id),
-            {'usage_departments': []},
+            {'usage_scope': 'COMPANY', 'usage_departments': []},
             format='json',
         )
         assert resp.status_code == status.HTTP_200_OK, resp.data

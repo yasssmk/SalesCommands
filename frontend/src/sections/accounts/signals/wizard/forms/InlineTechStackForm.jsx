@@ -85,18 +85,13 @@ import { useGetContactChoices } from "api/businessData/contacts";
  */
 const USAGE_SCOPE_OPTIONS = [
   {
-    value: "TEAM",
-    label: "Team",
-    helper: "Used by a single team within a department",
-  },
-  {
     value: "DEPARTMENT",
     label: "Department",
     helper: "Used by an identifiable department",
   },
   {
     value: "COMPANY",
-    label: "Company-wide",
+    label: "Company",
     helper: "Used across the whole organisation",
   },
   {

@@ -127,14 +127,14 @@ class TestRawNameExtraction:
         """Source / status / quote / scope routing is unchanged."""
         persisted, _ = _persist(
             activity, account, user_a,
-            [_raw('HubSpot', usage_scope='TEAM')],
+            [_raw('HubSpot', usage_scope='COMPANY')],
         )
 
         sig = persisted[0]
         assert sig.source == SignalSource.LLM_EXTRACTED
         assert sig.status == SignalStatus.PENDING
         assert sig.source_quote == 'We use HubSpot across the company'
-        assert sig.usage_scope == 'TEAM'
+        assert sig.usage_scope == 'COMPANY'
         assert sig.account_id == account.id
         assert sig.source_activity_id == activity.id
 
@@ -269,16 +269,18 @@ class TestMalformedEmissions:
         assert dropped == 2
         assert persisted[0].tech_name == 'Salesforce'
 
-    def test_department_scope_is_still_demoted_to_null(
+    def test_department_scope_without_department_is_unknown(
         self, account, activity, user_a,
     ):
-        """usage_scope filtering is unchanged by this rework."""
+        """Sprint TechStack T0: DEPARTMENT with no resolved department falls
+        back to UNKNOWN (DEPARTMENT <=> departments; never null). The full
+        matrix lives in test_techstack_usage_three_cases_extraction.py."""
         persisted, _ = _persist(
             activity, account, user_a,
             [_raw('Asana', usage_scope='DEPARTMENT')],
         )
 
-        assert persisted[0].usage_scope is None
+        assert persisted[0].usage_scope == 'UNKNOWN'
 
 
 # =============================================================================
