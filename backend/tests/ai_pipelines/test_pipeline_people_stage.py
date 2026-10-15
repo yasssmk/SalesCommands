@@ -101,7 +101,7 @@ class TestPeoplePersistence:
     ):
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
-        assert result['run'].prompt_versions['people'] == 'v2'
+        assert result['run'].prompt_versions['people'] == 'v3'
         assert result['run'].prompt_versions['context'] == 'v3'
         assert result['run'].status == AIPipelineStatus.SUCCESS
         people_prompt = fake_provider.calls_for('people')[0]['user']
@@ -445,6 +445,44 @@ class TestPeoplePromptV2:
         [signal] = _people(result)
         assert signal.target_contact_id is None
         assert signal.full_name == 'Claire Dubois'
+
+
+# =============================================================================
+# PROMPT v3 — department strictly from what the transcript says of the person
+# =============================================================================
+
+class TestPeoplePromptV3Department:
+
+    def _prompt(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            build_people_request,
+        )
+        # Whitespace collapsed: the rules wrap over several prompt lines.
+        return ' '.join(build_people_request('Karim will be our first pilot user.').split())
+
+    def test_department_only_from_what_the_transcript_says_of_the_person(self):
+        prompt = self._prompt()
+        assert "ONLY from what the transcript says about THIS person" in prompt
+
+    def test_department_never_inferred_from_other_sources(self):
+        prompt = self._prompt()
+        assert 'NEVER infer it from' in prompt
+        for source in (
+            'the company name', 'the meeting title', "the prospect's industry",
+            'the department of the SPEAKER', 'the other persons',
+            'PEOPLE ALREADY IDENTIFIED IN THIS DEAL',
+        ):
+            assert source in prompt
+
+    def test_department_null_when_nothing_is_said(self):
+        prompt = self._prompt()
+        assert 'set `department` to null' in prompt
+
+    def test_real_case_example_maps_key_accounts_lead_to_sales(self):
+        from app_modules.core_modules.models import StandardDepartment
+        prompt = self._prompt()
+        sales = StandardDepartment.DepartmentChoices.SALES.value
+        assert f'"head of the key accounts team" -> department "{sales}"' in prompt
 
 
 # =============================================================================

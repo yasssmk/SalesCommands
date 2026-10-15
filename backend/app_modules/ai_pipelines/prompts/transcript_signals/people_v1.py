@@ -1,7 +1,8 @@
 # app_modules/ai_pipelines/prompts/transcript_signals/people_v1.py
 """
 Request layer for People signal extraction (UX Activity, People S1;
-v2 -- People S1-bis: unlisted prospect speakers + explicit seller side).
+v2 -- People S1-bis: unlisted prospect speakers + explicit seller side;
+v3 -- People S6: department strictly from what is said of the person).
 
 This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
@@ -78,7 +79,9 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'build_people_request']
 # v2 (People S1-bis): a prospect who SPEAKS without being a listed contact is
 # extracted (participant_ref null, name from the speaker label); the seller
 # side is defined by who presents / sells the solution. File name unchanged.
-PEOPLE_PROMPT_VERSION = 'v2'
+# v3 (People S6): `department` strictly from what the transcript says about
+# the person; never inferred from other sources; null otherwise.
+PEOPLE_PROMPT_VERSION = 'v3'
 
 # Reference shapes rendered in the prompt, derived from the single
 # definition in participant_refs.py ("P<n>", "P1").
@@ -92,6 +95,7 @@ _ROLE_PROCUREMENT = PeopleRole.PROCUREMENT.value
 _DEPT_GENERAL_MANAGEMENT = StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT.value
 _DEPT_FINANCE = StandardDepartment.DepartmentChoices.FINANCE.value
 _DEPT_PROCUREMENT = StandardDepartment.DepartmentChoices.PROCUREMENT.value
+_DEPT_SALES = StandardDepartment.DepartmentChoices.SALES.value
 
 
 def build_people_request(transcript):
@@ -170,6 +174,15 @@ EMISSION RULES
   reason to omit the person.
 - The department "{_DEPT_PROCUREMENT}" is a DEPARTMENT, not the role
   "{_ROLE_PROCUREMENT}": pick each from its own list.
+- `department` is the function of THIS person in the prospect's
+  organization, taken ONLY from what the transcript says about THIS person
+  (their team, their job title, their trade): "head of the key accounts
+  team" -> department "{_DEPT_SALES}". NEVER infer it from the company name,
+  the meeting title, the prospect's industry, the department of the SPEAKER,
+  or the other persons (including those listed under PEOPLE ALREADY
+  IDENTIFIED IN THIS DEAL). WHEN NOTHING is said about this person's
+  function, set `department` to null -- null is the safe default; never
+  fill it with a guess.
 - `full_name` is the name as stated; NEVER invent, complete or guess a name.
 - `notes` MUST be your own short sentence -- never a copy of the quote.
 - `source_quote` MUST be the VERBATIM utterance where the person's role or
