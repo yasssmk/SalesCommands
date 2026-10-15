@@ -1714,12 +1714,65 @@ possibles) :
 - **Prérequis** : observabilité des rejets (**TD-264**) à traiter au début du
   fine-tuning.
 
-#### Listes déroulantes en un clic (NOUVEAU 2026-10 — branche dédiée APRÈS le Sprint People Activity)
+#### Listes déroulantes en un clic ✅ LIVRÉ (branche `fix/edit-single-click`, `836aa859`→`a6ced69f` + commit doc de clôture)
 - **Décision PO (B)** : **changement central dans `InlineEditableValue`**,
   appliqué à **tous les formulaires** (pas de correctif formulaire par
   formulaire).
-- **Position** : **prochaine branche dédiée**, juste après la clôture du
-  Sprint People Activity.
+- **Position** : branche dédiée juste après la clôture du Sprint People
+  Activity.
+- **Objectif** : un seul pattern d'édition — on voit la valeur, **un clic**
+  dessus, et seulement alors le composant d'édition apparaît ; plus de
+  double-clic, plus de champ / menu affiché d'emblée.
+- **Décisions PO** :
+  - **Un clic partout**, y compris les **champs date** (Activity
+    Scheduled / Due, Objective Target date) — **boutons ✓/✗ conservés**.
+  - **Select** : un clic ouvre le champ **avec le menu déjà ouvert** ;
+    **choisir une option** prend la valeur et **revient en lecture** ; fermer
+    sans choisir (clic dehors, Échap) = retour en lecture, valeur inchangée.
+  - **Un seul Échap** suffit (y compris dans la recherche de contact).
+  - **Sélection de texte** qui ouvre l'édition : **acceptée** — la copie se fait
+    depuis la **vue détail**.
+- **Mécanique centrale** :
+  - `components/drawer/InlineEditableValue.jsx` : entrée en édition au
+    `onClick` ; `type="select"` → `SelectProps` **`defaultOpen`** + **`onClose`
+    = commit** (MUI émet `onChange` AVANT `onClose` au clic d'une option) ;
+    nouvelles props **`renderEditor({ value, onChange, commit, cancel })`** +
+    **`formatValue`** (éditeur personnalisé sous la MÊME mécanique : clic,
+    valeur de départ, **Échap en phase de capture** → un seul Échap annule,
+    focus qui quitte l'éditeur → commit).
+  - `components/AsyncSelection/AsyncSelect.jsx` : **`autoFocus`** transmis au
+    champ de recherche (défaut false, sans effet sur les usages existants) ;
+    `openOnFocus` passé par les formulaires.
+- **Livré** (chaque sous-étape : ROUGE par le vrai formulaire rendu, VERT,
+  non-vacuité par édition ciblée, régression) :
+  - **1 — simple clic partout** (`836aa859`) : `InlineEditableValue` + les deux
+    champs date qui recopient sa mécanique (`EditActivityContent`,
+    `EditObjectiveContent`) ; tests `doubleClick` → `click`.
+  - **2 — comportement des selects** (`eafd8528`) : menu ouvert au clic, retour
+    en lecture au choix ; Échap / clic dehors sans choix → valeur inchangée.
+  - **3a — département sur le pattern** (`0758ca7e`) : **People §1** et
+    **Objective §2** en `InlineEditableValue type="select"` (option vide « — »
+    conservée pour People, non ajoutée pour Objective) ; **Objective : options
+    stringifiées** → corrige le département existant non affiché (int des
+    choices vs string du serializer, **TD-241** partie Objective).
+  - **3b — contact sur le pattern** (`a6ced69f`) : **People §1** et
+    **Objection §2** via `renderEditor` + `AsyncContactSelect`
+    (`autoFocus` + `openOnFocus`) ; lecture via `formatContact` existant ;
+    délier (Clear) conservé ; payloads inchangés ; `EditActivityContent` (ajout
+    de contact par bouton) non touché.
+- **Formulaires concernés** : People §1 (contact + département),
+  Objection §2 (contact), Objective §2 (département) ; plus l'entrée en un clic
+  de tous les `Edit*Content` (Activity, Contact, Objective, Pain, Impact,
+  Constraint, Objection, People).
+- **Migrations** : **aucune** (front uniquement).
+- **Validation (PO)** : **vitest 190 fichiers / 1508 tests verts** ; lint 0
+  erreur ; **smokes PO OK** (étapes 1, 2, 3a, 3b).
+- **Dette** : **MAJ TD-241** (partie Objective corrigée ; TechStack reste
+  OPEN) ; **NOUVEAUX TD-267** (champs date : copie de la mécanique
+  d'`InlineEditableValue`), **TD-268** (`EditableField` des en-têtes : second
+  mécanisme d'édition inline divergent).
+- **Prochain jalon** : **TechStack** (détail + edit sur le châssis, surface
+  Activity), puis **Competitor**.
 
 #### Sprint test (NOUVEAU 2026-08-21 — PRÉ-LAUNCH, DERNIER avant déploiement)
 - **Position** : après la phase fonctionnelle, **avant le déploiement** (voir
