@@ -144,6 +144,7 @@ class ConstraintSignalListSerializer(_ConstraintDisplayMixin, BaseSignalListSeri
         fields = _base_fields + [
             'nature', 'nature_display',
             'summary',
+            'notes',
             'rigidity', 'rigidity_display',
             'target_departments',
             # Legacy axes — read-only, present for historical rows.
