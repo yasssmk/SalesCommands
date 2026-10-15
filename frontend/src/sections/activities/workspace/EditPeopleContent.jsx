@@ -46,6 +46,7 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
+import { formatContact } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -218,13 +219,30 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
             title="Who is this person?"
             subtitle="Link a contact of this account, or keep the name as mentioned."
           />
-          <AsyncContactSelect
-            data-testid="people-contact-select"
+          {/* Contact on the click-to-edit pattern: name in read → one click →
+              focused search with the list open → a choice (or Clear, which
+              unlinks) returns to read. */}
+          <InlineEditableValue
+            name="contact"
+            label="Contact"
             value={values.contact}
-            onChange={(_event, contact) => setFieldValue("contact", contact ?? null)}
-            filters={{ account_id: accountId }}
-            label=""
-            placeholder="Search contacts…"
+            onChange={(contact) => setFieldValue("contact", contact ?? null)}
+            formatValue={formatContact}
+            renderEditor={({ value, onChange, commit }) => (
+              <AsyncContactSelect
+                data-testid="people-contact-select"
+                value={value}
+                onChange={(_event, contact) => {
+                  onChange(contact ?? null);
+                  commit();
+                }}
+                filters={{ account_id: accountId }}
+                label=""
+                placeholder="Search contacts…"
+                autoFocus
+                openOnFocus
+              />
+            )}
           />
           <InlineEditableValue
             name="full_name"

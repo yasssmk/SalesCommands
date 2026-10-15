@@ -9,6 +9,11 @@
 // type="select" opens WITH its menu already open; picking an option raises
 // onChange then returns to read; closing the menu without a choice (click
 // outside, Escape) returns to read with the value untouched.
+// renderEditor({ value, onChange, commit, cancel }) swaps the TextField for a
+// custom editor (e.g. a contact picker) under the SAME mechanics: one click to
+// open, Escape anywhere inside cancels (captured before the editor's own
+// handler, so ONE Escape is enough), focus leaving the editor commits;
+// formatValue(value) renders a non-scalar value in read mode.
 //
 // No hardcoded hex/px — the input is a plain MUI TextField (themed) and the read
 // rows use aphoriQ text tokens.
@@ -38,6 +43,8 @@ export default function InlineEditableValue({
   error = false,
   helperText,
   disabled = false,
+  renderEditor,
+  formatValue,
 }) {
   const aq = useTheme().aphoriQ;
   const [editing, setEditing] = useState(false);
@@ -71,6 +78,29 @@ export default function InlineEditableValue({
       {label}
     </Typography>
   );
+
+  // ---- EDIT (custom editor) ----
+  if (editing && renderEditor) {
+    return (
+      <Box
+        // Capture phase: runs BEFORE the editor's own Escape handling (an open
+        // Autocomplete stops the event), so a single Escape cancels.
+        onKeyDownCapture={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        }}
+        // Focus leaving the editor (click outside) commits the draft.
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) commit();
+        }}
+      >
+        {labelNode}
+        {renderEditor({ value, onChange, commit, cancel })}
+      </Box>
+    );
+  }
 
   // ---- EDIT ----
   if (editing) {
@@ -111,9 +141,13 @@ export default function InlineEditableValue({
   }
 
   // ---- READ ----
-  const isEmpty = value === null || value === undefined || value === "";
-  const displayValue =
-    type === "select" && !isEmpty
+  const formatted = formatValue && value != null ? formatValue(value) : undefined;
+  const isEmpty =
+    value === null || value === undefined || value === "" ||
+    (formatValue !== undefined && !formatted);
+  const displayValue = formatValue
+    ? formatted
+    : type === "select" && !isEmpty
       ? options.find((o) => o.value === value)?.label ?? value
       : value;
 
@@ -146,7 +180,7 @@ InlineEditableValue.propTypes = {
   /** Muted caption shown above the value in both modes. */
   label: PropTypes.string.isRequired,
   /** Current (controlled) value — the parent owns the draft. */
-  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.object]),
   /** Raised with the new value on every keystroke (a draft; no PATCH here). */
   onChange: PropTypes.func.isRequired,
   /** Input kind: text | textarea | select. */
@@ -160,4 +194,8 @@ InlineEditableValue.propTypes = {
   error: PropTypes.bool,
   helperText: PropTypes.string,
   disabled: PropTypes.bool,
+  /** Custom editor ({ value, onChange, commit, cancel }) → node, in place of the TextField. */
+  renderEditor: PropTypes.func,
+  /** Read-mode formatter for a non-scalar value (falsy result → placeholder). */
+  formatValue: PropTypes.func,
 };

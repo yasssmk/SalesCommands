@@ -70,6 +70,9 @@ const save = async () => {
   });
 };
 
+// The contact is click-to-edit: one click on its value reveals the picker.
+const openContact = () => fireEvent.click(screen.getByTestId("inline-read-contact"));
+
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
@@ -80,13 +83,14 @@ describe("EditObjectionContent (Objection S2)", () => {
       expect(screen.getByTestId(`inline-read-${name}`)).toBeInTheDocument(),
     );
     expect(screen.getByText(OBJECTION.summary)).toBeInTheDocument();
-    expect(screen.getByTestId("objection-contact-value")).toHaveTextContent("Sophie Martin");
+    expect(screen.getByTestId("inline-read-contact")).toHaveTextContent("Sophie Martin");
     expect(screen.getByText(OBJECTION.source_quote)).toBeInTheDocument();
     expect(screen.queryByText("Edit objection")).not.toBeInTheDocument();
   });
 
   it("E2: picking a contact → PATCH updateSignal('blockers', id, {contact: <uuid>})", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "pick" }));
     await save();
     expect(updateSignal).toHaveBeenCalledTimes(1);
@@ -98,6 +102,7 @@ describe("EditObjectionContent (Objection S2)", () => {
 
   it("E3: the picker is scoped to the activity's account — filters={{ account_id }}", () => {
     renderEdit();
+    openContact();
     expect(JSON.parse(screen.getByTestId("objection-contact-select").dataset.filters)).toEqual({
       account_id: "acc-1",
     });
@@ -105,6 +110,7 @@ describe("EditObjectionContent (Objection S2)", () => {
 
   it("E4: clearing the contact → payload contact null", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "clear" }));
     await save();
     expect(updateSignal).toHaveBeenCalledTimes(1);
@@ -143,6 +149,7 @@ describe("EditObjectionContent (Objection S2)", () => {
   it("Save returns to the detail — onSaved gets the rebuilt signal with a COMPACT contact", async () => {
     const onSaved = vi.fn();
     renderEdit(OBJECTION, { onSaved });
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "pick" }));
     await save();
     expect(onSaved).toHaveBeenCalledTimes(1);

@@ -263,6 +263,7 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
     expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit objection");
     expect(screen.getByText("What's the objection?")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-contact")); // click-to-edit contact
     expect(screen.getByRole("button", { name: "pick contact" })).toBeInTheDocument();
     expect(screen.queryByTestId("legacy-edit-dialog")).not.toBeInTheDocument();
   });
@@ -271,6 +272,7 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(await screen.findByText("Budget frozen flat"));
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByTestId("inline-read-contact")); // click-to-edit contact
     fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -285,6 +287,7 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(await screen.findByText("Budget frozen flat"));
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByTestId("inline-read-contact")); // click-to-edit contact
     fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(updateSignal).not.toHaveBeenCalled();
@@ -409,6 +412,7 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
     expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit people");
     expect(screen.getByText("Who is this person?")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-contact")); // click-to-edit contact
     expect(screen.getByRole("button", { name: "pick contact" })).toBeInTheDocument();
     expect(screen.queryByTestId("legacy-edit-dialog")).not.toBeInTheDocument();
   });
@@ -418,6 +422,7 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(await screen.findByText("Marc Dubois"));
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByTestId("inline-read-contact")); // click-to-edit contact
     fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));
@@ -433,6 +438,7 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(await screen.findByText("Marc Dubois"));
     fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByTestId("inline-read-contact")); // click-to-edit contact
     fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(updateSignal).not.toHaveBeenCalled();

@@ -18,6 +18,8 @@ vi.mock("themes/emotionCache", () => ({
   NextAppDirEmotionCacheProvider: ({ children }) => children,
 }));
 
+import { useState } from "react";
+import Box from "@mui/material/Box";
 import ThemeCustomization from "themes/index";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 
@@ -124,6 +126,69 @@ describe("InlineEditableValue — select: one click opens the menu, a choice clo
     await waitFor(() => expect(screen.queryByTestId("inline-input-title")).not.toBeInTheDocument());
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByText("Phone Call")).toBeInTheDocument();
+  });
+});
+
+describe("InlineEditableValue — renderEditor (custom editor, same mechanics)", () => {
+  const A = { id: 1, name: "Alice" };
+  const B = { id: 2, name: "Bob" };
+  // A parent that holds the draft, like Formik does.
+  function Harness({ onChange = () => {} }) {
+    const [value, setValue] = useState(A);
+    return (
+      <ThemeCustomization>
+        <InlineEditableValue
+          name="who"
+          label="Who"
+          value={value}
+          onChange={(v) => {
+            onChange(v);
+            setValue(v);
+          }}
+          formatValue={(v) => v?.name ?? null}
+          renderEditor={({ value: v, onChange: change, commit }) => (
+            <Box>
+              <input data-testid="custom-editor" readOnly value={v?.name ?? ""} />
+              <button type="button" onClick={() => { change(B); commit(); }}>pick-bob</button>
+            </Box>
+          )}
+        />
+      </ThemeCustomization>
+    );
+  }
+
+  it("reads through formatValue; one click shows the custom editor with the value", () => {
+    render(<Harness />);
+    expect(screen.getByTestId("inline-read-who")).toHaveTextContent("Alice");
+    expect(screen.queryByTestId("custom-editor")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-who"));
+    expect(screen.getByTestId("custom-editor")).toHaveValue("Alice");
+  });
+
+  it("onChange + commit from the editor → back to READ with the new value", () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId("inline-read-who"));
+    fireEvent.click(screen.getByRole("button", { name: "pick-bob" }));
+    expect(screen.queryByTestId("custom-editor")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inline-read-who")).toHaveTextContent("Bob");
+  });
+
+  it("Escape inside the editor cancels: back to READ with the value at edit start", () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    fireEvent.click(screen.getByTestId("inline-read-who"));
+    fireEvent.keyDown(screen.getByTestId("custom-editor"), { key: "Escape" });
+    expect(screen.queryByTestId("custom-editor")).not.toBeInTheDocument();
+    expect(onChange).toHaveBeenCalledWith(A);
+    expect(screen.getByTestId("inline-read-who")).toHaveTextContent("Alice");
+  });
+
+  it("focus leaving the editor commits (click outside) → back to READ", () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId("inline-read-who"));
+    fireEvent.blur(screen.getByTestId("custom-editor"));
+    expect(screen.queryByTestId("custom-editor")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inline-read-who")).toHaveTextContent("Alice");
   });
 });
 

@@ -116,6 +116,9 @@ const pickDepartment = (optionName) => {
   fireEvent.click(screen.getByRole("option", { name: optionName }));
 };
 
+// The contact is click-to-edit: one click on its value reveals the picker.
+const openContact = () => fireEvent.click(screen.getByTestId("inline-read-contact"));
+
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
@@ -125,7 +128,7 @@ describe("EditPeopleContent (People S3)", () => {
     expect(screen.getByText("Who is this person?")).toBeInTheDocument();
     expect(screen.getByText("What is their role?")).toBeInTheDocument();
     expect(screen.getByText("Source quote")).toBeInTheDocument();
-    expect(screen.getByTestId("people-contact-value")).toHaveTextContent("Sophie Martin");
+    expect(screen.getByTestId("inline-read-contact")).toHaveTextContent("Sophie Martin");
     expect(screen.getByTestId("inline-read-full_name")).toHaveTextContent("Sophie Martin");
     // int choices vs string payload id lined up → the department shows.
     expect(screen.getByTestId("inline-read-department")).toHaveTextContent("Finance");
@@ -138,6 +141,7 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E2: picking a contact → PATCH updateSignal('people', id, {target_contact: <uuid>})", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "pick" }));
     await save();
     expect(updateSignal).toHaveBeenCalledTimes(1);
@@ -149,6 +153,7 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E3: the picker is scoped to the activity's account — filters={{ account_id }}", () => {
     renderEdit();
+    openContact();
     expect(JSON.parse(screen.getByTestId("people-contact-select").dataset.filters)).toEqual({
       account_id: "acc-1",
     });
@@ -156,6 +161,7 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E4: clearing contact, department and influence → null in the payload (name kept)", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "clear" }));
     pickDepartment("—");
     pickSelect("influence", "—");
@@ -220,6 +226,7 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E6: contact, name AND department empty → Save disabled + warning help, no PATCH", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "clear" }));
     pickDepartment("—");
     fireEvent.click(screen.getByTestId("inline-read-full_name"));
@@ -240,6 +247,7 @@ describe("EditPeopleContent (People S3)", () => {
 
   it("E6b: any one identity (name only) → Save enabled, no warning", async () => {
     renderEdit();
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "clear" }));
     pickDepartment("—");
     await act(async () => {});
@@ -250,6 +258,7 @@ describe("EditPeopleContent (People S3)", () => {
   it("Save returns to the detail — onSaved gets the rebuilt signal (displays + compact FKs)", async () => {
     const onSaved = vi.fn();
     renderEdit(PEOPLE, { onSaved });
+    openContact();
     fireEvent.click(screen.getByRole("button", { name: "pick" }));
     pickDepartment("Marketing");
     pickSelect("role", "Champion");
