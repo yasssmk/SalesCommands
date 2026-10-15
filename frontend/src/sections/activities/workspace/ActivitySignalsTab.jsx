@@ -46,6 +46,7 @@ import EditImpactContent from "sections/activities/workspace/EditImpactContent";
 import EditConstraintContent from "sections/activities/workspace/EditConstraintContent";
 import EditObjectionContent from "sections/activities/workspace/EditObjectionContent";
 import EditPeopleContent from "sections/activities/workspace/EditPeopleContent";
+import EditTechStackContent from "sections/activities/workspace/EditTechStackContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -321,6 +322,25 @@ export default function ActivitySignalsTab({
             onCancel={() => openSignalDetail(signal, "people")}
           />,
           { title: "Edit people" },
+        );
+        return;
+      }
+      // TechStack T2b: TechStack edits go to the new chassis drawer (clone of
+      // the People branch) — the usage scope gesture + lifecycle live inside.
+      if (signalType === "tech-stack") {
+        openDrawer(
+          <EditTechStackContent
+            techstack={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "tech-stack");
+            }}
+            onCancel={() => openSignalDetail(signal, "tech-stack")}
+          />,
+          { title: "Edit tech stack" },
         );
         return;
       }

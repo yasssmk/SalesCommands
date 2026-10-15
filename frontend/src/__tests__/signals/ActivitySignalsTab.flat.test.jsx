@@ -73,6 +73,26 @@ vi.mock("api/businessData/contacts", () => ({
   useGetContactChoices: vi.fn(() => ({ standardDepartments: [] })),
 }));
 
+// x-date-pickers — stubbed in tests (jsdom can't resolve its ESM), same as
+// OutcomeDrawerContent.test: a "pick" button fires onChange with a dayjs date.
+vi.mock("@mui/x-date-pickers/DatePicker", async () => {
+  const { default: dayjs } = await import("dayjs");
+  return {
+    DatePicker: (props) => (
+      <button
+        type="button"
+        data-testid={`pick-${props.label}`}
+        onClick={() => props.onChange(dayjs("2026-12-31"))}
+      >
+        pick {props.label}
+      </button>
+    ),
+  };
+});
+vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
+  LocalizationProvider: ({ children }) => <>{children}</>,
+}));
+vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: class {} }));
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(),
   displayErrorSnackbar: vi.fn(),
@@ -481,12 +501,51 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getByTestId("techstack-usage")).toHaveTextContent("Unknown");
   });
 
+  const TECH_ROW = {
+    id: "ts-edit", status: "PENDING", _signalType: "tech-stack",
+    tech_name: "HubSpot", is_to_replace: false,
+    usage_scope: "COMPANY", usage_departments: [],
+    usage_start_year: null, renewal_date: null, cost_description: "",
+    is_discontinued: false, discontinued_date: null,
+    notes: "", source_quote: "We run on HubSpot.",
+    source_context: { contacts: [] },
+  };
+
   const PEOPLE_ROW = {
     id: "pe2", status: "PENDING", _signalType: "people",
     full_name: "Marc Dubois", role: "ECONOMIC_BUYER", role_display: "Economic Buyer",
     target_contact: null, target_department: null, notes: "", source_quote: "Marc decides.",
     source_context: { contacts: [] },
   };
+
+  it("TechStack T2b (a): Edit from the TechStack detail → EditTechStackContent in the coque, NOT the legacy dialog", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [TECH_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("HubSpot"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit tech stack");
+    expect(screen.getByTestId("techstack-edit")).toBeInTheDocument();
+    expect(screen.queryByTestId("legacy-edit-dialog")).not.toBeInTheDocument();
+  });
+
+  it("TechStack T2b (a): edit notes → Save → back to the TechStack detail showing them", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [TECH_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("HubSpot"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByTestId("inline-read-notes"));
+    fireEvent.change(screen.getByTestId("inline-input-notes"), {
+      target: { value: "Unhappy with support." },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledWith(
+      "tech-stack", "ts-edit", expect.not.objectContaining({ is_to_replace: expect.anything() }),
+    );
+    expect(screen.getByTestId("techstack-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("techstack-notes")).toHaveTextContent("Unhappy with support.");
+  });
 
   it("People S3 (E1): Edit from the People detail → EditPeopleContent in the coque, NOT the legacy dialog", async () => {
     useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_ROW] }));

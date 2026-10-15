@@ -180,7 +180,7 @@ InlineEditableValue.propTypes = {
   /** Muted caption shown above the value in both modes. */
   label: PropTypes.string.isRequired,
   /** Current (controlled) value — the parent owns the draft. */
-  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.object]),
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.bool, PropTypes.object]),
   /** Raised with the new value on every keystroke (a draft; no PATCH here). */
   onChange: PropTypes.func.isRequired,
   /** Input kind: text | textarea | select. */
