@@ -129,7 +129,6 @@ describe("EditImpactContent (S3)", () => {
   it("S5b (Voie B): the impact_type select carries an empty option '—' to clear it", () => {
     renderEdit();
     fireEvent.click(screen.getByTestId("inline-read-impact_type"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
     expect(screen.getByRole("option", { name: "—" })).toBeInTheDocument();
     // Enum options still offered alongside the empty one.
     expect(screen.getByRole("option", { name: "Financial" })).toBeInTheDocument();
@@ -137,9 +136,8 @@ describe("EditImpactContent (S3)", () => {
 
   it("S5b (Voie B): clearing impact_type to '—' SENDS impact_type: '' (real clearing, not omitted)", async () => {
     renderEdit(); // IMPACT starts with impact_type "TIME"
-    // Enter edit on impact_type, open the select, pick the empty option.
+    // Enter edit on impact_type (the menu opens with it), pick the empty option.
     fireEvent.click(screen.getByTestId("inline-read-impact_type"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
     fireEvent.click(screen.getByRole("option", { name: "—" }));
 
     await act(async () => {
@@ -155,7 +153,6 @@ describe("EditImpactContent (S3)", () => {
     const onSaved = vi.fn();
     renderEdit(IMPACT, { onSaved });
     fireEvent.click(screen.getByTestId("inline-read-impact_type"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
     fireEvent.click(screen.getByRole("option", { name: "—" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));

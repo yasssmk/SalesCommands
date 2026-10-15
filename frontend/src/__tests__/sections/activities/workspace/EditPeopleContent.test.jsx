@@ -8,7 +8,7 @@
 // department, else Save disabled with a warning help message.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, act, within } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act, waitFor } from "@testing-library/react";
 import AphoriqTheme from "../../../_utils/aphoriqTheme";
 
 // ---- mocks (before importing the component) ----
@@ -100,14 +100,9 @@ const save = async () => {
   });
 };
 
-// The open InlineEditableValue select: its combobox sits next to the hidden
-// native input carrying the inline-input test id (the department Select is a
-// second, always-visible combobox).
+// An InlineEditableValue select opens WITH its menu already open: one click.
 const openInlineSelect = (name) => {
   fireEvent.click(screen.getByTestId(`inline-read-${name}`));
-  fireEvent.mouseDown(
-    within(screen.getByTestId(`inline-input-${name}`).parentElement).getByRole("combobox"),
-  );
 };
 
 const pickSelect = (name, optionName) => {
@@ -180,6 +175,31 @@ describe("EditPeopleContent (People S3)", () => {
     fireEvent.click(screen.getByRole("option", { name: "Champion" }));
     await save();
     expect(updateSignal.mock.calls[0][2].role).toBe("CHAMPION");
+  });
+
+  it("select, one click: clicking the role opens the field WITH its menu already open", () => {
+    renderEdit();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inline-read-role"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("select: picking an option returns to READ showing the new value; Save sends it", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-role"));
+    fireEvent.click(screen.getByRole("option", { name: "Champion" }));
+    await waitFor(() => expect(screen.queryByTestId("inline-input-role")).not.toBeInTheDocument());
+    expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Champion");
+    await save();
+    expect(updateSignal.mock.calls[0][2].role).toBe("CHAMPION");
+  });
+
+  it("select: Escape with the menu open returns to READ with the original value", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-role"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("inline-input-role")).not.toBeInTheDocument());
+    expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Economic Buyer");
   });
 
   it("E5b: exact payload keys {role, influence, target_contact, target_department, full_name, notes, source_quote}", async () => {

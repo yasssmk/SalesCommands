@@ -6,6 +6,9 @@
 // select). Typing raises onChange(newValue) so the PARENT holds the draft — this
 // field never PATCHes on its own. Enter (or blur) returns to read keeping the
 // value; Escape reverts the in-flight edit to the value captured at edit start.
+// type="select" opens WITH its menu already open; picking an option raises
+// onChange then returns to read; closing the menu without a choice (click
+// outside, Escape) returns to read with the value untouched.
 //
 // No hardcoded hex/px — the input is a plain MUI TextField (themed) and the read
 // rows use aphoriQ text tokens.
@@ -91,6 +94,10 @@ export default function InlineEditableValue({
           // input; otherwise undefined (no placeholder, the historical behaviour).
           placeholder={inputPlaceholder}
           inputProps={{ "data-testid": `inline-input-${name}` }}
+          // MUI fires onChange BEFORE onClose on an option click, so closing
+          // the menu always means "done": the choice (if any) is already in
+          // the parent's draft, and no choice leaves the value untouched.
+          SelectProps={type === "select" ? { defaultOpen: true, onClose: commit } : undefined}
         >
           {type === "select" &&
             options.map((o) => (

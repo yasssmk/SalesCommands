@@ -94,7 +94,6 @@ describe("EditConstraintContent (S3)", () => {
   it("rigidity select carries an empty option '—' to clear it", () => {
     renderEdit();
     fireEvent.click(screen.getByTestId("inline-read-rigidity"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
     expect(screen.getByRole("option", { name: "—" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Flexible" })).toBeInTheDocument();
   });
@@ -168,7 +167,6 @@ describe("EditConstraintContent (S3)", () => {
   it("rigidity cleared via '—' → payload rigidity: '' (real clearing)", async () => {
     renderEdit();
     fireEvent.click(screen.getByTestId("inline-read-rigidity"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
     fireEvent.click(screen.getByRole("option", { name: "—" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /save/i }));

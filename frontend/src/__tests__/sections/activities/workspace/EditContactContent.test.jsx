@@ -144,9 +144,9 @@ describe("EditContactContent — fields", () => {
     renderEdit();
     fireEvent.click(screen.getByTestId("inline-read-standard_department_id"));
     // A MUI select renders a combobox (a text field would be a plain textbox).
-    const combobox = screen.getByRole("combobox");
+    // Its menu opens with the field, which aria-hides the rest → `hidden: true`.
+    const combobox = screen.getByRole("combobox", { hidden: true });
     expect(combobox).toBeInTheDocument();
-    fireEvent.mouseDown(combobox);
     expect(await screen.findByRole("option", { name: "Sales" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Marketing" })).toBeInTheDocument();
   });
@@ -276,7 +276,6 @@ describe("EditContactContent — role in the decision (DC only)", () => {
     renderEdit({ activity: DC_ACTIVITY });
 
     fireEvent.click(screen.getByTestId("inline-read-role"));
-    fireEvent.mouseDown(screen.getByRole("combobox"));
     fireEvent.click(await screen.findByRole("option", { name: "Decision Maker" }));
 
     fireEvent.click(screen.getByRole("button", { name: /save/i }));

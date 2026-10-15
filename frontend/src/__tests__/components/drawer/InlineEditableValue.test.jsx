@@ -98,6 +98,35 @@ describe("InlineEditableValue — single click to edit (draft, no PATCH)", () =>
   });
 });
 
+describe("InlineEditableValue — select: one click opens the menu, a choice closes", () => {
+  const OPTIONS = [{ value: "CALL", label: "Phone Call" }, { value: "EMAIL", label: "Email" }];
+
+  it("a click opens the field with its menu already open (no second click)", () => {
+    renderField({ value: "CALL", type: "select", options: OPTIONS });
+    fireEvent.click(screen.getByTestId("inline-read-title"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("picking an option raises onChange and returns to READ", async () => {
+    const onChange = vi.fn();
+    renderField({ value: "CALL", type: "select", options: OPTIONS, onChange });
+    fireEvent.click(screen.getByTestId("inline-read-title"));
+    fireEvent.click(screen.getByRole("option", { name: "Email" }));
+    expect(onChange).toHaveBeenCalledWith("EMAIL");
+    await waitFor(() => expect(screen.queryByTestId("inline-input-title")).not.toBeInTheDocument());
+  });
+
+  it("Escape with the menu open returns to READ, value untouched", async () => {
+    const onChange = vi.fn();
+    renderField({ value: "CALL", type: "select", options: OPTIONS, onChange });
+    fireEvent.click(screen.getByTestId("inline-read-title"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("inline-input-title")).not.toBeInTheDocument());
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("Phone Call")).toBeInTheDocument();
+  });
+});
+
 describe("InlineEditableValue — inputPlaceholder (opt-in edit placeholder)", () => {
   it("passes inputPlaceholder to the OPEN input; the read placeholder is unchanged", () => {
     renderField({ value: "", type: "textarea", placeholder: "No title", inputPlaceholder: "Type a title" });
