@@ -31,8 +31,12 @@ import {
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
-import ContactInline from "components/signals/ContactInline";
-import { getTechSummary, formatTargetDepartments } from "sections/activities/signals/utils/signalDisplay";
+import ContactInline, { IdentityInline } from "components/signals/ContactInline";
+import {
+  getTechSummary,
+  formatTargetDepartments,
+  getPeopleName,
+} from "sections/activities/signals/utils/signalDisplay";
 
 const ICON_SIZES = IconSizes();
 
@@ -171,6 +175,7 @@ export default function SignalLine({
   showNatureChip = true,
   showStatusChip = true,
   showContactOverflow = true,
+  showPeopleIdentity = false,
 }) {
   const isRejected = signal.status === "REJECTED";
 
@@ -248,19 +253,32 @@ export default function SignalLine({
           </Box>
         )}
 
-        {/* Message — full text, wraps to as many lines as needed. */}
-        <Typography
-          variant="body2"
-          sx={{
-            flexGrow: 1,
-            minWidth: 0,
-            fontWeight: 500,
-            whiteSpace: "normal",
-            overflowWrap: "anywhere",
-          }}
-        >
-          {message}
-        </Typography>
+        {/* People S4 (Activity only, opt-in): the person's identity as
+            **Name** · Department · Role — the same inline treatment as the
+            line-2 contact (IdentityInline); absent parts are dropped. */}
+        {showPeopleIdentity && signalType === "people" ? (
+          <IdentityInline
+            data-testid="people-identity-line"
+            variant="body2"
+            name={getPeopleName(signal)}
+            meta={[signal.target_department?.name, signal.role_display]}
+            sx={{ flexGrow: 1, minWidth: 0, whiteSpace: "normal", overflowWrap: "anywhere" }}
+          />
+        ) : (
+          /* Message — full text, wraps to as many lines as needed. */
+          <Typography
+            variant="body2"
+            sx={{
+              flexGrow: 1,
+              minWidth: 0,
+              fontWeight: 500,
+              whiteSpace: "normal",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {message}
+          </Typography>
+        )}
       </Stack>
 
       {/* Line 2 (meta): date · contact · scope · light status */}
@@ -449,4 +467,8 @@ SignalLine.propTypes = {
   showStatusChip: PropTypes.bool,
   /** Show the "+N" contact-overflow chip (default true; false in the validation list). */
   showContactOverflow: PropTypes.bool,
+  /** People S4: render a People line 1 as **Name** · Department · Role
+      (default false — DC/Account keep the full_name message; true in the
+      Activity validation list). */
+  showPeopleIdentity: PropTypes.bool,
 };

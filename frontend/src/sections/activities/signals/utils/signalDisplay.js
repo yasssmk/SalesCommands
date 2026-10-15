@@ -72,13 +72,18 @@ export function getPeopleSummary(signal) {
   return role || "—";
 }
 
+// A People signal's person name: the linked contact (first + last) first,
+// else the full_name as stated, else "Unnamed person". Shared by the detail
+// headline and the Activity list line (People S4).
+export function getPeopleName(signal) {
+  return formatContact(signal?.target_contact) || signal?.full_name?.trim() || "Unnamed person";
+}
+
 // People detail headline on the Activity chassis: "Name — Role (Department)".
-// Name = the linked contact (first + last), else the full_name as stated, else
-// "Unnamed person". Distinct from getPeopleSummary above ("Role — Name (Dept)",
-// contact-only name, no full_name) which SignalDetailCard keeps unchanged.
+// Distinct from getPeopleSummary above ("Role — Name (Dept)", contact-only
+// name, no full_name) which SignalDetailCard keeps unchanged.
 export function getPeopleHeadline(signal) {
-  const name =
-    formatContact(signal?.target_contact) || signal?.full_name?.trim() || "Unnamed person";
+  const name = getPeopleName(signal);
   const role = signal?.role_display || signal?.role || "";
   const deptName = signal?.target_department?.name ?? null;
   const head = role ? `${name} — ${role}` : name;
