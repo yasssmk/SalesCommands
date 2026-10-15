@@ -1336,6 +1336,32 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Jalon (décision PO) — FIN DU MODULE SIGNALS** : **test global sur transcriptions réelles + fine-tuning des prompts**, incluant : vérifier que les **repères `P1`…** du bloc de contexte partagé n'ont **pas dégradé les autres stages** (pain_impact, objective, techstack, constraint, competitor, next_steps), et mesurer le **comportement réel de `raised_by`** (taux d'attribution, erreurs).
 - **Prochain jalon** : **PEOPLE** (détail + edit sur le châssis Activity) — **audit read-only d'abord**, incluant la **cohérence chaîne LLM → front** et la règle **« chaque FK écrite contrôlée tenant + account »**.
 
+### Sprint People ✅ LIVRÉ (chantier UX Activity — EN COURS) — extraction LLM des People + détail + edit + ligne de liste sur le châssis Activity (branche `feat/ux-activity-people`, `135b7a65`→`238306ee` + commit doc de clôture)
+- **Identité** : People = **`PeopleSignal`**, clé front **`"people"`**. Champs propres : **`full_name`** (+ `full_name_normalized` dérivé), **`role`** (`PeopleRole`), **`influence`** (`InfluenceLevel` H/M/L, nullable), **`target_contact`** (FK Contact nullable), **`target_department`** (FK **mono** `StandardDepartment`), **`notes`**. Identité d'une personne = clé du cluster (`SignalClusterService._people_cluster_key`) : `contact:<id>`, sinon `name:<nom normalisé>|dept:<id>`, sinon `signal:<id>`.
+- **Décisions PO verrouillées** :
+  - **Surface Activity UNIQUEMENT** pour le détail + edit châssis et pour la ligne de liste ; **DC/Account inchangés** (branche flush, lignes existantes).
+  - **RGPD** : pour un contact, seul le **prénom** est envoyé au LLM.
+  - **Ne jamais recréer** une personne **déjà identifiée dans le DC** (filtre serveur, en plus de la consigne prompt).
+  - **Ligne de liste** : **pas de chip de rôle** ; ligne 1 = **Nom** · Département · Rôle ; ligne 2 inchangée ; option **Activity uniquement**.
+  - **Département** : uniquement d'après ce qui est **dit de la personne**, sinon **null** (S6).
+- **Règle de construction** : **homogénéité des PATTERNS** (mêmes briques que les types finis : `DrawerContentLayout`, `SectionHeader`, `InlineEditableValue`, branche `handleEdit` + `onSaved`/`onCancel`), **pas des surfaces** ; chaque FK écrite **contrôlée tenant + account**.
+- **Livré** (chaque sous-étape : ROUGE par le vrai chemin d'abord, puis VERT, non-vacuité par édition ciblée, régression) :
+  - **S1 — extraction IA** (`135b7a65`, `ccdd24fd`) : stage **`people`** ajouté à `QualificationSignalsPipeline` (dernier des 7 stages) ; contexte partagé (`prompts/transcript_signals/context.py`) étendu : taxonomie People (rôle / influence / département), bloc **PEOPLE ALREADY IDENTIFIED** ; **réutilise les repères participants `P1`, `P2`…** (`participant_refs.py`, filtrés **tenant + account**) ; prompt `people_v1.py` + builder `_build_people_data` (`transcript_signal_extractor.py`) avec résolveur de département `resolve_person_department` ; stage **exempté du drop `is_inferred`** (`DROP_INFERRED_EXEMPT_STAGES`) ; dédoublonnage homogène techstack / people (`_deduplicate_candidates`) ; clé `people` dans les réponses fraîche / cache / vide de `activity_extraction_view.py`.
+  - **S1-fix — RGPD + identité** (`c16b64b3`) : **prénom seul** envoyé au LLM pour un contact ; identité nom + département **alignée sur la clé du cluster**.
+  - **S2 — détail** (`585fbdb9`) : `PeopleDetailView` dans `components/signals/SignalDetailContent.jsx` ; garde `signalType === "people" && currentActivityId && !leadingAction && !trailingAction` ; `"people"` ajouté à `coqueOwnsHeader` (`ActivitySignalsTab`).
+  - **S3 — choices + edit** (`ac1588ef`, `7e461f7e`) : `SignalChoicesView` expose **`people_roles`** et **`people_influences`** ; `EditPeopleContent` (nouveau) + branche `"people"` de `handleEdit` → retour au détail People (Save / Cancel).
+  - **S1-bis — filet serveur « déjà identifié dans le DC »** (`3fe4feb4`) : `ai_pipelines/services/identified_people.py` — **`identified_people_in_deal(activity)`** = **source unique** des personnes déjà connues (People **non REJECTED** du DC), partagée par le bloc de contexte et le filtre `_drop_people_already_in_deal` (clé **contact** ou **nom normalisé + département**, log `people_already_identified_in_dc`).
+  - **Prompt people v2** (`a0242284`) : **locuteurs prospect non enregistrés** extraits (`participant_ref` null, nom du label) ; **côté vendeur exclu** (celui qui présente / vend la solution) ; taxonomie sans omission ; **`CONTEXT_VERSION` v3** (oubli de bump de S1 corrigé).
+  - **S5 — constantes** (`eb17aea4`) : seuils du filtre de sécurité (`PIPELINE_CONFIDENCE_MIN`, `PIPELINE_DROP_INFERRED`, `TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES`) dans **`ai_pipelines/constants.py`**, lus par les pipelines.
+  - **S4 — ligne de liste Activity** (`091fd05c`) : **Nom** · Département · Rôle via `IdentityInline` partagé (`components/signals/ContactInline.jsx`) + `getPeopleName` (`signalDisplay.js`) ; option **`showPeopleIdentity`** de `SignalLine` (défaut false, passée **uniquement** par `SignalsValidationList`) → **DC/Account inchangés**.
+  - **S6 — prompt people v3** (`238306ee`) : `department` = fonction de CETTE personne, **uniquement d'après ce que dit la transcription** ; jamais déduit du nom de société, du titre de réunion, de l'industrie, du département du locuteur ni des autres personnes ; **null sinon**.
+- **Migrations** : **aucune**.
+- **Validation (PO)** : **pytest** `tests/ai_pipelines` + `tests/signals` = **914 passed**, **1 seul échec, PRÉ-EXISTANT** (`test_create_requires_rigidity`, **TD-247**) ; **vitest 188 fichiers / 1480 tests verts** ; lint sans erreur ; **smoke PO OK** (filtre « déjà identifié », ligne de liste).
+- **Dette** : **MAJ TD-204** (détail People Activity livré, DC différé → OPEN), **TD-205** (edit People livré, restent TechStack + Competitor → OPEN), **TD-206** (code mort), **TD-211** (réconciliation contact non faite → OPEN), **TD-231** (OPEN, relié notes DC), **TD-238** (People fait, 2 types restent), **TD-241** (bug latent département Objective), **TD-254** (ligne 2 = `contacts[0]`), **TD-260** (versions people v1→v3, CONTEXT v3) ; **NOUVEAUX TD-262** (500 run en cache qualification seule), **TD-263** (`_people_cluster_key` privé réutilisé), **TD-264** (observabilité des rejets — S1-ter reporté), **TD-265** (`SignalLine` valeurs en dur), **TD-266** (`getScopeLabel` inopérant pour People). **TD-247** inchangé (OPEN).
+- **Phase de test** : voir « Phase de test — Vérification de l'acuité des informations extraites » (Nouveaux sprints).
+- **Chantier DC** : notes People rattachées à la fiche « Sprint Workspace / DC » (Nouveaux sprints).
+- **Chantier UX Activity** : **reste OUVERT**. **Prochain jalon** : **TechStack** (puis **Competitor**), détail + edit sur le châssis Activity. **Branche dédiée suivante** : « Listes déroulantes en un clic » (Nouveaux sprints).
+
 ---
 
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
@@ -1413,7 +1439,9 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
   read-only** puis **fix au point central par module**, sur le pattern des
   modules de base (`activities`, `campaigns`, `decision_cycles`, `contacts`).
   Le module **signals** est corrigé (fiche « Fix — Isolation tenant du module
-  signals ✅ ») ; les autres modules ne sont PAS prouvés. Dette : **TD-246**.
+  signals ✅ ») ; les autres modules ne sont PAS prouvés. Dette : **TD-246**
+  (+ **TD-257** : `create_with_entities`, contacts non filtrés par account —
+  même famille, relié TD-246).
 - **Gestion des erreurs** (#5 ci-dessus) — audit complet des vues d'erreur.
 - **Doublons de requêtes + efficacité cache** — TD principal existant, déjà
   marqué « pré-launch » dans sa fiche (« Sprint — Doublons de requêtes +
@@ -1570,6 +1598,9 @@ possibles) :
      reprise : **Fix isolation tenant du module signals ✅**. Suite : **People**
      (audit read-only d'abord), puis jalon **FIN DU MODULE SIGNALS** (test global
      sur transcriptions réelles + fine-tuning).
+     **MAJ (clôture People)** : **People ✅ LIVRÉ** surface Activity
+     (`feat/ux-activity-people` — voir la fiche « Sprint People ✅ LIVRÉ ») ;
+     suite : **TechStack** puis **Competitor** sur le châssis.
   - [+ suites déjà cadrées : **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]
@@ -1626,6 +1657,20 @@ possibles) :
   de départ logique du recadrage DC) et TD-174
   (`estimated_timeline_days` conservé mais débranché de la puce — à re-câbler si
   la fonctionnalité « jours restants » est construite ici).
+- **Notes People (Sprint People Activity, 2026-10)** — surface **DC** différée,
+  à traiter ici :
+  - **Garde d'unicité backend** sur les chemins manuels (même personne déjà
+    présente dans le DC → **409**, affichage **orange** = règle métier) ; le
+    filet actuel ne couvre que l'extraction LLM (`identified_people_in_deal`).
+  - **Fiche contact et onglet DC : modifier au lieu de créer** — relié
+    **TD-231** (rôle DC empilé).
+  - **People PENDING visibles dans le DC**.
+  - **Éditer / retirer un rôle depuis le DC**.
+  - **Étape DC des People**.
+  - **Rattacher manuellement une activité à un DC** + rattacher ses signaux.
+  - **Lignes People du DC** : un People lié à un contact sans `full_name`
+    affiche « — » → réutiliser `getPeopleName` / `showPeopleIdentity`
+    (`SignalLine`, livrés au S4 People, aujourd'hui Activity uniquement).
 
 #### Sprint Objectifs — Vue (NOUVEAU 2026-08-21)
 - **Position** : **3ter** de l'ordre cible, **APRÈS** le sprint Workspace / DC.
@@ -1645,6 +1690,36 @@ possibles) :
   `bi/metrics/sales_metrics.py`) est la source unique depuis le Sprint C wiring ;
   voir TD-171 (retrait des vestiges legacy) et TD-175 (ambiguïté de vocabulaire
   `quotas` / `objectives`).
+
+#### Phase de test — Vérification de l'acuité des informations extraites (NOUVEAU 2026-10 — décision PO)
+- **Position** : jalon **FIN DU MODULE SIGNALS** (smoke A→Z / fine-tuning de
+  fin de module — voir la fiche « Sprint Objection (Blocker) ✅ LIVRÉ »).
+- **Objectif** : vérifier sur **transcriptions réelles** que ce que le LLM
+  extrait est **juste**, pas seulement bien câblé.
+- **À vérifier (constats du Sprint People Activity)** :
+  - **Smoke S6 sur d'autres transcriptions** : département = ce qui est dit de
+    la personne, sinon null ; l'exemple du prompt vient du cas testé, la
+    **généralisation reste à prouver**.
+  - **Rôles inversés** : Marc (CEO) sorti **ECONOMIC_BUYER**, Isabelle (DAF)
+    **DECISION_MAKER**.
+  - **Sous-extraction** : Claire et Thomas (participants) **non proposés** par
+    le LLM.
+  - **Règle « participant unique → P1 »** : attribue les Objections à un
+    participant **muet**.
+  - **Règle « aucun poids dans la décision »** : risque d'**exclure les End
+    Users**.
+  - **Doublons possibles** : « Marc » vs « Marc Dupont » (même département) =
+    **clés différentes** ; une personne connue **sans nom** n'est **jamais
+    reconnue** par le filtre « déjà identifié ».
+- **Prérequis** : observabilité des rejets (**TD-264**) à traiter au début du
+  fine-tuning.
+
+#### Listes déroulantes en un clic (NOUVEAU 2026-10 — branche dédiée APRÈS le Sprint People Activity)
+- **Décision PO (B)** : **changement central dans `InlineEditableValue`**,
+  appliqué à **tous les formulaires** (pas de correctif formulaire par
+  formulaire).
+- **Position** : **prochaine branche dédiée**, juste après la clôture du
+  Sprint People Activity.
 
 #### Sprint test (NOUVEAU 2026-08-21 — PRÉ-LAUNCH, DERNIER avant déploiement)
 - **Position** : après la phase fonctionnelle, **avant le déploiement** (voir
