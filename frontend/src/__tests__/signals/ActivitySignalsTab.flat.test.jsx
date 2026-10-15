@@ -68,6 +68,11 @@ vi.mock("api/signals/signals", () => ({
   updateSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
+// People S3: EditPeopleContent renders for real — stub its department choices.
+vi.mock("api/businessData/contacts", () => ({
+  useGetContactChoices: vi.fn(() => ({ standardDepartments: [] })),
+}));
+
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(),
   displayErrorSnackbar: vi.fn(),
@@ -366,6 +371,119 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     // Header owned by the coque: no in-content header, a single close (coque ×).
     expect(screen.queryByTestId("objection-detail-header")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
+  it("People S2 (P4): opening a people signal shows the coque header 'People' + status pill on the chassis", async () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "pe1", status: "PENDING", _signalType: "people",
+            full_name: "Marc Dubois", role: "ECONOMIC_BUYER", role_display: "Economic Buyer",
+            target_contact: null, target_department: null, source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Marc Dubois"));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("People");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Pending");
+    expect(screen.getByTestId("people-detail-body")).toBeInTheDocument();
+    // Header owned by the coque: no in-content header, a single close (coque ×).
+    expect(screen.queryByTestId("people-detail-header")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
+  const PEOPLE_ROW = {
+    id: "pe2", status: "PENDING", _signalType: "people",
+    full_name: "Marc Dubois", role: "ECONOMIC_BUYER", role_display: "Economic Buyer",
+    target_contact: null, target_department: null, notes: "", source_quote: "Marc decides.",
+    source_context: { contacts: [] },
+  };
+
+  it("People S3 (E1): Edit from the People detail → EditPeopleContent in the coque, NOT the legacy dialog", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Marc Dubois"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit people");
+    expect(screen.getByText("Who is this person?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "pick contact" })).toBeInTheDocument();
+    expect(screen.queryByTestId("legacy-edit-dialog")).not.toBeInTheDocument();
+  });
+
+  it("People S3 (E7): pick a contact → Save → back to the People detail showing that contact", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Marc Dubois"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledWith("people", "pe2", expect.objectContaining({ target_contact: "c-new" }));
+    expect(screen.getByTestId("people-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("People");
+    expect(within(screen.getByTestId("people-contact")).getByText("Nina Newman")).toBeInTheDocument();
+  });
+
+  it("People S3 (E7b): Cancel → back to the People detail unchanged, no API call", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Marc Dubois"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByRole("button", { name: "pick contact" }));
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(updateSignal).not.toHaveBeenCalled();
+    expect(screen.getByTestId("people-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("people-contact")).toHaveTextContent("No contact linked");
+  });
+
+  // People S4 — the Activity list renders a People line 1 as an identity:
+  // **First Last** · Department · Role (contact first, then full_name, then
+  // "Unnamed person"); line 2 (date + source participant) is unchanged.
+  const PEOPLE_LINE = {
+    id: "pl1", status: "PENDING", _signalType: "people",
+    full_name: "Sophie M.",
+    target_contact: { id: "c-s", first_name: "Sophie", last_name: "Martin", job_title: "CFO" },
+    target_department: { id: "1", name: "Finance" },
+    role: "ECONOMIC_BUYER", role_display: "Economic Buyer",
+    source_context: { contacts: [{ id: "p1", first_name: "Paula", last_name: "Participant" }] },
+  };
+  const renderPeopleLine = (overrides = {}) => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({ signals: [{ ...PEOPLE_LINE, ...overrides }] }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    return screen.getByTestId("people-identity-line");
+  };
+
+  it("People S4 (R1): line 1 = **Sophie Martin** · Finance · Economic Buyer (contact first, name bold)", () => {
+    const identity = renderPeopleLine();
+    expect(identity).toHaveTextContent(/^Sophie Martin · Finance · Economic Buyer$/);
+    expect(getComputedStyle(within(identity).getByText("Sophie Martin")).fontWeight).toBe("600");
+    expect(screen.queryByText("Sophie M.")).not.toBeInTheDocument();
+  });
+
+  it("People S4 (R2): no contact and no name → 'Unnamed person' leads line 1", () => {
+    const identity = renderPeopleLine({ target_contact: null, full_name: "" });
+    expect(identity).toHaveTextContent(/^Unnamed person · Finance · Economic Buyer$/);
+  });
+
+  it("People S4 (R3): no department → no orphan separator", () => {
+    const identity = renderPeopleLine({
+      target_contact: null, full_name: "Karim", target_department: null,
+      role: "END_USER", role_display: "End User",
+    });
+    expect(identity).toHaveTextContent(/^Karim · End User$/);
+  });
+
+  it("People S4 (R4): line 2 still shows the source participant", () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_LINE] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    const line = screen.getByTestId("signal-line");
+    expect(within(line).getByText("Paula Participant")).toBeInTheDocument();
   });
 
   it("opens the signal drawer when a row is clicked", () => {

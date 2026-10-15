@@ -45,6 +45,7 @@ import EditPainContent from "sections/activities/workspace/EditPainContent";
 import EditImpactContent from "sections/activities/workspace/EditImpactContent";
 import EditConstraintContent from "sections/activities/workspace/EditConstraintContent";
 import EditObjectionContent from "sections/activities/workspace/EditObjectionContent";
+import EditPeopleContent from "sections/activities/workspace/EditPeopleContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -123,7 +124,8 @@ export default function ActivitySignalsTab({
         signalType === "pain" ||
         signalType === "impact" ||
         signalType === "constraints" ||
-        signalType === "blockers";
+        signalType === "blockers" ||
+        signalType === "people";
       openDrawer(
         <SignalDetailPanel
           signal={signal}
@@ -287,6 +289,25 @@ export default function ActivitySignalsTab({
             onCancel={() => openSignalDetail(signal, "blockers")}
           />,
           { title: "Edit objection" },
+        );
+        return;
+      }
+      // People S3: People edits go to the new chassis drawer (clone of the
+      // Objection branch) — the account-scoped contact picker lives inside.
+      if (signalType === "people") {
+        openDrawer(
+          <EditPeopleContent
+            people={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "people");
+            }}
+            onCancel={() => openSignalDetail(signal, "people")}
+          />,
+          { title: "Edit people" },
         );
         return;
       }

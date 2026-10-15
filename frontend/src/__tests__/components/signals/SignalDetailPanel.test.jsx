@@ -1186,3 +1186,150 @@ describe("SignalDetailPanel — Objection on the chassis (Activity, S1)", () => 
     );
   });
 });
+
+// ==== People S2 — People detail on the standard chassis (Activity) ====
+// Clone of the Objection chassis: same gate (currentActivityId, only the
+// Activity coque passes it) so DC/Account Flat keep the flush PeopleDetails.
+// 4 sections: Person (summary box "Name — Role (Department)") → Role (role,
+// influence, why) → Contact (target_contact ONLY, no participant fallback;
+// department) → Source.
+describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
+  const MOCK_PEOPLE_CHASSIS = {
+    id: "people-chassis",
+    status: "PENDING",
+    role: "ECONOMIC_BUYER",
+    role_display: "Economic Buyer",
+    influence: "HIGH",
+    influence_display: "High",
+    full_name: "Marc Dubois",
+    target_contact: null,
+    target_department: { id: "d1", name: "Finance" },
+    notes: "Signs off every budget line.",
+    source_quote: "Marc will have the final word on the budget.",
+    source_context: {
+      contacts: [{ id: "p1", first_name: "Paula", last_name: "Participant" }],
+    },
+  };
+
+  it("P1: people + currentActivityId (no leading/trailing) → people chassis, 4 sections", () => {
+    render(
+      <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,
+    );
+    expect(screen.getByTestId("people-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("people-summary-box")).toBeInTheDocument();
+    expect(screen.getByText("Person")).toBeInTheDocument();
+    // "Role": §2 title + the Role field label.
+    expect(screen.getAllByText("Role")).toHaveLength(2);
+    // "Contact": §3 title + the Source participants caption (one participant).
+    expect(screen.getAllByText("Contact")).toHaveLength(2);
+    expect(screen.getByText("Source")).toBeInTheDocument();
+    // Flush markers absent.
+    expect(screen.queryByText("ROLE")).not.toBeInTheDocument();
+    expect(screen.queryByText("ORIGIN")).not.toBeInTheDocument();
+  });
+
+  it("P2: people WITHOUT currentActivityId (DC Flat) → flush branch unchanged (PeopleDetails)", () => {
+    render(<SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" />);
+    expect(screen.queryByTestId("people-detail-body")).not.toBeInTheDocument();
+    expect(screen.getByText("ROLE")).toBeInTheDocument();
+    expect(screen.getByText("CONTEXT")).toBeInTheDocument();
+    expect(screen.getByText("SOURCE QUOTE")).toBeInTheDocument();
+  });
+
+  it("P3: people + currentActivityId + leading/trailing (cluster coque) → flush branch", () => {
+    render(
+      <SignalDetailContent
+        signal={MOCK_PEOPLE_CHASSIS}
+        signalType="people"
+        currentActivityId="act-1"
+        leadingAction={<span>back</span>}
+        trailingAction={<span>close</span>}
+      />,
+    );
+    expect(screen.queryByTestId("people-detail-body")).not.toBeInTheDocument();
+    expect(screen.getByText("ROLE")).toBeInTheDocument();
+  });
+
+  it("P5a: header with a linked contact → 'First Last — Role (Department)'", () => {
+    const withContact = {
+      ...MOCK_PEOPLE_CHASSIS,
+      id: "people-contact",
+      full_name: "John Smith",
+      target_contact: { id: "c9", first_name: "Sophie", last_name: "Martin", job_title: "CFO" },
+    };
+    render(<SignalDetailPanel signal={withContact} signalType="people" currentActivityId="act-1" />);
+    expect(screen.getByTestId("people-summary-text")).toHaveTextContent(
+      "Sophie Martin — Economic Buyer (Finance)",
+    );
+  });
+
+  it("P5b: header without contact → full_name as stated", () => {
+    render(
+      <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,
+    );
+    expect(screen.getByTestId("people-summary-text")).toHaveTextContent(
+      "Marc Dubois — Economic Buyer (Finance)",
+    );
+  });
+
+  it("P5c: header without contact nor name → 'Unnamed person — Role (Department)'", () => {
+    const unnamed = { ...MOCK_PEOPLE_CHASSIS, id: "people-unnamed", full_name: "" };
+    render(<SignalDetailPanel signal={unnamed} signalType="people" currentActivityId="act-1" />);
+    expect(screen.getByTestId("people-summary-text")).toHaveTextContent(
+      "Unnamed person — Economic Buyer (Finance)",
+    );
+  });
+
+  it("P6: contact null + participants → Contact placeholder, participant ONLY in Source", () => {
+    render(
+      <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,
+    );
+    const contact = screen.getByTestId("people-contact");
+    expect(contact).toHaveTextContent("No contact linked");
+    expect(contact).not.toHaveTextContent("Paula Participant");
+    expect(screen.getAllByText("Paula Participant")).toHaveLength(1);
+    expect(within(screen.getByTestId("people-source")).getByText("Paula Participant")).toBeInTheDocument();
+  });
+
+  it("P6b: contact set → Contact shows name + job_title, department shown", () => {
+    const withContact = {
+      ...MOCK_PEOPLE_CHASSIS,
+      id: "people-contact-2",
+      target_contact: { id: "c9", first_name: "Sophie", last_name: "Martin", job_title: "CFO" },
+    };
+    render(<SignalDetailPanel signal={withContact} signalType="people" currentActivityId="act-1" />);
+    const contact = screen.getByTestId("people-contact");
+    expect(within(contact).getByText("Sophie Martin")).toBeInTheDocument();
+    expect(contact).toHaveTextContent("CFO");
+    expect(contact).toHaveTextContent("Finance");
+    expect(contact).not.toHaveTextContent("No contact linked");
+  });
+
+  it("P7: influence null → 'Not assessed'; empty notes → 'No notes'; no department → placeholder", () => {
+    const sparse = {
+      ...MOCK_PEOPLE_CHASSIS,
+      id: "people-sparse",
+      influence: null,
+      influence_display: null,
+      notes: "",
+      target_department: null,
+    };
+    render(<SignalDetailPanel signal={sparse} signalType="people" currentActivityId="act-1" />);
+    const role = screen.getByTestId("people-role");
+    expect(role).toHaveTextContent("Economic Buyer");
+    expect(role).toHaveTextContent("Not assessed");
+    expect(role).toHaveTextContent("No notes");
+    expect(screen.getByTestId("people-contact")).toHaveTextContent("No department");
+  });
+
+  it("P8: role, influence, notes and source_quote from the payload shown in the right section", () => {
+    render(
+      <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,
+    );
+    const role = screen.getByTestId("people-role");
+    expect(role).toHaveTextContent("Economic Buyer");
+    expect(role).toHaveTextContent("High");
+    expect(role).toHaveTextContent(MOCK_PEOPLE_CHASSIS.notes);
+    expect(screen.getByTestId("people-source")).toHaveTextContent(MOCK_PEOPLE_CHASSIS.source_quote);
+  });
+});

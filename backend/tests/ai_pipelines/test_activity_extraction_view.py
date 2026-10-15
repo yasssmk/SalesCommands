@@ -511,6 +511,7 @@ class TestBothFailed:
             'blocker': LLMTimeoutError('timeout'),
             'constraint': LLMTimeoutError('timeout'),
             'competitor': LLMTimeoutError('timeout'),
+            'people': LLMTimeoutError('timeout'),
             'next_steps': LLMTimeoutError('timeout'),
         }
 

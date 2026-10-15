@@ -110,10 +110,10 @@ class TestMergedPainImpactStage:
         _run(QualificationSignalsPipeline, account, activity, user_a)
 
         # One LLM call for pain+impact (merged), plus
-        # objective/techstack/blocker/constraint/competitor.
+        # objective/techstack/blocker/constraint/competitor/people.
         assert fake_provider.stages_in_order() == [
             'pain_impact', 'objective', 'techstack', 'blocker', 'constraint',
-            'competitor',
+            'competitor', 'people',
         ]
 
 

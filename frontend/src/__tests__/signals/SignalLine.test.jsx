@@ -284,6 +284,20 @@ describe("SignalLine — informational content", () => {
     expect(getComputedStyle(meta).color).toBe("rgba(0, 0, 0, 0.6)"); // text.secondary (muted)
   });
 
+  it("People S4 witness (DC/Account): by default a People line keeps its full_name message, no identity line", () => {
+    const people = {
+      id: "pe-w", status: "PENDING", full_name: "Sophie M.",
+      target_contact: { id: "c-s", first_name: "Sophie", last_name: "Martin" },
+      target_department: { id: "1", name: "Finance" },
+      role: "ECONOMIC_BUYER", role_display: "Economic Buyer",
+      source_context: { contacts: [] },
+    };
+    render(<SignalLine signal={people} signalType="people" />);
+    expect(screen.getByText("Sophie M.")).toBeInTheDocument();
+    expect(screen.queryByTestId("people-identity-line")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Economic Buyer/)).not.toBeInTheDocument();
+  });
+
   it("renders tech_name as the message and NO scope chip for tech-stack", () => {
     render(<SignalLine signal={TECH} signalType="tech-stack" />);
     expect(screen.getByText("Salesforce")).toBeInTheDocument();

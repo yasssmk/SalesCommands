@@ -52,10 +52,14 @@ blocker stage (no axes) and on the constraint stage (constraint carries a
 
 Safety filter
 -------------
+Values in constants.py (PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED
+[TRANSCRIPT_SIGNALS], TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES):
     CONFIDENCE_MIN = 0.5   -- drop LLM signals with self-declared
                               confidence below this threshold.
     DROP_INFERRED  = True  -- drop signals where the LLM self-declared
-                              is_inferred=true (verbatim-anchored only).
+                              is_inferred=true (verbatim-anchored only),
+                              except for DROP_INFERRED_EXEMPT_STAGES
+                              (people: inferred roles are kept).
 
 The filter itself is applied by TranscriptSignalExtractor, per stage.
 The pipeline only OWNS the thresholds and propagates them
@@ -125,7 +129,14 @@ an import cycle if a future refactor has F.3 reading pipeline class
 attributes.
 """
 
-from ..constants import AIPipelineStatus, AIPipelineType, PIPELINE_TEMPERATURES
+from ..constants import (
+    AIPipelineStatus,
+    AIPipelineType,
+    PIPELINE_CONFIDENCE_MIN,
+    PIPELINE_DROP_INFERRED,
+    PIPELINE_TEMPERATURES,
+    TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES,
+)
 from ..prompts.base import PromptParseError
 from ..prompts.transcript_signals.system import (
     SYSTEM_PROMPT,
@@ -158,6 +169,10 @@ from ..prompts.transcript_signals.constraint_v1 import (
 from ..prompts.transcript_signals.competitor_v1 import (
     build_competitor_request,
     COMPETITOR_PROMPT_VERSION,
+)
+from ..prompts.transcript_signals.people_v1 import (
+    build_people_request,
+    PEOPLE_PROMPT_VERSION,
 )
 from ..providers.base import (
     LLMAuthError,
@@ -200,6 +215,11 @@ _STAGES = [
     # the seller's solution, distinct from used tools (techstack) and
     # integration requirements (constraint TECHNICAL).
     ('competitor', build_competitor_request),
+    # People is LAST (UX Activity -- People S1): the prospect-side persons
+    # who weigh in the decision or embody a step to clear, with their role.
+    # Its context also lists the persons already identified in the deal so
+    # they are not emitted again (one role per person per decision cycle).
+    ('people', build_people_request),
 ]
 
 
@@ -219,6 +239,7 @@ class QualificationSignalsPipeline(BasePipeline):
         'blocker':     BLOCKER_PROMPT_VERSION,
         'constraint':  CONSTRAINT_PROMPT_VERSION,
         'competitor':  COMPETITOR_PROMPT_VERSION,
+        'people':      PEOPLE_PROMPT_VERSION,
     }
 
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.TRANSCRIPT_SIGNALS]
@@ -226,8 +247,13 @@ class QualificationSignalsPipeline(BasePipeline):
     # Safety filter knobs -- read by TranscriptSignalExtractor.persist_stage().
     # Strict defaults for signal extraction (vs. e.g. sentiment analysis):
     # we want verbatim-anchored signals only.
-    CONFIDENCE_MIN = 0.5
-    DROP_INFERRED = True
+    # Values live in constants.py (S5); the class attributes point to them so
+    # the `self.X` reads and any subclass override keep working.
+    CONFIDENCE_MIN = PIPELINE_CONFIDENCE_MIN[AIPipelineType.TRANSCRIPT_SIGNALS]
+    DROP_INFERRED = PIPELINE_DROP_INFERRED[AIPipelineType.TRANSCRIPT_SIGNALS]
+    # Stages exempt from the DROP_INFERRED drop (the confidence floor still
+    # applies) -- see TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES.
+    DROP_INFERRED_EXEMPT_STAGES = TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES
 
     # =========================================================================
     # MAIN ENTRY
@@ -253,6 +279,9 @@ class QualificationSignalsPipeline(BasePipeline):
                     'impact':    list[ImpactSignal],
                     'techstack': list[TechStackSignal],
                     'blocker':   list[BlockerSignal],
+                    'constraint': list[ConstraintSignal],
+                    'competitor': list[CompetitorSignal],
+                    'people':    list[PeopleSignal],
                 },
             }
         """
@@ -365,7 +394,10 @@ class QualificationSignalsPipeline(BasePipeline):
                                 user=user,
                                 client_id=client_id,
                                 confidence_min=self.CONFIDENCE_MIN,
-                                drop_inferred=self.DROP_INFERRED,
+                                drop_inferred=(
+                                    self.DROP_INFERRED
+                                    and stage_name not in self.DROP_INFERRED_EXEMPT_STAGES
+                                ),
                                 source_run=run,
                             )
 

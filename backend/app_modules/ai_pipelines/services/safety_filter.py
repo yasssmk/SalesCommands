@@ -12,8 +12,10 @@ on the raw signals emitted by the LLM before any row is persisted:
     pipeline's `DROP_INFERRED` knob is True (verbatim-anchored
     extractors).
 
-Thresholds are not hardcoded here — they live as class attributes on
-each Pipeline subclass (CONFIDENCE_MIN, DROP_INFERRED) and are passed
+Thresholds are not hardcoded here — their values live in
+ai_pipelines/constants.py (PIPELINE_CONFIDENCE_MIN, PIPELINE_DROP_INFERRED),
+exposed as class attributes on each Pipeline subclass (CONFIDENCE_MIN,
+DROP_INFERRED) and passed
 into `passes_safety_filter()` per call so a future use case (e.g.
 sentiment analysis with a tolerant filter) can override without
 touching this module.

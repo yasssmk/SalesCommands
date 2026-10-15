@@ -164,3 +164,31 @@ PIPELINE_TEMPERATURES = {
     AIPipelineType.DEAL_HEALTH:        0.2,
     AIPipelineType.PREP_CALL:          0.3,
 }
+
+
+# =============================================================================
+# SAFETY FILTER THRESHOLDS
+# =============================================================================
+#
+# Applied by the extractors (services/safety_filter.passes_safety_filter) to
+# every LLM-emitted signal before persistence. One entry per FILTERING
+# pipeline (mirror of PIPELINE_TEMPERATURES): each pipeline owns its policy,
+# even when the values coincide today. Deal health / prep call do not filter
+# (BasePipeline neutral defaults: 0.0 / False).
+
+# Drop a signal whose self-declared confidence is missing or below this floor.
+PIPELINE_CONFIDENCE_MIN = {
+    AIPipelineType.TRANSCRIPT_SIGNALS: 0.5,
+    AIPipelineType.NEXT_STEPS:         0.5,
+}
+
+# Drop a signal whose self-declared is_inferred is True (verbatim-anchored).
+PIPELINE_DROP_INFERRED = {
+    AIPipelineType.TRANSCRIPT_SIGNALS: True,
+    AIPipelineType.NEXT_STEPS:         True,
+}
+
+# Qualification stages exempt from the is_inferred drop (the confidence floor
+# still applies). People: an inferred role is a legitimate observation (a
+# champion is rarely stated) that the rep validates — PO decision, People S1.
+TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES = frozenset({'people'})

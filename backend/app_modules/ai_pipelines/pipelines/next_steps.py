@@ -41,6 +41,8 @@ the dedup ambiguity does not manifest in practice yet.
 
 Safety filter
 -------------
+Values in constants.py (PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED
+[NEXT_STEPS]):
     CONFIDENCE_MIN = 0.5   -- drop LLM signals with self-declared
                               confidence below this threshold.
     DROP_INFERRED  = True  -- drop signals where the LLM self-declared
@@ -99,7 +101,13 @@ graph clean (mirror of QualificationSignalsPipeline's lazy import of
 TranscriptSignalExtractor).
 """
 
-from ..constants import AIPipelineStatus, AIPipelineType, PIPELINE_TEMPERATURES
+from ..constants import (
+    AIPipelineStatus,
+    AIPipelineType,
+    PIPELINE_CONFIDENCE_MIN,
+    PIPELINE_DROP_INFERRED,
+    PIPELINE_TEMPERATURES,
+)
 from ..prompts.base import PromptParseError
 from ..prompts.transcript_signals.system import (
     SYSTEM_PROMPT,
@@ -145,10 +153,10 @@ class NextStepsPipeline(BasePipeline):
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.NEXT_STEPS]
 
     # Safety filter knobs -- read by NextStepExtractor.persist_extracted().
-    # Same defaults as QualificationSignalsPipeline (evidence-anchored
-    # suggestions only).
-    CONFIDENCE_MIN = 0.5
-    DROP_INFERRED = True
+    # Values live in constants.py (S5), one entry per pipeline (evidence-
+    # anchored suggestions only).
+    CONFIDENCE_MIN = PIPELINE_CONFIDENCE_MIN[AIPipelineType.NEXT_STEPS]
+    DROP_INFERRED = PIPELINE_DROP_INFERRED[AIPipelineType.NEXT_STEPS]
 
     # =========================================================================
     # MAIN ENTRY

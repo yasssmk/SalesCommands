@@ -107,6 +107,9 @@ from app_modules.signals.serializers.blocker_serializer import (
 from app_modules.signals.serializers.constraint_serializer import (
     ConstraintSignalDetailSerializer,
 )
+from app_modules.signals.serializers.people_serializer import (
+    PeopleSignalDetailSerializer,
+)
 from app_modules.signals.serializers.next_step_serializer import (
     NextStepSignalDetailSerializer,
 )
@@ -563,6 +566,10 @@ class ActivityExtractionView(BaseAPIView):
                 signals_by_stage.get('constraint', []),
                 many=True, context=ser_ctx,
             ).data,
+            'people':     PeopleSignalDetailSerializer(
+                signals_by_stage.get('people', []),
+                many=True, context=ser_ctx,
+            ).data,
         }
 
     @staticmethod
@@ -575,12 +582,14 @@ class ActivityExtractionView(BaseAPIView):
             TechStackSignal,
             BlockerSignal,
             ConstraintSignal,
+            PeopleSignal,
         )
         activity = run.source_activity
         if activity is None:
             return {
                 'pain': [], 'objective': [], 'impact': [],
                 'tech-stack': [], 'blocker': [], 'constraint': [],
+                'people': [],
             }
 
         pain = PainSignal.objects.filter(source_activity=activity, source_run=run)
@@ -589,6 +598,7 @@ class ActivityExtractionView(BaseAPIView):
         techstack = TechStackSignal.objects.filter(source_activity=activity, source_run=run)
         blocker = BlockerSignal.objects.filter(source_activity=activity, source_run=run)
         constraint = ConstraintSignal.objects.filter(source_activity=activity, source_run=run)
+        people = PeopleSignal.objects.filter(source_activity=activity, source_run=run)
 
         return {
             'pain':       PainSignalDetailSerializer(
@@ -609,6 +619,9 @@ class ActivityExtractionView(BaseAPIView):
             'constraint': ConstraintSignalDetailSerializer(
                 constraint, many=True, context=ser_ctx,
             ).data,
+            'people':     PeopleSignalDetailSerializer(
+                people, many=True, context=ser_ctx,
+            ).data,
         }
 
     @staticmethod
@@ -628,6 +641,7 @@ class ActivityExtractionView(BaseAPIView):
         return {
             'pain': [], 'objective': [], 'impact': [],
             'tech-stack': [], 'blocker': [], 'constraint': [],
+            'people': [],
         }
 
     # =========================================================================

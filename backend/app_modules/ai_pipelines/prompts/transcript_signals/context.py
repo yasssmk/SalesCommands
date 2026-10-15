@@ -18,6 +18,9 @@ What this layer carries
     services/participant_refs.py -- the same list the extractor resolves
     against.
   - Canonical enum values per target stage.
+  - People stage only: the persons ALREADY identified in the activity's
+    deal (non-REJECTED PeopleSignals of its decision cycle), so the stage
+    does not emit them again.
 
 No longer carried (S10)
 -----------------------
@@ -36,7 +39,8 @@ What this layer deliberately omits (RGPD / data minimization)
   - Contact last names
         --> first_name + job_title disambiguates contacts within one
             activity. The transcript itself carries last names verbatim;
-            this layer does not re-emit them in the context.
+            this layer does not re-emit them in the context (session block
+            and People "already identified" block alike).
 
 The transcript itself is sent verbatim by the pipeline orchestrator.
 That exposure is covered legally (DPA with the LLM provider) -- not
@@ -71,6 +75,8 @@ import logging
 from app_modules.signals.constants import (
     ConstraintNature,
     ImpactType,
+    InfluenceLevel,
+    PeopleRole,
     SignalDimension,
     SignalWhat,
     UsageScope,
@@ -81,16 +87,22 @@ from app_modules.ai_pipelines.services.participant_refs import (
     format_participant_ref,
     ordered_participants,
 )
+from app_modules.ai_pipelines.services.identified_people import (
+    identified_people_in_deal,
+)
 
 
 logger = logging.getLogger(__name__)
 
 # v2 (Objection S3): participant lines carry their reference ("P1 — ...").
-CONTEXT_VERSION = 'v2'
+# v3 (People S1 / S1-bis): People stage only -- People taxonomy under its own
+# header (no "or OMIT the signal") + the "already identified in this deal"
+# block. The other stages' context is byte-identical to v2.
+CONTEXT_VERSION = 'v3'
 
 _SUPPORTED_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
-    'constraint', 'competitor',
+    'constraint', 'competitor', 'people',
 )
 
 # Stages that carry NO canonical taxonomy (no what/dimension, no nature, no
@@ -111,8 +123,7 @@ def build_context_layer(activity, target_stage):
     Args:
         activity: app_modules.activities.models.Activity. Anchor for all
             session grounding (tenant, account, contacts).
-        target_stage: One of 'pain_impact', 'pain', 'objective', 'impact',
-            'techstack', 'blocker'. Drives which canonical enums are
+        target_stage: One of _SUPPORTED_STAGES. Drives which canonical enums are
             exposed. 'pain_impact' is the merged stage (A2) and exposes the
             union of the pain and impact axes.
 
@@ -130,6 +141,10 @@ def build_context_layer(activity, target_stage):
             (no `what` / `dimension` / signal_category). Emitting an
             empty taxonomy header would waste tokens and confuse the LLM
             with an irrelevant instruction; we skip the block entirely.
+        people
+            session + taxonomy (role / influence / department) + the
+            "already identified in this deal" block (empty without a
+            decision cycle).
 
     Raises:
         ValueError: target_stage is not one of the supported values.
@@ -151,6 +166,11 @@ def build_context_layer(activity, target_stage):
         # The techstack stage receives no reference list: tech identity
         # is free text (techstack_v1 emits `tech_name`). The tenant
         # catalogue that used to be injected here was removed in S10.
+
+    # People only: the persons ALREADY identified in this deal, which the
+    # stage must NOT emit again (one role per person per decision cycle).
+    if target_stage == 'people':
+        blocks.append(_build_identified_people_block(activity))
 
     return '\n\n'.join(b for b in blocks if b)
 
@@ -284,6 +304,65 @@ def _build_contact_lines(activity):
 
 
 # =============================================================================
+# IDENTIFIED PEOPLE BLOCK -- People stage only
+# =============================================================================
+
+def _build_identified_people_block(activity):
+    """
+    Render the persons ALREADY identified in the activity's deal, which the
+    People stage must NOT emit again (PO rule: one role per person per
+    decision cycle; prevention at extraction time, no a-posteriori dedup).
+
+    Source: the non-REJECTED (VALIDATED + PENDING) PeopleSignals of the
+    activity's decision_cycle, scoped on the activity's tenant AND account.
+    An activity without a decision cycle (campaign context) yields "" -- the
+    caller drops the empty block.
+
+    Format per person: "[<ref> — ]<name> — role <ROLE>[, department <dept>]"
+        - <ref>  --> the participant reference ("P1", ...) when the person is
+          a participant of THIS activity (same numbering as the session
+          block, from ordered_participants).
+        - <name> --> a person linked to a contact: the contact's FIRST name
+          only (same data-minimisation rule as the session block -- the
+          stored full_name may carry the last name); a person without
+          contact: the full_name as stated in the transcript; else
+          "Unnamed person".
+    """
+    # Shared with the extractor's server-side safety net (same set).
+    signals = identified_people_in_deal(activity)
+    if not signals:
+        return ''
+
+    refs = {
+        contact.id: format_participant_ref(index)
+        for index, contact in enumerate(ordered_participants(activity))
+    }
+
+    lines = [
+        'PEOPLE ALREADY IDENTIFIED IN THIS DEAL '
+        '(do NOT emit any of them again)'
+    ]
+    for signal in signals:
+        contact = signal.target_contact
+        if contact:
+            name = (contact.first_name or '').strip()
+        else:
+            name = (signal.full_name or '').strip()
+        name = name or 'Unnamed person'
+
+        descriptor = f'{name} — role {signal.role}'
+        if signal.target_department:
+            descriptor += f', department {signal.target_department.name}'
+
+        ref = refs.get(contact.id) if contact else None
+        if ref:
+            descriptor = f'{ref} — {descriptor}'
+        lines.append(f'- {descriptor}')
+
+    return '\n'.join(lines)
+
+
+# =============================================================================
 # TAXONOMY BLOCK -- Canonical enums per target stage
 # =============================================================================
 
@@ -318,10 +397,19 @@ def _build_taxonomy_block(target_stage):
       * Impact:    scope_level forced to BUSINESS; metric_text and
                    human_impact left empty.
     """
-    lines = [
-        'CANONICAL TAXONOMY '
-        '(pick exactly one value from each list, or OMIT the signal)'
-    ]
+    if target_stage == 'people':
+        # People has its own header: only `role` must be picked from its list;
+        # influence / department may be null, so the canonical header's
+        # "or OMIT the signal" (which made the model drop persons) is not used.
+        lines = [
+            'PEOPLE TAXONOMY '
+            '(pick `role` from its list; influence and department may be null)'
+        ]
+    else:
+        lines = [
+            'CANONICAL TAXONOMY '
+            '(pick exactly one value from each list, or OMIT the signal)'
+        ]
 
     if target_stage == 'pain_impact':
         # Merged pain + impact stage: the union of the pain axes and the
@@ -392,6 +480,37 @@ def _build_taxonomy_block(target_stage):
             'more values from this list, exact strings; [] when no specific '
             'department is named): '
             + _enum_json_array(StandardDepartment.DepartmentChoices)
+        )
+
+    elif target_stage == 'people':
+        # People is classified on `role` (PeopleRole) with an optional
+        # `influence` — the SIGNAL InfluenceLevel (HIGH / MEDIUM / LOW), never
+        # contacts.InfluenceLevel — and placed in ONE department (single FK
+        # target_department). The department vocab is injected as a list of
+        # valid names, cloning the constraint branch above; the extractor
+        # resolves it by exact / unambiguous-word match (resolve_person_department).
+        # influence and department are nullable (people-specific header above,
+        # restated below).
+        from app_modules.core_modules.models import StandardDepartment
+        lines.append(
+            '- role (the person\'s part in the buying decision; pick EXACTLY '
+            'ONE code): ' + _enum_coded_list(PeopleRole)
+        )
+        lines.append(
+            '- influence (weight of the person in the decision; pick ONE code, '
+            'or null when it cannot be assessed): '
+            + _enum_coded_list(InfluenceLevel)
+        )
+        lines.append(
+            '- department (the ONE department the person belongs to; pick ONE '
+            'value from this list, exact string, or null when it cannot be '
+            'identified): '
+            + _enum_json_array(StandardDepartment.DepartmentChoices)
+        )
+        lines.append(
+            '- influence and department MAY be null: a missing influence or '
+            'department is NEVER a reason to omit the person. Only `role` '
+            'must match the list.'
         )
 
     return '\n'.join(lines)

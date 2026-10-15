@@ -16,11 +16,13 @@ import PropTypes from "prop-types";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 
-export default function ContactInline({ contact, variant = "body2", ...rest }) {
-  if (!contact) return null;
-  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
-  const meta = [contact.job_title || null, contact.department?.name || null].filter(Boolean);
-  if (!name && meta.length === 0) return null;
+// The shared inline identity rendering: a name in bold text.primary, then the
+// meta parts muted (text.secondary) joined with " · ". ContactInline builds it
+// from a contact; People S4 reuses it for the People line identity
+// (name · department · role). Empty meta parts are dropped — no orphan separator.
+export function IdentityInline({ name, meta = [], variant = "body2", ...rest }) {
+  const parts = meta.filter(Boolean);
+  if (!name && parts.length === 0) return null;
 
   return (
     <Typography variant={variant} component="span" {...rest}>
@@ -29,14 +31,30 @@ export default function ContactInline({ contact, variant = "body2", ...rest }) {
           {name}
         </Box>
       )}
-      {meta.length > 0 && (
+      {parts.length > 0 && (
         <Box component="span" sx={{ color: "text.secondary" }}>
           {name ? " · " : ""}
-          {meta.join(" · ")}
+          {parts.join(" · ")}
         </Box>
       )}
     </Typography>
   );
+}
+
+IdentityInline.propTypes = {
+  /** The bold, primary part. */
+  name: PropTypes.string,
+  /** The muted parts, joined with " · " (falsy entries dropped). */
+  meta: PropTypes.arrayOf(PropTypes.string),
+  /** Typography variant for the whole inline (default body2). */
+  variant: PropTypes.string,
+};
+
+export default function ContactInline({ contact, variant = "body2", ...rest }) {
+  if (!contact) return null;
+  const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim();
+  const meta = [contact.job_title || null, contact.department?.name || null];
+  return <IdentityInline name={name} meta={meta} variant={variant} {...rest} />;
 }
 
 ContactInline.propTypes = {

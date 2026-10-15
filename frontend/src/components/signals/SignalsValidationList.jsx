@@ -196,6 +196,7 @@ export default function SignalsValidationList({
                           showNatureChip={false}
                           showStatusChip={false}
                           showContactOverflow={false}
+                          showPeopleIdentity
                         />
                       ))}
                     </Box>
