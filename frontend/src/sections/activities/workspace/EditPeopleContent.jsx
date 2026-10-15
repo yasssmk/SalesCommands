@@ -35,10 +35,6 @@ import * as Yup from "yup";
 // MUI
 import Alert from "@mui/material/Alert";
 import Divider from "@mui/material/Divider";
-import FormControl from "@mui/material/FormControl";
-import InputLabel from "@mui/material/InputLabel";
-import MenuItem from "@mui/material/MenuItem";
-import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
 
 // Project
@@ -124,6 +120,11 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
       })),
     [standardDepartments],
   );
+  // department is OPTIONAL & clearable → prepend the empty "—" option.
+  const departmentSelectOptions = useMemo(
+    () => [EMPTY_OPTION, ...departmentOptions],
+    [departmentOptions],
+  );
 
   const initialValues = useMemo(
     () => ({
@@ -196,8 +197,10 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
   const set = (name) => (v) => setFieldValue(name, v);
   const identityMissing = !hasIdentity(values);
 
-  const handleDepartmentChange = (event) => {
-    const picked = departmentOptions.find((o) => o.value === event.target.value) ?? null;
+  // InlineEditableValue raises the picked option VALUE (the string id); the form
+  // keeps the {value,label} object ("" — the empty option — clears it).
+  const handleDepartmentChange = (value) => {
+    const picked = departmentOptions.find((o) => o.value === value) ?? null;
     setFieldValue("department", picked);
   };
 
@@ -231,23 +234,14 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
             onChange={set("full_name")}
             placeholder="No name mentioned"
           />
-          <FormControl fullWidth size="small">
-            <InputLabel id="people-target-dept-label">Department</InputLabel>
-            <Select
-              labelId="people-target-dept-label"
-              id="people-target-department"
-              value={values.department?.value ?? ""}
-              onChange={handleDepartmentChange}
-              label="Department"
-            >
-              <MenuItem value={EMPTY_OPTION.value}>{EMPTY_OPTION.label}</MenuItem>
-              {departmentOptions.map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <InlineEditableValue
+            name="department"
+            label="Department"
+            type="select"
+            value={values.department?.value ?? ""}
+            options={departmentSelectOptions}
+            onChange={handleDepartmentChange}
+          />
           {identityMissing && (
             <Alert severity="warning" data-testid="people-identity-warning">
               Link a contact, or give a name or a department to identify this person.

@@ -8,7 +8,7 @@
 // is its own titled section. Save PATCHes via updateSignal("objective", id, patch).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act, waitFor } from "@testing-library/react";
 import AphoriqTheme from "../../../_utils/aphoriqTheme";
 
 // ---- mocks (before importing the component) ----
@@ -58,6 +58,7 @@ vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: class {} }));
 
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
 import { updateSignal } from "api/signals/signals";
+import { useGetContactChoices } from "api/businessData/contacts";
 
 const OBJECTIVE = {
   id: "obj-1",
@@ -245,5 +246,41 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
       summary: "Reduce reporting time drastically now",
     });
     expect(closeDrawer).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditObjectiveContent — department on the click-to-edit pattern (one click, TD-241)", () => {
+  // REAL shapes: the contacts choices carry INT ids (contacts/views/views.py
+  // `dept.id`) while the objective serializer sends the id as a STRING
+  // (objective_serializer.py `str(d.id)`).
+  const REAL_DEPARTMENTS = { standardDepartments: [{ value: 3, label: "Finance" }, { value: 4, label: "Marketing" }] };
+  const DEPT_OBJECTIVE = { ...OBJECTIVE, target_department: { id: "3", name: "Finance" } };
+  let defaultImpl;
+  beforeEach(() => {
+    defaultImpl = useGetContactChoices.getMockImplementation();
+    useGetContactChoices.mockImplementation(() => REAL_DEPARTMENTS);
+  });
+  afterEach(() => useGetContactChoices.mockImplementation(defaultImpl));
+
+  it("no department combobox at render; the read row shows the LABEL, not the raw id", () => {
+    renderEdit(DEPT_OBJECTIVE);
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inline-read-target_department")).toHaveTextContent("Finance");
+  });
+
+  it("one click opens the menu; a choice returns to READ with the new label; Save sends the id", async () => {
+    renderEdit(DEPT_OBJECTIVE);
+    fireEvent.click(screen.getByTestId("inline-read-target_department"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("inline-input-target_department")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("inline-read-target_department")).toHaveTextContent("Marketing");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledTimes(1);
+    expect(updateSignal.mock.calls[0][2].target_department).toBe("4");
   });
 });

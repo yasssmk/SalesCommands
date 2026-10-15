@@ -110,8 +110,9 @@ const pickSelect = (name, optionName) => {
   fireEvent.click(screen.getByRole("option", { name: optionName }));
 };
 
+// The department is an InlineEditableValue select too: one click opens its menu.
 const pickDepartment = (optionName) => {
-  fireEvent.mouseDown(screen.getByRole("combobox", { name: /department/i }));
+  fireEvent.click(screen.getByTestId("inline-read-department"));
   fireEvent.click(screen.getByRole("option", { name: optionName }));
 };
 
@@ -127,7 +128,7 @@ describe("EditPeopleContent (People S3)", () => {
     expect(screen.getByTestId("people-contact-value")).toHaveTextContent("Sophie Martin");
     expect(screen.getByTestId("inline-read-full_name")).toHaveTextContent("Sophie Martin");
     // int choices vs string payload id lined up → the department shows.
-    expect(screen.getByRole("combobox", { name: /department/i })).toHaveTextContent("Finance");
+    expect(screen.getByTestId("inline-read-department")).toHaveTextContent("Finance");
     expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Economic Buyer");
     expect(screen.getByTestId("inline-read-influence")).toHaveTextContent("High");
     expect(screen.getByText(PEOPLE.notes)).toBeInTheDocument();
@@ -270,5 +271,32 @@ describe("EditPeopleContent (People S3)", () => {
       job_title: "CTO",
     });
     expect(closeDrawer).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditPeopleContent — department on the click-to-edit pattern (one click)", () => {
+  it("no department combobox at render; the read row shows the LABEL (int choices vs string id)", () => {
+    renderEdit();
+    expect(screen.queryByRole("combobox", { name: /department/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("inline-read-department")).toHaveTextContent("Finance");
+  });
+
+  it("one click opens the menu; a choice returns to READ with the new label; Save sends its id", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-department"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Marketing" }));
+    await waitFor(() => expect(screen.queryByTestId("inline-input-department")).not.toBeInTheDocument());
+    expect(screen.getByTestId("inline-read-department")).toHaveTextContent("Marketing");
+    await save();
+    expect(updateSignal.mock.calls[0][2].target_department).toBe("2");
+  });
+
+  it("the empty option '—' clears it → payload target_department null", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-department"));
+    fireEvent.click(screen.getByRole("option", { name: "—" }));
+    await save();
+    expect(updateSignal.mock.calls[0][2].target_department).toBeNull();
   });
 });
