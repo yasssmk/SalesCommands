@@ -1774,6 +1774,37 @@ possibles) :
 - **Prochain jalon** : **TechStack** (détail + edit sur le châssis, surface
   Activity), puis **Competitor**.
 
+#### Fix perte des notes à l'édition (Activity) ✅ LIVRÉ (branche `fix/edit-notes-loss`, `fce19df` + commit doc de clôture)
+- **Déclencheur** : audit read-only TechStack / Competitor (constat B8), étendu
+  à Pain en phase A.
+- **Cause** : sur la surface Activity, le drawer (détail puis edit) s'ouvre avec
+  la **ligne du payload de LISTE** (`/module-signals/all/`, serializers **List**
+  par type) **sans recharger le détail**. `notes` était **absent** des
+  serializers List **Pain / Constraint / TechStack**, alors que les formulaires
+  d'édition l'envoient toujours (`EditPainContent`, `EditConstraintContent`,
+  `InlineTechStackForm` via `SignalEditDrawer`, valeur initiale
+  `signal.notes || ""`) → **PATCH `notes: ""`** à chaque sauvegarde = **notes
+  existantes effacées** ; le détail ne les affichait jamais non plus.
+- **Correctif** : `notes` ajouté (lecture seule) aux **3 serializers List**
+  (`pain_serializer.py`, `constraint_serializer.py`, `tech_stack_serializer.py`),
+  **calqué sur le précédent Objective** (SIG-5e-fix4 P1, `295443e`). Aucun
+  changement front, **aucune migration**.
+- **Tests** : `tests/signals/test_list_exposes_notes.py` — par type, par le
+  **vrai chemin** `/module-signals/all/?activity_id=…` : (a) la ligne porte
+  `notes` avec sa valeur ; (b) un PATCH construit depuis la ligne **comme le
+  fait le formulaire** conserve `notes` en base. ROUGE d'abord (6/6), VERT
+  après fix, non-vacuité par édition ciblée (retrait sur Constraint → ses 2
+  tests rougissent).
+- **Effet aussi sur DC / Account** : le correctif est dans le serializer, donc
+  il vaut pour toutes les surfaces qui lisent le même payload agrégé.
+- **Hors périmètre** : `validated_by` / `validated_at` (même cause, sans perte
+  de données) → **TD-255(4)**, reste OPEN.
+- **Validation (PO)** : **pytest 446 passed**, seul échec **PRÉ-EXISTANT**
+  (`test_create_requires_rigidity`, **TD-247**) ; **smoke PO OK**.
+- **Dette** : **MAJ TD-255(4)**.
+- **Prochain jalon** : **sprint TechStack** (détail + edit sur le châssis,
+  surface Activity), puis **Competitor**.
+
 #### Sprint test (NOUVEAU 2026-08-21 — PRÉ-LAUNCH, DERNIER avant déploiement)
 - **Position** : après la phase fonctionnelle, **avant le déploiement** (voir
   « 🚀 Jalon LAUNCH »).
