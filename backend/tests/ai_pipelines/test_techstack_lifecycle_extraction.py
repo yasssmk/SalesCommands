@@ -229,8 +229,8 @@ class TestSameToolTwiceCompletesEmptyFields:
 class TestPromptV3:
 
     def test_version_is_v3_or_later(self):
-        # v4 (T4b) keeps the v3 content asserted below.
-        assert TECHSTACK_PROMPT_VERSION == 'v4'
+        # v4 (T4b) and v5 (T4c) keep the v3 content asserted below.
+        assert TECHSTACK_PROMPT_VERSION == 'v5'
 
     def test_schema_carries_the_new_fields_and_not_is_to_replace(self):
         prompt = build_techstack_request('transcript')

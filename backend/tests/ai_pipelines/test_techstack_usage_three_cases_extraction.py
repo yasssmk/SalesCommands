@@ -105,9 +105,9 @@ class TestBuilderNormalisesUsageToThreeCases:
 class TestPromptAndContextDescribeThreeCases:
 
     def test_prompt_version_is_v2_or_later(self):
-        # v2 introduced the three cases (T0); v3 (T4, lifecycle) and v4 (T4b)
-        # keep them — the content assertions below still hold.
-        assert TECHSTACK_PROMPT_VERSION == 'v4'
+        # v2 introduced the three cases (T0); v3 (T4, lifecycle), v4 (T4b)
+        # and v5 (T4c) keep them — the content assertions below still hold.
+        assert TECHSTACK_PROMPT_VERSION == 'v5'
 
     def test_prompt_no_longer_offers_team(self):
         prompt = build_techstack_request('transcript')

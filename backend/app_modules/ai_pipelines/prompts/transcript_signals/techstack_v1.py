@@ -36,7 +36,9 @@ array of tech-stack observations (v3). Each observation has these fields:
                                             designated as a user. See the
                                             USAGE DEPARTMENTS section below.
     usage_start_year       int|null     -- year the prospect started using it.
-    renewal_date           date|null    -- next renewal, YYYY-MM-DD.
+    renewal_date           date|null    -- next renewal, YYYY-MM-DD, ONLY
+                                            when a renewal is said (v5: a
+                                            stop date is never a renewal).
     cost_description       string|null  -- the cost as stated (verbatim).
     is_discontinued        boolean      -- the prospect stopped / will stop
                                             using it, with a stated date.
@@ -240,13 +242,19 @@ retrieved later for quality measurement and debugging.
         TechStack / Competitor boundary -- CONFIRMED usage only, a tool
         looked at / evaluated / tested is never tech stack (the competitor
         stage v2 takes it by default).
+  v5 -- Sprint TechStack T4c (PO smoke on T4b): EVERY tool used in a process
+        is tech stack, generic tools (Excel, Google Sheets, email, phone) and
+        manual means (paper, whiteboard, notebook) included, named as said;
+        renewal_date ONLY when a renewal is said -- a stop date is never a
+        renewal date. Examples deliberately NOT taken from the PO smoke
+        transcripts (they stay unseen tests).
 """
 
 
 __all__ = ['TECHSTACK_PROMPT_VERSION', 'build_techstack_request']
 
 
-TECHSTACK_PROMPT_VERSION = 'v4'
+TECHSTACK_PROMPT_VERSION = 'v5'
 
 
 def build_techstack_request(transcript):
@@ -268,8 +276,20 @@ def build_techstack_request(transcript):
 Extract TECH STACK signals from the SALES TRANSCRIPT below.
 
 A tech stack signal is structured evidence that the PROSPECT (the
-account-side) uses a specific tool, software, or product at their
-company. Tech stack = CONFIRMED usage only.
+account-side) uses a tool -- software or not -- in one of its processes.
+Tech stack = CONFIRMED usage only.
+
+EVERY tool the prospect uses in a process is tech stack, including GENERIC
+tools (Excel, Google Sheets, email, phone) and MANUAL means (paper,
+whiteboard, notebook): the aim is to understand everything the prospect's
+processes run on. Usage and lifecycle follow the same rules as for any tool
+(not said -> "UNKNOWN" / null).
+- « On suit les commandes dans un Google Sheet. » -> "tech_name": "Google Sheets"
+- « Les bons de livraison sont encore sur papier. » -> "tech_name": "Papier"
+- « Le planning de l'atelier est sur un tableau blanc. » -> "tech_name": "Tableau blanc"
+- « La compta fait ses rapprochements dans Excel. » -> "tech_name": "Excel"
+  (usage_scope="DEPARTMENT", usage_departments=["Finance"])
+- « Les clients passent commande par téléphone. » -> "tech_name": "Téléphone"
 
 DO NOT emit:
 - Tools the SELLER uses or sells (e.g. the prospect describing the
@@ -314,6 +334,10 @@ products, an in-house or unnamed tool), keep the name exactly as spoken
 rather than inventing a mapping. A faithful raw name is always better
 than a wrong canonical one. No reference list is provided -- rely only on
 well-known, unambiguous product knowledge, never on a guess.
+
+A generic or manual means is named AS SAID, capitalised, never expanded or
+mapped to a product: "Excel" (not "Microsoft Excel"), "Papier", "Tableau
+blanc", "Mail", "Téléphone".
 
 `tech_name` is REQUIRED on every signal; a signal without it is dropped.
 
@@ -361,9 +385,16 @@ relative date is null.
 - "usage_start_year" -- the year the prospect STARTED using the tool, as an
   integer (e.g. 2019). "We've been on it for three years" -> the
   Conversation date's year minus 3.
-- "renewal_date"     -- the next contract renewal, YYYY-MM-DD. Resolve a
-  relative date ("next March", "at the end of the year") with the
-  Conversation date; if it cannot be resolved to a precise day, emit null.
+- "renewal_date" -- ONLY when a RENEWAL is explicitly said (a contract or
+  subscription renewal, « renouvellement », « reconduction »): the next
+  renewal, YYYY-MM-DD. Resolve a relative date ("next March", "at the end of
+  the year") with the Conversation date; if it cannot be resolved to a
+  precise day, emit null. A stop / end / termination date is NEVER a renewal
+  date: it goes to "discontinued_date", and "renewal_date" stays null.
+  « Le contrat DocuSign se renouvelle le 1er septembre. »
+      -> "renewal_date": "<conversation year>-09-01", "is_discontinued": false
+  « On résilie notre abonnement Mailchimp fin mars. »
+      -> "is_discontinued": true, "discontinued_date": "<conversation year>-03-31", "renewal_date": null
 - "cost_description" -- the cost EXACTLY as stated ("around 3k a month",
   "120k$/year", "free tier"). Never convert or normalise.
 - "is_discontinued"  -- true ONLY when the prospect says they stopped or
@@ -471,7 +502,7 @@ technical word):
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of
-  prospect-side CONFIRMED CURRENT usage of a specific tool (a tool the prospect uses
+  prospect-side CONFIRMED CURRENT usage of a tool, software or not (a tool the prospect uses
   today, including one whose stop date is stated -- is_discontinued). Apply the EVIDENCE
   RULES and EPISTEMIC FILTER from the system prompt: drop weak
   inferences and NEVER fabricate.

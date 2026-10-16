@@ -142,8 +142,9 @@ class TestConversationDate:
 
 class TestTechstackPromptV4:
 
-    def test_version_is_v4(self):
-        assert TECHSTACK_PROMPT_VERSION == 'v4'
+    def test_version_is_v4_or_later(self):
+        # v5 (T4c) keeps the v4 content asserted below.
+        assert TECHSTACK_PROMPT_VERSION == 'v5'
 
     def test_sso_counter_example_replaced_by_a_neutral_one(self):
         prompt = _flat(build_techstack_request('transcript'))
