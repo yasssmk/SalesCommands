@@ -81,7 +81,8 @@ of teams. Usage is exactly one of three cases:
 
   * DEPARTMENT -- one or more departments are designated as users; they
                   are listed in `usage_departments`.
-  * COMPANY    -- used company-wide, no department designated.
+  * COMPANY    -- the transcript says the WHOLE company / everyone uses the
+                  tool (v4: "we use X" / "on est sur X" is NOT company-wide).
   * UNKNOWN    -- usage not said. "Not said" is UNKNOWN, never null.
 
   * "everyone here is on Slack"          -> usage_scope="COMPANY",
@@ -93,6 +94,7 @@ of teams. Usage is exactly one of three cases:
                                             "Marketing"].
   * "we use Datadog" (nothing more)       -> usage_scope="UNKNOWN",
                                             usage_departments=[].
+  * "on est sur Salesforce" (nothing more)-> usage_scope="UNKNOWN" (v4).
 
 DEPARTMENT <=> at least one department: the backend derives the final
 usage_scope from the RESOLVED departments (_techstack_usage_scope in the
@@ -110,10 +112,12 @@ Until v2 these fields were left to the rep (fuzzy extraction). PO decision:
 extract them, but ONLY when the transcript says them -- never guessed:
 
   * usage_start_year -- a year; relative statements ("for three years")
-    are resolved with the activity date of the context layer.
+    are resolved with the "Conversation date" of the context layer (v4;
+    no conversation date -> every relative date is null).
   * renewal_date / discontinued_date -- YYYY-MM-DD; relative dates ("next
-    March", "end of the year") resolved with the activity date. A partial
-    or hedged date the model cannot resolve is null.
+    March", "end of the year", "cette année") resolved with the
+    Conversation date. A partial or hedged date the model cannot resolve is
+    null.
   * cost_description -- verbatim (no normalisation, no false precision).
   * is_discontinued -- the prospect stopped or will stop using the tool,
     with its stop date. Intent alone ("we are unhappy with X") is NOT a
@@ -225,13 +229,21 @@ retrieved later for quality measurement and debugging.
   v3 -- Sprint TechStack T4: lifecycle + notes extracted (only when said),
         one technology = one signal (Salesforce / Azure AD example),
         is_to_replace out of the output schema.
+  v4 -- Sprint TechStack T4b (PO smoke on T4): identity / infra / security /
+        collaboration tools ARE tech stack, a used tool also required as an
+        integration is still emitted here, the "we need SSO" counter-example
+        replaced by a neutral one; relative dates resolved with the
+        "Conversation date" (null without it, FR "cette année" example);
+        COMPANY only when the WHOLE company is said to use the tool ("on est
+        sur X" -> UNKNOWN). Goes with CONTEXT v5 (dedicated TECH STACK
+        TAXONOMY header, no "or OMIT the signal").
 """
 
 
 __all__ = ['TECHSTACK_PROMPT_VERSION', 'build_techstack_request']
 
 
-TECHSTACK_PROMPT_VERSION = 'v3'
+TECHSTACK_PROMPT_VERSION = 'v4'
 
 
 def build_techstack_request(transcript):
@@ -263,6 +275,10 @@ DO NOT emit:
   without confirmed current adoption by the prospect.
 - Tools the seller suggests in passing, unless the prospect confirms
   they currently use them.
+
+Identity, infrastructure, security and collaboration tools (SSO, Azure AD,
+Okta, AWS, ...) ARE tech stack: emit them like any other tool the prospect
+uses.
 
 TOOL NAME
 Emit each tool under its CANONICAL name in `tech_name` -- the tool's
@@ -325,17 +341,23 @@ as a boolean on the tool.
 
 Do NOT emit an integration flag here: whether the SELLER's product must
 connect to a tool is a buyer REQUIREMENT, captured as a TECHNICAL
-constraint by the constraint stage, not as a boolean on the tool.
+constraint by the constraint stage, not as a boolean on the tool. A tool the
+prospect uses can ALSO be an integration requirement: STILL emit it here as
+a tech stack signal (the constraint stage captures the requirement apart).
 
 LIFECYCLE AND NOTES
 Fill each of these fields ONLY when the transcript says it; otherwise emit
 null -- never guess, never infer from the tool's category or the company.
+Every relative date ("this year", "next year", "end of the year", "in June",
+"for three years") is resolved with the "Conversation date" given in the
+context. When the context says the conversation date is not provided, every
+relative date is null.
 - "usage_start_year" -- the year the prospect STARTED using the tool, as an
-  integer (e.g. 2019). "We've been on it for three years" -> resolve with
-  the activity date given in the context ("Activity: ... on <date>").
+  integer (e.g. 2019). "We've been on it for three years" -> the
+  Conversation date's year minus 3.
 - "renewal_date"     -- the next contract renewal, YYYY-MM-DD. Resolve a
-  relative date ("next March", "at the end of the year") with the activity
-  date; if it cannot be resolved to a precise day, emit null.
+  relative date ("next March", "at the end of the year") with the
+  Conversation date; if it cannot be resolved to a precise day, emit null.
 - "cost_description" -- the cost EXACTLY as stated ("around 3k a month",
   "120k$/year", "free tier"). Never convert or normalise.
 - "is_discontinued"  -- true ONLY when the prospect says they stopped or
@@ -343,7 +365,11 @@ null -- never guess, never infer from the tool's category or the company.
   Dissatisfaction or an intent to look elsewhere is NOT a discontinuation:
   put it in the notes.
 - "discontinued_date" -- the stop date, YYYY-MM-DD (resolved with the
-  activity date); null when is_discontinued is false.
+  Conversation date); null when is_discontinued is false.
+  « on arrête X le 31 décembre de cette année »
+      -> "is_discontinued": true,
+         "discontinued_date": "<conversation year>-12-31"
+         ("cette année" = the year of the Conversation date).
 - "notes" -- HOW the prospect uses the tool (e.g. "SSO", "pipeline
   management", "support tickets") and what the prospect THINKS of it
   (satisfaction, pain points), in one or two short sentences. null when the
@@ -376,8 +402,10 @@ At the prospect we speak of DEPARTMENTS, never of teams.
 - "DEPARTMENT" -- one or more departments are explicitly designated as
                   users of the tool; list them in `usage_departments`
                   (e.g. "the SDR team in Sales uses Outreach" -> Sales).
-- "COMPANY"    -- the tool is used company-wide, no department designated
+- "COMPANY"    -- ONLY when
+                  the transcript says the WHOLE company / everyone uses the tool
                   (e.g. "everyone here uses Slack").
+                  "we use X" / "on est sur X" is NOT company-wide -> "UNKNOWN".
 - "UNKNOWN"    -- how the tool is used is not said. Usage not said is
                   UNKNOWN, never null and never a guess.
 
@@ -396,12 +424,13 @@ constraint scope guard):
   USING the tool: "the marketing team is on HubSpot", "Sales and Marketing
   both live in the CRM", "our finance department runs everything in SAP".
 - A technical theme-word, the tool's category, or the SPEAKER's own
-  department do NOT designate a user. "we need SSO" names no user; an IT
-  lead saying "everyone uses Slack" does not make it an IT tool.
+  department do NOT designate a user. "we have a ticketing tool" names no
+  user; an IT lead saying "everyone uses Slack" does not make it an IT tool.
 - When NO department is explicitly designated as a user, emit an EMPTY
-  list []. NEVER invent or guess a department. A company-wide tool with no
-  single owner is []  (with usage_scope="COMPANY"); a tool whose usage is
-  not said is []  (with usage_scope="UNKNOWN").
+  list [] -- and still emit the tool. NEVER invent or guess a department. A
+  tool the transcript says the whole company uses is []  (with
+  usage_scope="COMPANY"); a tool whose usage is not said is []  (with
+  usage_scope="UNKNOWN").
 - Use the exact StandardDepartment strings from the taxonomy list; a name
   not in that list, or a company-wide / "General Management" catch-all, is
   dropped downstream -- so prefer [] over a non-listed guess.
@@ -420,6 +449,15 @@ technical word):
 - "we use Zendesk for support tickets"
       -> usage_scope="DEPARTMENT", usage_departments=["Customer Support"]
          (the support function is designated as the user).
+- « On est sur Salesforce. »
+      -> usage_scope="UNKNOWN", usage_departments=[]
+         ("on est sur" is not company-wide: the usage is not said).
+- « Salesforce, c'est pour le pilotage du pipeline commercial. »
+      -> usage_scope="DEPARTMENT", usage_departments=["Sales"]
+         (the commercial pipeline designates Sales as the user).
+- « Côté support, on est sur Zendesk. »
+      -> usage_scope="DEPARTMENT", usage_departments=["Customer Support"]
+         ("côté support" designates the support function).
 - "our CTO mentioned we run Datadog"
       -> usage_scope="UNKNOWN", usage_departments=[]  (the SPEAKER's role
          does not designate a using department; nobody is named as the user

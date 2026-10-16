@@ -101,7 +101,15 @@ logger = logging.getLogger(__name__)
 # v4 (Sprint TechStack T0): TechStack usage in three cases -- the usage_scope
 # taxonomy lists DEPARTMENT / COMPANY / UNKNOWN (TEAM retired). The other
 # stages' context is byte-identical to v3.
-CONTEXT_VERSION = 'v4'
+# v5 (Sprint TechStack T4b): SHARED session block -- the date is presented as
+# the "Conversation date", the reference of EVERY relative date; without an
+# activity date the line says so and every relative date is null (all stages,
+# and the next_steps context that reuses the session block). TechStack gets
+# its own taxonomy header (no "or OMIT the signal"), like People in v3.
+CONTEXT_VERSION = 'v5'
+
+# Relative-date wordings named in the "Conversation date" line (v5).
+_RELATIVE_DATE_EXAMPLES = '"this year", "next year", "end of the year", "in June"'
 
 _SUPPORTED_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
@@ -204,13 +212,23 @@ def _build_session_block(activity):
         f'- Prospect (the account being analyzed): {account.company_name}{suffix}'
     )
 
-    # --- Activity (Type + Date) ---
+    # --- Activity (Type) + Conversation date (v5) ---
+    # The date is THE reference of every relative date said in the transcript;
+    # without it the model must not guess one (every relative date -> null).
     activity_type = activity.get_activity_type_display() or 'Activity'
+    lines.append(f'- Activity: {activity_type}')
     activity_date = _resolve_activity_date(activity)
     if activity_date:
-        lines.append(f'- Activity: {activity_type} on {activity_date}')
+        lines.append(
+            f'- Conversation date: {activity_date} (the reference for EVERY '
+            f'relative date in the transcript: {_RELATIVE_DATE_EXAMPLES}, ...)'
+        )
     else:
-        lines.append(f'- Activity: {activity_type}')
+        lines.append(
+            '- Conversation date: not provided -- EVERY relative date in the '
+            f'transcript ({_RELATIVE_DATE_EXAMPLES}, ...) cannot be resolved: '
+            'emit null for it, never guess a year.'
+        )
 
     # --- Contacts present ---
     contact_lines = _build_contact_lines(activity)
@@ -255,7 +273,8 @@ def _resolve_activity_date(activity):
         1. completed_at  -- the activity actually took place.
         2. scheduled_date -- the planned moment (date only; time of
            day rarely helps signal extraction so it is omitted).
-        3. None -- activity is rendered without a date suffix.
+        3. None -- the "Conversation date" line says it is not provided
+           (every relative date -> null, v5).
 
     ISO-8601 (YYYY-MM-DD) for unambiguous LLM parsing.
     """
@@ -407,6 +426,15 @@ def _build_taxonomy_block(target_stage):
         lines = [
             'PEOPLE TAXONOMY '
             '(pick `role` from its list; influence and department may be null)'
+        ]
+    elif target_stage == 'techstack':
+        # TechStack has its own header too (v5, same reason as People): the
+        # canonical "or OMIT the signal" made the model drop a used tool
+        # (e.g. Azure AD) when no usage department fitted.
+        lines = [
+            'TECH STACK TAXONOMY '
+            '(pick `usage_scope` from its list; usage_departments may be empty '
+            '-- NEVER omit a tool because no department fits)'
         ]
     else:
         lines = [

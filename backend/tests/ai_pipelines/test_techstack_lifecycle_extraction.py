@@ -228,8 +228,9 @@ class TestSameToolTwiceCompletesEmptyFields:
 
 class TestPromptV3:
 
-    def test_version_is_v3(self):
-        assert TECHSTACK_PROMPT_VERSION == 'v3'
+    def test_version_is_v3_or_later(self):
+        # v4 (T4b) keeps the v3 content asserted below.
+        assert TECHSTACK_PROMPT_VERSION == 'v4'
 
     def test_schema_carries_the_new_fields_and_not_is_to_replace(self):
         prompt = build_techstack_request('transcript')
@@ -245,9 +246,10 @@ class TestPromptV3:
         assert 'ONLY when the transcript says it' in prompt
         assert 'never guess' in prompt
 
-    def test_relative_dates_use_the_activity_date(self):
+    def test_relative_dates_use_the_conversation_date(self):
+        # v4 (T4b): the context names it "Conversation date".
         prompt = build_techstack_request('transcript')
-        assert 'activity date' in prompt
+        assert 'Conversation date' in prompt
         assert 'YYYY-MM-DD' in prompt
 
     def test_notes_cover_how_the_tool_is_used_and_the_prospect_opinion(self):

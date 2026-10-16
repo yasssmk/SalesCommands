@@ -52,7 +52,10 @@ from ..transcript_signals.context import _build_session_block
 __all__ = ['CONTEXT_VERSION', 'build_context_layer']
 
 
-CONTEXT_VERSION = 'v1'
+# v2 (Sprint TechStack T4b): the reused session block now presents the date
+# as the "Conversation date", reference of every relative date (null when the
+# activity has no date) -- transcript_signals context v5.
+CONTEXT_VERSION = 'v2'
 
 
 def build_context_layer(activity):

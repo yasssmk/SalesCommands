@@ -151,6 +151,10 @@ _TECHSTACK_MAX_USAGE_YEARS_AHEAD = 1
 
 _ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
+# D2 — note appended when a discontinuation is stated without a valid date
+# (the rep sets the date by hand from it). `quote` = the signal's source_quote.
+_TECHSTACK_UNDATED_DISCONTINUATION_NOTE = 'Discontinuation mentioned without a date: "{quote}"'
+
 
 def _techstack_usage_year(value):
     """An integer year within the module bounds (int or digit string), else None."""
@@ -1133,7 +1137,9 @@ class TranscriptSignalExtractor:
         is_discontinued = bool(raw.get('is_discontinued'))
         if is_discontinued and discontinued_date is None:
             is_discontinued = False
-            phrase = f'Discontinuation mentioned without a date: "{_clean_text(raw["source_quote"])}"'
+            phrase = _TECHSTACK_UNDATED_DISCONTINUATION_NOTE.format(
+                quote=_clean_text(raw['source_quote']),
+            )
             notes = f'{notes}\n{phrase}' if notes else phrase
         data['is_discontinued'] = is_discontinued
         data['discontinued_date'] = discontinued_date if is_discontinued else None

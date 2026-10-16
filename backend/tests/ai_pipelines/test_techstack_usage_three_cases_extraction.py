@@ -105,9 +105,9 @@ class TestBuilderNormalisesUsageToThreeCases:
 class TestPromptAndContextDescribeThreeCases:
 
     def test_prompt_version_is_v2_or_later(self):
-        # v2 introduced the three cases (T0); v3 (T4, lifecycle) keeps them —
-        # the content assertions below still hold.
-        assert TECHSTACK_PROMPT_VERSION == 'v3'
+        # v2 introduced the three cases (T0); v3 (T4, lifecycle) and v4 (T4b)
+        # keep them — the content assertions below still hold.
+        assert TECHSTACK_PROMPT_VERSION == 'v4'
 
     def test_prompt_no_longer_offers_team(self):
         prompt = build_techstack_request('transcript')
@@ -118,8 +118,9 @@ class TestPromptAndContextDescribeThreeCases:
         assert '"usage_scope":     "<DEPARTMENT | COMPANY | UNKNOWN>' in prompt
         assert 'never null' in prompt
 
-    def test_context_version_is_v4(self):
-        assert CONTEXT_VERSION == 'v4'
+    def test_context_version_is_v4_or_later(self):
+        # v4 introduced the three cases (T0); v5 (T4b) keeps them.
+        assert CONTEXT_VERSION == 'v5'
 
     def test_context_taxonomy_lists_exactly_the_three_cases(self, activity):
         context = build_context_layer(activity, 'techstack')
