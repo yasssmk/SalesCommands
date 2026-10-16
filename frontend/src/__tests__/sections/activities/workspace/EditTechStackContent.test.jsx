@@ -135,12 +135,20 @@ describe("EditTechStackContent (T2b)", () => {
     }
   });
 
-  it("§2 shows the 3 usage pills with the choices labels, the current one pressed", () => {
+  it("(T2c-1) §2 shows ONLY Department · Company (choices labels), NO Unknown pill", () => {
     renderEdit();
+    const pills = screen.getByTestId("techstack-scope-pills");
+    expect(within(pills).getAllByRole("button")).toHaveLength(2);
     expect(screen.getByTestId("scope-pill-DEPARTMENT")).toHaveTextContent("Department");
     expect(screen.getByTestId("scope-pill-COMPANY")).toHaveTextContent("Company");
-    expect(screen.getByTestId("scope-pill-UNKNOWN")).toHaveTextContent("Unknown");
+    expect(screen.queryByTestId("scope-pill-UNKNOWN")).not.toBeInTheDocument();
     expect(screen.getByTestId("scope-pill-DEPARTMENT")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("(T2c-1) an UNKNOWN signal → no pill pressed", () => {
+    renderEdit({ ...TECH, id: "ts-unknown", usage_scope: "UNKNOWN", usage_departments: [] });
+    expect(screen.getByTestId("scope-pill-DEPARTMENT")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("scope-pill-COMPANY")).toHaveAttribute("aria-pressed", "false");
   });
 
   // (b) — real types: int choices vs string payload ids.
@@ -189,9 +197,21 @@ describe("EditTechStackContent (T2b)", () => {
     expect(patch.usage_departments).toEqual([]);
   });
 
-  it("(c) Unknown → payload usage_scope UNKNOWN + usage_departments []", async () => {
-    renderEdit();
-    fireEvent.click(screen.getByTestId("scope-pill-UNKNOWN"));
+  it("(T2c-1) a click on the ACTIVE pill deselects it → UNKNOWN + usage_departments []", async () => {
+    renderEdit(); // Department pressed, Sales chosen
+    fireEvent.click(screen.getByTestId("scope-pill-DEPARTMENT"));
+    expect(screen.getByTestId("scope-pill-DEPARTMENT")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("scope-pill-COMPANY")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByTestId("techstack-departments-field")).not.toBeInTheDocument();
+    await save();
+    const [, , patch] = updateSignal.mock.calls[0];
+    expect(patch.usage_scope).toBe("UNKNOWN");
+    expect(patch.usage_departments).toEqual([]);
+  });
+
+  it("(T2c-1) deselecting Company → UNKNOWN", async () => {
+    renderEdit({ ...TECH, id: "ts-co", usage_scope: "COMPANY", usage_departments: [] });
+    fireEvent.click(screen.getByTestId("scope-pill-COMPANY"));
     await save();
     const [, , patch] = updateSignal.mock.calls[0];
     expect(patch.usage_scope).toBe("UNKNOWN");
@@ -218,10 +238,22 @@ describe("EditTechStackContent (T2b)", () => {
   });
 
   // (e) — discontinued without a date blocks the save.
+  it("(T2c-3) Discontinued is a Switch shown directly (no click to reveal), one single label", () => {
+    renderEdit();
+    const toggle = screen.getByRole("checkbox", { name: "Discontinued" });
+    expect(toggle.closest(".MuiSwitch-root")).not.toBeNull();
+    expect(toggle).not.toBeChecked();
+    expect(screen.queryByTestId("inline-read-is_discontinued")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("techstack-edit")).getAllByText("Discontinued")).toHaveLength(1);
+    // Off → no discontinued-date field.
+    expect(screen.queryByTestId("inline-read-discontinued_date")).not.toBeInTheDocument();
+  });
+
   it("(e) discontinued ticked without a date → save blocked with a message", async () => {
     renderEdit();
-    fireEvent.click(screen.getByTestId("inline-read-is_discontinued"));
-    fireEvent.click(screen.getByRole("checkbox", { name: /discontinued/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Discontinued" }));
+    // On → the (required) discontinued-date field appears, empty → "Unknown".
+    expect(screen.getByTestId("inline-read-discontinued_date")).toHaveTextContent("Unknown");
     expect(await screen.findByText("Discontinued date is required")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
     await save();
@@ -233,9 +265,14 @@ describe("EditTechStackContent (T2b)", () => {
       ...TECH, id: "ts-disc", is_discontinued: true, discontinued_date: "2026-06-30",
     });
     expect(screen.getByTestId("inline-read-discontinued_date")).toHaveTextContent("30 Jun 2026");
-    fireEvent.click(screen.getByTestId("inline-read-is_discontinued"));
-    fireEvent.click(screen.getByRole("checkbox", { name: /discontinued/i }));
+    expect(screen.getByRole("checkbox", { name: "Discontinued" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Discontinued" }));
     expect(screen.queryByTestId("inline-read-discontinued_date")).not.toBeInTheDocument();
+
+    // Switched back on → the date was ERASED (not restored): reads "Unknown".
+    fireEvent.click(screen.getByRole("checkbox", { name: "Discontinued" }));
+    expect(screen.getByTestId("inline-read-discontinued_date")).toHaveTextContent("Unknown");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Discontinued" }));
 
     await save();
     const [, , patch] = updateSignal.mock.calls[0];
@@ -261,6 +298,35 @@ describe("EditTechStackContent (T2b)", () => {
     await save();
     const [, , patch] = updateSignal.mock.calls[0];
     expect(patch.usage_start_year).toBe(2019);
+  });
+
+  it("(T2c-2) the start year can be ERASED: cleared + validated → null, reads 'Unknown'", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-usage_start_year"));
+    const input = screen.getByTestId("inline-input-usage_start_year");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("inline-read-usage_start_year")).toHaveTextContent("Unknown");
+    await waitFor(() => expect(screen.getByRole("button", { name: /save/i })).toBeEnabled());
+    await save();
+    const [, , patch] = updateSignal.mock.calls[0];
+    expect(patch.usage_start_year).toBeNull();
+  });
+
+  it("(T2c-2) Escape cancels the year being typed (back to the stored value)", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-usage_start_year"));
+    const input = screen.getByTestId("inline-input-usage_start_year");
+    fireEvent.change(input, { target: { value: "1999" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.getByTestId("inline-read-usage_start_year")).toHaveTextContent("2021");
+  });
+
+  it("(T2c-4) empty renewal date reads 'Unknown' (not 'No date set')", () => {
+    renderEdit({ ...TECH, id: "ts-no-renewal", renewal_date: null });
+    const renewal = screen.getByTestId("inline-read-renewal_date");
+    expect(renewal).toHaveTextContent("Unknown");
+    expect(renewal).not.toHaveTextContent("No date set");
   });
 
   it("§1 a blanked tool name blocks the save", async () => {

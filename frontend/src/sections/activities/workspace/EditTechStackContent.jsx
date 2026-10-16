@@ -10,13 +10,17 @@
 // payload); onSaved(updatedSignal) returns to the detail.
 //
 //   §1 Technology — tech_name (required, never blank).
-//   §2 Usage — the shared exclusive-scope gesture (ScopeDepartmentsField):
-//      3 pills Department · Company · Unknown (labels from the choices);
+//   §2 Usage — the shared exclusive-scope gesture (ScopeDepartmentsField) in its
+//      deselectable mode: 2 pills Department · Company (labels from the
+//      choices); NO pill pressed = UNKNOWN (not said) — a click on the active
+//      pill deselects it;
 //      Department → department pills + "+ add department" (options stringified,
-//      TD-241); Company / Unknown mask the departments (not cleared) and send [].
+//      TD-241); Company / no pill (Unknown) mask the departments (not cleared)
+//      and send [].
 //      Department ⇒ at least one department (same rule as the backend, T0).
-//   §3 Lifecycle — start year (bounds below), renewal date, cost, discontinued
-//      (+ its date, required when ticked, cleared when unticked).
+//   §3 Lifecycle — start year (bounds below, erasable → null), renewal date,
+//      cost, discontinued as a Switch shown directly (+ its date, required when
+//      on, cleared when off). Empty values read "Unknown" (not said).
 //   §4 Notes. §5 Source quote.
 // The payload NEVER carries is_to_replace (kept in the DB, out of the UI).
 //
@@ -31,11 +35,11 @@ import { useFormik } from "formik";
 import * as Yup from "yup";
 
 // MUI
-import Checkbox from "@mui/material/Checkbox";
 import Divider from "@mui/material/Divider";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import FormHelperText from "@mui/material/FormHelperText";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 
 // Project
@@ -102,9 +106,13 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
   const { choices } = useGetSignalChoices();
   const { standardDepartments } = useGetContactChoices();
 
-  // The 3 usage pills, in the backend order, labels from the choices.
+  // The usage pills, in the backend order, labels from the choices — WITHOUT
+  // UNKNOWN: "not said" is represented by NO pill pressed.
   const scopeOptions = useMemo(
-    () => (choices?.usage_scopes ?? []).map((o) => ({ key: o.value, label: o.label })),
+    () =>
+      (choices?.usage_scopes ?? [])
+        .filter((o) => o.value !== USAGE_SCOPE.UNKNOWN)
+        .map((o) => ({ key: o.value, label: o.label })),
     [choices],
   );
   // "Unknown" = the backend label of the UNKNOWN usage scope (not said).
@@ -203,8 +211,6 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
     if (!v) setFieldValue("discontinued_date", "");
   };
 
-  const yesNo = (v) => (v ? "Yes" : "No");
-
   return (
     <DrawerContentLayout
       onSave={formik.handleSubmit}
@@ -239,7 +245,9 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
           <ScopeDepartmentsField
             scopeOptions={scopeOptions}
             scope={values.usage_scope}
-            onScopeChange={set("usage_scope")}
+            // Deselecting the active pill (null) = UNKNOWN (not said).
+            onScopeChange={(key) => setFieldValue("usage_scope", key ?? USAGE_SCOPE.UNKNOWN)}
+            deselectable
             departmentScope={USAGE_SCOPE.DEPARTMENT}
             departments={values.usage_departments}
             onDepartmentsChange={set("usage_departments")}
@@ -296,6 +304,7 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
             name="renewal_date"
             value={values.renewal_date}
             onChange={set("renewal_date")}
+            emptyText={unknownLabel}
           />
           <InlineEditableValue
             name="cost_description"
@@ -305,27 +314,15 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
             onChange={set("cost_description")}
             placeholder={unknownLabel}
           />
-          <InlineEditableValue
-            name="is_discontinued"
+          {/* A Switch shown directly (a toggle needs no click-to-reveal). */}
+          <FormControlLabel
             label="Discontinued"
-            value={values.is_discontinued}
-            onChange={setDiscontinued}
-            formatValue={yesNo}
-            renderEditor={({ value, onChange, commit }) => (
-              <FormControlLabel
-                label="Discontinued"
-                control={
-                  <Checkbox
-                    autoFocus
-                    checked={Boolean(value)}
-                    onChange={(e) => {
-                      onChange(e.target.checked);
-                      commit();
-                    }}
-                  />
-                }
+            control={
+              <Switch
+                checked={Boolean(values.is_discontinued)}
+                onChange={(e) => setDiscontinued(e.target.checked)}
               />
-            )}
+            }
           />
           {values.is_discontinued && (
             <Stack spacing={0.5}>
@@ -334,6 +331,7 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
                 name="discontinued_date"
                 value={values.discontinued_date}
                 onChange={set("discontinued_date")}
+                emptyText={unknownLabel}
               />
               {errors.discontinued_date && (
                 <FormHelperText error>{errors.discontinued_date}</FormHelperText>

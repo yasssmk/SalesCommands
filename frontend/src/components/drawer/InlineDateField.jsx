@@ -13,6 +13,7 @@
 //   - read row test id ........ inline-read-<name>        (inline-read-target_date)
 //   - ✓ / ✗ test ids .......... <name with "-">-confirm / -cancel  (target-date-confirm)
 //   - ✓ / ✗ aria-labels ....... "Confirm <label lowercased>" / "Discard <label lowercased>"
+//   - empty read text ......... `emptyText` (default "No date set" — Objective)
 // Still a copy of the InlineEditableValue mechanics (TD-267) — moving it to
 // renderEditor is tracked there.
 
@@ -39,7 +40,7 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs from "dayjs";
 
-export default function InlineDateField({ label, name, value, onChange }) {
+export default function InlineDateField({ label, name, value, onChange, emptyText = "No date set" }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const [editing, setEditing] = useState(false);
@@ -110,7 +111,7 @@ export default function InlineDateField({ label, name, value, onChange }) {
           </Typography>
         ) : (
           <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
-            No date set
+            {emptyText}
           </Typography>
         )}
       </Box>
@@ -126,4 +127,6 @@ InlineDateField.propTypes = {
   /** ISO "YYYY-MM-DD" string, or "" / null when unset. */
   value: PropTypes.string,
   onChange: PropTypes.func.isRequired,
+  /** Read text when no date is set (default "No date set"). */
+  emptyText: PropTypes.string,
 };

@@ -10,7 +10,10 @@
 //     options EXCLUDE the already-chosen departments; on confirm the staged
 //     departments join the pills;
 //   - any other scope MASKS the departments (they are not cleared, so switching
-//     back restores them) — the caller's payload sends [] for those scopes.
+//     back restores them) — the caller's payload sends [] for those scopes;
+//   - `deselectable` (opt-in, default false = Pain behaviour): a click on the
+//     ACTIVE pill deselects it — onScopeChange(null), no pill pressed; the
+//     caller maps null to its "not said" value (TechStack: UNKNOWN).
 // Departments are {value,label} OBJECTS with STRING values (TD-241: the contacts
 // choices emit INTEGER ids, signal payloads STRING ids — the caller stringifies
 // its options, and toDepartmentObjects normalises the signal payload).
@@ -62,6 +65,7 @@ export default function ScopeDepartmentsField({
   departmentOptions,
   testIdPrefix,
   error,
+  deselectable = false,
 }) {
   const theme = useTheme();
   const isDepartment = scope === departmentScope;
@@ -75,7 +79,15 @@ export default function ScopeDepartmentsField({
   // pills + "+ add" block only render for the department scope) but does NOT
   // clear them — re-selecting the department scope brings them back untouched.
   const chooseScope = (key) => {
-    if (!key || key === scope) return;
+    if (!key) return;
+    if (key === scope) {
+      // Opt-in: the active pill toggles off (no scope chosen).
+      if (!deselectable) return;
+      onScopeChange(null);
+      setStaged([]);
+      setAdding(false);
+      return;
+    }
     onScopeChange(key);
     if (key !== departmentScope) {
       // Collapse the (now hidden) "+ add" picker UI — but keep the departments.
@@ -267,4 +279,6 @@ ScopeDepartmentsField.propTypes = {
   testIdPrefix: PropTypes.string.isRequired,
   /** Error message shown under the department scope (e.g. none chosen). */
   error: PropTypes.string,
+  /** Opt-in: a click on the ACTIVE pill deselects it → onScopeChange(null). */
+  deselectable: PropTypes.bool,
 };
