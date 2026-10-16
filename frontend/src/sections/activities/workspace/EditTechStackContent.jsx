@@ -35,12 +35,14 @@ import { useFormik } from "formik";
 import * as Yup from "yup";
 
 // MUI
+import { useTheme } from "@mui/material/styles";
+import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
-import FormControlLabel from "@mui/material/FormControlLabel";
-import FormHelperText from "@mui/material/FormHelperText";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
+import Typography from "@mui/material/Typography";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -51,6 +53,7 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import InlineDateField from "components/drawer/InlineDateField";
+import ConfirmCancelActions from "components/drawer/ConfirmCancelActions";
 import ScopeDepartmentsField, { toDepartmentObjects } from "components/drawer/ScopeDepartmentsField";
 import {
   USAGE_SCOPE,
@@ -103,6 +106,7 @@ const validationSchema = Yup.object({
 
 export default function EditTechStackContent({ techstack, accountId, onSaved, onCancel }) {
   const { closeDrawer } = useWorkspaceDrawer();
+  const aq = useTheme().aphoriQ;
   const { choices } = useGetSignalChoices();
   const { standardDepartments } = useGetContactChoices();
 
@@ -274,29 +278,39 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
             placeholder={unknownLabel}
             error={Boolean(errors.usage_start_year)}
             helperText={errors.usage_start_year}
-            renderEditor={({ value, onChange, commit }) => (
-              <TextField
-                fullWidth
-                size="small"
-                type="number"
-                autoFocus
-                value={value ?? ""}
-                onChange={(e) => onChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    commit();
-                  }
-                }}
-                error={Boolean(errors.usage_start_year)}
-                helperText={errors.usage_start_year}
-                inputProps={{
-                  "data-testid": "inline-input-usage_start_year",
-                  min: MIN_USAGE_YEAR,
-                  max: MAX_USAGE_YEAR,
-                  step: 1,
-                }}
-              />
+            // Same edit mechanics as the date field: the input + the shared
+            // ✓ (keep) / ✗ (discard) row. Erasing = empty the field + ✓.
+            renderEditor={({ value, onChange, commit, cancel }) => (
+              <Stack spacing={1}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="number"
+                  autoFocus
+                  value={value ?? ""}
+                  onChange={(e) => onChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commit();
+                    }
+                  }}
+                  error={Boolean(errors.usage_start_year)}
+                  helperText={errors.usage_start_year}
+                  inputProps={{
+                    "data-testid": "inline-input-usage_start_year",
+                    min: MIN_USAGE_YEAR,
+                    max: MAX_USAGE_YEAR,
+                    step: 1,
+                  }}
+                />
+                <ConfirmCancelActions
+                  onConfirm={commit}
+                  onCancel={cancel}
+                  testIdBase="usage-start-year"
+                  label="used since"
+                />
+              </Stack>
             )}
           />
           <InlineDateField
@@ -314,16 +328,27 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
             onChange={set("cost_description")}
             placeholder={unknownLabel}
           />
-          {/* A Switch shown directly (a toggle needs no click-to-reveal). */}
-          <FormControlLabel
-            label="Discontinued"
-            control={
-              <Switch
-                checked={Boolean(values.is_discontinued)}
-                onChange={(e) => setDiscontinued(e.target.checked)}
-              />
-            }
-          />
+          {/* Discontinued — a Switch shown directly (no click-to-reveal): the
+              label on the LEFT with the field-label typography of the other
+              fields (InlineEditableValue's caption), the switch on the RIGHT. */}
+          <Box
+            data-testid="techstack-discontinued-row"
+            sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+          >
+            <Typography
+              id="techstack-discontinued-label"
+              variant="caption"
+              sx={{ color: aq.text.muted }}
+            >
+              Discontinued
+            </Typography>
+            <Switch
+              size="small"
+              checked={Boolean(values.is_discontinued)}
+              onChange={(e) => setDiscontinued(e.target.checked)}
+              inputProps={{ "aria-labelledby": "techstack-discontinued-label" }}
+            />
+          </Box>
           {values.is_discontinued && (
             <Stack spacing={0.5}>
               <InlineDateField
@@ -333,8 +358,10 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
                 onChange={set("discontinued_date")}
                 emptyText={unknownLabel}
               />
+              {/* A business rule, not a technical failure → warning, not red
+                  (same treatment as the chassis SignalIncompleteAlert). */}
               {errors.discontinued_date && (
-                <FormHelperText error>{errors.discontinued_date}</FormHelperText>
+                <Alert severity="warning">{errors.discontinued_date}</Alert>
               )}
             </Stack>
           )}

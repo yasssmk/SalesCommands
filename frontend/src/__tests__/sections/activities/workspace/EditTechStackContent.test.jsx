@@ -300,6 +300,54 @@ describe("EditTechStackContent (T2b)", () => {
     expect(patch.usage_start_year).toBe(2019);
   });
 
+  it("(T2d-1) the start year editor has the ✓ / ✗ buttons of the date field (same ids pattern, same aria)", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-usage_start_year"));
+    expect(screen.getByTestId("usage-start-year-confirm")).toHaveAttribute("aria-label", "Confirm used since");
+    expect(screen.getByTestId("usage-start-year-cancel")).toHaveAttribute("aria-label", "Discard used since");
+  });
+
+  it("(T2d-1) erase the year like a date: empty the field + ✓ → null, reads 'Unknown'", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-usage_start_year"));
+    fireEvent.change(screen.getByTestId("inline-input-usage_start_year"), { target: { value: "" } });
+    fireEvent.click(screen.getByTestId("usage-start-year-confirm"));
+    expect(screen.getByTestId("inline-read-usage_start_year")).toHaveTextContent("Unknown");
+    await waitFor(() => expect(screen.getByRole("button", { name: /save/i })).toBeEnabled());
+    await save();
+    const [, , patch] = updateSignal.mock.calls[0];
+    expect(patch.usage_start_year).toBeNull();
+  });
+
+  it("(T2d-1) ✗ discards the year being typed (back to the stored value)", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-usage_start_year"));
+    fireEvent.change(screen.getByTestId("inline-input-usage_start_year"), { target: { value: "1999" } });
+    fireEvent.click(screen.getByTestId("usage-start-year-cancel"));
+    expect(screen.getByTestId("inline-read-usage_start_year")).toHaveTextContent("2021");
+  });
+
+  it("(T2d-2) Discontinued: label LEFT (field-label typography), switch RIGHT, one row", () => {
+    renderEdit();
+    const row = screen.getByTestId("techstack-discontinued-row");
+    const label = within(row).getByText("Discontinued");
+    const toggle = within(row).getByRole("checkbox", { name: "Discontinued" });
+    // Same typography as the other field labels (InlineEditableValue caption).
+    expect(label).toHaveClass("MuiTypography-caption");
+    // Label first, switch after (left → right), no FormControlLabel wrapper.
+    expect(label.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.querySelector(".MuiFormControlLabel-root")).toBeNull();
+    expect(toggle.closest(".MuiSwitch-root")).not.toBeNull();
+  });
+
+  it("(T2d-3) 'Discontinued date is required' is a WARNING (business rule), not a red error", async () => {
+    renderEdit();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Discontinued" }));
+    const message = await screen.findByText("Discontinued date is required");
+    expect(message.closest(".MuiAlert-standardWarning")).not.toBeNull();
+    expect(message.closest(".Mui-error")).toBeNull();
+  });
+
   it("(T2c-2) the start year can be ERASED: cleared + validated → null, reads 'Unknown'", async () => {
     renderEdit();
     fireEvent.click(screen.getByTestId("inline-read-usage_start_year"));

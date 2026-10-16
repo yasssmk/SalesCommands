@@ -25,13 +25,11 @@ import { useState, useRef } from "react";
 // MUI
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
-import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-// Icons
-import CheckOutlined from "@ant-design/icons/CheckOutlined";
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
+// Project — the shared ✓ / ✗ row (also used by the TechStack start year).
+import ConfirmCancelActions from "components/drawer/ConfirmCancelActions";
 
 // Date picker — the project's standard component (@mui/x-date-pickers + dayjs),
 // same as EditActivityContent / OutcomeDrawerContent.
@@ -69,26 +67,12 @@ export default function InlineDateField({ label, name, value, onChange, emptyTex
             onChange={(v) => onChange(v && v.isValid() ? v.format("YYYY-MM-DD") : "")}
             slotProps={{ textField: { fullWidth: true, size: "small" } }}
           />
-          <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
-            <IconButton
-              size="small"
-              onClick={confirm}
-              data-testid={`${testIdBase}-confirm`}
-              aria-label={`Confirm ${labelLower}`}
-              sx={{ color: "success.main" }}
-            >
-              <CheckOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={cancel}
-              data-testid={`${testIdBase}-cancel`}
-              aria-label={`Discard ${labelLower}`}
-              sx={{ color: "error.main" }}
-            >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-          </Stack>
+          <ConfirmCancelActions
+            onConfirm={confirm}
+            onCancel={cancel}
+            testIdBase={testIdBase}
+            label={labelLower}
+          />
         </Stack>
       </LocalizationProvider>
     );
