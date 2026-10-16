@@ -46,6 +46,7 @@ import EditImpactContent from "sections/activities/workspace/EditImpactContent";
 import EditConstraintContent from "sections/activities/workspace/EditConstraintContent";
 import EditObjectionContent from "sections/activities/workspace/EditObjectionContent";
 import EditPeopleContent from "sections/activities/workspace/EditPeopleContent";
+import EditTechStackContent from "sections/activities/workspace/EditTechStackContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -68,6 +69,18 @@ const STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
 // The aggregated endpoint caps page_size at 100 (core StandardResultsSetPagination).
 // One activity's signal set sits well under that, so we fetch it all in one page.
 const PAGE_SIZE = 100;
+
+// The detail injected into the single workspace coque. The coque renders the
+// node it was given, so a value passed at openDrawer() time would be FROZEN:
+// opened before the choices loaded, the labels would only show on reopen. This
+// wrapper reads the choices itself (SWR-cached, the same call the tab makes), so
+// the open detail re-renders the moment they arrive. Kept here — the Activity
+// tab is the only caller — so SignalDetailPanel / SignalDetailContent stay free
+// of any data hook.
+function ActivitySignalDetail(props) {
+  const { choices } = useGetSignalChoices();
+  return <SignalDetailPanel {...props} choices={choices} />;
+}
 
 // ==============================|| ACTIVITY SIGNALS TAB (FLAT) ||============================== //
 
@@ -125,9 +138,10 @@ export default function ActivitySignalsTab({
         signalType === "impact" ||
         signalType === "constraints" ||
         signalType === "blockers" ||
-        signalType === "people";
+        signalType === "people" ||
+        signalType === "tech-stack";
       openDrawer(
-        <SignalDetailPanel
+        <ActivitySignalDetail
           signal={signal}
           signalType={signalType}
           onValidate={h.onValidate}
@@ -308,6 +322,25 @@ export default function ActivitySignalsTab({
             onCancel={() => openSignalDetail(signal, "people")}
           />,
           { title: "Edit people" },
+        );
+        return;
+      }
+      // TechStack T2b: TechStack edits go to the new chassis drawer (clone of
+      // the People branch) — the usage scope gesture + lifecycle live inside.
+      if (signalType === "tech-stack") {
+        openDrawer(
+          <EditTechStackContent
+            techstack={signal}
+            accountId={accountId}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "tech-stack");
+            }}
+            onCancel={() => openSignalDetail(signal, "tech-stack")}
+          />,
+          { title: "Edit tech stack" },
         );
         return;
       }

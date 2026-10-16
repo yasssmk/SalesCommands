@@ -27,6 +27,7 @@ import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 export default function SignalDetailPanel({
   signal,
   signalType,
+  choices,
   onValidate,
   onReject,
   onEdit,
@@ -53,6 +54,7 @@ export default function SignalDetailPanel({
     <SignalDetailContent
       signal={signal}
       signalType={signalType}
+      choices={choices}
       onValidate={onValidate}
       onReject={onReject}
       onEdit={onEdit}
@@ -69,6 +71,8 @@ export default function SignalDetailPanel({
 SignalDetailPanel.propTypes = {
   signal: PropTypes.object,
   signalType: PropTypes.string,
+  /** The /signals/choices/ payload (labels) — TechStack chassis detail. */
+  choices: PropTypes.object,
   onValidate: PropTypes.func,
   onReject: PropTypes.func,
   onEdit: PropTypes.func,

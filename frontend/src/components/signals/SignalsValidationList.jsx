@@ -35,6 +35,7 @@ import { ThunderboltOutlined } from "@ant-design/icons";
 
 // Project imports
 import CollapsibleStrip from "components/display/CollapsibleStrip";
+import InfoNotice from "components/display/InfoNotice";
 import SignalLine from "components/signals/SignalLine";
 // Only the type LABEL is used here; the SIG-1 per-type colours (getSignalTypeColor /
 // aphoriQ.signalColors) stay in reserve — type headers are a uniform muted tone.
@@ -44,12 +45,16 @@ import { getSignalTypeLabel } from "utils/signalTypes";
 // (resolved by MUI sx): a semantic STATUS colour, distinct from the (reserved)
 // SIG-1 TYPE colours. To validate = warning, Validated = success, Rejected =
 // error (PO: red-for-status is fine in this worklist context).
+// `notice` (optional) = an information line at the head of the section (T5b:
+// the AI may be wrong — check before validating). Information, never red.
 const STATUS_SECTIONS = [
   {
     status: "PENDING",
     title: "To validate",
     titleColor: "warning.main",
     emptyText: "Nothing to validate",
+    notice:
+      "Transcript analysis can make mistakes. Please check each signal's details before validating it.",
     defaultExpanded: true,
   },
   {
@@ -144,7 +149,7 @@ export default function SignalsValidationList({
   return (
     <Stack spacing={1.5}>
       {STATUS_SECTIONS.map(
-        ({ status, title, titleColor, emptyText, defaultExpanded }) => {
+        ({ status, title, titleColor, emptyText, notice, defaultExpanded }) => {
           const sectionSignals = byStatus[status] ?? [];
           // Hide any empty section — including "To validate" once 0 pending
           // remain (P2): the worklist then shows only Validated / Rejected.
@@ -171,6 +176,7 @@ export default function SignalsValidationList({
                 </Typography>
               ) : (
                 <Stack spacing={2}>
+                  {notice && <InfoNotice>{notice}</InfoNotice>}
                   {groupByType(sectionSignals).map(([type, typeSignals]) => (
                     <Box key={type}>
                       {/* Type group = a plain muted header (uniform tone, NOT a

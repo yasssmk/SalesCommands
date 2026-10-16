@@ -13,7 +13,7 @@ The full assembly is performed by PromptBuilder.assemble() in base.py.
 Schema (v1 — S10 revision)
 --------------------------
 The LLM emits one JSON object with a single key `signals` containing an
-array of tech-stack observations. Each observation has exactly 8 fields:
+array of tech-stack observations (v3). Each observation has these fields:
 
     tech_name              string       -- the tool's CANONICAL product
                                             name (official, stable
@@ -21,11 +21,11 @@ array of tech-stack observations. Each observation has exactly 8 fields:
                                             tool is unknown or ambiguous).
                                             REQUIRED. See the TOOL NAME
                                             section of the request below.
-    is_to_replace          boolean      -- the prospect intends to move off it.
-    usage_scope            string|null  -- SCALE: "TEAM" | "COMPANY" |
-                                            "UNKNOWN", or null when not
-                                            discussed. HOW WIDELY the tool
-                                            is used.
+    usage_scope            string       -- three cases: "DEPARTMENT" (one
+                                            or more departments designated
+                                            as users) | "COMPANY" (company-
+                                            wide) | "UNKNOWN" (not said).
+                                            Never null (v2).
     usage_departments      string[]     -- WHO: the department(s) that USE
                                             the tool, drawn from the
                                             StandardDepartment vocabulary in
@@ -35,15 +35,27 @@ array of tech-stack observations. Each observation has exactly 8 fields:
                                             when no department is explicitly
                                             designated as a user. See the
                                             USAGE DEPARTMENTS section below.
+    usage_start_year       int|null     -- year the prospect started using it.
+    renewal_date           date|null    -- next renewal, YYYY-MM-DD, ONLY
+                                            when a renewal is said (v5: a
+                                            stop date is never a renewal).
+    cost_description       string|null  -- the cost as stated (verbatim).
+    is_discontinued        boolean      -- the prospect stopped / will stop
+                                            using it, with a stated date.
+    discontinued_date      date|null    -- that stop date, YYYY-MM-DD.
+    notes                  string|null  -- HOW the tool is used + what the
+                                            prospect thinks of it.
     source_quote           string       -- verbatim excerpt from the transcript.
     confidence             float        -- LLM self-declared, in [0.0, 1.0].
     is_inferred            boolean      -- LLM self-declared, true when not
                                             directly stated.
 
-`is_to_replace` is the only qualification boolean now: false is the
-common case ("the prospect uses this tool", no angle).
+The lifecycle fields and notes are emitted ONLY when the transcript says
+them, else null -- never guessed (same rule as the People department, v3).
 
-is_integration and is_competitor were RETIRED from this stage:
+is_to_replace, is_integration and is_competitor were RETIRED from this stage
+(is_to_replace in v3: the column stays in the DB, always False on extraction
+-- its replacement is a cluster-level "replacement considered", TD-199):
   * a required integration is a buyer REQUIREMENT, now captured as a
     ConstraintSignal of nature=TECHNICAL by the constraint stage;
   * a competitor is now captured as a CompetitorSignal by the competitor
@@ -64,22 +76,31 @@ data anymore.
 
 Empty result is represented by {"signals": []}.
 
-Two orthogonal axes: SCALE (usage_scope) and WHO (usage_departments)
--------------------------------------------------------------------
-`usage_scope` answers HOW WIDELY the tool is used (TEAM / COMPANY /
-UNKNOWN) -- a scale, unchanged by this revision. `usage_departments`
-answers WHO uses it: the specific department(s), multi-valued. The two
-are independent and both are emitted per tool:
+Usage in three cases (v2): usage_scope + usage_departments
+-----------------------------------------------------------
+PO rule (Sprint TechStack): at the prospect we speak of DEPARTMENTS, never
+of teams. Usage is exactly one of three cases:
+
+  * DEPARTMENT -- one or more departments are designated as users; they
+                  are listed in `usage_departments`.
+  * COMPANY    -- the transcript says the WHOLE company / everyone uses the
+                  tool (v4: "we use X" / "on est sur X" is NOT company-wide).
+  * UNKNOWN    -- usage not said. "Not said" is UNKNOWN, never null.
 
   * "everyone here is on Slack"          -> usage_scope="COMPANY",
-                                            usage_departments=[]
-                                            (company-wide, no single dept
-                                            designated).
-  * "the marketing team lives in HubSpot"-> usage_scope="TEAM",
+                                            usage_departments=[].
+  * "the marketing team lives in HubSpot"-> usage_scope="DEPARTMENT",
                                             usage_departments=["Marketing"].
-  * "Sales and Marketing both use X"      -> usage_scope="TEAM",
+  * "Sales and Marketing both use X"      -> usage_scope="DEPARTMENT",
                                             usage_departments=["Sales",
                                             "Marketing"].
+  * "we use Datadog" (nothing more)       -> usage_scope="UNKNOWN",
+                                            usage_departments=[].
+  * "on est sur Salesforce" (nothing more)-> usage_scope="UNKNOWN" (v4).
+
+DEPARTMENT <=> at least one department: the backend derives the final
+usage_scope from the RESOLVED departments (_techstack_usage_scope in the
+extractor), so an unresolvable department name falls back to UNKNOWN.
 
 Department names are drawn from the StandardDepartment vocabulary injected
 in the context layer; the backend resolves each by EXACT name match (no
@@ -87,29 +108,31 @@ fuzzy matching) to a StandardDepartment row and assigns them to the
 multi-department M2M TechStackSignal.usage_departments. An unresolved or
 "General Management" name is dropped by the backend, never invented.
 
-Why usage_scope="DEPARTMENT" is still NOT emitted
--------------------------------------------------
-The scale axis keeps only TEAM / COMPANY / UNKNOWN. "which department"
-is no longer a scale value -- it moved to the dedicated multi-valued
-`usage_departments` field above. So the model never emits
-usage_scope="DEPARTMENT".
+Lifecycle + notes ARE extracted since v3 (Sprint TechStack T4)
+---------------------------------------------------------------
+Until v2 these fields were left to the rep (fuzzy extraction). PO decision:
+extract them, but ONLY when the transcript says them -- never guessed:
 
-Why is_discontinued / cost_description / renewal_date are NOT extracted
-----------------------------------------------------------------------
-These fields exist on TechStackSignal but their extraction is fuzzy:
+  * usage_start_year -- a year; relative statements ("for three years")
+    are resolved with the "Conversation date" of the context layer (v4;
+    no conversation date -> every relative date is null).
+  * renewal_date / discontinued_date -- YYYY-MM-DD; relative dates ("next
+    March", "end of the year", "cette année") resolved with the
+    Conversation date. A partial or hedged date the model cannot resolve is
+    null.
+  * cost_description -- verbatim (no normalisation, no false precision).
+  * is_discontinued -- the prospect stopped or will stop using the tool,
+    with its stop date. Intent alone ("we are unhappy with X") is NOT a
+    discontinuation; it belongs in the notes.
+  * notes -- HOW the tool is used (e.g. Azure AD "used for SSO") and what
+    the prospect thinks of it (satisfaction, pain points).
 
-  * is_discontinued requires distinguishing "they stopped using X" (PAST)
-    from "they are considering replacing X" (FUTURE intent, not yet
-    discontinued). Misclassification is costly -- the cluster priority
-    scorer applies a strong negative weight to discontinued tools.
-  * cost_description is free text but reps describe costs with widely
-    varying units ("$3k/mo", "120k/year", "free tier"). LLM normalisation
-    risks false precision.
-  * renewal_date / usage_start_year require unambiguous date parsing
-    that the LLM does not reliably perform on hedged transcript text
-    ("around three years ago", "later this year").
-
-All four are left to rep refinement post-validation.
+The backend re-checks everything (TranscriptSignalExtractor._build_techstack_
+data): a year outside the bounds or an unparseable date is dropped to null;
+discontinued without a valid date is NOT discontinued (the phrase is kept in
+the notes, D2); a second mention of the same tool completes the empty fields
+of the first (D3). No consumer scores these fields today (the former "cluster
+priority scorer" weight on is_discontinued is not wired).
 
 Epistemic self-declaration (confidence / is_inferred)
 -----------------------------------------------------
@@ -142,14 +165,23 @@ mapped to a new TechStackSignal row:
     LLM-emitted field             ->  TechStackSignal column
     -------------------------------    --------------------------------
     tech_name                     ->  tech_name (verbatim)
-    is_to_replace                 ->  is_to_replace
-    usage_scope                   ->  usage_scope (NULL when null/missing)
+    usage_scope                   ->  usage_scope (three cases; DEPARTMENT
+                                       iff departments resolved, else
+                                       COMPANY when emitted, else UNKNOWN)
     usage_departments             ->  usage_departments (M2M; each name
                                        resolved by exact match to a
                                        StandardDepartment row via
                                        resolve_tech_usage_departments,
                                        deduped, unresolved / General
                                        Management dropped; [] when none)
+    usage_start_year              ->  usage_start_year (int in bounds, else NULL)
+    renewal_date                  ->  renewal_date (valid ISO date, else NULL)
+    cost_description              ->  cost_description (stripped, '' if none)
+    is_discontinued +
+      discontinued_date           ->  is_discontinued / discontinued_date
+                                       (D2: no valid date -> False / NULL,
+                                       phrase appended to notes)
+    notes                         ->  notes (stripped, '' if none)
     source_quote                  ->  source_quote (declared on BaseSignal)
     confidence                    ->  confidence   (declared on BaseSignal)
     is_inferred                   ->  is_inferred  (declared on BaseSignal)
@@ -163,16 +195,9 @@ Fields filled by the service from the request context:
     client_id           =  activity.client_id
     created_by          =  request.user
 
-Hardcoded defaults at create:
+Hardcoded at create:
 
-    is_discontinued     =  False
-    discontinued_date   =  None
-    usage_department    =  None    (legacy single-FK; being retired --
-                                    the WHO is carried by usage_departments)
-    usage_start_year    =  None
-    renewal_date        =  None
-    cost_description    =  ''
-    notes               =  ''
+    is_to_replace       =  False   (out of the v3 schema, see above)
 
 TechStackSignal.save() then derives:
 
@@ -199,13 +224,37 @@ Versioning
 TECHSTACK_PROMPT_VERSION is captured in AIPipelineRun.prompt_versions
 so the exact prompt revision used for any persisted signal can be
 retrieved later for quality measurement and debugging.
+
+  v1 -- S10 free-text identity + usage_departments (Tech scope sprint).
+  v2 -- Sprint TechStack T0: usage in three cases (DEPARTMENT / COMPANY /
+        UNKNOWN), TEAM retired, "not said" = UNKNOWN (never null).
+  v3 -- Sprint TechStack T4: lifecycle + notes extracted (only when said),
+        one technology = one signal (Salesforce / Azure AD example),
+        is_to_replace out of the output schema.
+  v4 -- Sprint TechStack T4b (PO smoke on T4): identity / infra / security /
+        collaboration tools ARE tech stack, a used tool also required as an
+        integration is still emitted here, the "we need SSO" counter-example
+        replaced by a neutral one; relative dates resolved with the
+        "Conversation date" (null without it, FR "cette année" example);
+        COMPANY only when the WHOLE company is said to use the tool ("on est
+        sur X" -> UNKNOWN). Goes with CONTEXT v5 (dedicated TECH STACK
+        TAXONOMY header, no "or OMIT the signal"). Same v4 (same delivery):
+        TechStack / Competitor boundary -- CONFIRMED usage only, a tool
+        looked at / evaluated / tested is never tech stack (the competitor
+        stage v2 takes it by default).
+  v5 -- Sprint TechStack T4c (PO smoke on T4b): EVERY tool used in a process
+        is tech stack, generic tools (Excel, Google Sheets, email, phone) and
+        manual means (paper, whiteboard, notebook) included, named as said;
+        renewal_date ONLY when a renewal is said -- a stop date is never a
+        renewal date. Examples deliberately NOT taken from the PO smoke
+        transcripts (they stay unseen tests).
 """
 
 
 __all__ = ['TECHSTACK_PROMPT_VERSION', 'build_techstack_request']
 
 
-TECHSTACK_PROMPT_VERSION = 'v1'
+TECHSTACK_PROMPT_VERSION = 'v5'
 
 
 def build_techstack_request(transcript):
@@ -220,23 +269,42 @@ def build_techstack_request(transcript):
 
     Returns:
         str: A ready-to-concatenate request block. Will be combined
-        with the context layer (which includes the TECH CATALOG list)
-        by PromptBuilder.assemble() to form the final user message.
+        with the context layer (session grounding, activity date, usage
+        taxonomy) by PromptBuilder.assemble() to form the final user message.
     """
     return f"""TASK
 Extract TECH STACK signals from the SALES TRANSCRIPT below.
 
 A tech stack signal is structured evidence that the PROSPECT (the
-account-side) uses a specific tool, software, or product at their
-company.
+account-side) uses a tool -- software or not -- in one of its processes.
+Tech stack = CONFIRMED usage only.
+
+EVERY tool the prospect uses in a process is tech stack, including GENERIC
+tools (Excel, Google Sheets, email, phone) and MANUAL means (paper,
+whiteboard, notebook): the aim is to understand everything the prospect's
+processes run on. Usage and lifecycle follow the same rules as for any tool
+(not said -> "UNKNOWN" / null).
+- « On suit les commandes dans un Google Sheet. » -> "tech_name": "Google Sheets"
+- « Les bons de livraison sont encore sur papier. » -> "tech_name": "Papier"
+- « Le planning de l'atelier est sur un tableau blanc. » -> "tech_name": "Tableau blanc"
+- « La compta fait ses rapprochements dans Excel. » -> "tech_name": "Excel"
+  (usage_scope="DEPARTMENT", usage_departments=["Finance"])
+- « Les clients passent commande par téléphone. » -> "tech_name": "Téléphone"
 
 DO NOT emit:
 - Tools the SELLER uses or sells (e.g. the prospect describing the
   seller's product is not a tech stack observation about the prospect).
 - Tools mentioned only HYPOTHETICALLY ("we could try X", "what about Y?")
   without confirmed current adoption by the prospect.
+- A tool the prospect is only LOOKING AT, EVALUATING or TESTING
+  (« on regarde / évalue / teste X », "we're evaluating X") is NEVER tech
+  stack -- it is captured by the competitor stage.
 - Tools the seller suggests in passing, unless the prospect confirms
   they currently use them.
+
+Identity, infrastructure, security and collaboration tools (SSO, Azure AD,
+Okta, AWS, ...) ARE tech stack: emit them like any other tool the prospect
+uses.
 
 TOOL NAME
 Emit each tool under its CANONICAL name in `tech_name` -- the tool's
@@ -267,6 +335,10 @@ rather than inventing a mapping. A faithful raw name is always better
 than a wrong canonical one. No reference list is provided -- rely only on
 well-known, unambiguous product knowledge, never on a guess.
 
+A generic or manual means is named AS SAID, capitalised, never expanded or
+mapped to a product: "Excel" (not "Microsoft Excel"), "Papier", "Tableau
+blanc", "Mail", "Téléphone".
+
 `tech_name` is REQUIRED on every signal; a signal without it is dropped.
 
 CANONICAL NAME EXAMPLES
@@ -283,33 +355,62 @@ CANONICAL NAME EXAMPLES
       -> emit  "tech_name": "Pyramid"  (unknown / in-house: keep verbatim,
          do NOT map it to the BI product "Pyramid Analytics").
 
-QUALIFICATION
-Each signal carries ONE qualification boolean, `is_to_replace`. False is
-the common case: the prospect uses the tool with no further angle.
-
-- "is_to_replace"  -- the prospect intends to move off this tool.
-
-Set the flag ONLY when the transcript supports it; default to false.
+ONE technology = ONE signal
+Each distinct tool, software or product gets its OWN signal, even when
+several are named in the same sentence. Never merge two tools into one
+signal, never fold one tool into another's notes.
+- "On est sur Salesforce et on a un SSO Azure AD."
+      -> 2 signals:
+         {{"tech_name": "Salesforce", "notes": null, ...}}
+         {{"tech_name": "Azure AD", "notes": "SSO", ...}}
+         (two tools; HOW Azure AD is used -- for SSO -- goes in its notes).
 
 Do NOT emit a competitor flag here: whether a tool competes with what the
-SELLER sells is captured as a CompetitorSignal by the competitor stage
-(sub-step 5), not as a boolean on the tool.
+SELLER sells is captured as a CompetitorSignal by the competitor stage, not
+as a boolean on the tool.
 
 Do NOT emit an integration flag here: whether the SELLER's product must
 connect to a tool is a buyer REQUIREMENT, captured as a TECHNICAL
-constraint by the constraint stage, not as a boolean on the tool.
+constraint by the constraint stage, not as a boolean on the tool. A tool the
+prospect uses can ALSO be an integration requirement: STILL emit it here as
+a tech stack signal (the constraint stage captures the requirement apart).
 
-# TODO(Competitors sprint): the definition above is deliberately one
-# line. This is the anchor point for the full is_to_replace wording,
-# which is NOT written yet:
-#   * is_to_replace  -- needs the PAST vs FUTURE distinction that
-#     `is_discontinued` extraction was deferred for (see the
-#     "Why is_discontinued ... NOT extracted" section above):
-#     "we dropped X" (past, not to-replace) vs "we are looking to
-#     replace X" (future intent, to-replace) vs "we are unhappy with X"
-#     (dissatisfaction, not yet intent). Add worked examples.
-# Until that sprint lands, expect the model to under-set this flag.
-# Under-setting is the safe failure mode: a rep can tick a box.
+LIFECYCLE AND NOTES
+Fill each of these fields ONLY when the transcript says it; otherwise emit
+null -- never guess, never infer from the tool's category or the company.
+Every relative date ("this year", "next year", "end of the year", "in June",
+"for three years") is resolved with the "Conversation date" given in the
+context. When the context says the conversation date is not provided, every
+relative date is null.
+- "usage_start_year" -- the year the prospect STARTED using the tool, as an
+  integer (e.g. 2019). "We've been on it for three years" -> the
+  Conversation date's year minus 3.
+- "renewal_date" -- ONLY when a RENEWAL is explicitly said (a contract or
+  subscription renewal, « renouvellement », « reconduction »): the next
+  renewal, YYYY-MM-DD. Resolve a relative date ("next March", "at the end of
+  the year") with the Conversation date; if it cannot be resolved to a
+  precise day, emit null. A stop / end / termination date is NEVER a renewal
+  date: it goes to "discontinued_date", and "renewal_date" stays null.
+  « Le contrat DocuSign se renouvelle le 1er septembre. »
+      -> "renewal_date": "<conversation year>-09-01", "is_discontinued": false
+  « On résilie notre abonnement Mailchimp fin mars. »
+      -> "is_discontinued": true, "discontinued_date": "<conversation year>-03-31", "renewal_date": null
+- "cost_description" -- the cost EXACTLY as stated ("around 3k a month",
+  "120k$/year", "free tier"). Never convert or normalise.
+- "is_discontinued"  -- true ONLY when the prospect says they stopped or
+  will stop using the tool, AND the stop date is stated; false otherwise.
+  Dissatisfaction or an intent to look elsewhere is NOT a discontinuation:
+  put it in the notes.
+- "discontinued_date" -- the stop date, YYYY-MM-DD (resolved with the
+  Conversation date); null when is_discontinued is false.
+  « on arrête X le 31 décembre de cette année »
+      -> "is_discontinued": true,
+         "discontinued_date": "<conversation year>-12-31"
+         ("cette année" = the year of the Conversation date).
+- "notes" -- HOW the prospect uses the tool (e.g. "SSO", "pipeline
+  management", "support tickets") and what the prospect THINKS of it
+  (satisfaction, pain points), in one or two short sentences. null when the
+  transcript says nothing of it.
 
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
@@ -318,9 +419,14 @@ Return a single JSON object with this exact shape:
   "signals": [
     {{
       "tech_name":       "<canonical product name -- see TOOL NAME: official stable spelling, verbatim when the tool is unknown or ambiguous>",
-      "is_to_replace":   <boolean, see QUALIFICATION>,
-      "usage_scope":     "<TEAM | COMPANY | UNKNOWN, or null when scope was not discussed>",
+      "usage_scope":     "<DEPARTMENT | COMPANY | UNKNOWN>",
       "usage_departments": ["<zero or more department names from the CANONICAL TAXONOMY usage_departments list -- see USAGE DEPARTMENTS; [] when none is explicitly designated>"],
+      "usage_start_year": <integer year, or null -- see LIFECYCLE AND NOTES>,
+      "renewal_date":    "<YYYY-MM-DD, or null>",
+      "cost_description": "<the cost exactly as stated, or null>",
+      "is_discontinued": <boolean -- true only with a stated stop date>,
+      "discontinued_date": "<YYYY-MM-DD, or null>",
+      "notes":           "<how the tool is used + what the prospect thinks of it, or null>",
       "source_quote":    "<verbatim excerpt from the transcript supporting this tool observation>",
       "confidence":      <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
       "is_inferred":     <boolean, true when the signal is inferred rather than directly stated>
@@ -328,19 +434,20 @@ Return a single JSON object with this exact shape:
   ]
 }}
 
-USAGE SCOPE GUIDANCE (SCALE -- how widely, one value)
-- "TEAM"     -- the tool is used by a single team inside a department
-                (e.g. "the SDR team uses Outreach").
-- "COMPANY"  -- the tool is used company-wide across multiple departments
-                (e.g. "everyone here uses Slack").
-- "UNKNOWN"  -- usage scope was discussed but not clarified.
-- null       -- usage scope was not discussed at all.
+USAGE (exactly one of three cases)
+At the prospect we speak of DEPARTMENTS, never of teams.
+- "DEPARTMENT" -- one or more departments are explicitly designated as
+                  users of the tool; list them in `usage_departments`
+                  (e.g. "the SDR team in Sales uses Outreach" -> Sales).
+- "COMPANY"    -- ONLY when
+                  the transcript says the WHOLE company / everyone uses the tool
+                  (e.g. "everyone here uses Slack").
+                  "we use X" / "on est sur X" is NOT company-wide -> "UNKNOWN".
+- "UNKNOWN"    -- how the tool is used is not said. Usage not said is
+                  UNKNOWN, never null and never a guess.
 
-Never emit "DEPARTMENT" for usage_scope -- it is a SCALE, not a WHO.
-"which department uses it" is captured separately and multi-valued in
-`usage_departments` (next section). usage_scope stays the scale even when
-one or more departments are named (e.g. "the marketing team is on HubSpot"
--> usage_scope="TEAM", usage_departments=["Marketing"]).
+"DEPARTMENT" always comes with at least one department in
+`usage_departments`; "COMPANY" and "UNKNOWN" always come with [].
 
 USAGE DEPARTMENTS (WHO -- which department(s) USE the tool; multi-valued)
 Emit in `usage_departments` every department that is EXPLICITLY DESIGNATED
@@ -354,11 +461,13 @@ constraint scope guard):
   USING the tool: "the marketing team is on HubSpot", "Sales and Marketing
   both live in the CRM", "our finance department runs everything in SAP".
 - A technical theme-word, the tool's category, or the SPEAKER's own
-  department do NOT designate a user. "we need SSO" names no user; an IT
-  lead saying "everyone uses Slack" does not make it an IT tool.
+  department do NOT designate a user. "we have a ticketing tool" names no
+  user; an IT lead saying "everyone uses Slack" does not make it an IT tool.
 - When NO department is explicitly designated as a user, emit an EMPTY
-  list []. NEVER invent or guess a department. A company-wide tool with no
-  single owner is []  (with usage_scope="COMPANY").
+  list [] -- and still emit the tool. NEVER invent or guess a department. A
+  tool the transcript says the whole company uses is []  (with
+  usage_scope="COMPANY"); a tool whose usage is not said is []  (with
+  usage_scope="UNKNOWN").
 - Use the exact StandardDepartment strings from the taxonomy list; a name
   not in that list, or a company-wide / "General Management" catch-all, is
   dropped downstream -- so prefer [] over a non-listed guess.
@@ -366,24 +475,35 @@ constraint scope guard):
 USAGE DEPARTMENTS EXAMPLES (designation decides -- not the speaker, not a
 technical word):
 - "the marketing team has been on HubSpot for three years"
-      -> usage_scope="TEAM", usage_departments=["Marketing"]
+      -> usage_scope="DEPARTMENT", usage_departments=["Marketing"]
          (one department explicitly designated as the user).
 - "both Sales and Marketing run their pipeline in the CRM"
-      -> usage_scope="TEAM", usage_departments=["Sales", "Marketing"]
+      -> usage_scope="DEPARTMENT", usage_departments=["Sales", "Marketing"]
          (two departments explicitly designated -- multi-valued).
 - "honestly everyone in the company is on Slack"
       -> usage_scope="COMPANY", usage_departments=[]
          (company-wide, no single department designated -- empty, not a guess).
 - "we use Zendesk for support tickets"
-      -> usage_scope="TEAM", usage_departments=["Customer Support"]
+      -> usage_scope="DEPARTMENT", usage_departments=["Customer Support"]
          (the support function is designated as the user).
+- « On est sur Salesforce. »
+      -> usage_scope="UNKNOWN", usage_departments=[]
+         ("on est sur" is not company-wide: the usage is not said).
+- « Salesforce, c'est pour le pilotage du pipeline commercial. »
+      -> usage_scope="DEPARTMENT", usage_departments=["Sales"]
+         (the commercial pipeline designates Sales as the user).
+- « Côté support, on est sur Zendesk. »
+      -> usage_scope="DEPARTMENT", usage_departments=["Customer Support"]
+         ("côté support" designates the support function).
 - "our CTO mentioned we run Datadog"
-      -> usage_departments=[]  (the SPEAKER's role does not designate a
-         using department; nobody is named as the user).
+      -> usage_scope="UNKNOWN", usage_departments=[]  (the SPEAKER's role
+         does not designate a using department; nobody is named as the user
+         and the usage is not said).
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of
-  prospect-side CURRENT usage of a specific tool. Apply the EVIDENCE
+  prospect-side CONFIRMED CURRENT usage of a tool, software or not (a tool the prospect uses
+  today, including one whose stop date is stated -- is_discontinued). Apply the EVIDENCE
   RULES and EPISTEMIC FILTER from the system prompt: drop weak
   inferences and NEVER fabricate.
 - Multiple signals for the SAME tool on the same activity ARE allowed

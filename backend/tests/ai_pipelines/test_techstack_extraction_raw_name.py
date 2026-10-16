@@ -127,14 +127,14 @@ class TestRawNameExtraction:
         """Source / status / quote / scope routing is unchanged."""
         persisted, _ = _persist(
             activity, account, user_a,
-            [_raw('HubSpot', usage_scope='TEAM')],
+            [_raw('HubSpot', usage_scope='COMPANY')],
         )
 
         sig = persisted[0]
         assert sig.source == SignalSource.LLM_EXTRACTED
         assert sig.status == SignalStatus.PENDING
         assert sig.source_quote == 'We use HubSpot across the company'
-        assert sig.usage_scope == 'TEAM'
+        assert sig.usage_scope == 'COMPANY'
         assert sig.account_id == account.id
         assert sig.source_activity_id == activity.id
 
@@ -180,7 +180,8 @@ class TestQualificationBooleansFromLLM:
         self, account, activity, user_a,
     ):
         # Sub-step 5: is_competitor is no longer extracted (stays default
-        # False even when the LLM emits it); is_to_replace still flows.
+        # False even when the LLM emits it). Sprint TechStack T4 (prompt v3):
+        # is_to_replace left the output schema too — forced False.
         persisted, _ = _persist(
             activity, account, user_a,
             [_raw('Salesforce', is_competitor=True, is_to_replace=True)],
@@ -188,9 +189,11 @@ class TestQualificationBooleansFromLLM:
 
         sig = persisted[0]
         sig.refresh_from_db()
-        assert sig.is_to_replace is True
+        assert sig.is_to_replace is False
 
-    def test_to_replace_flows_through(self, account, activity, user_a):
+    def test_to_replace_no_longer_flows_through(self, account, activity, user_a):
+        # Sprint TechStack T4: is_to_replace is out of the v3 schema — an
+        # emitted value never lands (the column stays, always False).
         persisted, _ = _persist(
             activity, account, user_a,
             [_raw('Slack', is_competitor=True, is_to_replace=True)],
@@ -198,7 +201,7 @@ class TestQualificationBooleansFromLLM:
 
         sig = persisted[0]
         sig.refresh_from_db()
-        assert sig.is_to_replace is True
+        assert sig.is_to_replace is False
         # is_competitor (8b) and is_integration (9c) are no longer fields at
         # all, so an emitted value for either cannot land.
 
@@ -206,15 +209,18 @@ class TestQualificationBooleansFromLLM:
         self, account, activity, user_a,
     ):
         """An LLM emitting "true"/1 must not land a non-boolean in the DB.
-        Coercion is asserted on is_to_replace, the surviving extracted flag
-        (is_competitor is no longer extracted -- sub-step 5)."""
+        Coercion is asserted on is_discontinued, the surviving extracted flag
+        since prompt v3 (is_competitor / is_to_replace are no longer
+        extracted)."""
         persisted, _ = _persist(
             activity, account, user_a,
-            [_raw('Jira', is_to_replace=1, is_competitor=1)],
+            [_raw('Jira', is_to_replace=1, is_competitor=1,
+                  is_discontinued=1, discontinued_date='2026-12-31')],
         )
 
         sig = persisted[0]
-        assert sig.is_to_replace is True
+        assert sig.is_discontinued is True
+        assert sig.is_to_replace is False
         # is_competitor is not extracted anymore -> stays False regardless.
 
 # =============================================================================
@@ -269,16 +275,18 @@ class TestMalformedEmissions:
         assert dropped == 2
         assert persisted[0].tech_name == 'Salesforce'
 
-    def test_department_scope_is_still_demoted_to_null(
+    def test_department_scope_without_department_is_unknown(
         self, account, activity, user_a,
     ):
-        """usage_scope filtering is unchanged by this rework."""
+        """Sprint TechStack T0: DEPARTMENT with no resolved department falls
+        back to UNKNOWN (DEPARTMENT <=> departments; never null). The full
+        matrix lives in test_techstack_usage_three_cases_extraction.py."""
         persisted, _ = _persist(
             activity, account, user_a,
             [_raw('Asana', usage_scope='DEPARTMENT')],
         )
 
-        assert persisted[0].usage_scope is None
+        assert persisted[0].usage_scope == 'UNKNOWN'
 
 
 # =============================================================================

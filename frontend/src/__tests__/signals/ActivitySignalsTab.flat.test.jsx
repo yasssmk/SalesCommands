@@ -13,7 +13,7 @@
 //   - drives the status / type filters server-side,
 //   - opens the signal drawer on row click and reopens a rejected signal there.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 // The legacy dialog renders a marker ONLY when opened, so a test can prove a
 // type does NOT fall back to it.
 vi.mock("components/signals/SignalEditDrawer", () => ({
@@ -73,6 +73,26 @@ vi.mock("api/businessData/contacts", () => ({
   useGetContactChoices: vi.fn(() => ({ standardDepartments: [] })),
 }));
 
+// x-date-pickers — stubbed in tests (jsdom can't resolve its ESM), same as
+// OutcomeDrawerContent.test: a "pick" button fires onChange with a dayjs date.
+vi.mock("@mui/x-date-pickers/DatePicker", async () => {
+  const { default: dayjs } = await import("dayjs");
+  return {
+    DatePicker: (props) => (
+      <button
+        type="button"
+        data-testid={`pick-${props.label}`}
+        onClick={() => props.onChange(dayjs("2026-12-31"))}
+      >
+        pick {props.label}
+      </button>
+    ),
+  };
+});
+vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
+  LocalizationProvider: ({ children }) => <>{children}</>,
+}));
+vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: class {} }));
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(),
   displayErrorSnackbar: vi.fn(),
@@ -82,7 +102,14 @@ vi.mock("utils/displayError", () => ({
 
 import ActivitySignalsTab from "sections/activities/workspace/ActivitySignalsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import { reopenSignal, validateSignal, rejectSignal, updateSignal } from "api/signals/signals";
+import {
+  reopenSignal,
+  validateSignal,
+  rejectSignal,
+  updateSignal,
+  useGetSignalChoices,
+} from "api/signals/signals";
+import { useSyncExternalStore } from "react";
 import { displayErrorSnackbar } from "utils/displayError";
 
 const MOCK_ACTIVITY = { id: "act-flat", account: "acc-1" };
@@ -398,12 +425,127 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
   });
 
+  it("TechStack T1: opening a tech-stack signal shows the coque header 'Tech Stack' + status pill on the chassis", async () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "ts1", status: "PENDING", _signalType: "tech-stack",
+            tech_name: "HubSpot", usage_scope: "UNKNOWN", usage_departments: [],
+            source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("HubSpot"));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Tech Stack");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Pending");
+    expect(screen.getByTestId("techstack-detail-body")).toBeInTheDocument();
+    // Header owned by the coque: no in-content header, a single close (coque ×).
+    expect(screen.queryByTestId("techstack-detail-header")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
+  it("TechStack T2a: choices arriving AFTER the drawer opened reach the open detail (no reopen)", async () => {
+    // A tiny SWR-like store: the choices arrive asynchronously and every hook
+    // consumer re-renders on its own (no parent re-render, no reopen).
+    let current = { choices: null, choicesLoading: true };
+    const listeners = new Set();
+    const choicesStore = {
+      subscribe: (fn) => {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      },
+      get: () => current,
+      load: (choices) => {
+        current = { choices, choicesLoading: false };
+        listeners.forEach((fn) => fn());
+      },
+    };
+    vi.mocked(useGetSignalChoices).mockImplementation(() =>
+      useSyncExternalStore(choicesStore.subscribe, choicesStore.get),
+    );
+    // vi.clearAllMocks (beforeEach) keeps implementations — restore the module
+    // default after this test so the store never leaks into later tests.
+    onTestFinished(() =>
+      vi.mocked(useGetSignalChoices).mockImplementation(() => ({ choices: {}, choicesLoading: false })),
+    );
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "ts2", status: "PENDING", _signalType: "tech-stack",
+            tech_name: "Datadog", usage_scope: "UNKNOWN", usage_departments: [],
+            source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+
+    // Drawer opened BEFORE the choices are loaded → no label yet.
+    fireEvent.click(await screen.findByText("Datadog"));
+    expect(screen.getByTestId("techstack-usage")).not.toHaveTextContent("Unknown");
+
+    // The choices arrive → the open detail shows "Unknown" without a reopen.
+    act(() =>
+      choicesStore.load({
+        usage_scopes: [
+          { value: "DEPARTMENT", label: "Department" },
+          { value: "COMPANY", label: "Company" },
+          { value: "UNKNOWN", label: "Unknown" },
+        ],
+      }),
+    );
+    expect(screen.getByTestId("techstack-usage")).toHaveTextContent("Unknown");
+  });
+
+  const TECH_ROW = {
+    id: "ts-edit", status: "PENDING", _signalType: "tech-stack",
+    tech_name: "HubSpot", is_to_replace: false,
+    usage_scope: "COMPANY", usage_departments: [],
+    usage_start_year: null, renewal_date: null, cost_description: "",
+    is_discontinued: false, discontinued_date: null,
+    notes: "", source_quote: "We run on HubSpot.",
+    source_context: { contacts: [] },
+  };
+
   const PEOPLE_ROW = {
     id: "pe2", status: "PENDING", _signalType: "people",
     full_name: "Marc Dubois", role: "ECONOMIC_BUYER", role_display: "Economic Buyer",
     target_contact: null, target_department: null, notes: "", source_quote: "Marc decides.",
     source_context: { contacts: [] },
   };
+
+  it("TechStack T2b (a): Edit from the TechStack detail → EditTechStackContent in the coque, NOT the legacy dialog", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [TECH_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("HubSpot"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit tech stack");
+    expect(screen.getByTestId("techstack-edit")).toBeInTheDocument();
+    expect(screen.queryByTestId("legacy-edit-dialog")).not.toBeInTheDocument();
+  });
+
+  it("TechStack T2b (a): edit notes → Save → back to the TechStack detail showing them", async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [TECH_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("HubSpot"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+    fireEvent.click(screen.getByTestId("inline-read-notes"));
+    fireEvent.change(screen.getByTestId("inline-input-notes"), {
+      target: { value: "Unhappy with support." },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledWith(
+      "tech-stack", "ts-edit", expect.not.objectContaining({ is_to_replace: expect.anything() }),
+    );
+    expect(screen.getByTestId("techstack-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("techstack-notes")).toHaveTextContent("Unhappy with support.");
+  });
 
   it("People S3 (E1): Edit from the People detail → EditPeopleContent in the coque, NOT the legacy dialog", async () => {
     useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [PEOPLE_ROW] }));
@@ -537,5 +679,46 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.queryByText("Failed to load signals")).not.toBeInTheDocument();
     expect(screen.getAllByTestId("signal-line").length).toBeGreaterThan(0);
     expect(displayErrorSnackbar).toHaveBeenCalled();
+  });
+});
+
+// ==============================|| T5b — AI REVIEW NOTICE ||============================== //
+
+const AI_NOTICE =
+  "Transcript analysis can make mistakes. Please check each signal's details before validating it.";
+
+describe("ActivitySignalsTab — AI review notice in 'To validate' (T5b)", () => {
+  it("shows the notice at the head of the 'To validate' section, before its rows", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    const notice = screen.getByText(AI_NOTICE);
+    const header = screen.getByText("To validate");
+    const firstRow = screen.getAllByTestId("signal-line")[0];
+    // Header → notice → first pending row, in document order.
+    expect(header.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notice.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText(AI_NOTICE)).toHaveLength(1);
+  });
+
+  it("is absent when nothing is left to validate (only Validated / Rejected)", () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          { id: "o1", status: "VALIDATED", summary: "Validated objective", _signalType: "objective" },
+          { id: "r1", status: "REJECTED", summary: "Rejected blocker", _signalType: "blockers" },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    // Open both sections: the notice must not live in them either.
+    fireEvent.click(screen.getByText("Validated"));
+    fireEvent.click(screen.getByText("Rejected"));
+    expect(screen.queryByText("To validate")).not.toBeInTheDocument();
+    expect(screen.queryByText(AI_NOTICE)).not.toBeInTheDocument();
+  });
+
+  it("is absent when the activity has no signal at all", () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [], count: 0 }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    expect(screen.queryByText(AI_NOTICE)).not.toBeInTheDocument();
   });
 });

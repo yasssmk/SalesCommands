@@ -1362,6 +1362,29 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Chantier DC** : notes People rattachées à la fiche « Sprint Workspace / DC » (Nouveaux sprints).
 - **Chantier UX Activity** : **reste OUVERT**. **Prochain jalon** : **TechStack** (puis **Competitor**), détail + edit sur le châssis Activity. **Branche dédiée suivante** : « Listes déroulantes en un clic » (Nouveaux sprints).
 
+### Sprint TechStack (surface Activity) ✅ LIVRÉ (chantier UX Activity — EN COURS) — usage en 3 cas + détail + edit sur le châssis Activity + prompts techstack v1→v5 + avertissement IA (branche `feat/ux-activity-techstack`, `f31c781`→`47aad1e` + commit doc de clôture)
+- **Identité** : TechStack = **`TechStackSignal`**, clé front **`"tech-stack"`**. Champs propres : **`tech_name`** (+ `tech_name_normalized` dérivé), **`usage_scope`** (`UsageScope` : DEPARTMENT / COMPANY / UNKNOWN), **`usage_departments`** (M2M `StandardDepartment`), cycle de vie (**`usage_start_year`**, **`renewal_date`**, **`cost_description`**, **`is_discontinued`** + **`discontinued_date`**), **`notes`**. **`is_to_replace`** conservé en base, **hors UI Activity et hors prompt** (TD-199).
+- **Décisions PO verrouillées** :
+  - **Surface Activity UNIQUEMENT** (détail + edit châssis) ; **DC/Account inchangés** (ancien `InlineTechStackForm`, branche flush).
+  - **Usage en 3 cas** : Department (+ ≥1 département) / Company / Unknown — **TEAM retiré** ; **usage non dit = « Unknown » en toutes lettres** (jamais vide, jamais null).
+  - **TechStack = usage CONFIRMÉ** ; un outil **regardé / évalué / testé** est un **Competitor par défaut**, sauf s'il est **clairement sans rapport** avec le projet.
+  - **Dans le doute, l'IA émet et l'utilisateur rejette** (pas l'inverse).
+  - **Tout outil d'un process est une TechStack**, y compris les outils génériques (Excel, Google Sheets, mail, téléphone) et le manuel (papier, tableau blanc, cahier).
+- **Règle de construction** : **homogénéité des PATTERNS** (mêmes briques que les types finis : `DrawerContentLayout`, `SectionHeader`, `InlineEditableValue`, branche `handleEdit` + `onSaved`/`onCancel`) ; **réutiliser l'existant** (fichier:ligne cité avant de coder) ; partager plutôt que recopier.
+- **Livré** (chaque sous-étape : ROUGE par le vrai chemin d'abord, puis VERT, non-vacuité par édition ciblée vérifiée par `cmp`, régression) :
+  - **T0 — usage en 3 cas** (`f31c781`, backend) : `UsageScope` = DEPARTMENT / COMPANY / UNKNOWN (TEAM retiré) ; règle **DEPARTMENT ⇔ ≥1 département** au serializer (`_validate_usage_consistency`) et au builder (`_techstack_usage_scope`) ; migration **`0045_techstack_usage_scope_three_cases`** **réversible** (marqueur `metadata['usage_scope_migrated_from']`). **SQL PO avant / après** : COMPANY/false **27**, DEPARTMENT/true **5**, UNKNOWN/false **33→35**, total **67**, **7 marqueurs**.
+  - **T1 — détail châssis** (`1818352`) : `TechStackDetailView` (`SignalDetailContent.jsx`), **5 blocs** Technology / Usage / Lifecycle / Notes / **Source en dernier** ; « **Mentioned by** » et « **To replace** » retirés ; `"tech-stack"` dans `coqueOwnsHeader`.
+  - **T2a–T2d — édition châssis** (`5e2db9a`, `a6a753a`, `51e980c`, `29b165f`) : `EditTechStackContent` + branche `"tech-stack"` de `handleEdit` ; briques **partagées** **`InlineDateField`** (extrait d'Objective), **`ScopeDepartmentsField`** (scope + départements), **`ConfirmCancelActions`** (✓/✗, extrait d'`InlineDateField`) ; pastilles **désélectionnables** ; **Switch « Discontinued »** (date requise → message **warning**) ; **« Unknown »** affiché si vide.
+  - **T3 — ANNULÉ** (ancien `InlineTechStackForm`, hors surface Activity — cf. TD-269).
+  - **T4 / T4b / T4c — prompts** (`0ecbcb8`, `8180c0f`, `d4bbc48`, `dbac813`) : **techstack v1→v5** — cycle de vie + notes extraits **seulement s'ils sont dits** ; **une technologie = un signal** ; en-tête de taxonomie TechStack dédié (plus de « or OMIT the signal ») ; outils d'identité / infra / sécurité / collaboration ; COMPANY seulement si toute l'entreprise est dite utilisatrice ; **outils génériques et manuels** ; **renouvellement ≠ arrêt** ; **frontière TechStack / Competitor**. **Contexte partagé v5** (« **Conversation date** » = référence de toute date relative, null sans date d'activité), **next_steps contexte v2**, **competitor v2** (outil évalué = competitor par défaut). Note D2 en constante du module.
+  - **T5 — tests API + isolation tenant** (`827e78a`, tests seuls) : reject / reopen par les vrais endpoints ; tenant A sur un TechStack de B : liste (absent), retrieve / PATCH / validate / reject / reopen **404** ; création cross-tenant **400 `OBJECT_NOT_FOUND`**, autre account **400 `INVALID_ACCOUNT`**. **Isolation en lecture sur 3 couches** (`filter_queryset_by_client`, filtre client de `ScopedQuerysetMixin`, lookup tenant de `get_object`) prouvée par mutation. **Aucune faille.**
+  - **T5b — avertissement IA** (`47aad1e`) : « Transcript analysis can make mistakes. Please check each signal's details before validating it. » en tête de « To validate » (`SignalsValidationList`), via **`InfoNotice`** (encart du `RunAIWizard` extrait, DOM identique, ton info).
+- **Migrations** : **0045** (réversible).
+- **Validation (PO)** : **pytest** `tests/signals` + `tests/ai_pipelines` = **1062 passed**, **1 seul échec, PRÉ-EXISTANT** (`test_create_requires_rigidity`, **TD-247**) ; **vitest 192 fichiers / 1555 tests verts** ; lint sans erreur.
+- **Smokes et marge d'erreur MVP acceptée** : smoke **Nordline** (transcription jamais vue par le prompt) **8/10**, puis **Excel OK** après T4c ; restent **Freshdesk `renewal_date` = date d'arrêt**, **Word / Carnet non testés** (réplique ajoutée non confirmée), **People non extraits** pour des locuteurs non enregistrés (**Camille, Hugo** — même cas que Claire / Thomas). Voir « Phase de test ».
+- **Dette** : **RESOLVED TD-207** (resserrement prompt tech) ; **MAJ TD-199**, **TD-204**, **TD-205**, **TD-238**, **TD-241**, **TD-249**, **TD-254**, **TD-260**, **TD-264**, **TD-267** ; **NOUVEAUX TD-269** (ancien `InlineTechStackForm` → 400 depuis T0), **TD-270** (wizard de création orphelin), **TD-271** (scope exclusif recopié Pain/Impact/Constraint), **TD-272** (messages de règle de saisie en rouge), **TD-273** (exemples de prompts = phrases des smokes). **TD-247** inchangé (OPEN).
+- **Chantier UX Activity** : **reste OUVERT**. **Prochain jalon** : **sprint Competitor (surface Activity)** — **C0** tests API + isolation tenant, **C1** détail châssis, **C2** édition châssis (répare le drawer vide « Edit Edit Signal »).
+
 ---
 
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
@@ -1474,6 +1497,10 @@ possibles) :
   sprint séparé en amont). Toute mention existante de S12 est conservée dans sa
   fiche, avec ce cadrage ajouté.
 - **Prep call** : prompt + UI.
+  **MAJ (clôture TechStack)** : le prep-call devra **lire Account et DC
+  directement, pas les signaux** ; son compartiment **`to_replace`** n'est
+  **plus alimenté depuis T4** (`is_to_replace` forcé à False à l'extraction —
+  cf. TD-199).
 - **Signaux** : tester TOUS les signaux + UI (réplicable dans la vue account).
 - **Deal health** : prompt + UI.
 - **Recherche produit / commandes IA pour MANAGER** : **à définir** — pas de
@@ -1601,12 +1628,18 @@ possibles) :
      **MAJ (clôture People)** : **People ✅ LIVRÉ** surface Activity
      (`feat/ux-activity-people` — voir la fiche « Sprint People ✅ LIVRÉ ») ;
      suite : **TechStack** puis **Competitor** sur le châssis.
+     **MAJ (clôture TechStack)** : **TechStack ✅ LIVRÉ** surface Activity
+     (`feat/ux-activity-techstack` — voir la fiche « Sprint TechStack (surface
+     Activity) ✅ LIVRÉ ») ; suite : **Competitor** sur le châssis (C0 → C2).
   - [+ suites déjà cadrées : **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]
 - **Resserrement prompt tech (TD-207) à traiter AVANT la fin d'Activity** :
   rattaché à la passe de nettoyage / resserrement prompt qui **précède la clôture
   d'Activity** (avec **TD-206**), **PAS** à People ni Next steps.
+  **MAJ (clôture TechStack)** : **TD-207 RESOLVED** — utilisée vs envisagée
+  (`d4bbc48`) et COMPANY + département (builder T0 `f31c781`, prompt v4
+  `8180c0f`).
 - **Décisions verrouillées (2026-08-31)** : **competitor = signal détaché** (annule
   l'attribut booléen) ; **People signal éditable manuel** ; **layout Activity sans
   onglets** ; **`is_to_replace` conservé** (drop reporté **TD-199**).
@@ -1631,6 +1664,12 @@ possibles) :
 - **Objectif** : vérifier que TOUT le produit utilise les MÊMES patterns /
   méthodes — pas d'implémentations divergentes pour un même besoin.
 - **Nature** : dette de qualité interne.
+- **Ajouts (clôture Sprint TechStack, hors sprint)** :
+  - **« Unknown » en toutes lettres pour tous les types** de signaux, **champ
+    par champ** (règle « non dit = Unknown » posée sur TechStack).
+  - **Les notes sur tous les types de signaux** (aujourd'hui pas sur tous).
+  - Geste de scope exclusif recopié dans Pain / Impact / Constraint → migrer
+    sur `ScopeDepartmentsField` (**TD-271**).
 
 #### UI Admin Produit / gestion des tenants (NOUVEAU — POST-LAUNCH)
 - **Position** : #10 de l'ordre cible.
@@ -1713,6 +1752,37 @@ possibles) :
     reconnue** par le filtre « déjà identifié ».
 - **Prérequis** : observabilité des rejets (**TD-264**) à traiter au début du
   fine-tuning.
+- **À faire / à vérifier (clôture Sprint TechStack Activity)** :
+  - **Jeu de transcriptions de test jamais vu par les prompts** (rôle de
+    **juge**) — le smoke Nordline en est le premier exemple ; il ne doit jamais
+    nourrir un prompt.
+  - **Remplacer les exemples des prompts tirés des smokes** par des exemples
+    **variés** (risque de sur-apprentissage — **TD-273**).
+  - **TD-264 PRIORITAIRE** au début du fine-tuning (stocker prompt + réponse
+    brute par appel).
+  - **Vérifier si chaque stage analyse TOUTE la transcription** avant
+    d'émettre.
+  - **Résultats de smoke TechStack** (marge d'erreur MVP acceptée) : Nordline
+    **8/10** puis **Excel OK** ; **Freshdesk `renewal_date` = date d'arrêt**
+    (malgré la règle v5) ; **Word / Carnet** non testés ; **People** non
+    extraits pour des locuteurs non enregistrés (**Camille, Hugo** — même cas
+    que Claire / Thomas ci-dessus).
+
+#### Question STRATÉGIQUE — création manuelle des signaux (à trancher en fin de surface Activity)
+- **Position** : à trancher **en fin de surface Activity** (après Competitor).
+- **Constat** : aujourd'hui **aucune création manuelle de signal dans l'UI hors
+  People** ; des **infos clés non relevées par l'IA** ne peuvent donc pas être
+  saisies par le commercial.
+- **À décider sur 4 axes** : **produit**, **roadmap**, **business**, **data**.
+- **Lien** : wizard de création orphelin (**TD-270**, relié **TD-206**).
+
+#### Messages de règle de saisie : rouge → warning dans les drawers (branche dédiée suivante)
+- **Position** : **branche dédiée** juste après la clôture du Sprint TechStack.
+- **Objectif** : les messages de **règle de saisie** des drawers passent du
+  **rouge** (`error`) au **warning** — doctrine « rouge = vraie erreur
+  technique, orange = règle métier » (`UX_UI_Guidelines.md`, fiche « Gestion
+  des erreurs »).
+- **Occurrences** : **TD-272**.
 
 #### Listes déroulantes en un clic ✅ LIVRÉ (branche `fix/edit-single-click`, `836aa859`→`a6ced69f` + commit doc de clôture)
 - **Décision PO (B)** : **changement central dans `InlineEditableValue`**,

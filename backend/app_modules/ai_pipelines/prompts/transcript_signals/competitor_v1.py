@@ -24,8 +24,17 @@ It is deliberately distinct from the two neighbouring tech stages:
     INTEGRATION requirement ("it has to plug into our Salesforce") -- a
     requirement the product must meet, not a competing option.
 The SAME tool may legitimately appear in those other signals; here it is
-emitted ONLY for its competition facet, and only when the transcript
-frames it as a competing option.
+emitted ONLY for its competition facet.
+
+Evaluated tools are competitors BY DEFAULT (v2)
+-----------------------------------------------
+PO rule (Sprint TechStack T4b): a tool the prospect is LOOKING AT /
+EVALUATING / TESTING is a competitor by default, even when its link to the
+seller's project is in doubt -- the tech-stack stage never emits it (confirmed
+usage only), so dropping it here would lose it. The ONLY exception is a tool
+the transcript CLEARLY says is unrelated ("we're also looking at a payroll
+tool, but that's another topic") -> nothing emitted. v1's "When in doubt, do
+NOT emit" is gone.
 
 Schema (v1)
 -----------
@@ -79,13 +88,19 @@ Versioning
 COMPETITOR_PROMPT_VERSION is captured in AIPipelineRun.prompt_versions so
 the exact prompt revision used for any persisted signal can be retrieved
 later for quality measurement and debugging.
+
+  v1 -- Competitors sprint: competing option framed as such; "when in doubt,
+        do NOT emit".
+  v2 -- Sprint TechStack T4b: a tool looked at / evaluated / tested is a
+        competitor BY DEFAULT, even when its link to the project is in doubt;
+        the only exception is a tool CLEARLY said to be unrelated.
 """
 
 
 __all__ = ['COMPETITOR_PROMPT_VERSION', 'build_competitor_request']
 
 
-COMPETITOR_PROMPT_VERSION = 'v1'
+COMPETITOR_PROMPT_VERSION = 'v2'
 
 
 def build_competitor_request(transcript):
@@ -113,8 +128,11 @@ INSTEAD OF / AGAINST the seller's offering ("we're also evaluating
 Intercom instead of you", "we're comparing you against HubSpot", "the
 other option on the table is Gong").
 
-Extract a tool/vendor ONLY when the transcript frames it as a competing
-option to the seller's solution. When in doubt, do NOT emit.
+A tool or vendor the prospect is LOOKING AT, EVALUATING or TESTING
+(« on regarde / évalue / teste X ») is a COMPETITOR BY DEFAULT: emit it,
+even when its link to the seller's project is in doubt.
+The ONLY exception: the transcript says CLEARLY that the tool is unrelated
+to the project -- then emit nothing for it.
 
 Competitor vs. Tech-stack (do NOT confuse the two)
 - A TOOL THE PROSPECT MERELY USES today is a tech-stack signal, NOT a
@@ -131,9 +149,9 @@ Competitor vs. Integration requirement (do NOT confuse the two)
 
 Same tool, several roles
 - The SAME tool may legitimately appear in other signals (used, and/or an
-  integration target). Here, emit it ONLY for its COMPETITION facet, and
-  only if the transcript frames it as a competing option in this deal. Do
-  NOT emit it here for its usage or integration facets.
+  integration target). Here, emit it ONLY for its COMPETITION facet (framed
+  as a competing option, or looked at / evaluated by the prospect). Do NOT
+  emit it here for its usage or integration facets.
 
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
@@ -151,10 +169,12 @@ Return a single JSON object with this exact shape:
 }}
 
 EMISSION RULES
-- Emit a signal ONLY when the transcript provides clear evidence that the
-  tool is positioned as an alternative to / in competition with the
-  seller's solution. Apply the EVIDENCE RULES and EPISTEMIC FILTER from
-  the system prompt: drop weak inferences and NEVER fabricate.
+- Emit a signal when the tool is positioned as an alternative to / in
+  competition with the seller's solution, OR when the prospect is looking
+  at / evaluating / testing it (a competitor by default -- see above),
+  unless the transcript clearly says it is unrelated to the project. Apply
+  the EVIDENCE RULES and EPISTEMIC FILTER from the system prompt: NEVER
+  fabricate a tool that is not named.
 - `summary` MUST be your own short rephrasing of the competitive framing.
   Never copy-paste the source_quote into the summary.
 - `competitor_name` MUST be the tool/vendor name as stated, preserving its
@@ -176,6 +196,13 @@ EXAMPLES (the FRAMING decides -- not the mere presence of a tool name)
          constraint). Do NOT emit it here.
 - "We're also evaluating Intercom instead of you"
       -> competitor_name="Intercom" (framed as an alternative to us).
+- « On commence à regarder HubSpot pour remplacer Salesforce. »
+      -> competitor_name="HubSpot" (a tool being looked at: a competitor by
+         default, even if its link to our project is not spelled out).
+         Salesforce, used today, is NOT a competitor here.
+- « On regarde aussi un outil de paie, mais c'est un autre sujet. »
+      -> NOT a competitor: emit nothing (the transcript clearly says it is
+         unrelated to the project -- the only exception).
 - "We run on Zendesk, you'd need to plug into it, and frankly we're
    weighing just expanding Zendesk rather than buying your tool"
       -> emit ONLY competitor_name="Zendesk" for the COMPETITION facet

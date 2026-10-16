@@ -19,6 +19,8 @@ vi.mock('components/MainCard', () => ({
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
+// The review-step notice (InfoNotice, T5b) reads theme.iconSizes.
+import AphoriqTheme from '../../../_utils/aphoriqTheme';
 
 // ==============================|| TEST DATA ||============================== //
 
@@ -38,7 +40,7 @@ const defaultProps = {
 // ==============================|| HELPERS ||============================== //
 
 function renderWizard(overrides = {}) {
-  return render(<RunAIWizard {...defaultProps} {...overrides} />);
+  return render(<RunAIWizard {...defaultProps} {...overrides} />, { wrapper: AphoriqTheme });
 }
 
 // ==============================|| TESTS ||============================== //

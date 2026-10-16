@@ -26,8 +26,9 @@ this service:
         - TechStack   -> raw `tech_name` passthrough (normalised by
                           TechStackSignal.save(), not here) + the
                           qualification booleans (is_competitor /
-                          is_to_replace); usage_scope (SCALE) filtered to
-                          TEAM / COMPANY / UNKNOWN; usage_departments (WHO)
+                          is_to_replace); usage in three cases
+                          (_techstack_usage_scope: DEPARTMENT iff departments
+                          resolved, else COMPANY or UNKNOWN); usage_departments
                           resolved to a multi-department M2M via
                           resolve_tech_usage_departments. `is_integration`
                           is NO LONGER extracted -- a required integration is
@@ -93,6 +94,7 @@ method for symmetry with future variants (e.g. a v2 extractor with
 a different filter strategy could subclass).
 """
 
+import datetime
 import logging
 import re
 
@@ -107,6 +109,7 @@ from app_modules.signals.constants import (
     ScopeLevel,
     SignalSource,
     SignalStatus,
+    UsageScope,
 )
 from app_modules.signals.models import PeopleSignal, TechStackSignal
 from app_modules.signals.services.signal_cluster_service import SignalClusterService
@@ -121,12 +124,65 @@ from .safety_filter import passes_safety_filter, safe_float
 logger = logging.getLogger(__name__)
 
 
-# Allowed values for TechStack usage_scope. usage_scope is the SCALE axis
-# (how widely the tool is used) and is kept as-is by the mono->multi
-# department migration. Any other value (including "DEPARTMENT", which the
-# prompt no longer asks for -- the WHO is carried by usage_departments now)
-# is demoted to None.
-_TECHSTACK_USAGE_SCOPE_ALLOWED = {'TEAM', 'COMPANY', 'UNKNOWN'}
+def _techstack_usage_scope(raw_scope, departments):
+    """
+    TechStack usage in THREE cases (Sprint TechStack, T0) — same normalisation
+    as data migration 0045:
+
+      * at least one RESOLVED usage department -> DEPARTMENT (the departments
+        decide, whatever scope the model emitted);
+      * else COMPANY when the model said COMPANY;
+      * else UNKNOWN — "not said" (null / missing), the retired TEAM, a
+        DEPARTMENT whose departments did not resolve, or any garbage value.
+
+    Guarantees DEPARTMENT <=> at least one usage department, and never null.
+    """
+    if departments:
+        return UsageScope.DEPARTMENT
+    if raw_scope == UsageScope.COMPANY:
+        return UsageScope.COMPANY
+    return UsageScope.UNKNOWN
+
+
+# TechStack usage_start_year bounds (Sprint TechStack T4) — a year outside is
+# a model slip, dropped to null (same bounds as the Activity edit drawer).
+_TECHSTACK_MIN_USAGE_YEAR = 1980
+_TECHSTACK_MAX_USAGE_YEARS_AHEAD = 1
+
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+# D2 — note appended when a discontinuation is stated without a valid date
+# (the rep sets the date by hand from it). `quote` = the signal's source_quote.
+_TECHSTACK_UNDATED_DISCONTINUATION_NOTE = 'Discontinuation mentioned without a date: "{quote}"'
+
+
+def _techstack_usage_year(value):
+    """An integer year within the module bounds (int or digit string), else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if not isinstance(value, int):
+        return None
+    max_year = timezone.now().year + _TECHSTACK_MAX_USAGE_YEARS_AHEAD
+    if not _TECHSTACK_MIN_USAGE_YEAR <= value <= max_year:
+        return None
+    return value
+
+
+def _iso_date(value):
+    """A real calendar date written YYYY-MM-DD, else None (never guessed)."""
+    if not isinstance(value, str) or not _ISO_DATE_RE.match(value.strip()):
+        return None
+    try:
+        return datetime.date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def _clean_text(value):
+    """Stripped text; None / missing -> ''."""
+    return str(value).strip() if value is not None else ''
 
 
 def _build_department_resolution_index():
@@ -464,7 +520,7 @@ def resolve_person_department(name):
 # IN-EXTRACTION DEDUPLICATION (shared by TechStack and People)
 # =============================================================================
 
-def _deduplicate_candidates(candidates, key_fn):
+def _deduplicate_candidates(candidates, key_fn, fill_groups=()):
     """
     Merge the candidates of ONE extraction that share a grouping key.
 
@@ -473,9 +529,16 @@ def _deduplicate_candidates(candidates, key_fn):
     metadata.additional_quotes for traceability. A candidate whose key is
     None is NEVER merged (kept as is). Order of first occurrence preserved.
 
+    fill_groups (D3, TechStack): tuples of fields filled TOGETHER — when the
+    winner's first field of a group is EMPTY (None / '' / False) and a later
+    member's is not, the whole group is copied from that member (the first
+    non-empty one wins). Fields already set on the winner are never
+    overwritten.
+
     Args:
-        candidates: list[dict] -- data dicts built for SignalManager.create().
-        key_fn:     callable(dict) -> hashable | None -- the grouping key.
+        candidates:  list[dict] -- data dicts built for SignalManager.create().
+        key_fn:      callable(dict) -> hashable | None -- the grouping key.
+        fill_groups: tuple[tuple[str, ...]] -- field groups to complete.
 
     Returns:
         list[dict] -- the surviving candidates.
@@ -494,6 +557,10 @@ def _deduplicate_candidates(candidates, key_fn):
             survivors.append(data)
         else:
             winner = groups[key]
+            for group in fill_groups:
+                if not winner.get(group[0]) and data.get(group[0]):
+                    for field in group:
+                        winner[field] = data.get(field)
             extra_quote = data.get('source_quote')
             if extra_quote:
                 if not winner.get('metadata'):
@@ -590,6 +657,18 @@ def _drop_people_already_in_deal(candidates, activity):
 _DEDUP_KEY_BY_STAGE = {
     'techstack': _techstack_dedup_key,
     'people':    _people_dedup_key,
+}
+
+# Stage -> field groups a later duplicate may complete when EMPTY on the
+# winner (D3, Sprint TechStack T4). The discontinuation pair travels together.
+_DEDUP_FILL_GROUPS_BY_STAGE = {
+    'techstack': (
+        ('usage_start_year',),
+        ('renewal_date',),
+        ('cost_description',),
+        ('notes',),
+        ('is_discontinued', 'discontinued_date'),
+    ),
 }
 
 # PeopleSignal.full_name column width -- an over-long LLM name is truncated
@@ -696,7 +775,9 @@ class TranscriptSignalExtractor:
         dedup_key = _DEDUP_KEY_BY_STAGE.get(stage)
         if dedup_key is not None and len(candidates) > 1:
             before = len(candidates)
-            candidates = _deduplicate_candidates(candidates, dedup_key)
+            candidates = _deduplicate_candidates(
+                candidates, dedup_key, _DEDUP_FILL_GROUPS_BY_STAGE.get(stage, ()),
+            )
             dropped_count += before - len(candidates)
 
         # --- Phase 1.6: People only — never recreate a person already
@@ -777,7 +858,9 @@ class TranscriptSignalExtractor:
         qualification booleans -- and additional source_quote values are
         stored in metadata.additional_quotes for traceability.
         """
-        return _deduplicate_candidates(candidates, _techstack_dedup_key)
+        return _deduplicate_candidates(
+            candidates, _techstack_dedup_key, _DEDUP_FILL_GROUPS_BY_STAGE['techstack'],
+        )
 
     # =========================================================================
     # DATA-DICT BUILDERS
@@ -965,13 +1048,14 @@ class TranscriptSignalExtractor:
         """
         Build SignalManager.create() data for a TechStack signal.
 
-        Schema requirements (from techstack_v1.py):
+        Schema requirements (from techstack_v1.py, prompt v3):
             tech_name (required, free text),
-            is_competitor / is_to_replace (booleans),
-            usage_scope (optional),
+            usage_scope + usage_departments (three cases, see below),
+            usage_start_year, renewal_date, cost_description,
+            is_discontinued, discontinued_date, notes (ONLY when said),
             source_quote, confidence, is_inferred.
-            (is_integration is no longer extracted -- now a TECHNICAL
-            constraint; see the constraint stage.)
+            (is_to_replace left the schema in v3 -- forced to False here;
+            is_competitor / is_integration were retired earlier.)
 
         Tech identity (S10):
             The LLM emits the tool name as free text and the extractor
@@ -979,34 +1063,29 @@ class TranscriptSignalExtractor:
             `tech_name_normalized` from it -- do NOT normalise here, or
             the raw display text would be lost.
 
-            `metadata['pending_tech_name']` is no longer written -- the
-            column is the identity carrier now, and a second copy of the
-            same string could only drift from it.
-
-        Qualification booleans:
-            Two independent flags (is_competitor / is_to_replace), coerced
-            with bool() so a JSON "true" / 1 / null from the model can never
-            land a non-boolean in the DB. Both absent -> both False, meaning
-            "a tool the account simply uses". (is_integration was retired
-            from this path -- now a TECHNICAL constraint.)
-
-        usage_scope filtering (SCALE axis -- how widely, kept as-is):
-            * "TEAM" / "COMPANY" / "UNKNOWN"  -> propagate to model.
-            * Anything else (incl. "DEPARTMENT", no longer asked for) or
-              missing -> demote to None. Model field is nullable.
+        usage_scope (three cases, see _techstack_usage_scope):
+            * resolved departments -> DEPARTMENT;
+            * else COMPANY when emitted as COMPANY;
+            * else UNKNOWN ("not said", the retired TEAM, an unresolved
+              DEPARTMENT, garbage). Never null.
 
         usage_departments (WHO uses the tool -- multi-department M2M):
-            The LLM emits `usage_departments`, an array of department names
-            explicitly designated as USERS of the tool. resolve_tech_usage_
-            departments maps them to StandardDepartment rows (exact-name,
-            deduped, dropping unresolved / General Management). The list is
-            passed in the data dict; SignalManager.create applies it via
-            .set() after the row is saved (M2M can't be set pre-save).
-            An empty list ("nobody designated") is valid and assigned as-is.
+            resolve_tech_usage_departments maps the emitted names to
+            StandardDepartment rows; SignalManager.create applies the list
+            via .set() after the row is saved.
 
-            The legacy single-FK `usage_department` is intentionally NOT set
-            here anymore -- the WHO is carried by the M2M. The FK is being
-            retired; while it still exists it stays null on extracted rows.
+        Lifecycle + notes (prompt v3):
+            * usage_start_year -- an integer within the module bounds
+              (_TECHSTACK_MIN_USAGE_YEAR .. current year +
+              _TECHSTACK_MAX_USAGE_YEARS_AHEAD), else None;
+            * renewal_date / discontinued_date -- a real YYYY-MM-DD date,
+              else None;
+            * cost_description / notes -- stripped text ('' when absent);
+            * D2 -- is_discontinued without a valid discontinued_date ->
+              not discontinued, no date, the source_quote appended to the
+              notes; a date without the flag is ignored.
+            (D3 -- a later mention of the same tool completes the EMPTY
+            fields: see _deduplicate_candidates / _DEDUP_FILL_GROUPS_BY_STAGE.)
 
         Drops:
             * missing / blank source_quote -> drop (schema).
@@ -1039,27 +1118,43 @@ class TranscriptSignalExtractor:
             # normalised grouping key from it.
             'tech_name':       str(tech_name),
 
-            # is_integration and is_competitor are NO LONGER extracted:
-            #  * a required integration is captured as a ConstraintSignal of
-            #    nature=TECHNICAL (constraint stage);
-            #  * a competitor is captured as a CompetitorSignal (competitor
-            #    stage) — sub-step 5.
-            # Both columns stay (neutralised, default False) pending their
-            # schema drop (sub-step 8). is_to_replace is untouched.
-            'is_to_replace':   bool(raw.get('is_to_replace')),
+            # is_to_replace left the output schema (prompt v3, Sprint
+            # TechStack T4): the column stays in the DB, always False on
+            # extraction (out of the UI; its replacement is TD-199).
+            'is_to_replace':   False,
         }
 
-        # --- usage_scope filtering (SCALE axis, kept as-is) ---
-        usage_scope_raw = raw.get('usage_scope')
-        if usage_scope_raw in _TECHSTACK_USAGE_SCOPE_ALLOWED:
-            data['usage_scope'] = usage_scope_raw
-        # else: leave unset (None) -- model field is nullable.
+        # --- lifecycle + notes (prompt v3): ONLY when said, never guessed ---
+        data['usage_start_year'] = _techstack_usage_year(raw.get('usage_start_year'))
+        data['renewal_date'] = _iso_date(raw.get('renewal_date'))
+        data['cost_description'] = _clean_text(raw.get('cost_description'))
+        notes = _clean_text(raw.get('notes'))
 
-        # --- usage_departments (WHO -- multi-department M2M) ---
-        # Always assign the resolved list (possibly empty). SignalManager
-        # .create pops M2M values and applies them with .set() post-save.
-        # The legacy single-FK usage_department is deliberately left unset.
-        data['usage_departments'] = resolve_tech_usage_departments(raw)
+        # D2 — discontinued requires a valid date (model rule). Without one the
+        # signal is NOT discontinued, and the stated phrase is kept in the
+        # notes so the rep can set the date by hand.
+        discontinued_date = _iso_date(raw.get('discontinued_date'))
+        is_discontinued = bool(raw.get('is_discontinued'))
+        if is_discontinued and discontinued_date is None:
+            is_discontinued = False
+            phrase = _TECHSTACK_UNDATED_DISCONTINUATION_NOTE.format(
+                quote=_clean_text(raw['source_quote']),
+            )
+            notes = f'{notes}\n{phrase}' if notes else phrase
+        data['is_discontinued'] = is_discontinued
+        data['discontinued_date'] = discontinued_date if is_discontinued else None
+        data['notes'] = notes
+
+        # --- usage in three cases ---
+        # Always assign the resolved department list (possibly empty).
+        # SignalManager.create pops M2M values and applies them with .set()
+        # post-save. The resolved departments decide DEPARTMENT; otherwise
+        # COMPANY or UNKNOWN (never null) — see _techstack_usage_scope.
+        departments = resolve_tech_usage_departments(raw)
+        data['usage_departments'] = departments
+        data['usage_scope'] = _techstack_usage_scope(
+            raw.get('usage_scope'), departments,
+        )
 
         return data
 

@@ -24,22 +24,16 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useState, useRef } from "react";
+import { useMemo } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
 
 // MUI
-import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
-import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-
-// Icons
-import CheckOutlined from "@ant-design/icons/CheckOutlined";
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -52,12 +46,8 @@ import InlineEditableValue from "components/drawer/InlineEditableValue";
 import ObjectiveScopePill from "components/signals/ObjectiveScopePill";
 import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
 
-// Date picker — the project's standard component (@mui/x-date-pickers + dayjs),
-// same as EditActivityContent / OutcomeDrawerContent.
-import { DatePicker } from "@mui/x-date-pickers/DatePicker";
-import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import dayjs from "dayjs";
+// Target date — the shared chassis date field (moved from this file, D1).
+import InlineDateField from "components/drawer/InlineDateField";
 
 // ==============================|| HELPERS (reproduced from InlineObjectiveForm) ||=========== //
 
@@ -65,90 +55,6 @@ function resolveLabel(options, value) {
   if (!value || !options) return null;
   return options.find((o) => o.value === value)?.label ?? value;
 }
-
-// Target date — read row that reveals the project DatePicker ONLY on a click,
-// with ✓ (keep the draft) / ✗ (restore the pre-edit value), same interaction as
-// EditActivityContent's scheduled-date field. Formik keeps the ISO "YYYY-MM-DD"
-// string; the picker reads/writes a dayjs.
-function TargetDateField({ value, onChange }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
-  const [editing, setEditing] = useState(false);
-  const startRef = useRef(null);
-
-  const startEdit = () => {
-    startRef.current = value;
-    setEditing(true);
-  };
-  const confirm = () => setEditing(false);
-  const cancel = () => {
-    onChange(startRef.current ?? "");
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Stack spacing={1}>
-          <DatePicker
-            label="Target date"
-            value={value ? dayjs(value) : null}
-            onChange={(v) => onChange(v && v.isValid() ? v.format("YYYY-MM-DD") : "")}
-            slotProps={{ textField: { fullWidth: true, size: "small" } }}
-          />
-          <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
-            <IconButton
-              size="small"
-              onClick={confirm}
-              data-testid="target-date-confirm"
-              aria-label="Confirm target date"
-              sx={{ color: "success.main" }}
-            >
-              <CheckOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={cancel}
-              data-testid="target-date-cancel"
-              aria-label="Discard target date"
-              sx={{ color: "error.main" }}
-            >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-          </Stack>
-        </Stack>
-      </LocalizationProvider>
-    );
-  }
-
-  const display = value ? dayjs(value).format("D MMM YYYY") : null;
-  return (
-    <Box>
-      <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-        Target date
-      </Typography>
-      <Box
-        data-testid="inline-read-target_date"
-        onClick={startEdit}
-        sx={{ cursor: "pointer", py: 0.25 }}
-      >
-        {display ? (
-          <Typography variant="body2" color="text.primary">
-            {display}
-          </Typography>
-        ) : (
-          <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
-            No date set
-          </Typography>
-        )}
-      </Box>
-    </Box>
-  );
-}
-TargetDateField.propTypes = {
-  value: PropTypes.string,
-  onChange: PropTypes.func.isRequired,
-};
 
 // ==============================|| VALIDATION (preserved from InlineObjectiveForm) ||=========== //
 
@@ -436,7 +342,12 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
             placeholder="No success criteria"
           />
           {/* Target date — a click reveals the project DatePicker (✓/✗). */}
-          <TargetDateField value={values.target_date} onChange={set("target_date")} />
+          <InlineDateField
+            label="Target date"
+            name="target_date"
+            value={values.target_date}
+            onChange={set("target_date")}
+          />
           <InlineEditableValue
             name="notes"
             label="Notes"

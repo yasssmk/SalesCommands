@@ -12,6 +12,7 @@ import Typography from "@mui/material/Typography";
 // Shared primitives
 import DrawerSection from "components/display/DrawerSection";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
+import { getTechUsage } from "sections/activities/signals/utils/signalDisplay";
 
 function formatDate(isoDate) {
   if (!isoDate) return null;
@@ -40,26 +41,17 @@ export default function TechDetailBlock({ signal }) {
     signal.is_to_replace && { key: "to-replace", label: "To replace", color: "warning" },
   ].filter(Boolean);
 
-  const usageScope = signal.usage_scope_display;
-  // WHO uses the tool — multi-department (M2M). Every write path
-  // (extraction and manual entry) fills usage_departments; the legacy
-  // single usage_department FK was dropped. Each entry is a compact
-  // { id, name } payload.
-  const departments = Array.isArray(signal.usage_departments)
-    ? signal.usage_departments
-    : [];
-
-  // ONE usage line (PO rule). The department is the WHO and PRIMES over the
-  // usage_scope SCALE: when at least one department is designated, show the
-  // department list and NOT the scale (they contradict — "Company-wide" +
-  // "Marketing" side by side made no sense). Otherwise fall back to the
-  // scale. Never both. Plain text (comma-separated), same DrawerFieldRow
-  // text style as "Used since" / "Cost" below — no chips.
-  const departmentNames = departments.map((d) => d && d.name).filter(Boolean);
+  // ONE usage line (PO rule). The departments PRIME over the scale: when at
+  // least one department is designated, show the department list and NOT the
+  // scale. Otherwise fall back to the scale. Never both. The rule lives in the
+  // shared getTechUsage helper (also used by the Activity chassis detail).
+  // Plain text (comma-separated), same DrawerFieldRow text style as
+  // "Used since" / "Cost" below — no chips.
+  const { departmentNames, usageScopeDisplay } = getTechUsage(signal);
   const usageValue =
     departmentNames.length > 0
       ? departmentNames.join(", ")
-      : usageScope || null;
+      : usageScopeDisplay || null;
   const usageLabel =
     departmentNames.length > 1
       ? "Departments"

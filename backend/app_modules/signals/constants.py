@@ -445,26 +445,24 @@ class ScopeLevel(models.TextChoices):
 
 class UsageScope(models.TextChoices):
     """
-    Organisational SCALE at which a tool is used at an account.
+    How a tool is used at the prospect — THREE cases (PO, Sprint TechStack):
 
-    This is the SCALE axis only. WHO uses the tool is a separate, orthogonal
-    concept — the multi-department TechStackSignal.usage_departments M2M —
-    with no coupling to this scale (the former single-FK usage_department
-    and its DEPARTMENT-scope conditional were dropped).
+    DEPARTMENT — used by one or more named departments; the departments are
+                 carried by the TechStackSignal.usage_departments M2M.
+                 DEPARTMENT <=> at least one usage department (enforced by
+                 the Create / Update serializers and the extraction builder).
+    COMPANY    — used company-wide (no department designated).
+    UNKNOWN    — usage not said. "Not said" is UNKNOWN, never null.
 
-    TEAM       — used by a single team within a department
-    DEPARTMENT — used at the level of one department
-    COMPANY    — used company-wide across multiple departments
-    UNKNOWN    — scope was discussed but not clarified, or not yet known.
-                 Safe default for early-stage observations.
+    TEAM was retired (the prospect side speaks of departments, not teams):
+    migration 0045 moved TEAM rows to DEPARTMENT (with departments) or
+    UNKNOWN (without). INDIVIDUAL is intentionally NOT a value.
 
-    INDIVIDUAL is intentionally NOT a value — single-user usage is captured
-    through notes / source_quote on the signal itself, not promoted to a
-    canonical scope.
+    Declaration order = display order of the scope pills (Department ·
+    Company · Unknown).
     """
-    TEAM       = 'TEAM',       _('Team')
     DEPARTMENT = 'DEPARTMENT', _('Department')
-    COMPANY    = 'COMPANY',    _('Company-wide')
+    COMPANY    = 'COMPANY',    _('Company')
     UNKNOWN    = 'UNKNOWN',    _('Unknown')
 
 # =============================================================================

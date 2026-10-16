@@ -36,9 +36,10 @@ Notes:
     False, writable on both Create and Update. (is_competitor and
     is_integration were both retired from the surface.)
 
-  - Usage: usage_scope is the SCALE (TEAM/COMPANY/UNKNOWN); the WHO is the
-    multi-department M2M usage_departments, written as a list of
-    StandardDepartment ids and independent of usage_scope. The legacy
+  - Usage in three cases: usage_scope DEPARTMENT / COMPANY / UNKNOWN; the
+    departments are the M2M usage_departments, written as a list of
+    StandardDepartment ids. DEPARTMENT <=> at least one department; a
+    missing / cleared usage_scope means "not said" -> UNKNOWN. The legacy
     single FK usage_department has been dropped.
 
   - Conditional rule (mirror of TechStackSignal.clean()):
@@ -54,6 +55,7 @@ from core.exceptions import StandardizedValidationError
 
 from app_modules.core_modules.models import StandardDepartment
 
+from ..constants import UsageScope
 from ..models import TechStackSignal
 from .base_serializer import (
     BaseSignalCreateSerializer,
@@ -102,6 +104,26 @@ class _TechStackDisplayMixin:
             }
             for d in obj.usage_departments.all()
         ]
+
+
+def _validate_usage_consistency(usage_scope, usage_departments):
+    """
+    Enforce the three-case usage rule: DEPARTMENT <=> at least one usage
+    department. Called by Create (strict) and Update (merged-state).
+
+    Rules:
+      usage_scope = DEPARTMENT  → usage_departments REQUIRED (non-empty)
+      usage_scope ≠ DEPARTMENT  → usage_departments FORBIDDEN (empty)
+    """
+    has_departments = bool(usage_departments)
+    if usage_scope == UsageScope.DEPARTMENT and not has_departments:
+        raise StandardizedValidationError({
+            'usage_departments': SignalErrorMessages.TECHSTACK_DEPT_REQUIRES_DEPT,
+        })
+    if usage_scope != UsageScope.DEPARTMENT and has_departments:
+        raise StandardizedValidationError({
+            'usage_departments': SignalErrorMessages.TECHSTACK_DEPT_OUTSIDE_SCOPE,
+        })
 
 
 def _validate_discontinuation_consistency(is_discontinued, discontinued_date):
@@ -399,12 +421,10 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
              whitespace-only name, which allow_blank=False alone would
              let through).
           2. Discontinuation ↔ discontinued_date coherence (strict).
-          3. super().validate() — base injects client_id from JWT
+          3. Usage in three cases: missing scope -> UNKNOWN, then
+             DEPARTMENT <=> at least one usage department (strict).
+          4. super().validate() — base injects client_id from JWT
              context.
-
-        usage_departments carries no conditional rule: the multi-department
-        M2M is independent of usage_scope (the WHO is orthogonal to the
-        SCALE), so any combination is valid.
         """
 
         # Rule 1: tech_name presence (rejects whitespace-only too)
@@ -417,6 +437,15 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
         _validate_discontinuation_consistency(
             is_discontinued=attrs.get('is_discontinued', False),
             discontinued_date=attrs.get('discontinued_date'),
+        )
+
+        # Rule 3: usage in three cases — "not said" is UNKNOWN (never null),
+        # and DEPARTMENT <=> at least one usage department (strict).
+        if not attrs.get('usage_scope'):
+            attrs['usage_scope'] = UsageScope.UNKNOWN
+        _validate_usage_consistency(
+            usage_scope=attrs['usage_scope'],
+            usage_departments=attrs.get('usage_departments') or [],
         )
 
         # Delegate to base for client_id injection.
@@ -459,13 +488,18 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
     Merged-state validation:
       A partial PATCH that touches `is_discontinued` or `discontinued_date`
       triggers the discontinuation consistency check against the merged
-      (instance + payload) state. usage_departments carries no conditional
-      rule (independent of usage_scope), so a PATCH may set it freely.
+      (instance + payload) state. Likewise a PATCH touching `usage_scope` or
+      `usage_departments` is checked against the merged state:
+      DEPARTMENT <=> at least one usage department.
 
     Examples:
       Reassigning the using departments:
-        PATCH { usage_departments: [7, 5] }  → replaces the M2M set.
-        PATCH { usage_departments: [] }      → clears it.
+        PATCH { usage_scope: 'DEPARTMENT', usage_departments: [7, 5] }
+          → replaces the M2M set.
+        PATCH { usage_scope: 'COMPANY', usage_departments: [] }
+          → clears it.
+        PATCH { usage_scope: 'DEPARTMENT', usage_departments: [] }
+          → rejected (DEPARTMENT needs a department).
 
       Marking discontinued without a date:
         PATCH { is_discontinued: true }
@@ -545,8 +579,8 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
         It is checked only when at least one of its members is in the
         payload — otherwise the instance is already valid and nothing
         changed for that pair. This avoids spurious 400s on unrelated
-        PATCHes (e.g. a notes-only update). usage_departments is
-        unconditional (independent of usage_scope) and needs no check.
+        PATCHes (e.g. a notes-only update). The usage pair
+        (usage_scope ↔ usage_departments) follows the same rule.
         """
         instance = self.instance
 
@@ -576,6 +610,24 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
             _validate_discontinuation_consistency(
                 is_discontinued=merged_is_discontinued,
                 discontinued_date=merged_discontinued_date,
+            )
+
+        # --- usage in three cases (merged state) ---
+        # A cleared usage_scope means "not said" -> UNKNOWN (never null).
+        if 'usage_scope' in attrs and not attrs['usage_scope']:
+            attrs['usage_scope'] = UsageScope.UNKNOWN
+
+        touched_usage_fields = any(
+            field in attrs for field in ('usage_scope', 'usage_departments')
+        )
+        if touched_usage_fields and instance is not None:
+            _validate_usage_consistency(
+                usage_scope=attrs.get('usage_scope', instance.usage_scope),
+                usage_departments=(
+                    attrs['usage_departments']
+                    if 'usage_departments' in attrs
+                    else list(instance.usage_departments.all())
+                ),
             )
 
         return super().validate(attrs)
