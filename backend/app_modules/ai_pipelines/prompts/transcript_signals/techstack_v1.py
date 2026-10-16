@@ -13,7 +13,7 @@ The full assembly is performed by PromptBuilder.assemble() in base.py.
 Schema (v1 — S10 revision)
 --------------------------
 The LLM emits one JSON object with a single key `signals` containing an
-array of tech-stack observations. Each observation has exactly 8 fields:
+array of tech-stack observations (v3). Each observation has these fields:
 
     tech_name              string       -- the tool's CANONICAL product
                                             name (official, stable
@@ -21,7 +21,6 @@ array of tech-stack observations. Each observation has exactly 8 fields:
                                             tool is unknown or ambiguous).
                                             REQUIRED. See the TOOL NAME
                                             section of the request below.
-    is_to_replace          boolean      -- the prospect intends to move off it.
     usage_scope            string       -- three cases: "DEPARTMENT" (one
                                             or more departments designated
                                             as users) | "COMPANY" (company-
@@ -36,15 +35,25 @@ array of tech-stack observations. Each observation has exactly 8 fields:
                                             when no department is explicitly
                                             designated as a user. See the
                                             USAGE DEPARTMENTS section below.
+    usage_start_year       int|null     -- year the prospect started using it.
+    renewal_date           date|null    -- next renewal, YYYY-MM-DD.
+    cost_description       string|null  -- the cost as stated (verbatim).
+    is_discontinued        boolean      -- the prospect stopped / will stop
+                                            using it, with a stated date.
+    discontinued_date      date|null    -- that stop date, YYYY-MM-DD.
+    notes                  string|null  -- HOW the tool is used + what the
+                                            prospect thinks of it.
     source_quote           string       -- verbatim excerpt from the transcript.
     confidence             float        -- LLM self-declared, in [0.0, 1.0].
     is_inferred            boolean      -- LLM self-declared, true when not
                                             directly stated.
 
-`is_to_replace` is the only qualification boolean now: false is the
-common case ("the prospect uses this tool", no angle).
+The lifecycle fields and notes are emitted ONLY when the transcript says
+them, else null -- never guessed (same rule as the People department, v3).
 
-is_integration and is_competitor were RETIRED from this stage:
+is_to_replace, is_integration and is_competitor were RETIRED from this stage
+(is_to_replace in v3: the column stays in the DB, always False on extraction
+-- its replacement is a cluster-level "replacement considered", TD-199):
   * a required integration is a buyer REQUIREMENT, now captured as a
     ConstraintSignal of nature=TECHNICAL by the constraint stage;
   * a competitor is now captured as a CompetitorSignal by the competitor
@@ -95,22 +104,29 @@ fuzzy matching) to a StandardDepartment row and assigns them to the
 multi-department M2M TechStackSignal.usage_departments. An unresolved or
 "General Management" name is dropped by the backend, never invented.
 
-Why is_discontinued / cost_description / renewal_date are NOT extracted
-----------------------------------------------------------------------
-These fields exist on TechStackSignal but their extraction is fuzzy:
+Lifecycle + notes ARE extracted since v3 (Sprint TechStack T4)
+---------------------------------------------------------------
+Until v2 these fields were left to the rep (fuzzy extraction). PO decision:
+extract them, but ONLY when the transcript says them -- never guessed:
 
-  * is_discontinued requires distinguishing "they stopped using X" (PAST)
-    from "they are considering replacing X" (FUTURE intent, not yet
-    discontinued). Misclassification is costly -- the cluster priority
-    scorer applies a strong negative weight to discontinued tools.
-  * cost_description is free text but reps describe costs with widely
-    varying units ("$3k/mo", "120k/year", "free tier"). LLM normalisation
-    risks false precision.
-  * renewal_date / usage_start_year require unambiguous date parsing
-    that the LLM does not reliably perform on hedged transcript text
-    ("around three years ago", "later this year").
+  * usage_start_year -- a year; relative statements ("for three years")
+    are resolved with the activity date of the context layer.
+  * renewal_date / discontinued_date -- YYYY-MM-DD; relative dates ("next
+    March", "end of the year") resolved with the activity date. A partial
+    or hedged date the model cannot resolve is null.
+  * cost_description -- verbatim (no normalisation, no false precision).
+  * is_discontinued -- the prospect stopped or will stop using the tool,
+    with its stop date. Intent alone ("we are unhappy with X") is NOT a
+    discontinuation; it belongs in the notes.
+  * notes -- HOW the tool is used (e.g. Azure AD "used for SSO") and what
+    the prospect thinks of it (satisfaction, pain points).
 
-All four are left to rep refinement post-validation.
+The backend re-checks everything (TranscriptSignalExtractor._build_techstack_
+data): a year outside the bounds or an unparseable date is dropped to null;
+discontinued without a valid date is NOT discontinued (the phrase is kept in
+the notes, D2); a second mention of the same tool completes the empty fields
+of the first (D3). No consumer scores these fields today (the former "cluster
+priority scorer" weight on is_discontinued is not wired).
 
 Epistemic self-declaration (confidence / is_inferred)
 -----------------------------------------------------
@@ -143,7 +159,6 @@ mapped to a new TechStackSignal row:
     LLM-emitted field             ->  TechStackSignal column
     -------------------------------    --------------------------------
     tech_name                     ->  tech_name (verbatim)
-    is_to_replace                 ->  is_to_replace
     usage_scope                   ->  usage_scope (three cases; DEPARTMENT
                                        iff departments resolved, else
                                        COMPANY when emitted, else UNKNOWN)
@@ -153,6 +168,14 @@ mapped to a new TechStackSignal row:
                                        resolve_tech_usage_departments,
                                        deduped, unresolved / General
                                        Management dropped; [] when none)
+    usage_start_year              ->  usage_start_year (int in bounds, else NULL)
+    renewal_date                  ->  renewal_date (valid ISO date, else NULL)
+    cost_description              ->  cost_description (stripped, '' if none)
+    is_discontinued +
+      discontinued_date           ->  is_discontinued / discontinued_date
+                                       (D2: no valid date -> False / NULL,
+                                       phrase appended to notes)
+    notes                         ->  notes (stripped, '' if none)
     source_quote                  ->  source_quote (declared on BaseSignal)
     confidence                    ->  confidence   (declared on BaseSignal)
     is_inferred                   ->  is_inferred  (declared on BaseSignal)
@@ -166,16 +189,9 @@ Fields filled by the service from the request context:
     client_id           =  activity.client_id
     created_by          =  request.user
 
-Hardcoded defaults at create:
+Hardcoded at create:
 
-    is_discontinued     =  False
-    discontinued_date   =  None
-    usage_department    =  None    (legacy single-FK; being retired --
-                                    the WHO is carried by usage_departments)
-    usage_start_year    =  None
-    renewal_date        =  None
-    cost_description    =  ''
-    notes               =  ''
+    is_to_replace       =  False   (out of the v3 schema, see above)
 
 TechStackSignal.save() then derives:
 
@@ -206,13 +222,16 @@ retrieved later for quality measurement and debugging.
   v1 -- S10 free-text identity + usage_departments (Tech scope sprint).
   v2 -- Sprint TechStack T0: usage in three cases (DEPARTMENT / COMPANY /
         UNKNOWN), TEAM retired, "not said" = UNKNOWN (never null).
+  v3 -- Sprint TechStack T4: lifecycle + notes extracted (only when said),
+        one technology = one signal (Salesforce / Azure AD example),
+        is_to_replace out of the output schema.
 """
 
 
 __all__ = ['TECHSTACK_PROMPT_VERSION', 'build_techstack_request']
 
 
-TECHSTACK_PROMPT_VERSION = 'v2'
+TECHSTACK_PROMPT_VERSION = 'v3'
 
 
 def build_techstack_request(transcript):
@@ -227,8 +246,8 @@ def build_techstack_request(transcript):
 
     Returns:
         str: A ready-to-concatenate request block. Will be combined
-        with the context layer (which includes the TECH CATALOG list)
-        by PromptBuilder.assemble() to form the final user message.
+        with the context layer (session grounding, activity date, usage
+        taxonomy) by PromptBuilder.assemble() to form the final user message.
     """
     return f"""TASK
 Extract TECH STACK signals from the SALES TRANSCRIPT below.
@@ -290,33 +309,45 @@ CANONICAL NAME EXAMPLES
       -> emit  "tech_name": "Pyramid"  (unknown / in-house: keep verbatim,
          do NOT map it to the BI product "Pyramid Analytics").
 
-QUALIFICATION
-Each signal carries ONE qualification boolean, `is_to_replace`. False is
-the common case: the prospect uses the tool with no further angle.
-
-- "is_to_replace"  -- the prospect intends to move off this tool.
-
-Set the flag ONLY when the transcript supports it; default to false.
+ONE technology = ONE signal
+Each distinct tool, software or product gets its OWN signal, even when
+several are named in the same sentence. Never merge two tools into one
+signal, never fold one tool into another's notes.
+- "On est sur Salesforce et on a un SSO Azure AD."
+      -> 2 signals:
+         {{"tech_name": "Salesforce", "notes": null, ...}}
+         {{"tech_name": "Azure AD", "notes": "SSO", ...}}
+         (two tools; HOW Azure AD is used -- for SSO -- goes in its notes).
 
 Do NOT emit a competitor flag here: whether a tool competes with what the
-SELLER sells is captured as a CompetitorSignal by the competitor stage
-(sub-step 5), not as a boolean on the tool.
+SELLER sells is captured as a CompetitorSignal by the competitor stage, not
+as a boolean on the tool.
 
 Do NOT emit an integration flag here: whether the SELLER's product must
 connect to a tool is a buyer REQUIREMENT, captured as a TECHNICAL
 constraint by the constraint stage, not as a boolean on the tool.
 
-# TODO(Competitors sprint): the definition above is deliberately one
-# line. This is the anchor point for the full is_to_replace wording,
-# which is NOT written yet:
-#   * is_to_replace  -- needs the PAST vs FUTURE distinction that
-#     `is_discontinued` extraction was deferred for (see the
-#     "Why is_discontinued ... NOT extracted" section above):
-#     "we dropped X" (past, not to-replace) vs "we are looking to
-#     replace X" (future intent, to-replace) vs "we are unhappy with X"
-#     (dissatisfaction, not yet intent). Add worked examples.
-# Until that sprint lands, expect the model to under-set this flag.
-# Under-setting is the safe failure mode: a rep can tick a box.
+LIFECYCLE AND NOTES
+Fill each of these fields ONLY when the transcript says it; otherwise emit
+null -- never guess, never infer from the tool's category or the company.
+- "usage_start_year" -- the year the prospect STARTED using the tool, as an
+  integer (e.g. 2019). "We've been on it for three years" -> resolve with
+  the activity date given in the context ("Activity: ... on <date>").
+- "renewal_date"     -- the next contract renewal, YYYY-MM-DD. Resolve a
+  relative date ("next March", "at the end of the year") with the activity
+  date; if it cannot be resolved to a precise day, emit null.
+- "cost_description" -- the cost EXACTLY as stated ("around 3k a month",
+  "120k$/year", "free tier"). Never convert or normalise.
+- "is_discontinued"  -- true ONLY when the prospect says they stopped or
+  will stop using the tool, AND the stop date is stated; false otherwise.
+  Dissatisfaction or an intent to look elsewhere is NOT a discontinuation:
+  put it in the notes.
+- "discontinued_date" -- the stop date, YYYY-MM-DD (resolved with the
+  activity date); null when is_discontinued is false.
+- "notes" -- HOW the prospect uses the tool (e.g. "SSO", "pipeline
+  management", "support tickets") and what the prospect THINKS of it
+  (satisfaction, pain points), in one or two short sentences. null when the
+  transcript says nothing of it.
 
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
@@ -325,9 +356,14 @@ Return a single JSON object with this exact shape:
   "signals": [
     {{
       "tech_name":       "<canonical product name -- see TOOL NAME: official stable spelling, verbatim when the tool is unknown or ambiguous>",
-      "is_to_replace":   <boolean, see QUALIFICATION>,
       "usage_scope":     "<DEPARTMENT | COMPANY | UNKNOWN>",
       "usage_departments": ["<zero or more department names from the CANONICAL TAXONOMY usage_departments list -- see USAGE DEPARTMENTS; [] when none is explicitly designated>"],
+      "usage_start_year": <integer year, or null -- see LIFECYCLE AND NOTES>,
+      "renewal_date":    "<YYYY-MM-DD, or null>",
+      "cost_description": "<the cost exactly as stated, or null>",
+      "is_discontinued": <boolean -- true only with a stated stop date>,
+      "discontinued_date": "<YYYY-MM-DD, or null>",
+      "notes":           "<how the tool is used + what the prospect thinks of it, or null>",
       "source_quote":    "<verbatim excerpt from the transcript supporting this tool observation>",
       "confidence":      <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
       "is_inferred":     <boolean, true when the signal is inferred rather than directly stated>
@@ -391,7 +427,8 @@ technical word):
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of
-  prospect-side CURRENT usage of a specific tool. Apply the EVIDENCE
+  prospect-side CURRENT usage of a specific tool (a tool the prospect uses
+  today, including one whose stop date is stated -- is_discontinued). Apply the EVIDENCE
   RULES and EPISTEMIC FILTER from the system prompt: drop weak
   inferences and NEVER fabricate.
 - Multiple signals for the SAME tool on the same activity ARE allowed
