@@ -236,7 +236,10 @@ retrieved later for quality measurement and debugging.
         "Conversation date" (null without it, FR "cette année" example);
         COMPANY only when the WHOLE company is said to use the tool ("on est
         sur X" -> UNKNOWN). Goes with CONTEXT v5 (dedicated TECH STACK
-        TAXONOMY header, no "or OMIT the signal").
+        TAXONOMY header, no "or OMIT the signal"). Same v4 (same delivery):
+        TechStack / Competitor boundary -- CONFIRMED usage only, a tool
+        looked at / evaluated / tested is never tech stack (the competitor
+        stage v2 takes it by default).
 """
 
 
@@ -266,13 +269,16 @@ Extract TECH STACK signals from the SALES TRANSCRIPT below.
 
 A tech stack signal is structured evidence that the PROSPECT (the
 account-side) uses a specific tool, software, or product at their
-company.
+company. Tech stack = CONFIRMED usage only.
 
 DO NOT emit:
 - Tools the SELLER uses or sells (e.g. the prospect describing the
   seller's product is not a tech stack observation about the prospect).
 - Tools mentioned only HYPOTHETICALLY ("we could try X", "what about Y?")
   without confirmed current adoption by the prospect.
+- A tool the prospect is only LOOKING AT, EVALUATING or TESTING
+  (« on regarde / évalue / teste X », "we're evaluating X") is NEVER tech
+  stack -- it is captured by the competitor stage.
 - Tools the seller suggests in passing, unless the prospect confirms
   they currently use them.
 
@@ -465,7 +471,7 @@ technical word):
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence of
-  prospect-side CURRENT usage of a specific tool (a tool the prospect uses
+  prospect-side CONFIRMED CURRENT usage of a specific tool (a tool the prospect uses
   today, including one whose stop date is stated -- is_discontinued). Apply the EVIDENCE
   RULES and EPISTEMIC FILTER from the system prompt: drop weak
   inferences and NEVER fabricate.
