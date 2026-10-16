@@ -681,3 +681,44 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(displayErrorSnackbar).toHaveBeenCalled();
   });
 });
+
+// ==============================|| T5b — AI REVIEW NOTICE ||============================== //
+
+const AI_NOTICE =
+  "Transcript analysis can make mistakes. Please check each signal's details before validating it.";
+
+describe("ActivitySignalsTab — AI review notice in 'To validate' (T5b)", () => {
+  it("shows the notice at the head of the 'To validate' section, before its rows", () => {
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    const notice = screen.getByText(AI_NOTICE);
+    const header = screen.getByText("To validate");
+    const firstRow = screen.getAllByTestId("signal-line")[0];
+    // Header → notice → first pending row, in document order.
+    expect(header.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(notice.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByText(AI_NOTICE)).toHaveLength(1);
+  });
+
+  it("is absent when nothing is left to validate (only Validated / Rejected)", () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          { id: "o1", status: "VALIDATED", summary: "Validated objective", _signalType: "objective" },
+          { id: "r1", status: "REJECTED", summary: "Rejected blocker", _signalType: "blockers" },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    // Open both sections: the notice must not live in them either.
+    fireEvent.click(screen.getByText("Validated"));
+    fireEvent.click(screen.getByText("Rejected"));
+    expect(screen.queryByText("To validate")).not.toBeInTheDocument();
+    expect(screen.queryByText(AI_NOTICE)).not.toBeInTheDocument();
+  });
+
+  it("is absent when the activity has no signal at all", () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [], count: 0 }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    expect(screen.queryByText(AI_NOTICE)).not.toBeInTheDocument();
+  });
+});

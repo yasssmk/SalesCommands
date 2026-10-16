@@ -20,11 +20,11 @@ import Typography from '@mui/material/Typography';
 
 // project imports
 import MainCard from 'components/MainCard';
+import InfoNotice from 'components/display/InfoNotice';
 
 // assets
 import SendOutlined from '@ant-design/icons/SendOutlined';
 import ArrowLeftOutlined from '@ant-design/icons/ArrowLeftOutlined';
-import InfoCircleOutlined from '@ant-design/icons/InfoCircleOutlined';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
 
 // ==============================|| CONSTANTS ||============================== //
@@ -225,23 +225,11 @@ function StepCuration({
   return (
     <Box sx={{ p: 2.5 }}>
       <Stack spacing={2.5}>
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{
-            p: 1.5,
-            borderRadius: 1,
-            bgcolor: 'info.lighter',
-            color: 'info.dark',
-          }}
-        >
-          <InfoCircleOutlined style={{ fontSize: 16, marginTop: 2, flexShrink: 0 }} />
-          <Typography variant="body2">
-            Edit below to remove anything you don&apos;t want to send to the AI
-            (confidential names, third parties, NDA details, etc.).
-            Your original transcript stays untouched.
-          </Typography>
-        </Stack>
+        <InfoNotice>
+          Edit below to remove anything you don&apos;t want to send to the AI
+          (confidential names, third parties, NDA details, etc.).
+          Your original transcript stays untouched.
+        </InfoNotice>
 
         {dupWarning && dupAlertMessage && (
           <Alert severity="warning">{dupAlertMessage}</Alert>
