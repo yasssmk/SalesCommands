@@ -488,7 +488,9 @@ class TestPeoplePromptV3Department:
 
 
 # =============================================================================
-# DC SAFETY NET — never recreate a person already identified in the deal
+# NO FILTER BETWEEN ACTIVITIES — a person already known in the deal is ALWAYS
+# created again for a new activity (PO rule: merge only within ONE transcript;
+# the grouping across activities is the DC cluster's job).
 # =============================================================================
 
 def _attach_cycle(activity, cycle):
@@ -496,6 +498,22 @@ def _attach_cycle(activity, cycle):
     Activity.objects.filter(id=activity.id).update(decision_cycle=cycle)
     activity.refresh_from_db()
     return activity
+
+
+def _second_activity(account, user, cycle):
+    """Activity B of the SAME deal (activity A is the `activity` fixture)."""
+    from app_modules.activities.constants import ActivityStatus, ActivityType
+    from app_modules.activities.models import Activity
+    b = Activity(
+        title='Follow-up call with Acme',
+        activity_type=ActivityType.MEETING,
+        status=ActivityStatus.COMPLETED,
+        account=account,
+        owner=user,
+        decision_cycle=cycle,
+    )
+    b.save(user=user, client_id=account.client_id)
+    return b
 
 
 def _existing_people(activity, user, cycle, *, status=SignalStatus.PENDING,
@@ -518,47 +536,53 @@ def _existing_people(activity, user, cycle, *, status=SignalStatus.PENDING,
     return signal
 
 
-class TestPeopleAlreadyIdentifiedInDeal:
+class TestKnownPersonIsNeverFiltered:
 
-    def test_f1_named_person_already_in_dc_is_not_recreated_and_logged(
-        self, account, activity, user_a, decision_cycle,  # noqa: F811
+    @pytest.mark.parametrize('status', [SignalStatus.PENDING, SignalStatus.VALIDATED])
+    def test_n1_named_person_known_from_activity_a_is_created_again_for_activity_b(
+        self, status, account, activity, user_a, decision_cycle,  # noqa: F811
         fake_provider, patch_active_provider, caplog,
     ):
         _attach_cycle(activity, decision_cycle)
         existing = _existing_people(
-            activity, user_a, decision_cycle,
-            full_name='Isabelle Roux', department=_dept('Finance'),
+            activity, user_a, decision_cycle, status=status,
+            full_name='Marc Dupont', department=_dept('Finance'),
         )
+        activity_b = _second_activity(account, user_a, decision_cycle)
 
         with caplog.at_level('WARNING'):
-            result = _run(account, activity, user_a, fake_provider, [
-                _person(full_name='isabelle  ROUX', department='Finance'),
+            result = _run(account, activity_b, user_a, fake_provider, [
+                _person(full_name='Marc Dupont', department='Finance'),
             ])
 
-        assert _people(result) == []
-        assert PeopleSignal.objects.filter(decision_cycle=decision_cycle).count() == 1
-        records = [r for r in caplog.records if r.getMessage() == 'people_already_identified_in_dc']
-        assert len(records) == 1
-        assert records[0].existing_signal_id == str(existing.id)
-        # The log never carries the person's name.
-        assert 'roux' not in str(records[0].__dict__).lower()
+        [signal] = _people(result)
+        assert signal.id != existing.id
+        assert signal.source_activity_id == activity_b.id
+        assert signal.full_name == 'Marc Dupont'
+        # Two signals in the deal: one per activity.
+        assert PeopleSignal.objects.filter(decision_cycle=decision_cycle).count() == 2
+        assert not [r for r in caplog.records if r.getMessage() == 'people_already_identified_in_dc']
         people_call = [c for c in result['run'].sub_calls if c['stage'] == 'people'][0]
-        assert people_call['dropped_by_safety_filter'] == 1
+        assert people_call['dropped_by_safety_filter'] == 0
 
-    def test_f2_participant_contact_already_in_dc_is_not_recreated(
+    def test_n2_participant_contact_known_from_activity_a_is_created_again_for_activity_b(
         self, account, activity, user_a, contact, decision_cycle,  # noqa: F811
         fake_provider, patch_active_provider,
     ):
-        activity.contacts.add(contact)
         _attach_cycle(activity, decision_cycle)
-        _existing_people(activity, user_a, decision_cycle, contact=contact)
+        existing = _existing_people(activity, user_a, decision_cycle, contact=contact)
+        activity_b = _second_activity(account, user_a, decision_cycle)
+        activity_b.contacts.add(contact)
 
-        result = _run(account, activity, user_a, fake_provider, [
+        result = _run(account, activity_b, user_a, fake_provider, [
             _person(participant_ref='P1'),
         ])
 
-        assert _people(result) == []
-        assert PeopleSignal.objects.filter(target_contact=contact).count() == 1
+        [signal] = _people(result)
+        assert signal.id != existing.id
+        assert signal.target_contact_id == contact.id
+        assert signal.source_activity_id == activity_b.id
+        assert PeopleSignal.objects.filter(target_contact=contact).count() == 2
 
     def test_f3_new_person_is_created(
         self, account, activity, user_a, decision_cycle,  # noqa: F811
@@ -573,49 +597,6 @@ class TestPeopleAlreadyIdentifiedInDeal:
 
         [signal] = _people(result)
         assert signal.full_name == 'Marc Lefort'
-
-    def test_f4_activity_without_dc_has_no_filter(
-        self, account, activity, user_a, decision_cycle,  # noqa: F811
-        fake_provider, patch_active_provider,
-    ):
-        # A same-named person exists in some DC, but this activity has none.
-        _existing_people(activity, user_a, decision_cycle, full_name='Isabelle Roux')
-
-        result = _run(account, activity, user_a, fake_provider, [
-            _person(full_name='Isabelle Roux'),
-        ])
-
-        assert len(_people(result)) == 1
-
-    def test_f5_rejected_existing_person_does_not_block(
-        self, account, activity, user_a, decision_cycle,  # noqa: F811
-        fake_provider, patch_active_provider,
-    ):
-        _attach_cycle(activity, decision_cycle)
-        _existing_people(
-            activity, user_a, decision_cycle,
-            full_name='Isabelle Roux', status=SignalStatus.REJECTED,
-        )
-
-        result = _run(account, activity, user_a, fake_provider, [
-            _person(full_name='Isabelle Roux'),
-        ])
-
-        assert len(_people(result)) == 1
-
-    def test_f6_unnamed_person_is_never_filtered(
-        self, account, activity, user_a, decision_cycle,  # noqa: F811
-        fake_provider, patch_active_provider,
-    ):
-        finance = _dept('Finance')
-        _attach_cycle(activity, decision_cycle)
-        _existing_people(activity, user_a, decision_cycle, department=finance)
-
-        result = _run(account, activity, user_a, fake_provider, [
-            _person(full_name=None, department='Finance'),
-        ])
-
-        assert len(_people(result)) == 1
 
 
 # =============================================================================
