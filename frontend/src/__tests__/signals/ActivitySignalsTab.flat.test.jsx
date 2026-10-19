@@ -447,6 +447,35 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
   });
 
+  it("Competitor C1: opening a competitor shows the coque header 'Competitor' + status pill on the chassis", async () => {
+    useAggregatedSignals.mockImplementation(() =>
+      flatReturn({
+        signals: [
+          {
+            id: "cmp1", status: "PENDING", _signalType: "competitors",
+            competitor_name: "Intercom",
+            summary: "The prospect is also evaluating Intercom instead of us.",
+            source_quote: "We're also looking at Intercom.",
+            source_context: { contacts: [] },
+          },
+        ],
+      }),
+    );
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Intercom"));
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Competitor");
+    expect(screen.getByTestId("status-pill")).toHaveTextContent("Pending");
+    expect(screen.getByTestId("competitor-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("competitor-summary-text")).toHaveTextContent("Intercom");
+    expect(screen.getByTestId("competitor-summary")).toHaveTextContent(
+      "The prospect is also evaluating Intercom instead of us.",
+    );
+    expect(screen.getByTestId("competitor-source")).toHaveTextContent("We're also looking at Intercom.");
+    // Header owned by the coque: no in-content header, a single close (coque ×).
+    expect(screen.queryByTestId("competitor-detail-header")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /close drawer/i })).toHaveLength(1);
+  });
+
   it("TechStack T2a: choices arriving AFTER the drawer opened reach the open detail (no reopen)", async () => {
     // A tiny SWR-like store: the choices arrive asynchronously and every hook
     // consumer re-renders on its own (no parent re-render, no reopen).

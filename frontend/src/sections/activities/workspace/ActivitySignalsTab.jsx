@@ -139,7 +139,8 @@ export default function ActivitySignalsTab({
         signalType === "constraints" ||
         signalType === "blockers" ||
         signalType === "people" ||
-        signalType === "tech-stack";
+        signalType === "tech-stack" ||
+        signalType === "competitors";
       openDrawer(
         <ActivitySignalDetail
           signal={signal}
