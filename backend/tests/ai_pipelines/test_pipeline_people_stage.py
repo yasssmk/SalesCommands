@@ -101,10 +101,11 @@ class TestPeoplePersistence:
     ):
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
-        assert result['run'].prompt_versions['people'] == 'v3'
+        assert result['run'].prompt_versions['people'] == 'v4'
         # v4 = Sprint TechStack T0 (techstack usage taxonomy); v5 = T4b
-        # (shared "Conversation date" line + techstack header).
-        assert result['run'].prompt_versions['context'] == 'v5'
+        # (shared "Conversation date" line + techstack header); v6 = no list
+        # of the persons already known in the deal (people P2).
+        assert result['run'].prompt_versions['context'] == 'v6'
         assert result['run'].status == AIPipelineStatus.SUCCESS
         people_prompt = fake_provider.calls_for('people')[0]['user']
         assert 'Extract PEOPLE signals' in people_prompt
@@ -472,7 +473,6 @@ class TestPeoplePromptV3Department:
         for source in (
             'the company name', 'the meeting title', "the prospect's industry",
             'the department of the SPEAKER', 'the other persons',
-            'PEOPLE ALREADY IDENTIFIED IN THIS DEAL',
         ):
             assert source in prompt
 
@@ -485,6 +485,53 @@ class TestPeoplePromptV3Department:
         prompt = self._prompt()
         sales = StandardDepartment.DepartmentChoices.SALES.value
         assert f'"head of the key accounts team" -> department "{sales}"' in prompt
+
+
+# =============================================================================
+# P2 — NO KNOWN-PEOPLE LIST in the people context nor in the prompt
+# =============================================================================
+
+# Marker of the removed "persons already known in the deal" block (P2),
+# assembled from its words so the removed wording appears nowhere in backend/.
+_REMOVED_BLOCK_MARKER = ' '.join(('ALREADY', 'IDENTIFIED'))
+
+
+class TestNoKnownPeopleListSentToTheLLM:
+
+    def test_the_people_call_of_a_new_activity_carries_no_known_people_list(
+        self, account, activity, user_a, decision_cycle,  # noqa: F811
+        fake_provider, patch_active_provider,
+    ):
+        # Marc Dupont is known in the deal from activity A; the people call of
+        # activity B (real context + request assembly) must not list him.
+        _attach_cycle(activity, decision_cycle)
+        _existing_people(
+            activity, user_a, decision_cycle,
+            full_name='Marc Dupont', department=_dept('Finance'),
+        )
+        activity_b = _second_activity(account, user_a, decision_cycle)
+
+        _run(account, activity_b, user_a, fake_provider, [])
+
+        [call] = fake_provider.calls_for('people')
+        assert _REMOVED_BLOCK_MARKER not in call['user']
+        assert 'Dupont' not in call['user']
+
+    def test_the_people_prompt_no_longer_mentions_the_list(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            build_people_request,
+        )
+        prompt = ' '.join(build_people_request('Karim will be our first pilot user.').split())
+        assert _REMOVED_BLOCK_MARKER not in prompt
+        assert 'never emit them again' not in prompt
+
+    def test_versions(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.context import CONTEXT_VERSION
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            PEOPLE_PROMPT_VERSION,
+        )
+        assert PEOPLE_PROMPT_VERSION == 'v4'
+        assert CONTEXT_VERSION == 'v6'
 
 
 # =============================================================================

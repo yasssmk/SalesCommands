@@ -2,7 +2,8 @@
 """
 Request layer for People signal extraction (UX Activity, People S1;
 v2 -- People S1-bis: unlisted prospect speakers + explicit seller side;
-v3 -- People S6: department strictly from what is said of the person).
+v3 -- People S6: department strictly from what is said of the person;
+v4 -- no list of the persons already known in the deal).
 
 This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
@@ -10,8 +11,8 @@ family. It is combined at call time with:
   * build_context_layer(activity, 'people') -- session grounding (the
     participants, each prefixed with its reference "P1", "P2", ... -- the
     closed list `participant_ref` picks from), the People taxonomy (role,
-    influence, department) and the persons ALREADY identified in the deal,
-    which must not be emitted again.
+    influence, department). No list of the persons already known in the
+    deal (removed in v4).
 The full assembly is performed by PromptBuilder.assemble() in base.py.
 
 Schema (v1)
@@ -81,7 +82,10 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'build_people_request']
 # side is defined by who presents / sells the solution. File name unchanged.
 # v3 (People S6): `department` strictly from what the transcript says about
 # the person; never inferred from other sources; null otherwise.
-PEOPLE_PROMPT_VERSION = 'v3'
+# v4 (fix people-no-cross-activity-filter P2): the list of the persons already
+# identified in the deal is no longer sent, nor its "never emit them again"
+# rule -- every activity re-observes its persons.
+PEOPLE_PROMPT_VERSION = 'v4'
 
 # Reference shapes rendered in the prompt, derived from the single
 # definition in participant_refs.py ("P<n>", "P1").
@@ -140,8 +144,6 @@ DO NOT emit
   prospect side ONLY. The person who presents or sells the solution, and
   their colleagues, are on the SELLER side even when their organization is
   not named next to their name.
-- Any person listed under PEOPLE ALREADY IDENTIFIED IN THIS DEAL in the
-  context: they already have their role -- never emit them again.
 - A person with no observable weight in the decision and no step to clear.
 
 OUTPUT SCHEMA
@@ -179,10 +181,9 @@ EMISSION RULES
   (their team, their job title, their trade): "head of the key accounts
   team" -> department "{_DEPT_SALES}". NEVER infer it from the company name,
   the meeting title, the prospect's industry, the department of the SPEAKER,
-  or the other persons (including those listed under PEOPLE ALREADY
-  IDENTIFIED IN THIS DEAL). WHEN NOTHING is said about this person's
-  function, set `department` to null -- null is the safe default; never
-  fill it with a guess.
+  or the other persons. WHEN NOTHING is said about this person's function,
+  set `department` to null -- null is the safe default; never fill it with a
+  guess.
 - `full_name` is the name as stated; NEVER invent, complete or guess a name.
 - `notes` MUST be your own short sentence -- never a copy of the quote.
 - `source_quote` MUST be the VERBATIM utterance where the person's role or

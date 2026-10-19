@@ -18,9 +18,6 @@ What this layer carries
     services/participant_refs.py -- the same list the extractor resolves
     against.
   - Canonical enum values per target stage.
-  - People stage only: the persons ALREADY identified in the activity's
-    deal (non-REJECTED PeopleSignals of its decision cycle), so the stage
-    does not emit them again.
 
 No longer carried (S10)
 -----------------------
@@ -39,8 +36,8 @@ What this layer deliberately omits (RGPD / data minimization)
   - Contact last names
         --> first_name + job_title disambiguates contacts within one
             activity. The transcript itself carries last names verbatim;
-            this layer does not re-emit them in the context (session block
-            and People "already identified" block alike).
+            this layer does not re-emit them in the context (session
+            block).
 
 The transcript itself is sent verbatim by the pipeline orchestrator.
 That exposure is covered legally (DPA with the LLM provider) -- not
@@ -87,9 +84,6 @@ from app_modules.ai_pipelines.services.participant_refs import (
     format_participant_ref,
     ordered_participants,
 )
-from app_modules.ai_pipelines.services.identified_people import (
-    identified_people_in_deal,
-)
 
 
 logger = logging.getLogger(__name__)
@@ -106,7 +100,11 @@ logger = logging.getLogger(__name__)
 # activity date the line says so and every relative date is null (all stages,
 # and the next_steps context that reuses the session block). TechStack gets
 # its own taxonomy header (no "or OMIT the signal"), like People in v3.
-CONTEXT_VERSION = 'v5'
+# v6 (fix people-no-cross-activity-filter P2): People stage only -- the
+# "already identified in this deal" block is REMOVED (PO rule: each activity
+# creates its signals; the grouping per person is the DC cluster's job). The
+# other stages' context is byte-identical to v5.
+CONTEXT_VERSION = 'v6'
 
 # Relative-date wordings named in the "Conversation date" line (v5).
 _RELATIVE_DATE_EXAMPLES = '"this year", "next year", "end of the year", "in June"'
@@ -153,9 +151,8 @@ def build_context_layer(activity, target_stage):
             empty taxonomy header would waste tokens and confuse the LLM
             with an irrelevant instruction; we skip the block entirely.
         people
-            session + taxonomy (role / influence / department) + the
-            "already identified in this deal" block (empty without a
-            decision cycle).
+            session + taxonomy (role / influence / department). No list of
+            the persons already known in the deal (removed in v6).
 
     Raises:
         ValueError: target_stage is not one of the supported values.
@@ -177,11 +174,6 @@ def build_context_layer(activity, target_stage):
         # The techstack stage receives no reference list: tech identity
         # is free text (techstack_v1 emits `tech_name`). The tenant
         # catalogue that used to be injected here was removed in S10.
-
-    # People only: the persons ALREADY identified in this deal, which the
-    # stage must NOT emit again (one role per person per decision cycle).
-    if target_stage == 'people':
-        blocks.append(_build_identified_people_block(activity))
 
     return '\n\n'.join(b for b in blocks if b)
 
@@ -323,65 +315,6 @@ def _build_contact_lines(activity):
         else:
             descriptors.append(f'{ref} — {name} ({job})')
     return descriptors
-
-
-# =============================================================================
-# IDENTIFIED PEOPLE BLOCK -- People stage only
-# =============================================================================
-
-def _build_identified_people_block(activity):
-    """
-    Render the persons ALREADY identified in the activity's deal, which the
-    People stage must NOT emit again (PO rule: one role per person per
-    decision cycle; prevention at extraction time, no a-posteriori dedup).
-
-    Source: the non-REJECTED (VALIDATED + PENDING) PeopleSignals of the
-    activity's decision_cycle, scoped on the activity's tenant AND account.
-    An activity without a decision cycle (campaign context) yields "" -- the
-    caller drops the empty block.
-
-    Format per person: "[<ref> — ]<name> — role <ROLE>[, department <dept>]"
-        - <ref>  --> the participant reference ("P1", ...) when the person is
-          a participant of THIS activity (same numbering as the session
-          block, from ordered_participants).
-        - <name> --> a person linked to a contact: the contact's FIRST name
-          only (same data-minimisation rule as the session block -- the
-          stored full_name may carry the last name); a person without
-          contact: the full_name as stated in the transcript; else
-          "Unnamed person".
-    """
-    # Shared with the extractor's server-side safety net (same set).
-    signals = identified_people_in_deal(activity)
-    if not signals:
-        return ''
-
-    refs = {
-        contact.id: format_participant_ref(index)
-        for index, contact in enumerate(ordered_participants(activity))
-    }
-
-    lines = [
-        'PEOPLE ALREADY IDENTIFIED IN THIS DEAL '
-        '(do NOT emit any of them again)'
-    ]
-    for signal in signals:
-        contact = signal.target_contact
-        if contact:
-            name = (contact.first_name or '').strip()
-        else:
-            name = (signal.full_name or '').strip()
-        name = name or 'Unnamed person'
-
-        descriptor = f'{name} — role {signal.role}'
-        if signal.target_department:
-            descriptor += f', department {signal.target_department.name}'
-
-        ref = refs.get(contact.id) if contact else None
-        if ref:
-            descriptor = f'{ref} — {descriptor}'
-        lines.append(f'- {descriptor}')
-
-    return '\n'.join(lines)
 
 
 # =============================================================================

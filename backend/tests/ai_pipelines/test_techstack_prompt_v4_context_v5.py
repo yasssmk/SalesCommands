@@ -103,7 +103,8 @@ class TestTechstackTaxonomyHeader:
 class TestConversationDate:
 
     def test_context_version_is_v5(self):
-        assert CONTEXT_VERSION == 'v5'
+        # v6 (people P2) keeps the v5 content asserted in this file.
+        assert CONTEXT_VERSION == 'v6'
 
     def test_next_steps_context_version_is_v2(self):
         assert next_steps_context.CONTEXT_VERSION == 'v2'
