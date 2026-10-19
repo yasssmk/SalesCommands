@@ -115,14 +115,15 @@ class TestPeoplePersistence:
         fake_provider, patch_active_provider,
     ):
         # Doe = P1, Smith = P2 (last_name order). Smith's own department wins
-        # over the extracted one.
+        # over the extracted one. The stated name must designate the contact
+        # (TD-279: "John" matches John Smith; another name would detach).
         contact_extra.standard_department = _dept('Finance')
         contact_extra.save(user=user_a, client_id=account.client_id)
         _dept('IT')
         activity.contacts.add(contact, contact_extra)
 
         result = _run(account, activity, user_a, fake_provider, [
-            _person(participant_ref='P2', full_name='Johnny', department='IT'),
+            _person(participant_ref='P2', full_name='John', department='IT'),
         ])
 
         [signal] = _people(result)
@@ -394,6 +395,107 @@ class TestPeopleDeduplication:
         ])
 
         assert len(_people(result)) == 2
+
+
+# =============================================================================
+# TD-279 — a participant reference whose name is another person is DETACHED
+# =============================================================================
+
+ISABELLE_QUOTE = (
+    'Mais avant ça, on devra forcément faire un rendez-vous avec Isabelle '
+    'Roux, notre DAF. C\'est elle qui tient le budget, elle voudra voir un '
+    'business case avec un retour sur investissement chiffré.'
+)
+
+
+@pytest.fixture
+def criminelle(db, account, user_a, activity):
+    """The registered contact of the TD-279 smoke: Finance, never speaks."""
+    from app_modules.contacts.models import Contact
+    c = Contact(
+        account=account,
+        first_name='Criminelle',
+        last_name='Husky',
+        standard_department=_dept('Finance'),
+    )
+    c.save(user=user_a, client_id=account.client_id)
+    activity.contacts.add(c)
+    return c
+
+
+class TestParticipantNameMismatchIsDetached:
+    """
+    TD-279: the LLM returns "P1" with the name of ANOTHER person (the cited
+    DAF Isabelle Roux) -> the reference is ignored, no contact, the stated
+    name is kept; the check runs BEFORE the in-extraction dedup, so the false
+    P1 merges with the real "Isabelle Roux" entry.
+    """
+
+    def test_a_false_p1_with_another_name_merges_into_the_cited_person(
+        self, account, activity, user_a, criminelle,
+        fake_provider, patch_active_provider,
+    ):
+        result = _run(account, activity, user_a, fake_provider, [
+            _person(participant_ref='P1', full_name='Isabelle Roux',
+                    role=PeopleRole.DECISION_MAKER.value, department='Finance',
+                    source_quote=ISABELLE_QUOTE),
+            _person(participant_ref=None, full_name='Isabelle Roux',
+                    department='Finance', source_quote=ISABELLE_QUOTE),
+        ])
+
+        [signal] = _people(result)
+        signal.refresh_from_db()
+        assert signal.full_name == 'Isabelle Roux'
+        assert signal.target_contact_id is None
+        assert not PeopleSignal.objects.filter(target_contact=criminelle).exists()
+
+    def test_b_p1_with_the_contact_first_name_stays_attached(
+        self, account, activity, user_a, criminelle,
+        fake_provider, patch_active_provider,
+    ):
+        result = _run(account, activity, user_a, fake_provider, [
+            _person(participant_ref='P1', full_name='Criminelle'),
+        ])
+
+        [signal] = _people(result)
+        assert signal.target_contact_id == criminelle.id
+        assert signal.full_name == 'Criminelle Husky'
+
+    def test_c_p1_without_a_name_stays_attached(
+        self, account, activity, user_a, criminelle,
+        fake_provider, patch_active_provider,
+    ):
+        result = _run(account, activity, user_a, fake_provider, [
+            _person(participant_ref='P1', full_name=None),
+        ])
+
+        [signal] = _people(result)
+        assert signal.target_contact_id == criminelle.id
+        assert signal.full_name == 'Criminelle Husky'
+
+
+class TestStatedNameMatchesContact:
+    """The TD-279 word match itself (no DB)."""
+
+    @staticmethod
+    def _matches(stated, first='Hélène', last='Le Gall'):
+        from types import SimpleNamespace
+        from app_modules.ai_pipelines.services.transcript_signal_extractor import (
+            stated_name_matches_contact,
+        )
+        return stated_name_matches_contact(
+            stated, SimpleNamespace(first_name=first, last_name=last),
+        )
+
+    @pytest.mark.parametrize('stated', [
+        'Hélène', 'helene', 'HELENE', 'Hélène Le Gall', 'Mme Le Gall', None, '', '   ',
+    ])
+    def test_matches(self, stated):
+        assert self._matches(stated)
+
+    @pytest.mark.parametrize('stated', ['Isabelle Roux', 'Hélènette', 'Gall', 'Le'])
+    def test_does_not_match(self, stated):
+        assert not self._matches(stated)
 
 
 # =============================================================================

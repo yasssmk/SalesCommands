@@ -97,6 +97,7 @@ a different filter strategy could subclass).
 import datetime
 import logging
 import re
+import unicodedata
 
 from django.db import transaction
 from django.utils import timezone
@@ -513,6 +514,41 @@ def resolve_person_department(name):
 
     by_value, by_word = _build_department_resolution_index()
     return by_value.get(key) or by_word.get(key)
+
+
+def _normalize_person_name(value):
+    """Lowercase, accents stripped, whitespace collapsed ("  Hélène " -> "helene")."""
+    decomposed = unicodedata.normalize('NFKD', str(value))
+    stripped = ''.join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return ' '.join(stripped.lower().split())
+
+
+def stated_name_matches_contact(stated_name, contact):
+    """
+    TD-279 guard (People stage): does the name the LLM gave for a participant
+    reference designate THAT contact?
+
+    Simple word match, no AI: the stated name matches when one of its words
+    (normalised: lowercase, no accents) equals the contact's first name OR
+    last name -- a multi-word first / last name ("Le Gall") must appear as
+    consecutive words. A missing / blank stated name has nothing to compare
+    and matches (the reference is kept).
+
+    Returns:
+        bool -- False means the reference describes ANOTHER person.
+    """
+    if not isinstance(stated_name, str):
+        return True
+    stated = _normalize_person_name(stated_name)
+    if not stated:
+        return True
+
+    padded = f' {stated} '
+    for part in (contact.first_name, contact.last_name):
+        name = _normalize_person_name(part or '')
+        if name and f' {name} ' in padded:
+            return True
+    return False
 
 
 # =============================================================================
@@ -1335,6 +1371,11 @@ class TranscriptSignalExtractor:
             the extracted one. Non-null but unresolved -> signal KEPT without
             contact + warning (as blocker `raised_by`); full_name and
             department then come from the extraction;
+          * TD-279: a resolved reference whose stated full_name is ANOTHER
+            person (stated_name_matches_contact) -> reference ignored, no
+            contact, full_name / department from the extraction + warning.
+            Done here, before the in-extraction dedup, so the false reference
+            merges with that person's own entry;
           * no contact, no name and no department after resolution ->
             DROPPED + warning. Checked HERE: persist_stage feeds
             SignalManager.create directly -- neither the People serializer
@@ -1366,6 +1407,20 @@ class TranscriptSignalExtractor:
 
         participant_ref = raw.get('participant_ref')
         contact = resolve_participant_ref(participant_ref, activity)
+        if contact is not None and not stated_name_matches_contact(raw.get('full_name'), contact):
+            # TD-279: the reference carries ANOTHER person's name -> it is
+            # ignored (PO decision); the stated name is kept below, so this
+            # candidate can merge with that person's own entry in the dedup.
+            logger.warning(
+                'people_participant_ref_name_mismatch',
+                extra={
+                    'participant_ref': str(participant_ref),
+                    'activity_id': str(activity.id),
+                    'event': 'ai_pipeline_persist',
+                },
+            )
+            contact = None
+            participant_ref = None
         if contact is not None:
             full_name = f'{contact.first_name or ""} {contact.last_name or ""}'.strip()
             department = (
