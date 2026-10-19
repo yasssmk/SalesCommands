@@ -1405,14 +1405,21 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Dette** : **NOUVEAUX TD-274** (édition Competitor sur DC : drawer vide « Edit Edit Signal »), **TD-275** (Objection garde « 10 » en dur), **TD-276** (écarts de structure détail / édition — faible priorité) ; **MAJ TD-198** (docstring du ViewSet competitor : `/competitor/` au lieu de `/competitors/`), **TD-204**, **TD-205**, **TD-238** (les 8 types de la section Signaux sont sur le châssis côté Activity ; DC/Account différés → OPEN), **TD-210**, **TD-249** (Competitor : seule la garde du serializer protège `source_activity`, prouvé par mutation), **TD-261** (commentaires « legacy dialog » d'`ActivitySignalsTab` désormais faux pour les 8 types). **TD-247** inchangé (OPEN).
 - **Section Signaux d'UX Activity : TERMINÉE côté Activity** — les **8 types** de la section (Objective, Pain, Impact, Constraint, Objection, People, TechStack, Competitor) sont sur le châssis (les next steps vivent dans leur propre section). **Chantier UX Activity** : **reste OUVERT** (autres sections).
 - **Prochain jalon (ordre à confirmer par le PO)** : branche **messages rouges → warning** (TD-272) ; **TO-DO People** (ci-dessous) ; puis les **autres sections d'UX Activity** (Next step, Transcript / notes, Preparation) ; puis la **question stratégique « création manuelle des signaux »**.
+  **MAJ (fix People doublons)** : TO-DO People **LIVRÉ** (partie doublons). **Prochain jalon AVANT Next step** : **audit de la régression People** — un tiers cité est rattaché à tort au contact enregistré de l'activité (**TD-279**).
 
 #### Règle doublons (décision PO, Sprint Competitor)
 - **Fusion UNIQUEMENT dans une même transcription** (un même concurrent / outil cité plusieurs fois dans UN appel = 1 signal).
 - **JAMAIS de filtre entre activités** : les infos venues d'activités différentes se **centralisent dans le cluster DC / Account** (ex. activité 1 : « ils utilisent Salesforce », activité 2 : « combien ils paient » → **1 cluster** Salesforce).
 
-#### TO-DO People (avant Next step) — aligner People sur la règle doublons
+#### TO-DO People (avant Next step) — aligner People sur la règle doublons ✅ LIVRÉ (partie doublons)
 - **Retirer** le filtre « déjà identifié dans le DC » (S1-bis, `_drop_people_already_in_deal` / `identified_people_in_deal`) **et** la consigne LLM « **PEOPLE ALREADY IDENTIFIED — do NOT emit** » : ils sont **contraires** à la règle doublons (ils filtrent entre activités).
 - **Audit préalable** du **cluster People** : vérifier qu'il centralise bien les infos d'une même personne venues d'activités différentes avant de retirer le filtre.
+- **Livré** (branche `fix/people-no-cross-activity-filter`) :
+  - **P1** (`154addb`) : **filtre serveur retiré** (phase 1.6 de `persist_stage`, `_drop_people_already_in_deal`) — une personne déjà connue dans le DC est de nouveau créée par une autre activité.
+  - **P2** (`07c6d0f`) : **liste « déjà identifiés » retirée** du contexte People et du prompt People (`identified_people.py` supprimé) ; **PEOPLE_PROMPT_VERSION v4**, **CONTEXT_VERSION v6**. La règle département garde l'interdiction de déduire depuis les autres personnes.
+  - **Fusion UNIQUEMENT dans une même transcription** (inchangée : `_people_dedup_key`, `_deduplicate_candidates`).
+  - **Centralisation par personne = cluster DC** (`SignalClusterService`) — les cas limites et l'onglet People du DC relèvent du **chantier DC/Account** (**TD-277**, **TD-278**).
+  - **Prouvé en réel** (SELECT PO) : « marc » et « isabelle roux » ont chacun **3 signaux sur 3 activités** du même DC.
 
 ---
 
@@ -1739,9 +1746,6 @@ possibles) :
   la fonctionnalité « jours restants » est construite ici).
 - **Notes People (Sprint People Activity, 2026-10)** — surface **DC** différée,
   à traiter ici :
-  - **Garde d'unicité backend** sur les chemins manuels (même personne déjà
-    présente dans le DC → **409**, affichage **orange** = règle métier) ; le
-    filet actuel ne couvre que l'extraction LLM (`identified_people_in_deal`).
   - **Fiche contact et onglet DC : modifier au lieu de créer** — relié
     **TD-231** (rôle DC empilé).
   - **People PENDING visibles dans le DC**.
@@ -1793,6 +1797,10 @@ possibles) :
     reconnue** par le filtre « déjà identifié ».
 - **Prérequis** : observabilité des rejets (**TD-264**) à traiter au début du
   fine-tuning.
+- **Le LLM récupère parfois la mauvaise info** (même famille, voir **TD-279**) :
+  - **TechStack Freshdesk** : `renewal_date` = la **date d'arrêt** de l'outil.
+  - **People** : la description de la **DAF Isabelle Roux** (tiers cité) est
+    collée sur le **contact enregistré Criminelle Husky**.
 - **À faire / à vérifier (clôture Sprint TechStack Activity)** :
   - **Jeu de transcriptions de test jamais vu par les prompts** (rôle de
     **juge**) — le smoke Nordline en est le premier exemple ; il ne doit jamais
