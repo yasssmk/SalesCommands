@@ -1,0 +1,28 @@
+Démo SalesCommands – Logistix - 2026/10/14 10:02 CEST - Transcript
+Attendees
+Claire Dubois, Julien Moreau, Thomas Lefèvre
+Transcript
+00:00:00
+
+Julien Moreau: Bonjour Claire, bonjour Thomas, merci de prendre ce temps. L'idée aujourd'hui, c'est de revenir sur ce qu'on a vu la semaine dernière et de caler la suite.
+Claire Dubois: Bonjour Julien. Oui, parfait. De mon côté je suis convaincue, honnêtement c'est moi qui ai poussé pour qu'on regarde votre solution. Mes équipes commerciales perdent un temps fou à mettre à jour le CRM après chaque rendez-vous.
+Julien Moreau: C'est exactement le cas d'usage qu'on adresse. Thomas, de votre côté, côté technique, des questions ?
+Thomas Lefèvre: Oui, surtout sur l'intégration. On est sur Salesforce et on a un SSO Azure AD. Si ça ne s'intègre pas proprement, ça ne passera pas. Après, je ne suis pas celui qui décide, mais mon avis compte pour la validation technique.
+Julien Moreau: On a un connecteur Salesforce natif et le SSO Azure est supporté. Je vous enverrai la documentation.
+Thomas Lefèvre: Très bien. Par contre, il faudra aussi convaincre notre DSI. Il est très réticent aux nouveaux outils SaaS, il a bloqué le dernier projet de ce type l'an dernier pour des raisons de sécurité.
+00:05:00
+
+Julien Moreau: Compris. Et sur la décision finale, comment ça se passe chez vous ?
+Claire Dubois: Le décideur final, c'est Marc, notre CEO. C'est lui qui doit valider le devis. Mais avant ça, on devra forcément faire un rendez-vous avec Isabelle Roux, notre DAF. C'est elle qui tient le budget, elle voudra voir un business case avec un retour sur investissement chiffré.
+Julien Moreau: D'accord, on peut préparer ça ensemble. Isabelle a beaucoup de poids dans la décision ?
+Claire Dubois: Énormément. Si elle ne valide pas le ROI, Marc ne signera pas.
+Thomas Lefèvre: Et il ne faut pas oublier le service achats. Pour tout contrat au-dessus de cinquante mille euros, ils passent derrière pour négocier les conditions. Ils sont assez durs en négociation.
+Julien Moreau: C'est noté. Et côté utilisateurs, qui utilisera l'outil au quotidien ?
+Claire Dubois: Les commerciaux terrain, une vingtaine de personnes. Karim, notre responsable de l'équipe grands comptes, sera le premier utilisateur pilote. Il est très enthousiaste.
+00:10:00
+
+Julien Moreau: Parfait. Pour résumer les prochaines étapes : je vous envoie la doc technique pour Thomas, on prépare ensemble le business case pour Isabelle, et on organise une session de sécurité avec votre DSI.
+Claire Dubois: Oui, ça me va. Idéalement on voit Isabelle avant fin novembre, parce que les budgets 2027 se bouclent en décembre.
+Thomas Lefèvre: Et pour la sécurité, envoyez-nous votre questionnaire SOC 2 en amont, ça fera gagner du temps avec le DSI.
+Julien Moreau: Je m'en occupe. Merci à tous les deux, je vous envoie un récapitulatif cet après-midi.
+Claire Dubois: Merci Julien, à bientôt.
