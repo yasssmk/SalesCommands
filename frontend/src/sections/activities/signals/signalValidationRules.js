@@ -7,6 +7,12 @@
  * disable the Validate action until the signal is complete.
  */
 
+// Edit-form limits (Sprint Competitor C2). Mirror of the backend model:
+// CompetitorSignal.competitor_name max_length (competitor_signal.py) and the
+// summary minimum the Objection edit already applies.
+export const COMPETITOR_NAME_MAX_LENGTH = 255;
+export const SIGNAL_SUMMARY_MIN_LENGTH = 10;
+
 const REQUIRED_FIELDS = {
   pain: [
     { key: "what", label: "What" },

@@ -47,6 +47,7 @@ import EditConstraintContent from "sections/activities/workspace/EditConstraintC
 import EditObjectionContent from "sections/activities/workspace/EditObjectionContent";
 import EditPeopleContent from "sections/activities/workspace/EditPeopleContent";
 import EditTechStackContent from "sections/activities/workspace/EditTechStackContent";
+import EditCompetitorContent from "sections/activities/workspace/EditCompetitorContent";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -342,6 +343,24 @@ export default function ActivitySignalsTab({
             onCancel={() => openSignalDetail(signal, "tech-stack")}
           />,
           { title: "Edit tech stack" },
+        );
+        return;
+      }
+      // Competitor C2: Competitor edits go to the new chassis drawer (mirror of
+      // the Objection branch) — name, summary and source quote live inside.
+      if (signalType === "competitors") {
+        openDrawer(
+          <EditCompetitorContent
+            competitor={signal}
+            onSaved={(updated) => {
+              mutateAll();
+              mutateCounts?.();
+              // Return to the detail (updated), keeping the coque open.
+              openSignalDetail(updated ?? signal, "competitors");
+            }}
+            onCancel={() => openSignalDetail(signal, "competitors")}
+          />,
+          { title: "Edit competitor" },
         );
         return;
       }

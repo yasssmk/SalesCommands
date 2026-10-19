@@ -323,6 +323,59 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     expect(screen.getByTestId("objection-summary-text")).toHaveTextContent("Budget frozen flat");
   });
 
+  // Competitor C2 — a pending competitor row for the edit routing tests.
+  const COMPETITOR_ROW = {
+    id: "cmp-edit", status: "PENDING", _signalType: "competitors",
+    competitor_name: "Intercom",
+    summary: "The prospect is also evaluating Intercom instead of us.",
+    source_quote: "We're also looking at Intercom.",
+    source_context: { contacts: [] },
+  };
+  const openCompetitorEdit = async () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [COMPETITOR_ROW] }));
+    render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    fireEvent.click(await screen.findByText("Intercom"));
+    fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+  };
+
+  it("Competitor C2: Edit from the Competitor detail → EditCompetitorContent in the coque, NOT the legacy dialog", async () => {
+    await openCompetitorEdit();
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Edit competitor");
+    expect(screen.getByTestId("inline-read-competitor_name")).toHaveTextContent("Intercom");
+    expect(screen.queryByTestId("legacy-edit-dialog")).not.toBeInTheDocument();
+  });
+
+  it("Competitor C2: rename → Save → PATCH then back to the Competitor detail showing the new name", async () => {
+    await openCompetitorEdit();
+    fireEvent.click(screen.getByTestId("inline-read-competitor_name"));
+    fireEvent.change(screen.getByTestId("inline-input-competitor_name"), {
+      target: { value: "HubSpot" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    });
+    expect(updateSignal).toHaveBeenCalledWith("competitors", "cmp-edit", {
+      competitor_name: "HubSpot",
+      summary: COMPETITOR_ROW.summary,
+      source_quote: COMPETITOR_ROW.source_quote,
+    });
+    expect(screen.getByTestId("competitor-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("coque-title")).toHaveTextContent("Competitor");
+    expect(screen.getByTestId("competitor-summary-text")).toHaveTextContent("HubSpot");
+  });
+
+  it("Competitor C2: Cancel → back to the Competitor detail unchanged, no API call", async () => {
+    await openCompetitorEdit();
+    fireEvent.click(screen.getByTestId("inline-read-competitor_name"));
+    fireEvent.change(screen.getByTestId("inline-input-competitor_name"), {
+      target: { value: "HubSpot" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    expect(updateSignal).not.toHaveBeenCalled();
+    expect(screen.getByTestId("competitor-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("competitor-summary-text")).toHaveTextContent("Intercom");
+  });
+
   it("UI-1: opening an Objective shows the coque header title 'Objective'", async () => {
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     fireEvent.click(screen.getByText("Validated"));
