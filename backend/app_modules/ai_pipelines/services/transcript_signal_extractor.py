@@ -111,7 +111,7 @@ from app_modules.signals.constants import (
     SignalStatus,
     UsageScope,
 )
-from app_modules.signals.models import PeopleSignal, TechStackSignal
+from app_modules.signals.models import CompetitorSignal, PeopleSignal, TechStackSignal
 from app_modules.signals.services.signal_cluster_service import SignalClusterService
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
@@ -576,6 +576,17 @@ def _techstack_dedup_key(data):
     return TechStackSignal._normalize_tech_name(data.get('tech_name'))
 
 
+def _competitor_dedup_key(data):
+    """
+    Competitor grouping key (Sprint Competitor C3): the normalised competitor
+    name, computed with CompetitorSignal._normalize_competitor_name -- the rule
+    save() uses for competitor_name_normalized, which the DC cluster groups on.
+    In-batch only: a competitor cited several times in ONE transcript is one
+    signal; across activities the DC cluster does the grouping.
+    """
+    return CompetitorSignal._normalize_competitor_name(data.get('competitor_name'))
+
+
 def _people_dedup_key(data):
     """
     People grouping key: the SAME per-person identity as the DC People
@@ -655,8 +666,9 @@ def _drop_people_already_in_deal(candidates, activity):
 
 # Stage -> grouping key of the in-extraction deduplication.
 _DEDUP_KEY_BY_STAGE = {
-    'techstack': _techstack_dedup_key,
-    'people':    _people_dedup_key,
+    'techstack':  _techstack_dedup_key,
+    'people':     _people_dedup_key,
+    'competitor': _competitor_dedup_key,
 }
 
 # Stage -> field groups a later duplicate may complete when EMPTY on the
@@ -771,7 +783,7 @@ class TranscriptSignalExtractor:
 
             candidates.append(data)
 
-        # --- Phase 1.5: Deduplicate candidates (TechStack, People) ---
+        # --- Phase 1.5: Deduplicate candidates (TechStack, People, Competitor) ---
         dedup_key = _DEDUP_KEY_BY_STAGE.get(stage)
         if dedup_key is not None and len(candidates) > 1:
             before = len(candidates)

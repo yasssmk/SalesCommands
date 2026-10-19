@@ -1362,6 +1362,171 @@ ObjectionDetailView.propTypes = {
   currentActivityId: PropTypes.string,
 };
 
+// ==============================|| COMPETITOR DETAIL VIEW (Competitor C1) ||============================== //
+//
+// The Competitor (CompetitorSignal, front key "competitors") detail on the
+// standard drawer chassis, cloned from ObjectionDetailView (same header
+// mechanism, numbered SectionHeaders + DrawerContentLayout read-action bar),
+// routed here on the ACTIVITY coque ONLY. Deltas from Objection:
+//   - §1 Competitor: the competitor NAME heads the shared summary box (as the
+//     TechStack detail does with the tool name), the AI sentence (summary)
+//     below it.
+//   - NO "Raised by" / "Mentioned by" (no contact attribution on Competitor);
+//     the participants stay in the Source section.
+// PO section order (2): Competitor (name + summary) → Source.
+function CompetitorDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "competitors") : [];
+  const validateDisabled = missingFields.length > 0;
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+
+  return (
+    <Box data-testid="competitor-detail-body">
+      {/* In-content header — suppressed when the coque owns the header
+          (headerInCoque; the Activity coque does). Mirror of ObjectionDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="competitor-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="competitor-detail-title">
+            {getSignalTypeLabel("competitors")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "competitors"),
+          onReject: () => onReject?.(signal, "competitors"),
+          onValidate: () => onValidate?.(signal, "competitors"),
+          onReopen: () => onReopen?.(signal, "competitors"),
+          status: signal.status,
+          isLocked,
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Competitor: the name heads the shared summary box (as
+            TechStack's tool name), the AI sentence (summary) below it. */}
+        <SectionHeader index={1} title={getSignalTypeLabel("competitors")} sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={signal.competitor_name}
+          boxTestId="competitor-summary-box"
+          summaryTestId="competitor-summary-text"
+        />
+        <Box data-testid="competitor-summary" sx={{ mt: 1.25 }}>
+          {signal.summary ? (
+            <Typography variant="body2" color="text.primary">
+              {signal.summary}
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No summary
+            </Typography>
+          )}
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 2 — Source: the quote + who said it, with an optional link to
+            the origin activity. Same treatment as the Objection detail. */}
+        <SectionHeader index={2} title="Source" sx={{ mb: 1 }} />
+        <Box data-testid="competitor-source">
+          {signal.source_quote ? (
+            <SourceQuoteBlock quote={signal.source_quote} />
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No source quote
+            </Typography>
+          )}
+          {contacts.length > 0 && (
+            <Box sx={{ mt: 1.25 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+                {contacts.length > 1 ? "Contacts" : "Contact"}
+              </Typography>
+              <Stack spacing={0.25}>
+                {contacts.map((c) => (
+                  <ContactInline key={c.id} contact={c} variant="body2" />
+                ))}
+              </Stack>
+            </Box>
+          )}
+          {showOriginLink && (
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+              onClick={() => onOpenActivity(originActivityId)}
+              sx={{ mt: 0.5, px: 0 }}
+            >
+              View origin activity
+            </Button>
+          )}
+        </Box>
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+CompetitorDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| PEOPLE DETAIL VIEW (People S2) ||============================== //
 //
 // The People (PeopleSignal, front key "people") detail on the standard drawer
@@ -1955,6 +2120,27 @@ export default function SignalDetailContent({
       <TechStackDetailView
         signal={signal}
         choices={choices}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
+  // Competitor C1 — Competitor uses the standard chassis on the ACTIVITY
+  // surface only, exact mirror of the TechStack gate: currentActivityId (only
+  // the Activity coque passes it) + no leading/trailing action. DC/Account Flat
+  // and the cluster drawer keep the generic flush branch (CompetitorDetails).
+  if (signalType === "competitors" && currentActivityId && !leadingAction && !trailingAction) {
+    return (
+      <CompetitorDetailView
+        signal={signal}
         onValidate={onValidate}
         onReject={onReject}
         onEdit={onEdit}

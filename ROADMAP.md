@@ -1385,6 +1385,35 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Dette** : **RESOLVED TD-207** (resserrement prompt tech) ; **MAJ TD-199**, **TD-204**, **TD-205**, **TD-238**, **TD-241**, **TD-249**, **TD-254**, **TD-260**, **TD-264**, **TD-267** ; **NOUVEAUX TD-269** (ancien `InlineTechStackForm` → 400 depuis T0), **TD-270** (wizard de création orphelin), **TD-271** (scope exclusif recopié Pain/Impact/Constraint), **TD-272** (messages de règle de saisie en rouge), **TD-273** (exemples de prompts = phrases des smokes). **TD-247** inchangé (OPEN).
 - **Chantier UX Activity** : **reste OUVERT**. **Prochain jalon** : **sprint Competitor (surface Activity)** — **C0** tests API + isolation tenant, **C1** détail châssis, **C2** édition châssis (répare le drawer vide « Edit Edit Signal »).
 
+### Sprint Competitor (surface Activity) ✅ LIVRÉ (chantier UX Activity — EN COURS) — tests API + détail + édition sur le châssis Activity + doublons fusionnés dans une même transcription (branche `feat/ux-activity-competitor`, `7ae2a9a`→`4319336` + commit doc de clôture)
+- **Identité** : Competitor = **`CompetitorSignal`**, clé front **`"competitors"`**. Champs propres : **`competitor_name`** (255 car.) + **`competitor_name_normalized`** (dérivé au `save()`, clé du cluster DC), **`summary`** (la phrase de l'IA). **Pas de scope**, **pas de `notes`**, **pas d'attribution de contact**, `canonical_key` forcé à None. Prompt **competitor v2** (T4b TechStack : outil regardé / évalué = competitor par défaut).
+- **Décisions PO verrouillées** :
+  - **Surface Activity UNIQUEMENT** (détail + édition châssis) ; **DC/Account inchangés** (branche flush, `SignalEditDrawer`).
+  - **Détail** : en-tête du drawer « **Competitor** » + pastille de statut (comme les autres types) ; **§1 Competitor** = le nom en tête de `SignalSummaryBox`, la phrase de l'IA dessous ; **§2 Source** en dernier ; pas de « Mentioned by ». Ligne de liste **inchangée** (nom seul). Vieilles lignes migrées (« Competitor: X ») : rien à faire.
+  - **Édition** : nom requis **≤ 255** (constante), summary **≥ 10** (comme Objection), même style de messages que les autres formulaires (rouge → warning = TD-272).
+  - **Doublons** : fusion **UNIQUEMENT dans une même transcription** ; **JAMAIS de filtre entre activités** (voir « Règle doublons » ci-dessous).
+  - **Règle UI (C2b)** : l'édition reprend **les mêmes blocs que le détail** (mêmes infos au même endroit) ; les titres d'édition **peuvent être des questions qui guident** ; un **léger écart est accepté s'il guide l'utilisateur**.
+- **Règle de construction** : **homogénéité des PATTERNS** (calque `ObjectionDetailView` / `EditObjectionContent`, `DrawerContentLayout`, `SectionHeader`, `SignalSummaryBox`, `InlineEditableValue`, branche `handleEdit` + `onSaved`/`onCancel`) ; **réutiliser l'existant** (`_deduplicate_candidates`, `_normalize_competitor_name`).
+- **Livré** (chaque sous-étape : ROUGE par le vrai chemin d'abord, puis VERT, non-vacuité par édition ciblée vérifiée par `cmp`, régression) :
+  - **C0 — tests API + isolation tenant** (`7ae2a9a`, tests seuls) : **32 tests** (aucun test n'appelait `/module-signals/competitors/`) — CRUD, création **sans `source_activity` → 400 `SOURCE_ACTIVITY_REQUIRED`** (`StandardizedValidationError`, TD-248 non déclenché), validate / reject / reopen relus en base ; tenant A sur un Competitor de B : liste (absent), retrieve / PATCH / DELETE / validate / reject / reopen **404** ; création cross-tenant **400 `OBJECT_NOT_FOUND`**, autre account **400 `INVALID_ACCOUNT`**. **Aucune faille.** Non-vacuité : 3 couches tenant, `_validate_fk_scope`, garde `source_activity` du Create (seule protection, le `clean()` ne s'exécute jamais — TD-249).
+  - **C1 — détail châssis** (`cc1e6c7`) : `CompetitorDetailView` (`SignalDetailContent.jsx`), garde `signalType === "competitors" && currentActivityId && !leadingAction && !trailingAction`, `"competitors"` dans `coqueOwnsHeader`. Témoins DC/Account (branche flush) verts.
+  - **C2 — édition châssis** (`18bdecc`) : `EditCompetitorContent` (clone d'`EditObjectionContent`) + branche `"competitors"` de `handleEdit` (titre « Edit competitor », retour au détail mis à jour / inchangé) ; payload `{competitor_name, summary, source_quote}` ; constantes **`COMPETITOR_NAME_MAX_LENGTH`** / **`SIGNAL_SUMMARY_MIN_LENGTH`** (`signalValidationRules.js`) ; test d'aller-retour PATCH backend. **Répare le drawer vide « Edit Edit Signal » sur Activity** (DC : TD-274).
+  - **C2b — édition = mêmes blocs que le détail** (`91c87ce`) : 3 sections → 2 (**§1 Competitor** = Name puis « What was said », **§2 Source**), titre de §1 lu à la même constante que le détail ; test qui compare le détail et l'édition rendus section par section. **Audit des 7 autres types** : écarts de titres (questions qui guident — acceptés) et **écarts de structure** Pain « Related tool », Constraint « Rigidity », People « Contact » (**TD-276**).
+  - **C3 — doublons dans une même transcription** (`4319336`) : `_competitor_dedup_key` (= `CompetitorSignal._normalize_competitor_name`) ajouté à `_DEDUP_KEY_BY_STAGE` — calque de TechStack ; le premier gagne, les citations suivantes vont dans `metadata.additional_quotes`. Tests par `persist_stage` et par le pipeline (LLM simulé). **Test du regroupement inter-activités** par le cluster DC (2 activités du même DC → 2 signaux, 1 cluster), **absent jusqu'ici**.
+- **Migrations** : **aucune**.
+- **Validation (PO)** : **pytest** `tests/signals` + `tests/ai_pipelines` = **1105 passed**, **1 seul échec, PRÉ-EXISTANT** (`test_create_requires_rigidity`, **TD-247**) ; **vitest 194 fichiers / 1574 tests verts** ; lint sans erreur ; **smokes PO OK** (C1, C2, C3).
+- **Dette** : **NOUVEAUX TD-274** (édition Competitor sur DC : drawer vide « Edit Edit Signal »), **TD-275** (Objection garde « 10 » en dur), **TD-276** (écarts de structure détail / édition — faible priorité) ; **MAJ TD-198** (docstring du ViewSet competitor : `/competitor/` au lieu de `/competitors/`), **TD-204**, **TD-205**, **TD-238** (les 8 types de la section Signaux sont sur le châssis côté Activity ; DC/Account différés → OPEN), **TD-210**, **TD-249** (Competitor : seule la garde du serializer protège `source_activity`, prouvé par mutation), **TD-261** (commentaires « legacy dialog » d'`ActivitySignalsTab` désormais faux pour les 8 types). **TD-247** inchangé (OPEN).
+- **Section Signaux d'UX Activity : TERMINÉE côté Activity** — les **8 types** de la section (Objective, Pain, Impact, Constraint, Objection, People, TechStack, Competitor) sont sur le châssis (les next steps vivent dans leur propre section). **Chantier UX Activity** : **reste OUVERT** (autres sections).
+- **Prochain jalon (ordre à confirmer par le PO)** : branche **messages rouges → warning** (TD-272) ; **TO-DO People** (ci-dessous) ; puis les **autres sections d'UX Activity** (Next step, Transcript / notes, Preparation) ; puis la **question stratégique « création manuelle des signaux »**.
+
+#### Règle doublons (décision PO, Sprint Competitor)
+- **Fusion UNIQUEMENT dans une même transcription** (un même concurrent / outil cité plusieurs fois dans UN appel = 1 signal).
+- **JAMAIS de filtre entre activités** : les infos venues d'activités différentes se **centralisent dans le cluster DC / Account** (ex. activité 1 : « ils utilisent Salesforce », activité 2 : « combien ils paient » → **1 cluster** Salesforce).
+
+#### TO-DO People (avant Next step) — aligner People sur la règle doublons
+- **Retirer** le filtre « déjà identifié dans le DC » (S1-bis, `_drop_people_already_in_deal` / `identified_people_in_deal`) **et** la consigne LLM « **PEOPLE ALREADY IDENTIFIED — do NOT emit** » : ils sont **contraires** à la règle doublons (ils filtrent entre activités).
+- **Audit préalable** du **cluster People** : vérifier qu'il centralise bien les infos d'une même personne venues d'activités différentes avant de retirer le filtre.
+
 ---
 
 ## Ordre cible des sprints à venir + jalon LAUNCH (réorg 2026-08-15)
@@ -1631,6 +1660,11 @@ possibles) :
      **MAJ (clôture TechStack)** : **TechStack ✅ LIVRÉ** surface Activity
      (`feat/ux-activity-techstack` — voir la fiche « Sprint TechStack (surface
      Activity) ✅ LIVRÉ ») ; suite : **Competitor** sur le châssis (C0 → C2).
+     **MAJ (clôture Competitor)** : **Competitor ✅ LIVRÉ** surface Activity
+     (`feat/ux-activity-competitor` — voir la fiche « Sprint Competitor
+     (surface Activity) ✅ LIVRÉ ») : les **8 types** de la section Signaux sont
+     sur le châssis côté Activity. Suite (ordre à confirmer PO) : rouge →
+     warning (TD-272), TO-DO People, autres sections d'UX Activity.
   - [+ suites déjà cadrées : **Filtres transverse**
     (TD-189/202), **Passe cluster** (TD-199, dont **drop `is_to_replace`**),
     **UX Signals**, **Nettoyage** (TD-206), **Smoke A→Z**, **Clôture → Prep call**.]
@@ -1670,6 +1704,13 @@ possibles) :
   - **Les notes sur tous les types de signaux** (aujourd'hui pas sur tous).
   - Geste de scope exclusif recopié dans Pain / Impact / Constraint → migrer
     sur `ScopeDepartmentsField` (**TD-271**).
+- **Ajouts (clôture Sprint Competitor, hors sprint)** :
+  - **Afficher les citations fusionnées** (`metadata.additional_quotes`) —
+    TechStack et Competitor ; aujourd'hui conservées en base, jamais
+    affichées.
+  - **Édition = mêmes blocs que le détail** pour tous les types (règle UI C2b) :
+    écarts de structure Pain / Constraint / People (**TD-276**) ; constante
+    `SIGNAL_SUMMARY_MIN_LENGTH` pour Objection (**TD-275**).
 
 #### UI Admin Produit / gestion des tenants (NOUVEAU — POST-LAUNCH)
 - **Position** : #10 de l'ordre cible.
@@ -1767,9 +1808,16 @@ possibles) :
     (malgré la règle v5) ; **Word / Carnet** non testés ; **People** non
     extraits pour des locuteurs non enregistrés (**Camille, Hugo** — même cas
     que Claire / Thomas ci-dessus).
+- **À étudier (clôture Sprint Competitor)** : **relancer l'extraction sur la
+  même activité avec une transcription modifiée recrée des signaux** (la
+  fusion des doublons ne vaut que dans un même lot — test
+  `test_two_batches_on_the_same_activity_are_not_filtered`).
 
 #### Question STRATÉGIQUE — création manuelle des signaux (à trancher en fin de surface Activity)
 - **Position** : à trancher **en fin de surface Activity** (après Competitor).
+  **MAJ (clôture Competitor)** : Competitor livré — question à trancher après
+  la branche rouge → warning, le TO-DO People et les autres sections d'UX
+  Activity (ordre à confirmer PO).
 - **Constat** : aujourd'hui **aucune création manuelle de signal dans l'UI hors
   People** ; des **infos clés non relevées par l'IA** ne peuvent donc pas être
   saisies par le commercial.
