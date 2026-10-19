@@ -7,9 +7,9 @@ resolver.
     People taxonomy: the 7 PeopleRole codes, the SIGNAL InfluenceLevel codes
     (never the contacts.InfluenceLevel faux-ami: GATEKEEPER / UNKNOWN), and the
     StandardDepartment vocabulary.
-  * The "already identified in this deal" block lists the non-REJECTED
-    PeopleSignals of the activity's decision cycle (participant reference when
-    the person is a participant); empty without a decision cycle.
+  * NO list of persons already known in the deal (PO rule, fix
+    people-no-cross-activity-filter P2): each activity creates its signals,
+    the grouping per person is the DC cluster's job.
   * The other stages' context is untouched by People data.
   * resolve_person_department: exact / unambiguous-word match, General
     Management KEPT, ambiguous word -> None.
@@ -33,7 +33,9 @@ from tests.signals.conftest import decision_cycle  # noqa: F401
 
 pytestmark = pytest.mark.django_db
 
-_IDENTIFIED_HEADER = 'PEOPLE ALREADY IDENTIFIED IN THIS DEAL'
+# Marker of the removed "persons already known in the deal" block (P2),
+# assembled from its words so the removed wording appears nowhere in backend/.
+_REMOVED_BLOCK_MARKER = ' '.join(('ALREADY', 'IDENTIFIED'))
 
 _OTHER_STAGES = (
     'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
@@ -108,123 +110,30 @@ class TestPeopleTaxonomy:
 
 
 # =============================================================================
-# ALREADY IDENTIFIED IN THIS DEAL
+# NO KNOWN-PEOPLE LIST (P2) — the people known in the deal are NOT sent
 # =============================================================================
 
-class TestIdentifiedPeopleBlock:
+class TestNoKnownPeopleList:
 
-    def test_no_decision_cycle_no_block(self, activity, user_a):
-        _mk_people(activity, user_a, role=PeopleRole.CHAMPION, full_name='Marc Dubois')
-        context = build_context_layer(activity, 'people')
-        assert _IDENTIFIED_HEADER not in context
-
-    def test_cycle_without_people_no_block(self, activity, decision_cycle):  # noqa: F811
-        _attach_cycle(activity, decision_cycle)
-        context = build_context_layer(activity, 'people')
-        assert _IDENTIFIED_HEADER not in context
-
-    def test_pending_and_validated_listed_rejected_excluded(
+    def test_people_known_in_the_deal_are_not_listed_in_the_context(
         self, activity, user_a, decision_cycle,  # noqa: F811
     ):
         _attach_cycle(activity, decision_cycle)
         _mk_people(
             activity, user_a, role=PeopleRole.ECONOMIC_BUYER,
-            full_name='Marc Dubois', department=_dept('Finance'),
+            full_name='Marc Dupont', department=_dept('Finance'),
             cycle=decision_cycle,
         )
         _mk_people(
             activity, user_a, role=PeopleRole.CHAMPION, full_name='Lea Martin',
             status=SignalStatus.VALIDATED, cycle=decision_cycle,
         )
-        rejected = _mk_people(
-            activity, user_a, role=PeopleRole.BLOCKER, full_name='Paul Rejet',
-            cycle=decision_cycle,
-        )
-        # MANUAL create forces VALIDATED: reach REJECTED by a direct update.
-        PeopleSignal.objects.filter(id=rejected.id).update(status=SignalStatus.REJECTED)
 
         context = build_context_layer(activity, 'people')
 
-        assert _IDENTIFIED_HEADER in context
-        assert '- Marc Dubois — role ECONOMIC_BUYER, department Finance' in context
-        assert '- Lea Martin — role CHAMPION' in context
-        assert 'Paul Rejet' not in context
-
-    def test_participant_listed_with_its_reference_and_contact_name(
-        self, activity, user_a, decision_cycle, contact, contact_extra,  # noqa: F811
-    ):
-        # Doe = P1, Smith = P2 (last_name order).
-        activity.contacts.add(contact, contact_extra)
-        _attach_cycle(activity, decision_cycle)
-        _mk_people(
-            activity, user_a, role=PeopleRole.DECISION_MAKER,
-            contact=contact_extra, cycle=decision_cycle,
-        )
-
-        context = build_context_layer(activity, 'people')
-
-        # RGPD: the contact's FIRST name only (the session-block rule).
-        assert '- P2 — John — role DECISION_MAKER' in context
-        assert 'Smith' not in context
-
-    def test_contact_first_name_only_even_when_full_name_stored(
-        self, activity, user_a, decision_cycle, contact_extra,  # noqa: F811
-    ):
-        # The S1 builder stores full_name = contact first + last name; the
-        # block must still send the first name only (non-participant here).
-        _attach_cycle(activity, decision_cycle)
-        _mk_people(
-            activity, user_a, role=PeopleRole.ECONOMIC_BUYER,
-            contact=contact_extra, full_name='John Smith', cycle=decision_cycle,
-        )
-
-        context = build_context_layer(activity, 'people')
-
-        assert '- John — role ECONOMIC_BUYER' in context
-        assert 'Smith' not in context
-
-    def test_cited_person_without_contact_keeps_stated_name(
-        self, activity, user_a, decision_cycle,  # noqa: F811
-    ):
-        _attach_cycle(activity, decision_cycle)
-        _mk_people(
-            activity, user_a, role=PeopleRole.CHAMPION,
-            full_name='Marc Dubois', cycle=decision_cycle,
-        )
-
-        context = build_context_layer(activity, 'people')
-
-        assert '- Marc Dubois — role CHAMPION' in context
-
-    def test_unnamed_person_listed_with_role_and_department(
-        self, activity, user_a, decision_cycle,  # noqa: F811
-    ):
-        _attach_cycle(activity, decision_cycle)
-        _mk_people(
-            activity, user_a, role=PeopleRole.ECONOMIC_BUYER,
-            department=_dept('Finance'), cycle=decision_cycle,
-        )
-
-        context = build_context_layer(activity, 'people')
-
-        assert '- Unnamed person — role ECONOMIC_BUYER, department Finance' in context
-
-    def test_other_cycle_people_not_listed(
-        self, activity, account, user_a, decision_cycle,  # noqa: F811
-    ):
-        from app_modules.decision_cycles.models import DecisionCycle
-        other = DecisionCycle(account=account, owner=user_a, name='Other', is_active=True)
-        other.save(user=user_a, client_id=account.client_id)
-
-        _attach_cycle(activity, decision_cycle)
-        _mk_people(
-            activity, user_a, role=PeopleRole.CHAMPION, full_name='Elsewhere Person',
-            cycle=other,
-        )
-
-        context = build_context_layer(activity, 'people')
-
-        assert 'Elsewhere Person' not in context
+        assert _REMOVED_BLOCK_MARKER not in context
+        assert 'Dupont' not in context
+        assert 'Lea Martin' not in context
 
 
 # =============================================================================
@@ -247,7 +156,7 @@ class TestOtherStagesUntouched:
         after = build_context_layer(activity, stage)
 
         assert after == before
-        assert _IDENTIFIED_HEADER not in after
+        assert _REMOVED_BLOCK_MARKER not in after
         assert 'ECONOMIC_BUYER' not in after
 
 
