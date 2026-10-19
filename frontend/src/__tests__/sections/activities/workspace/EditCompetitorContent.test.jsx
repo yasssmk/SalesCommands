@@ -154,3 +154,64 @@ describe("EditCompetitorContent (Competitor C2)", () => {
     expect(updateSignal).not.toHaveBeenCalled();
   });
 });
+
+// ==============================|| C2b — SAME SECTIONS AS THE DETAIL ||============================== //
+//
+// PO rule: the edit drawer reproduces EXACTLY the detail's sections (same
+// number, same order, same titles), as TechStack does.
+
+import SignalDetailPanel from "components/signals/SignalDetailPanel";
+
+// The numbered SectionHeaders of a rendered tree: [{ index, title, el }].
+function sectionHeaders(root) {
+  return [...root.querySelectorAll(".MuiChip-label")]
+    .filter((label) => /^\d+$/.test(label.textContent))
+    .map((label) => {
+      const row = label.closest(".MuiChip-root").parentElement;
+      return {
+        index: label.textContent,
+        title: row.textContent.slice(label.textContent.length),
+        el: row,
+      };
+    });
+}
+
+describe("EditCompetitorContent — same sections as the detail (C2b)", () => {
+  it("has exactly the detail's sections: same count, order and titles", () => {
+    const detail = render(
+      <AphoriqTheme>
+        <SignalDetailPanel
+          signal={COMPETITOR}
+          signalType="competitors"
+          currentActivityId="act-1"
+          headerInCoque
+        />
+      </AphoriqTheme>,
+    );
+    const detailSections = sectionHeaders(detail.container).map(({ index, title }) => ({ index, title }));
+    cleanup();
+
+    const editTree = renderEdit();
+    const editSections = sectionHeaders(editTree.container).map(({ index, title }) => ({ index, title }));
+
+    expect(detailSections).toEqual([
+      { index: "1", title: "Competitor" },
+      { index: "2", title: "Source" },
+    ]);
+    expect(editSections).toEqual(detailSections);
+  });
+
+  it("§1 Competitor holds Name then Summary; §2 Source holds the quote", () => {
+    const { container } = renderEdit();
+    const [competitor, source] = sectionHeaders(container).map(({ el }) => el);
+    const name = screen.getByTestId("inline-read-competitor_name");
+    const summary = screen.getByTestId("inline-read-summary");
+    const quote = screen.getByTestId("inline-read-source_quote");
+    const follows = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    // §1 header → Name → Summary → §2 header → quote.
+    expect(follows(competitor, name)).toBe(true);
+    expect(follows(name, summary)).toBe(true);
+    expect(follows(summary, source)).toBe(true);
+    expect(follows(source, quote)).toBe(true);
+  });
+});

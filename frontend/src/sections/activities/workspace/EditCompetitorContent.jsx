@@ -7,6 +7,10 @@
 // title. Save PATCHes via updateSignal("competitors", id, payload);
 // onSaved(updatedSignal) returns to the detail.
 //
+// Sections = EXACTLY the detail's (C2b, PO rule, as TechStack): §1 Competitor
+// (Name, then Summary "What was said") → §2 Source (the quote). The §1 title
+// reads the same constant as the detail (getSignalTypeLabel).
+//
 // Deltas vs Objection:
 //   - Fields: competitor_name + summary + source_quote. NO contact (no
 //     attribution on Competitor), NO notes (CompetitorSignal has none).
@@ -34,6 +38,7 @@ import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
+import { getSignalTypeLabel } from "utils/signalTypes";
 import {
   COMPETITOR_NAME_MAX_LENGTH,
   SIGNAL_SUMMARY_MIN_LENGTH,
@@ -117,12 +122,12 @@ export default function EditCompetitorContent({ competitor, onSaved, onCancel })
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
     >
       <Stack spacing={2.5}>
-        {/* ---- SECTION 1 — Competitor ---- */}
+        {/* ---- SECTION 1 — Competitor: Name, then the AI sentence (as the detail) ---- */}
         <Stack spacing={1.5}>
           <SectionHeader
             index={1}
-            title="Competitor"
-            subtitle="The competing tool or vendor."
+            title={getSignalTypeLabel("competitors")}
+            subtitle="The competing tool or vendor, and what was said about it."
           />
           <InlineEditableValue
             name="competitor_name"
@@ -133,20 +138,9 @@ export default function EditCompetitorContent({ competitor, onSaved, onCancel })
             error={Boolean(errors.competitor_name)}
             helperText={errors.competitor_name}
           />
-        </Stack>
-
-        <Divider />
-
-        {/* ---- SECTION 2 — Summary (the AI sentence) ---- */}
-        <Stack spacing={1.5}>
-          <SectionHeader
-            index={2}
-            title="What was said?"
-            subtitle="How the prospect positions this competitor."
-          />
           <InlineEditableValue
             name="summary"
-            label="Summary"
+            label="What was said"
             type="textarea"
             value={values.summary}
             onChange={set("summary")}
@@ -158,9 +152,9 @@ export default function EditCompetitorContent({ competitor, onSaved, onCancel })
 
         <Divider />
 
-        {/* ---- SECTION 3 — Source quote (last) ---- */}
+        {/* ---- SECTION 2 — Source (last, as the detail) ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={3} title="Source quote" subtitle="Where does this signal come from" />
+          <SectionHeader index={2} title="Source" subtitle="Where does this signal come from" />
           <InlineEditableValue
             name="source_quote"
             label="Quote"
