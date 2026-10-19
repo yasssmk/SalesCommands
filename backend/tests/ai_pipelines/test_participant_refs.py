@@ -119,5 +119,5 @@ class TestContextParticipantRefs:
 
     def test_no_participant_no_block(self, activity):
         ctx = build_context_layer(activity, target_stage='blocker')
-        assert 'Prospect contacts in this conversation' not in ctx
+        assert 'Prospect contacts' not in ctx
         assert 'P1' not in ctx

@@ -3,7 +3,9 @@
 Request layer for People signal extraction (UX Activity, People S1;
 v2 -- People S1-bis: unlisted prospect speakers + explicit seller side;
 v3 -- People S6: department strictly from what is said of the person;
-v4 -- no list of the persons already known in the deal).
+v4 -- no list of the persons already known in the deal;
+v5 -- TD-279: a listed contact is evidence of nothing, attribution only on
+evidence about THAT participant).
 
 This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
@@ -85,7 +87,12 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'build_people_request']
 # v4 (fix people-no-cross-activity-filter P2): the list of the persons already
 # identified in the deal is no longer sent, nor its "never emit them again"
 # rule -- every activity re-observes its persons.
-PEOPLE_PROMPT_VERSION = 'v4'
+# v5 (TD-279 B3): a listed contact is extracted ONLY when the transcript shows
+# them; participant_ref ONLY on evidence about that participant (a different
+# name is never them); never transfer what is said of another named person;
+# full_name of a reference entry = the name as written (checked server-side by
+# stated_name_matches_contact); deduction allowed, unfounded conclusion not.
+PEOPLE_PROMPT_VERSION = 'v5'
 
 # Reference shapes rendered in the prompt, derived from the single
 # definition in participant_refs.py ("P<n>", "P1").
@@ -122,8 +129,12 @@ approval, a sign-off, a validation, a meeting to hold with them).
 
 WHO TO EXTRACT
 - Persons PRESENT in the conversation: every PROSPECT-side person who SPEAKS
-  in the transcript (a speaker label such as "Claire Dubois: ...") OR who is
-  listed as a prospect contact in the SESSION CONTEXT.
+  in the transcript (a speaker label such as "Claire Dubois: ...").
+- A contact listed in the SESSION CONTEXT is extracted ONLY when the
+  transcript shows THIS contact: they speak (their name in a speaker label)
+  OR they are named or clearly designated. A listed contact who never speaks
+  and is never named or designated is NOT emitted -- being listed is never
+  evidence of a role.
 - A prospect speaker NOT listed in the SESSION CONTEXT is STILL extracted:
   participant_ref = null and full_name = the name exactly as written in the
   speaker label.
@@ -185,6 +196,13 @@ EMISSION RULES
   set `department` to null -- null is the safe default; never fill it with a
   guess.
 - `full_name` is the name as stated; NEVER invent, complete or guess a name.
+- NEVER transfer to one person what the transcript says about ANOTHER named
+  person: "Paul Martin, our head of IT, signs off on security" describes Paul
+  Martin only -- never a listed contact, never the speaker.
+- A DEDUCTION from what the transcript says is allowed (e.g. a role implied
+  by what a named person decides or does); a conclusion with NO evidence in
+  the transcript is not. The SESSION CONTEXT says who is registered on the
+  activity -- it is never evidence of what a person said or does.
 - `notes` MUST be your own short sentence -- never a copy of the quote.
 - `source_quote` MUST be the VERBATIM utterance where the person's role or
   weight appears, exactly as in the transcript, preserving original
@@ -193,10 +211,17 @@ EMISSION RULES
   {{"signals": []}}
 
 ATTRIBUTION RULES (participant_ref)
-- The SESSION CONTEXT lists the prospect contacts in this conversation,
-  each prefixed with a reference ({_REF_SHAPE}).
-- When the person is one of the listed participants, set `participant_ref`
-  to that participant's reference (e.g. "{_FIRST_REF}").
+- The SESSION CONTEXT lists the prospect contacts registered on this
+  activity, each prefixed with a reference ({_REF_SHAPE}).
+- Set `participant_ref` to a participant's reference (e.g. "{_FIRST_REF}")
+  ONLY when the evidence is about THAT participant: their name in the
+  speaker label, or a cited name that matches their name.
+- A speaker or cited person whose name differs from the listed participant's
+  name is NEVER that participant: `participant_ref` = null and `full_name` =
+  their name as written (e.g. speaker "Paul Martin" while "{_FIRST_REF} — Sophie"
+  is listed -> null, "Paul Martin").
+- For a `participant_ref` entry, `full_name` is the participant's name
+  exactly as written in the transcript (speaker label or cited name).
 - When the person is only cited (absent from the list), or is a prospect
   speaker who is NOT a listed participant, set `participant_ref` to null and
   give the name in `full_name`.

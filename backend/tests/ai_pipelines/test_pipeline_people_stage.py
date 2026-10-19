@@ -101,11 +101,12 @@ class TestPeoplePersistence:
     ):
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
-        assert result['run'].prompt_versions['people'] == 'v4'
+        assert result['run'].prompt_versions['people'] == 'v5'
         # v4 = Sprint TechStack T0 (techstack usage taxonomy); v5 = T4b
         # (shared "Conversation date" line + techstack header); v6 = no list
-        # of the persons already known in the deal (people P2).
-        assert result['run'].prompt_versions['context'] == 'v6'
+        # of the persons already known in the deal (people P2); v7 = contacts
+        # "registered on this activity", not "in this conversation" (TD-279).
+        assert result['run'].prompt_versions['context'] == 'v7'
         assert result['run'].status == AIPipelineStatus.SUCCESS
         people_prompt = fake_provider.calls_for('people')[0]['user']
         assert 'Extract PEOPLE signals' in people_prompt
@@ -590,6 +591,64 @@ class TestPeoplePromptV3Department:
 
 
 # =============================================================================
+# TD-279 B3 — PROMPT v5 / CONTEXT v7: a listed contact is evidence of nothing
+# =============================================================================
+
+class TestPeoplePromptV5Attribution:
+
+    def _prompt(self):
+        return TestPeoplePromptV3Department()._prompt()
+
+    def test_listed_contact_extracted_only_when_the_transcript_shows_them(self):
+        prompt = self._prompt()
+        assert 'A contact listed in the SESSION CONTEXT is extracted ONLY when' in prompt
+        assert 'is NOT emitted -- being listed is never evidence of a role' in prompt
+        # The v4 rule "speaks OR is listed" is gone.
+        assert 'OR who is listed as a prospect contact' not in prompt
+
+    def test_reference_only_when_the_evidence_is_about_that_participant(self):
+        prompt = self._prompt()
+        assert '`participant_ref` to a participant\'s reference' in prompt
+        assert 'ONLY when the evidence is about THAT participant' in prompt
+        assert 'whose name differs from the listed participant\'s name is NEVER that participant' in prompt
+
+    def test_never_transfer_what_is_said_of_another_named_person(self):
+        prompt = self._prompt()
+        assert 'NEVER transfer to one person what the transcript says about ANOTHER' in prompt
+
+    def test_full_name_of_a_reference_entry_is_the_name_as_written(self):
+        prompt = self._prompt()
+        assert 'For a `participant_ref` entry, `full_name` is the participant\'s name' in prompt
+
+    def test_deduction_allowed_conclusion_without_evidence_not(self):
+        prompt = self._prompt()
+        assert 'A DEDUCTION from what the transcript says is allowed' in prompt
+        assert 'a conclusion with NO evidence in the transcript is not' in prompt
+
+    def test_examples_do_not_reuse_the_td279_smoke(self):
+        # TD-273: an example taken from the smoke would no longer measure
+        # generalisation (B2 runs on that very transcript).
+        prompt = self._prompt()
+        for smoke_word in ('Isabelle', 'Criminelle', 'Logistix', 'DAF'):
+            assert smoke_word not in prompt
+
+    @pytest.mark.parametrize('stage', ['people', 'blocker', 'pain_impact', 'techstack'])
+    def test_context_line_says_contacts_are_registered_not_present(
+        self, stage, activity, contact,
+    ):
+        from app_modules.ai_pipelines.prompts.transcript_signals.context import (
+            build_context_layer,
+        )
+        activity.contacts.add(contact)
+        context = build_context_layer(activity, stage)
+        assert (
+            '- Prospect contacts registered on this activity (they may not speak, '
+            'and are not necessarily the persons cited in the transcript):'
+        ) in context
+        assert 'contacts in this conversation' not in context
+
+
+# =============================================================================
 # P2 — NO KNOWN-PEOPLE LIST in the people context nor in the prompt
 # =============================================================================
 
@@ -632,8 +691,8 @@ class TestNoKnownPeopleListSentToTheLLM:
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v4'
-        assert CONTEXT_VERSION == 'v6'
+        assert PEOPLE_PROMPT_VERSION == 'v5'
+        assert CONTEXT_VERSION == 'v7'
 
 
 # =============================================================================

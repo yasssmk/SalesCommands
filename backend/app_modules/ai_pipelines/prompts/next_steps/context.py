@@ -55,7 +55,9 @@ __all__ = ['CONTEXT_VERSION', 'build_context_layer']
 # v2 (Sprint TechStack T4b): the reused session block now presents the date
 # as the "Conversation date", reference of every relative date (null when the
 # activity has no date) -- transcript_signals context v5.
-CONTEXT_VERSION = 'v2'
+# v3 (TD-279 B3): the reused session block lists the contacts as "registered
+# on this activity", no longer "in this conversation".
+CONTEXT_VERSION = 'v3'
 
 
 def build_context_layer(activity):

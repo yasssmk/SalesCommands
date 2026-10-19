@@ -102,11 +102,11 @@ class TestTechstackTaxonomyHeader:
 
 class TestConversationDate:
 
-    def test_context_version_is_v6(self):
-        assert CONTEXT_VERSION == 'v6'
+    def test_context_version_is_v7(self):
+        assert CONTEXT_VERSION == 'v7'
 
-    def test_next_steps_context_version_is_v2(self):
-        assert next_steps_context.CONTEXT_VERSION == 'v2'
+    def test_next_steps_context_version_is_v3(self):
+        assert next_steps_context.CONTEXT_VERSION == 'v3'
 
     @pytest.mark.parametrize('stage', PIPELINE_STAGES)
     def test_dated_activity_gives_the_reference_for_relative_dates(self, stage, activity):

@@ -104,7 +104,11 @@ logger = logging.getLogger(__name__)
 # "already identified in this deal" block is REMOVED (PO rule: each activity
 # creates its signals; the grouping per person is the DC cluster's job). The
 # other stages' context is byte-identical to v5.
-CONTEXT_VERSION = 'v6'
+# v7 (TD-279 B3): SHARED session block -- the contacts are "registered on this
+# activity (they may not speak, and are not necessarily the persons cited)",
+# no longer "in this conversation": a registered contact can be absent from
+# the transcript (all stages, and the next_steps context that reuses it).
+CONTEXT_VERSION = 'v7'
 
 # Relative-date wordings named in the "Conversation date" line (v5).
 _RELATIVE_DATE_EXAMPLES = '"this year", "next year", "end of the year", "in June"'
@@ -225,7 +229,11 @@ def _build_session_block(activity):
     # --- Contacts present ---
     contact_lines = _build_contact_lines(activity)
     if contact_lines:
-        lines.append('- Prospect contacts in this conversation:')
+        lines.append(
+            '- Prospect contacts registered on this activity (they may not '
+            'speak, and are not necessarily the persons cited in the '
+            'transcript):'
+        )
         lines.extend(f'  * {line}' for line in contact_lines)
 
     return '\n'.join(lines)

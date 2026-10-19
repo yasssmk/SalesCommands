@@ -260,7 +260,8 @@ def run_variant(name, n, out_dir, provider, activity):
         recorder = RecordingProvider(provider)
         pipeline = QualificationSignalsPipeline(provider=recorder)
         record = {'variant': name, 'call': index, 'stage': stage,
-                  'transcript': transcript_key, 'date_line_removed': drop_date}
+                  'transcript': transcript_key, 'date_line_removed': drop_date,
+                  'prompt_versions': dict(QualificationSignalsPipeline.PROMPT_VERSIONS)}
         try:
             parsed, meta = pipeline._call_llm(
                 system_prompt=SYSTEM_PROMPT, context=context, request=request,
@@ -330,6 +331,9 @@ def main():
 
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     out_dir = Path(args.out) if args.out else HERE / 'out' / stamp
+    # Never overwrite a previous run (the B2 reference outputs are kept).
+    if out_dir.exists() and any(out_dir.iterdir()):
+        sys.exit(f'Output folder {out_dir} is not empty -- choose another --out.')
     out_dir.mkdir(parents=True, exist_ok=True)
 
     provider = DryRunProvider() if args.dry_run else get_active_provider()
@@ -346,7 +350,9 @@ def main():
         writer.writerows(rows)
     recap = _recap(rows)
     (out_dir / 'summary.md').write_text(
-        '# TD-279 B2 — récap\n\n' + '\n'.join(recap) + '\n', encoding='utf-8',
+        '# TD-279 B2 — récap\n\n'
+        f'Versions : {json.dumps(QualificationSignalsPipeline.PROMPT_VERSIONS)}\n\n'
+        + '\n'.join(recap) + '\n', encoding='utf-8',
     )
     print('\n'.join(recap))
     print(f'\nOutput: {out_dir}')
