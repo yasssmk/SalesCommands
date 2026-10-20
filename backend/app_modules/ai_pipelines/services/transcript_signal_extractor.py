@@ -97,7 +97,6 @@ a different filter strategy could subclass).
 import datetime
 import logging
 import re
-import unicodedata
 
 from django.db import transaction
 from django.utils import timezone
@@ -117,7 +116,11 @@ from app_modules.signals.services.signal_cluster_service import SignalClusterSer
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
-from .participant_refs import resolve_participant_ref
+from .participant_refs import (
+    resolve_participant_by_name,
+    resolve_participant_ref,
+    stated_name_matches_contact,
+)
 from .safety_filter import passes_safety_filter, safe_float
 
 
@@ -514,41 +517,6 @@ def resolve_person_department(name):
 
     by_value, by_word = _build_department_resolution_index()
     return by_value.get(key) or by_word.get(key)
-
-
-def _normalize_person_name(value):
-    """Lowercase, accents stripped, whitespace collapsed ("  Hélène " -> "helene")."""
-    decomposed = unicodedata.normalize('NFKD', str(value))
-    stripped = ''.join(ch for ch in decomposed if not unicodedata.combining(ch))
-    return ' '.join(stripped.lower().split())
-
-
-def stated_name_matches_contact(stated_name, contact):
-    """
-    TD-279 guard (People stage): does the name the LLM gave for a participant
-    reference designate THAT contact?
-
-    Simple word match, no AI: the stated name matches when one of its words
-    (normalised: lowercase, no accents) equals the contact's first name OR
-    last name -- a multi-word first / last name ("Le Gall") must appear as
-    consecutive words. A missing / blank stated name has nothing to compare
-    and matches (the reference is kept).
-
-    Returns:
-        bool -- False means the reference describes ANOTHER person.
-    """
-    if not isinstance(stated_name, str):
-        return True
-    stated = _normalize_person_name(stated_name)
-    if not stated:
-        return True
-
-    padded = f' {stated} '
-    for part in (contact.first_name, contact.last_name):
-        name = _normalize_person_name(part or '')
-        if name and f' {name} ' in padded:
-            return True
-    return False
 
 
 # =============================================================================
@@ -1163,6 +1131,9 @@ class TranscriptSignalExtractor:
         is set. Absent / null / invalid -> `contact` stays unset (model
         default None), a warning is logged on a non-null reference that
         does not resolve, and the signal is NEVER dropped for this reason.
+        TD-279 B4a: without a resolved reference, `raised_by_name` (the
+        speaker's name as written) is linked by resolve_participant_by_name
+        (registered contacts only, ambiguous -> None).
 
         Other deferred BlockerSignal fields
         -----------------------------------
@@ -1204,6 +1175,10 @@ class TranscriptSignalExtractor:
         # forces an attribution; an unresolved reference keeps the signal.
         raised_by = raw.get('raised_by')
         contact = resolve_participant_ref(raised_by, activity)
+        if contact is None:
+            # TD-279 B4a: the speaker's name as written (`raised_by_name`)
+            # linked to a contact registered on the activity (never a guess).
+            contact = resolve_participant_by_name(raw.get('raised_by_name'), activity)
         if contact is not None:
             data['contact'] = contact
         elif raised_by is not None:
@@ -1376,6 +1351,10 @@ class TranscriptSignalExtractor:
             contact, full_name / department from the extraction + warning.
             Done here, before the in-extraction dedup, so the false reference
             merges with that person's own entry;
+          * TD-279 B4a: no reference (absent / null / ignored above) -> the
+            full_name as written is linked by resolve_participant_by_name
+            (registered contacts only, ambiguous -> None); a linked contact
+            has the same effect as a resolved reference;
           * no contact, no name and no department after resolution ->
             DROPPED + warning. Checked HERE: persist_stage feeds
             SignalManager.create directly -- neither the People serializer
@@ -1421,6 +1400,11 @@ class TranscriptSignalExtractor:
             )
             contact = None
             participant_ref = None
+        if contact is None and participant_ref is None:
+            # TD-279 B4a: no reference -> the name as written is linked to a
+            # contact registered on the activity (never a guess). Set here,
+            # before the in-extraction dedup, like a resolved reference.
+            contact = resolve_participant_by_name(raw.get('full_name'), activity)
         if contact is not None:
             full_name = f'{contact.first_name or ""} {contact.last_name or ""}'.strip()
             department = (
