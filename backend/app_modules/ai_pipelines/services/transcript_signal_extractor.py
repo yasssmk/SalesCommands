@@ -891,6 +891,11 @@ class TranscriptSignalExtractor:
 
         Schema requirements (from objective_v1.py):
             what, dimension, summary, source_quote, confidence, is_inferred
+            (+ optional target_date, v2)
+
+        target_date (TD-279 C2): a real YYYY-MM-DD date via _iso_date (same
+        helper as the techstack lifecycle dates), else None -- an invalid or
+        missing date never drops the signal.
 
         BUSINESS-scope hardcoded fields (v1):
             scope_level         = ScopeLevel.BUSINESS
@@ -924,6 +929,7 @@ class TranscriptSignalExtractor:
 
             'scope_level':        scope_level,
             'target_department':  target_department,
+            'target_date':        _iso_date(raw.get('target_date')),
         }
     
     # ---------------------- Impact ----------------------

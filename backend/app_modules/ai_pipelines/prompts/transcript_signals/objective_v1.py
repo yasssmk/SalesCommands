@@ -40,7 +40,9 @@ self-declaration; the backend decides what to do with the values.
 
 ObjectiveSignal exposes additional axes that are NOT extracted in v1:
 scope_level, target_contact, target_department, target_date,
-success_criteria. Rationale per axis:
+success_criteria. (Since then: scope_level / target_department are
+LLM-extracted; target_date is extracted since v2 -- TD-279 C2.) Rationale per
+axis:
 
   * scope_level is conditional (PERSONAL requires target_contact FK,
     DEPARTMENT requires target_department FK, BUSINESS forbids both).
@@ -61,7 +63,7 @@ The persistence service hardcodes the deferred fields at create time:
     scope_level         = ScopeLevel.BUSINESS
     target_contact      = None
     target_department   = None
-    target_date         = None     (rep adds later)
+    target_date         = None     (rep adds later -- v1 only; v2 extracts it)
     success_criteria    = ''       (rep adds later)
     notes               = ''       (rep adds later)
 
@@ -82,6 +84,8 @@ mapped to a new ObjectiveSignal row:
     what                ->  what
     dimension           ->  dimension
     summary             ->  summary
+    target_date         ->  target_date    (v2: real YYYY-MM-DD date, else NULL;
+                                            an invalid date never drops the signal)
     source_quote        ->  source_quote   (declared on BaseSignal)
     confidence          ->  confidence     (declared on BaseSignal)
     is_inferred         ->  is_inferred    (declared on BaseSignal)
@@ -114,10 +118,18 @@ retrieved later for quality measurement and debugging.
 """
 
 
+from app_modules.ai_pipelines.prompts.transcript_signals.date_rules import (
+    RELATIVE_DATE_RULE,
+)
+
+
 __all__ = ['OBJECTIVE_PROMPT_VERSION', 'build_objective_request']
 
 
-OBJECTIVE_PROMPT_VERSION = 'v1'
+# v2 (TD-279 C2): `target_date` -- the deadline of the objective, resolved with
+# the Conversation date (shared RELATIVE_DATE_RULE, date_rules.py), a period
+# resolving to its LAST day; null when no deadline is said.
+OBJECTIVE_PROMPT_VERSION = 'v2'
 
 
 def build_objective_request(transcript):
@@ -191,6 +203,7 @@ Return a single JSON object with this exact shape:
       "target_department": "<one value from the `target_department` list when scope_level is DEPARTMENT, otherwise null>",
       "summary":      "<one short sentence rephrasing the objective in your own words, around 200 chars or less>",
       "source_quote": "<verbatim excerpt from the transcript supporting this objective>",
+      "target_date": "<YYYY-MM-DD deadline of the objective, or null when no deadline is said -- see TARGET DATE>",
       "confidence":   <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
       "is_inferred":  <boolean, true when the signal is inferred rather than directly stated>
     }}
@@ -211,6 +224,19 @@ WHAT x DIMENSION EXAMPLES (domain code first, measure axis second)
 - "reduce operational costs by 15%"  -> what="OPS"    (Operations / Process), dimension="COST"    (Cost / Budget)
 - "shorten the sales cycle"          -> what="GROWTH" (Growth / Revenue),     dimension="TIME"    (Time / Speed)
 - "improve data accuracy"            -> what="DATA"   (Data / Visibility),    dimension="QUALITY" (Quality / Accuracy)
+
+TARGET DATE
+- "target_date" -- the deadline by which the prospect wants to reach the
+  objective, YYYY-MM-DD; null when no deadline is said -- never guess one.
+{RELATIVE_DATE_RULE}
+- A deadline stated as a PERIOD (a month, a quarter, a half-year, a year) is
+  the LAST day of that period. A deadline is in the future of the
+  Conversation date. A deadline with no clear end ("soon", "as soon as
+  possible", "in the coming months") is null.
+  « On veut doubler les inscriptions avant la fin de l'année. »
+      -> "target_date": "<conversation year>-12-31"
+  "We aim to cut churn by a third by the end of next year."
+      -> "target_date": "<conversation year + 1>-12-31"
 
 EMISSION RULES
 - Emit a signal ONLY when the transcript provides clear evidence that the
