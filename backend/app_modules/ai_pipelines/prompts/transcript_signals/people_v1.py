@@ -98,6 +98,8 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'build_people_request']
 # (the NEVER transfer rule applies to the speaker); the seller side is whoever
 # presents / sells THE SOLUTION -- a prospect presenting the project internally
 # stays prospect; an unnamed cited person's department comes from the job title.
+# The two examples inherited from test transcripts (a speaker label, a team
+# lead -> Sales) were replaced by neutral ones before any v7 run (C5-bis).
 PEOPLE_PROMPT_VERSION = 'v7'
 
 # Codes / names quoted in the worked examples, taken from the enums.
@@ -132,7 +134,7 @@ approval, a sign-off, a validation, a meeting to hold with them).
 
 WHO TO EXTRACT
 - Persons PRESENT in the conversation: every PROSPECT-side person who SPEAKS
-  in the transcript (a speaker label such as "Claire Dubois: ...") is ALWAYS
+  in the transcript (a speaker label such as "Jordan Lee: ...") is ALWAYS
   extracted -- even when they say they do not decide. The weight rule of
   DO NOT emit never applies to a speaker.
 - `full_name` = the person's name exactly as written in the transcript:
@@ -192,7 +194,7 @@ EMISSION RULES
   "{_ROLE_PROCUREMENT}": pick each from its own list.
 - `department` is the function of THIS person in the prospect's
   organization, taken ONLY from what the transcript says about THIS person
-  (their team, their job title, their trade): "head of the key accounts
+  (their team, their job title, their trade): "manager of the inside sales
   team" -> department "{_DEPT_SALES}". NEVER infer it from the company name,
   the meeting title, the prospect's industry, the department of the SPEAKER,
   or the other persons. WHEN NOTHING is said about this person's function,

@@ -492,11 +492,12 @@ class TestPeoplePromptV3Department:
         prompt = self._prompt()
         assert 'set `department` to null' in prompt
 
-    def test_real_case_example_maps_key_accounts_lead_to_sales(self):
+    def test_neutral_example_maps_a_sales_team_lead_to_sales(self):
+        # C5-bis: the former example came from a test transcript (TD-273).
         from app_modules.core_modules.models import StandardDepartment
         prompt = self._prompt()
         sales = StandardDepartment.DepartmentChoices.SALES.value
-        assert f'"head of the key accounts team" -> department "{sales}"' in prompt
+        assert f'"manager of the inside sales team" -> department "{sales}"' in prompt
 
 
 # =============================================================================
@@ -529,7 +530,9 @@ class TestPeoplePromptAttributionRules:
         for smoke_word in ('Isabelle', 'Criminelle', 'Logistix', 'DAF',
                            # "atelier business case" smoke (TD-279 C5)
                            'Thomas', 'Nadia', 'Laurent', 'Sophie', 'Karim',
-                           'Zendesk', 'Gong', 'contrôleur', 'controller'):
+                           'Zendesk', 'Gong', 'contrôleur', 'controller',
+                           # inherited Logistix examples (TD-279 C5-bis)
+                           'Claire', 'Dubois', 'key accounts', 'grands comptes'):
             assert smoke_word not in prompt
 
 
