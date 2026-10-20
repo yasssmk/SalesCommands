@@ -19,13 +19,21 @@ Retry policy:
   is the orchestrator's responsibility (decided per pipeline).
 
 Response format:
-  Plain-text completion mode (no `response_format={"type":
+  By default, plain-text completion mode (no `response_format={"type":
   "json_object"}`). Reasons:
     * Symmetric with Claude, which has no equivalent strict mode.
     * Cleaner LLMProvider abstraction — no provider-specific
       capabilities leak into the contract.
     * Prompts already enforce JSON-only output. Pipelines re-prompt
       on parse failure (TranscriptSignalsPipeline behavior).
+  TD-279 P0 -- OPTIONAL, per call (default = unchanged):
+    * response_schema -> response_format json_schema, strict;
+    * reasoning_effort -> reasoning-model mode: reasoning_effort sent,
+      max_completion_tokens instead of max_tokens, temperature NOT sent
+      (driven by the caller's config, never by the model name);
+    * in either mode, a refusal or a truncated answer (finish_reason
+      "length") raises LLMProviderError -- in the default mode the
+      content is still returned (the pipeline's parse retry decides).
 
 Privacy:
   Logs include model identifier, token counts, and duration only.
@@ -81,10 +89,12 @@ class OpenAIProvider(LLMProvider):
         *,
         system: str,
         user: str,
-        temperature: float,
+        temperature: float | None,
         model: str,
         max_tokens: int,
         timeout_s: int,
+        response_schema: dict | None = None,
+        reasoning_effort: str | None = None,
     ) -> LLMCallResult:
         """
         Perform a single OpenAI chat completion.
@@ -106,17 +116,35 @@ class OpenAIProvider(LLMProvider):
         """
         start = time.perf_counter()
 
+        kwargs = {
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': system},
+                {'role': 'user',   'content': user},
+            ],
+            'timeout': timeout_s,
+        }
+        if reasoning_effort is not None:
+            # Reasoning-model mode: no temperature, completion budget.
+            kwargs['reasoning_effort'] = reasoning_effort
+            kwargs['max_completion_tokens'] = max_tokens
+        else:
+            if temperature is not None:
+                kwargs['temperature'] = temperature
+            kwargs['max_tokens'] = max_tokens
+        if response_schema is not None:
+            kwargs['response_format'] = {
+                'type': 'json_schema',
+                'json_schema': {
+                    'name':   response_schema['name'],
+                    'schema': response_schema['schema'],
+                    'strict': True,
+                },
+            }
+        strict_mode = response_schema is not None or reasoning_effort is not None
+
         try:
-            response = self._client.chat.completions.create(
-                model=model,
-                messages=[
-                    {'role': 'system', 'content': system},
-                    {'role': 'user',   'content': user},
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens,
-                timeout=timeout_s,
-            )
+            response = self._client.chat.completions.create(**kwargs)
 
         except APITimeoutError as e:
             duration_ms = self._measure_duration_ms(start)
@@ -166,9 +194,12 @@ class OpenAIProvider(LLMProvider):
         if usage:
             input_tokens  = getattr(usage, 'prompt_tokens',     0)
             output_tokens = getattr(usage, 'completion_tokens', 0)
+            details = getattr(usage, 'completion_tokens_details', None)
+            reasoning_tokens = getattr(details, 'reasoning_tokens', 0) or 0
         else:
             input_tokens  = 0
             output_tokens = 0
+            reasoning_tokens = 0
 
         # ----- Content extraction (defensive) -----
         # Missing choices or null message.content indicates a
@@ -176,11 +207,23 @@ class OpenAIProvider(LLMProvider):
         # ...). Surface as a provider error rather than silently
         # returning empty content.
         try:
-            content = response.choices[0].message.content or ''
+            choice = response.choices[0]
+            content = choice.message.content or ''
         except (IndexError, AttributeError) as e:
             raise LLMProviderError(
                 f'Malformed OpenAI response — no choices or message: {e!r}'
             ) from e
+
+        if strict_mode:
+            # Structured / reasoning mode only (TD-279 P0): a refusal or a
+            # truncated answer is never handed over as content.
+            if getattr(choice.message, 'refusal', None):
+                raise LLMProviderError('OpenAI refused the request (structured output refusal).')
+            if getattr(choice, 'finish_reason', None) == 'length':
+                raise LLMProviderError(
+                    'OpenAI answer truncated (finish_reason "length") -- '
+                    'max_tokens too low for this call.'
+                )
 
         if not content:
             raise LLMProviderError(
@@ -209,4 +252,5 @@ class OpenAIProvider(LLMProvider):
             output_tokens=output_tokens,
             model_used=model_used,
             duration_ms=duration_ms,
+            reasoning_tokens=reasoning_tokens,
         )

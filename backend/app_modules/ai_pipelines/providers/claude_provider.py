@@ -88,10 +88,12 @@ class ClaudeProvider(LLMProvider):
         *,
         system: str,
         user: str,
-        temperature: float,
+        temperature: float | None,
         model: str,
         max_tokens: int,
         timeout_s: int,
+        response_schema: dict | None = None,
+        reasoning_effort: str | None = None,
     ) -> LLMCallResult:
         """
         Perform a single Anthropic messages.create completion.
@@ -110,7 +112,16 @@ class ClaudeProvider(LLMProvider):
           robust against future block types and multi-block
           responses. Empty content surfaces as LLMProviderError
           rather than silently returning ''.
+
+        TD-279 P0: a strict response schema or a reasoning effort is NOT
+        supported by this provider -> LLMProviderError before any call
+        (never a silent downgrade).
         """
+        if response_schema is not None or reasoning_effort is not None:
+            raise LLMProviderError(
+                'ClaudeProvider: response_schema / reasoning_effort not supported.'
+            )
+
         start = time.perf_counter()
 
         try:

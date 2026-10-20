@@ -220,6 +220,10 @@ class BasePipeline(ABC):
             'dropped_by_safety_filter': dropped_count,
             'error': error,
         }
+        # TD-279 P0: hidden reasoning tokens, only when the API reports some
+        # (every other entry keeps exactly its pre-P0 keys).
+        if meta.get('reasoning_tokens'):
+            entry['reasoning_tokens'] = meta['reasoning_tokens']
 
         # JSONField list mutation: re-bind to force change detection.
         current = list(run.sub_calls or [])
@@ -369,4 +373,6 @@ class BasePipeline(ABC):
             'input_tokens': llm_result.input_tokens,
             'output_tokens': llm_result.output_tokens,
             'model_used': llm_result.model_used,
+            **({'reasoning_tokens': llm_result.reasoning_tokens}
+               if llm_result.reasoning_tokens else {}),
         }
