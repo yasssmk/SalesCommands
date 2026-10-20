@@ -25,7 +25,7 @@ Mental model surfaced in the prompt: "[A] wants to reach [B: objective], but
 emits C (the pain / cause) and E (the impact / measurable cost). Objective B
 is a DIFFERENT sub-call (objective_v1) -- objectives are NOT emitted here.
 
-Output schema (v1)
+Output schema (v2)
 ------------------
 ONE JSON object with two arrays::
 
@@ -34,12 +34,15 @@ ONE JSON object with two arrays::
                     summary, source_quote, confidence, is_inferred}, ... ],
       "impacts": [ {what, dimension, impact_type, scope_level,
                     target_departments, summary, source_quote,
-                    confidence, is_inferred}, ... ]
+                    metric_text, confidence, is_inferred}, ... ]
     }
 
 The pain object schema is exactly the pain_v1 field set; the impact object
-schema is exactly the impact_v1 field set (it additionally carries
-`impact_type`). Empty result is `{"pains": [], "impacts": []}`.
+schema is the impact_v1 field set (it additionally carries `impact_type`)
+plus, since v2 (TD-279 C3), `metric_text` -- the impact DESCRIPTION shown
+in the UI ("Describe the impact" / "Impact description"): one short
+sentence describing the consequence with the figures as said, null when
+there is no concrete consequence nor figure. Empty result is `{"pains": [], "impacts": []}`.
 
 Independent scope
 -----------------
@@ -81,7 +84,10 @@ under the single 'pain_impact' key.
 __all__ = ['PAIN_IMPACT_PROMPT_VERSION', 'build_pain_impact_request']
 
 
-PAIN_IMPACT_PROMPT_VERSION = 'v1'
+# v2 (TD-279 C3): impacts carry `metric_text` (the impact description, figures
+# as said, never computed); a FIGURED consequence of a pain is ALSO emitted as
+# an impact (the pain stays a pain).
+PAIN_IMPACT_PROMPT_VERSION = 'v2'
 
 
 def build_pain_impact_request(transcript):
@@ -125,6 +131,19 @@ PARTIAL EMISSION (be honest, never invent)
 - A pain stated without its cost    -> emit the pain alone.
 - An impact stated without its cause -> emit the impact alone.
 - NEVER invent a missing figure or a missing cause. Extraction is factual.
+
+FIGURED CONSEQUENCES (impact `metric_text`)
+- A FIGURED consequence of a pain (hours lost, full-time equivalents, a cost,
+  a missed percentage, a delay...) is ALSO emitted as an IMPACT, even when it
+  is said in the same breath as the pain; the pain stays emitted as a PAIN.
+- `metric_text` describes the consequence in ONE short sentence, keeping
+  every figure that is said, exactly as said (units, currency, "about").
+  NEVER compute a figure that is not said: no total, no conversion, no
+  equivalent the speaker did not give. null when the impact has no concrete
+  consequence nor figure.
+  "each of our six planners spends a day a week fixing the schedule by hand"
+      -> pain:   the schedule is fixed by hand
+         impact: metric_text = "Six planners each spend a day a week fixing the schedule by hand."
 
 Pain / Impact vs. Constraint (important distinction -- do NOT over-exclude)
 - A PAIN is a lived difficulty in the prospect's CURRENT state; an IMPACT is
@@ -193,6 +212,7 @@ Return a single JSON object with this exact shape:
       "target_departments": ["<zero or more department names from the `target_departments` list -- every department explicitly concerned; [] when scope_level is BUSINESS>"],
       "summary":      "<one short sentence rephrasing the impact (consequence) in your own words, ~200 chars or less>",
       "source_quote": "<verbatim excerpt stating the measurable CONSEQUENCE>",
+      "metric_text":  <one short sentence describing the consequence, with every figure as said, or null -- see FIGURED CONSEQUENCES>,
       "confidence":   <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER>,
       "is_inferred":  <boolean, true when inferred rather than directly stated>
     }}

@@ -20,9 +20,10 @@ this service:
                           unset, satisfying ObjectiveSignal.clean()'s
                           BUSINESS branch).
         - Impact      -> 1:1 passthrough + force scope_level=BUSINESS;
-                          metric_text and human_impact left unset (rep
-                          fills during validation). impact_type is
-                          emitted by the LLM and persisted directly.
+                          metric_text extracted by the LLM since TD-279
+                          C3; human_impact left unset (dormant, TD-245).
+                          impact_type is emitted by the LLM and persisted
+                          directly.
         - TechStack   -> raw `tech_name` passthrough (normalised by
                           TechStackSignal.save(), not here) + the
                           qualification booleans (is_competitor /
@@ -111,7 +112,12 @@ from app_modules.signals.constants import (
     SignalStatus,
     UsageScope,
 )
-from app_modules.signals.models import CompetitorSignal, PeopleSignal, TechStackSignal
+from app_modules.signals.models import (
+    CompetitorSignal,
+    ImpactSignal,
+    PeopleSignal,
+    TechStackSignal,
+)
 from app_modules.signals.services.signal_cluster_service import SignalClusterService
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
@@ -632,6 +638,10 @@ _DEDUP_FILL_GROUPS_BY_STAGE = {
 # rather than failing the insert inside the pipeline transaction.
 _PEOPLE_FULL_NAME_MAX_LENGTH = PeopleSignal._meta.get_field('full_name').max_length
 
+# ImpactSignal.metric_text column width (TD-279 C3) -- same rule: an over-long
+# description is truncated, the impact is kept.
+_IMPACT_METRIC_TEXT_MAX_LENGTH = ImpactSignal._meta.get_field('metric_text').max_length
+
 
 class TranscriptSignalExtractor:
     """
@@ -950,10 +960,13 @@ class TranscriptSignalExtractor:
             scope_level    = ScopeLevel.BUSINESS  (rep promotes during
                                                     validation)
 
-        Optional Impact fields left unset (rep adds during validation):
-            metric_text    -- free-text quantified value; LLM
-                              normalisation of fuzzy units is brittle
-                              at MVP scope.
+        metric_text (TD-279 C3, pain_impact v2): the impact DESCRIPTION
+        ("Describe the impact" in the UI), one short sentence with the
+        figures as said -- stripped, truncated to the column width, empty
+        when absent / blank (CharField blank, no NULL). Never drops the
+        impact.
+
+        Optional Impact field left unset (rep adds during validation):
             human_impact   -- fuzzy emotion qualifier (FRUSTRATION /
                               OVERLOAD / STRESS / DEMOTIVATION /
                               CONFLICT); mapping a quote to a precise
@@ -992,9 +1005,10 @@ class TranscriptSignalExtractor:
             'scope_level':         scope_level,
             'target_departments':  target_departments,
 
-            # metric_text and human_impact NOT extracted in v1 -- rep
-            # fills during validation. The fields are nullable on the
-            # model, so omitting them from the data dict is safe.
+            'metric_text':         _clean_text(raw.get('metric_text'))[:_IMPACT_METRIC_TEXT_MAX_LENGTH],
+
+            # human_impact NOT extracted -- dormant (TD-245); the field is
+            # nullable on the model, so omitting it is safe.
         }
 
     # ---------------------- TechStack ----------------------
