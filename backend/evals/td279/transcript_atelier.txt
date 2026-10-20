@@ -1,0 +1,39 @@
+Atelier business case SalesCommands – Logistix - 2026/10/20 14:00 CEST - Transcript
+Attendees
+Isabelle Roux, Thomas Lefèvre, Julien Moreau, Sophie Garnier
+Transcript
+00:00:00
+
+Julien Moreau: Bonjour Isabelle, bonjour Thomas. Merci d'avoir calé ce créneau. Je suis avec Sophie Garnier, notre ingénieure avant-vente, qui pourra répondre aux questions techniques. L'objectif aujourd'hui, c'est de construire ensemble le business case et de valider les points de sécurité.
+Isabelle Roux: Bonjour à tous. Oui, Claire m'a fait un retour très positif de la démo. Moi, ce que je veux, ce sont des chiffres. Si je présente ce projet à Marc, il me demandera tout de suite le retour sur investissement.
+Julien Moreau: Très bien. Pour partir de la réalité : aujourd'hui, combien de temps vos commerciaux passent-ils sur le CRM ?
+Isabelle Roux: D'après l'enquête interne qu'on a faite en septembre, chaque commercial passe environ quatre heures par semaine à ressaisir ses comptes rendus dans Salesforce. Sur vingt commerciaux, ça fait quatre-vingts heures par semaine. C'est l'équivalent de deux personnes à temps plein.
+Thomas Lefèvre: Et la qualité des données ne suit pas. La moitié des opportunités n'ont pas de date de clôture à jour, donc le forecast est faux.
+Isabelle Roux: Exactement. Le trimestre dernier, on a raté notre prévision de dix-huit pour cent. Ça m'a coûté une réunion très désagréable avec le comité de direction.
+Julien Moreau: Donc si on fixe un objectif commun, ce serait quoi ?
+Isabelle Roux: Diviser par deux le temps de saisie d'ici la fin du premier trimestre de l'année prochaine. Et avoir un forecast fiable à plus ou moins dix pour cent.
+00:03:00
+
+Sophie Garnier: Côté technique, Thomas, vous êtes toujours sur Salesforce pour toute l'équipe commerciale ?
+Thomas Lefèvre: Oui, Salesforce pour les ventes, notre contrat se renouvelle fin mars. Le marketing est sur HubSpot. Et pour le support, on a arrêté Zendesk en juin dernier, on est passé sur Freshdesk, qu'on renouvelle chaque année en janvier.
+Sophie Garnier: Parfait, on a un connecteur natif Salesforce, et HubSpot est aussi supporté.
+Thomas Lefèvre: Le vrai sujet, ce n'est pas moi. Ce n'est pas moi qui signe sur la sécurité, c'est Laurent Petit, notre DSI, qui a le dernier mot. Et Laurent a une exigence non négociable : les données doivent être hébergées en Europe.
+Sophie Garnier: Nos serveurs sont à Francfort et à Paris. Je peux vous envoyer le DPA et le rapport SOC 2.
+Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît. Laurent veut les lire avant de vous rencontrer. Si l'hébergement n'est pas clair, il bloquera le projet, comme il l'a fait l'an dernier avec un autre outil.
+00:05:30
+
+Isabelle Roux: Parlons du prix. Je vais être franche : votre proposition est au-dessus de ce qu'on avait en tête. Notre enveloppe pour ce type d'outil, c'est soixante mille euros par an, pas plus.
+Julien Moreau: Je comprends. On peut regarder un démarrage sur une partie de l'équipe.
+Isabelle Roux: Et au-dessus de cinquante mille euros, le contrat passe obligatoirement par les achats. Nadia Benali, notre responsable achats, va négocier chaque ligne, elle est redoutable.
+Julien Moreau: C'est noté. Vous regardez d'autres solutions en parallèle ?
+Isabelle Roux: Oui, on a vu Gong la semaine dernière. Et notre intégrateur nous pousse Salesforce Einstein. Pour l'instant, vous êtes devant, mais Gong est moins cher.
+Thomas Lefèvre: Et attention à l'adoption. Si les commerciaux ne l'utilisent pas, ça ne servira à rien. Karim, le responsable des grands comptes, est partant pour un pilote, mais il faudra le former.
+00:08:00
+
+Julien Moreau: Sur le calendrier, quelles sont les échéances ?
+Isabelle Roux: Le budget 2027 se boucle le quinze décembre. Si le business case n'est pas validé avant, le projet glisse d'un an. Il me faut la version finale avant le quinze novembre pour la présenter au contrôleur de gestion, puis à Marc.
+Julien Moreau: Alors je propose : Sophie vous envoie le DPA et le SOC 2 d'ici vendredi. On organise un rendez-vous sécurité avec Laurent Petit dans deux semaines. Et on vous envoie une première version du business case la semaine prochaine.
+Thomas Lefèvre: Ça me va. Pour Laurent, privilégiez un mardi, il est en comité le reste de la semaine.
+Isabelle Roux: Et si tout est validé, on lance le pilote avec Karim en janvier.
+Julien Moreau: Parfait. Merci Isabelle, merci Thomas. Je vous envoie le récapitulatif ce soir.
+Isabelle Roux: Merci, à bientôt.
