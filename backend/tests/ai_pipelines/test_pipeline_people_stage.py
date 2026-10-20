@@ -11,9 +11,8 @@ People-stage integration tests for QualificationSignalsPipeline
   * Drops: role out of PeopleRole, no identity, blank source_quote.
     Folds: invalid influence -> None. Other-account contact -> never
     linked, signal kept.
-  * is_inferred=true is KEPT for people (DROP_INFERRED_EXEMPT_STAGES) and
-    still dropped for another stage in the same run; the confidence floor
-    still applies to people.
+  * is_inferred=true is KEPT for people, as for every stage since TD-279 C1
+    (blocker in the same run); the confidence floor still applies to people.
   * In-extraction dedup (shared with TechStack): same contact twice ->
     one signal + 1 additional quote; same name twice -> one signal; two
     unnamed persons -> two signals.
@@ -265,12 +264,12 @@ class TestPeopleDropsAndFolds:
 
 
 # =============================================================================
-# SAFETY FILTER — is_inferred exemption limited to people
+# SAFETY FILTER — is_inferred kept (people, and every stage since TD-279 C1)
 # =============================================================================
 
 class TestPeopleInferredExemption:
 
-    def test_inferred_people_kept_inferred_blocker_still_dropped(
+    def test_inferred_people_kept_inferred_blocker_kept_too(
         self, account, activity, user_a, fake_provider, patch_active_provider,
     ):
         blocker_reply = json.dumps({'signals': [{
@@ -291,9 +290,10 @@ class TestPeopleInferredExemption:
         [signal] = _people(result)
         assert signal.is_inferred is True
         assert signal.role == PeopleRole.CHAMPION
-        # Témoin: the same epistemic state is still dropped for blocker.
-        assert result['signals_by_stage']['blocker'] == []
-        assert BlockerSignal.objects.count() == 0
+        # TD-279 C1: the same epistemic state is now kept for blocker too.
+        [blocker] = result['signals_by_stage']['blocker']
+        assert blocker.is_inferred is True
+        assert BlockerSignal.objects.count() == 1
 
     def test_confidence_floor_still_applies_to_people(
         self, account, activity, user_a, fake_provider, patch_active_provider,

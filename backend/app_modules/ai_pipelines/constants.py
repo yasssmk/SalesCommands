@@ -183,12 +183,12 @@ PIPELINE_CONFIDENCE_MIN = {
 }
 
 # Drop a signal whose self-declared is_inferred is True (verbatim-anchored).
+# TRANSCRIPT_SIGNALS: False since TD-279 C1 (PO decision) -- a deduction from
+# what the transcript says is a legitimate observation the rep validates, for
+# EVERY stage (People already kept it since S1); a weak deduction is still
+# dropped by PIPELINE_CONFIDENCE_MIN. NEXT_STEPS is a separate pipeline and
+# keeps its own policy.
 PIPELINE_DROP_INFERRED = {
-    AIPipelineType.TRANSCRIPT_SIGNALS: True,
+    AIPipelineType.TRANSCRIPT_SIGNALS: False,
     AIPipelineType.NEXT_STEPS:         True,
 }
-
-# Qualification stages exempt from the is_inferred drop (the confidence floor
-# still applies). People: an inferred role is a legitimate observation (a
-# champion is rarely stated) that the rep validates — PO decision, People S1.
-TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES = frozenset({'people'})

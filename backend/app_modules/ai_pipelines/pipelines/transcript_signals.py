@@ -53,13 +53,13 @@ blocker stage (no axes) and on the constraint stage (constraint carries a
 Safety filter
 -------------
 Values in constants.py (PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED
-[TRANSCRIPT_SIGNALS], TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES):
+[TRANSCRIPT_SIGNALS]):
     CONFIDENCE_MIN = 0.5   -- drop LLM signals with self-declared
                               confidence below this threshold.
-    DROP_INFERRED  = True  -- drop signals where the LLM self-declared
-                              is_inferred=true (verbatim-anchored only),
-                              except for DROP_INFERRED_EXEMPT_STAGES
-                              (people: inferred roles are kept).
+    DROP_INFERRED  = False -- a signal the LLM self-declares
+                              is_inferred=true is KEPT on every stage
+                              (TD-279 C1); the confidence floor alone
+                              drops a weak deduction.
 
 The filter itself is applied by TranscriptSignalExtractor, per stage.
 The pipeline only OWNS the thresholds and propagates them
@@ -135,7 +135,6 @@ from ..constants import (
     PIPELINE_CONFIDENCE_MIN,
     PIPELINE_DROP_INFERRED,
     PIPELINE_TEMPERATURES,
-    TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES,
 )
 from ..prompts.base import PromptParseError
 from ..prompts.transcript_signals.system import (
@@ -245,15 +244,10 @@ class QualificationSignalsPipeline(BasePipeline):
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.TRANSCRIPT_SIGNALS]
 
     # Safety filter knobs -- read by TranscriptSignalExtractor.persist_stage().
-    # Strict defaults for signal extraction (vs. e.g. sentiment analysis):
-    # we want verbatim-anchored signals only.
     # Values live in constants.py (S5); the class attributes point to them so
     # the `self.X` reads and any subclass override keep working.
     CONFIDENCE_MIN = PIPELINE_CONFIDENCE_MIN[AIPipelineType.TRANSCRIPT_SIGNALS]
     DROP_INFERRED = PIPELINE_DROP_INFERRED[AIPipelineType.TRANSCRIPT_SIGNALS]
-    # Stages exempt from the DROP_INFERRED drop (the confidence floor still
-    # applies) -- see TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES.
-    DROP_INFERRED_EXEMPT_STAGES = TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES
 
     # =========================================================================
     # MAIN ENTRY
@@ -394,10 +388,7 @@ class QualificationSignalsPipeline(BasePipeline):
                                 user=user,
                                 client_id=client_id,
                                 confidence_min=self.CONFIDENCE_MIN,
-                                drop_inferred=(
-                                    self.DROP_INFERRED
-                                    and stage_name not in self.DROP_INFERRED_EXEMPT_STAGES
-                                ),
+                                drop_inferred=self.DROP_INFERRED,
                                 source_run=run,
                             )
 

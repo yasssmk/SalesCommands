@@ -38,10 +38,9 @@ Empty result is represented by {"signals": []}.
 Persistence contract
 --------------------
 TranscriptSignalExtractor applies the confidence floor of the safety
-filter; the is_inferred drop is NOT applied to this stage
-(QualificationSignalsPipeline.DROP_INFERRED_EXEMPT_STAGES): a Champion is
-rarely stated, an inferred role is a legitimate observation the rep
-validates. Each surviving observation maps to a new PeopleSignal row:
+filter; an inferred role is KEPT (a Champion is rarely stated -- a
+legitimate observation the rep validates; since TD-279 C1 no stage drops
+is_inferred, PIPELINE_DROP_INFERRED). Each surviving observation maps to a new PeopleSignal row:
 
     LLM-emitted field   ->  PeopleSignal column
     -----------------       -----------------------------------------------

@@ -335,12 +335,12 @@ def _blocker_metrics(signals, activity):
 # --- Atelier business case (PO smoke 2026-10-20) -------------------------------
 
 def _survives(raw, stage):
-    """The server safety filter of the pipeline, same thresholds (constants)."""
-    drop_inferred = (
-        QualificationSignalsPipeline.DROP_INFERRED
-        and stage not in QualificationSignalsPipeline.DROP_INFERRED_EXEMPT_STAGES
+    """The server safety filter of the pipeline, same thresholds (constants;
+    one policy for every stage since TD-279 C1 -- `stage` kept for the call
+    sites)."""
+    return passes_safety_filter(
+        raw, QualificationSignalsPipeline.CONFIDENCE_MIN, QualificationSignalsPipeline.DROP_INFERRED,
     )
-    return passes_safety_filter(raw, QualificationSignalsPipeline.CONFIDENCE_MIN, drop_inferred)
 
 
 def _text(raw, *keys):
