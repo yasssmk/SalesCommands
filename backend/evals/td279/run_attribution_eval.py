@@ -31,9 +31,15 @@ Variants (N calls each, default 10):
   atelier_techstack / atelier_blocker
                     "Atelier business case" transcript (PO smoke 2026-10-20,
                     activity 0254973b; Conversation date 2026-10-20): the
-                    expected items the smoke missed are checked one by one,
-                    on the RAW answer and after the server safety filter
-                    (same thresholds as the pipeline).
+                    expected items are checked one by one, on the RAW answer
+                    and after the server safety filter (same thresholds as
+                    the pipeline) -- people: Isabelle, Thomas (role, not
+                    DECISION_MAKER), the cost controller (Finance), Laurent,
+                    Nadia, Marc, Karim, no seller entry; pain_impact: the
+                    "80 h / 2 FTE" impact and the 18 % impact, each with a
+                    metric_text; objective: target_date 2027-03-31; blocker:
+                    adoption risk, hosting -> "will block" threat.
+                    All variants run on the PRODUCTION prompts.
 
 The Logistix variants are scored on the FINAL result a run would store (link
 by name).
@@ -95,15 +101,16 @@ from app_modules.ai_pipelines.providers import get_active_provider  # noqa: E402
 from app_modules.ai_pipelines.providers.base import LLMCallResult  # noqa: E402
 from app_modules.ai_pipelines.services import participant_refs  # noqa: E402
 from app_modules.ai_pipelines.services.safety_filter import passes_safety_filter  # noqa: E402
-from app_modules.ai_pipelines.services.transcript_signal_extractor import (  # noqa: E402
-    _iso_date,
-    resolve_person_department,
-)
+from app_modules.ai_pipelines.services.transcript_signal_extractor import _iso_date  # noqa: E402
+from app_modules.core_modules.models import StandardDepartment  # noqa: E402
 
 
 # =============================================================================
 # TEST CASE (TD-279 smoke, activity 5b53de3d)
 # =============================================================================
+
+DEPARTMENTS = StandardDepartment.DepartmentChoices.values
+FINANCE = StandardDepartment.DepartmentChoices.FINANCE.value
 
 CONTACT = types.SimpleNamespace(
     first_name='Criminelle',
@@ -365,30 +372,45 @@ def _atelier_metrics(stage, parsed):
     if stage == 'people':
         signals = _signals(parsed)
         name = lambda s: (s.get('full_name') or '').lower()  # noqa: E731
-        m.update(_found('isabelle', _first(signals, lambda s: 'isabelle' in name(s) or 'roux' in name(s)), stage))
-        m.update(_found('thomas', _first(signals, lambda s: 'thomas' in name(s) or 'lef' in name(s)), stage))
+        named = lambda *keys: _first(signals, lambda s: any(k in name(s) for k in keys))  # noqa: E731
+        for key, words in (('isabelle', ('isabelle', 'roux')), ('laurent', ('laurent', 'petit')),
+                           ('nadia', ('nadia', 'benali')), ('marc', ('marc',)), ('karim', ('karim',))):
+            m.update(_found(key, named(*words), stage))
+        thomas = named('thomas', 'lefèvre', 'lefevre')
+        m.update(_found('thomas', thomas, stage))
+        m['thomas_role'] = (thomas or {}).get('role') or ''
+        m['thomas_not_decision_maker'] = bool(thomas) and thomas.get('role') != 'DECISION_MAKER'
         controleur = _first(signals, lambda s: 'contr' in _text(s, 'full_name', 'notes', 'source_quote')
                             and 'gestion' in _text(s, 'full_name', 'notes', 'source_quote'))
         m.update(_found('controleur', controleur, stage))
+        department = ((controleur or {}).get('department') or '').strip()
+        m['controleur_department'] = department
+        m['controleur_department_finance'] = department.lower() == FINANCE.lower()
         # Server identity rule (_build_people_data): no contact, no name and no
-        # resolvable department -> dropped.
+        # resolvable department -> dropped. Approximated without the DB: exact
+        # StandardDepartment value (the server also accepts an unambiguous word).
         m['controleur_has_identity'] = bool(controleur) and bool(
             (controleur.get('full_name') or '').strip()
-            or resolve_person_department(controleur.get('department'))
+            or department.lower() in {v.lower() for v in DEPARTMENTS}
         )
         m['seller_entries'] = sum(1 for s in signals if _who(s.get('full_name')) == 'Julien (seller)'
                                   or 'sophie' in name(s) or 'garnier' in name(s))
+        m['roles'] = '; '.join(f"{s.get('full_name')}={s.get('role')}" for s in signals)
         m['names'] = '; '.join(str(s.get('full_name')) for s in signals)
         m['total_entries'] = len(signals)
     elif stage == 'pain_impact':
         pains = parsed.get('pains') if isinstance(parsed, dict) and isinstance(parsed.get('pains'), list) else []
         impacts = parsed.get('impacts') if isinstance(parsed, dict) and isinstance(parsed.get('impacts'), list) else []
         etp = lambda s: any(k in _text(s, 'source_quote') for k in ('quatre-vingts', 'temps plein', '80'))  # noqa: E731
-        m.update(_found('impact_2etp', _first(impacts, etp), 'impact'))
+        i2 = _first(impacts, etp)
+        m.update(_found('impact_2etp', i2, 'impact'))
+        m['impact_2etp_metric_text'] = bool(i2 and str(i2.get('metric_text') or '').strip())
+        m['impact_2etp_metric_text_value'] = str((i2 or {}).get('metric_text') or '')
         m['etp_in_pains_instead'] = _first(pains, etp) is not None
         i18 = _first(impacts, lambda s: 'dix-huit' in _text(s, 'source_quote') or '18' in _text(s, 'source_quote'))
         m.update(_found('impact_18', i18, 'impact'))
-        m['impact_18_metric_text_in_raw'] = bool(i18 and i18.get('metric_text'))
+        m['impact_18_metric_text'] = bool(i18 and str(i18.get('metric_text') or '').strip())
+        m['impact_18_metric_text_value'] = str((i18 or {}).get('metric_text') or '')
         m['total_pains'] = len(pains)
         m['total_impacts'] = len(impacts)
     elif stage == 'objective':
@@ -416,6 +438,10 @@ def _atelier_metrics(stage, parsed):
         adoption = _first(signals, lambda s: 'utilisent pas' in _text(s, 'source_quote')
                           or 'adoption' in _text(s, 'source_quote', 'summary'))
         m.update(_found('blocker_adoption', adoption, stage))
+        hosting = _first(signals, lambda s: 'bloquera' in _text(s, 'source_quote')
+                         or 'hébergement' in _text(s, 'source_quote'))
+        m.update(_found('blocker_hosting_threat', hosting, stage))
+        m['raised_by'] = '; '.join(str(s.get('raised_by_name')) for s in signals)
         m['total_entries'] = len(signals)
     if isinstance(parsed, dict):
         entries = [s for key in ('signals', 'pains', 'impacts') for s in (parsed.get(key) or [])
