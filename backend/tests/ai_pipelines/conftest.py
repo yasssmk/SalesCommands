@@ -151,9 +151,11 @@ class FakeProvider:
     # PROVIDER INTERFACE
     # -------------------------------------------------------------------------
 
-    def call(self, *, system, user, temperature, model, max_tokens, timeout_s):
+    def call(self, *, system, user, temperature, model, max_tokens, timeout_s, **extra):
         """
-        Matches LLMProvider.call(...) signature.
+        Matches LLMProvider.call(...) signature (TD-279 P0: the optional
+        response_schema / reasoning_effort arrive in **extra, recorded as
+        sent -- empty for a default call).
 
         Returns:
             LLMCallResult with the canned content for the inferred stage.
@@ -174,6 +176,7 @@ class FakeProvider:
             'model':       model,
             'max_tokens':  max_tokens,
             'timeout_s':   timeout_s,
+            'extra':       extra,
         }
         self.calls.append(call_record)
 

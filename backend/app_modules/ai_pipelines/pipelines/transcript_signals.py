@@ -129,6 +129,7 @@ an import cycle if a future refactor has F.3 reading pipeline class
 attributes.
 """
 
+from .. import config as ai_config
 from ..constants import (
     AIPipelineStatus,
     AIPipelineType,
@@ -220,6 +221,24 @@ _STAGES = [
     # they are not emitted again (one role per person per decision cycle).
     ('people', build_people_request),
 ]
+
+
+def check_stage_names(stage_provider):
+    """
+    TD-279 P1 sanity check: config.STAGE_PROVIDER may only name stages of
+    this pipeline (a typo would silently fall back to the default model).
+    Raises ImportError so a misconfiguration fails at Django startup.
+    """
+    known = {name for name, _ in _STAGES}
+    unknown = sorted(set(stage_provider) - known)
+    if unknown:
+        raise ImportError(
+            f'AI Pipelines configuration error: AI_PIPELINES_STAGE_PROVIDER '
+            f'names unknown stage(s) {unknown}. Known stages: {sorted(known)}.'
+        )
+
+
+check_stage_names(ai_config.STAGE_PROVIDER)
 
 
 class QualificationSignalsPipeline(BasePipeline):
@@ -314,6 +333,8 @@ class QualificationSignalsPipeline(BasePipeline):
                             system_prompt=SYSTEM_PROMPT,
                             context=context_layer,
                             request=request_layer,
+                            # Model per stage (TD-279 P1): None -> default.
+                            provider_key=ai_config.STAGE_PROVIDER.get(stage_name),
                         )
 
                         if stage_name == 'pain_impact':

@@ -86,11 +86,12 @@ from abc import ABC, abstractmethod
 import hashlib
 import logging
 
+from .. import config as ai_config
 from ..config import ACTIVE_PROVIDER, get_active_provider_config
 from ..constants import AIPipelineStatus
 from ..models import AIPipelineRun
 from ..prompts.base import PromptBuilder, PromptParseError
-from ..providers import get_active_provider
+from ..providers import get_active_provider, get_provider
 
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,9 @@ class BasePipeline(ABC):
                 f'{self.__class__.__name__} must define PROMPT_VERSIONS.'
             )
 
+        # An injected provider (tests, eval script) serves EVERY stage, each
+        # still with its own config (model per stage, TD-279 P1).
+        self._provider_injected = provider is not None
         self.provider = provider or get_active_provider()
         self._provider_config = get_active_provider_config()
 
@@ -173,6 +177,9 @@ class BasePipeline(ABC):
             pipeline_type=self.PIPELINE_TYPE,
             prompt_versions=dict(self.PROMPT_VERSIONS),
             provider=ACTIVE_PROVIDER,
+            # The DEFAULT model of the run. A stage mapped to another entry
+            # (config.STAGE_PROVIDER, TD-279 P1) is not reflected here: the
+            # real model of each call is sub_calls[].model_used.
             model_name=self._provider_config['model'],
             temperature=self.TEMPERATURE,
             source_activity=source_activity,
@@ -272,7 +279,7 @@ class BasePipeline(ABC):
     # =========================================================================
 
     def _call_llm(self, *, system_prompt, context, request,
-                  max_tokens=None, timeout_s=None):
+                  max_tokens=None, timeout_s=None, provider_key=None):
         """
         One LLM call with one parse retry on PromptParseError.
 
@@ -294,6 +301,11 @@ class BasePipeline(ABC):
             request:       str -- the request layer (from <stage>_v1.py).
             max_tokens:    int -- defaults to provider config max_tokens.
             timeout_s:     int -- defaults to provider config timeout_s.
+            provider_key:  str -- OPTIONAL PROVIDER_CONFIG key (model per
+                           stage, TD-279 P1). None -> the active provider and
+                           config, i.e. EXACTLY the pre-P1 call. Its
+                           `reasoning_effort` is sent and temperature is then
+                           None (not sent).
 
         Returns:
             tuple (parsed_content, sub_call_meta)
@@ -307,10 +319,19 @@ class BasePipeline(ABC):
                                limit, auth, generic) -- propagated
                                untouched. The caller decides what to do.
         """
+        provider, provider_config = self._resolve_provider(provider_key)
         if max_tokens is None:
-            max_tokens = self._provider_config['max_tokens']
+            max_tokens = provider_config['max_tokens']
         if timeout_s is None:
-            timeout_s = self._provider_config['timeout_s']
+            timeout_s = provider_config['timeout_s']
+
+        # Reasoning mode (TD-279 P0/P1): driven by the config entry only.
+        call_options = {'temperature': self.TEMPERATURE}
+        if provider_config.get('reasoning_effort'):
+            call_options = {
+                'temperature': None,
+                'reasoning_effort': provider_config['reasoning_effort'],
+            }
 
         sys_text, user_text = PromptBuilder.assemble(
             system=system_prompt,
@@ -319,13 +340,13 @@ class BasePipeline(ABC):
         )
 
         # --- Attempt 1 ---
-        result_1 = self.provider.call(
+        result_1 = provider.call(
             system=sys_text,
             user=user_text,
-            temperature=self.TEMPERATURE,
-            model=self._provider_config['model'],
+            model=provider_config['model'],
             max_tokens=max_tokens,
             timeout_s=timeout_s,
+            **call_options,
         )
 
         try:
@@ -351,18 +372,34 @@ class BasePipeline(ABC):
             f"Re-emit the response now."
         )
 
-        result_2 = self.provider.call(
+        result_2 = provider.call(
             system=sys_text,
             user=corrective_user,
-            temperature=self.TEMPERATURE,
-            model=self._provider_config['model'],
+            model=provider_config['model'],
             max_tokens=max_tokens,
             timeout_s=timeout_s,
+            **call_options,
         )
 
         # If this still raises PromptParseError, propagate to caller.
         parsed = PromptBuilder.parse_response(result_2.content)
         return parsed, self._meta_from_result(result_2, attempt=2)
+
+    def _resolve_provider(self, provider_key):
+        """
+        (provider instance, config entry) for one call (TD-279 P1).
+
+        None -> the pipeline's provider and the active config (pre-P1
+        behaviour). A key -> its PROVIDER_CONFIG entry; the instance comes
+        from providers.get_provider() (cached), unless a provider was
+        injected into the pipeline, which then serves every stage.
+        """
+        if provider_key is None:
+            return self.provider, self._provider_config
+        provider_config = ai_config.PROVIDER_CONFIG[provider_key]
+        if self._provider_injected:
+            return self.provider, provider_config
+        return get_provider(provider_key), provider_config
 
     @staticmethod
     def _meta_from_result(llm_result, *, attempt):

@@ -54,8 +54,8 @@ Usage (from backend/, with the usual .env holding OPENAI_API_KEY):
   python evals/td279/run_attribution_eval.py --only atelier_people atelier_pain_impact \
       atelier_objective atelier_techstack atelier_blocker   # the atelier audit
   python evals/td279/run_attribution_eval.py --n 3 --only people_V0
-  python evals/td279/run_attribution_eval.py --n 20 --model claude-haiku-4-5-20251001 \
-      --only people_V0 people_WITNESS atelier_people   # another DECLARED model
+  python evals/td279/run_attribution_eval.py --n 20 --model gpt-5.6-terra \
+      --only people_V0 people_WITNESS atelier_people   # the People challenger
   python evals/td279/run_attribution_eval.py --dry-run       # no API call
 """
 
@@ -100,10 +100,7 @@ from app_modules.ai_pipelines.prompts.transcript_signals.system import (  # noqa
     SYSTEM_PROMPT,
 )
 from app_modules.ai_pipelines import config as ai_config  # noqa: E402
-from app_modules.ai_pipelines.providers import (  # noqa: E402
-    _PROVIDER_REGISTRY,
-    get_active_provider,
-)
+from app_modules.ai_pipelines.providers import get_provider  # noqa: E402
 from app_modules.ai_pipelines.providers.base import LLMCallResult  # noqa: E402
 from app_modules.ai_pipelines.services import participant_refs  # noqa: E402
 from app_modules.ai_pipelines.services.safety_filter import passes_safety_filter  # noqa: E402
@@ -116,7 +113,7 @@ from app_modules.core_modules.models import StandardDepartment  # noqa: E402
 # =============================================================================
 
 # --model choices: ONLY the models declared in the repo config (never invented)
-# -> provider key.
+# -> PROVIDER_CONFIG key.
 MODELS = {cfg['model']: key for key, cfg in ai_config.PROVIDER_CONFIG.items()}
 
 DEPARTMENTS = StandardDepartment.DepartmentChoices.values
@@ -216,6 +213,7 @@ class RecordingProvider:
             'model': kwargs.get('model'),
             'temperature': kwargs.get('temperature'),
             'max_tokens': kwargs.get('max_tokens'),
+            'reasoning_effort': kwargs.get('reasoning_effort'),
             'raw_response': result.content,
             'model_used': result.model_used,
             'input_tokens': result.input_tokens,
@@ -477,8 +475,18 @@ def _signals(parsed):
 # RUN
 # =============================================================================
 
-def run_variant(name, n, out_dir, provider, tenant_name, provider_config=None):
+def _provider_key(stage, forced_key):
+    """The PROVIDER_CONFIG entry of the call: --model, else the production
+    model-per-stage setting (config.STAGE_PROVIDER, TD-279 P1), else None
+    (the active provider)."""
+    return forced_key or ai_config.STAGE_PROVIDER.get(stage)
+
+
+def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
     stage, transcript_key = VARIANTS[name]
+    provider_key = _provider_key(stage, forced_key)
+    provider = DryRunProvider() if dry_run else get_provider(provider_key or ai_config.ACTIVE_PROVIDER)
+    model = ai_config.PROVIDER_CONFIG[provider_key or ai_config.ACTIVE_PROVIDER]['model']
     transcript = TRANSCRIPTS[transcript_key].read_text(encoding='utf-8')
     activity = _activity(tenant_name, CONVERSATION_DATES[transcript_key])
     context = _context(activity, stage)
@@ -490,15 +498,13 @@ def run_variant(name, n, out_dir, provider, tenant_name, provider_config=None):
     for index in range(1, n + 1):
         recorder = RecordingProvider(provider)
         pipeline = QualificationSignalsPipeline(provider=recorder)
-        if provider_config is not None:
-            # --model: the declared config of another provider (script only).
-            pipeline._provider_config = provider_config
         record = {'variant': name, 'call': index, 'stage': stage,
-                  'transcript': transcript_key,
+                  'transcript': transcript_key, 'provider_key': provider_key, 'model': model,
                   'prompt_versions': dict(QualificationSignalsPipeline.PROMPT_VERSIONS)}
         try:
             parsed, meta = pipeline._call_llm(
                 system_prompt=SYSTEM_PROMPT, context=context, request=request,
+                provider_key=provider_key,
             )
             record['meta'] = meta
             record['error'] = None
@@ -618,8 +624,10 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='no API call')
     parser.add_argument(
         '--model', choices=sorted(MODELS),
-        help='run with another model DECLARED in ai_pipelines/config.py '
-             'PROVIDER_CONFIG (default: the active provider\'s model)',
+        help='force a model DECLARED in ai_pipelines/config.py PROVIDER_CONFIG '
+             '(e.g. the People challenger) for every variant run; default: the '
+             'production model per stage (config.STAGE_PROVIDER, else the '
+             'active provider)',
     )
     args = parser.parse_args()
 
@@ -630,20 +638,17 @@ def main():
         sys.exit(f'Output folder {out_dir} is not empty -- choose another --out.')
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    provider_config = None
-    if args.model:
-        provider_key = MODELS[args.model]
-        provider_config = ai_config.PROVIDER_CONFIG[provider_key]
-    if args.dry_run:
-        provider = DryRunProvider()
-    elif args.model:
-        provider = _PROVIDER_REGISTRY[provider_key]()
-    else:
-        provider = get_active_provider()
-    model_used = (provider_config or ai_config.get_active_provider_config())['model']
+    forced_key = MODELS[args.model] if args.model else None
+    names = args.only or list(VARIANTS)
+    models_used = {
+        name: ai_config.PROVIDER_CONFIG[
+            _provider_key(VARIANTS[name][0], forced_key) or ai_config.ACTIVE_PROVIDER
+        ]['model']
+        for name in names
+    }
     rows = []
-    for name in args.only or list(VARIANTS):
-        rows.extend(run_variant(name, args.n, out_dir, provider, args.tenant_name, provider_config))
+    for name in names:
+        rows.extend(run_variant(name, args.n, out_dir, args.dry_run, args.tenant_name, forced_key))
 
     fields = sorted({key for row in rows for key in row}, key=lambda k: (k not in ('variant', 'call'), k))
     with open(out_dir / 'summary.csv', 'w', newline='', encoding='utf-8') as handle:
@@ -653,7 +658,7 @@ def main():
     recap = _recap(rows)
     (out_dir / 'summary.md').write_text(
         '# TD-279 — récap\n\n'
-        f'Modèle : {model_used}\n\n'
+        f'Modèle par variante : {json.dumps(models_used)}\n\n'
         f'Versions : {json.dumps(QualificationSignalsPipeline.PROMPT_VERSIONS)}\n\n'
         + '\n'.join(recap) + '\n', encoding='utf-8',
     )

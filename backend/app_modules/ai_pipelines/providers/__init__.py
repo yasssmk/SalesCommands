@@ -84,6 +84,10 @@ _PROVIDER_REGISTRY = {
 
 _active_provider_instance: LLMProvider | None = None
 
+# TD-279 P1: instances of the NON-active provider classes, keyed by provider
+# class key (one SDK client per provider, shared by every config entry).
+_provider_instances: dict[str, LLMProvider] = {}
+
 
 # =============================================================================
 # FACTORY
@@ -139,6 +143,32 @@ def reset_provider_cache() -> None:
     """
     global _active_provider_instance
     _active_provider_instance = None
+    _provider_instances.clear()
+
+
+def get_provider(config_key: str) -> LLMProvider:
+    """
+    TD-279 P1: the provider instance for a PROVIDER_CONFIG entry (model per
+    stage). The entry's optional `provider` names the provider class (default:
+    the entry key). The active provider class reuses the get_active_provider()
+    singleton; any other class is instantiated once and cached.
+
+    Raises:
+        KeyError on an unknown entry or an unregistered provider class.
+    """
+    provider_key = config.PROVIDER_CONFIG[config_key].get('provider', config_key)
+    if provider_key == config.ACTIVE_PROVIDER:
+        return get_active_provider()
+    if provider_key not in _provider_instances:
+        provider_class = _PROVIDER_REGISTRY.get(provider_key)
+        if provider_class is None:
+            raise KeyError(
+                f"PROVIDER_CONFIG['{config_key}'] uses provider '{provider_key}', "
+                f"not registered in providers/__init__.py. "
+                f"Registered: {sorted(_PROVIDER_REGISTRY.keys())}."
+            )
+        _provider_instances[provider_key] = provider_class()
+    return _provider_instances[provider_key]
 
 
 # =============================================================================
@@ -148,6 +178,7 @@ def reset_provider_cache() -> None:
 __all__ = [
     # Factory
     'get_active_provider',
+    'get_provider',
     'reset_provider_cache',
     # Abstract base + return type
     'LLMProvider',
