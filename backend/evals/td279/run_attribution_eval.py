@@ -54,6 +54,8 @@ Usage (from backend/, with the usual .env holding OPENAI_API_KEY):
   python evals/td279/run_attribution_eval.py --only atelier_people atelier_pain_impact \
       atelier_objective atelier_techstack atelier_blocker   # the atelier audit
   python evals/td279/run_attribution_eval.py --n 3 --only people_V0
+  python evals/td279/run_attribution_eval.py --n 20 --model claude-haiku-4-5-20251001 \
+      --only people_V0 people_WITNESS atelier_people   # another DECLARED model
   python evals/td279/run_attribution_eval.py --dry-run       # no API call
 """
 
@@ -97,7 +99,11 @@ from app_modules.ai_pipelines.prompts.transcript_signals.techstack_v1 import (  
 from app_modules.ai_pipelines.prompts.transcript_signals.system import (  # noqa: E402
     SYSTEM_PROMPT,
 )
-from app_modules.ai_pipelines.providers import get_active_provider  # noqa: E402
+from app_modules.ai_pipelines import config as ai_config  # noqa: E402
+from app_modules.ai_pipelines.providers import (  # noqa: E402
+    _PROVIDER_REGISTRY,
+    get_active_provider,
+)
 from app_modules.ai_pipelines.providers.base import LLMCallResult  # noqa: E402
 from app_modules.ai_pipelines.services import participant_refs  # noqa: E402
 from app_modules.ai_pipelines.services.safety_filter import passes_safety_filter  # noqa: E402
@@ -108,6 +114,10 @@ from app_modules.core_modules.models import StandardDepartment  # noqa: E402
 # =============================================================================
 # TEST CASE (TD-279 smoke, activity 5b53de3d)
 # =============================================================================
+
+# --model choices: ONLY the models declared in the repo config (never invented)
+# -> provider key.
+MODELS = {cfg['model']: key for key, cfg in ai_config.PROVIDER_CONFIG.items()}
 
 DEPARTMENTS = StandardDepartment.DepartmentChoices.values
 FINANCE = StandardDepartment.DepartmentChoices.FINANCE.value
@@ -367,7 +377,7 @@ def _found(prefix, raw, stage):
     }
 
 
-def _atelier_metrics(stage, parsed):
+def _atelier_metrics(stage, parsed, activity=None):
     m = {}
     if stage == 'people':
         signals = _signals(parsed)
@@ -375,7 +385,12 @@ def _atelier_metrics(stage, parsed):
         named = lambda *keys: _first(signals, lambda s: any(k in name(s) for k in keys))  # noqa: E731
         for key, words in (('isabelle', ('isabelle', 'roux')), ('laurent', ('laurent', 'petit')),
                            ('nadia', ('nadia', 'benali')), ('marc', ('marc',)), ('karim', ('karim',))):
-            m.update(_found(key, named(*words), stage))
+            person = named(*words)
+            m.update(_found(key, person, stage))
+            if key in ('isabelle', 'marc'):
+                m[f'{key}_role'] = (person or {}).get('role') or ''
+        if activity is not None:
+            m['linked_to_criminelle'] = sum(1 for s in signals if _linked(s.get('full_name'), activity))
         thomas = named('thomas', 'lefèvre', 'lefevre')
         m.update(_found('thomas', thomas, stage))
         m['thomas_role'] = (thomas or {}).get('role') or ''
@@ -462,7 +477,7 @@ def _signals(parsed):
 # RUN
 # =============================================================================
 
-def run_variant(name, n, out_dir, provider, tenant_name):
+def run_variant(name, n, out_dir, provider, tenant_name, provider_config=None):
     stage, transcript_key = VARIANTS[name]
     transcript = TRANSCRIPTS[transcript_key].read_text(encoding='utf-8')
     activity = _activity(tenant_name, CONVERSATION_DATES[transcript_key])
@@ -475,6 +490,9 @@ def run_variant(name, n, out_dir, provider, tenant_name):
     for index in range(1, n + 1):
         recorder = RecordingProvider(provider)
         pipeline = QualificationSignalsPipeline(provider=recorder)
+        if provider_config is not None:
+            # --model: the declared config of another provider (script only).
+            pipeline._provider_config = provider_config
         record = {'variant': name, 'call': index, 'stage': stage,
                   'transcript': transcript_key,
                   'prompt_versions': dict(QualificationSignalsPipeline.PROMPT_VERSIONS)}
@@ -491,7 +509,7 @@ def run_variant(name, n, out_dir, provider, tenant_name):
         record['parsed'] = parsed
         signals = _signals(parsed)
         if transcript_key == 'atelier':
-            metrics = _atelier_metrics(stage, parsed)
+            metrics = _atelier_metrics(stage, parsed, activity)
         elif stage == 'people':
             metrics = _people_metrics(signals, transcript, activity)
         else:
@@ -598,6 +616,11 @@ def main():
     parser.add_argument('--out', default=None, help='output folder')
     parser.add_argument('--tenant-name', default='SalesCommands')
     parser.add_argument('--dry-run', action='store_true', help='no API call')
+    parser.add_argument(
+        '--model', choices=sorted(MODELS),
+        help='run with another model DECLARED in ai_pipelines/config.py '
+             'PROVIDER_CONFIG (default: the active provider\'s model)',
+    )
     args = parser.parse_args()
 
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -607,10 +630,20 @@ def main():
         sys.exit(f'Output folder {out_dir} is not empty -- choose another --out.')
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    provider = DryRunProvider() if args.dry_run else get_active_provider()
+    provider_config = None
+    if args.model:
+        provider_key = MODELS[args.model]
+        provider_config = ai_config.PROVIDER_CONFIG[provider_key]
+    if args.dry_run:
+        provider = DryRunProvider()
+    elif args.model:
+        provider = _PROVIDER_REGISTRY[provider_key]()
+    else:
+        provider = get_active_provider()
+    model_used = (provider_config or ai_config.get_active_provider_config())['model']
     rows = []
     for name in args.only or list(VARIANTS):
-        rows.extend(run_variant(name, args.n, out_dir, provider, args.tenant_name))
+        rows.extend(run_variant(name, args.n, out_dir, provider, args.tenant_name, provider_config))
 
     fields = sorted({key for row in rows for key in row}, key=lambda k: (k not in ('variant', 'call'), k))
     with open(out_dir / 'summary.csv', 'w', newline='', encoding='utf-8') as handle:
@@ -620,6 +653,7 @@ def main():
     recap = _recap(rows)
     (out_dir / 'summary.md').write_text(
         '# TD-279 — récap\n\n'
+        f'Modèle : {model_used}\n\n'
         f'Versions : {json.dumps(QualificationSignalsPipeline.PROMPT_VERSIONS)}\n\n'
         + '\n'.join(recap) + '\n', encoding='utf-8',
     )
