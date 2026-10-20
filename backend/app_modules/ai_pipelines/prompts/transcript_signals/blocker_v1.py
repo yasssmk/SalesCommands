@@ -133,7 +133,12 @@ __all__ = ['BLOCKER_PROMPT_VERSION', 'build_blocker_request']
 # (the speaker's name as written, linked by the server); the "exactly ONE
 # listed participant -> P1" rule is removed. Patch measured by the B2 eval
 # (blocker_noP) and validated by the PO, plus the "never the seller" line.
-BLOCKER_PROMPT_VERSION = 'v3'
+# v4 (TD-279 C6): a blocker is what STOPS the deal today OR what can SLOW it --
+# a concern, an objection or a future risk the PROSPECT expresses (adoption,
+# resistance to change, doubt on an integration), always said, never imagined;
+# a firm requirement stays a CONSTRAINT, the blocking threat that follows from
+# it is a blocker. raised_by_name unchanged.
+BLOCKER_PROMPT_VERSION = 'v4'
 
 
 def build_blocker_request(transcript):
@@ -157,7 +162,15 @@ Extract BLOCKER signals from the SALES TRANSCRIPT below.
 A blocker signal is structured evidence that the prospect raised an
 OBSTACLE, OBJECTION, HESITATION, MISSING INFORMATION, BUDGET CONCERN,
 TIMING CONSTRAINT, STAKEHOLDER ISSUE, or any other concrete impediment
-that stands in the way of moving the deal forward.
+that stands in the way of moving the deal forward -- what STOPS the deal
+today OR what can SLOW it: a concern, an objection or a future risk the
+PROSPECT expresses (adoption by the users, resistance to change, doubt
+about an integration...).
+- A risk is emitted ONLY when the PROSPECT says it in the transcript --
+  never a risk you imagine yourself (a new tool MAY face low adoption, but
+  emit it only if a prospect raises that concern).
+  "half of our technicians will never open a new app" -> BLOCKER (an
+  adoption risk the prospect states).
 
 Blocker vs. Pain (important distinction)
 - A PAIN is a "things are broken in our current state" statement about
@@ -176,9 +189,16 @@ Blocker vs. Pain (important distinction)
 Blocker vs. Objective (important distinction)
 - An OBJECTIVE is a "we want to achieve" statement (captured in a separate
   sub-call -- do NOT emit objectives here).
-- A BLOCKER is what currently STOPS the deal from progressing. The two
-  are conceptually opposite: an objective pulls the deal forward, a
-  blocker holds it back.
+- A BLOCKER is what stops or slows the deal. The two are conceptually
+  opposite: an objective pulls the deal forward, a blocker holds it back.
+
+Blocker vs. Constraint (important distinction)
+- A firm REQUIREMENT the solution must meet is a CONSTRAINT (captured in a
+  separate sub-call -- do NOT emit it here); the THREAT of blocking the deal
+  that follows from it is a BLOCKER (emit it here, on its own quote).
+  "the contract must be governed by French law" -> CONSTRAINT (not here)
+  "if the contract is not under French law, our legal team will stop
+  everything" -> BLOCKER
 
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:

@@ -292,6 +292,6 @@ class TestPromptsWithoutReferences:
             PEOPLE_PROMPT_VERSION,
         )
         assert PEOPLE_PROMPT_VERSION == 'v7'
-        assert BLOCKER_PROMPT_VERSION == 'v3'
+        assert BLOCKER_PROMPT_VERSION == 'v4'
         assert CONTEXT_VERSION == 'v8'
         assert next_steps_context.CONTEXT_VERSION == 'v4'
