@@ -6,7 +6,9 @@ v3 -- People S6: department strictly from what is said of the person;
 v4 -- no list of the persons already known in the deal;
 v5 -- TD-279: a listed contact is evidence of nothing, attribution only on
 evidence about THAT participant;
-v6 -- TD-279 B4b: no participant reference, names as written).
+v6 -- TD-279 B4b: no participant reference, names as written;
+v7 -- TD-279 C5: speakers always extracted, role from what is said of them,
+seller side = the solution, department from the job title).
 
 This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
@@ -91,13 +93,20 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'build_people_request']
 # RULES and every mention of a participant list are removed; full_name is the
 # name as written and the SERVER links it to a registered contact. Patch
 # measured by the B2 eval (people_noP) and validated by the PO.
-PEOPLE_PROMPT_VERSION = 'v6'
+# v7 (TD-279 C5): every prospect SPEAKER is extracted (the weight rule only
+# concerns cited persons); a speaker's role rests only on what is said of THEM
+# (the NEVER transfer rule applies to the speaker); the seller side is whoever
+# presents / sells THE SOLUTION -- a prospect presenting the project internally
+# stays prospect; an unnamed cited person's department comes from the job title.
+PEOPLE_PROMPT_VERSION = 'v7'
 
 # Codes / names quoted in the worked examples, taken from the enums.
 _ECONOMIC_BUYER = PeopleRole.ECONOMIC_BUYER.value
 _DECISION_MAKER = PeopleRole.DECISION_MAKER.value
 _ROLE_PROCUREMENT = PeopleRole.PROCUREMENT.value
 _DEPT_GENERAL_MANAGEMENT = StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT.value
+_DEPT_HR = StandardDepartment.DepartmentChoices.HR.value
+_DEPT_LOGISTICS = StandardDepartment.DepartmentChoices.LOGISTICS.value
 _DEPT_FINANCE = StandardDepartment.DepartmentChoices.FINANCE.value
 _DEPT_PROCUREMENT = StandardDepartment.DepartmentChoices.PROCUREMENT.value
 _DEPT_SALES = StandardDepartment.DepartmentChoices.SALES.value
@@ -123,12 +132,16 @@ approval, a sign-off, a validation, a meeting to hold with them).
 
 WHO TO EXTRACT
 - Persons PRESENT in the conversation: every PROSPECT-side person who SPEAKS
-  in the transcript (a speaker label such as "Claire Dubois: ...").
+  in the transcript (a speaker label such as "Claire Dubois: ...") is ALWAYS
+  extracted -- even when they say they do not decide. The weight rule of
+  DO NOT emit never applies to a speaker.
 - `full_name` = the person's name exactly as written in the transcript:
   the speaker label for a person who speaks, the name as cited otherwise.
 - Persons only CITED but absent ("our CFO Marc will decide").
 - A cited person without a name ("our CFO") is STILL extracted:
-  full_name = null, with the department when it can be identified.
+  full_name = null, with the department deduced from their job title when it
+  is said ("our HR director" -> department "{_DEPT_HR}", "the logistics
+  manager" -> department "{_DEPT_LOGISTICS}").
 - Examples:
   * "The final decision maker is the CEO, who has to approve the quote"
     -> the CEO, role "{_ECONOMIC_BUYER}", department "{_DEPT_GENERAL_MANAGEMENT}".
@@ -140,10 +153,13 @@ WHO TO EXTRACT
 DO NOT emit
 - Anyone from the SELLER organization named in the SESSION CONTEXT (the
   seller's account executive, colleagues, solution engineers, managers):
-  prospect side ONLY. The person who presents or sells the solution, and
-  their colleagues, are on the SELLER side even when their organization is
-  not named next to their name.
-- A person with no observable weight in the decision and no step to clear.
+  prospect side ONLY. The SELLER side is the person who presents or sells
+  THE SOLUTION being offered (the Seller organization of the SESSION
+  CONTEXT), and their colleagues, even when their organization is not named
+  next to their name. A prospect who presents THE PROJECT internally (to
+  their management, to a committee) stays on the PROSPECT side.
+- A CITED person (who does not speak) with no observable weight in the
+  decision and no step to clear.
 
 OUTPUT SCHEMA
 Return a single JSON object with this exact shape:
@@ -186,6 +202,13 @@ EMISSION RULES
 - NEVER transfer to one person what the transcript says about ANOTHER named
   person: "Paul Martin, our head of IT, signs off on security" describes Paul
   Martin only -- never another person, never the speaker.
+- The role of a SPEAKER rests ONLY on what the transcript says about THIS
+  speaker (what they say about themselves, what others say about them) --
+  never on what they say about other persons: the NEVER transfer rule above
+  applies to the speaker too. A speaker who says "our managing director will
+  sign" does not become the decision maker -- the managing director does.
+  When nothing states the speaker's role, pick the best-supported role with
+  `is_inferred` = true and an honest `confidence`.
 - A DEDUCTION from what the transcript says is allowed (e.g. a role implied
   by what a named person decides or does); a conclusion with NO evidence in
   the transcript is not.

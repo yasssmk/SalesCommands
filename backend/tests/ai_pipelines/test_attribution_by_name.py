@@ -291,7 +291,7 @@ class TestPromptsWithoutReferences:
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v6'
+        assert PEOPLE_PROMPT_VERSION == 'v7'
         assert BLOCKER_PROMPT_VERSION == 'v3'
         assert CONTEXT_VERSION == 'v8'
         assert next_steps_context.CONTEXT_VERSION == 'v4'

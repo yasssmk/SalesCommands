@@ -100,7 +100,7 @@ class TestPeoplePersistence:
     ):
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
-        assert result['run'].prompt_versions['people'] == 'v6'
+        assert result['run'].prompt_versions['people'] == 'v7'
         # v4 = Sprint TechStack T0 (techstack usage taxonomy); v5 = T4b
         # (shared "Conversation date" line + techstack header); v6 = no list
         # of the persons already known in the deal (people P2); v7 = contacts
@@ -434,7 +434,8 @@ class TestPeoplePromptV2:
 
     def test_seller_side_rule_present(self):
         prompt = self._prompt()
-        assert 'presents or sells the solution' in prompt
+        # Wording "THE SOLUTION" since v7 (TD-279 C5).
+        assert 'presents or sells THE SOLUTION' in prompt
         assert 'even when their organization is not named' in prompt
 
     def test_people_taxonomy_header_has_no_omission_rule(self, activity):
@@ -519,10 +520,62 @@ class TestPeoplePromptAttributionRules:
 
     def test_examples_do_not_reuse_the_td279_smoke(self):
         # TD-273: an example taken from the smoke would no longer measure
-        # generalisation (B2 runs on that very transcript).
-        prompt = self._prompt()
-        for smoke_word in ('Isabelle', 'Criminelle', 'Logistix', 'DAF'):
+        # generalisation (B2 runs on that very transcript). Rendered with a
+        # neutral transcript so only the prompt's own text is checked.
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            build_people_request,
+        )
+        prompt = ' '.join(build_people_request('TRANSCRIPT').split())
+        for smoke_word in ('Isabelle', 'Criminelle', 'Logistix', 'DAF',
+                           # "atelier business case" smoke (TD-279 C5)
+                           'Thomas', 'Nadia', 'Laurent', 'Sophie', 'Karim',
+                           'Zendesk', 'Gong', 'contrôleur', 'controller'):
             assert smoke_word not in prompt
+
+
+# =============================================================================
+# TD-279 C5 — PROMPT v7: speakers always extracted, their role from what is
+# said of THEM, seller side = the SOLUTION, department from the job title
+# =============================================================================
+
+class TestPeoplePromptV7:
+
+    def _prompt(self):
+        return TestPeoplePromptV3Department()._prompt()
+
+    def test_1_every_prospect_speaker_is_extracted(self):
+        prompt = self._prompt()
+        assert 'is ALWAYS extracted -- even when they say they do not decide' in prompt
+        # The weight rule only concerns cited persons.
+        assert 'A CITED person (who does not speak) with no observable weight' in prompt
+        assert '- A person with no observable weight in the decision' not in prompt
+
+    def test_2_a_speaker_role_rests_only_on_what_is_said_of_them(self):
+        prompt = self._prompt()
+        assert 'The role of a SPEAKER rests ONLY on what the transcript says about THIS speaker' in prompt
+        assert 'the NEVER transfer rule above applies to the speaker too' in prompt
+        assert 'does not become the decision maker' in prompt
+        assert 'pick the best-supported role with `is_inferred` = true' in prompt
+
+    def test_3_seller_side_is_the_solution_not_an_internal_presentation(self):
+        prompt = self._prompt()
+        assert 'presents or sells THE SOLUTION being offered' in prompt
+        assert 'A prospect who presents THE PROJECT internally' in prompt
+        assert 'stays on the PROSPECT side' in prompt
+
+    def test_4_unnamed_cited_person_department_from_job_title(self):
+        from app_modules.core_modules.models import StandardDepartment
+        prompt = self._prompt()
+        choices = StandardDepartment.DepartmentChoices
+        assert 'with the department deduced from their job title when it is said' in prompt
+        assert f'"our HR director" -> department "{choices.HR.value}"' in prompt
+        assert f'"the logistics manager" -> department "{choices.LOGISTICS.value}"' in prompt
+
+    def test_version(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            PEOPLE_PROMPT_VERSION,
+        )
+        assert PEOPLE_PROMPT_VERSION == 'v7'
 
 # =============================================================================
 # P2 — NO KNOWN-PEOPLE LIST in the people context nor in the prompt
@@ -567,7 +620,7 @@ class TestNoKnownPeopleListSentToTheLLM:
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v6'
+        assert PEOPLE_PROMPT_VERSION == 'v7'
         assert CONTEXT_VERSION == 'v8'
 
 
