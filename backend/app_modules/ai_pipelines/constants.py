@@ -192,3 +192,20 @@ PIPELINE_DROP_INFERRED = {
     AIPipelineType.TRANSCRIPT_SIGNALS: False,
     AIPipelineType.NEXT_STEPS:         True,
 }
+
+
+# =============================================================================
+# PEOPLE ROLE IN THE PROMPT PACKS (prep_call / deal_health)
+# =============================================================================
+
+# TD-279 U (PO): a PeopleSignal of role UNKNOWN reaches the prep_call and
+# deal_health packs as a role still to qualify -- never filtered out, never
+# as the bare "UNKNOWN" code (read as "no role" / "no stakeholder").
+PEOPLE_ROLE_TO_QUALIFY = 'role to qualify'
+
+
+def people_role_for_prompt(role):
+    """The PeopleSignal role as sent to an LLM pack: the code, or
+    PEOPLE_ROLE_TO_QUALIFY for UNKNOWN."""
+    from app_modules.signals.constants import PeopleRole
+    return PEOPLE_ROLE_TO_QUALIFY if role == PeopleRole.UNKNOWN else role

@@ -13,7 +13,11 @@ and the diagnostic request layer.
 
 import logging
 
-from app_modules.signals.constants import SignalStatus
+from app_modules.ai_pipelines.constants import (
+    PEOPLE_ROLE_TO_QUALIFY,
+    people_role_for_prompt,
+)
+from app_modules.signals.constants import PeopleRole, SignalStatus
 
 from app_modules.decision_cycles.services.readiness_score_service import (
     ReadinessScoreService,
@@ -107,6 +111,10 @@ class DealHealthEvidenceBuilder:
     @staticmethod
     def _build_people(dc):
         result = PeopleConsolidationService().consolidate(dc)
+        # UNKNOWN is kept (TD-279 U) and shown as a role to qualify.
+        for entry in result['qualified']:
+            if entry['role'] == PeopleRole.UNKNOWN:
+                entry['role_display'] = PEOPLE_ROLE_TO_QUALIFY
         return {
             'qualified': result['qualified'],
             'unqualified_count': len(result['unqualified']),
@@ -334,7 +342,7 @@ class DealHealthEvidenceBuilder:
                 'summary': '',
                 'source_quote': s.source_quote or '',
                 'canonical_key': s.canonical_key,
-                'role': s.role,
+                'role': people_role_for_prompt(s.role),
                 'influence': s.influence or '',
                 'target_department': (
                     s.target_department.get_name_display()

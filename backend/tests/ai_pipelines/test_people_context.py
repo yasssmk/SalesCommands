@@ -88,8 +88,12 @@ class TestPeopleTaxonomy:
 
     def test_all_people_roles_listed(self, activity):
         context = build_context_layer(activity, 'people')
+        # UNKNOWN (TD-279 U) is not offered to the model before step M.
         for code in PeopleRole.values:
-            assert f'"{code}"' in context
+            if code == PeopleRole.UNKNOWN:
+                assert f'"{code}"' not in context
+            else:
+                assert f'"{code}"' in context
 
     def test_signal_influence_levels_listed_not_contact_faux_ami(self, activity):
         context = build_context_layer(activity, 'people')
