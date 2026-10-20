@@ -161,35 +161,36 @@ class TestBlockerStagePersistence:
 
 
 # =============================================================================
-# RAISED BY -- LLM participant reference resolved to a Contact (Objection S3)
+# RAISED BY -- the speaker's name as written, linked by the server (TD-279)
 # =============================================================================
 
-def _blocker_reply(raised_by_json):
-    """One blocker signal whose `raised_by` is the given JSON literal."""
+def _blocker_reply(raised_by_name_json):
+    """One blocker signal whose `raised_by_name` is the given JSON literal."""
     return (
         '{"signals": [{'
         '"summary": "No budget allocated for Q4", '
         '"source_quote": "We have no budget for this in Q4", '
         '"confidence": 0.85, '
         '"is_inferred": false, '
-        f'"raised_by": {raised_by_json}'
+        f'"raised_by_name": {raised_by_name_json}'
         '}]}'
     )
 
 
 class TestBlockerRaisedByAttribution:
     """
-    The context numbers the activity's participants (P1, P2...); the LLM
-    returns the reference in `raised_by`; the server resolves it among the
-    participants (tenant + account filtered). An absent / null / invalid
-    reference leaves contact None -- the signal is ALWAYS persisted.
+    TD-279 B4b: the LLM gets no contact list and returns the speaker's name
+    in `raised_by_name`; the server links it to a contact registered on the
+    activity (tenant + account filtered, an ambiguous name is never linked).
+    An absent / null / unknown name leaves contact None -- the signal is
+    ALWAYS persisted.
     """
 
-    def _run(self, account, activity, user_a, fake_provider, raised_by_json):
+    def _run(self, account, activity, user_a, fake_provider, raised_by_name_json):
         from app_modules.ai_pipelines.pipelines.transcript_signals import (
             QualificationSignalsPipeline,
         )
-        fake_provider.replies = {'blocker': _blocker_reply(raised_by_json)}
+        fake_provider.replies = {'blocker': _blocker_reply(raised_by_name_json)}
         result = QualificationSignalsPipeline().run(
             transcript='Discovery call with Acme. Budget came up at the end.',
             activity=activity,
@@ -201,21 +202,20 @@ class TestBlockerRaisedByAttribution:
         assert len(blockers) == 1
         return blockers[0], fake_provider
 
-    def test_ref_p2_resolves_to_second_participant(
+    def test_speaker_name_links_the_registered_contact(
         self, account, activity, user_a, contact, contact_extra,
         fake_provider, patch_active_provider,
     ):
-        # Doe = P1, Smith = P2 (last_name order).
         activity.contacts.add(contact, contact_extra)
-        signal, provider = self._run(account, activity, user_a, fake_provider, '"P2"')
+        signal, provider = self._run(account, activity, user_a, fake_provider, '"John Smith"')
         signal.refresh_from_db()
         assert signal.contact_id == contact_extra.id
-        # The blocker prompt carried the numbered participants.
+        # The blocker prompt carries no contact list (context v8).
         blocker_prompt = provider.calls_for('blocker')[0]['user']
-        assert 'P1 — Jane (VP Engineering)' in blocker_prompt
-        assert 'P2 — John (CTO)' in blocker_prompt
+        assert 'Prospect contacts' not in blocker_prompt
+        assert 'Jane' not in blocker_prompt
 
-    def test_null_ref_leaves_contact_none(
+    def test_null_name_leaves_contact_none(
         self, account, activity, user_a, contact, contact_extra,
         fake_provider, patch_active_provider,
     ):
@@ -223,24 +223,22 @@ class TestBlockerRaisedByAttribution:
         signal, _ = self._run(account, activity, user_a, fake_provider, 'null')
         assert signal.contact_id is None
 
-    @pytest.mark.parametrize('raised_by_json', ['"P9"', '"Jane"'])
-    def test_invalid_ref_contact_none_signal_persisted(
+    @pytest.mark.parametrize('raised_by_name_json', ['"Marc"', '"P2"'])
+    def test_unknown_name_contact_none_signal_persisted(
         self, account, activity, user_a, contact, contact_extra,
-        fake_provider, patch_active_provider, raised_by_json,
+        fake_provider, patch_active_provider, raised_by_name_json,
     ):
         activity.contacts.add(contact, contact_extra)
-        signal, _ = self._run(account, activity, user_a, fake_provider, raised_by_json)
+        signal, _ = self._run(account, activity, user_a, fake_provider, raised_by_name_json)
         assert signal.contact_id is None
         assert BlockerSignal.objects.filter(id=signal.id).exists()
 
-    def test_ref_to_other_account_participant_is_none(
+    def test_other_account_contact_is_never_linked(
         self, account, activity, user_a, contact, other_account_contact,
         fake_provider, patch_active_provider,
     ):
-        # Unfiltered numbering would be Doe = P1, Lumbergh = P2. Filtered on
-        # the activity's account, Lumbergh is not a participant: P2 is invalid.
         activity.contacts.add(contact, other_account_contact)
-        signal, _ = self._run(account, activity, user_a, fake_provider, '"P2"')
+        signal, _ = self._run(account, activity, user_a, fake_provider, '"Bill Lumbergh"')
         assert signal.contact_id is None
 
 

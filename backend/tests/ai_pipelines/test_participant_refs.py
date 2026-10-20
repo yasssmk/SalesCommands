@@ -1,25 +1,17 @@
 # backend/tests/ai_pipelines/test_participant_refs.py
 """
-Unit tests for services/participant_refs.py (Objection S3) and for the
-participant references rendered in the transcript_signals context layer.
+Unit tests for services/participant_refs.py.
 
   * ordered_participants(activity): activity.contacts filtered on the
-    activity's tenant AND account, ordered last_name, first_name, id --
-    the SINGLE source of the P<n> numbering.
-  * resolve_participant_ref(ref, activity): only a valid "P<n>" within
-    that list resolves; anything else -> None (never guessed).
-  * The context block prefixes each participant line with its reference.
+    activity's tenant AND account, ordered last_name, first_name, id -- the
+    scope resolve_participant_by_name links names in (TD-279; the "P<n>"
+    references and their context lines are gone since B4b, the name link is
+    tested in test_attribution_by_name.py).
 """
 
 import pytest
 
-from app_modules.ai_pipelines.prompts.transcript_signals.context import (
-    build_context_layer,
-)
-from app_modules.ai_pipelines.services.participant_refs import (
-    ordered_participants,
-    resolve_participant_ref,
-)
+from app_modules.ai_pipelines.services.participant_refs import ordered_participants
 
 # Cross-account fixtures (tenant A, second account) -- re-used from the
 # signals conftest, same re-export pattern as tests/ai_pipelines/conftest.py.
@@ -63,61 +55,3 @@ class TestOrderedParticipants:
 
     def test_no_participant_is_empty(self, activity):
         assert ordered_participants(activity) == []
-
-
-# =============================================================================
-# resolve_participant_ref
-# =============================================================================
-
-class TestResolveParticipantRef:
-
-    def test_valid_ref_resolves_to_contact(self, activity, contact, contact_extra):
-        activity.contacts.add(contact, contact_extra)
-        assert resolve_participant_ref('P1', activity) == contact
-        assert resolve_participant_ref('P2', activity) == contact_extra
-
-    @pytest.mark.parametrize('ref', ['P9', 'P0', 'Jane', 123, None, 'p 1', '', 'P-1', 'P1x'])
-    def test_invalid_ref_is_none(self, activity, contact, contact_extra, ref):
-        activity.contacts.add(contact, contact_extra)
-        assert resolve_participant_ref(ref, activity) is None
-
-    def test_other_account_participant_never_resolves(
-        self, activity, contact, other_account_contact,
-    ):
-        # Unfiltered, Lumbergh would be P2 (Doe, Lumbergh). Filtered, the
-        # list is [Doe] only, so P2 does not exist.
-        activity.contacts.add(contact, other_account_contact)
-        assert resolve_participant_ref('P2', activity) is None
-        assert resolve_participant_ref('P1', activity) == contact
-
-    def test_no_participant_resolves_nothing(self, activity):
-        assert resolve_participant_ref('P1', activity) is None
-
-
-# =============================================================================
-# Context layer -- participant references
-# =============================================================================
-
-class TestContextParticipantRefs:
-
-    def test_blocker_context_prefixes_each_participant_with_its_ref(
-        self, activity, contact, contact_extra,
-    ):
-        activity.contacts.add(contact_extra, contact)
-        ctx = build_context_layer(activity, target_stage='blocker')
-        assert '* P1 — Jane (VP Engineering)' in ctx
-        assert '* P2 — John (CTO)' in ctx
-
-    def test_other_account_participant_not_listed(
-        self, activity, contact, other_account_contact,
-    ):
-        activity.contacts.add(contact, other_account_contact)
-        ctx = build_context_layer(activity, target_stage='blocker')
-        assert '* P1 — Jane (VP Engineering)' in ctx
-        assert 'Bill' not in ctx
-        assert 'P2' not in ctx
-
-    def test_no_participant_no_block(self, activity):
-        ctx = build_context_layer(activity, target_stage='blocker')
-        assert 'Prospect contacts' not in ctx
-        assert 'P1' not in ctx

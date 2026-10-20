@@ -4,7 +4,7 @@ Context layer for the next_steps prompt family (Sprint B4).
 
 The NextStepsPipeline is single-stage and carries no canonical
 taxonomy axes. Its context layer therefore reduces to the session
-grounding block (tenant, prospect, activity, contacts) -- enough to
+grounding block (tenant, prospect, activity) -- enough to
 disambiguate "what conversation are we extracting suggestions from?"
 without the taxonomy / techcatalog blocks that the qualification
 pipeline emits.
@@ -16,7 +16,7 @@ transcript_signals/context.py rather than copying the rendering code.
 
   * `_build_session_block(activity)` is the single source of truth for
     the "SESSION CONTEXT" block (tenant_name + account name/industry/
-    segment + activity type/date + contacts compact). Any improvement
+    segment + activity type/date). Any improvement
     to that block (e.g. richer disambiguation, RGPD field tightening)
     must propagate to every pipeline that uses it -- import-side reuse
     guarantees that.
@@ -57,7 +57,8 @@ __all__ = ['CONTEXT_VERSION', 'build_context_layer']
 # activity has no date) -- transcript_signals context v5.
 # v3 (TD-279 B3): the reused session block lists the contacts as "registered
 # on this activity", no longer "in this conversation".
-CONTEXT_VERSION = 'v3'
+# v4 (TD-279 B4b): the reused session block no longer lists the contacts.
+CONTEXT_VERSION = 'v4'
 
 
 def build_context_layer(activity):
@@ -70,7 +71,7 @@ def build_context_layer(activity):
 
     Args:
         activity: app_modules.activities.models.Activity. Anchor for
-            session grounding (tenant, account, contacts).
+            session grounding (tenant, account, activity).
 
     Returns:
         str: A ready-to-concatenate context block. Will be combined

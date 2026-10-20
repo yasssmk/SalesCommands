@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
-TD-279 — B2: measure, on the REAL LLM, how often a registered contact (P1)
-is wrongly given another person's description.
+TD-279 — measure, on the REAL LLM, whether a registered contact is wrongly
+given another person's description (People) or another speaker's blocker.
 
 Standalone evaluation script. NOT part of the product: it lives outside
 app_modules/, nothing imports it, it writes nothing to the database. It
@@ -9,41 +9,35 @@ reuses the production code path for everything that matters:
 
   * prompt rendered by the real builders: build_context_layer +
     build_people_request / build_blocker_request + PromptBuilder.assemble
-    (done inside BasePipeline._call_llm);
+    (done inside BasePipeline._call_llm) -- no patch: since B4b the
+    production prompts ARE the validated "no P reference" track (no contact
+    list in the context, names as written);
   * LLM call through QualificationSignalsPipeline._call_llm -- same active
     provider, model, temperature (PIPELINE_TEMPERATURES), max_tokens,
-    timeout and one corrective parse retry as the pipeline.
+    timeout and one corrective parse retry as the pipeline;
+  * contact link through the real server helper resolve_participant_by_name
+    (People full_name, Blocker raised_by_name).
 
-Only the two DB lookups of the context layer are replaced by the test case
-(tenant name, participant list): P1 = Criminelle Husky (Finance, no job
-title), account Logistix.
+Only DB lookups are replaced by the test case: the tenant name, and the
+contacts registered on the activity (Criminelle Husky, Finance), account
+Logistix.
 
 Variants (N calls each, default 10):
-  people_V0             current people / context prompts, Logistix transcript
-  people_V0_no_date     same, the "- Conversation date:" line removed
-  people_WITNESS        V0 with a transcript where Criminelle Husky SPEAKS
-  blocker_V0            blocker stage, Logistix transcript
-  blocker_WITNESS       blocker stage, witness transcript
-  people_noP            "no P reference" track (B3 follow-up): the rendered
-  people_noP_WITNESS    prompt is PATCHED in this script only -- no contact
-  blocker_noP           list in the context, no participant_ref / raised_by;
-  blocker_noP_WITNESS   the LLM returns names as written (people full_name,
-                        blocker raised_by_name) and the contact is linked by
-                        name with the B1 rule (stated_name_matches_contact).
+  people_V0         Logistix transcript (Criminelle registered, never speaks)
+  people_WITNESS    same, with a transcript where Criminelle Husky SPEAKS
+  blocker_V0        blocker stage, Logistix transcript
+  blocker_WITNESS   blocker stage, witness transcript
 
-Every variant is scored on the FINAL result a run would store: the contact
-link is simulated with the server rule of the track (P track: P1 resolved,
-then the B1 guard for people / no guard for blocker; noP track: link by
-name with stated_name_matches_contact).
+Each call is scored on the FINAL result a run would store (link by name).
 
-Output (one folder per run, see --out):
+Output (one folder per run, see --out; a non-empty folder is refused):
   <variant>/call_<NN>.json   rendered system + user prompt, raw response(s),
                              parsed JSON, metrics of the call
   summary.csv / summary.md   one row per call + the per-variant recap
 
 Usage (from backend/, with the usual .env holding OPENAI_API_KEY):
-  python evals/td279/run_attribution_eval.py                 # 9 x 10 calls
-  python evals/td279/run_attribution_eval.py --n 3 --only people_V0 people_noP
+  python evals/td279/run_attribution_eval.py                 # 4 x 10 calls
+  python evals/td279/run_attribution_eval.py --n 3 --only people_V0
   python evals/td279/run_attribution_eval.py --dry-run       # no API call
 """
 
@@ -52,7 +46,6 @@ import csv
 import datetime
 import json
 import os
-import re
 import sys
 import types
 from pathlib import Path
@@ -81,9 +74,7 @@ from app_modules.ai_pipelines.prompts.transcript_signals.system import (  # noqa
 )
 from app_modules.ai_pipelines.providers import get_active_provider  # noqa: E402
 from app_modules.ai_pipelines.providers.base import LLMCallResult  # noqa: E402
-from app_modules.ai_pipelines.services.transcript_signal_extractor import (  # noqa: E402
-    stated_name_matches_contact,
-)
+from app_modules.ai_pipelines.services import participant_refs  # noqa: E402
 
 
 # =============================================================================
@@ -99,8 +90,6 @@ CONTACT = types.SimpleNamespace(
     ),
 )
 CONVERSATION_DATE = '2026-10-14'
-DATE_LINE_PREFIX = '- Conversation date:'
-CONTACT_LIST_PREFIX = '- Prospect contacts'
 
 TRANSCRIPTS = {
     'logistix': HERE / 'transcript_logistix.txt',
@@ -115,17 +104,12 @@ SPEAKERS = {
     'Julien (seller)': 'Julien Moreau',
 }
 
-# variant -> (stage, transcript key, drop the date line, "no P reference" track)
+# variant -> (stage, transcript key)
 VARIANTS = {
-    'people_V0':           ('people', 'logistix', False, False),
-    'people_V0_no_date':   ('people', 'logistix', True, False),
-    'people_WITNESS':      ('people', 'witness', False, False),
-    'blocker_V0':          ('blocker', 'logistix', False, False),
-    'blocker_WITNESS':     ('blocker', 'witness', False, False),
-    'people_noP':          ('people', 'logistix', False, True),
-    'people_noP_WITNESS':  ('people', 'witness', False, True),
-    'blocker_noP':         ('blocker', 'logistix', False, True),
-    'blocker_noP_WITNESS': ('blocker', 'witness', False, True),
+    'people_V0':       ('people', 'logistix'),
+    'people_WITNESS':  ('people', 'witness'),
+    'blocker_V0':      ('blocker', 'logistix'),
+    'blocker_WITNESS': ('blocker', 'witness'),
 }
 
 REQUEST_BUILDERS = {
@@ -135,10 +119,10 @@ REQUEST_BUILDERS = {
 
 
 def _activity(tenant_name):
-    """The activity of the case; the two DB lookups of the context layer are
-    replaced (tenant name, participants) -- nothing is read from the DB."""
+    """The activity of the case; the DB lookups are replaced (tenant name,
+    registered contacts) -- nothing is read from the DB."""
     ctx._resolve_tenant_name = lambda client_id: tenant_name
-    ctx.ordered_participants = lambda activity: [CONTACT]
+    participant_refs.ordered_participants = lambda activity: [CONTACT]
     return types.SimpleNamespace(
         client_id='eval',
         account=types.SimpleNamespace(
@@ -151,106 +135,11 @@ def _activity(tenant_name):
     )
 
 
-# =============================================================================
-# PROMPT PATCHES (this script only -- production prompts are untouched)
-# =============================================================================
-
-def _replace_once(text, old, new):
-    """Exact replacement that fails loudly when the rendered prompt drifted."""
-    assert text.count(old) == 1, f'patch anchor not found exactly once: {old[:60]!r}'
-    return text.replace(old, new)
-
-
-def _cut_between(text, start, end):
-    """Remove text[start:end) (end kept), both anchors found exactly once."""
-    assert text.count(start) == 1 and text.count(end) == 1, (start, end)
-    i, j = text.index(start), text.index(end)
-    assert i < j
-    return text[:i] + text[j:]
-
-
-def _context(activity, stage, drop_date, no_p):
+def _context(activity, stage):
     context = ctx.build_context_layer(activity, target_stage=stage)
-    lines = context.split('\n')
-    if drop_date:
-        kept = [line for line in lines if not line.startswith(DATE_LINE_PREFIX)]
-        assert len(kept) == len(lines) - 1, 'Conversation date line not found'
-        lines = kept
-    if no_p:
-        # The contact list = its header line + its "  * P1 — ..." lines.
-        start = next(i for i, line in enumerate(lines) if line.startswith(CONTACT_LIST_PREFIX))
-        end = start + 1
-        while end < len(lines) and lines[end].startswith('  * '):
-            end += 1
-        lines = lines[:start] + lines[end:]
-    context = '\n'.join(lines)
-    if no_p:
-        assert 'P1' not in context and 'Criminelle' not in context
+    # Context v8: the registered contacts are never sent to the LLM.
+    assert 'Criminelle' not in context
     return context
-
-
-def _people_request_no_p(request):
-    """people prompt without any participant reference: names as written."""
-    request = _cut_between(
-        request,
-        '- A contact listed in the SESSION CONTEXT is extracted ONLY when the',
-        '- A prospect speaker NOT listed in the SESSION CONTEXT',
-    )
-    request = _replace_once(
-        request,
-        '- A prospect speaker NOT listed in the SESSION CONTEXT is STILL extracted:\n'
-        '  participant_ref = null and full_name = the name exactly as written in the\n'
-        '  speaker label.\n',
-        '- `full_name` = the person\'s name exactly as written in the transcript:\n'
-        '  the speaker label for a person who speaks, the name as cited otherwise.\n',
-    )
-    request = re.sub(r'\n *"participant_ref": [^\n]*', '', request, count=1)
-    request = _replace_once(
-        request, 'never a listed contact, never the speaker.',
-        'never another person, never the speaker.',
-    )
-    request = _replace_once(
-        request,
-        ' The SESSION CONTEXT says who is registered on the\n'
-        '  activity -- it is never evidence of what a person said or does.',
-        '',
-    )
-    request = _cut_between(request, 'ATTRIBUTION RULES (participant_ref)', 'TRANSCRIPT\n<<<')
-    assert 'participant_ref' not in request and 'P<n>' not in request
-    return request
-
-
-def _blocker_request_no_p(request):
-    """blocker prompt with raised_by_name (the speaker's name as written)."""
-    request = re.sub(
-        r'"raised_by": +<[^\n]*>',
-        '"raised_by_name": <name of the PROSPECT-side speaker who voiced the '
-        'blocker, exactly as written in the speaker label, or null -- see '
-        'ATTRIBUTION RULES below>',
-        request, count=1,
-    )
-    request = _cut_between(request, 'ATTRIBUTION RULES (raised_by)', 'TRANSCRIPT\n<<<')
-    request = _replace_once(
-        request, 'TRANSCRIPT\n<<<',
-        'ATTRIBUTION RULES (raised_by_name)\n'
-        '- Set `raised_by_name` to the name of the PROSPECT-side speaker who\n'
-        '  voiced the blocker, exactly as written in the speaker label.\n'
-        '- Set `raised_by_name` to null when the person who voiced the blocker\n'
-        '  cannot be identified from the transcript.\n'
-        '- NEVER output a name that does not appear in the transcript.\n'
-        '\n'
-        'TRANSCRIPT\n<<<',
-    )
-    assert 'raised_by`' not in request.replace('raised_by_name`', '')
-    assert 'P<n>' not in request
-    return request
-
-
-def _request(stage, transcript, no_p):
-    request = REQUEST_BUILDERS[stage](transcript)
-    if not no_p:
-        return request
-    return _people_request_no_p(request) if stage == 'people' else _blocker_request_no_p(request)
 
 
 # =============================================================================
@@ -284,21 +173,15 @@ class DryRunProvider:
     """--dry-run: no API call, a fixed answer, to check the plumbing."""
 
     def call(self, **kwargs):
-        user = kwargs['user']
-        if 'Extract PEOPLE signals' in user:
-            person = {
+        if 'Extract PEOPLE signals' in kwargs['user']:
+            content = {'signals': [{
                 'full_name': 'Claire Dubois', 'role': 'CHAMPION', 'influence': 'HIGH',
                 'department': 'Sales', 'notes': 'dry run',
                 'source_quote': "honnêtement c'est moi qui ai poussé pour qu'on regarde votre solution",
                 'confidence': 0.9, 'is_inferred': False,
-            }
-            if 'participant_ref' in user:
-                person['participant_ref'] = 'P1'
-            content = {'signals': [person]}
-        elif 'raised_by_name' in user:
-            content = {'signals': [{'raised_by_name': 'Thomas Lefèvre', 'source_quote': 'dry run'}]}
+            }]}
         else:
-            content = {'signals': [{'raised_by': 'P1', 'source_quote': 'dry run'}]}
+            content = {'signals': [{'raised_by_name': 'Thomas Lefèvre', 'source_quote': 'dry run'}]}
         return LLMCallResult(
             content=json.dumps(content), input_tokens=0, output_tokens=0,
             model_used='dry-run', duration_ms=0,
@@ -331,26 +214,20 @@ def _who(name):
     if not isinstance(name, str) or not name.strip():
         return 'null'
     for key, full in SPEAKERS.items():
-        contact = types.SimpleNamespace(first_name=full.split()[0], last_name=full.split()[1])
-        if stated_name_matches_contact(name, contact):
+        first, last = full.split()
+        speaker = types.SimpleNamespace(first_name=first, last_name=last)
+        if participant_refs.stated_name_matches_contact(name, speaker):
             return key
     return f'other: {name}'
 
 
-def _people_link(signal, no_p):
-    """Is the entry linked to Criminelle in the stored result?"""
-    if no_p:
-        name = signal.get('full_name')
-        return isinstance(name, str) and bool(name.strip()) and stated_name_matches_contact(name, CONTACT)
-    # P track: P1 resolved, then the B1 guard (b92b571).
-    return signal.get('participant_ref') == 'P1' and stated_name_matches_contact(
-        signal.get('full_name'), CONTACT,
-    )
+def _linked(name, activity):
+    """The server link of the stored result (real helper)."""
+    return participant_refs.resolve_participant_by_name(name, activity) is CONTACT
 
 
-def _people_metrics(signals, transcript, no_p):
-    p1 = [s for s in signals if s.get('participant_ref') == 'P1']
-    linked = [s for s in signals if _people_link(s, no_p)]
+def _people_metrics(signals, transcript, activity):
+    linked = [s for s in signals if _linked(s.get('full_name'), activity)]
     claire = [s for s in signals if _who(s.get('full_name')) == 'Claire']
     first_claire = claire[0] if claire else {}
     claire_quote = first_claire.get('source_quote') or ''
@@ -365,10 +242,6 @@ def _people_metrics(signals, transcript, no_p):
         claire_verdict = 'autre'
     return {
         'total_entries': len(signals),
-        # Raw LLM output of the P track.
-        'p1_entries': len(p1),
-        'p1_full_name': '; '.join(str(s.get('full_name')) for s in p1),
-        # Final stored result.
         'linked_to_criminelle': len(linked),
         'linked_quote_said_by_criminelle': sum(
             1 for s in linked if _said_by(s.get('source_quote'), transcript, SPEAKERS['Criminelle'])
@@ -384,28 +257,22 @@ def _people_metrics(signals, transcript, no_p):
         'claire_quote': claire_quote,
         'claire_verdict': claire_verdict,
         'isabelle_present': any(
-            'isabelle' in (s.get('full_name') or '').lower() and not _people_link(s, no_p)
+            'isabelle' in (s.get('full_name') or '').lower() and not _linked(s.get('full_name'), activity)
             for s in signals
         ),
         'seller_entries': sum(1 for s in signals if _who(s.get('full_name')) == 'Julien (seller)'),
     }
 
 
-def _blocker_metrics(signals, no_p):
-    if no_p:
-        names = [_who(s.get('raised_by_name')) for s in signals]
-        linked = sum(1 for s in signals if _who(s.get('raised_by_name')) == 'Criminelle')
-    else:
-        names = ['P1' if s.get('raised_by') == 'P1' else _who(s.get('raised_by')) for s in signals]
-        # No server guard on blocker: P1 resolves to Criminelle.
-        linked = sum(1 for s in signals if s.get('raised_by') == 'P1')
+def _blocker_metrics(signals, activity):
     distribution = {}
-    for name in names:
+    for s in signals:
+        name = _who(s.get('raised_by_name'))
         distribution[name] = distribution.get(name, 0) + 1
     return {
         'total_entries': len(signals),
         'raised_by_distribution': json.dumps(distribution, ensure_ascii=False),
-        'linked_to_criminelle': linked,
+        'linked_to_criminelle': sum(1 for s in signals if _linked(s.get('raised_by_name'), activity)),
     }
 
 
@@ -420,10 +287,10 @@ def _signals(parsed):
 # =============================================================================
 
 def run_variant(name, n, out_dir, provider, activity):
-    stage, transcript_key, drop_date, no_p = VARIANTS[name]
+    stage, transcript_key = VARIANTS[name]
     transcript = TRANSCRIPTS[transcript_key].read_text(encoding='utf-8')
-    context = _context(activity, stage, drop_date, no_p)
-    request = _request(stage, transcript, no_p)
+    context = _context(activity, stage)
+    request = REQUEST_BUILDERS[stage](transcript)
     variant_dir = out_dir / name
     variant_dir.mkdir(parents=True, exist_ok=True)
 
@@ -432,8 +299,7 @@ def run_variant(name, n, out_dir, provider, activity):
         recorder = RecordingProvider(provider)
         pipeline = QualificationSignalsPipeline(provider=recorder)
         record = {'variant': name, 'call': index, 'stage': stage,
-                  'transcript': transcript_key, 'date_line_removed': drop_date,
-                  'no_p_patch': no_p,
+                  'transcript': transcript_key,
                   'prompt_versions': dict(QualificationSignalsPipeline.PROMPT_VERSIONS)}
         try:
             parsed, meta = pipeline._call_llm(
@@ -448,9 +314,9 @@ def run_variant(name, n, out_dir, provider, activity):
         record['parsed'] = parsed
         signals = _signals(parsed)
         if stage == 'people':
-            metrics = _people_metrics(signals, transcript, no_p)
+            metrics = _people_metrics(signals, transcript, activity)
         else:
-            metrics = _blocker_metrics(signals, no_p)
+            metrics = _blocker_metrics(signals, activity)
         record['metrics'] = metrics
         (variant_dir / f'call_{index:02d}.json').write_text(
             json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8',
@@ -478,7 +344,7 @@ def _recap(rows):
         if VARIANTS[name][0] == 'people':
             totals = [r['total_entries'] for r in vrows]
             people.append(
-                f'| {name} | {sum(1 for r in vrows if r["p1_entries"])}/{n} | '
+                f'| {name} | '
                 f'{sum(1 for r in vrows if r["linked_to_criminelle"])}/{n} | '
                 f'{sum(1 for r in vrows if r["linked_quote_said_by_criminelle"])}/{n} | '
                 f'{sum(1 for r in vrows if r["linked_quote_about_isabelle"])}/{n} | '
@@ -503,18 +369,18 @@ def _recap(rows):
         lines += [
             '## People (appels avec ... / N)',
             '',
-            '| variante | P1 émis (brut) | rattaché à Criminelle (final) | '
+            '| variante | rattaché à Criminelle (final) | '
             'dont citation dite par Criminelle | dont citation sur Isabelle | '
             'entrée Claire | rôle Claire | Isabelle (entrée propre) | '
             'entrée vendeur | entrées | erreurs |',
-            '|---|---|---|---|---|---|---|---|---|---|---|',
+            '|---|---|---|---|---|---|---|---|---|---|',
             *people, '',
         ]
     if blockers:
         lines += [
             '## Blocker (total des appels)',
             '',
-            '| variante | blockers | rattachés à Criminelle (final) | raised_by | erreurs |',
+            '| variante | blockers | rattachés à Criminelle (final) | raised_by_name | erreurs |',
             '|---|---|---|---|---|',
             *blockers, '',
         ]
@@ -532,7 +398,7 @@ def main():
 
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     out_dir = Path(args.out) if args.out else HERE / 'out' / stamp
-    # Never overwrite a previous run (the B2 reference outputs are kept).
+    # Never overwrite a previous run (the earlier reference outputs are kept).
     if out_dir.exists() and any(out_dir.iterdir()):
         sys.exit(f'Output folder {out_dir} is not empty -- choose another --out.')
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -551,7 +417,7 @@ def main():
         writer.writerows(rows)
     recap = _recap(rows)
     (out_dir / 'summary.md').write_text(
-        '# TD-279 B2 — récap\n\n'
+        '# TD-279 — récap\n\n'
         f'Versions : {json.dumps(QualificationSignalsPipeline.PROMPT_VERSIONS)}\n\n'
         + '\n'.join(recap) + '\n', encoding='utf-8',
     )

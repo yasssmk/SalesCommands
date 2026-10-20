@@ -3,7 +3,7 @@
 Context layer for the transcript_signals prompt family.
 
 Builds the dynamic, per-run context block that grounds the LLM in:
-  * The commercial identity of the session (Seller, Prospect, Activity, Contacts)
+  * The commercial identity of the session (Seller, Prospect, Activity)
   * The canonical taxonomy applicable to the target sub-call
 
 What this layer carries
@@ -11,12 +11,6 @@ What this layer carries
   - Tenant display name (from ClientAccount.name).
   - Prospect commercial identity (company_name, industry, classification).
   - Activity metadata (type, date).
-  - Contacts on the activity: first_name + job_title + department only,
-    each prefixed with its participant reference ("P1", "P2", ...) so a
-    stage can attribute a signal to a participant (Blocker `raised_by`,
-    Objection S3). Numbering + scope (tenant AND account) come from
-    services/participant_refs.py -- the same list the extractor resolves
-    against.
   - Canonical enum values per target stage.
 
 No longer carried (S10)
@@ -28,16 +22,16 @@ No longer carried (S10)
 
 What this layer deliberately omits (RGPD / data minimization)
 --------------------------------------------------------------
+  - The contacts registered on the activity (v8, TD-279): the list only
+    served the participant references ("P1", ...), and a registered contact
+    who never speaks was taken for a speaker. The LLM now returns names as
+    written; the server links them (services/participant_refs.py,
+    resolve_participant_by_name).
   - Contact emails, phone numbers, postal addresses
         --> never required to extract a commercial signal.
   - User (rep) identity (name, email)
         --> "the Seller AE" is enough; the rep's individual identity
             adds no signal-extraction value.
-  - Contact last names
-        --> first_name + job_title disambiguates contacts within one
-            activity. The transcript itself carries last names verbatim;
-            this layer does not re-emit them in the context (session
-            block).
 
 The transcript itself is sent verbatim by the pipeline orchestrator.
 That exposure is covered legally (DPA with the LLM provider) -- not
@@ -53,15 +47,8 @@ audit traceability of every prompt revision in production.
 Performance
 -----------
 This builder runs per sub-call (4 sub-calls per pipeline run). For
-production use the orchestrator should pass an Activity
-prefetched with:
-
-    Activity.objects
-        .select_related('account')
-        .prefetch_related('contacts', 'contacts__standard_department')
-        .get(id=...)
-
-Without prefetching, expect N+1 queries on contacts. The ClientAccount
+production use the orchestrator should pass an Activity with its
+account selected (select_related('account')). The ClientAccount
 lookup is a single indexed PK query per call -- small and not cached
 in v1. If profiling shows it matters, move tenant_name resolution to
 the pipeline orchestrator (resolve once, pass three times).
@@ -79,11 +66,6 @@ from app_modules.signals.constants import (
     UsageScope,
 )
 from end_users.models import ClientAccount
-
-from app_modules.ai_pipelines.services.participant_refs import (
-    format_participant_ref,
-    ordered_participants,
-)
 
 
 logger = logging.getLogger(__name__)
@@ -108,7 +90,10 @@ logger = logging.getLogger(__name__)
 # activity (they may not speak, and are not necessarily the persons cited)",
 # no longer "in this conversation": a registered contact can be absent from
 # the transcript (all stages, and the next_steps context that reuses it).
-CONTEXT_VERSION = 'v7'
+# v8 (TD-279 B4b): SHARED session block -- the contact list is REMOVED (it
+# only served the participant references; the LLM returns names as written
+# and the server links them). All stages + the next_steps context.
+CONTEXT_VERSION = 'v8'
 
 # Relative-date wordings named in the "Conversation date" line (v5).
 _RELATIVE_DATE_EXAMPLES = '"this year", "next year", "end of the year", "in June"'
@@ -135,7 +120,7 @@ def build_context_layer(activity, target_stage):
 
     Args:
         activity: app_modules.activities.models.Activity. Anchor for all
-            session grounding (tenant, account, contacts).
+            session grounding (tenant, account, activity).
         target_stage: One of _SUPPORTED_STAGES. Drives which canonical enums are
             exposed. 'pain_impact' is the merged stage (A2) and exposes the
             union of the pain and impact axes.
@@ -183,7 +168,7 @@ def build_context_layer(activity, target_stage):
 
 
 # =============================================================================
-# SESSION BLOCK -- Tenant + Account + Activity + Contacts
+# SESSION BLOCK -- Tenant + Account + Activity
 # =============================================================================
 
 def _build_session_block(activity):
@@ -225,16 +210,6 @@ def _build_session_block(activity):
             f'transcript ({_RELATIVE_DATE_EXAMPLES}, ...) cannot be resolved: '
             'emit null for it, never guess a year.'
         )
-
-    # --- Contacts present ---
-    contact_lines = _build_contact_lines(activity)
-    if contact_lines:
-        lines.append(
-            '- Prospect contacts registered on this activity (they may not '
-            'speak, and are not necessarily the persons cited in the '
-            'transcript):'
-        )
-        lines.extend(f'  * {line}' for line in contact_lines)
 
     return '\n'.join(lines)
 
@@ -283,46 +258,6 @@ def _resolve_activity_date(activity):
     if activity.scheduled_date:
         return activity.scheduled_date.isoformat()
     return None
-
-
-def _build_contact_lines(activity):
-    """
-    Render one descriptor per contact attached to the activity.
-
-    Format per descriptor: "<ref> — <first_name> (<job_title>, <department>)"
-        - <ref> --> the participant reference ("P1", "P2", ...) from
-          services/participant_refs.py. The list is ordered_participants():
-          filtered on the activity's tenant AND account, ordered
-          last_name, first_name, id -- the extractor resolves a returned
-          reference against this exact list.
-        - Missing first_name --> "Contact" placeholder.
-        - Missing job_title --> "role unknown" placeholder.
-        - Missing department --> dropped from the parenthesis.
-        - email / phone --> NEVER rendered (see module docstring).
-
-    Returns:
-        list[str]: One descriptor per contact. Empty list when the
-        activity has no linked contacts (the caller skips the
-        "Prospect contacts" line entirely in that case).
-    """
-    descriptors = []
-    for index, contact in enumerate(ordered_participants(activity)):
-        ref = format_participant_ref(index)
-        name = (contact.first_name or '').strip() or 'Contact'
-        job = (contact.job_title or '').strip() or 'role unknown'
-
-        department = None
-        if contact.standard_department:
-            # standard_department.name is a TextChoices field; display
-            # via get_name_display(). Pattern reused from
-            # ActivityContactSerializer.get_department_name.
-            department = contact.standard_department.get_name_display()
-
-        if department:
-            descriptors.append(f'{ref} — {name} ({job}, {department})')
-        else:
-            descriptors.append(f'{ref} — {name} ({job})')
-    return descriptors
 
 
 # =============================================================================

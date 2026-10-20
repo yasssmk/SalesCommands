@@ -116,11 +116,7 @@ from app_modules.signals.services.signal_cluster_service import SignalClusterSer
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
-from .participant_refs import (
-    resolve_participant_by_name,
-    resolve_participant_ref,
-    stated_name_matches_contact,
-)
+from .participant_refs import resolve_participant_by_name
 from .safety_filter import passes_safety_filter, safe_float
 
 
@@ -1119,21 +1115,16 @@ class TranscriptSignalExtractor:
 
         Schema requirements (from blocker_v1.py):
             summary, source_quote, confidence, is_inferred
-            (+ optional raised_by)
+            (+ optional raised_by_name)
 
-        `contact` attribution (blocker_v2 -- Objection S3)
-        --------------------------------------------------
-        The LLM returns `raised_by`, the REFERENCE ("P1", ...) of a
-        participant from the closed list rendered by the context layer.
-        It is resolved via services/participant_refs.py against the same
-        list (tenant + account filtered) -- never by name, never guessed
-        (mirror of the department resolver above). Resolved -> `contact`
-        is set. Absent / null / invalid -> `contact` stays unset (model
-        default None), a warning is logged on a non-null reference that
-        does not resolve, and the signal is NEVER dropped for this reason.
-        TD-279 B4a: without a resolved reference, `raised_by_name` (the
-        speaker's name as written) is linked by resolve_participant_by_name
-        (registered contacts only, ambiguous -> None).
+        `contact` attribution (blocker_v3 -- TD-279 B4b)
+        ------------------------------------------------
+        The LLM returns `raised_by_name`, the prospect speaker's name as
+        written. The server links it to a contact registered on the
+        activity (resolve_participant_by_name: tenant + account filtered,
+        word match, an ambiguous name is never linked). Linked -> `contact`
+        is set. Absent / null / unknown / ambiguous -> `contact` stays unset
+        (model default None); the signal is NEVER dropped for this reason.
 
         Other deferred BlockerSignal fields
         -----------------------------------
@@ -1171,25 +1162,11 @@ class TranscriptSignalExtractor:
             'is_inferred':     bool(raw.get('is_inferred')),
         }
 
-        # Objection S3: resolve the participant reference. The server never
-        # forces an attribution; an unresolved reference keeps the signal.
-        raised_by = raw.get('raised_by')
-        contact = resolve_participant_ref(raised_by, activity)
-        if contact is None:
-            # TD-279 B4a: the speaker's name as written (`raised_by_name`)
-            # linked to a contact registered on the activity (never a guess).
-            contact = resolve_participant_by_name(raw.get('raised_by_name'), activity)
+        # TD-279: the speaker's name as written, linked to a contact
+        # registered on the activity. Never forced, never a guess.
+        contact = resolve_participant_by_name(raw.get('raised_by_name'), activity)
         if contact is not None:
             data['contact'] = contact
-        elif raised_by is not None:
-            logger.warning(
-                'blocker_raised_by_unresolved',
-                extra={
-                    'raised_by': str(raised_by),
-                    'activity_id': str(activity.id),
-                    'event': 'ai_pipeline_persist',
-                },
-            )
 
         return data
 
@@ -1330,8 +1307,7 @@ class TranscriptSignalExtractor:
 
         Schema requirements (from people_v1.py):
             role, source_quote, confidence, is_inferred
-            (+ optional participant_ref, full_name, influence, department,
-            notes).
+            (+ optional full_name, influence, department, notes).
 
         Drop / fold rules (mirror of the existing builders):
           * blank / missing source_quote -> DROPPED (as blocker / constraint);
@@ -1339,22 +1315,15 @@ class TranscriptSignalExtractor:
             coerced (as constraint `nature`);
           * influence out of the SIGNAL InfluenceLevel -> None (nullable
             column, so no default is forced -- unlike constraint `rigidity`);
-          * participant_ref resolved via services/participant_refs.py
-            (tenant + account filtered, never by name). Resolved -> contact
-            set, full_name DERIVED from the contact (first + last name) and
-            department = the contact's standard_department when set, else
-            the extracted one. Non-null but unresolved -> signal KEPT without
-            contact + warning (as blocker `raised_by`); full_name and
-            department then come from the extraction;
-          * TD-279: a resolved reference whose stated full_name is ANOTHER
-            person (stated_name_matches_contact) -> reference ignored, no
-            contact, full_name / department from the extraction + warning.
-            Done here, before the in-extraction dedup, so the false reference
-            merges with that person's own entry;
-          * TD-279 B4a: no reference (absent / null / ignored above) -> the
-            full_name as written is linked by resolve_participant_by_name
-            (registered contacts only, ambiguous -> None); a linked contact
-            has the same effect as a resolved reference;
+          * TD-279: the full_name as written is linked to a contact
+            registered on the activity (resolve_participant_by_name: tenant +
+            account filtered, word match, an ambiguous name is never
+            linked). Linked -> contact set, full_name DERIVED from the
+            contact (first + last name) and department = the contact's
+            standard_department when set, else the extracted one. Not
+            linked -> full_name and department from the extraction. Done
+            here, before the in-extraction dedup, so every mention of the
+            same contact merges;
           * no contact, no name and no department after resolution ->
             DROPPED + warning. Checked HERE: persist_stage feeds
             SignalManager.create directly -- neither the People serializer
@@ -1384,27 +1353,9 @@ class TranscriptSignalExtractor:
         if influence not in InfluenceLevel.values:
             influence = None
 
-        participant_ref = raw.get('participant_ref')
-        contact = resolve_participant_ref(participant_ref, activity)
-        if contact is not None and not stated_name_matches_contact(raw.get('full_name'), contact):
-            # TD-279: the reference carries ANOTHER person's name -> it is
-            # ignored (PO decision); the stated name is kept below, so this
-            # candidate can merge with that person's own entry in the dedup.
-            logger.warning(
-                'people_participant_ref_name_mismatch',
-                extra={
-                    'participant_ref': str(participant_ref),
-                    'activity_id': str(activity.id),
-                    'event': 'ai_pipeline_persist',
-                },
-            )
-            contact = None
-            participant_ref = None
-        if contact is None and participant_ref is None:
-            # TD-279 B4a: no reference -> the name as written is linked to a
-            # contact registered on the activity (never a guess). Set here,
-            # before the in-extraction dedup, like a resolved reference.
-            contact = resolve_participant_by_name(raw.get('full_name'), activity)
+        # TD-279: the name as written, linked to a contact registered on the
+        # activity (never a guess), before the in-extraction dedup.
+        contact = resolve_participant_by_name(raw.get('full_name'), activity)
         if contact is not None:
             full_name = f'{contact.first_name or ""} {contact.last_name or ""}'.strip()
             department = (
@@ -1412,15 +1363,6 @@ class TranscriptSignalExtractor:
                 or resolve_person_department(raw.get('department'))
             )
         else:
-            if participant_ref is not None:
-                logger.warning(
-                    'people_participant_ref_unresolved',
-                    extra={
-                        'participant_ref': str(participant_ref),
-                        'activity_id': str(activity.id),
-                        'event': 'ai_pipeline_persist',
-                    },
-                )
             raw_name = raw.get('full_name')
             full_name = raw_name.strip() if isinstance(raw_name, str) else ''
             department = resolve_person_department(raw.get('department'))

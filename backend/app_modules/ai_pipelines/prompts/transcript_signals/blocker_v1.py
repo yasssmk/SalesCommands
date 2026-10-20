@@ -8,12 +8,10 @@ family. It is combined at call time with:
   * build_context_layer(activity, 'blocker') -- session grounding only
     (Blocker carries NO canonical taxonomy axes, so the context layer
     skips the taxonomy block entirely; the techcatalog block is also
-    omitted). The session block lists the participants, each prefixed
-    with its reference ("P1", "P2", ...) -- the closed list `raised_by`
-    picks from.
+    omitted). No contact list since context v8 (TD-279 B4b).
 The full assembly is performed by PromptBuilder.assemble() in base.py.
 
-Schema (v2)
+Schema (v3)
 -----------
 The LLM emits one JSON object with a single key `signals` containing an
 array of blocker observations. Each observation has exactly 5 fields:
@@ -22,8 +20,9 @@ array of blocker observations. Each observation has exactly 5 fields:
     source_quote  string   -- verbatim utterance expressing the blocker
     confidence    float    -- LLM self-declared, in [0.0, 1.0]
     is_inferred   boolean  -- LLM self-declared, true when not directly stated
-    raised_by     string|null -- participant reference ("P1", ...) of the
-                                 listed participant who voiced the blocker
+    raised_by_name string|null -- name of the PROSPECT-side speaker who
+                                 voiced the blocker, as written in the
+                                 speaker label (v3)
 
 Empty result is represented by {"signals": []}.
 
@@ -36,19 +35,20 @@ Five fields per emitted signal, deliberately minimal:
   * Two epistemic self-declaration fields (confidence / is_inferred)
     that feed the backend safety filter applied by
     TranscriptSignalExtractor before any BlockerSignal row is created.
-  * One attribution field (`raised_by`, v2 -- Objection S3, TD-6).
+  * One attribution field (`raised_by_name`, v3 -- TD-279 B4b).
 
-`contact` attribution (v2 -- Objection S3)
-------------------------------------------
-v1 deferred `contact` entirely to the rep (TD-6): fuzzy mapping from
-"the CFO" to a Contact UUID via LLM is brittle. v2 removes the fuzzy
-part: the LLM never emits a name or a UUID, only the REFERENCE of a
-participant from the closed list the context layer provides. The server
-resolves that reference against the same list
-(services/participant_refs.py -- tenant + account filtered). An absent,
-null or invalid reference leaves `contact` None and the signal is STILL
-persisted; the server never forces an attribution. The rep can still
-set / correct the contact in the edit drawer (Objection S2).
+`contact` attribution (v3 -- TD-279 B4b)
+---------------------------------------
+v2 (Objection S3) had the LLM pick a participant REFERENCE ("P1") from a
+contact list in the context; the model filled it even for a registered
+contact who never spoke (TD-279: 40/40 blockers on a silent contact). v3:
+the LLM returns the speaker's NAME as written; the server links it to a
+contact registered on the activity (services/participant_refs.py,
+resolve_participant_by_name -- tenant + account filtered, word match, an
+ambiguous name is never linked). An absent / null / unknown name leaves
+`contact` None and the signal is STILL persisted; the server never forces
+an attribution. The rep can still set / correct the contact in the edit
+drawer (Objection S2).
 
 source_quote semantic contract for BlockerSignal
 ------------------------------------------------
@@ -86,7 +86,7 @@ mapped to a new BlockerSignal row:
     source_quote        ->  source_quote   (declared on BaseSignal)
     confidence          ->  confidence     (declared on BaseSignal)
     is_inferred         ->  is_inferred    (declared on BaseSignal)
-    raised_by           ->  contact        (resolved participant, else None)
+    raised_by_name      ->  contact        (registered contact linked by name, else None)
 
 Fields filled by the service from the request context:
 
@@ -103,8 +103,8 @@ BlockerSignal.save() forces:
 
 Fields left at their model default at create:
 
-    contact             =  None   only when `raised_by` is absent / null /
-                                  invalid (never forced by the server)
+    contact             =  None   when `raised_by_name` is absent / null /
+                                  unknown / ambiguous (never forced)
     signal_category     =  shadow-overridden to None on the model
     decision_cycle / campaign  =  auto-propagated from source_activity
                                   by SignalManager._propagate_activity_context
@@ -125,22 +125,15 @@ later for quality measurement and debugging.
 """
 
 
-from app_modules.ai_pipelines.services.participant_refs import (
-    PARTICIPANT_REF_PREFIX,
-    format_participant_ref,
-)
-
-
 __all__ = ['BLOCKER_PROMPT_VERSION', 'build_blocker_request']
 
 
 # v2 (Objection S3): `raised_by` participant attribution. File name unchanged.
-BLOCKER_PROMPT_VERSION = 'v2'
-
-# Reference shapes rendered in the prompt, derived from the single
-# definition in participant_refs.py ("P<n>", "P1").
-_REF_SHAPE = f'{PARTICIPANT_REF_PREFIX}<n>'
-_FIRST_REF = format_participant_ref(0)
+# v3 (TD-279 B4b): `raised_by` (participant reference) -> `raised_by_name`
+# (the speaker's name as written, linked by the server); the "exactly ONE
+# listed participant -> P1" rule is removed. Patch measured by the B2 eval
+# (blocker_noP) and validated by the PO, plus the "never the seller" line.
+BLOCKER_PROMPT_VERSION = 'v3'
 
 
 def build_blocker_request(transcript):
@@ -197,7 +190,7 @@ Return a single JSON object with this exact shape:
       "source_quote": "<VERBATIM utterance expressing the blocker -- see EMISSION RULES below>",
       "confidence":   <float in [0.0, 1.0], self-declared per the EPISTEMIC FILTER in the system prompt>,
       "is_inferred":  <boolean, true when the signal is inferred rather than directly stated>,
-      "raised_by":    <"{_REF_SHAPE}" reference of the listed participant who voiced the blocker, or null -- see ATTRIBUTION RULES below>
+      "raised_by_name": <name of the PROSPECT-side speaker who voiced the blocker, exactly as written in the speaker label, or null -- see ATTRIBUTION RULES below>
     }}
   ]
 }}
@@ -221,20 +214,14 @@ EMISSION RULES
 - If NO blocker evidence is present anywhere in the transcript, return
   exactly: {{"signals": []}}
 
-ATTRIBUTION RULES (raised_by)
-- The SESSION CONTEXT lists the prospect contacts in this conversation,
-  each prefixed with a reference ({_REF_SHAPE}).
-- Set `raised_by` to the reference of the listed participant who voiced
-  the blocker, every time that participant can be identified from the
-  transcript.
-- If exactly ONE prospect participant is listed and the blocker comes
-  from the prospect side, set `raised_by` to "{_FIRST_REF}".
-- Set `raised_by` to null ONLY when the participant who voiced the
-  blocker genuinely cannot be identified, or when no participant is
-  listed.
-- `raised_by` MUST be one of the listed references, copied exactly.
-  NEVER output a name, an email, a job title, or a reference that is not
-  in the list. NEVER invent a reference.
+ATTRIBUTION RULES (raised_by_name)
+- Set `raised_by_name` to the name of the PROSPECT-side speaker who
+  voiced the blocker, exactly as written in the speaker label.
+- Set `raised_by_name` to null when the person who voiced the blocker
+  cannot be identified from the transcript.
+- NEVER output a name that does not appear in the transcript.
+- Prospect side only: never the seller (the person who presents or
+  sells the solution, or one of their colleagues).
 
 TRANSCRIPT
 <<<TRANSCRIPT_START>>>

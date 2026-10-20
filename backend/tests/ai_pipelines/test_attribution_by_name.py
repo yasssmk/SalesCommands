@@ -1,17 +1,22 @@
 # backend/tests/ai_pipelines/test_attribution_by_name.py
 """
-TD-279 B4a — the SERVER links a name as written by the LLM to a contact
-registered on the activity (People full_name, Blocker raised_by_name),
-through the REAL pipeline path (FakeProvider -> persist_stage).
+TD-279 B4a / B4b — the SERVER links a name as written by the LLM to a
+contact registered on the activity (People full_name, Blocker
+raised_by_name), through the REAL pipeline path (FakeProvider ->
+persist_stage). Since B4b the LLM gets no contact list and no participant
+reference ("P1") at all.
 
-  * People {participant_ref null, full_name "Criminelle Husky"} -> linked;
-    {null, "Isabelle Roux"} -> not linked.
+  * People "Criminelle Husky" -> linked; "Isabelle Roux" -> not linked; the
+    TD-279 smoke (Isabelle twice, Criminelle registered) -> one Isabelle,
+    nothing on Criminelle.
   * Blocker raised_by_name "Thomas Lefèvre" -> not linked; "Criminelle" ->
     linked.
   * Several registered contacts match the name -> not linked (no guess);
     the full name settles it when only one contact matches both names.
   * Only the contacts registered on the activity, filtered on tenant AND
-    account (same scope as the P references).
+    account.
+  * Prompts: no contact in any context (context v8 / next_steps v4), people
+    v6 without participant_ref, blocker v3 with raised_by_name.
 """
 
 import json
@@ -65,7 +70,6 @@ def _run(account, activity, user_a, fake_provider, **replies):
 
 def _person(full_name, **overrides):
     payload = {
-        'participant_ref': None,
         'full_name': full_name,
         'role': PeopleRole.CHAMPION.value,
         'influence': InfluenceLevel.HIGH.value,
@@ -116,17 +120,34 @@ class TestPeopleLinkedByName:
         assert signal.target_contact_id is None
         assert signal.full_name == 'Isabelle Roux'
 
-    def test_linked_by_name_merges_with_the_reference_entry(
+    def test_two_mentions_of_the_same_contact_merge(
         self, account, activity, user_a, criminelle,
         fake_provider, patch_active_provider,
     ):
-        # The link is set BEFORE the in-extraction dedup: P1 and the name of
-        # the same contact are ONE person.
+        # The link is set BEFORE the in-extraction dedup: "Criminelle" and
+        # "Criminelle Husky" are ONE person.
         [signal] = _run(account, activity, user_a, fake_provider, people=[
-            _person('Criminelle', participant_ref='P1'),
+            _person('Criminelle'),
             _person('Criminelle Husky', source_quote='Je valide les hypothèses de coût.'),
         ])['people']
         assert signal.target_contact_id == criminelle.id
+
+
+    def test_td279_smoke_the_cited_cfo_is_never_put_on_the_registered_contact(
+        self, account, activity, user_a, criminelle,
+        fake_provider, patch_active_provider,
+    ):
+        quote = ('Mais avant ça, on devra forcément faire un rendez-vous avec '
+                 'Isabelle Roux, notre DAF. C\'est elle qui tient le budget.')
+        [signal] = _run(account, activity, user_a, fake_provider, people=[
+            _person('Isabelle Roux', role=PeopleRole.DECISION_MAKER.value,
+                    department='Finance', source_quote=quote),
+            _person('Isabelle Roux', department='Finance', source_quote=quote),
+        ])['people']
+        assert signal.full_name == 'Isabelle Roux'
+        assert signal.target_contact_id is None
+        from app_modules.signals.models import PeopleSignal
+        assert not PeopleSignal.objects.filter(target_contact=criminelle).exists()
 
 
 # =============================================================================
@@ -197,3 +218,80 @@ class TestNoGuessAndScope:
                       people=[_person(name)], blocker=[_blocker(name)])
         assert stages['people'][0].target_contact_id is None
         assert stages['blocker'][0].contact_id is None
+
+
+# =============================================================================
+# B4b — prompts without participant references (people v6, blocker v3,
+# context v8, next_steps context v4)
+# =============================================================================
+
+def _flat(text):
+    return ' '.join(text.split())
+
+
+class TestPromptsWithoutReferences:
+
+    @pytest.mark.parametrize('stage', [
+        'pain_impact', 'pain', 'objective', 'impact', 'techstack', 'blocker',
+        'constraint', 'competitor', 'people',
+    ])
+    def test_context_lists_no_contact(self, stage, activity, criminelle):
+        from app_modules.ai_pipelines.prompts.transcript_signals.context import (
+            build_context_layer,
+        )
+        context = build_context_layer(activity, stage)
+        assert 'Prospect contacts' not in context
+        assert 'Criminelle' not in context
+        assert 'P1' not in context
+
+    def test_next_steps_context_lists_no_contact(self, activity, criminelle):
+        from app_modules.ai_pipelines.prompts.next_steps.context import (
+            build_context_layer,
+        )
+        context = build_context_layer(activity)
+        assert 'Prospect contacts' not in context
+        assert 'Criminelle' not in context
+
+    def test_people_prompt_has_no_reference(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            build_people_request,
+        )
+        prompt = _flat(build_people_request('TRANSCRIPT'))
+        for gone in ('participant_ref', 'ATTRIBUTION RULES', 'P<n>',
+                     'A contact listed in the SESSION CONTEXT',
+                     'NOT listed in the SESSION CONTEXT', 'listed contact'):
+            assert gone not in prompt
+        assert ("`full_name` = the person's name exactly as written in the "
+                'transcript: the speaker label for a person who speaks, the '
+                'name as cited otherwise.') in prompt
+        # Kept from v5.
+        assert 'NEVER transfer to one person what the transcript says about ANOTHER' in prompt
+        assert 'A DEDUCTION from what the transcript says is allowed' in prompt
+
+    def test_blocker_prompt_asks_the_speaker_name(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.blocker_v1 import (
+            build_blocker_request,
+        )
+        prompt = _flat(build_blocker_request('TRANSCRIPT'))
+        assert '"raised_by_name":' in prompt
+        assert 'ATTRIBUTION RULES (raised_by_name)' in prompt
+        assert ('Set `raised_by_name` to the name of the PROSPECT-side speaker '
+                'who voiced the blocker, exactly as written in the speaker label.') in prompt
+        assert 'NEVER output a name that does not appear in the transcript.' in prompt
+        assert 'never the seller' in prompt
+        for gone in ('"raised_by":', 'exactly ONE prospect participant', 'P<n>', 'P1'):
+            assert gone not in prompt
+
+    def test_versions(self):
+        from app_modules.ai_pipelines.prompts.next_steps import context as next_steps_context
+        from app_modules.ai_pipelines.prompts.transcript_signals.blocker_v1 import (
+            BLOCKER_PROMPT_VERSION,
+        )
+        from app_modules.ai_pipelines.prompts.transcript_signals.context import CONTEXT_VERSION
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            PEOPLE_PROMPT_VERSION,
+        )
+        assert PEOPLE_PROMPT_VERSION == 'v6'
+        assert BLOCKER_PROMPT_VERSION == 'v3'
+        assert CONTEXT_VERSION == 'v8'
+        assert next_steps_context.CONTEXT_VERSION == 'v4'
