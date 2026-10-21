@@ -61,6 +61,8 @@ Usage (from backend/, with the usual .env holding OPENAI_API_KEY):
   python evals/td279/run_attribution_eval.py --n 20 --model gpt-5.4-mini-2026-03-17 \
       --only people_V0 people_WITNESS atelier_people   # the People challenger
   python evals/td279/run_attribution_eval.py --dry-run       # no API call
+  python evals/td279/run_attribution_eval.py --rescore evals/td279/out/<stamp>
+      # recompute the summary from the recorded raw answers, no API call
 """
 
 import argparse
@@ -281,8 +283,10 @@ class DryRunProvider:
 
 def _said_by(quote, transcript, speaker):
     """The quote is part of a line of `speaker` (production text service,
-    services/transcript_text.py -- TD-279 V)."""
-    return TranscriptText(transcript).said_by(quote, speaker)
+    services/transcript_text.py -- TD-279 V), a speaker label copied at its
+    head removed as the server does (strip_speaker_label)."""
+    text = TranscriptText(transcript)
+    return text.said_by(text.strip_speaker_label(quote), speaker)
 
 
 def _evidence_metrics(signals, transcript):
@@ -291,7 +295,9 @@ def _evidence_metrics(signals, transcript):
     text = TranscriptText(transcript)
     rejected = {}
     for s in signals:
-        status = check_people_evidence(s.get('full_name'), s.get('source_quote') or '', text)
+        # Same order as the server: label removed, then the check.
+        quote = text.strip_speaker_label(s.get('source_quote') or '')
+        status = check_people_evidence(s.get('full_name'), quote, text)
         if status != 'ok':
             rejected.setdefault(str(status), []).append(_who(s.get('full_name')))
     return {
@@ -395,6 +401,22 @@ def _found(prefix, raw, stage):
     }
 
 
+def _controleur(signals):
+    """
+    The management controller of the atelier: the entry whose job_title
+    names the function, else an UNNAMED entry whose quote / notes do -- never
+    a named person whose quote merely mentions it (Isabelle: "... la
+    présenter au contrôleur de gestion, puis à Marc").
+    """
+    def names_it(text):
+        return 'contr' in text and 'gestion' in text
+    return (
+        _first(signals, lambda s: names_it(_text(s, 'job_title')))
+        or _first(signals, lambda s: not (s.get('full_name') or '').strip()
+                  and names_it(_text(s, 'notes', 'source_quote')))
+    )
+
+
 def _atelier_metrics(stage, parsed, activity=None):
     m = {}
     if stage == 'people':
@@ -413,8 +435,7 @@ def _atelier_metrics(stage, parsed, activity=None):
         m.update(_found('thomas', thomas, stage))
         m['thomas_role'] = (thomas or {}).get('role') or ''
         m['thomas_not_decision_maker'] = bool(thomas) and thomas.get('role') != 'DECISION_MAKER'
-        controleur = _first(signals, lambda s: 'contr' in _text(s, 'full_name', 'notes', 'source_quote')
-                            and 'gestion' in _text(s, 'full_name', 'notes', 'source_quote'))
+        controleur = _controleur(signals)
         m.update(_found('controleur', controleur, stage))
         department = ((controleur or {}).get('department') or '').strip()
         m['controleur_department'] = department
@@ -559,25 +580,60 @@ def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
         record['wall_ms'] = int((time.monotonic() - started) * 1000)
         record['attempts'] = recorder.calls
         record['parsed'] = parsed
-        signals = _signals(parsed)
-        if transcript_key == 'atelier':
-            metrics = _atelier_metrics(stage, parsed, activity)
-        elif stage == 'people':
-            metrics = _people_metrics(signals, transcript, activity)
-        else:
-            metrics = _blocker_metrics(signals, activity)
-        if stage == 'people':
-            metrics.update(_evidence_metrics(signals, transcript))
+        metrics = _score(record, transcript, activity)
         record['metrics'] = metrics
         (variant_dir / f'call_{index:02d}.json').write_text(
             json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8',
         )
-        rows.append({'variant': name, 'call': index, 'error': record['error'] or '',
-                     'error_type': record['error_type'] or '',
-                     'duration_ms': meta.get('duration_ms'), 'wall_ms': record['wall_ms'],
-                     **metrics})
+        rows.append(_row(record, metrics))
         print(f'{name} #{index}: {metrics}', flush=True)
     return rows
+
+
+def _score(record, transcript, activity):
+    """The metrics of ONE recorded call, from its raw parsed answer only
+    (shared by a run and --rescore)."""
+    stage, parsed = record['stage'], record.get('parsed')
+    signals = _signals(parsed)
+    if record['transcript'] == 'atelier':
+        metrics = _atelier_metrics(stage, parsed, activity)
+    elif stage == 'people':
+        metrics = _people_metrics(signals, transcript, activity)
+    else:
+        metrics = _blocker_metrics(signals, activity)
+    if stage == 'people':
+        metrics.update(_evidence_metrics(signals, transcript))
+    return metrics
+
+
+def _row(record, metrics):
+    """The summary row of a call (older records: missing keys -> empty)."""
+    return {'variant': record['variant'], 'call': record['call'],
+            'error': record.get('error') or '', 'error_type': record.get('error_type') or '',
+            'duration_ms': (record.get('meta') or {}).get('duration_ms'),
+            'wall_ms': record.get('wall_ms'), **metrics}
+
+
+def rescore(out_dir, tenant_name):
+    """
+    --rescore: recompute the metrics and the summary of a run folder from the
+    raw answers ALREADY recorded (call_NN.json) -- no API call, no provider.
+    Writes summary_rescored.csv / summary_rescored.md next to the originals
+    (kept). Transcripts: the current files of this folder.
+    """
+    rows, models_used, versions = [], {}, {}
+    for name in VARIANTS:
+        for path in sorted((out_dir / name).glob('call_*.json')):
+            record = json.loads(path.read_text(encoding='utf-8'))
+            key = record['transcript']
+            transcript = TRANSCRIPTS[key].read_text(encoding='utf-8')
+            activity = _activity(tenant_name, CONVERSATION_DATES[key])
+            rows.append(_row(record, _score(record, transcript, activity)))
+            models_used[name] = record.get('model')
+            versions = versions or record.get('prompt_versions') or {}
+    if not rows:
+        sys.exit(f'No call_NN.json under {out_dir} -- nothing to rescore.')
+    _write_summary(out_dir, rows, models_used, versions, suffix='_rescored')
 
 
 def _count(values):
@@ -611,8 +667,9 @@ def _timing_line(name, vrows):
     mean = round(sum(durations) / len(durations)) if durations else '-'
     longest = max(durations) if durations else '-'
     errors = _count(r['error_type'] for r in vrows if r['error_type'])
+    walls = [r['wall_ms'] for r in vrows if r['wall_ms'] is not None]
     return (f'| {name} | {len(vrows)} | {mean} | {longest} | '
-            f'{max(r["wall_ms"] for r in vrows)} | {errors or "-"} |')
+            f'{max(walls) if walls else "-"} | {errors or "-"} |')
 
 
 def _recap(rows):
@@ -722,6 +779,11 @@ def main():
     parser.add_argument('--tenant-name', default='SalesCommands')
     parser.add_argument('--dry-run', action='store_true', help='no API call')
     parser.add_argument(
+        '--rescore', metavar='OUT_DIR', default=None,
+        help='recompute the summary of an existing run folder from its recorded '
+             'raw answers (no API call); writes summary_rescored.csv / .md',
+    )
+    parser.add_argument(
         '--model', choices=sorted(MODELS),
         help='force a model DECLARED in ai_pipelines/config.py PROVIDER_CONFIG '
              '(e.g. the People challenger) for every variant run; default: the '
@@ -729,6 +791,10 @@ def main():
              'active provider)',
     )
     args = parser.parse_args()
+
+    if args.rescore:
+        rescore(Path(args.rescore), args.tenant_name)
+        return
 
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     out_dir = Path(args.out) if args.out else HERE / 'out' / stamp
@@ -748,17 +814,20 @@ def main():
     rows = []
     for name in names:
         rows.extend(run_variant(name, args.n, out_dir, args.dry_run, args.tenant_name, forced_key))
+    _write_summary(out_dir, rows, models_used, QualificationSignalsPipeline.PROMPT_VERSIONS)
 
+
+def _write_summary(out_dir, rows, models_used, versions, suffix=''):
     fields = sorted({key for row in rows for key in row}, key=lambda k: (k not in ('variant', 'call'), k))
-    with open(out_dir / 'summary.csv', 'w', newline='', encoding='utf-8') as handle:
+    with open(out_dir / f'summary{suffix}.csv', 'w', newline='', encoding='utf-8') as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
     recap = _recap(rows)
-    (out_dir / 'summary.md').write_text(
+    (out_dir / f'summary{suffix}.md').write_text(
         '# TD-279 — récap\n\n'
         f'Modèle par variante : {json.dumps(models_used)}\n\n'
-        f'Versions : {json.dumps(QualificationSignalsPipeline.PROMPT_VERSIONS)}\n\n'
+        f'Versions : {json.dumps(versions)}\n\n'
         + '\n'.join(recap) + '\n', encoding='utf-8',
     )
     print('\n'.join(recap))
