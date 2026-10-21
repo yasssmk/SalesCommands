@@ -45,9 +45,10 @@ Values in constants.py (PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED
 [NEXT_STEPS]):
     CONFIDENCE_MIN = 0.5   -- drop LLM signals with self-declared
                               confidence below this threshold.
-    DROP_INFERRED  = True  -- drop signals where the LLM self-declared
-                              is_inferred=true (evidence-anchored
-                              suggestions only).
+    DROP_INFERRED  = False -- an inferred next step is kept (TD-282 (1),
+                              aligned on TRANSCRIPT_SIGNALS since
+                              TD-279 C1); a weak one is still dropped
+                              by CONFIDENCE_MIN.
 
 The filter itself is applied by NextStepExtractor.persist_extracted,
 which delegates to services/safety_filter.py (the policy module

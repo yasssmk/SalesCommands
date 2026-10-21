@@ -186,11 +186,11 @@ PIPELINE_CONFIDENCE_MIN = {
 # TRANSCRIPT_SIGNALS: False since TD-279 C1 (PO decision) -- a deduction from
 # what the transcript says is a legitimate observation the rep validates, for
 # EVERY stage (People already kept it since S1); a weak deduction is still
-# dropped by PIPELINE_CONFIDENCE_MIN. NEXT_STEPS is a separate pipeline and
-# keeps its own policy.
+# dropped by PIPELINE_CONFIDENCE_MIN. NEXT_STEPS: False since TD-282 (1) --
+# same policy, an inferred next step is kept and the rep validates it.
 PIPELINE_DROP_INFERRED = {
     AIPipelineType.TRANSCRIPT_SIGNALS: False,
-    AIPipelineType.NEXT_STEPS:         True,
+    AIPipelineType.NEXT_STEPS:         False,
 }
 
 

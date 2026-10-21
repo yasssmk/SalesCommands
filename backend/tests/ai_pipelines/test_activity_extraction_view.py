@@ -834,3 +834,70 @@ class TestNextStepDcOnlyGuard:
         ).count() >= 1
         assert data['next_steps_run'] is not None
         assert len(data['next_step_signals']) >= 1
+
+
+# =============================================================================
+# TD-282 (1) — an inferred next step is KEPT (aligned on TD-279 C1)
+# =============================================================================
+
+def _next_step_reply(confidence, is_inferred):
+    return (
+        '{"signals": [{'
+        '"suggested_title": "Send the DPA and the SOC 2 report", '
+        '"suggested_activity_type": "EMAIL", '
+        '"suggested_due_date": null, '
+        '"source_quote": "Envoyez-les avant vendredi", '
+        f'"confidence": {confidence}, '
+        f'"is_inferred": {"true" if is_inferred else "false"}'
+        '}]}'
+    )
+
+
+@pytest.mark.django_db
+class TestNextStepInferredKept:
+    """
+    TD-282 (1): NEXT_STEPS no longer drops a self-declared inferred next
+    step — same policy as TRANSCRIPT_SIGNALS since TD-279 C1. A weak one is
+    still dropped by the confidence threshold.
+    """
+
+    def _run(self, authed_api_a, activity):
+        with _apply_patches(_bypass_redis):
+            return authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': TRANSCRIPT,
+                    'run_qualification': False,
+                    'run_next_steps': True,
+                },
+                format='json',
+            )
+
+    def test_inferred_next_step_is_persisted(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        from app_modules.signals.models import NextStepSignal
+
+        fake_provider.replies = {'next_steps': _next_step_reply(0.8, True)}
+
+        resp = self._run(authed_api_a, activity)
+
+        assert resp.status_code == 200
+        rows = NextStepSignal.objects.filter(source_activity=activity)
+        assert rows.count() == 1
+        assert rows.get().is_inferred is True
+
+    def test_low_confidence_inferred_next_step_still_dropped(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        from app_modules.signals.models import NextStepSignal
+
+        fake_provider.replies = {'next_steps': _next_step_reply(0.4, True)}
+
+        resp = self._run(authed_api_a, activity)
+
+        assert resp.status_code == 200
+        assert NextStepSignal.objects.filter(
+            source_activity=activity,
+        ).count() == 0

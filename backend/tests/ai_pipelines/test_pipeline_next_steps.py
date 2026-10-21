@@ -20,7 +20,7 @@ Covers everything that lives at the pipeline-runner boundary:
       * PromptParseError after retry     -> PARSE_ERROR
       * Generic LLMProviderError         -> LLM_ERROR
   * Safety filter applies to NextSteps with the shared module
-    (confidence < 0.5 -> drop; is_inferred=True -> drop).
+    (confidence < 0.5 -> drop; is_inferred=True -> KEPT since TD-282 (1)).
   * Regression: QualificationSignalsPipeline still produces signals
     on a happy-path run (the safety_filter refactor did not break it).
 
@@ -66,7 +66,7 @@ class TestNextStepsPipelineRegistry:
     def test_safety_thresholds_match_qualification(self):
         from app_modules.ai_pipelines.pipelines.next_steps import NextStepsPipeline
         assert NextStepsPipeline.CONFIDENCE_MIN == 0.5
-        assert NextStepsPipeline.DROP_INFERRED is True
+        assert NextStepsPipeline.DROP_INFERRED is False
 
 
 # =============================================================================
@@ -397,7 +397,8 @@ class TestNextStepsPipelineFailureModes:
 # =============================================================================
 
 class TestSafetyFilterAppliesToNextSteps:
-    """Shared safety filter must drop weak signals at the NextSteps stage."""
+    """Shared safety filter must drop weak signals at the NextSteps stage
+    and keep an inferred one (TD-282 (1))."""
 
     def test_low_confidence_signal_dropped(
         self, account, activity, user_a, fake_provider, patch_active_provider,
@@ -426,7 +427,7 @@ class TestSafetyFilterAppliesToNextSteps:
         sub = result['run'].sub_calls[0]
         assert sub['dropped_by_safety_filter'] == 1
 
-    def test_inferred_signal_dropped(
+    def test_inferred_signal_kept(
         self, account, activity, user_a, fake_provider, patch_active_provider,
     ):
         from app_modules.ai_pipelines.pipelines.next_steps import NextStepsPipeline
@@ -444,14 +445,15 @@ class TestSafetyFilterAppliesToNextSteps:
         }
 
         result = NextStepsPipeline().run(
-            transcript='Inferred drop test transcript.',
+            transcript='Inferred keep test transcript.',
             activity=activity,
             user=user_a,
             client_id=account.client_id,
         )
-        assert result['signals'] == []
+        assert len(result['signals']) == 1
+        assert result['signals'][0].is_inferred is True
         sub = result['run'].sub_calls[0]
-        assert sub['dropped_by_safety_filter'] == 1
+        assert sub['dropped_by_safety_filter'] == 0
 
 
 # =============================================================================
