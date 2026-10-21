@@ -183,12 +183,51 @@ PIPELINE_CONFIDENCE_MIN = {
 }
 
 # Drop a signal whose self-declared is_inferred is True (verbatim-anchored).
+# TRANSCRIPT_SIGNALS: False since TD-279 C1 (PO decision) -- a deduction from
+# what the transcript says is a legitimate observation the rep validates, for
+# EVERY stage (People already kept it since S1); a weak deduction is still
+# dropped by PIPELINE_CONFIDENCE_MIN. NEXT_STEPS is a separate pipeline and
+# keeps its own policy.
 PIPELINE_DROP_INFERRED = {
-    AIPipelineType.TRANSCRIPT_SIGNALS: True,
+    AIPipelineType.TRANSCRIPT_SIGNALS: False,
     AIPipelineType.NEXT_STEPS:         True,
 }
 
-# Qualification stages exempt from the is_inferred drop (the confidence floor
-# still applies). People: an inferred role is a legitimate observation (a
-# champion is rarely stated) that the rep validates — PO decision, People S1.
-TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES = frozenset({'people'})
+
+# =============================================================================
+# PEOPLE ROLE IN THE PROMPT PACKS (prep_call / deal_health)
+# =============================================================================
+
+# TD-279 U (PO): a PeopleSignal of role UNKNOWN reaches the prep_call and
+# deal_health packs as a role still to qualify -- never filtered out, never
+# as the bare "UNKNOWN" code (read as "no role" / "no stakeholder").
+PEOPLE_ROLE_TO_QUALIFY = 'role to qualify'
+
+
+def people_role_for_prompt(role):
+    """The PeopleSignal role as sent to an LLM pack: the code, or
+    PEOPLE_ROLE_TO_QUALIFY for UNKNOWN."""
+    from app_modules.signals.constants import PeopleRole
+    return PEOPLE_ROLE_TO_QUALIFY if role == PeopleRole.UNKNOWN else role
+
+
+# =============================================================================
+# PEOPLE EVIDENCE CHECK (TD-279 V)
+# =============================================================================
+
+class PeopleEvidenceStatus(models.TextChoices):
+    """
+    Server check of a People observation's source_quote, stored in
+    PeopleSignal.metadata.evidence_check.status (services/people_evidence.py).
+
+    OK                     -- the quote is in the transcript and, for a
+                              SPEAKER, said by them or naming them.
+    QUOTE_NOT_FOUND        -- the quote is not in the transcript.
+    QUOTE_NOT_ABOUT_PERSON -- the person speaks, but the quote is neither
+                              theirs nor names them.
+
+    A rejected proof never drops the person: role -> PeopleRole.UNKNOWN.
+    """
+    OK                     = 'ok',                     _('Ok')
+    QUOTE_NOT_FOUND        = 'quote_not_found',        _('Quote not found')
+    QUOTE_NOT_ABOUT_PERSON = 'quote_not_about_person', _('Quote not about the person')

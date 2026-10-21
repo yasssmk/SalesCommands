@@ -3,17 +3,17 @@
 People-stage integration tests for QualificationSignalsPipeline
 (UX Activity — People S1), through the REAL pipeline path (FakeProvider).
 
-  * Participant reference -> target_contact; full_name and department
+  * Name of a registered contact (TD-279: linked by the server, no
+    participant reference) -> target_contact; full_name and department
     DERIVED from the contact (department falls back to the extracted one).
   * Cited person -> full_name as stated + resolved department, no contact.
     Unnamed cited person ("our CFO") -> department alone, kept.
   * Drops: role out of PeopleRole, no identity, blank source_quote.
-    Folds: invalid influence -> None. Unresolved / other-account reference
-    -> no contact, signal kept.
-  * is_inferred=true is KEPT for people (DROP_INFERRED_EXEMPT_STAGES) and
-    still dropped for another stage in the same run; the confidence floor
-    still applies to people.
-  * In-extraction dedup (shared with TechStack): same participant twice ->
+    Folds: invalid influence -> None. Other-account contact -> never
+    linked, signal kept.
+  * is_inferred=true is KEPT for people, as for every stage since TD-279 C1
+    (blocker in the same run); the confidence floor still applies to people.
+  * In-extraction dedup (shared with TechStack): same contact twice ->
     one signal + 1 additional quote; same name twice -> one signal; two
     unnamed persons -> two signals.
   * Endpoint response carries the `people` key (fresh, cached, empty).
@@ -56,7 +56,6 @@ def _dept(name):
 
 def _person(**overrides):
     payload = {
-        'participant_ref': None,
         'full_name': None,
         'role': PeopleRole.ECONOMIC_BUYER.value,
         'influence': InfluenceLevel.HIGH.value,
@@ -70,7 +69,8 @@ def _person(**overrides):
     return payload
 
 
-def _run(account, activity, user_a, fake_provider, people, extra_replies=None):
+def _run(account, activity, user_a, fake_provider, people, extra_replies=None,
+         transcript=TRANSCRIPT):
     from app_modules.ai_pipelines.pipelines.transcript_signals import (
         QualificationSignalsPipeline,
     )
@@ -79,7 +79,7 @@ def _run(account, activity, user_a, fake_provider, people, extra_replies=None):
         **(extra_replies or {}),
     }
     return QualificationSignalsPipeline().run(
-        transcript=TRANSCRIPT,
+        transcript=transcript,
         activity=activity,
         user=user_a,
         client_id=account.client_id,
@@ -101,28 +101,31 @@ class TestPeoplePersistence:
     ):
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
-        assert result['run'].prompt_versions['people'] == 'v4'
+        assert result['run'].prompt_versions['people'] == 'v9'
         # v4 = Sprint TechStack T0 (techstack usage taxonomy); v5 = T4b
         # (shared "Conversation date" line + techstack header); v6 = no list
-        # of the persons already known in the deal (people P2).
-        assert result['run'].prompt_versions['context'] == 'v6'
+        # of the persons already known in the deal (people P2); v7 = contacts
+        # "registered on this activity", not "in this conversation" (TD-279);
+        # v8 = no contact list at all (TD-279 B4b); v9 = People role list
+        # offers UNKNOWN (TD-279 M).
+        assert result['run'].prompt_versions['context'] == 'v9'
         assert result['run'].status == AIPipelineStatus.SUCCESS
         people_prompt = fake_provider.calls_for('people')[0]['user']
         assert 'Extract PEOPLE signals' in people_prompt
 
-    def test_participant_ref_resolves_and_derives_name_and_department(
+    def test_registered_contact_named_derives_name_and_department(
         self, account, activity, user_a, contact, contact_extra,
         fake_provider, patch_active_provider,
     ):
-        # Doe = P1, Smith = P2 (last_name order). Smith's own department wins
-        # over the extracted one.
+        # The name as written links John Smith (TD-279 B4b, server side);
+        # Smith's own department wins over the extracted one.
         contact_extra.standard_department = _dept('Finance')
         contact_extra.save(user=user_a, client_id=account.client_id)
         _dept('IT')
         activity.contacts.add(contact, contact_extra)
 
         result = _run(account, activity, user_a, fake_provider, [
-            _person(participant_ref='P2', full_name='Johnny', department='IT'),
+            _person(full_name='John', department='IT'),
         ])
 
         [signal] = _people(result)
@@ -139,7 +142,7 @@ class TestPeoplePersistence:
         assert signal.account_id == account.id
         assert signal.canonical_key is None
 
-    def test_participant_without_department_takes_the_extracted_one(
+    def test_contact_without_department_takes_the_extracted_one(
         self, account, activity, user_a, contact,
         fake_provider, patch_active_provider,
     ):
@@ -147,7 +150,7 @@ class TestPeoplePersistence:
         activity.contacts.add(contact)
 
         result = _run(account, activity, user_a, fake_provider, [
-            _person(participant_ref='P1', department='IT'),
+            _person(full_name='Jane Doe', department='IT'),
         ])
 
         [signal] = _people(result)
@@ -227,41 +230,27 @@ class TestPeopleDropsAndFolds:
         [signal] = _people(result)
         assert signal.influence is None
 
-    def test_other_account_participant_is_not_attributed(
+    def test_other_account_contact_is_not_attributed(
         self, account, activity, user_a, contact, other_account_contact,
         fake_provider, patch_active_provider,
     ):
         # Filtered on the activity's account, the other-account contact is
-        # not a participant: P2 does not resolve.
+        # never linked, even named.
         activity.contacts.add(contact, other_account_contact)
 
         result = _run(account, activity, user_a, fake_provider, [
-            _person(participant_ref='P2', full_name='Bill'),
+            _person(full_name='Bill'),
         ])
 
         [signal] = _people(result)
         assert signal.target_contact_id is None
         assert signal.full_name == 'Bill'
 
-    def test_unresolved_reference_keeps_signal_without_contact(
-        self, account, activity, user_a, contact,
-        fake_provider, patch_active_provider,
-    ):
-        activity.contacts.add(contact)
-
-        result = _run(account, activity, user_a, fake_provider, [
-            _person(participant_ref='P9', full_name='Marc'),
-        ])
-
-        [signal] = _people(result)
-        assert signal.target_contact_id is None
-        assert signal.full_name == 'Marc'
-
     def test_no_identity_is_dropped(
         self, account, activity, user_a, fake_provider, patch_active_provider,
     ):
         result = _run(account, activity, user_a, fake_provider, [
-            _person(participant_ref=None, full_name=None, department='Martians'),
+            _person(full_name=None, department='Martians'),
         ])
         assert _people(result) == []
         assert PeopleSignal.objects.count() == 0
@@ -277,12 +266,12 @@ class TestPeopleDropsAndFolds:
 
 
 # =============================================================================
-# SAFETY FILTER — is_inferred exemption limited to people
+# SAFETY FILTER — is_inferred kept (people, and every stage since TD-279 C1)
 # =============================================================================
 
 class TestPeopleInferredExemption:
 
-    def test_inferred_people_kept_inferred_blocker_still_dropped(
+    def test_inferred_people_kept_inferred_blocker_kept_too(
         self, account, activity, user_a, fake_provider, patch_active_provider,
     ):
         blocker_reply = json.dumps({'signals': [{
@@ -290,7 +279,7 @@ class TestPeopleInferredExemption:
             'source_quote': 'We have no budget allocated for Q4',
             'confidence': 0.6,
             'is_inferred': True,
-            'raised_by': None,
+            'raised_by_name': None,
         }]})
 
         result = _run(
@@ -303,9 +292,10 @@ class TestPeopleInferredExemption:
         [signal] = _people(result)
         assert signal.is_inferred is True
         assert signal.role == PeopleRole.CHAMPION
-        # Témoin: the same epistemic state is still dropped for blocker.
-        assert result['signals_by_stage']['blocker'] == []
-        assert BlockerSignal.objects.count() == 0
+        # TD-279 C1: the same epistemic state is now kept for blocker too.
+        [blocker] = result['signals_by_stage']['blocker']
+        assert blocker.is_inferred is True
+        assert BlockerSignal.objects.count() == 1
 
     def test_confidence_floor_still_applies_to_people(
         self, account, activity, user_a, fake_provider, patch_active_provider,
@@ -322,17 +312,19 @@ class TestPeopleInferredExemption:
 
 class TestPeopleDeduplication:
 
-    def test_same_participant_twice_is_one_signal_with_additional_quote(
+    def test_same_contact_named_twice_is_one_signal_with_additional_quote(
         self, account, activity, user_a, contact,
         fake_provider, patch_active_provider,
     ):
         activity.contacts.add(contact)
 
         result = _run(account, activity, user_a, fake_provider, [
-            _person(participant_ref='P1', source_quote='Jane signs off.'),
-            _person(participant_ref='P1', role=PeopleRole.CHAMPION.value,
+            _person(full_name='Jane', source_quote='Jane signs off.'),
+            _person(full_name='Jane Doe', role=PeopleRole.CHAMPION.value,
                     source_quote='Jane pushes for it internally.'),
-        ])
+        # Both quotes are in the transcript: the roles are not rejected by
+        # the evidence check (TD-279 V) -- this test is about the merge.
+        ], transcript='Jane signs off. Jane pushes for it internally.')
 
         [signal] = _people(result)
         assert signal.target_contact_id == contact.id
@@ -397,6 +389,48 @@ class TestPeopleDeduplication:
 
 
 # =============================================================================
+# TD-279 — the word match used to link a name to a registered contact
+# =============================================================================
+
+class TestNameWordMatch:
+    """
+    The TD-279 word match itself (no DB), through the shared rule
+    _best_unique_match (resolve_participant_by_name / resolve_speaker_label).
+    Migrated from the removed stated_name_matches_contact: same match / no
+    match cases; a missing / blank name is never linked (None).
+    """
+
+    @staticmethod
+    def _match(stated, first='Hélène', last='Le Gall'):
+        from app_modules.ai_pipelines.services.participant_refs import (
+            _best_unique_match,
+        )
+        return _best_unique_match(stated, [((first, last), 'contact')])
+
+    @pytest.mark.parametrize('stated', [
+        'Hélène', 'helene', 'HELENE', 'Hélène Le Gall', 'Mme Le Gall',
+    ])
+    def test_matches(self, stated):
+        assert self._match(stated) == 'contact'
+
+    @pytest.mark.parametrize('stated', ['Isabelle Roux', 'Hélènette', 'Gall', 'Le'])
+    def test_does_not_match(self, stated):
+        assert self._match(stated) is None
+
+    @pytest.mark.parametrize('stated', [None, '', '   '])
+    def test_missing_name_is_never_linked(self, stated):
+        assert self._match(stated) is None
+
+    def test_a_speaker_label_uses_the_same_match(self):
+        from app_modules.ai_pipelines.services.participant_refs import (
+            resolve_speaker_label,
+        )
+        labels = ['Hélène Le Gall', 'Julien Moreau']
+        assert resolve_speaker_label('Mme Le Gall', labels) == 'Hélène Le Gall'
+        assert resolve_speaker_label('Gall', labels) is None
+
+
+# =============================================================================
 # PROMPT v2 — unlisted prospect speakers + seller side + no-omission taxonomy
 # =============================================================================
 
@@ -411,20 +445,16 @@ class TestPeoplePromptV2:
             build_people_request('Claire Dubois: we need the CFO on board.').split()
         )
 
-    def test_unlisted_prospect_speaker_rule_present(self):
+    def test_prospect_speaker_rule_present(self):
         prompt = self._prompt()
         assert 'SPEAKS in the transcript' in prompt
         assert 'speaker label' in prompt
-        assert 'NOT listed in the SESSION CONTEXT' in prompt
 
     def test_seller_side_rule_present(self):
         prompt = self._prompt()
-        assert 'presents or sells the solution' in prompt
+        # Wording "THE SOLUTION" since v7 (TD-279 C5).
+        assert 'presents or sells THE SOLUTION' in prompt
         assert 'even when their organization is not named' in prompt
-
-    def test_unlisted_speaker_attribution_rule(self):
-        prompt = self._prompt()
-        assert 'speaker who is NOT a listed participant' in prompt
 
     def test_people_taxonomy_header_has_no_omission_rule(self, activity):
         from app_modules.ai_pipelines.prompts.transcript_signals.context import (
@@ -435,14 +465,14 @@ class TestPeoplePromptV2:
         assert 'OMIT' not in context
         assert 'CANONICAL TAXONOMY' not in context
 
-    def test_unlisted_speaker_emitted_without_ref_is_created_without_contact(
+    def test_unregistered_speaker_is_created_without_contact(
         self, account, activity, user_a, contact,
         fake_provider, patch_active_provider,
     ):
         activity.contacts.add(contact)
 
         result = _run(account, activity, user_a, fake_provider, [
-            _person(participant_ref=None, full_name='Claire Dubois'),
+            _person(full_name='Claire Dubois'),
         ])
 
         [signal] = _people(result)
@@ -480,12 +510,98 @@ class TestPeoplePromptV3Department:
         prompt = self._prompt()
         assert 'set `department` to null' in prompt
 
-    def test_real_case_example_maps_key_accounts_lead_to_sales(self):
+    def test_neutral_example_maps_a_sales_team_lead_to_sales(self):
+        # C5-bis: the former example came from a test transcript (TD-273).
         from app_modules.core_modules.models import StandardDepartment
         prompt = self._prompt()
         sales = StandardDepartment.DepartmentChoices.SALES.value
-        assert f'"head of the key accounts team" -> department "{sales}"' in prompt
+        assert f'"manager of the inside sales team" -> department "{sales}"' in prompt
 
+
+# =============================================================================
+# TD-279 — rules kept from prompt v5 (the participant-reference rules are
+# gone with v6, see test_attribution_by_name.py)
+# =============================================================================
+
+class TestPeoplePromptAttributionRules:
+
+    def _prompt(self):
+        return TestPeoplePromptV3Department()._prompt()
+
+    def test_never_transfer_what_is_said_of_another_named_person(self):
+        prompt = self._prompt()
+        assert 'NEVER transfer to one person what the transcript says about ANOTHER' in prompt
+
+    def test_deduction_allowed_conclusion_without_evidence_not(self):
+        prompt = self._prompt()
+        assert 'A DEDUCTION from what the transcript says is allowed' in prompt
+        assert 'a conclusion with NO evidence in the transcript is not' in prompt
+
+    def test_examples_do_not_reuse_the_td279_smoke(self):
+        # TD-273: an example taken from the smoke would no longer measure
+        # generalisation (B2 runs on that very transcript). Rendered with a
+        # neutral transcript so only the prompt's own text is checked.
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            build_people_request,
+        )
+        prompt = ' '.join(build_people_request('TRANSCRIPT').split())
+        for smoke_word in ('Isabelle', 'Criminelle', 'Logistix', 'DAF',
+                           # "atelier business case" smoke (TD-279 C5)
+                           'Thomas', 'Nadia', 'Laurent', 'Sophie', 'Karim',
+                           'Zendesk', 'Gong', 'contrôleur', 'controller',
+                           # inherited Logistix examples (TD-279 C5-bis)
+                           'Claire', 'Dubois', 'key accounts', 'grands comptes'):
+            assert smoke_word not in prompt
+
+
+# =============================================================================
+# TD-279 C5 — PROMPT v7: speakers always extracted, their role from what is
+# said of THEM, seller side = the SOLUTION, department from the job title
+# =============================================================================
+
+class TestPeoplePromptV7:
+
+    def _prompt(self):
+        return TestPeoplePromptV3Department()._prompt()
+
+    def test_1_every_prospect_speaker_is_extracted(self):
+        prompt = self._prompt()
+        assert 'is ALWAYS extracted -- even when they say they do not decide' in prompt
+        # The weight rule only concerns cited persons.
+        assert 'A CITED person (who does not speak) with no observable weight' in prompt
+        assert '- A person with no observable weight in the decision' not in prompt
+
+    def test_2_a_speaker_role_rests_only_on_what_is_said_of_them(self):
+        prompt = self._prompt()
+        assert 'The role of a SPEAKER rests ONLY on what the transcript says about THIS speaker' in prompt
+        assert 'the NEVER transfer rule above applies to the speaker too' in prompt
+        assert 'does not become the decision maker' in prompt
+        # v8 (TD-279 M): nothing establishes the speaker's role -> UNKNOWN,
+        # never the best-supported guess.
+        assert 'When nothing establishes the speaker\'s role, the role is "UNKNOWN"' in prompt
+        assert 'pick the best-supported role' not in prompt
+
+    def test_3_seller_side_is_the_solution_not_an_internal_presentation(self):
+        prompt = self._prompt()
+        assert 'presents or sells THE SOLUTION being offered' in prompt
+        assert 'A prospect who presents THE PROJECT internally' in prompt
+        assert 'stays on the PROSPECT side' in prompt
+
+    def test_4_unnamed_cited_person_department_from_job_title(self):
+        from app_modules.core_modules.models import StandardDepartment
+        prompt = self._prompt()
+        choices = StandardDepartment.DepartmentChoices
+        # v9 (TD-279 D): the title as said + the department it designates.
+        assert ('full_name = null, `job_title` = the title as said, and the '
+                'department that title designates') in prompt
+        assert f'"the payroll manager" -> department "{choices.HR.value}"' in prompt
+        assert f'"our accounts payable clerk" -> department "{choices.FINANCE.value}"' in prompt
+
+    def test_version(self):
+        from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
+            PEOPLE_PROMPT_VERSION,
+        )
+        assert PEOPLE_PROMPT_VERSION == 'v9'
 
 # =============================================================================
 # P2 — NO KNOWN-PEOPLE LIST in the people context nor in the prompt
@@ -530,8 +646,8 @@ class TestNoKnownPeopleListSentToTheLLM:
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v4'
-        assert CONTEXT_VERSION == 'v6'
+        assert PEOPLE_PROMPT_VERSION == 'v9'
+        assert CONTEXT_VERSION == 'v9'
 
 
 # =============================================================================
@@ -612,7 +728,7 @@ class TestKnownPersonIsNeverFiltered:
         people_call = [c for c in result['run'].sub_calls if c['stage'] == 'people'][0]
         assert people_call['dropped_by_safety_filter'] == 0
 
-    def test_n2_participant_contact_known_from_activity_a_is_created_again_for_activity_b(
+    def test_n2_registered_contact_known_from_activity_a_is_created_again_for_activity_b(
         self, account, activity, user_a, contact, decision_cycle,  # noqa: F811
         fake_provider, patch_active_provider,
     ):
@@ -622,7 +738,7 @@ class TestKnownPersonIsNeverFiltered:
         activity_b.contacts.add(contact)
 
         result = _run(account, activity_b, user_a, fake_provider, [
-            _person(participant_ref='P1'),
+            _person(full_name='Jane Doe'),
         ])
 
         [signal] = _people(result)

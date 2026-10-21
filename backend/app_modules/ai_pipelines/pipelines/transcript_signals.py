@@ -53,13 +53,13 @@ blocker stage (no axes) and on the constraint stage (constraint carries a
 Safety filter
 -------------
 Values in constants.py (PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED
-[TRANSCRIPT_SIGNALS], TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES):
+[TRANSCRIPT_SIGNALS]):
     CONFIDENCE_MIN = 0.5   -- drop LLM signals with self-declared
                               confidence below this threshold.
-    DROP_INFERRED  = True  -- drop signals where the LLM self-declared
-                              is_inferred=true (verbatim-anchored only),
-                              except for DROP_INFERRED_EXEMPT_STAGES
-                              (people: inferred roles are kept).
+    DROP_INFERRED  = False -- a signal the LLM self-declares
+                              is_inferred=true is KEPT on every stage
+                              (TD-279 C1); the confidence floor alone
+                              drops a weak deduction.
 
 The filter itself is applied by TranscriptSignalExtractor, per stage.
 The pipeline only OWNS the thresholds and propagates them
@@ -129,13 +129,13 @@ an import cycle if a future refactor has F.3 reading pipeline class
 attributes.
 """
 
+from .. import config as ai_config
 from ..constants import (
     AIPipelineStatus,
     AIPipelineType,
     PIPELINE_CONFIDENCE_MIN,
     PIPELINE_DROP_INFERRED,
     PIPELINE_TEMPERATURES,
-    TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES,
 )
 from ..prompts.base import PromptParseError
 from ..prompts.transcript_signals.system import (
@@ -173,7 +173,9 @@ from ..prompts.transcript_signals.competitor_v1 import (
 from ..prompts.transcript_signals.people_v1 import (
     build_people_request,
     PEOPLE_PROMPT_VERSION,
+    PEOPLE_RESPONSE_SCHEMA,
 )
+from ..providers import provider_supports_response_schema
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -217,10 +219,56 @@ _STAGES = [
     ('competitor', build_competitor_request),
     # People is LAST (UX Activity -- People S1): the prospect-side persons
     # who weigh in the decision or embody a step to clear, with their role.
-    # Its context also lists the persons already identified in the deal so
-    # they are not emitted again (one role per person per decision cycle).
+    # Every activity re-observes its persons (no list of the persons already
+    # known in the deal since people v4); the cluster of the DC merges them.
     ('people', build_people_request),
 ]
+
+
+# Strict response schema per stage (Structured Outputs, TD-279 M). A stage
+# absent from the map sends none (pre-M call). Its stage's provider must
+# support it (checked at load, check_stage_schemas).
+STAGE_RESPONSE_SCHEMAS = {
+    'people': PEOPLE_RESPONSE_SCHEMA,
+}
+
+
+def check_stage_names(stage_provider):
+    """
+    TD-279 P1 sanity check: config.STAGE_PROVIDER may only name stages of
+    this pipeline (a typo would silently fall back to the default model).
+    Raises ImportError so a misconfiguration fails at Django startup.
+    """
+    known = {name for name, _ in _STAGES}
+    unknown = sorted(set(stage_provider) - known)
+    if unknown:
+        raise ImportError(
+            f'AI Pipelines configuration error: AI_PIPELINES_STAGE_PROVIDER '
+            f'names unknown stage(s) {unknown}. Known stages: {sorted(known)}.'
+        )
+
+
+check_stage_names(ai_config.STAGE_PROVIDER)
+
+
+def check_stage_schemas(stage_schemas, stage_provider):
+    """
+    TD-279 V sanity check: a stage that sends a response schema must be
+    mapped (STAGE_PROVIDER, else the active provider) to a provider that
+    supports it -- Claude refuses one at call time. Raises ImportError so the
+    misconfiguration fails at Django startup, not on a rep's extraction.
+    """
+    for stage in stage_schemas:
+        config_key = stage_provider.get(stage) or ai_config.ACTIVE_PROVIDER
+        if not provider_supports_response_schema(config_key):
+            raise ImportError(
+                f'AI Pipelines configuration error: stage {stage!r} sends a '
+                f'response schema but is mapped to {config_key!r}, whose '
+                f'provider does not support a response schema.'
+            )
+
+
+check_stage_schemas(STAGE_RESPONSE_SCHEMAS, ai_config.STAGE_PROVIDER)
 
 
 class QualificationSignalsPipeline(BasePipeline):
@@ -245,15 +293,10 @@ class QualificationSignalsPipeline(BasePipeline):
     TEMPERATURE = PIPELINE_TEMPERATURES[AIPipelineType.TRANSCRIPT_SIGNALS]
 
     # Safety filter knobs -- read by TranscriptSignalExtractor.persist_stage().
-    # Strict defaults for signal extraction (vs. e.g. sentiment analysis):
-    # we want verbatim-anchored signals only.
     # Values live in constants.py (S5); the class attributes point to them so
     # the `self.X` reads and any subclass override keep working.
     CONFIDENCE_MIN = PIPELINE_CONFIDENCE_MIN[AIPipelineType.TRANSCRIPT_SIGNALS]
     DROP_INFERRED = PIPELINE_DROP_INFERRED[AIPipelineType.TRANSCRIPT_SIGNALS]
-    # Stages exempt from the DROP_INFERRED drop (the confidence floor still
-    # applies) -- see TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES.
-    DROP_INFERRED_EXEMPT_STAGES = TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES
 
     # =========================================================================
     # MAIN ENTRY
@@ -320,6 +363,9 @@ class QualificationSignalsPipeline(BasePipeline):
                             system_prompt=SYSTEM_PROMPT,
                             context=context_layer,
                             request=request_layer,
+                            # Model per stage (TD-279 P1): None -> default.
+                            provider_key=ai_config.STAGE_PROVIDER.get(stage_name),
+                            response_schema=STAGE_RESPONSE_SCHEMAS.get(stage_name),
                         )
 
                         if stage_name == 'pain_impact':
@@ -347,6 +393,7 @@ class QualificationSignalsPipeline(BasePipeline):
                                 confidence_min=self.CONFIDENCE_MIN,
                                 drop_inferred=self.DROP_INFERRED,
                                 source_run=run,
+                                transcript=transcript,
                             )
                             impact_persisted, impact_dropped = extractor.persist_stage(
                                 stage='impact',
@@ -357,6 +404,7 @@ class QualificationSignalsPipeline(BasePipeline):
                                 confidence_min=self.CONFIDENCE_MIN,
                                 drop_inferred=self.DROP_INFERRED,
                                 source_run=run,
+                                transcript=transcript,
                             )
 
                             signals_by_stage['pain'] = pain_persisted
@@ -394,11 +442,11 @@ class QualificationSignalsPipeline(BasePipeline):
                                 user=user,
                                 client_id=client_id,
                                 confidence_min=self.CONFIDENCE_MIN,
-                                drop_inferred=(
-                                    self.DROP_INFERRED
-                                    and stage_name not in self.DROP_INFERRED_EXEMPT_STAGES
-                                ),
+                                drop_inferred=self.DROP_INFERRED,
                                 source_run=run,
+                                # Quote labels (every stage) + People proofs
+                                # checked server-side (TD-279 V).
+                                transcript=transcript,
                             )
 
                             signals_by_stage[stage_name] = persisted
@@ -412,6 +460,7 @@ class QualificationSignalsPipeline(BasePipeline):
                                 parsed=parsed,
                                 error=None,
                                 dropped_count=dropped_count,
+                                evidence_check=extractor.last_evidence_counts,
                             )
 
                     # --- Specific subclasses first, then generic LLMProviderError ---

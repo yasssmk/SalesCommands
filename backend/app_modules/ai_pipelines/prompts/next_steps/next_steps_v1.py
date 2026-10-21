@@ -9,7 +9,7 @@ combined at call time with:
         Universal MEDDPICC-analyst system prompt (output rules, evidence
         rules, epistemic filter, privacy). Reused as-is.
   * prompts/next_steps/context.py
-        Session-only context layer (tenant, account, activity, contacts).
+        Session-only context layer (tenant, account, activity).
         No taxonomy block, no techcatalog block -- NextStepSignal has
         no canonical axes.
 

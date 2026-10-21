@@ -20,9 +20,10 @@ this service:
                           unset, satisfying ObjectiveSignal.clean()'s
                           BUSINESS branch).
         - Impact      -> 1:1 passthrough + force scope_level=BUSINESS;
-                          metric_text and human_impact left unset (rep
-                          fills during validation). impact_type is
-                          emitted by the LLM and persisted directly.
+                          metric_text extracted by the LLM since TD-279
+                          C3; human_impact left unset (dormant, TD-245).
+                          impact_type is emitted by the LLM and persisted
+                          directly.
         - TechStack   -> raw `tech_name` passthrough (normalised by
                           TechStackSignal.save(), not here) + the
                           qualification booleans (is_competitor /
@@ -88,10 +89,11 @@ local try/except and remain partial-success — that behavior is preserved.
 
 Statelessness
 -------------
-The extractor holds no per-instance state. `persist_stage()` is
-effectively a classmethod with `self`. We keep it as an instance
-method for symmetry with future variants (e.g. a v2 extractor with
-a different filter strategy could subclass).
+The extractor holds no per-instance state, except `last_evidence_counts`
+(TD-279 V): the People evidence counts of the LAST persist_stage call,
+read right after it by the pipeline for its sub_calls entry. We keep
+persist_stage as an instance method for symmetry with future variants
+(e.g. a v2 extractor with a different filter strategy could subclass).
 """
 
 import datetime
@@ -111,13 +113,21 @@ from app_modules.signals.constants import (
     SignalStatus,
     UsageScope,
 )
-from app_modules.signals.models import CompetitorSignal, PeopleSignal, TechStackSignal
+from app_modules.signals.models import (
+    CompetitorSignal,
+    ImpactSignal,
+    PeopleSignal,
+    TechStackSignal,
+)
 from app_modules.signals.services.signal_cluster_service import SignalClusterService
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
-from .participant_refs import resolve_participant_ref
+from ..constants import PeopleEvidenceStatus
+from .participant_refs import resolve_participant_by_name
+from .people_evidence import check_people_evidence
 from .safety_filter import passes_safety_filter, safe_float
+from .transcript_text import TranscriptText
 
 
 logger = logging.getLogger(__name__)
@@ -515,11 +525,22 @@ def resolve_person_department(name):
     return by_value.get(key) or by_word.get(key)
 
 
+def resolve_person_department_or_title(department, job_title):
+    """
+    TD-279 D: the department of a person -- the LLM-emitted department, else
+    (server safety net) the job title as said, through the SAME resolver
+    (resolve_person_department: a title that is a department name or a
+    single word unique to one department). None otherwise -- no hard-coded
+    title table.
+    """
+    return resolve_person_department(department) or resolve_person_department(job_title)
+
+
 # =============================================================================
 # IN-EXTRACTION DEDUPLICATION (shared by TechStack and People)
 # =============================================================================
 
-def _deduplicate_candidates(candidates, key_fn, fill_groups=()):
+def _deduplicate_candidates(candidates, key_fn, fill_groups=(), prefer_fn=None):
     """
     Merge the candidates of ONE extraction that share a grouping key.
 
@@ -534,10 +555,16 @@ def _deduplicate_candidates(candidates, key_fn, fill_groups=()):
     non-empty one wins). Fields already set on the winner are never
     overwritten.
 
+    prefer_fn (TD-279 V-bis, People): a later member for which prefer_fn is
+    True REPLACES a winner for which it is False (at the winner's position);
+    the former winner's source_quote and additional_quotes move to the new
+    winner's metadata.additional_quotes. None -> first wins, always.
+
     Args:
         candidates:  list[dict] -- data dicts built for SignalManager.create().
         key_fn:      callable(dict) -> hashable | None -- the grouping key.
         fill_groups: tuple[tuple[str, ...]] -- field groups to complete.
+        prefer_fn:   callable(dict) -> bool | None -- see above.
 
     Returns:
         list[dict] -- the surviving candidates.
@@ -556,16 +583,22 @@ def _deduplicate_candidates(candidates, key_fn, fill_groups=()):
             survivors.append(data)
         else:
             winner = groups[key]
+            moved_quotes = []
+            if prefer_fn is not None and prefer_fn(data) and not prefer_fn(winner):
+                position = next(i for i, kept in enumerate(survivors) if kept is winner)
+                survivors[position] = groups[key] = data
+                moved_quotes = (winner.get('metadata') or {}).get('additional_quotes', [])
+                winner, data = data, winner
             for group in fill_groups:
                 if not winner.get(group[0]) and data.get(group[0]):
                     for field in group:
                         winner[field] = data.get(field)
-            extra_quote = data.get('source_quote')
-            if extra_quote:
+            extra_quotes = [q for q in (data.get('source_quote'), *moved_quotes) if q]
+            if extra_quotes:
                 if not winner.get('metadata'):
                     winner['metadata'] = {}
                 additional = winner['metadata'].setdefault('additional_quotes', [])
-                additional.append(extra_quote)
+                additional.extend(extra_quotes)
 
     return survivors
 
@@ -616,6 +649,18 @@ _DEDUP_KEY_BY_STAGE = {
     'competitor': _competitor_dedup_key,
 }
 
+def _people_proof_verified(data):
+    """TD-279 V-bis: a People candidate whose proof passed the server check."""
+    evidence_check = (data.get('metadata') or {}).get('evidence_check') or {}
+    return evidence_check.get('status') == PeopleEvidenceStatus.OK
+
+
+# Stage -> preferred candidate of a group (V-bis): the first VERIFIED People
+# mention wins over a rejected one. Absent -> the first candidate wins.
+_DEDUP_PREFER_BY_STAGE = {
+    'people': _people_proof_verified,
+}
+
 # Stage -> field groups a later duplicate may complete when EMPTY on the
 # winner (D3, Sprint TechStack T4). The discontinuation pair travels together.
 _DEDUP_FILL_GROUPS_BY_STAGE = {
@@ -631,6 +676,10 @@ _DEDUP_FILL_GROUPS_BY_STAGE = {
 # PeopleSignal.full_name column width -- an over-long LLM name is truncated
 # rather than failing the insert inside the pipeline transaction.
 _PEOPLE_FULL_NAME_MAX_LENGTH = PeopleSignal._meta.get_field('full_name').max_length
+
+# ImpactSignal.metric_text column width (TD-279 C3) -- same rule: an over-long
+# description is truncated, the impact is kept.
+_IMPACT_METRIC_TEXT_MAX_LENGTH = ImpactSignal._meta.get_field('metric_text').max_length
 
 
 class TranscriptSignalExtractor:
@@ -650,6 +699,10 @@ class TranscriptSignalExtractor:
         )
     """
 
+    # People evidence-check counts of the LAST persist_stage call (TD-279 V);
+    # None for any other stage / without a transcript.
+    last_evidence_counts = None
+
     # =========================================================================
     # MAIN ENTRY
     # =========================================================================
@@ -665,6 +718,7 @@ class TranscriptSignalExtractor:
         confidence_min,
         drop_inferred,
         source_run=None,
+        transcript=None,
     ):
         """
         Apply safety filter + persist surviving signals for one stage.
@@ -680,6 +734,16 @@ class TranscriptSignalExtractor:
                                        dropped (safety filter).
             drop_inferred:   bool -- if True, drop signals where
                                        is_inferred is True.
+            transcript:      str | None -- the run's transcript. EVERY
+                                       stage: a speaker label of this
+                                       transcript copied at the head of a
+                                       source_quote is removed (TD-279).
+                                       People (TD-279 V): each proof is
+                                       checked against it (people_evidence);
+                                       the per-status counts of the
+                                       candidates are left in
+                                       self.last_evidence_counts (None for
+                                       any other stage / no transcript).
 
         Returns:
             tuple (persisted, dropped_count)
@@ -691,6 +755,7 @@ class TranscriptSignalExtractor:
                                 combined. The pipeline logs this in
                                 AIPipelineRun.sub_calls.
         """
+        self.last_evidence_counts = None
         if not isinstance(raw_signals, list):
             logger.warning(
                 'persist_stage_invalid_input',
@@ -705,6 +770,12 @@ class TranscriptSignalExtractor:
         persisted = []
         dropped_count = 0
 
+        # The transcript, read once: quote labels (every stage), People
+        # proofs (TD-279 V).
+        transcript_text = TranscriptText(transcript) if transcript is not None else None
+        if stage == 'people' and transcript_text is not None:
+            self.last_evidence_counts = {status: 0 for status in PeopleEvidenceStatus.values}
+
         # --- Phase 1: Build all data dicts (filter + transform) ---
         candidates = []
         for raw in raw_signals:
@@ -716,16 +787,25 @@ class TranscriptSignalExtractor:
                 dropped_count += 1
                 continue
 
+            # TD-279: "Claire Dubois: c'est moi..." -> "c'est moi..." when the
+            # prefix is a speaker label of THIS transcript (never another ":").
+            if transcript_text is not None and 'source_quote' in raw:
+                raw = {**raw, 'source_quote': transcript_text.strip_speaker_label(
+                    raw['source_quote'])}
+
             data = self._build_signal_data(
                 stage=stage,
                 raw=raw,
                 activity=activity,
                 client_id=client_id,
+                transcript_text=transcript_text if stage == 'people' else None,
             )
             if data is None:
                 dropped_count += 1
                 continue
 
+            if self.last_evidence_counts is not None:
+                self.last_evidence_counts[data['metadata']['evidence_check']['status']] += 1
             candidates.append(data)
 
         # --- Phase 1.5: Deduplicate candidates (TechStack, People, Competitor) ---
@@ -734,6 +814,7 @@ class TranscriptSignalExtractor:
             before = len(candidates)
             candidates = _deduplicate_candidates(
                 candidates, dedup_key, _DEDUP_FILL_GROUPS_BY_STAGE.get(stage, ()),
+                _DEDUP_PREFER_BY_STAGE.get(stage),
             )
             dropped_count += before - len(candidates)
 
@@ -815,9 +896,10 @@ class TranscriptSignalExtractor:
     # DATA-DICT BUILDERS
     # =========================================================================
 
-    def _build_signal_data(self, *, stage, raw, activity, client_id):
+    def _build_signal_data(self, *, stage, raw, activity, client_id, transcript_text=None):
         """
-        Dispatch to the per-stage data-dict builder.
+        Dispatch to the per-stage data-dict builder (transcript_text: People
+        evidence check, TD-279 V).
 
         Returns:
             dict ready for SignalManager.create(), or None on malformed input.
@@ -837,7 +919,7 @@ class TranscriptSignalExtractor:
         if stage == 'competitor':
             return self._build_competitor_data(raw, activity)
         if stage == 'people':
-            return self._build_people_data(raw, activity)
+            return self._build_people_data(raw, activity, transcript_text)
 
         logger.warning(
             'persist_stage_unknown_stage',
@@ -891,6 +973,11 @@ class TranscriptSignalExtractor:
 
         Schema requirements (from objective_v1.py):
             what, dimension, summary, source_quote, confidence, is_inferred
+            (+ optional target_date, v2)
+
+        target_date (TD-279 C2): a real YYYY-MM-DD date via _iso_date (same
+        helper as the techstack lifecycle dates), else None -- an invalid or
+        missing date never drops the signal.
 
         BUSINESS-scope hardcoded fields (v1):
             scope_level         = ScopeLevel.BUSINESS
@@ -924,6 +1011,7 @@ class TranscriptSignalExtractor:
 
             'scope_level':        scope_level,
             'target_department':  target_department,
+            'target_date':        _iso_date(raw.get('target_date')),
         }
     
     # ---------------------- Impact ----------------------
@@ -944,10 +1032,13 @@ class TranscriptSignalExtractor:
             scope_level    = ScopeLevel.BUSINESS  (rep promotes during
                                                     validation)
 
-        Optional Impact fields left unset (rep adds during validation):
-            metric_text    -- free-text quantified value; LLM
-                              normalisation of fuzzy units is brittle
-                              at MVP scope.
+        metric_text (TD-279 C3, pain_impact v2): the impact DESCRIPTION
+        ("Describe the impact" in the UI), one short sentence with the
+        figures as said -- stripped, truncated to the column width, empty
+        when absent / blank (CharField blank, no NULL). Never drops the
+        impact.
+
+        Optional Impact field left unset (rep adds during validation):
             human_impact   -- fuzzy emotion qualifier (FRUSTRATION /
                               OVERLOAD / STRESS / DEMOTIVATION /
                               CONFLICT); mapping a quote to a precise
@@ -986,9 +1077,10 @@ class TranscriptSignalExtractor:
             'scope_level':         scope_level,
             'target_departments':  target_departments,
 
-            # metric_text and human_impact NOT extracted in v1 -- rep
-            # fills during validation. The fields are nullable on the
-            # model, so omitting them from the data dict is safe.
+            'metric_text':         _clean_text(raw.get('metric_text'))[:_IMPACT_METRIC_TEXT_MAX_LENGTH],
+
+            # human_impact NOT extracted -- dormant (TD-245); the field is
+            # nullable on the model, so omitting it is safe.
         }
 
     # ---------------------- TechStack ----------------------
@@ -1115,18 +1207,16 @@ class TranscriptSignalExtractor:
 
         Schema requirements (from blocker_v1.py):
             summary, source_quote, confidence, is_inferred
-            (+ optional raised_by)
+            (+ optional raised_by_name)
 
-        `contact` attribution (blocker_v2 -- Objection S3)
-        --------------------------------------------------
-        The LLM returns `raised_by`, the REFERENCE ("P1", ...) of a
-        participant from the closed list rendered by the context layer.
-        It is resolved via services/participant_refs.py against the same
-        list (tenant + account filtered) -- never by name, never guessed
-        (mirror of the department resolver above). Resolved -> `contact`
-        is set. Absent / null / invalid -> `contact` stays unset (model
-        default None), a warning is logged on a non-null reference that
-        does not resolve, and the signal is NEVER dropped for this reason.
+        `contact` attribution (blocker_v3 -- TD-279 B4b)
+        ------------------------------------------------
+        The LLM returns `raised_by_name`, the prospect speaker's name as
+        written. The server links it to a contact registered on the
+        activity (resolve_participant_by_name: tenant + account filtered,
+        word match, an ambiguous name is never linked). Linked -> `contact`
+        is set. Absent / null / unknown / ambiguous -> `contact` stays unset
+        (model default None); the signal is NEVER dropped for this reason.
 
         Other deferred BlockerSignal fields
         -----------------------------------
@@ -1164,21 +1254,11 @@ class TranscriptSignalExtractor:
             'is_inferred':     bool(raw.get('is_inferred')),
         }
 
-        # Objection S3: resolve the participant reference. The server never
-        # forces an attribution; an unresolved reference keeps the signal.
-        raised_by = raw.get('raised_by')
-        contact = resolve_participant_ref(raised_by, activity)
+        # TD-279: the speaker's name as written, linked to a contact
+        # registered on the activity. Never forced, never a guess.
+        contact = resolve_participant_by_name(raw.get('raised_by_name'), activity)
         if contact is not None:
             data['contact'] = contact
-        elif raised_by is not None:
-            logger.warning(
-                'blocker_raised_by_unresolved',
-                extra={
-                    'raised_by': str(raised_by),
-                    'activity_id': str(activity.id),
-                    'event': 'ai_pipeline_persist',
-                },
-            )
 
         return data
 
@@ -1313,14 +1393,13 @@ class TranscriptSignalExtractor:
 
     # ---------------------- People ----------------------
 
-    def _build_people_data(self, raw, activity):
+    def _build_people_data(self, raw, activity, transcript_text=None):
         """
         Build SignalManager.create() data for a People signal.
 
         Schema requirements (from people_v1.py):
             role, source_quote, confidence, is_inferred
-            (+ optional participant_ref, full_name, influence, department,
-            notes).
+            (+ optional full_name, influence, department, notes).
 
         Drop / fold rules (mirror of the existing builders):
           * blank / missing source_quote -> DROPPED (as blocker / constraint);
@@ -1328,17 +1407,30 @@ class TranscriptSignalExtractor:
             coerced (as constraint `nature`);
           * influence out of the SIGNAL InfluenceLevel -> None (nullable
             column, so no default is forced -- unlike constraint `rigidity`);
-          * participant_ref resolved via services/participant_refs.py
-            (tenant + account filtered, never by name). Resolved -> contact
-            set, full_name DERIVED from the contact (first + last name) and
-            department = the contact's standard_department when set, else
-            the extracted one. Non-null but unresolved -> signal KEPT without
-            contact + warning (as blocker `raised_by`); full_name and
-            department then come from the extraction;
+          * TD-279: the full_name as written is linked to a contact
+            registered on the activity (resolve_participant_by_name: tenant +
+            account filtered, word match, an ambiguous name is never
+            linked). Linked -> contact set, full_name DERIVED from the
+            contact (first + last name) and department = the contact's
+            standard_department when set, else the extracted one. Not
+            linked -> full_name and department from the extraction. Done
+            here, before the in-extraction dedup, so every mention of the
+            same contact merges;
           * no contact, no name and no department after resolution ->
             DROPPED + warning. Checked HERE: persist_stage feeds
             SignalManager.create directly -- neither the People serializer
-            nor PeopleSignal.clean() runs on this path (TD-249).
+            nor PeopleSignal.clean() runs on this path (TD-249);
+          * TD-279 D: job_title (as said) -> metadata.job_title; when the
+            department is not resolved, the job title is resolved by the
+            same resolver (resolve_person_department_or_title) before the
+            identity rule;
+          * TD-279 V (transcript_text given): the proof is checked
+            (people_evidence.check_people_evidence). A rejected proof keeps
+            the person with role UNKNOWN, influence None and empty notes
+            (they rested on that proof); metadata.evidence_check = {status,
+            + rejected_role / rejected_influence / rejected_notes when
+            rejected}. The source_quote is stored as returned (the status
+            says it was not found).
 
         decision_cycle / campaign are auto-propagated from source_activity
         by SignalManager._propagate_activity_context -- not by this builder.
@@ -1364,27 +1456,24 @@ class TranscriptSignalExtractor:
         if influence not in InfluenceLevel.values:
             influence = None
 
-        participant_ref = raw.get('participant_ref')
-        contact = resolve_participant_ref(participant_ref, activity)
+        # TD-279 D: the job title as said (metadata.job_title), also the
+        # department's safety net.
+        raw_title = raw.get('job_title')
+        job_title = raw_title.strip() if isinstance(raw_title, str) else ''
+
+        # TD-279: the name as written, linked to a contact registered on the
+        # activity (never a guess), before the in-extraction dedup.
+        contact = resolve_participant_by_name(raw.get('full_name'), activity)
         if contact is not None:
             full_name = f'{contact.first_name or ""} {contact.last_name or ""}'.strip()
             department = (
                 contact.standard_department
-                or resolve_person_department(raw.get('department'))
+                or resolve_person_department_or_title(raw.get('department'), job_title)
             )
         else:
-            if participant_ref is not None:
-                logger.warning(
-                    'people_participant_ref_unresolved',
-                    extra={
-                        'participant_ref': str(participant_ref),
-                        'activity_id': str(activity.id),
-                        'event': 'ai_pipeline_persist',
-                    },
-                )
             raw_name = raw.get('full_name')
             full_name = raw_name.strip() if isinstance(raw_name, str) else ''
-            department = resolve_person_department(raw.get('department'))
+            department = resolve_person_department_or_title(raw.get('department'), job_title)
 
         full_name = full_name[:_PEOPLE_FULL_NAME_MAX_LENGTH]
 
@@ -1401,6 +1490,28 @@ class TranscriptSignalExtractor:
         raw_notes = raw.get('notes')
         notes = raw_notes.strip() if isinstance(raw_notes, str) else ''
 
+        metadata = {}
+        if job_title:
+            metadata['job_title'] = job_title
+
+        # TD-279 V: never trust a role on a proof the transcript does not hold.
+        if transcript_text is not None:
+            status = check_people_evidence(raw.get('full_name'), source_quote, transcript_text)
+            evidence_check = {'status': status.value}
+            if status != PeopleEvidenceStatus.OK:
+                # What rested on the rejected proof is cleared and kept for
+                # traceability (V-bis, PO); confidence / is_inferred unchanged.
+                evidence_check.update(
+                    rejected_role=role,
+                    rejected_influence=influence,
+                    rejected_notes=notes,
+                )
+                role = PeopleRole.UNKNOWN.value
+                influence = None
+                notes = ''
+            metadata['evidence_check'] = evidence_check
+        extra = {'metadata': metadata} if metadata else {}
+
         return {
             'signal_type':       'people',
             'account':           activity.account,
@@ -1416,6 +1527,7 @@ class TranscriptSignalExtractor:
             'source_quote':      source_quote,
             'confidence':        self._safe_float(raw.get('confidence')),
             'is_inferred':       bool(raw.get('is_inferred')),
+            **extra,
 
             # canonical_key is forced to None and full_name_normalized is
             # derived by PeopleSignal.save().

@@ -6,8 +6,8 @@ module's constants.py), and the pipelines read them from there.
 
   * PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED — one entry per
     pipeline type (mirror of PIPELINE_TEMPERATURES), current values pinned.
-  * TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES — the qualification stages
-    exempt from the is_inferred drop (People S1).
+  * TRANSCRIPT_SIGNALS no longer drops is_inferred (TD-279 C1, every stage,
+    so the People exemption set is gone); NEXT_STEPS keeps its own policy.
   * The pipeline class attributes ARE these constants (same objects), so the
     `self.X` reads and any subclass override keep working unchanged.
 """
@@ -16,7 +16,6 @@ from app_modules.ai_pipelines.constants import (
     AIPipelineType,
     PIPELINE_CONFIDENCE_MIN,
     PIPELINE_DROP_INFERRED,
-    TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES,
 )
 from app_modules.ai_pipelines.pipelines.next_steps import NextStepsPipeline
 from app_modules.ai_pipelines.pipelines.transcript_signals import (
@@ -34,12 +33,9 @@ class TestThresholdConstantsValues:
 
     def test_drop_inferred_per_pipeline(self):
         assert PIPELINE_DROP_INFERRED == {
-            AIPipelineType.TRANSCRIPT_SIGNALS: True,
+            AIPipelineType.TRANSCRIPT_SIGNALS: False,
             AIPipelineType.NEXT_STEPS: True,
         }
-
-    def test_drop_inferred_exempt_stages(self):
-        assert TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES == frozenset({'people'})
 
 
 class TestPipelinesReadTheConstants:
@@ -50,9 +46,6 @@ class TestPipelinesReadTheConstants:
         )
         assert QualificationSignalsPipeline.DROP_INFERRED is (
             PIPELINE_DROP_INFERRED[AIPipelineType.TRANSCRIPT_SIGNALS]
-        )
-        assert QualificationSignalsPipeline.DROP_INFERRED_EXEMPT_STAGES is (
-            TRANSCRIPT_SIGNALS_DROP_INFERRED_EXEMPT_STAGES
         )
 
     def test_next_steps_pipeline_reads_its_constants(self):

@@ -251,6 +251,11 @@ retrieved later for quality measurement and debugging.
 """
 
 
+from app_modules.ai_pipelines.prompts.transcript_signals.date_rules import (
+    RELATIVE_DATE_RULE,
+)
+
+
 __all__ = ['TECHSTACK_PROMPT_VERSION', 'build_techstack_request']
 
 
@@ -378,10 +383,7 @@ a tech stack signal (the constraint stage captures the requirement apart).
 LIFECYCLE AND NOTES
 Fill each of these fields ONLY when the transcript says it; otherwise emit
 null -- never guess, never infer from the tool's category or the company.
-Every relative date ("this year", "next year", "end of the year", "in June",
-"for three years") is resolved with the "Conversation date" given in the
-context. When the context says the conversation date is not provided, every
-relative date is null.
+{RELATIVE_DATE_RULE}
 - "usage_start_year" -- the year the prospect STARTED using the tool, as an
   integer (e.g. 2019). "We've been on it for three years" -> the
   Conversation date's year minus 3.

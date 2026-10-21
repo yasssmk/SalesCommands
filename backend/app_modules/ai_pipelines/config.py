@@ -59,6 +59,17 @@ ACTIVE_PROVIDER = getattr(settings, 'AI_PIPELINES_ACTIVE_PROVIDER', 'openai')
 #                for structured JSON responses on long transcripts
 #                but bounded to keep cost / latency predictable.
 #
+#   provider    OPTIONAL (TD-279 P1) -- the provider class key in
+#                providers/__init__.py when the entry key is not a
+#                provider name itself (several entries can share one
+#                provider). Default: the entry key.
+#
+#   reasoning_effort  OPTIONAL (TD-279 P1) -- reasoning-model mode
+#                ('low' / 'medium' / 'high'): sent as reasoning_effort,
+#                temperature NOT sent, max_tokens sent as
+#                max_completion_tokens (providers, P0). This option -- never
+#                the model name -- decides the mode.
+#
 # Override the whole dict in Django settings:
 #     AI_PIPELINES_PROVIDER_CONFIG = {...}
 PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
@@ -72,6 +83,50 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':   30,
         'max_tokens':  4096,
     },
+    # TD-279 P1 -- People stage on a reasoning model. TD-279 M (PO, after the
+    # --n 20 "model alone" measure on prompt v7): gpt-5.6-terra (quality over
+    # cost; no pinned snapshot listed, so the model may change under the same
+    # name -- the eval is the guard); gpt-5.4-mini becomes the challenger.
+    # timeout_s 90: the extraction runs its stages sequentially inside one
+    # request whose client falls back to polling for ~180 s
+    # (core/timeout_conventions.py POLLING_MAX_ATTEMPTS x
+    # POLLING_INTERVAL_SECONDS); rule R2 asks that window to cover the sum of
+    # the calls. Estimating the 7 other stages at ~5-10 s each (~60 s, not
+    # measured), 90 s is the share left to People -- about 1.5x the time to
+    # emit the full 8192-token budget at ~100 tokens/s, reasoning included.
+    # Kept until the eval measures the real durations (mean / max duration_ms).
+    'openai_people': {
+        'provider':          'openai',
+        'model':             'gpt-5.6-terra',
+        'reasoning_effort':  'medium',
+        'timeout_s':         90,
+        'max_tokens':        8192,
+    },
+    # Challenger, DECLARED for the eval only (--model) -- not wired in
+    # STAGE_PROVIDER. Pinned snapshot (2 calls in error out of 20 in the
+    # "model alone" measure).
+    'openai_people_challenger': {
+        'provider':          'openai',
+        'model':             'gpt-5.4-mini-2026-03-17',
+        'reasoning_effort':  'medium',
+        'timeout_s':         90,
+        'max_tokens':        8192,
+    },
+})
+
+
+# =============================================================================
+# MODEL PER STAGE (TD-279 P1)
+# =============================================================================
+
+# Stage name -> PROVIDER_CONFIG key. A stage absent from the map uses the
+# active provider (ACTIVE_PROVIDER) exactly as before. Stage names are the
+# transcript_signals stages (checked at load in that module).
+#
+# Override in Django settings:
+#     AI_PIPELINES_STAGE_PROVIDER = {'people': 'openai_people'}
+STAGE_PROVIDER = getattr(settings, 'AI_PIPELINES_STAGE_PROVIDER', {
+    'people': 'openai_people',
 })
 
 
@@ -143,3 +198,21 @@ if ACTIVE_PROVIDER not in PROVIDER_CONFIG:
         f"Fix AI_PIPELINES_ACTIVE_PROVIDER or AI_PIPELINES_PROVIDER_CONFIG "
         f"in your Django settings."
     )
+
+
+def check_stage_provider(stage_provider, provider_config):
+    """
+    TD-279 P1 sanity check (same rule as ACTIVE_PROVIDER): every stage must
+    point to a PROVIDER_CONFIG key. Raises ImportError so a misconfiguration
+    fails at Django startup.
+    """
+    unknown = {stage: key for stage, key in stage_provider.items() if key not in provider_config}
+    if unknown:
+        raise ImportError(
+            f"AI Pipelines configuration error: AI_PIPELINES_STAGE_PROVIDER "
+            f"{unknown} -- key(s) not in PROVIDER_CONFIG. Available keys: "
+            f"{sorted(provider_config.keys())}."
+        )
+
+
+check_stage_provider(STAGE_PROVIDER, PROVIDER_CONFIG)

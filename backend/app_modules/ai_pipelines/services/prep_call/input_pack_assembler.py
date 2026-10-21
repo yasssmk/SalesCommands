@@ -12,6 +12,7 @@ guide/To_IMPLEMENT/signals_journey.md §3.2.
 
 import logging
 
+from app_modules.ai_pipelines.constants import people_role_for_prompt
 from app_modules.signals.constants import SignalStatus
 
 logger = logging.getLogger(__name__)
@@ -134,7 +135,7 @@ class PrepInputPackAssembler:
             .first()
         )
         if people:
-            role = people.role
+            role = people_role_for_prompt(people.role)
 
         return {
             'id': str(contact.id),
@@ -369,7 +370,7 @@ class PrepInputPackAssembler:
     def _serialize_people_signals(qs):
         return [
             {
-                'role': s.role,
+                'role': people_role_for_prompt(s.role),
                 'influence': s.influence or '',
                 'target_department': (
                     s.target_department.get_name_display()

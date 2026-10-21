@@ -32,7 +32,7 @@ import {
 
 // Project imports
 import { useGetDCPeople } from "api/accounts/decisionCycles";
-import { createSignal } from "api/signals/signals";
+import { createSignal, useGetSignalChoices } from "api/signals/signals";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import {
   displaySuccessSnackbar,
@@ -41,24 +41,10 @@ import {
 
 // ==============================|| CONSTANTS ||============================== //
 
-const ROLE_FILTERS = [
-  { value: "all", label: "All" },
-  { value: "CHAMPION", label: "Champion" },
-  { value: "ECONOMIC_BUYER", label: "Economic Buyer" },
-  { value: "DECISION_MAKER", label: "Decision Maker" },
-  { value: "INFLUENCER", label: "Influencer" },
-  { value: "BLOCKER", label: "Blocker" },
-  { value: "END_USER", label: "End User" },
-  { value: "PROCUREMENT", label: "Procurement" },
-];
-
-const ROLE_OPTIONS = ROLE_FILTERS.filter((f) => f.value !== "all");
-
-const INFLUENCE_OPTIONS = [
-  { value: "HIGH", label: "High" },
-  { value: "MEDIUM", label: "Medium" },
-  { value: "LOW", label: "Low" },
-];
+// Roles and influences come from the signal choices endpoint (people_roles /
+// people_influences, the EditPeopleContent source) -- no hard-coded list
+// (TD-279: UNKNOWN included). Only the "All" filter is local.
+const ALL_FILTER = { value: "all", label: "All" };
 
 const CRITICAL_ROLES = ["CHAMPION", "ECONOMIC_BUYER", "DECISION_MAKER"];
 
@@ -70,7 +56,7 @@ const INFLUENCE_COLORS = {
 
 // ==============================|| ROLE FILTER BAR ||============================== //
 
-function RoleFilterBar({ activeRole, onChange, qualified }) {
+function RoleFilterBar({ activeRole, onChange, qualified, roleOptions }) {
   const roleCounts = useMemo(() => {
     const counts = { all: qualified.length };
     for (const q of qualified) {
@@ -84,7 +70,7 @@ function RoleFilterBar({ activeRole, onChange, qualified }) {
       <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
         Role:
       </Typography>
-      {ROLE_FILTERS.map((f) => (
+      {[ALL_FILTER, ...roleOptions].map((f) => (
         <Chip
           key={f.value}
           label={`${f.label} (${roleCounts[f.value] || 0})`}
@@ -103,11 +89,12 @@ RoleFilterBar.propTypes = {
   activeRole: PropTypes.string.isRequired,
   onChange: PropTypes.func.isRequired,
   qualified: PropTypes.array.isRequired,
+  roleOptions: PropTypes.array.isRequired,
 };
 
 // ==============================|| COVERAGE ALERT ||============================== //
 
-function CoverageAlert({ qualified }) {
+function CoverageAlert({ qualified, roleOptions }) {
   const missingRoles = useMemo(() => {
     const presentRoles = new Set(qualified.map((q) => q.role));
     return CRITICAL_ROLES.filter((r) => !presentRoles.has(r));
@@ -116,8 +103,8 @@ function CoverageAlert({ qualified }) {
   if (missingRoles.length === 0) return null;
 
   const labels = missingRoles.map((r) => {
-    const filter = ROLE_FILTERS.find((f) => f.value === r);
-    return filter ? filter.label : r;
+    const option = roleOptions.find((o) => o.value === r);
+    return option ? option.label : r;
   });
 
   return (
@@ -133,6 +120,7 @@ function CoverageAlert({ qualified }) {
 
 CoverageAlert.propTypes = {
   qualified: PropTypes.array.isRequired,
+  roleOptions: PropTypes.array.isRequired,
 };
 
 // ==============================|| CONTACT NAME HELPER ||============================== //
@@ -153,6 +141,8 @@ function QualifyDialog({
   prefilledContact,
   accountId,
   showContactPicker,
+  roleOptions,
+  influenceOptions,
 }) {
   const [contact, setContact] = useState(prefilledContact || null);
   const [role, setRole] = useState("");
@@ -206,7 +196,7 @@ function QualifyDialog({
           value={role}
           onChange={(e) => setRole(e.target.value)}
         >
-          {ROLE_OPTIONS.map((o) => (
+          {roleOptions.map((o) => (
             <MenuItem key={o.value} value={o.value}>
               {o.label}
             </MenuItem>
@@ -220,7 +210,7 @@ function QualifyDialog({
           onChange={(e) => setInfluence(e.target.value)}
         >
           <MenuItem value="">—</MenuItem>
-          {INFLUENCE_OPTIONS.map((o) => (
+          {influenceOptions.map((o) => (
             <MenuItem key={o.value} value={o.value}>
               {o.label}
             </MenuItem>
@@ -261,6 +251,8 @@ QualifyDialog.propTypes = {
   prefilledContact: PropTypes.object,
   accountId: PropTypes.string.isRequired,
   showContactPicker: PropTypes.bool,
+  roleOptions: PropTypes.array.isRequired,
+  influenceOptions: PropTypes.array.isRequired,
 };
 
 // ==============================|| QUALIFIED PERSON CARD ||============================== //
@@ -422,6 +414,9 @@ UnqualifiedContactRow.propTypes = {
 export default function PeopleTab({ cycleId, accountId }) {
   const { people, peopleLoading, peopleError, mutatePeople } =
     useGetDCPeople(cycleId);
+  const { choices } = useGetSignalChoices();
+  const roleOptions = choices?.people_roles ?? [];
+  const influenceOptions = choices?.people_influences ?? [];
 
   const [roleFilter, setRoleFilter] = useState("all");
 
@@ -585,13 +580,14 @@ export default function PeopleTab({ cycleId, accountId }) {
       </Stack>
 
       {/* Coverage alert */}
-      <CoverageAlert qualified={qualified} />
+      <CoverageAlert qualified={qualified} roleOptions={roleOptions} />
 
       {/* Role filter bar */}
       <RoleFilterBar
         activeRole={roleFilter}
         onChange={setRoleFilter}
         qualified={qualified}
+        roleOptions={roleOptions}
       />
 
       {/* Qualified section */}
@@ -671,6 +667,8 @@ export default function PeopleTab({ cycleId, accountId }) {
           prefilledContact={qualifyContact}
           accountId={accountId}
           showContactPicker={showContactPicker}
+          roleOptions={roleOptions}
+          influenceOptions={influenceOptions}
         />
       )}
     </Box>

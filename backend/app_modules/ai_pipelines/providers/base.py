@@ -69,6 +69,10 @@ class LLMCallResult:
                      Includes serialization + network + provider
                      processing — i.e. what the caller actually
                      waited for.
+      reasoning_tokens  Hidden reasoning tokens of a reasoning model
+                     (TD-279 P0), when the API reports them; 0
+                     otherwise (default -- unchanged for every other
+                     call).
 
     Frozen dataclass: results are immutable once produced. Prevents
     accidental mutation by downstream consumers (orchestrator,
@@ -79,6 +83,7 @@ class LLMCallResult:
     output_tokens: int
     model_used: str
     duration_ms: int
+    reasoning_tokens: int = 0
 
 
 # =============================================================================
@@ -147,16 +152,23 @@ class LLMProvider(ABC):
     swapped without touching the call sites.
     """
 
+    # TD-279 V: does `call` honour a strict response_schema (Structured
+    # Outputs)? Checked at load for every stage that sends one
+    # (transcript_signals.check_stage_schemas).
+    SUPPORTS_RESPONSE_SCHEMA: bool = False
+
     @abstractmethod
     def call(
         self,
         *,
         system: str,
         user: str,
-        temperature: float,
+        temperature: float | None,
         model: str,
         max_tokens: int,
         timeout_s: int,
+        response_schema: dict | None = None,
+        reasoning_effort: str | None = None,
     ) -> LLMCallResult:
         """
         Perform a single LLM call.
@@ -165,10 +177,22 @@ class LLMProvider(ABC):
           system        System prompt (role, output format, hard rules).
           user          User prompt (task spec + dynamic payload).
           temperature   Sampling temperature (typically 0.0 for
-                        structured extraction).
+                        structured extraction). None -> not sent
+                        (TD-279 P0).
           model         Model identifier to pass to the SDK.
           max_tokens    Ceiling on response tokens.
           timeout_s     Per-call timeout in seconds.
+          response_schema   OPTIONAL (TD-279 P0) -- {'name': str,
+                        'schema': <JSON schema>}: the answer must follow
+                        this schema strictly (structured output).
+          reasoning_effort  OPTIONAL (TD-279 P0) -- reasoning-model mode
+                        ('low' / 'medium' / 'high'); set by the caller
+                        from the config, never inferred from the model
+                        name.
+          Both optional parameters default to None: the call is then
+          EXACTLY the pre-P0 call. A provider that cannot honour one of
+          them raises LLMProviderError ("not supported") -- never a
+          silent downgrade.
 
         Returns:
           LLMCallResult with content + token counts + measured

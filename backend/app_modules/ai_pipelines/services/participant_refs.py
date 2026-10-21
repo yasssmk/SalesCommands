@@ -1,21 +1,13 @@
 # app_modules/ai_pipelines/services/participant_refs.py
 """
-Participant references shared by the context layer and the extractors.
+Link a person NAMED in a transcript to a contact registered on the activity.
 
-The transcript_signals context layer lists the activity's participants,
-each prefixed with a short reference ("P1", "P2", ...). An extraction
-stage may return such a reference to attribute a signal to the
-participant who voiced it (Blocker `raised_by` -- Objection S3). The
-server resolves the reference back to a Contact HERE, against the very
-same ordered list -- never by name, never guessed.
-
-Why a shared module (mirror of safety_filter.py)
-------------------------------------------------
-The numbering MUST be identical when it is rendered (context.py) and
-when it is resolved (the extractor): ordered_participants() is the
-SINGLE source of that order, and PARTICIPANT_REF_PREFIX the single
-definition of the reference format. NextStep.suggested_contacts (TD-7)
-is expected to reuse this module.
+TD-279 B4b: the LLM no longer receives the activity's contacts nor picks a
+participant reference ("P1", ...) -- it filled that slot even for a
+registered contact who never spoke. It returns names as written (People
+`full_name`, Blocker `raised_by_name`); the server links them HERE with
+resolve_participant_by_name() -- a word match, never a guess. (The module
+name is kept from the participant-reference era, Objection S3.)
 
 Tenant / account guard
 ----------------------
@@ -24,45 +16,25 @@ A participant is NOT guaranteed to belong to the activity's account
 tenant only), and the pipeline creates signals through
 SignalManager.create(), which bypasses the serializer FK scope guard.
 ordered_participants() therefore filters on the activity's client_id
-AND account_id: a contact outside that scope is never listed, never
-numbered, never resolvable.
-
-Tolerance (mirror of the department resolver in
-transcript_signal_extractor.py)
---------------------------------
-Only an exact "P<n>" within the list resolves. Anything else (None,
-a name, an int, "p 1", an out-of-range index) -> None. The caller
-decides what to do with None (the Blocker builder keeps the signal
-without a contact).
+AND account_id: a contact outside that scope is never linked.
 """
 
 import re
+import unicodedata
 
 
 __all__ = [
-    'PARTICIPANT_REF_PREFIX',
-    'format_participant_ref',
+    'name_appears_in_text',
     'ordered_participants',
-    'resolve_participant_ref',
+    'resolve_participant_by_name',
+    'resolve_speaker_label',
 ]
-
-
-# The reference format: PARTICIPANT_REF_PREFIX + 1-based index ("P1").
-PARTICIPANT_REF_PREFIX = 'P'
-
-_REF_PATTERN = re.compile(rf'^{re.escape(PARTICIPANT_REF_PREFIX)}([1-9][0-9]*)$')
-
-
-def format_participant_ref(index):
-    """Reference of the participant at the 0-based `index` ("P1" for 0)."""
-    return f'{PARTICIPANT_REF_PREFIX}{index + 1}'
 
 
 def ordered_participants(activity):
     """
     The activity's participants, filtered on its tenant AND account,
-    ordered last_name, first_name, id (id breaks homonym ties so the
-    numbering is deterministic).
+    ordered last_name, first_name, id (deterministic order).
 
     Returns:
         list[Contact] -- possibly empty.
@@ -75,20 +47,117 @@ def ordered_participants(activity):
     )
 
 
-def resolve_participant_ref(ref, activity):
+# =============================================================================
+# NAMES AS WRITTEN (TD-279)
+# =============================================================================
+
+# Anything but letters / digits is a word boundary when a name is searched in
+# free text (apostrophes included: "d'Isabelle" contains "Isabelle").
+_NON_WORD_RE = re.compile(r'[\W_]+')
+
+
+def _normalize_person_name(value):
+    """Lowercase, accents stripped, whitespace collapsed ("  Hélène " -> "helene")."""
+    decomposed = unicodedata.normalize('NFKD', str(value))
+    stripped = ''.join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return ' '.join(stripped.lower().split())
+
+
+def _matched_name_parts(stated, name_parts):
     """
-    Resolve a participant reference ("P<n>") to a Contact of the activity.
+    How many of the name parts (first name, last name) appear in the
+    normalised stated name, each as one word or as consecutive words
+    ("Le Gall").
+    """
+    padded = f' {stated} '
+    count = 0
+    for part in name_parts:
+        name = _normalize_person_name(part or '')
+        if name and f' {name} ' in padded:
+            count += 1
+    return count
+
+
+def _contact_name_parts(contact):
+    return (contact.first_name, contact.last_name)
+
+
+def _written_name_parts(name):
+    """A name as written ("Jean Le Gall", a speaker label) split into
+    (first name, last name): the first word, then the rest."""
+    words = str(name or '').split()
+    return (words[0] if words else '', ' '.join(words[1:]))
+
+
+def _best_unique_match(stated_name, candidates):
+    """
+    The candidate whose name parts best match the stated name -- the rule of
+    resolve_participant_by_name, shared (TD-279 V): None when the name is
+    missing / blank, when nothing matches, or when several candidates tie on
+    the best score (never a guess).
+
+    Simple word match, no AI: a name part (first or last name) matches when
+    it appears in the stated name (normalised: lowercase, no accents) as a
+    word -- a multi-word part ("Le Gall") as consecutive words.
+
+    Args:
+        candidates: iterable of (name_parts, value).
+    """
+    if not isinstance(stated_name, str):
+        return None
+    stated = _normalize_person_name(stated_name)
+    if not stated:
+        return None
+
+    scored = [(_matched_name_parts(stated, parts), value) for parts, value in candidates]
+    best = max((score for score, _ in scored), default=0)
+    if best == 0:
+        return None
+    winners = [value for score, value in scored if score == best]
+    return winners[0] if len(winners) == 1 else None
+
+
+def resolve_participant_by_name(stated_name, activity):
+    """
+    TD-279 B4a: link a name as written in the transcript (People full_name,
+    Blocker raised_by_name) to a contact REGISTERED on the activity.
+
+    Scope: ordered_participants() (tenant AND account filtered). Word match
+    of _best_unique_match (no AI). Never a guess:
+      * missing / blank name -> None;
+      * no participant matches -> None;
+      * several participants match: the one matching the MOST name parts
+        (first AND last name) wins only if it is the only one -- two "Marie"
+        and the name "Marie" -> None; "Marie Dupont" -> Marie Dupont.
 
     Returns:
-        Contact | None -- None for anything but a valid in-range reference.
+        Contact | None
     """
-    if not isinstance(ref, str):
-        return None
-    match = _REF_PATTERN.match(ref)
-    if not match:
-        return None
-    index = int(match.group(1)) - 1
-    participants = ordered_participants(activity)
-    if index >= len(participants):
-        return None
-    return participants[index]
+    return _best_unique_match(stated_name, [
+        (_contact_name_parts(contact), contact)
+        for contact in ordered_participants(activity)
+    ])
+
+
+def resolve_speaker_label(stated_name, labels):
+    """
+    TD-279 V: the speaker label (transcript_text.TranscriptText.labels) a
+    name as written designates -- the SAME rule as resolve_participant_by_name
+    (a label is split first word / rest). None when not a speaker or
+    ambiguous.
+    """
+    return _best_unique_match(stated_name, [
+        (_written_name_parts(label), label) for label in labels
+    ])
+
+
+def name_appears_in_text(stated_name, text):
+    """
+    TD-279 V: does the text (a quote) contain the first or the last name of
+    the name as written, as a word -- the SAME word match, punctuation
+    ignored ("... avec Marc, notre DAF" contains "Marc")?
+    """
+    if not isinstance(stated_name, str):
+        return False
+    words = _normalize_person_name(_NON_WORD_RE.sub(' ', str(text or '')))
+    return _matched_name_parts(words, _written_name_parts(stated_name)) > 0

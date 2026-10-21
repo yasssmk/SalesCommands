@@ -32,6 +32,7 @@ import SignalStatusChip from "components/chips/SignalStatusChip";
 import StatusPill from "components/chips/StatusPill";
 import ContactInline from "components/signals/ContactInline";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
+import { PEOPLE_EVIDENCE_PILL } from "components/signals/peopleEvidencePill";
 import { getSignalTypeLabel } from "utils/signalTypes";
 import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
@@ -1564,6 +1565,7 @@ function PeopleDetailView({
   const showOriginLink = Boolean(
     originActivityId && onOpenActivity && originActivityId !== currentActivityId,
   );
+  const evidenceStatus = signal.metadata?.evidence_check?.status;
 
   const placeholder = (text) => (
     <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
@@ -1695,6 +1697,17 @@ function PeopleDetailView({
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
               No source quote
             </Typography>
+          )}
+          {/* TD-279: the server evidence check of the quote — a warning-tone
+              StatusPill (PEOPLE_EVIDENCE_PILL); "ok" / no check → nothing. */}
+          {PEOPLE_EVIDENCE_PILL[evidenceStatus] && (
+            <Box sx={{ mt: 1 }}>
+              <StatusPill
+                status={evidenceStatus}
+                statusMap={PEOPLE_EVIDENCE_PILL}
+                data-testid="people-evidence-badge"
+              />
+            </Box>
           )}
           {contacts.length > 0 && (
             <Box sx={{ mt: 1.25 }}>

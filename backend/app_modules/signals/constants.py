@@ -176,6 +176,11 @@ class PeopleRole(models.TextChoices):
     END_USER        — will use the product day-to-day
     PROCUREMENT     — owns the vendor / contract management process
     INFLUENCER      — shapes opinions without formal authority
+    UNKNOWN         — takes part in the deal, role not established yet
+                      (TD-279, PO): shown "Unknown", choosable at edit,
+                      counted in the DC People view, sent to prep_call /
+                      deal_health as a role to qualify; never counts in the
+                      readiness score (DM / EB / CHAMPION only).
     """
     DECISION_MAKER  = 'DECISION_MAKER',  _('Decision Maker')
     ECONOMIC_BUYER  = 'ECONOMIC_BUYER',  _('Economic Buyer')
@@ -184,6 +189,7 @@ class PeopleRole(models.TextChoices):
     END_USER        = 'END_USER',        _('End User')
     PROCUREMENT     = 'PROCUREMENT',     _('Procurement')
     INFLUENCER      = 'INFLUENCER',      _('Influencer')
+    UNKNOWN         = 'UNKNOWN',         _('Unknown')
 
 
 class InfluenceLevel(models.TextChoices):

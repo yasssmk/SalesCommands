@@ -102,11 +102,12 @@ class TestTechstackTaxonomyHeader:
 
 class TestConversationDate:
 
-    def test_context_version_is_v6(self):
-        assert CONTEXT_VERSION == 'v6'
+    def test_context_version_is_v9(self):
+        # v9 (TD-279 M) only changes the People branch.
+        assert CONTEXT_VERSION == 'v9'
 
-    def test_next_steps_context_version_is_v2(self):
-        assert next_steps_context.CONTEXT_VERSION == 'v2'
+    def test_next_steps_context_version_is_v4(self):
+        assert next_steps_context.CONTEXT_VERSION == 'v4'
 
     @pytest.mark.parametrize('stage', PIPELINE_STAGES)
     def test_dated_activity_gives_the_reference_for_relative_dates(self, stage, activity):

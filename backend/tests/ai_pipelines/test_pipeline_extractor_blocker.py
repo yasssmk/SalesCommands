@@ -66,15 +66,15 @@ class TestBuildBlockerDataHappyPath:
         assert data['source_quote']    == 'We have no budget for this in Q4'
         assert data['confidence']      == pytest.approx(0.85)
         assert data['is_inferred']     is False
-        # Objection S3: no `raised_by` emitted -> no attribution, the
-        # builder leaves the field unset (model default = None).
+        # No `raised_by_name` emitted -> no attribution, the builder leaves
+        # the field unset (model default = None).
         assert 'contact' not in data
 
-    def test_builder_sets_contact_from_valid_raised_by(
+    def test_builder_sets_contact_from_the_speaker_name(
         self, activity, contact, contact_extra,
     ):
-        # Objection S3: a valid participant reference resolves to the
-        # Contact (Doe = P1, Smith = P2).
+        # TD-279 B4b: the speaker's name as written is linked to the
+        # registered contact.
         activity.contacts.add(contact, contact_extra)
         extractor = TranscriptSignalExtractor()
         raw = {
@@ -82,15 +82,17 @@ class TestBuildBlockerDataHappyPath:
             'source_quote': 'We have no budget for this in Q4',
             'confidence':   0.85,
             'is_inferred':  False,
-            'raised_by':    'P1',
+            'raised_by_name': 'Jane Doe',
         }
         data = extractor._build_blocker_data(raw, activity)
         assert data['contact'] == contact
 
-    def test_builder_invalid_raised_by_keeps_signal_without_contact(
-        self, activity, contact, caplog,
+    @pytest.mark.parametrize('name', ['Thomas Lefèvre', 'P1', None])
+    def test_builder_unknown_speaker_keeps_signal_without_contact(
+        self, activity, contact, name,
     ):
-        # Objection S3: an invalid reference never drops the signal.
+        # An unregistered speaker (or a leftover reference) never drops the
+        # signal and is never linked.
         activity.contacts.add(contact)
         extractor = TranscriptSignalExtractor()
         raw = {
@@ -98,15 +100,11 @@ class TestBuildBlockerDataHappyPath:
             'source_quote': 'We have no budget for this in Q4',
             'confidence':   0.85,
             'is_inferred':  False,
-            'raised_by':    'P7',
+            'raised_by_name': name,
         }
-        with caplog.at_level('WARNING'):
-            data = extractor._build_blocker_data(raw, activity)
+        data = extractor._build_blocker_data(raw, activity)
         assert data is not None
         assert 'contact' not in data
-        assert any(
-            r.getMessage() == 'blocker_raised_by_unresolved' for r in caplog.records
-        )
 
 
 # =============================================================================

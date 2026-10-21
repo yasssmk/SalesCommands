@@ -16,7 +16,7 @@ Covers everything that lives at the pipeline-runner boundary:
       * any stage raises -> PARTIAL (provided at least one succeeded)
   * Safety filter still applies to the Blocker stage:
       * confidence < 0.5 -> drop
-      * is_inferred = True -> drop
+      * is_inferred = True -> KEPT (TD-279 C1; the confidence floor drops)
   * Back-compat alias TranscriptSignalsPipeline resolves to the same
     class as QualificationSignalsPipeline.
 
@@ -344,8 +344,9 @@ class TestPipelinePartialOnBlockerFailure:
 
 class TestSafetyFilterAppliesToBlocker:
     """
-    CONFIDENCE_MIN = 0.5 and DROP_INFERRED = True must apply to the
-    Blocker stage with the same rigor as the 4 prior stages.
+    CONFIDENCE_MIN = 0.5 must apply to the Blocker stage with the same
+    rigor as the other stages; DROP_INFERRED is False since TD-279 C1 (an
+    inferred blocker above the floor is kept).
     """
 
     def test_blocker_low_confidence_signal_dropped(
@@ -380,7 +381,7 @@ class TestSafetyFilterAppliesToBlocker:
         )
         assert blocker_sub['dropped_by_safety_filter'] == 1
 
-    def test_blocker_inferred_signal_dropped(
+    def test_blocker_inferred_signal_kept(  # TD-279 C1: is_inferred no longer drops
         self, account, activity, user_a, fake_provider, patch_active_provider,
     ):
         from app_modules.ai_pipelines.pipelines.transcript_signals import (
@@ -403,10 +404,11 @@ class TestSafetyFilterAppliesToBlocker:
             user=user_a,
             client_id=account.client_id,
         )
-        assert result['signals_by_stage']['blocker'] == []
-        assert BlockerSignal.objects.count() == 0
+        [signal] = result['signals_by_stage']['blocker']
+        assert signal.is_inferred is True
+        assert BlockerSignal.objects.count() == 1
 
         blocker_sub = next(
             c for c in result['run'].sub_calls if c['stage'] == 'blocker'
         )
-        assert blocker_sub['dropped_by_safety_filter'] == 1
+        assert blocker_sub['dropped_by_safety_filter'] == 0

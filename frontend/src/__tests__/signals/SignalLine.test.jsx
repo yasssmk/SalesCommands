@@ -298,6 +298,20 @@ describe("SignalLine — informational content", () => {
     expect(screen.queryByText(/Economic Buyer/)).not.toBeInTheDocument();
   });
 
+  it("TD-279: Activity people line, unnamed person with a job title → the title", () => {
+    const people = {
+      id: "p-title", status: "PENDING", full_name: "", target_contact: null,
+      target_department: { id: "d1", name: "Finance" },
+      role: "INFLUENCER", role_display: "Influencer",
+      metadata: { job_title: "contrôleur de gestion" },
+      source_context: { contacts: [] },
+    };
+    render(<SignalLine signal={people} signalType="people" showPeopleIdentity />);
+    const line = screen.getByTestId("people-identity-line");
+    expect(line).toHaveTextContent("contrôleur de gestion");
+    expect(line).not.toHaveTextContent("Unnamed person");
+  });
+
   it("renders tech_name as the message and NO scope chip for tech-stack", () => {
     render(<SignalLine signal={TECH} signalType="tech-stack" />);
     expect(screen.getByText("Salesforce")).toBeInTheDocument();
