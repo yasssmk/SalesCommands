@@ -528,7 +528,7 @@ def resolve_person_department(name):
 # IN-EXTRACTION DEDUPLICATION (shared by TechStack and People)
 # =============================================================================
 
-def _deduplicate_candidates(candidates, key_fn, fill_groups=()):
+def _deduplicate_candidates(candidates, key_fn, fill_groups=(), prefer_fn=None):
     """
     Merge the candidates of ONE extraction that share a grouping key.
 
@@ -543,10 +543,16 @@ def _deduplicate_candidates(candidates, key_fn, fill_groups=()):
     non-empty one wins). Fields already set on the winner are never
     overwritten.
 
+    prefer_fn (TD-279 V-bis, People): a later member for which prefer_fn is
+    True REPLACES a winner for which it is False (at the winner's position);
+    the former winner's source_quote and additional_quotes move to the new
+    winner's metadata.additional_quotes. None -> first wins, always.
+
     Args:
         candidates:  list[dict] -- data dicts built for SignalManager.create().
         key_fn:      callable(dict) -> hashable | None -- the grouping key.
         fill_groups: tuple[tuple[str, ...]] -- field groups to complete.
+        prefer_fn:   callable(dict) -> bool | None -- see above.
 
     Returns:
         list[dict] -- the surviving candidates.
@@ -565,16 +571,22 @@ def _deduplicate_candidates(candidates, key_fn, fill_groups=()):
             survivors.append(data)
         else:
             winner = groups[key]
+            moved_quotes = []
+            if prefer_fn is not None and prefer_fn(data) and not prefer_fn(winner):
+                position = next(i for i, kept in enumerate(survivors) if kept is winner)
+                survivors[position] = groups[key] = data
+                moved_quotes = (winner.get('metadata') or {}).get('additional_quotes', [])
+                winner, data = data, winner
             for group in fill_groups:
                 if not winner.get(group[0]) and data.get(group[0]):
                     for field in group:
                         winner[field] = data.get(field)
-            extra_quote = data.get('source_quote')
-            if extra_quote:
+            extra_quotes = [q for q in (data.get('source_quote'), *moved_quotes) if q]
+            if extra_quotes:
                 if not winner.get('metadata'):
                     winner['metadata'] = {}
                 additional = winner['metadata'].setdefault('additional_quotes', [])
-                additional.append(extra_quote)
+                additional.extend(extra_quotes)
 
     return survivors
 
@@ -623,6 +635,18 @@ _DEDUP_KEY_BY_STAGE = {
     'techstack':  _techstack_dedup_key,
     'people':     _people_dedup_key,
     'competitor': _competitor_dedup_key,
+}
+
+def _people_proof_verified(data):
+    """TD-279 V-bis: a People candidate whose proof passed the server check."""
+    evidence_check = (data.get('metadata') or {}).get('evidence_check') or {}
+    return evidence_check.get('status') == PeopleEvidenceStatus.OK
+
+
+# Stage -> preferred candidate of a group (V-bis): the first VERIFIED People
+# mention wins over a rejected one. Absent -> the first candidate wins.
+_DEDUP_PREFER_BY_STAGE = {
+    'people': _people_proof_verified,
 }
 
 # Stage -> field groups a later duplicate may complete when EMPTY on the
@@ -769,6 +793,7 @@ class TranscriptSignalExtractor:
             before = len(candidates)
             candidates = _deduplicate_candidates(
                 candidates, dedup_key, _DEDUP_FILL_GROUPS_BY_STAGE.get(stage, ()),
+                _DEDUP_PREFER_BY_STAGE.get(stage),
             )
             dropped_count += before - len(candidates)
 
@@ -1376,9 +1401,11 @@ class TranscriptSignalExtractor:
             nor PeopleSignal.clean() runs on this path (TD-249);
           * TD-279 V (transcript_text given): the proof is checked
             (people_evidence.check_people_evidence). A rejected proof keeps
-            the person with role UNKNOWN; metadata.evidence_check =
-            {status, rejected_role when rejected}. The source_quote is
-            stored as returned (the status says it was not found).
+            the person with role UNKNOWN, influence None and empty notes
+            (they rested on that proof); metadata.evidence_check = {status,
+            + rejected_role / rejected_influence / rejected_notes when
+            rejected}. The source_quote is stored as returned (the status
+            says it was not found).
 
         decision_cycle / campaign are auto-propagated from source_activity
         by SignalManager._propagate_activity_context -- not by this builder.
@@ -1439,8 +1466,16 @@ class TranscriptSignalExtractor:
             status = check_people_evidence(raw.get('full_name'), source_quote, transcript_text)
             evidence_check = {'status': status.value}
             if status != PeopleEvidenceStatus.OK:
-                evidence_check['rejected_role'] = role
+                # What rested on the rejected proof is cleared and kept for
+                # traceability (V-bis, PO); confidence / is_inferred unchanged.
+                evidence_check.update(
+                    rejected_role=role,
+                    rejected_influence=influence,
+                    rejected_notes=notes,
+                )
                 role = PeopleRole.UNKNOWN.value
+                influence = None
+                notes = ''
             extra['metadata'] = {'evidence_check': evidence_check}
 
         return {

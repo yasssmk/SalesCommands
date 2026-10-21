@@ -82,7 +82,8 @@ class TestRules:
         assert signal.full_name == 'Claire Dubois'
         assert signal.role == PeopleRole.UNKNOWN
         assert signal.metadata['evidence_check'] == {
-            'status': 'quote_not_found', 'rejected_role': 'CHAMPION'}
+            'status': 'quote_not_found', 'rejected_role': 'CHAMPION',
+            'rejected_influence': 'HIGH', 'rejected_notes': 'Observed in the call.'}
 
     def test_b_a_speaker_with_another_speakers_sentence_about_someone_else(
         self, account, activity, user_a, fake_provider, patch_active_provider,
@@ -93,7 +94,8 @@ class TestRules:
         ])
         assert signal.role == PeopleRole.UNKNOWN
         assert signal.metadata['evidence_check'] == {
-            'status': 'quote_not_about_person', 'rejected_role': 'ECONOMIC_BUYER'}
+            'status': 'quote_not_about_person', 'rejected_role': 'ECONOMIC_BUYER',
+            'rejected_influence': 'HIGH', 'rejected_notes': 'Observed in the call.'}
 
     def test_a_speaker_with_her_own_sentence_keeps_her_role(
         self, account, activity, user_a, fake_provider, patch_active_provider,
@@ -198,3 +200,65 @@ class TestLoadGuard:
         from app_modules.ai_pipelines.pipelines import transcript_signals
         transcript_signals.check_stage_schemas(
             transcript_signals.STAGE_RESPONSE_SCHEMAS, config.STAGE_PROVIDER)
+
+
+# =============================================================================
+# V-bis (PO) -- what rests on a rejected proof, and the People merge
+# =============================================================================
+
+class TestRejectedProofAndMerge:
+
+    def test_a_rejected_proof_clears_influence_and_notes_kept_in_metadata(
+        self, account, activity, user_a, fake_provider, patch_active_provider,
+    ):
+        [signal], _ = _run(account, activity, user_a, fake_provider, [
+            _person('Claire Dubois', 'Je signe le bon de commande demain.'),
+        ])
+        assert signal.role == PeopleRole.UNKNOWN
+        assert signal.influence is None
+        assert signal.notes == ''
+        assert signal.metadata['evidence_check'] == {
+            'status': 'quote_not_found', 'rejected_role': 'CHAMPION',
+            'rejected_influence': 'HIGH', 'rejected_notes': 'Observed in the call.'}
+        # Unchanged.
+        assert signal.confidence == 0.9
+        assert signal.is_inferred is False
+        assert signal.source_quote == 'Je signe le bon de commande demain.'
+
+    def test_a_verified_proof_keeps_influence_and_notes(
+        self, account, activity, user_a, fake_provider, patch_active_provider,
+    ):
+        [signal], _ = _run(account, activity, user_a, fake_provider, [
+            _person('Claire Dubois', "c'est moi qui ai poussé pour qu'on regarde votre solution"),
+        ])
+        assert signal.influence == InfluenceLevel.HIGH
+        assert signal.notes == 'Observed in the call.'
+        assert signal.metadata['evidence_check'] == {'status': 'ok'}
+
+    def test_rejected_then_verified_mention_the_verified_one_wins(
+        self, account, activity, user_a, fake_provider, patch_active_provider,
+    ):
+        verified = "c'est moi qui ai poussé pour qu'on regarde votre solution"
+        [signal], _ = _run(account, activity, user_a, fake_provider, [
+            _person('Claire Dubois', 'Je signe le bon de commande demain.',
+                    role=PeopleRole.ECONOMIC_BUYER.value),
+            _person('Claire Dubois', verified),
+        ])
+        assert signal.role == PeopleRole.CHAMPION
+        assert signal.influence == InfluenceLevel.HIGH
+        assert signal.source_quote == verified
+        assert signal.metadata['evidence_check'] == {'status': 'ok'}
+        assert signal.metadata['additional_quotes'] == ['Je signe le bon de commande demain.']
+
+    def test_verified_then_rejected_mention_the_first_stays(
+        self, account, activity, user_a, fake_provider, patch_active_provider,
+    ):
+        verified = "c'est moi qui ai poussé pour qu'on regarde votre solution"
+        [signal], _ = _run(account, activity, user_a, fake_provider, [
+            _person('Claire Dubois', verified),
+            _person('Claire Dubois', 'Je signe le bon de commande demain.',
+                    role=PeopleRole.ECONOMIC_BUYER.value),
+        ])
+        assert signal.role == PeopleRole.CHAMPION
+        assert signal.source_quote == verified
+        assert signal.metadata['additional_quotes'] == ['Je signe le bon de commande demain.']
