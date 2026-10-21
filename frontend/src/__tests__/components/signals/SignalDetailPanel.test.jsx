@@ -1280,6 +1280,55 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
     );
   });
 
+  // TD-279 UI — server evidence check badge (metadata.evidence_check.status)
+  // and the job title of an unnamed person (metadata.job_title).
+  it("TD-279: quote_not_found → warning badge 'Quote not found in the transcript'", () => {
+    const signal = {
+      ...MOCK_PEOPLE_CHASSIS,
+      id: "people-ev1",
+      metadata: { evidence_check: { status: "quote_not_found", rejected_role: "CHAMPION" } },
+    };
+    render(<SignalDetailPanel signal={signal} signalType="people" currentActivityId="act-1" />);
+    const badge = screen.getByTestId("people-evidence-badge");
+    expect(badge).toHaveTextContent("Quote not found in the transcript");
+    expect(within(screen.getByTestId("people-source")).getByTestId("people-evidence-badge"))
+      .toBeInTheDocument();
+  });
+
+  it("TD-279: quote_not_about_person → 'Quote does not concern this person'", () => {
+    const signal = {
+      ...MOCK_PEOPLE_CHASSIS,
+      id: "people-ev2",
+      metadata: { evidence_check: { status: "quote_not_about_person" } },
+    };
+    render(<SignalDetailPanel signal={signal} signalType="people" currentActivityId="act-1" />);
+    expect(screen.getByTestId("people-evidence-badge")).toHaveTextContent(
+      "Quote does not concern this person",
+    );
+  });
+
+  it("TD-279: evidence ok or absent → no badge", () => {
+    const ok = { ...MOCK_PEOPLE_CHASSIS, id: "people-ev3", metadata: { evidence_check: { status: "ok" } } };
+    render(<SignalDetailPanel signal={ok} signalType="people" currentActivityId="act-1" />);
+    expect(screen.queryByTestId("people-evidence-badge")).not.toBeInTheDocument();
+    cleanup();
+    render(<SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />);
+    expect(screen.queryByTestId("people-evidence-badge")).not.toBeInTheDocument();
+  });
+
+  it("TD-279: unnamed person with a job title → the title in the headline", () => {
+    const titled = {
+      ...MOCK_PEOPLE_CHASSIS,
+      id: "people-title",
+      full_name: "",
+      metadata: { job_title: "contrôleur de gestion" },
+    };
+    render(<SignalDetailPanel signal={titled} signalType="people" currentActivityId="act-1" />);
+    expect(screen.getByTestId("people-summary-text")).toHaveTextContent(
+      "contrôleur de gestion — Economic Buyer (Finance)",
+    );
+  });
+
   it("P6: contact null + participants → Contact placeholder, participant ONLY in Source", () => {
     render(
       <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,

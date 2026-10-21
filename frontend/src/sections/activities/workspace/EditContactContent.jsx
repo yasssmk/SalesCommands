@@ -38,22 +38,14 @@ import Typography from "@mui/material/Typography";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import { useGetContact, useGetContactChoices, updateContact } from "api/businessData/contacts";
 import { useGetDCPeople } from "api/accounts/decisionCycles";
-import { createSignal } from "api/signals/signals";
+import { createSignal, useGetSignalChoices } from "api/signals/signals";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 
-// Mirror of the DC People tab's stakeholder role / influence enums
-// (sections/accounts/dc-workspace/PeopleTab.jsx:44-61).
-const ROLE_OPTIONS = [
-  { value: "CHAMPION", label: "Champion" },
-  { value: "ECONOMIC_BUYER", label: "Economic Buyer" },
-  { value: "DECISION_MAKER", label: "Decision Maker" },
-  { value: "INFLUENCER", label: "Influencer" },
-  { value: "BLOCKER", label: "Blocker" },
-  { value: "END_USER", label: "End User" },
-  { value: "PROCUREMENT", label: "Procurement" },
-];
+// Roles: the signal choices endpoint (people_roles, the EditPeopleContent
+// source; TD-279: UNKNOWN included), read in the component. Influence: mirror
+// of the DC People tab's enum (PeopleTab.jsx INFLUENCE_OPTIONS).
 const INFLUENCE_OPTIONS = [
   { value: "HIGH", label: "High" },
   { value: "MEDIUM", label: "Medium" },
@@ -108,6 +100,8 @@ export default function EditContactContent({ contactId, activity, onSaved }) {
   const accountId =
     activity?.account_detail?.id || activity?.account || contact?.account?.id || null;
   const { people, mutatePeople } = useGetDCPeople(cycleId);
+  const { choices } = useGetSignalChoices();
+  const roleOptions = choices?.people_roles ?? [];
 
   // The contact's current qualified entry in DC people → role/influence prefill.
   const dcEntry =
@@ -292,7 +286,7 @@ export default function EditContactContent({ contactId, activity, onSaved }) {
                 name="role"
                 label="Role"
                 type="select"
-                options={ROLE_OPTIONS}
+                options={roleOptions}
                 value={values.role}
                 onChange={(v) => setFieldValue("role", v)}
                 placeholder="No role defined"

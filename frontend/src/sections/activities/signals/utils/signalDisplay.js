@@ -107,10 +107,16 @@ export function getPeopleSummary(signal) {
 }
 
 // A People signal's person name: the linked contact (first + last) first,
-// else the full_name as stated, else "Unnamed person". Shared by the detail
-// headline and the Activity list line (People S4).
+// else the full_name as stated, else the job title as said (TD-279 D,
+// metadata.job_title -- "contrôleur de gestion"), else "Unnamed person".
+// Shared by the detail headline and the Activity list line (People S4).
 export function getPeopleName(signal) {
-  return formatContact(signal?.target_contact) || signal?.full_name?.trim() || "Unnamed person";
+  return (
+    formatContact(signal?.target_contact) ||
+    signal?.full_name?.trim() ||
+    signal?.metadata?.job_title?.trim() ||
+    "Unnamed person"
+  );
 }
 
 // People detail headline on the Activity chassis: "Name — Role (Department)".

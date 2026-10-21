@@ -44,8 +44,21 @@ vi.mock("api/businessData/contacts", () => ({
 vi.mock("api/accounts/decisionCycles", () => ({
   useGetDCPeople: (...a) => useGetDCPeople(...a),
 }));
+// TD-279 UI: the role options come from the signal choices endpoint (the
+// EditPeopleContent source), UNKNOWN included.
+const PEOPLE_ROLES = [
+  { value: "DECISION_MAKER", label: "Decision Maker" },
+  { value: "ECONOMIC_BUYER", label: "Economic Buyer" },
+  { value: "CHAMPION", label: "Champion" },
+  { value: "BLOCKER", label: "Blocker" },
+  { value: "END_USER", label: "End User" },
+  { value: "PROCUREMENT", label: "Procurement" },
+  { value: "INFLUENCER", label: "Influencer" },
+  { value: "UNKNOWN", label: "Unknown" },
+];
 vi.mock("api/signals/signals", () => ({
   createSignal: (...a) => createSignal(...a),
+  useGetSignalChoices: () => ({ choices: { people_roles: PEOPLE_ROLES }, choicesLoading: false }),
 }));
 
 import ThemeCustomization from "themes/index";
@@ -293,6 +306,18 @@ describe("EditContactContent — role in the decision (DC only)", () => {
     );
     expect(mutatePeople).toHaveBeenCalled();
     expect(closeDrawer).toHaveBeenCalled();
+  });
+
+  it("TD-279: an UNKNOWN role reads 'Unknown' and 'Unknown' is an option", async () => {
+    mockDCPeople({
+      qualified: [{ ...QUALIFIED, role: "UNKNOWN", role_display: "Unknown" }],
+      unqualified: [],
+    });
+    renderEdit({ activity: DC_ACTIVITY });
+    expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Unknown");
+    fireEvent.click(screen.getByTestId("inline-read-role"));
+    expect(await screen.findByRole("option", { name: "Unknown" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Champion" })).toBeInTheDocument();
   });
 
   it("does NOT write a people signal when the role is unchanged", async () => {
