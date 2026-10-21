@@ -392,28 +392,42 @@ class TestPeopleDeduplication:
 # TD-279 — the word match used to link a name to a registered contact
 # =============================================================================
 
-class TestStatedNameMatchesContact:
-    """The TD-279 word match itself (no DB)."""
+class TestNameWordMatch:
+    """
+    The TD-279 word match itself (no DB), through the shared rule
+    _best_unique_match (resolve_participant_by_name / resolve_speaker_label).
+    Migrated from the removed stated_name_matches_contact: same match / no
+    match cases; a missing / blank name is never linked (None).
+    """
 
     @staticmethod
-    def _matches(stated, first='Hélène', last='Le Gall'):
-        from types import SimpleNamespace
+    def _match(stated, first='Hélène', last='Le Gall'):
         from app_modules.ai_pipelines.services.participant_refs import (
-            stated_name_matches_contact,
+            _best_unique_match,
         )
-        return stated_name_matches_contact(
-            stated, SimpleNamespace(first_name=first, last_name=last),
-        )
+        return _best_unique_match(stated, [((first, last), 'contact')])
 
     @pytest.mark.parametrize('stated', [
-        'Hélène', 'helene', 'HELENE', 'Hélène Le Gall', 'Mme Le Gall', None, '', '   ',
+        'Hélène', 'helene', 'HELENE', 'Hélène Le Gall', 'Mme Le Gall',
     ])
     def test_matches(self, stated):
-        assert self._matches(stated)
+        assert self._match(stated) == 'contact'
 
     @pytest.mark.parametrize('stated', ['Isabelle Roux', 'Hélènette', 'Gall', 'Le'])
     def test_does_not_match(self, stated):
-        assert not self._matches(stated)
+        assert self._match(stated) is None
+
+    @pytest.mark.parametrize('stated', [None, '', '   '])
+    def test_missing_name_is_never_linked(self, stated):
+        assert self._match(stated) is None
+
+    def test_a_speaker_label_uses_the_same_match(self):
+        from app_modules.ai_pipelines.services.participant_refs import (
+            resolve_speaker_label,
+        )
+        labels = ['Hélène Le Gall', 'Julien Moreau']
+        assert resolve_speaker_label('Mme Le Gall', labels) == 'Hélène Le Gall'
+        assert resolve_speaker_label('Gall', labels) is None
 
 
 # =============================================================================

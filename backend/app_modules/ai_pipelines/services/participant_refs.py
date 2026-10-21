@@ -28,7 +28,6 @@ __all__ = [
     'ordered_participants',
     'resolve_participant_by_name',
     'resolve_speaker_label',
-    'stated_name_matches_contact',
 ]
 
 
@@ -97,6 +96,10 @@ def _best_unique_match(stated_name, candidates):
     missing / blank, when nothing matches, or when several candidates tie on
     the best score (never a guess).
 
+    Simple word match, no AI: a name part (first or last name) matches when
+    it appears in the stated name (normalised: lowercase, no accents) as a
+    word -- a multi-word part ("Le Gall") as consecutive words.
+
     Args:
         candidates: iterable of (name_parts, value).
     """
@@ -114,35 +117,13 @@ def _best_unique_match(stated_name, candidates):
     return winners[0] if len(winners) == 1 else None
 
 
-def stated_name_matches_contact(stated_name, contact):
-    """
-    Does a name as written by the LLM designate THAT contact? (TD-279; the
-    word match resolve_participant_by_name relies on, also used by the
-    evals/td279 measurement script.)
-
-    Simple word match, no AI: the stated name matches when one of its words
-    (normalised: lowercase, no accents) equals the contact's first name OR
-    last name -- a multi-word first / last name ("Le Gall") must appear as
-    consecutive words. A missing / blank stated name has nothing to compare
-    and matches (nothing to compare).
-
-    Returns:
-        bool -- False means the name describes ANOTHER person.
-    """
-    if not isinstance(stated_name, str):
-        return True
-    stated = _normalize_person_name(stated_name)
-    if not stated:
-        return True
-    return _matched_name_parts(stated, _contact_name_parts(contact)) > 0
-
-
 def resolve_participant_by_name(stated_name, activity):
     """
     TD-279 B4a: link a name as written in the transcript (People full_name,
     Blocker raised_by_name) to a contact REGISTERED on the activity.
 
-    Scope: ordered_participants() (tenant AND account filtered). Same word match as stated_name_matches_contact. Never a guess:
+    Scope: ordered_participants() (tenant AND account filtered). Word match
+    of _best_unique_match (no AI). Never a guess:
       * missing / blank name -> None;
       * no participant matches -> None;
       * several participants match: the one matching the MOST name parts

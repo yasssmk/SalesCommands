@@ -100,7 +100,8 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'PEOPLE_RESPONSE_SCHEMA', 'build_people_requ
 # them; participant_ref ONLY on evidence about that participant (a different
 # name is never them); never transfer what is said of another named person;
 # full_name of a reference entry = the name as written (checked server-side by
-# stated_name_matches_contact); deduction allowed, unfounded conclusion not.
+# stated_name_matches_contact, since removed); deduction allowed, unfounded
+# conclusion not.
 # v6 (TD-279 B4b): no participant reference -- participant_ref, the ATTRIBUTION
 # RULES and every mention of a participant list are removed; full_name is the
 # name as written and the SERVER links it to a registered contact. Patch

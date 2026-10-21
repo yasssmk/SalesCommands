@@ -43,14 +43,9 @@ import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 
-// Roles: the signal choices endpoint (people_roles, the EditPeopleContent
-// source; TD-279: UNKNOWN included), read in the component. Influence: mirror
-// of the DC People tab's enum (PeopleTab.jsx INFLUENCE_OPTIONS).
-const INFLUENCE_OPTIONS = [
-  { value: "HIGH", label: "High" },
-  { value: "MEDIUM", label: "Medium" },
-  { value: "LOW", label: "Low" },
-];
+// Roles and influences: the signal choices endpoint (people_roles /
+// people_influences, the EditPeopleContent source; TD-279: UNKNOWN included),
+// read in the component -- no hard-coded list.
 
 // ==============================|| VALIDATION ||============================== //
 
@@ -102,6 +97,7 @@ export default function EditContactContent({ contactId, activity, onSaved }) {
   const { people, mutatePeople } = useGetDCPeople(cycleId);
   const { choices } = useGetSignalChoices();
   const roleOptions = choices?.people_roles ?? [];
+  const influenceOptions = choices?.people_influences ?? [];
 
   // The contact's current qualified entry in DC people → role/influence prefill.
   const dcEntry =
@@ -295,7 +291,7 @@ export default function EditContactContent({ contactId, activity, onSaved }) {
                 name="influence"
                 label="Influence"
                 type="select"
-                options={INFLUENCE_OPTIONS}
+                options={influenceOptions}
                 value={values.influence}
                 onChange={(v) => setFieldValue("influence", v)}
                 placeholder="No influence"

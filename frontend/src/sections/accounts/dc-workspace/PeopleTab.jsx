@@ -41,16 +41,10 @@ import {
 
 // ==============================|| CONSTANTS ||============================== //
 
-// Roles come from the signal choices endpoint (people_roles, the
-// EditPeopleContent source) -- no hard-coded list (TD-279: UNKNOWN included).
-// Only the "All" filter is local.
+// Roles and influences come from the signal choices endpoint (people_roles /
+// people_influences, the EditPeopleContent source) -- no hard-coded list
+// (TD-279: UNKNOWN included). Only the "All" filter is local.
 const ALL_FILTER = { value: "all", label: "All" };
-
-const INFLUENCE_OPTIONS = [
-  { value: "HIGH", label: "High" },
-  { value: "MEDIUM", label: "Medium" },
-  { value: "LOW", label: "Low" },
-];
 
 const CRITICAL_ROLES = ["CHAMPION", "ECONOMIC_BUYER", "DECISION_MAKER"];
 
@@ -148,6 +142,7 @@ function QualifyDialog({
   accountId,
   showContactPicker,
   roleOptions,
+  influenceOptions,
 }) {
   const [contact, setContact] = useState(prefilledContact || null);
   const [role, setRole] = useState("");
@@ -215,7 +210,7 @@ function QualifyDialog({
           onChange={(e) => setInfluence(e.target.value)}
         >
           <MenuItem value="">—</MenuItem>
-          {INFLUENCE_OPTIONS.map((o) => (
+          {influenceOptions.map((o) => (
             <MenuItem key={o.value} value={o.value}>
               {o.label}
             </MenuItem>
@@ -257,6 +252,7 @@ QualifyDialog.propTypes = {
   accountId: PropTypes.string.isRequired,
   showContactPicker: PropTypes.bool,
   roleOptions: PropTypes.array.isRequired,
+  influenceOptions: PropTypes.array.isRequired,
 };
 
 // ==============================|| QUALIFIED PERSON CARD ||============================== //
@@ -420,6 +416,7 @@ export default function PeopleTab({ cycleId, accountId }) {
     useGetDCPeople(cycleId);
   const { choices } = useGetSignalChoices();
   const roleOptions = choices?.people_roles ?? [];
+  const influenceOptions = choices?.people_influences ?? [];
 
   const [roleFilter, setRoleFilter] = useState("all");
 
@@ -671,6 +668,7 @@ export default function PeopleTab({ cycleId, accountId }) {
           accountId={accountId}
           showContactPicker={showContactPicker}
           roleOptions={roleOptions}
+          influenceOptions={influenceOptions}
         />
       )}
     </Box>

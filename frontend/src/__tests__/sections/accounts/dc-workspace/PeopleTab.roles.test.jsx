@@ -41,6 +41,13 @@ const PEOPLE_ROLES = [
   { value: "INFLUENCER", label: "Influencer" },
   { value: "UNKNOWN", label: "Unknown" },
 ];
+// Influence choices -- labels distinct from any hard-coded list, so a test
+// seeing them proves the endpoint is the source.
+const PEOPLE_INFLUENCES = [
+  { value: "HIGH", label: "High (endpoint)" },
+  { value: "MEDIUM", label: "Medium (endpoint)" },
+  { value: "LOW", label: "Low (endpoint)" },
+];
 
 const person = (id, role, role_display, first_name) => ({
   signal_id: id,
@@ -56,7 +63,7 @@ const person = (id, role, role_display, first_name) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   useGetSignalChoices.mockReturnValue({
-    choices: { people_roles: PEOPLE_ROLES },
+    choices: { people_roles: PEOPLE_ROLES, people_influences: PEOPLE_INFLUENCES },
     choicesLoading: false,
   });
   useGetDCPeople.mockReturnValue({
@@ -97,6 +104,16 @@ describe("PeopleTab — roles from the choices endpoint (TD-279 UI)", () => {
     fireEvent.mouseDown(within(dialog).getAllByRole("combobox")[0]);
     expect(await screen.findByRole("option", { name: "Unknown" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Champion" })).toBeInTheDocument();
+  });
+
+  it("the qualify Select's influence options come from the choices endpoint", async () => {
+    renderTab();
+    fireEvent.click(screen.getByRole("button", { name: /add stakeholder/i }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.mouseDown(within(dialog).getAllByRole("combobox")[1]);
+    expect(await screen.findByRole("option", { name: "High (endpoint)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Low (endpoint)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "—" })).toBeInTheDocument();
   });
 
   it("coverage alert unchanged: critical roles only, labels from the choices", () => {

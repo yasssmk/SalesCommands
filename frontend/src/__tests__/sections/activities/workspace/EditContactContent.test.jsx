@@ -56,9 +56,19 @@ const PEOPLE_ROLES = [
   { value: "INFLUENCER", label: "Influencer" },
   { value: "UNKNOWN", label: "Unknown" },
 ];
+// Influence labels distinct from any hard-coded list: seeing them proves the
+// endpoint is the source.
+const PEOPLE_INFLUENCES = [
+  { value: "HIGH", label: "High (endpoint)" },
+  { value: "MEDIUM", label: "Medium (endpoint)" },
+  { value: "LOW", label: "Low (endpoint)" },
+];
 vi.mock("api/signals/signals", () => ({
   createSignal: (...a) => createSignal(...a),
-  useGetSignalChoices: () => ({ choices: { people_roles: PEOPLE_ROLES }, choicesLoading: false }),
+  useGetSignalChoices: () => ({
+    choices: { people_roles: PEOPLE_ROLES, people_influences: PEOPLE_INFLUENCES },
+    choicesLoading: false,
+  }),
 }));
 
 import ThemeCustomization from "themes/index";
@@ -318,6 +328,14 @@ describe("EditContactContent — role in the decision (DC only)", () => {
     fireEvent.click(screen.getByTestId("inline-read-role"));
     expect(await screen.findByRole("option", { name: "Unknown" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Champion" })).toBeInTheDocument();
+  });
+
+  it("TD-279 closure: the influence options come from the choices endpoint", async () => {
+    mockDCPeople({ qualified: [QUALIFIED], unqualified: [] });
+    renderEdit({ activity: DC_ACTIVITY });
+    expect(screen.getByTestId("inline-read-influence")).toHaveTextContent("High (endpoint)");
+    fireEvent.click(screen.getByTestId("inline-read-influence"));
+    expect(await screen.findByRole("option", { name: "Low (endpoint)" })).toBeInTheDocument();
   });
 
   it("does NOT write a people signal when the role is unchanged", async () => {

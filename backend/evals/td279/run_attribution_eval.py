@@ -310,12 +310,10 @@ def _who(name):
     """Speaker key for a name as returned by the LLM (or 'null' / 'other')."""
     if not isinstance(name, str) or not name.strip():
         return 'null'
-    for key, full in SPEAKERS.items():
-        first, last = full.split()
-        speaker = types.SimpleNamespace(first_name=first, last_name=last)
-        if participant_refs.stated_name_matches_contact(name, speaker):
-            return key
-    return f'other: {name}'
+    # The production word match (participant_refs.resolve_speaker_label).
+    label = participant_refs.resolve_speaker_label(name, list(SPEAKERS.values()))
+    keys = {full: key for key, full in SPEAKERS.items()}
+    return keys[label] if label is not None else f'other: {name}'
 
 
 def _linked(name, activity):

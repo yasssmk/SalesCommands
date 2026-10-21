@@ -219,8 +219,8 @@ _STAGES = [
     ('competitor', build_competitor_request),
     # People is LAST (UX Activity -- People S1): the prospect-side persons
     # who weigh in the decision or embody a step to clear, with their role.
-    # Its context also lists the persons already identified in the deal so
-    # they are not emitted again (one role per person per decision cycle).
+    # Every activity re-observes its persons (no list of the persons already
+    # known in the deal since people v4); the cluster of the DC merges them.
     ('people', build_people_request),
 ]
 
