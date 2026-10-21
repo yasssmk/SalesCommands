@@ -25,7 +25,7 @@ pytestmark = pytest.mark.django_db
 
 TERRA = 'gpt-5.6-terra'
 FIELDS = {
-    'full_name', 'role', 'influence', 'department', 'notes', 'source_quote',
+    'full_name', 'job_title', 'role', 'influence', 'department', 'notes', 'source_quote',
     'confidence', 'is_inferred',
 }
 UNKNOWN_RULE = (
@@ -143,5 +143,5 @@ class TestVersions:
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v8'
+        assert PEOPLE_PROMPT_VERSION == 'v9'   # v9: job_title (TD-279 D)
         assert CONTEXT_VERSION == 'v9'

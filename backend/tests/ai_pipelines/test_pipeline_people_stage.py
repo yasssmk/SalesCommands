@@ -101,7 +101,7 @@ class TestPeoplePersistence:
     ):
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
-        assert result['run'].prompt_versions['people'] == 'v8'
+        assert result['run'].prompt_versions['people'] == 'v9'
         # v4 = Sprint TechStack T0 (techstack usage taxonomy); v5 = T4b
         # (shared "Conversation date" line + techstack header); v6 = no list
         # of the persons already known in the deal (people P2); v7 = contacts
@@ -577,15 +577,17 @@ class TestPeoplePromptV7:
         from app_modules.core_modules.models import StandardDepartment
         prompt = self._prompt()
         choices = StandardDepartment.DepartmentChoices
-        assert 'with the department deduced from their job title when it is said' in prompt
-        assert f'"our HR director" -> department "{choices.HR.value}"' in prompt
-        assert f'"the logistics manager" -> department "{choices.LOGISTICS.value}"' in prompt
+        # v9 (TD-279 D): the title as said + the department it designates.
+        assert ('full_name = null, `job_title` = the title as said, and the '
+                'department that title designates') in prompt
+        assert f'"the payroll manager" -> department "{choices.HR.value}"' in prompt
+        assert f'"our accounts payable clerk" -> department "{choices.FINANCE.value}"' in prompt
 
     def test_version(self):
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v8'
+        assert PEOPLE_PROMPT_VERSION == 'v9'
 
 # =============================================================================
 # P2 — NO KNOWN-PEOPLE LIST in the people context nor in the prompt
@@ -630,7 +632,7 @@ class TestNoKnownPeopleListSentToTheLLM:
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v8'
+        assert PEOPLE_PROMPT_VERSION == 'v9'
         assert CONTEXT_VERSION == 'v9'
 
 

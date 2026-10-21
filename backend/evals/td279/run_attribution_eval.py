@@ -117,7 +117,10 @@ from app_modules.ai_pipelines.services import participant_refs  # noqa: E402
 from app_modules.ai_pipelines.services.people_evidence import check_people_evidence  # noqa: E402
 from app_modules.ai_pipelines.services.transcript_text import TranscriptText  # noqa: E402
 from app_modules.ai_pipelines.services.safety_filter import passes_safety_filter  # noqa: E402
-from app_modules.ai_pipelines.services.transcript_signal_extractor import _iso_date  # noqa: E402
+from app_modules.ai_pipelines.services.transcript_signal_extractor import (  # noqa: E402
+    _iso_date,
+    resolve_person_department_or_title,
+)
 from app_modules.core_modules.models import StandardDepartment  # noqa: E402
 
 
@@ -129,7 +132,6 @@ from app_modules.core_modules.models import StandardDepartment  # noqa: E402
 # -> PROVIDER_CONFIG key.
 MODELS = {cfg['model']: key for key, cfg in ai_config.PROVIDER_CONFIG.items()}
 
-DEPARTMENTS = StandardDepartment.DepartmentChoices.values
 FINANCE = StandardDepartment.DepartmentChoices.FINANCE.value
 
 CONTACT = types.SimpleNamespace(
@@ -417,12 +419,16 @@ def _atelier_metrics(stage, parsed, activity=None):
         department = ((controleur or {}).get('department') or '').strip()
         m['controleur_department'] = department
         m['controleur_department_finance'] = department.lower() == FINANCE.lower()
+        # TD-279 D: the job title as said, and the department the SERVER keeps
+        # (production resolver: the department, else the job title).
+        m['controleur_job_title'] = ((controleur or {}).get('job_title') or '').strip()
+        server_department = resolve_person_department_or_title(
+            (controleur or {}).get('department'), (controleur or {}).get('job_title'))
+        m['controleur_department_after_server'] = server_department.name if server_department else ''
         # Server identity rule (_build_people_data): no contact, no name and no
-        # resolvable department -> dropped. Approximated without the DB: exact
-        # StandardDepartment value (the server also accepts an unambiguous word).
+        # resolved department -> dropped.
         m['controleur_has_identity'] = bool(controleur) and bool(
-            (controleur.get('full_name') or '').strip()
-            or department.lower() in {v.lower() for v in DEPARTMENTS}
+            (controleur.get('full_name') or '').strip() or server_department
         )
         m['seller_entries'] = sum(1 for s in signals if _who(s.get('full_name')) == 'Julien (seller)'
                                   or 'sophie' in name(s) or 'garnier' in name(s))

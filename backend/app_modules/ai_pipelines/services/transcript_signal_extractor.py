@@ -524,6 +524,17 @@ def resolve_person_department(name):
     return by_value.get(key) or by_word.get(key)
 
 
+def resolve_person_department_or_title(department, job_title):
+    """
+    TD-279 D: the department of a person -- the LLM-emitted department, else
+    (server safety net) the job title as said, through the SAME resolver
+    (resolve_person_department: a title that is a department name or a
+    single word unique to one department). None otherwise -- no hard-coded
+    title table.
+    """
+    return resolve_person_department(department) or resolve_person_department(job_title)
+
+
 # =============================================================================
 # IN-EXTRACTION DEDUPLICATION (shared by TechStack and People)
 # =============================================================================
@@ -1399,6 +1410,10 @@ class TranscriptSignalExtractor:
             DROPPED + warning. Checked HERE: persist_stage feeds
             SignalManager.create directly -- neither the People serializer
             nor PeopleSignal.clean() runs on this path (TD-249);
+          * TD-279 D: job_title (as said) -> metadata.job_title; when the
+            department is not resolved, the job title is resolved by the
+            same resolver (resolve_person_department_or_title) before the
+            identity rule;
           * TD-279 V (transcript_text given): the proof is checked
             (people_evidence.check_people_evidence). A rejected proof keeps
             the person with role UNKNOWN, influence None and empty notes
@@ -1431,6 +1446,11 @@ class TranscriptSignalExtractor:
         if influence not in InfluenceLevel.values:
             influence = None
 
+        # TD-279 D: the job title as said (metadata.job_title), also the
+        # department's safety net.
+        raw_title = raw.get('job_title')
+        job_title = raw_title.strip() if isinstance(raw_title, str) else ''
+
         # TD-279: the name as written, linked to a contact registered on the
         # activity (never a guess), before the in-extraction dedup.
         contact = resolve_participant_by_name(raw.get('full_name'), activity)
@@ -1438,12 +1458,12 @@ class TranscriptSignalExtractor:
             full_name = f'{contact.first_name or ""} {contact.last_name or ""}'.strip()
             department = (
                 contact.standard_department
-                or resolve_person_department(raw.get('department'))
+                or resolve_person_department_or_title(raw.get('department'), job_title)
             )
         else:
             raw_name = raw.get('full_name')
             full_name = raw_name.strip() if isinstance(raw_name, str) else ''
-            department = resolve_person_department(raw.get('department'))
+            department = resolve_person_department_or_title(raw.get('department'), job_title)
 
         full_name = full_name[:_PEOPLE_FULL_NAME_MAX_LENGTH]
 
@@ -1460,8 +1480,11 @@ class TranscriptSignalExtractor:
         raw_notes = raw.get('notes')
         notes = raw_notes.strip() if isinstance(raw_notes, str) else ''
 
+        metadata = {}
+        if job_title:
+            metadata['job_title'] = job_title
+
         # TD-279 V: never trust a role on a proof the transcript does not hold.
-        extra = {}
         if transcript_text is not None:
             status = check_people_evidence(raw.get('full_name'), source_quote, transcript_text)
             evidence_check = {'status': status.value}
@@ -1476,7 +1499,8 @@ class TranscriptSignalExtractor:
                 role = PeopleRole.UNKNOWN.value
                 influence = None
                 notes = ''
-            extra['metadata'] = {'evidence_check': evidence_check}
+            metadata['evidence_check'] = evidence_check
+        extra = {'metadata': metadata} if metadata else {}
 
         return {
             'signal_type':       'people',

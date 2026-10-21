@@ -10,7 +10,8 @@ v6 -- TD-279 B4b: no participant reference, names as written;
 v7 -- TD-279 C5: speakers always extracted, role from what is said of them,
 seller side = the solution, department from the job title;
 v8 -- TD-279 M: role UNKNOWN offered, never guess a role; the answer is
-constrained by a strict JSON schema, PEOPLE_RESPONSE_SCHEMA).
+constrained by a strict JSON schema, PEOPLE_RESPONSE_SCHEMA;
+v9 -- TD-279 D: job_title as said, department = the function it designates).
 
 This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
@@ -28,6 +29,7 @@ array of person observations. Each observation has these fields:
 
     full_name        string|null -- the name as written (speaker label, else
                                     as cited), null when not named
+    job_title        string|null -- the job title as said, else null (v9)
     role             string      -- one PeopleRole code (UNKNOWN when nothing
                                     establishes the role, v8)
     influence        string|null -- one InfluenceLevel code (HIGH / MEDIUM /
@@ -60,7 +62,10 @@ is_inferred, PIPELINE_DROP_INFERRED). Each surviving observation maps to a new P
     role                ->  role (out-of-list value -> signal dropped)
     influence           ->  influence (invalid -> None)
     department          ->  target_department (the contact's standard
-                            department when set, else the resolved name)
+                            department when set, else the resolved name,
+                            else -- v9 safety net -- the job_title resolved
+                            by the same resolver)
+    job_title           ->  metadata.job_title
     notes               ->  notes
     source_quote        ->  source_quote
     confidence          ->  confidence
@@ -112,7 +117,13 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'PEOPLE_RESPONSE_SCHEMA', 'build_people_requ
 # UNKNOWN, never a guess (replaces "pick the best-supported role with
 # is_inferred"); a role DEDUCED from evidence stays allowed (is_inferred).
 # The answer is constrained by PEOPLE_RESPONSE_SCHEMA (strict).
-PEOPLE_PROMPT_VERSION = 'v8'
+# v9 (TD-279 D): a `job_title` field (the title as said, else null); the
+# department of a person whose job title is said is the function that title
+# designates -- a deduction from what is SAID (neutral examples: payroll
+# manager -> HR, accounts payable clerk -> Finance), the "nothing said ->
+# null" rule unchanged otherwise. The cited-unnamed-person examples (HR
+# director, logistics manager) gave the department word itself; replaced.
+PEOPLE_PROMPT_VERSION = 'v9'
 
 # Codes / names quoted in the worked examples, taken from the enums.
 _ECONOMIC_BUYER = PeopleRole.ECONOMIC_BUYER.value
@@ -121,7 +132,6 @@ _ROLE_PROCUREMENT = PeopleRole.PROCUREMENT.value
 _ROLE_UNKNOWN = PeopleRole.UNKNOWN.value
 _DEPT_GENERAL_MANAGEMENT = StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT.value
 _DEPT_HR = StandardDepartment.DepartmentChoices.HR.value
-_DEPT_LOGISTICS = StandardDepartment.DepartmentChoices.LOGISTICS.value
 _DEPT_FINANCE = StandardDepartment.DepartmentChoices.FINANCE.value
 _DEPT_PROCUREMENT = StandardDepartment.DepartmentChoices.PROCUREMENT.value
 _DEPT_SALES = StandardDepartment.DepartmentChoices.SALES.value
@@ -150,11 +160,12 @@ PEOPLE_RESPONSE_SCHEMA = {
                     'type': 'object',
                     'additionalProperties': False,
                     'required': [
-                        'full_name', 'role', 'influence', 'department', 'notes',
-                        'source_quote', 'confidence', 'is_inferred',
+                        'full_name', 'job_title', 'role', 'influence', 'department',
+                        'notes', 'source_quote', 'confidence', 'is_inferred',
                     ],
                     'properties': {
                         'full_name':    {'type': ['string', 'null']},
+                        'job_title':    {'type': ['string', 'null']},
                         'role':         {'type': 'string', 'enum': list(PeopleRole.values)},
                         'influence':    _nullable_enum(InfluenceLevel.values),
                         'department':   _nullable_enum(
@@ -197,9 +208,8 @@ WHO TO EXTRACT
   the speaker label for a person who speaks, the name as cited otherwise.
 - Persons only CITED but absent ("our CFO Marc will decide").
 - A cited person without a name ("our CFO") is STILL extracted:
-  full_name = null, with the department deduced from their job title when it
-  is said ("our HR director" -> department "{_DEPT_HR}", "the logistics
-  manager" -> department "{_DEPT_LOGISTICS}").
+  full_name = null, `job_title` = the title as said, and the department
+  that title designates (see `department` below).
 - Examples:
   * "The final decision maker is the CEO, who has to approve the quote"
     -> the CEO, role "{_ECONOMIC_BUYER}", department "{_DEPT_GENERAL_MANAGEMENT}".
@@ -226,6 +236,7 @@ Return a single JSON object with this exact shape:
   "signals": [
     {{
       "full_name":       <the person's name exactly as stated in the transcript, or null when the person is not named>,
+      "job_title":       <the person's job title exactly as said in the transcript, or null when no title is said>,
       "role":            "<EXACTLY ONE role code from the context list>",
       "influence":       <one influence code from the context list, or null>,
       "department":      <one department value from the context list, exact string, or null>,
@@ -252,14 +263,20 @@ EMISSION RULES
   reason to omit the person.
 - The department "{_DEPT_PROCUREMENT}" is a DEPARTMENT, not the role
   "{_ROLE_PROCUREMENT}": pick each from its own list.
+- `job_title` = the person's job title exactly as said in the transcript
+  (e.g. "our accounts payable clerk"), or null when no title is said.
 - `department` is the function of THIS person in the prospect's
   organization, taken ONLY from what the transcript says about THIS person
   (their team, their job title, their trade): "manager of the inside sales
-  team" -> department "{_DEPT_SALES}". NEVER infer it from the company name,
-  the meeting title, the prospect's industry, the department of the SPEAKER,
-  or the other persons. WHEN NOTHING is said about this person's function,
-  set `department` to null -- null is the safe default; never fill it with a
-  guess.
+  team" -> department "{_DEPT_SALES}". When the transcript gives the
+  person's job title, `department` is the function that title designates --
+  a deduction from what is SAID, not a guess: "the payroll manager" ->
+  department "{_DEPT_HR}", "our accounts payable clerk" -> department
+  "{_DEPT_FINANCE}". NEVER infer it from the company name, the meeting title,
+  the prospect's industry, the department of the SPEAKER, or the other
+  persons. WHEN NOTHING is said about this person's function (no team, no
+  job title, no trade), set `department` to null -- null is the safe
+  default; never fill it with a guess.
 - `full_name` is the name as stated; NEVER invent, complete or guess a name.
 - NEVER transfer to one person what the transcript says about ANOTHER named
   person: "Paul Martin, our head of IT, signs off on security" describes Paul
