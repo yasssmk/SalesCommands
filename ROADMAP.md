@@ -1406,6 +1406,7 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Section Signaux d'UX Activity : TERMINÉE côté Activity** — les **8 types** de la section (Objective, Pain, Impact, Constraint, Objection, People, TechStack, Competitor) sont sur le châssis (les next steps vivent dans leur propre section). **Chantier UX Activity** : **reste OUVERT** (autres sections).
 - **Prochain jalon (ordre à confirmer par le PO)** : branche **messages rouges → warning** (TD-272) ; **TO-DO People** (ci-dessous) ; puis les **autres sections d'UX Activity** (Next step, Transcript / notes, Preparation) ; puis la **question stratégique « création manuelle des signaux »**.
   **MAJ (fix People doublons)** : TO-DO People **LIVRÉ** (partie doublons). **Prochain jalon AVANT Next step** : **audit de la régression People** — un tiers cité est rattaché à tort au contact enregistré de l'activité (**TD-279**).
+  **MAJ (sprint TD-279)** : audit + correctif **LIVRÉS** — voir la fiche « Sprint TD-279 » ci-dessous. Prochain jalon : **TD-272**.
 
 #### Règle doublons (décision PO, Sprint Competitor)
 - **Fusion UNIQUEMENT dans une même transcription** (un même concurrent / outil cité plusieurs fois dans UN appel = 1 signal).
@@ -1420,6 +1421,39 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
   - **Fusion UNIQUEMENT dans une même transcription** (inchangée : `_people_dedup_key`, `_deduplicate_candidates`).
   - **Centralisation par personne = cluster DC** (`SignalClusterService`) — les cas limites et l'onglet People du DC relèvent du **chantier DC/Account** (**TD-277**, **TD-278**).
   - **Prouvé en réel** (SELECT PO) : « marc » et « isabelle roux » ont chacun **3 signaux sur 3 activités** du même DC.
+
+### Sprint TD-279 — Attribution People ✅ LIVRÉ (chantier UX Activity — EN COURS) — un tiers cité n'est plus collé sur le contact enregistré : noms rattachés par le serveur, People sur gpt-5.6-terra + Structured Outputs, rôle UNKNOWN, contrôle serveur des preuves, UI (branche `fix/td-279-people-attribution`, `b92b571`→`c5daa3c` + commits de clôture)
+- **Constat (smoke PO, 2026-10-19)** : la description de la DAF **Isabelle Roux** (tiers cité, dite par Claire) était émise **aussi** sur le **contact enregistré Criminelle Husky** → fausse donnée sur un vrai contact (**TD-279**).
+- **Cause prouvée** : le prompt People imposait d'extraire **tout contact listé** et de remplir la case **`P1`** ; **gpt-4o-mini confondait le locuteur et le sujet**. Ce n'était pas la ligne « Conversation date ».
+- **Décisions PO verrouillées** :
+  - **Un seul rôle par signal** (pas de multi-rôle) ; au cluster DC, le rôle de plus haute confiance (**TD-280**).
+  - **Rôle `UNKNOWN`** : affiché **« Unknown » en toutes lettres**, **choisissable** à l'édition, **compté** dans DC People, envoyé au **prep call / deal health** comme **« role to qualify »** (jamais filtré), **ignoré par le readiness**.
+  - **Preuve rejetée** (citation introuvable, ou citation d'un intervenant qui n'est ni la sienne ni ne le nomme) → **rôle UNKNOWN, personne GARDÉE**, influence et notes vidées (gardées dans `metadata.evidence_check`) ; **badge orange** « citation non retrouvée » / « ne concerne pas la personne » ; la citation est **conservée**.
+  - **TechStack : seuls les outils utilisés aujourd'hui** ; **Blocker : un risque futur exprimé = objection** ; **département déduit de l'intitulé de poste** (`job_title`) ; **inférés gardés** sur tous les stages (seuil 0.5).
+  - **Qualité > coût** : People sur **`gpt-5.6-terra`** (effort medium), challenger `gpt-5.4-mini-2026-03-17` ; les autres stages restent sur `gpt-4o-mini`.
+  - **Rattachement CRM à 3 états** (MATCHED / AMBIGUOUS / UNRESOLVED) : **stocké seulement** — **non implémenté** (**TD-287**, avec TD-211).
+- **Livré** (chaque sous-étape : ROUGE par le vrai chemin, VERT, non-vacuité par mutation ciblée restaurée et vérifiée par `cmp`, régression) :
+  - **Attribution par nom (B1 → B4b)** : plus de repère `P<n>` pour People et Blocker ; le LLM rend les **noms tels qu'écrits**, le **serveur rattache** au contact enregistré (`participant_refs.resolve_participant_by_name`, mot à mot, tenant + account, ambigu → rien) ; **liste des contacts retirée du contexte** (contexte v8, next_steps v4) ; script d'éval réel `evals/td279`.
+  - **Extraction (C1 → C6)** : inférés gardés sur tous les stages ; Objective **`target_date`** (v2) ; Impact **`metric_text`** (pain_impact v2) ; People v7 (tout intervenant extrait, rôle d'un intervenant = ce qui est dit de lui, « présenter le projet » ≠ vendeur) ; Blocker v4 (ce qui bloque OU peut ralentir).
+  - **Socle LLM (P0, P1)** : contrat provider étendu (schéma de réponse strict, mode raisonnement ; Claude refuse) ; **modèle par stage** au point central (`config.STAGE_PROVIDER`, contrôlé au démarrage).
+  - **People (U, M, V, V-bis, D, D-bis)** : `PeopleRole.UNKNOWN` (migration de choix 0046) ; People sur Terra + **Structured Outputs** (schéma strict, énumérations des mêmes sources que la taxonomie) ; **contrôle serveur des preuves** (`services/people_evidence.py`, `services/transcript_text.py`) ; fusion : la mention vérifiée l'emporte ; `job_title` + département déduit (people v9) ; garde-fou : un stage avec schéma ne peut pas être mappé sur Claude.
+  - **Label de locuteur retiré en tête de citation** (« Nom: … », seulement un label réel de la transcription), **tous les stages** transcript_signals (`080e656`).
+  - **UI** (`c5daa3c` + clôture) : rôles et influences lus depuis l'endpoint des choix (PeopleTab, EditContactContent) ; badge de preuve dans le détail People ; intitulé affiché pour une personne sans nom.
+  - **Éval** (`evals/td279`, README) : `--model`, `--rescore` (re-note les réponses brutes enregistrées, sans appel API), durées et types d'erreur.
+- **Migrations** : **0046** (`module_signals`, choix `PeopleRole` + UNKNOWN, sans changement de schéma, réversible).
+- **Validation** : éval réelle `--n 20` (Terra, people v9, PO) — **Claire juste 20/20**, les **7 personnes de l'atelier présentes**, **0 rattachement à tort**, **0 preuve rejetée à tort**, citation de Criminelle 20/20, contrôleur 17/20, **durées ≤ 22 s** (timeout 90 s validé), 0 erreur. pytest `tests/ai_pipelines` + `tests/signals` + `tests/decision_cycles` verts sauf **TD-247** (pré-existant) ; vitest complet vert. **Smoke réel : à la fin, après le sprint Next step** (un smoke global TD-279 + Next step, décision PO).
+- **Architecture OpenAI en 2 appels (inventaire des personnes → rôles)** : **EN RÉSERVE**. À activer si l'éval sur **d'autres transcriptions** montre des erreurs que le **serveur n'attrape pas** (le contrôle des preuves attrape aujourd'hui le cas TD-279).
+- **Dette** : **TD-279 RESOLVED** (archivé) ; **NOUVEAUX TD-280 → TD-289** (cluster DC rôle de plus haute confiance, « Conversation date », NextSteps à aligner, `dropped_by_safety_filter`, Terra sans snapshot, qualité People résiduelle, `help_text` metric_text, rattachement CRM à 3 états, Claude sans Structured Outputs, cache d'extraction) ; **MAJ TD-7**.
+- **Prochain jalon** : **TD-272** — voir la suite de la surface Activity ci-dessous.
+
+#### Suite de la surface Activity (ordre PO, clôture TD-279)
+1. **TD-272** — messages rouge → orange, **snackbars uniquement**.
+2. **Next step** — cadrage ouvert par un **AUDIT DE STRUCTURE**. **Idée PO à étudier** : lier People et Next step (« une personne est souvent une étape du processus, et une étape est un next step ») — **pas toutes** : un utilisateur pilote n'est pas une étape. Concepts à cartographier : `NextStepSignal`, `suggested_contacts` (**TD-7**), étapes de décision du DC, `PeopleSignal` ; décider aussi si **Blocker et Next step réutilisent un inventaire des personnes**. Aligner NextSteps sur TD-279 (**TD-282**).
+3. **SMOKE GLOBAL** (décision PO) couvrant **TD-279 + Next step**.
+4. **Transcript & notes** → **Preparation / EMAIL GENERATION** (à remettre ; PO : « on doit pouvoir extraire un email »).
+5. Décision **« création manuelle des signaux »** (fiche « Question STRATÉGIQUE » ci-dessous).
+6. **Prérequis de clôture d'Activity** : nettoyage **TD-206**, passe cluster **TD-199**, **smoke A→Z**.
+7. **Prep call**.
 
 ---
 
@@ -1800,7 +1834,8 @@ possibles) :
 - **Le LLM récupère parfois la mauvaise info** (même famille, voir **TD-279**) :
   - **TechStack Freshdesk** : `renewal_date` = la **date d'arrêt** de l'outil.
   - **People** : la description de la **DAF Isabelle Roux** (tiers cité) est
-    collée sur le **contact enregistré Criminelle Husky**.
+    collée sur le **contact enregistré Criminelle Husky**. **✅ RÉSOLU
+    (sprint TD-279)** — voir la fiche « Sprint TD-279 ».
 - **À faire / à vérifier (clôture Sprint TechStack Activity)** :
   - **Jeu de transcriptions de test jamais vu par les prompts** (rôle de
     **juge**) — le smoke Nordline en est le premier exemple ; il ne doit jamais
@@ -1820,6 +1855,17 @@ possibles) :
   même activité avec une transcription modifiée recrée des signaux** (la
   fusion des doublons ne vaut que dans un même lot — test
   `test_two_batches_on_the_same_activity_are_not_filtered`).
+- **FINE-TUNING (décision PO, clôture TD-279)** : « **le meilleur LLM pour
+  chaque méthode / requête LLM ; en tester plusieurs et vérifier** ».
+  - **Méthode** : `evals/` (run, `--model`, `--rescore` — modèle du sprint
+    TD-279 : `backend/evals/td279/`), **≥ 20-30 appels par variante** (les
+    modèles varient même à température 0).
+  - **Tester `gpt-5.6-luna`** pour les autres stages ; **étendre les
+    Structured Outputs** aux autres stages (People l'a déjà).
+  - **Jeu de transcriptions annotées** : locuteur qui parle d'un décideur
+    absent, rôles anonymes, homonymes, FR / EN.
+  - Reliés : **TD-284** (Terra sans snapshot), **TD-285** (qualité People
+    résiduelle).
 
 #### Question STRATÉGIQUE — création manuelle des signaux (à trancher en fin de surface Activity)
 - **Position** : à trancher **en fin de surface Activity** (après Competitor).
@@ -1839,6 +1885,8 @@ possibles) :
   technique, orange = règle métier » (`UX_UI_Guidelines.md`, fiche « Gestion
   des erreurs »).
 - **Occurrences** : **TD-272**.
+- **MAJ (clôture TD-279)** : **prochain jalon** de la surface Activity —
+  périmètre **snackbars uniquement** (rouge → orange, décision PO).
 
 #### Listes déroulantes en un clic ✅ LIVRÉ (branche `fix/edit-single-click`, `836aa859`→`a6ced69f` + commit doc de clôture)
 - **Décision PO (B)** : **changement central dans `InlineEditableValue`**,
