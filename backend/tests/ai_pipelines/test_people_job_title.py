@@ -157,9 +157,7 @@ class TestSchemaAndPrompt:
     @pytest.mark.parametrize('word', [
         # Test transcripts (Logistix demo, atelier business case) + this file.
         'contrôleur', 'gestion', 'controller', 'DSI', 'DAF', 'Isabelle', 'Claire',
-        # "Marc" is left out: the pre-existing example "our CFO Marc will
-        # decide" (v1) is outside step D -- reported to the PO.
-        'Thomas', 'Criminelle', 'Laurent', 'Nadia', 'Karim', 'Logistix',
+        'Thomas', 'Criminelle', 'Laurent', 'Nadia', 'Karim', 'Marc', 'Logistix',
         'Morgan', 'paie',
     ])
     def test_examples_do_not_reuse_test_transcripts(self, word):

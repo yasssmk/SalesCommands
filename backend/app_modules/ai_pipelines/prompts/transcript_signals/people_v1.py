@@ -123,6 +123,8 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'PEOPLE_RESPONSE_SCHEMA', 'build_people_requ
 # manager -> HR, accounts payable clerk -> Finance), the "nothing said ->
 # null" rule unchanged otherwise. The cited-unnamed-person examples (HR
 # director, logistics manager) gave the department word itself; replaced.
+# D-bis (before any v9 run, version kept): the historical cited-person
+# example "our CFO Marc" (a first name of the test transcripts) -> "Elena".
 PEOPLE_PROMPT_VERSION = 'v9'
 
 # Codes / names quoted in the worked examples, taken from the enums.
@@ -206,7 +208,7 @@ WHO TO EXTRACT
   DO NOT emit never applies to a speaker.
 - `full_name` = the person's name exactly as written in the transcript:
   the speaker label for a person who speaks, the name as cited otherwise.
-- Persons only CITED but absent ("our CFO Marc will decide").
+- Persons only CITED but absent ("our CFO Elena will decide").
 - A cited person without a name ("our CFO") is STILL extracted:
   full_name = null, `job_title` = the title as said, and the department
   that title designates (see `department` below).
