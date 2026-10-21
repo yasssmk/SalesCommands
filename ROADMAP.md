@@ -1407,6 +1407,7 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Prochain jalon (ordre à confirmer par le PO)** : branche **messages rouges → warning** (TD-272) ; **TO-DO People** (ci-dessous) ; puis les **autres sections d'UX Activity** (Next step, Transcript / notes, Preparation) ; puis la **question stratégique « création manuelle des signaux »**.
   **MAJ (fix People doublons)** : TO-DO People **LIVRÉ** (partie doublons). **Prochain jalon AVANT Next step** : **audit de la régression People** — un tiers cité est rattaché à tort au contact enregistré de l'activité (**TD-279**).
   **MAJ (sprint TD-279)** : audit + correctif **LIVRÉS** — voir la fiche « Sprint TD-279 » ci-dessous. Prochain jalon : **TD-272**.
+  **MAJ (séquence PO révisée, clôture TD-279)** : **TD-272 déplacé en fin d'UX** (homogénéisation UI + validation + gestion des erreurs). Prochain jalon : **Next step** — voir « Suite de la surface Activity » ci-dessous.
 
 #### Règle doublons (décision PO, Sprint Competitor)
 - **Fusion UNIQUEMENT dans une même transcription** (un même concurrent / outil cité plusieurs fois dans UN appel = 1 signal).
@@ -1444,16 +1445,17 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Validation** : éval réelle `--n 20` (Terra, people v9, PO) — **Claire juste 20/20**, les **7 personnes de l'atelier présentes**, **0 rattachement à tort**, **0 preuve rejetée à tort**, citation de Criminelle 20/20, contrôleur 17/20, **durées ≤ 22 s** (timeout 90 s validé), 0 erreur. pytest `tests/ai_pipelines` + `tests/signals` + `tests/decision_cycles` verts sauf **TD-247** (pré-existant) ; vitest complet vert. **Smoke réel : à la fin, après le sprint Next step** (un smoke global TD-279 + Next step, décision PO).
 - **Architecture OpenAI en 2 appels (inventaire des personnes → rôles)** : **EN RÉSERVE**. À activer si l'éval sur **d'autres transcriptions** montre des erreurs que le **serveur n'attrape pas** (le contrôle des preuves attrape aujourd'hui le cas TD-279).
 - **Dette** : **TD-279 RESOLVED** (archivé) ; **NOUVEAUX TD-280 → TD-289** (cluster DC rôle de plus haute confiance, « Conversation date », NextSteps à aligner, `dropped_by_safety_filter`, Terra sans snapshot, qualité People résiduelle, `help_text` metric_text, rattachement CRM à 3 états, Claude sans Structured Outputs, cache d'extraction) ; **MAJ TD-7**.
-- **Prochain jalon** : **TD-272** — voir la suite de la surface Activity ci-dessous.
+- **Prochain jalon** : **Next step** (audit de structure d'abord) — voir la suite de la surface Activity ci-dessous. *(Était : TD-272 — déplacé en fin d'UX, décision PO.)*
 
-#### Suite de la surface Activity (ordre PO, clôture TD-279)
-1. **TD-272** — messages rouge → orange, **snackbars uniquement**.
-2. **Next step** — cadrage ouvert par un **AUDIT DE STRUCTURE**. **Idée PO à étudier** : lier People et Next step (« une personne est souvent une étape du processus, et une étape est un next step ») — **pas toutes** : un utilisateur pilote n'est pas une étape. Concepts à cartographier : `NextStepSignal`, `suggested_contacts` (**TD-7**), étapes de décision du DC, `PeopleSignal` ; décider aussi si **Blocker et Next step réutilisent un inventaire des personnes**. Aligner NextSteps sur TD-279 (**TD-282**).
-3. **SMOKE GLOBAL** (décision PO) couvrant **TD-279 + Next step**.
-4. **Transcript & notes** → **Preparation / EMAIL GENERATION** (à remettre ; PO : « on doit pouvoir extraire un email »).
-5. Décision **« création manuelle des signaux »** (fiche « Question STRATÉGIQUE » ci-dessous).
-6. **Prérequis de clôture d'Activity** : nettoyage **TD-206**, passe cluster **TD-199**, **smoke A→Z**.
-7. **Prep call**.
+#### Suite de la surface Activity (ordre PO, clôture TD-279 — séquence révisée)
+1. **Next step** — cadrage ouvert par un **AUDIT DE STRUCTURE**. **Idée PO à étudier** : lier People et Next step (« une personne est souvent une étape du processus, et une étape est un next step ») — **pas toutes** : un utilisateur pilote n'est pas une étape. Concepts à cartographier : `NextStepSignal`, `suggested_contacts` (**TD-7**), étapes de décision du DC, `PeopleSignal` ; décider aussi si **Blocker et Next step réutilisent un inventaire des personnes**. Aligner NextSteps sur TD-279 (**TD-282**).
+2. **SMOKE GLOBAL** (décision PO) couvrant **TD-279 + Next step** — transcription modifiée : **cache d'extraction (TD-289)**.
+3. **UN SEUL SPRINT** : **Transcript & notes** + **Preparation / EMAIL GENERATION** (PO : « on doit pouvoir extraire un email ») + **Prep call**. À l'audit de ce sprint, **vérifier si le prep call dépend des clusters** (passe cluster TD-199 désormais au chantier DC/Account, étape 5).
+4. Décision **« création manuelle des signaux »** (fiche « Question STRATÉGIQUE » ci-dessous).
+5. **Prérequis de clôture d'Activity** : nettoyage **TD-206**, **smoke A→Z**. La **passe cluster TD-199 en est RETIRÉE** : les clusters relèvent du **chantier DC/Account**.
+6. **Chantier DC / Account** — dont les clusters : **TD-199**, **TD-277**, **TD-278**, **TD-280**, **TD-243**.
+7. **À LA FIN, une fois toute l'UX terminée** : **homogénéisation de l'UI et de la validation + gestion des erreurs** — **TD-272** (snackbars rouge → orange pour une règle métier) **ET** les **messages Formik**, **ensemble**.
+8. **Fine-tuning IA**.
 
 ---
 
@@ -1887,6 +1889,12 @@ possibles) :
 - **Occurrences** : **TD-272**.
 - **MAJ (clôture TD-279)** : **prochain jalon** de la surface Activity —
   périmètre **snackbars uniquement** (rouge → orange, décision PO).
+- **MAJ (séquence PO révisée, clôture TD-279)** : **n'est plus le prochain
+  jalon** — **déplacé À LA FIN, une fois toute l'UX terminée**, dans
+  l'**homogénéisation de l'UI et de la validation + gestion des erreurs** :
+  **TD-272** (snackbars rouge → orange pour une règle métier) **ET** les
+  **messages Formik**, traités **ensemble** (étape 7 de « Suite de la surface
+  Activity »).
 
 #### Listes déroulantes en un clic ✅ LIVRÉ (branche `fix/edit-single-click`, `836aa859`→`a6ced69f` + commit doc de clôture)
 - **Décision PO (B)** : **changement central dans `InlineEditableValue`**,
