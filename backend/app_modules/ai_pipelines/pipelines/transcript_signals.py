@@ -393,6 +393,7 @@ class QualificationSignalsPipeline(BasePipeline):
                                 confidence_min=self.CONFIDENCE_MIN,
                                 drop_inferred=self.DROP_INFERRED,
                                 source_run=run,
+                                transcript=transcript,
                             )
                             impact_persisted, impact_dropped = extractor.persist_stage(
                                 stage='impact',
@@ -403,6 +404,7 @@ class QualificationSignalsPipeline(BasePipeline):
                                 confidence_min=self.CONFIDENCE_MIN,
                                 drop_inferred=self.DROP_INFERRED,
                                 source_run=run,
+                                transcript=transcript,
                             )
 
                             signals_by_stage['pain'] = pain_persisted
@@ -442,7 +444,8 @@ class QualificationSignalsPipeline(BasePipeline):
                                 confidence_min=self.CONFIDENCE_MIN,
                                 drop_inferred=self.DROP_INFERRED,
                                 source_run=run,
-                                # People proofs checked server-side (TD-279 V).
+                                # Quote labels (every stage) + People proofs
+                                # checked server-side (TD-279 V).
                                 transcript=transcript,
                             )
 

@@ -1,7 +1,8 @@
 # app_modules/ai_pipelines/services/transcript_text.py
 """
 Read a transcript as text: normalisation, speaker labels, "who said this
-quote" (TD-279 V). Promoted from the evals/td279 measurement script, which
+quote" (TD-279 V), a speaker label wrongly copied at the head of a quote
+(strip_speaker_label). Promoted from the evals/td279 measurement script, which
 now imports it -- one implementation.
 
 No AI, no database. Used by the People evidence check
@@ -42,8 +43,11 @@ _ELLIPSIS_RE = re.compile(r'…|\.{3,}')
 _EDGE_PUNCTUATION = " .,;:!?'-"
 
 # "Label: text" -- the label starts with a letter and holds letters, digits,
-# spaces, apostrophes, dots and hyphens only (no "/", no ":").
-_SPEAKER_LINE_RE = re.compile(r"^\s*([^\W\d_][\w'’.\- ]*?)\s?:\s+(.*\S)\s*$")
+# spaces, apostrophes, dots and hyphens only (no "/", no ":"). The same
+# prefix reads a line of the transcript and the head of a quote.
+_LABEL_PREFIX = r"^\s*([^\W\d_][\w'’.\- ]*?)\s?:\s+"
+_SPEAKER_LINE_RE = re.compile(_LABEL_PREFIX + r"(.*\S)\s*$")
+_QUOTE_LABEL_RE = re.compile(_LABEL_PREFIX)
 
 
 def normalize_text(text):
@@ -54,15 +58,19 @@ def normalize_text(text):
     return ' '.join(text.split()).strip(_EDGE_PUNCTUATION)
 
 
+def _label(match):
+    """The label of a prefix match, whitespace collapsed; None when too long
+    to be a name."""
+    label = ' '.join(match.group(1).split())
+    return label if len(label.split()) <= _MAX_LABEL_WORDS else None
+
+
 def _speaker_line(line):
     """(label, utterance) for a "Label: text" line, else None."""
     match = _SPEAKER_LINE_RE.match(line)
-    if match is None:
+    if match is None or _label(match) is None:
         return None
-    label = ' '.join(match.group(1).split())
-    if len(label.split()) > _MAX_LABEL_WORDS:
-        return None
-    return label, match.group(2)
+    return _label(match), match.group(2)
 
 
 class TranscriptText:
@@ -87,6 +95,20 @@ class TranscriptText:
             self._utterances.append((label, normalize_text(utterance)))
             if label not in self.labels:
                 self.labels.append(label)
+
+    def strip_speaker_label(self, quote):
+        """
+        TD-279: the quote without a leading speaker label ("Claire Dubois:
+        Bonjour" -> "Bonjour") -- removed ONLY when that prefix is a label of
+        THIS transcript, never on any other ":" ("Objectif : ..."). Anything
+        else (non-string included) is returned unchanged.
+        """
+        if not isinstance(quote, str):
+            return quote
+        match = _QUOTE_LABEL_RE.match(quote)
+        if match is None or _label(match) not in self.labels:
+            return quote
+        return quote[match.end():]
 
     @property
     def has_speaker_labels(self):

@@ -89,10 +89,11 @@ local try/except and remain partial-success — that behavior is preserved.
 
 Statelessness
 -------------
-The extractor holds no per-instance state. `persist_stage()` is
-effectively a classmethod with `self`. We keep it as an instance
-method for symmetry with future variants (e.g. a v2 extractor with
-a different filter strategy could subclass).
+The extractor holds no per-instance state, except `last_evidence_counts`
+(TD-279 V): the People evidence counts of the LAST persist_stage call,
+read right after it by the pipeline for its sub_calls entry. We keep
+persist_stage as an instance method for symmetry with future variants
+(e.g. a v2 extractor with a different filter strategy could subclass).
 """
 
 import datetime
@@ -733,11 +734,14 @@ class TranscriptSignalExtractor:
                                        dropped (safety filter).
             drop_inferred:   bool -- if True, drop signals where
                                        is_inferred is True.
-            transcript:      str | None -- the run's transcript. People
-                                       (TD-279 V): each proof is checked
-                                       against it (people_evidence); the
-                                       per-status counts of the candidates
-                                       are left in
+            transcript:      str | None -- the run's transcript. EVERY
+                                       stage: a speaker label of this
+                                       transcript copied at the head of a
+                                       source_quote is removed (TD-279).
+                                       People (TD-279 V): each proof is
+                                       checked against it (people_evidence);
+                                       the per-status counts of the
+                                       candidates are left in
                                        self.last_evidence_counts (None for
                                        any other stage / no transcript).
 
@@ -766,10 +770,10 @@ class TranscriptSignalExtractor:
         persisted = []
         dropped_count = 0
 
-        # TD-279 V: People proofs checked against the transcript, read once.
-        transcript_text = None
-        if stage == 'people' and transcript is not None:
-            transcript_text = TranscriptText(transcript)
+        # The transcript, read once: quote labels (every stage), People
+        # proofs (TD-279 V).
+        transcript_text = TranscriptText(transcript) if transcript is not None else None
+        if stage == 'people' and transcript_text is not None:
             self.last_evidence_counts = {status: 0 for status in PeopleEvidenceStatus.values}
 
         # --- Phase 1: Build all data dicts (filter + transform) ---
@@ -783,12 +787,18 @@ class TranscriptSignalExtractor:
                 dropped_count += 1
                 continue
 
+            # TD-279: "Claire Dubois: c'est moi..." -> "c'est moi..." when the
+            # prefix is a speaker label of THIS transcript (never another ":").
+            if transcript_text is not None and 'source_quote' in raw:
+                raw = {**raw, 'source_quote': transcript_text.strip_speaker_label(
+                    raw['source_quote'])}
+
             data = self._build_signal_data(
                 stage=stage,
                 raw=raw,
                 activity=activity,
                 client_id=client_id,
-                transcript_text=transcript_text,
+                transcript_text=transcript_text if stage == 'people' else None,
             )
             if data is None:
                 dropped_count += 1
