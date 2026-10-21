@@ -122,8 +122,11 @@ from app_modules.signals.services.signal_cluster_service import SignalClusterSer
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
+from ..constants import PeopleEvidenceStatus
 from .participant_refs import resolve_participant_by_name
+from .people_evidence import check_people_evidence
 from .safety_filter import passes_safety_filter, safe_float
+from .transcript_text import TranscriptText
 
 
 logger = logging.getLogger(__name__)
@@ -660,6 +663,10 @@ class TranscriptSignalExtractor:
         )
     """
 
+    # People evidence-check counts of the LAST persist_stage call (TD-279 V);
+    # None for any other stage / without a transcript.
+    last_evidence_counts = None
+
     # =========================================================================
     # MAIN ENTRY
     # =========================================================================
@@ -675,6 +682,7 @@ class TranscriptSignalExtractor:
         confidence_min,
         drop_inferred,
         source_run=None,
+        transcript=None,
     ):
         """
         Apply safety filter + persist surviving signals for one stage.
@@ -690,6 +698,13 @@ class TranscriptSignalExtractor:
                                        dropped (safety filter).
             drop_inferred:   bool -- if True, drop signals where
                                        is_inferred is True.
+            transcript:      str | None -- the run's transcript. People
+                                       (TD-279 V): each proof is checked
+                                       against it (people_evidence); the
+                                       per-status counts of the candidates
+                                       are left in
+                                       self.last_evidence_counts (None for
+                                       any other stage / no transcript).
 
         Returns:
             tuple (persisted, dropped_count)
@@ -701,6 +716,7 @@ class TranscriptSignalExtractor:
                                 combined. The pipeline logs this in
                                 AIPipelineRun.sub_calls.
         """
+        self.last_evidence_counts = None
         if not isinstance(raw_signals, list):
             logger.warning(
                 'persist_stage_invalid_input',
@@ -714,6 +730,12 @@ class TranscriptSignalExtractor:
 
         persisted = []
         dropped_count = 0
+
+        # TD-279 V: People proofs checked against the transcript, read once.
+        transcript_text = None
+        if stage == 'people' and transcript is not None:
+            transcript_text = TranscriptText(transcript)
+            self.last_evidence_counts = {status: 0 for status in PeopleEvidenceStatus.values}
 
         # --- Phase 1: Build all data dicts (filter + transform) ---
         candidates = []
@@ -731,11 +753,14 @@ class TranscriptSignalExtractor:
                 raw=raw,
                 activity=activity,
                 client_id=client_id,
+                transcript_text=transcript_text,
             )
             if data is None:
                 dropped_count += 1
                 continue
 
+            if self.last_evidence_counts is not None:
+                self.last_evidence_counts[data['metadata']['evidence_check']['status']] += 1
             candidates.append(data)
 
         # --- Phase 1.5: Deduplicate candidates (TechStack, People, Competitor) ---
@@ -825,9 +850,10 @@ class TranscriptSignalExtractor:
     # DATA-DICT BUILDERS
     # =========================================================================
 
-    def _build_signal_data(self, *, stage, raw, activity, client_id):
+    def _build_signal_data(self, *, stage, raw, activity, client_id, transcript_text=None):
         """
-        Dispatch to the per-stage data-dict builder.
+        Dispatch to the per-stage data-dict builder (transcript_text: People
+        evidence check, TD-279 V).
 
         Returns:
             dict ready for SignalManager.create(), or None on malformed input.
@@ -847,7 +873,7 @@ class TranscriptSignalExtractor:
         if stage == 'competitor':
             return self._build_competitor_data(raw, activity)
         if stage == 'people':
-            return self._build_people_data(raw, activity)
+            return self._build_people_data(raw, activity, transcript_text)
 
         logger.warning(
             'persist_stage_unknown_stage',
@@ -1321,7 +1347,7 @@ class TranscriptSignalExtractor:
 
     # ---------------------- People ----------------------
 
-    def _build_people_data(self, raw, activity):
+    def _build_people_data(self, raw, activity, transcript_text=None):
         """
         Build SignalManager.create() data for a People signal.
 
@@ -1347,7 +1373,12 @@ class TranscriptSignalExtractor:
           * no contact, no name and no department after resolution ->
             DROPPED + warning. Checked HERE: persist_stage feeds
             SignalManager.create directly -- neither the People serializer
-            nor PeopleSignal.clean() runs on this path (TD-249).
+            nor PeopleSignal.clean() runs on this path (TD-249);
+          * TD-279 V (transcript_text given): the proof is checked
+            (people_evidence.check_people_evidence). A rejected proof keeps
+            the person with role UNKNOWN; metadata.evidence_check =
+            {status, rejected_role when rejected}. The source_quote is
+            stored as returned (the status says it was not found).
 
         decision_cycle / campaign are auto-propagated from source_activity
         by SignalManager._propagate_activity_context -- not by this builder.
@@ -1402,6 +1433,16 @@ class TranscriptSignalExtractor:
         raw_notes = raw.get('notes')
         notes = raw_notes.strip() if isinstance(raw_notes, str) else ''
 
+        # TD-279 V: never trust a role on a proof the transcript does not hold.
+        extra = {}
+        if transcript_text is not None:
+            status = check_people_evidence(raw.get('full_name'), source_quote, transcript_text)
+            evidence_check = {'status': status.value}
+            if status != PeopleEvidenceStatus.OK:
+                evidence_check['rejected_role'] = role
+                role = PeopleRole.UNKNOWN.value
+            extra['metadata'] = {'evidence_check': evidence_check}
+
         return {
             'signal_type':       'people',
             'account':           activity.account,
@@ -1417,6 +1458,7 @@ class TranscriptSignalExtractor:
             'source_quote':      source_quote,
             'confidence':        self._safe_float(raw.get('confidence')),
             'is_inferred':       bool(raw.get('is_inferred')),
+            **extra,
 
             # canonical_key is forced to None and full_name_normalized is
             # derived by PeopleSignal.save().

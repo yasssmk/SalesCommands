@@ -209,3 +209,25 @@ def people_role_for_prompt(role):
     PEOPLE_ROLE_TO_QUALIFY for UNKNOWN."""
     from app_modules.signals.constants import PeopleRole
     return PEOPLE_ROLE_TO_QUALIFY if role == PeopleRole.UNKNOWN else role
+
+
+# =============================================================================
+# PEOPLE EVIDENCE CHECK (TD-279 V)
+# =============================================================================
+
+class PeopleEvidenceStatus(models.TextChoices):
+    """
+    Server check of a People observation's source_quote, stored in
+    PeopleSignal.metadata.evidence_check.status (services/people_evidence.py).
+
+    OK                     -- the quote is in the transcript and, for a
+                              SPEAKER, said by them or naming them.
+    QUOTE_NOT_FOUND        -- the quote is not in the transcript.
+    QUOTE_NOT_ABOUT_PERSON -- the person speaks, but the quote is neither
+                              theirs nor names them.
+
+    A rejected proof never drops the person: role -> PeopleRole.UNKNOWN.
+    """
+    OK                     = 'ok',                     _('Ok')
+    QUOTE_NOT_FOUND        = 'quote_not_found',        _('Quote not found')
+    QUOTE_NOT_ABOUT_PERSON = 'quote_not_about_person', _('Quote not about the person')

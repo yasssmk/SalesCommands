@@ -175,6 +175,7 @@ from ..prompts.transcript_signals.people_v1 import (
     PEOPLE_PROMPT_VERSION,
     PEOPLE_RESPONSE_SCHEMA,
 )
+from ..providers import provider_supports_response_schema
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -226,7 +227,7 @@ _STAGES = [
 
 # Strict response schema per stage (Structured Outputs, TD-279 M). A stage
 # absent from the map sends none (pre-M call). Its stage's provider must
-# support it (OpenAI; Claude refuses a schema -- LLMProviderError).
+# support it (checked at load, check_stage_schemas).
 STAGE_RESPONSE_SCHEMAS = {
     'people': PEOPLE_RESPONSE_SCHEMA,
 }
@@ -248,6 +249,26 @@ def check_stage_names(stage_provider):
 
 
 check_stage_names(ai_config.STAGE_PROVIDER)
+
+
+def check_stage_schemas(stage_schemas, stage_provider):
+    """
+    TD-279 V sanity check: a stage that sends a response schema must be
+    mapped (STAGE_PROVIDER, else the active provider) to a provider that
+    supports it -- Claude refuses one at call time. Raises ImportError so the
+    misconfiguration fails at Django startup, not on a rep's extraction.
+    """
+    for stage in stage_schemas:
+        config_key = stage_provider.get(stage) or ai_config.ACTIVE_PROVIDER
+        if not provider_supports_response_schema(config_key):
+            raise ImportError(
+                f'AI Pipelines configuration error: stage {stage!r} sends a '
+                f'response schema but is mapped to {config_key!r}, whose '
+                f'provider does not support a response schema.'
+            )
+
+
+check_stage_schemas(STAGE_RESPONSE_SCHEMAS, ai_config.STAGE_PROVIDER)
 
 
 class QualificationSignalsPipeline(BasePipeline):
@@ -421,6 +442,8 @@ class QualificationSignalsPipeline(BasePipeline):
                                 confidence_min=self.CONFIDENCE_MIN,
                                 drop_inferred=self.DROP_INFERRED,
                                 source_run=run,
+                                # People proofs checked server-side (TD-279 V).
+                                transcript=transcript,
                             )
 
                             signals_by_stage[stage_name] = persisted
@@ -434,6 +457,7 @@ class QualificationSignalsPipeline(BasePipeline):
                                 parsed=parsed,
                                 error=None,
                                 dropped_count=dropped_count,
+                                evidence_check=extractor.last_evidence_counts,
                             )
 
                     # --- Specific subclasses first, then generic LLMProviderError ---

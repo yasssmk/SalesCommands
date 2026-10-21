@@ -171,6 +171,17 @@ def get_provider(config_key: str) -> LLMProvider:
     return _provider_instances[provider_key]
 
 
+def provider_supports_response_schema(config_key: str) -> bool:
+    """
+    TD-279 V: does the provider class of a PROVIDER_CONFIG entry support a
+    strict response_schema? Read on the class -- no instantiation, no API
+    key needed (load-time check). An unregistered provider -> False.
+    """
+    provider_key = config.PROVIDER_CONFIG[config_key].get('provider', config_key)
+    provider_class = _PROVIDER_REGISTRY.get(provider_key)
+    return provider_class is not None and provider_class.SUPPORTS_RESPONSE_SCHEMA
+
+
 # =============================================================================
 # PUBLIC API
 # =============================================================================
@@ -179,6 +190,7 @@ __all__ = [
     # Factory
     'get_active_provider',
     'get_provider',
+    'provider_supports_response_schema',
     'reset_provider_cache',
     # Abstract base + return type
     'LLMProvider',

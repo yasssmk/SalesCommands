@@ -152,6 +152,11 @@ class LLMProvider(ABC):
     swapped without touching the call sites.
     """
 
+    # TD-279 V: does `call` honour a strict response_schema (Structured
+    # Outputs)? Checked at load for every stage that sends one
+    # (transcript_signals.check_stage_schemas).
+    SUPPORTS_RESPONSE_SCHEMA: bool = False
+
     @abstractmethod
     def call(
         self,

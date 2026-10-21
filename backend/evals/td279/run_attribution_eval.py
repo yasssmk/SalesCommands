@@ -114,6 +114,8 @@ from app_modules.ai_pipelines.providers.base import (  # noqa: E402
     LLMTimeoutError,
 )
 from app_modules.ai_pipelines.services import participant_refs  # noqa: E402
+from app_modules.ai_pipelines.services.people_evidence import check_people_evidence  # noqa: E402
+from app_modules.ai_pipelines.services.transcript_text import TranscriptText  # noqa: E402
 from app_modules.ai_pipelines.services.safety_filter import passes_safety_filter  # noqa: E402
 from app_modules.ai_pipelines.services.transcript_signal_extractor import _iso_date  # noqa: E402
 from app_modules.core_modules.models import StandardDepartment  # noqa: E402
@@ -275,21 +277,25 @@ class DryRunProvider:
 # METRICS
 # =============================================================================
 
-def _norm(text):
-    """Lowercase, whitespace collapsed, surrounding quotes / ellipsis dropped."""
-    text = ' '.join(str(text or '').lower().split())
-    return text.strip(' "\'«»“”.…')
-
-
-def _speaker_lines(transcript, speaker):
-    prefix = f'{speaker}:'
-    return [_norm(line[len(prefix):]) for line in transcript.splitlines() if line.startswith(prefix)]
-
-
 def _said_by(quote, transcript, speaker):
-    """The quote is (a case-insensitive substring of) a line of `speaker`."""
-    quote = _norm(quote)
-    return bool(quote) and any(quote in line for line in _speaker_lines(transcript, speaker))
+    """The quote is part of a line of `speaker` (production text service,
+    services/transcript_text.py -- TD-279 V)."""
+    return TranscriptText(transcript).said_by(quote, speaker)
+
+
+def _evidence_metrics(signals, transcript):
+    """TD-279 V: the server check of each People proof (production
+    function): rejected proofs, per cause and per person."""
+    text = TranscriptText(transcript)
+    rejected = {}
+    for s in signals:
+        status = check_people_evidence(s.get('full_name'), s.get('source_quote') or '', text)
+        if status != 'ok':
+            rejected.setdefault(str(status), []).append(_who(s.get('full_name')))
+    return {
+        'evidence_rejected': sum(len(names) for names in rejected.values()),
+        'evidence_rejected_detail': json.dumps(rejected, ensure_ascii=False),
+    }
 
 
 def _who(name):
@@ -554,6 +560,8 @@ def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
             metrics = _people_metrics(signals, transcript, activity)
         else:
             metrics = _blocker_metrics(signals, activity)
+        if stage == 'people':
+            metrics.update(_evidence_metrics(signals, transcript))
         record['metrics'] = metrics
         (variant_dir / f'call_{index:02d}.json').write_text(
             json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8',
@@ -573,8 +581,23 @@ def _count(values):
     return counts
 
 
-# Columns of a row that are not metrics of the variant's stage.
-_CALL_KEYS = ('variant', 'call', 'error', 'error_type', 'duration_ms', 'wall_ms')
+# Columns of a row that are not metrics of the variant's stage (shown in
+# their own recap sections).
+_CALL_KEYS = ('variant', 'call', 'error', 'error_type', 'duration_ms', 'wall_ms',
+              'evidence_rejected', 'evidence_rejected_detail')
+
+
+def _evidence_line(name, vrows):
+    by_cause, by_person = {}, {}
+    for r in vrows:
+        for cause, names in json.loads(r['evidence_rejected_detail']).items():
+            by_cause[cause] = by_cause.get(cause, 0) + len(names)
+            for who in names:
+                key = f'{who} ({cause})'
+                by_person[key] = by_person.get(key, 0) + 1
+    calls = sum(1 for r in vrows if r['evidence_rejected'])
+    return (f'| {name} | {sum(r["evidence_rejected"] for r in vrows)} | {calls}/{len(vrows)} | '
+            f'{by_cause or "-"} | {by_person or "-"} |')
 
 
 def _timing_line(name, vrows):
@@ -587,12 +610,14 @@ def _timing_line(name, vrows):
 
 
 def _recap(rows):
-    people, blockers, atelier, timings = [], [], [], []
+    people, blockers, atelier, timings, evidence = [], [], [], [], []
     for name in VARIANTS:
         vrows = [r for r in rows if r['variant'] == name]
         if not vrows:
             continue
         timings.append(_timing_line(name, vrows))
+        if VARIANTS[name][0] == 'people':
+            evidence.append(_evidence_line(name, vrows))
         if VARIANTS[name][1] == 'atelier':
             n = len(vrows)
             errors = sum(1 for r in vrows if r['error'])
@@ -643,6 +668,15 @@ def _recap(rows):
         '|---|---|---|---|---|---|',
         *timings, '',
     ]
+    if evidence:
+        lines += [
+            '## People — preuves rejetées par le serveur (TD-279 V : rôle -> UNKNOWN, '
+            'personne gardée)',
+            '',
+            '| variante | preuves rejetées | appels concernés | par cause | par personne (cause) |',
+            '|---|---|---|---|---|',
+            *evidence, '',
+        ]
     if atelier:
         lines += [
             '## Atelier business case (appels avec ... / N ; _emitted = réponse brute, '

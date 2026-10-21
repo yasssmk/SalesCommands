@@ -69,7 +69,8 @@ def _person(**overrides):
     return payload
 
 
-def _run(account, activity, user_a, fake_provider, people, extra_replies=None):
+def _run(account, activity, user_a, fake_provider, people, extra_replies=None,
+         transcript=TRANSCRIPT):
     from app_modules.ai_pipelines.pipelines.transcript_signals import (
         QualificationSignalsPipeline,
     )
@@ -78,7 +79,7 @@ def _run(account, activity, user_a, fake_provider, people, extra_replies=None):
         **(extra_replies or {}),
     }
     return QualificationSignalsPipeline().run(
-        transcript=TRANSCRIPT,
+        transcript=transcript,
         activity=activity,
         user=user_a,
         client_id=account.client_id,
@@ -321,7 +322,9 @@ class TestPeopleDeduplication:
             _person(full_name='Jane', source_quote='Jane signs off.'),
             _person(full_name='Jane Doe', role=PeopleRole.CHAMPION.value,
                     source_quote='Jane pushes for it internally.'),
-        ])
+        # Both quotes are in the transcript: the roles are not rejected by
+        # the evidence check (TD-279 V) -- this test is about the merge.
+        ], transcript='Jane signs off. Jane pushes for it internally.')
 
         [signal] = _people(result)
         assert signal.target_contact_id == contact.id

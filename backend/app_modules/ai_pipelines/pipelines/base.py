@@ -197,7 +197,8 @@ class BasePipeline(ABC):
         )
 
     def _log_sub_call(self, run, *, stage, sub_call_meta=None,
-                      parsed=None, error=None, dropped_count=0):
+                      parsed=None, error=None, dropped_count=0,
+                      evidence_check=None):
         """
         Append one sub-call entry to run.sub_calls and aggregate counters.
 
@@ -210,6 +211,8 @@ class BasePipeline(ABC):
             dropped_count: int -- signals dropped by the downstream safety
                                   filter (counted by the persistence service
                                   and passed in here for audit).
+            evidence_check: dict | None -- People proofs per check status
+                                  (TD-279 V); recorded only when given.
         """
         emitted = 0
         if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
@@ -231,6 +234,8 @@ class BasePipeline(ABC):
         # (every other entry keeps exactly its pre-P0 keys).
         if meta.get('reasoning_tokens'):
             entry['reasoning_tokens'] = meta['reasoning_tokens']
+        if evidence_check is not None:
+            entry['evidence_check'] = dict(evidence_check)
 
         # JSONField list mutation: re-bind to force change detection.
         current = list(run.sub_calls or [])

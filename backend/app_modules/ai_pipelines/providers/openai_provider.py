@@ -77,6 +77,8 @@ class OpenAIProvider(LLMProvider):
     construction time — fail fast at startup, not at first request.
     """
 
+    SUPPORTS_RESPONSE_SCHEMA = True
+
     def __init__(self) -> None:
         # OpenAI() reads OPENAI_API_KEY from os.environ at this
         # point. Raises OpenAIError when the key is missing or

@@ -19,12 +19,15 @@ ordered_participants() therefore filters on the activity's client_id
 AND account_id: a contact outside that scope is never linked.
 """
 
+import re
 import unicodedata
 
 
 __all__ = [
+    'name_appears_in_text',
     'ordered_participants',
     'resolve_participant_by_name',
+    'resolve_speaker_label',
     'stated_name_matches_contact',
 ]
 
@@ -49,6 +52,11 @@ def ordered_participants(activity):
 # NAMES AS WRITTEN (TD-279)
 # =============================================================================
 
+# Anything but letters / digits is a word boundary when a name is searched in
+# free text (apostrophes included: "d'Isabelle" contains "Isabelle").
+_NON_WORD_RE = re.compile(r'[\W_]+')
+
+
 def _normalize_person_name(value):
     """Lowercase, accents stripped, whitespace collapsed ("  Hélène " -> "helene")."""
     decomposed = unicodedata.normalize('NFKD', str(value))
@@ -56,18 +64,54 @@ def _normalize_person_name(value):
     return ' '.join(stripped.lower().split())
 
 
-def _matched_name_parts(stated, contact):
+def _matched_name_parts(stated, name_parts):
     """
-    How many of the contact's first / last name appear in the normalised
-    stated name, each as one word or as consecutive words ("Le Gall").
+    How many of the name parts (first name, last name) appear in the
+    normalised stated name, each as one word or as consecutive words
+    ("Le Gall").
     """
     padded = f' {stated} '
     count = 0
-    for part in (contact.first_name, contact.last_name):
+    for part in name_parts:
         name = _normalize_person_name(part or '')
         if name and f' {name} ' in padded:
             count += 1
     return count
+
+
+def _contact_name_parts(contact):
+    return (contact.first_name, contact.last_name)
+
+
+def _written_name_parts(name):
+    """A name as written ("Jean Le Gall", a speaker label) split into
+    (first name, last name): the first word, then the rest."""
+    words = str(name or '').split()
+    return (words[0] if words else '', ' '.join(words[1:]))
+
+
+def _best_unique_match(stated_name, candidates):
+    """
+    The candidate whose name parts best match the stated name -- the rule of
+    resolve_participant_by_name, shared (TD-279 V): None when the name is
+    missing / blank, when nothing matches, or when several candidates tie on
+    the best score (never a guess).
+
+    Args:
+        candidates: iterable of (name_parts, value).
+    """
+    if not isinstance(stated_name, str):
+        return None
+    stated = _normalize_person_name(stated_name)
+    if not stated:
+        return None
+
+    scored = [(_matched_name_parts(stated, parts), value) for parts, value in candidates]
+    best = max((score for score, _ in scored), default=0)
+    if best == 0:
+        return None
+    winners = [value for score, value in scored if score == best]
+    return winners[0] if len(winners) == 1 else None
 
 
 def stated_name_matches_contact(stated_name, contact):
@@ -90,7 +134,7 @@ def stated_name_matches_contact(stated_name, contact):
     stated = _normalize_person_name(stated_name)
     if not stated:
         return True
-    return _matched_name_parts(stated, contact) > 0
+    return _matched_name_parts(stated, _contact_name_parts(contact)) > 0
 
 
 def resolve_participant_by_name(stated_name, activity):
@@ -108,18 +152,31 @@ def resolve_participant_by_name(stated_name, activity):
     Returns:
         Contact | None
     """
-    if not isinstance(stated_name, str):
-        return None
-    stated = _normalize_person_name(stated_name)
-    if not stated:
-        return None
-
-    scored = [
-        (_matched_name_parts(stated, contact), contact)
+    return _best_unique_match(stated_name, [
+        (_contact_name_parts(contact), contact)
         for contact in ordered_participants(activity)
-    ]
-    best = max((score for score, _ in scored), default=0)
-    if best == 0:
-        return None
-    winners = [contact for score, contact in scored if score == best]
-    return winners[0] if len(winners) == 1 else None
+    ])
+
+
+def resolve_speaker_label(stated_name, labels):
+    """
+    TD-279 V: the speaker label (transcript_text.TranscriptText.labels) a
+    name as written designates -- the SAME rule as resolve_participant_by_name
+    (a label is split first word / rest). None when not a speaker or
+    ambiguous.
+    """
+    return _best_unique_match(stated_name, [
+        (_written_name_parts(label), label) for label in labels
+    ])
+
+
+def name_appears_in_text(stated_name, text):
+    """
+    TD-279 V: does the text (a quote) contain the first or the last name of
+    the name as written, as a word -- the SAME word match, punctuation
+    ignored ("... avec Marc, notre DAF" contains "Marc")?
+    """
+    if not isinstance(stated_name, str):
+        return False
+    words = _normalize_person_name(_NON_WORD_RE.sub(' ', str(text or '')))
+    return _matched_name_parts(words, _written_name_parts(stated_name)) > 0
