@@ -83,26 +83,31 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':   30,
         'max_tokens':  4096,
     },
-    # TD-279 P1 -- People stage on a reasoning model (snapshot pinned).
+    # TD-279 P1 -- People stage on a reasoning model. TD-279 M (PO, after the
+    # --n 20 "model alone" measure on prompt v7): gpt-5.6-terra (quality over
+    # cost; no pinned snapshot listed, so the model may change under the same
+    # name -- the eval is the guard); gpt-5.4-mini becomes the challenger.
     # timeout_s 90: the extraction runs its stages sequentially inside one
     # request whose client falls back to polling for ~180 s
     # (core/timeout_conventions.py POLLING_MAX_ATTEMPTS x
     # POLLING_INTERVAL_SECONDS); rule R2 asks that window to cover the sum of
-    # the calls. The 7 other stages take ~5-10 s each in practice (~60 s), so
-    # 90 s is the share left to People -- about 1.5x the time to emit the full
-    # 8192-token budget at ~100 tokens/s, reasoning included.
+    # the calls. Estimating the 7 other stages at ~5-10 s each (~60 s, not
+    # measured), 90 s is the share left to People -- about 1.5x the time to
+    # emit the full 8192-token budget at ~100 tokens/s, reasoning included.
+    # Kept until the eval measures the real durations (mean / max duration_ms).
     'openai_people': {
         'provider':          'openai',
-        'model':             'gpt-5.4-mini-2026-03-17',
+        'model':             'gpt-5.6-terra',
         'reasoning_effort':  'medium',
         'timeout_s':         90,
         'max_tokens':        8192,
     },
     # Challenger, DECLARED for the eval only (--model) -- not wired in
-    # STAGE_PROVIDER. No pinned snapshot is listed for it.
+    # STAGE_PROVIDER. Pinned snapshot (2 calls in error out of 20 in the
+    # "model alone" measure).
     'openai_people_challenger': {
         'provider':          'openai',
-        'model':             'gpt-5.6-terra',
+        'model':             'gpt-5.4-mini-2026-03-17',
         'reasoning_effort':  'medium',
         'timeout_s':         90,
         'max_tokens':        8192,

@@ -3,8 +3,9 @@
 TD-279 P1 — model per stage, at the central point.
 
   * config.STAGE_PROVIDER maps a stage to a PROVIDER_CONFIG key (People ->
-    the reasoning entry gpt-5.4-mini-2026-03-17, effort medium); unknown key
-    or unknown stage -> error at load time.
+    the reasoning entry, effort medium: gpt-5.6-terra since TD-279 M, the
+    challenger gpt-5.4-mini-2026-03-17); unknown key or unknown stage ->
+    error at load time.
   * Real pipeline path (FakeProvider): the people stage is called with the
     People model, reasoning_effort medium, NO temperature, its own max_tokens
     / timeout; the 7 other stages keep EXACTLY the default call
@@ -39,13 +40,13 @@ class TestConfig:
         assert config.STAGE_PROVIDER == {'people': PEOPLE_KEY}
         entry = config.PROVIDER_CONFIG[PEOPLE_KEY]
         assert entry['provider'] == 'openai'
-        assert entry['model'] == 'gpt-5.4-mini-2026-03-17'
+        assert entry['model'] == 'gpt-5.6-terra'
         assert entry['reasoning_effort'] == 'medium'
         assert entry['max_tokens'] == 8192
 
     def test_challenger_is_declared_but_not_wired(self):
         entry = config.PROVIDER_CONFIG[CHALLENGER_KEY]
-        assert entry['model'] == 'gpt-5.6-terra'
+        assert entry['model'] == 'gpt-5.4-mini-2026-03-17'
         assert entry['reasoning_effort'] == 'medium'
         assert CHALLENGER_KEY not in config.STAGE_PROVIDER.values()
 
@@ -67,14 +68,16 @@ class TestStageCalls:
         result = _run(account, activity, user_a)
         entry = config.PROVIDER_CONFIG[PEOPLE_KEY]
         [call] = fake_provider.calls_for('people')
-        assert call['model'] == 'gpt-5.4-mini-2026-03-17'
+        assert call['model'] == 'gpt-5.6-terra'
         assert call['temperature'] is None
-        assert call['extra'] == {'reasoning_effort': 'medium'}
+        # + the strict response schema since TD-279 M.
+        assert set(call['extra']) == {'reasoning_effort', 'response_schema'}
+        assert call['extra']['reasoning_effort'] == 'medium'
         assert call['max_tokens'] == entry['max_tokens']
         assert call['timeout_s'] == entry['timeout_s']
         # The real model of the call is in the audit.
         models = {c['stage']: c['model_used'] for c in result['run'].sub_calls}
-        assert models['people'] == 'gpt-5.4-mini-2026-03-17'
+        assert models['people'] == 'gpt-5.6-terra'
 
     def test_b_the_other_stages_keep_exactly_the_default_call(
         self, account, activity, user_a, fake_provider, patch_active_provider,

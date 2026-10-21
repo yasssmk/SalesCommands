@@ -47,14 +47,18 @@ by name).
 Output (one folder per run, see --out; a non-empty folder is refused):
   <variant>/call_<NN>.json   rendered system + user prompt, raw response(s),
                              parsed JSON, metrics of the call
-  summary.csv / summary.md   one row per call + the per-variant recap
+  summary.csv / summary.md   one row per call + the per-variant recap, with
+                             the call durations (meta.duration_ms: mean / max;
+                             wall_ms: wall clock, failed calls included) and
+                             the TYPE of each error (timeout, troncature,
+                             refus, parsing, ...)
 
 Usage (from backend/, with the usual .env holding OPENAI_API_KEY):
   python evals/td279/run_attribution_eval.py                 # 9 x 10 calls
   python evals/td279/run_attribution_eval.py --only atelier_people atelier_pain_impact \
       atelier_objective atelier_techstack atelier_blocker   # the atelier audit
   python evals/td279/run_attribution_eval.py --n 3 --only people_V0
-  python evals/td279/run_attribution_eval.py --n 20 --model gpt-5.6-terra \
+  python evals/td279/run_attribution_eval.py --n 20 --model gpt-5.4-mini-2026-03-17 \
       --only people_V0 people_WITNESS atelier_people   # the People challenger
   python evals/td279/run_attribution_eval.py --dry-run       # no API call
 """
@@ -65,6 +69,7 @@ import datetime
 import json
 import os
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -79,6 +84,7 @@ django.setup()
 
 from app_modules.ai_pipelines.pipelines.transcript_signals import (  # noqa: E402
     QualificationSignalsPipeline,
+    STAGE_RESPONSE_SCHEMAS,
 )
 from app_modules.ai_pipelines.prompts.transcript_signals import context as ctx  # noqa: E402
 from app_modules.ai_pipelines.prompts.transcript_signals.blocker_v1 import (  # noqa: E402
@@ -101,7 +107,12 @@ from app_modules.ai_pipelines.prompts.transcript_signals.system import (  # noqa
 )
 from app_modules.ai_pipelines import config as ai_config  # noqa: E402
 from app_modules.ai_pipelines.providers import get_provider  # noqa: E402
-from app_modules.ai_pipelines.providers.base import LLMCallResult  # noqa: E402
+from app_modules.ai_pipelines.prompts.base import PromptParseError  # noqa: E402
+from app_modules.ai_pipelines.providers.base import (  # noqa: E402
+    LLMCallResult,
+    LLMProviderError,
+    LLMTimeoutError,
+)
 from app_modules.ai_pipelines.services import participant_refs  # noqa: E402
 from app_modules.ai_pipelines.services.safety_filter import passes_safety_filter  # noqa: E402
 from app_modules.ai_pipelines.services.transcript_signal_extractor import _iso_date  # noqa: E402
@@ -214,6 +225,7 @@ class RecordingProvider:
             'temperature': kwargs.get('temperature'),
             'max_tokens': kwargs.get('max_tokens'),
             'reasoning_effort': kwargs.get('reasoning_effort'),
+            'response_schema': (kwargs.get('response_schema') or {}).get('name'),
             'raw_response': result.content,
             'model_used': result.model_used,
             'input_tokens': result.input_tokens,
@@ -482,6 +494,21 @@ def _provider_key(stage, forced_key):
     return forced_key or ai_config.STAGE_PROVIDER.get(stage)
 
 
+def _error_type(exc):
+    """The kind of a failed call, for the recap (messages of providers/)."""
+    if isinstance(exc, LLMTimeoutError):
+        return 'timeout'
+    if isinstance(exc, PromptParseError):
+        return 'parsing'
+    if isinstance(exc, LLMProviderError):
+        if 'truncated' in str(exc):
+            return 'troncature'
+        if 'refused' in str(exc):
+            return 'refus'
+        return 'provider'
+    return type(exc).__name__
+
+
 def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
     stage, transcript_key = VARIANTS[name]
     provider_key = _provider_key(stage, forced_key)
@@ -501,16 +528,23 @@ def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
         record = {'variant': name, 'call': index, 'stage': stage,
                   'transcript': transcript_key, 'provider_key': provider_key, 'model': model,
                   'prompt_versions': dict(QualificationSignalsPipeline.PROMPT_VERSIONS)}
+        started = time.monotonic()
         try:
             parsed, meta = pipeline._call_llm(
                 system_prompt=SYSTEM_PROMPT, context=context, request=request,
                 provider_key=provider_key,
+                # Same strict schema as production (TD-279 M).
+                response_schema=STAGE_RESPONSE_SCHEMAS.get(stage),
             )
             record['meta'] = meta
             record['error'] = None
+            record['error_type'] = None
         except Exception as exc:  # parse failure twice, provider error
+            meta = {}
             parsed = None
             record['error'] = f'{type(exc).__name__}: {exc}'
+            record['error_type'] = _error_type(exc)
+        record['wall_ms'] = int((time.monotonic() - started) * 1000)
         record['attempts'] = recorder.calls
         record['parsed'] = parsed
         signals = _signals(parsed)
@@ -524,7 +558,10 @@ def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
         (variant_dir / f'call_{index:02d}.json').write_text(
             json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8',
         )
-        rows.append({'variant': name, 'call': index, 'error': record['error'] or '', **metrics})
+        rows.append({'variant': name, 'call': index, 'error': record['error'] or '',
+                     'error_type': record['error_type'] or '',
+                     'duration_ms': meta.get('duration_ms'), 'wall_ms': record['wall_ms'],
+                     **metrics})
         print(f'{name} #{index}: {metrics}', flush=True)
     return rows
 
@@ -536,17 +573,31 @@ def _count(values):
     return counts
 
 
+# Columns of a row that are not metrics of the variant's stage.
+_CALL_KEYS = ('variant', 'call', 'error', 'error_type', 'duration_ms', 'wall_ms')
+
+
+def _timing_line(name, vrows):
+    durations = [r['duration_ms'] for r in vrows if r['duration_ms'] is not None]
+    mean = round(sum(durations) / len(durations)) if durations else '-'
+    longest = max(durations) if durations else '-'
+    errors = _count(r['error_type'] for r in vrows if r['error_type'])
+    return (f'| {name} | {len(vrows)} | {mean} | {longest} | '
+            f'{max(r["wall_ms"] for r in vrows)} | {errors or "-"} |')
+
+
 def _recap(rows):
-    people, blockers, atelier = [], [], []
+    people, blockers, atelier, timings = [], [], [], []
     for name in VARIANTS:
         vrows = [r for r in rows if r['variant'] == name]
         if not vrows:
             continue
+        timings.append(_timing_line(name, vrows))
         if VARIANTS[name][1] == 'atelier':
             n = len(vrows)
             errors = sum(1 for r in vrows if r['error'])
             for key in sorted(vrows[0]):
-                if key in ('variant', 'call', 'error'):
+                if key in _CALL_KEYS:
                     continue
                 values = [r.get(key) for r in vrows]
                 if all(isinstance(v, bool) for v in values):
@@ -583,7 +634,15 @@ def _recap(rows):
                 f'{sum(r["linked_to_criminelle"] for r in vrows)} | '
                 f'{distribution} | {errors} |'
             )
-    lines = []
+    lines = [
+        '## Durées et erreurs (duration_ms = meta de l\'appel réussi ; wall_ms = '
+        'horloge, appels en erreur compris)',
+        '',
+        '| variante | appels | duration_ms moyenne | duration_ms max | wall_ms max | '
+        'erreurs par type |',
+        '|---|---|---|---|---|---|',
+        *timings, '',
+    ]
     if atelier:
         lines += [
             '## Atelier business case (appels avec ... / N ; _emitted = réponse brute, '

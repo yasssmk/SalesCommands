@@ -8,7 +8,9 @@ v5 -- TD-279: a listed contact is evidence of nothing, attribution only on
 evidence about THAT participant;
 v6 -- TD-279 B4b: no participant reference, names as written;
 v7 -- TD-279 C5: speakers always extracted, role from what is said of them,
-seller side = the solution, department from the job title).
+seller side = the solution, department from the job title;
+v8 -- TD-279 M: role UNKNOWN offered, never guess a role; the answer is
+constrained by a strict JSON schema, PEOPLE_RESPONSE_SCHEMA).
 
 This is the per-stage request module of the transcript_signals pipeline
 family. It is combined at call time with:
@@ -26,7 +28,8 @@ array of person observations. Each observation has these fields:
 
     full_name        string|null -- the name as written (speaker label, else
                                     as cited), null when not named
-    role             string      -- one PeopleRole code
+    role             string      -- one PeopleRole code (UNKNOWN when nothing
+                                    establishes the role, v8)
     influence        string|null -- one InfluenceLevel code (HIGH / MEDIUM /
                                     LOW), null when it cannot be assessed
     department       string|null -- one StandardDepartment name, else null
@@ -36,6 +39,10 @@ array of person observations. Each observation has these fields:
     is_inferred      boolean     -- LLM self-declared
 
 Empty result is represented by {"signals": []}.
+
+Since v8 the provider enforces this shape (Structured Outputs, strict):
+PEOPLE_RESPONSE_SCHEMA, its enums built from the SAME enums as the context
+taxonomy (PeopleRole, InfluenceLevel, StandardDepartment.DepartmentChoices).
 
 Persistence contract
 --------------------
@@ -70,10 +77,10 @@ PEOPLE_PROMPT_VERSION is captured in AIPipelineRun.prompt_versions.
 """
 
 from app_modules.core_modules.models import StandardDepartment
-from app_modules.signals.constants import PeopleRole
+from app_modules.signals.constants import InfluenceLevel, PeopleRole
 
 
-__all__ = ['PEOPLE_PROMPT_VERSION', 'build_people_request']
+__all__ = ['PEOPLE_PROMPT_VERSION', 'PEOPLE_RESPONSE_SCHEMA', 'build_people_request']
 
 
 # v2 (People S1-bis): a prospect who SPEAKS without being a listed contact is
@@ -100,12 +107,18 @@ __all__ = ['PEOPLE_PROMPT_VERSION', 'build_people_request']
 # stays prospect; an unnamed cited person's department comes from the job title.
 # The two examples inherited from test transcripts (a speaker label, a team
 # lead -> Sales) were replaced by neutral ones before any v7 run (C5-bis).
-PEOPLE_PROMPT_VERSION = 'v7'
+# v8 (TD-279 M): the role list offers UNKNOWN (context v9); when nothing in
+# the transcript establishes a person's role -- speaker included -- role is
+# UNKNOWN, never a guess (replaces "pick the best-supported role with
+# is_inferred"); a role DEDUCED from evidence stays allowed (is_inferred).
+# The answer is constrained by PEOPLE_RESPONSE_SCHEMA (strict).
+PEOPLE_PROMPT_VERSION = 'v8'
 
 # Codes / names quoted in the worked examples, taken from the enums.
 _ECONOMIC_BUYER = PeopleRole.ECONOMIC_BUYER.value
 _DECISION_MAKER = PeopleRole.DECISION_MAKER.value
 _ROLE_PROCUREMENT = PeopleRole.PROCUREMENT.value
+_ROLE_UNKNOWN = PeopleRole.UNKNOWN.value
 _DEPT_GENERAL_MANAGEMENT = StandardDepartment.DepartmentChoices.GENERAL_MANAGEMENT.value
 _DEPT_HR = StandardDepartment.DepartmentChoices.HR.value
 _DEPT_LOGISTICS = StandardDepartment.DepartmentChoices.LOGISTICS.value
@@ -113,6 +126,49 @@ _DEPT_FINANCE = StandardDepartment.DepartmentChoices.FINANCE.value
 _DEPT_PROCUREMENT = StandardDepartment.DepartmentChoices.PROCUREMENT.value
 _DEPT_SALES = StandardDepartment.DepartmentChoices.SALES.value
 
+
+
+def _nullable_enum(enum_values):
+    return {'type': ['string', 'null'], 'enum': [*enum_values, None]}
+
+
+# Strict Structured Outputs schema of the answer (TD-279 M): the exact shape
+# of the OUTPUT SCHEMA below -- every field required, no other field,
+# nullables typed [..., "null"]. Its enums come from the SAME enums as the
+# context taxonomy (context.py, people branch); the department list is a
+# static TextChoices enum, no database read.
+PEOPLE_RESPONSE_SCHEMA = {
+    'name': 'people_signals',
+    'schema': {
+        'type': 'object',
+        'additionalProperties': False,
+        'required': ['signals'],
+        'properties': {
+            'signals': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'additionalProperties': False,
+                    'required': [
+                        'full_name', 'role', 'influence', 'department', 'notes',
+                        'source_quote', 'confidence', 'is_inferred',
+                    ],
+                    'properties': {
+                        'full_name':    {'type': ['string', 'null']},
+                        'role':         {'type': 'string', 'enum': list(PeopleRole.values)},
+                        'influence':    _nullable_enum(InfluenceLevel.values),
+                        'department':   _nullable_enum(
+                            StandardDepartment.DepartmentChoices.values),
+                        'notes':        {'type': 'string'},
+                        'source_quote': {'type': 'string'},
+                        'confidence':   {'type': 'number'},
+                        'is_inferred':  {'type': 'boolean'},
+                    },
+                },
+            },
+        },
+    },
+}
 
 def build_people_request(transcript):
     """
@@ -184,9 +240,13 @@ Return a single JSON object with this exact shape:
 EMISSION RULES
 - ONE entry per person. A person cited several times, or showing several
   roles, gets a SINGLE entry carrying the most decision-relevant role.
-- `role` MUST be one code of the role list. An INFERRED role is allowed (a
-  champion is rarely named as such): set `is_inferred` to true and calibrate
-  `confidence` honestly. Never emit a role on a weak guess.
+- `role` MUST be one code of the role list. A role DEDUCED from evidence in
+  the transcript is allowed (a champion is rarely named as such): set
+  `is_inferred` to true and calibrate `confidence` honestly.
+- When NOTHING in the transcript establishes the person's role, set `role`
+  to "{_ROLE_UNKNOWN}" -- NEVER guess a role. With "{_ROLE_UNKNOWN}",
+  `is_inferred` is false and `confidence` rates how clearly the transcript
+  shows this person taking part in the deal.
 - `influence` and `department` MAY be null. This overrides the system
   prompt's taxonomy rule: a missing influence or department is NEVER a
   reason to omit the person.
@@ -209,8 +269,8 @@ EMISSION RULES
   never on what they say about other persons: the NEVER transfer rule above
   applies to the speaker too. A speaker who says "our managing director will
   sign" does not become the decision maker -- the managing director does.
-  When nothing states the speaker's role, pick the best-supported role with
-  `is_inferred` = true and an honest `confidence`.
+  When nothing establishes the speaker's role, the role is
+  "{_ROLE_UNKNOWN}" (rule above) -- the speaker is still extracted.
 - A DEDUCTION from what the transcript says is allowed (e.g. a role implied
   by what a named person decides or does); a conclusion with NO evidence in
   the transcript is not.

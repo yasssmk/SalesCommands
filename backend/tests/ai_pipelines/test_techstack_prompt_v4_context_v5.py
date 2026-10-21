@@ -102,8 +102,9 @@ class TestTechstackTaxonomyHeader:
 
 class TestConversationDate:
 
-    def test_context_version_is_v8(self):
-        assert CONTEXT_VERSION == 'v8'
+    def test_context_version_is_v9(self):
+        # v9 (TD-279 M) only changes the People branch.
+        assert CONTEXT_VERSION == 'v9'
 
     def test_next_steps_context_version_is_v4(self):
         assert next_steps_context.CONTEXT_VERSION == 'v4'

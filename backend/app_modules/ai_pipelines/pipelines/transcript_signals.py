@@ -173,6 +173,7 @@ from ..prompts.transcript_signals.competitor_v1 import (
 from ..prompts.transcript_signals.people_v1 import (
     build_people_request,
     PEOPLE_PROMPT_VERSION,
+    PEOPLE_RESPONSE_SCHEMA,
 )
 from ..providers.base import (
     LLMAuthError,
@@ -221,6 +222,14 @@ _STAGES = [
     # they are not emitted again (one role per person per decision cycle).
     ('people', build_people_request),
 ]
+
+
+# Strict response schema per stage (Structured Outputs, TD-279 M). A stage
+# absent from the map sends none (pre-M call). Its stage's provider must
+# support it (OpenAI; Claude refuses a schema -- LLMProviderError).
+STAGE_RESPONSE_SCHEMAS = {
+    'people': PEOPLE_RESPONSE_SCHEMA,
+}
 
 
 def check_stage_names(stage_provider):
@@ -335,6 +344,7 @@ class QualificationSignalsPipeline(BasePipeline):
                             request=request_layer,
                             # Model per stage (TD-279 P1): None -> default.
                             provider_key=ai_config.STAGE_PROVIDER.get(stage_name),
+                            response_schema=STAGE_RESPONSE_SCHEMAS.get(stage_name),
                         )
 
                         if stage_name == 'pain_impact':

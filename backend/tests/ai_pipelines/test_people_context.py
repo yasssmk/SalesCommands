@@ -88,20 +88,22 @@ class TestPeopleTaxonomy:
 
     def test_all_people_roles_listed(self, activity):
         context = build_context_layer(activity, 'people')
-        # UNKNOWN (TD-279 U) is not offered to the model before step M.
+        # UNKNOWN included since TD-279 M (context v9).
         for code in PeopleRole.values:
-            if code == PeopleRole.UNKNOWN:
-                assert f'"{code}"' not in context
-            else:
-                assert f'"{code}"' in context
+            assert f'"{code}"' in context
 
     def test_signal_influence_levels_listed_not_contact_faux_ami(self, activity):
         context = build_context_layer(activity, 'people')
+        [influence_line] = [
+            line for line in context.splitlines() if line.startswith('- influence (')
+        ]
         for code in InfluenceLevel.values:
-            assert f'"{code}"' in context
+            assert f'"{code}"' in influence_line
         # contacts.InfluenceLevel values that are NOT signal influence levels.
+        # Checked on the influence line: the role list offers its own
+        # "UNKNOWN" (PeopleRole, TD-279 M).
         assert 'GATEKEEPER' not in context
-        assert 'UNKNOWN' not in context
+        assert 'UNKNOWN' not in influence_line
 
     def test_department_vocabulary_listed_general_management_included(self, activity):
         context = build_context_layer(activity, 'people')

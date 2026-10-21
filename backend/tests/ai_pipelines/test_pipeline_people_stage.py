@@ -100,13 +100,14 @@ class TestPeoplePersistence:
     ):
         result = _run(account, activity, user_a, fake_provider, [])
         assert fake_provider.stages_in_order()[-1] == 'people'
-        assert result['run'].prompt_versions['people'] == 'v7'
+        assert result['run'].prompt_versions['people'] == 'v8'
         # v4 = Sprint TechStack T0 (techstack usage taxonomy); v5 = T4b
         # (shared "Conversation date" line + techstack header); v6 = no list
         # of the persons already known in the deal (people P2); v7 = contacts
         # "registered on this activity", not "in this conversation" (TD-279);
-        # v8 = no contact list at all (TD-279 B4b).
-        assert result['run'].prompt_versions['context'] == 'v8'
+        # v8 = no contact list at all (TD-279 B4b); v9 = People role list
+        # offers UNKNOWN (TD-279 M).
+        assert result['run'].prompt_versions['context'] == 'v9'
         assert result['run'].status == AIPipelineStatus.SUCCESS
         people_prompt = fake_provider.calls_for('people')[0]['user']
         assert 'Extract PEOPLE signals' in people_prompt
@@ -558,7 +559,10 @@ class TestPeoplePromptV7:
         assert 'The role of a SPEAKER rests ONLY on what the transcript says about THIS speaker' in prompt
         assert 'the NEVER transfer rule above applies to the speaker too' in prompt
         assert 'does not become the decision maker' in prompt
-        assert 'pick the best-supported role with `is_inferred` = true' in prompt
+        # v8 (TD-279 M): nothing establishes the speaker's role -> UNKNOWN,
+        # never the best-supported guess.
+        assert 'When nothing establishes the speaker\'s role, the role is "UNKNOWN"' in prompt
+        assert 'pick the best-supported role' not in prompt
 
     def test_3_seller_side_is_the_solution_not_an_internal_presentation(self):
         prompt = self._prompt()
@@ -578,7 +582,7 @@ class TestPeoplePromptV7:
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v7'
+        assert PEOPLE_PROMPT_VERSION == 'v8'
 
 # =============================================================================
 # P2 — NO KNOWN-PEOPLE LIST in the people context nor in the prompt
@@ -623,8 +627,8 @@ class TestNoKnownPeopleListSentToTheLLM:
         from app_modules.ai_pipelines.prompts.transcript_signals.people_v1 import (
             PEOPLE_PROMPT_VERSION,
         )
-        assert PEOPLE_PROMPT_VERSION == 'v7'
-        assert CONTEXT_VERSION == 'v8'
+        assert PEOPLE_PROMPT_VERSION == 'v8'
+        assert CONTEXT_VERSION == 'v9'
 
 
 # =============================================================================

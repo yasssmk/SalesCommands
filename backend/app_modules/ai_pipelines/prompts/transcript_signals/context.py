@@ -93,7 +93,9 @@ logger = logging.getLogger(__name__)
 # v8 (TD-279 B4b): SHARED session block -- the contact list is REMOVED (it
 # only served the participant references; the LLM returns names as written
 # and the server links them). All stages + the next_steps context.
-CONTEXT_VERSION = 'v8'
+# v9 (TD-279 M): People stage only -- the role list offers UNKNOWN (rendered
+# from PeopleRole, like the People response schema). Other stages unchanged.
+CONTEXT_VERSION = 'v9'
 
 # Relative-date wordings named in the "Conversation date" line (v5).
 _RELATIVE_DATE_EXAMPLES = '"this year", "next year", "end of the year", "in June"'
@@ -402,10 +404,7 @@ def _build_taxonomy_block(target_stage):
         from app_modules.core_modules.models import StandardDepartment
         lines.append(
             '- role (the person\'s part in the buying decision; pick EXACTLY '
-            'ONE code): '
-            # UNKNOWN (TD-279 U) is not offered to the model yet: offering it
-            # is a prompt change, owned by step M (context stays v8 here).
-            + _enum_coded_list(PeopleRole, exclude=(PeopleRole.UNKNOWN,))
+            'ONE code): ' + _enum_coded_list(PeopleRole)
         )
         lines.append(
             '- influence (weight of the person in the decision; pick ONE code, '
@@ -440,7 +439,7 @@ def _enum_json_array(enum_cls):
     return '[' + ', '.join(f'"{v}"' for v in enum_cls.values) + ']'
 
 
-def _enum_coded_list(enum_cls, exclude=()):
+def _enum_coded_list(enum_cls):
     """
     Render a Django TextChoices enum as a code+label list:
 
@@ -451,11 +450,8 @@ def _enum_coded_list(enum_cls, exclude=()):
     model can map a business AREA it reads in the transcript
     ("operational", "reporting", "hiring") to the right code, instead of
     grabbing a surface word. Codes are the contract; labels are the hint.
-    `exclude`: codes NOT offered to the model.
     """
-    return ', '.join(
-        f'"{v}" ({label})' for v, label in enum_cls.choices if v not in exclude
-    )
+    return ', '.join(f'"{v}" ({label})' for v, label in enum_cls.choices)
 
 
 def _what_dimension_lines():

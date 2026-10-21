@@ -10,8 +10,7 @@ their role is not established yet.
        * counted in the DC People view (qualified, "Unknown");
        * prep_call and deal_health receive it as a "role to qualify" --
          never filtered out, never as the bare code.
-  d) The People extraction prompt does NOT offer UNKNOWN yet (byte-identical
-     context; the prompt change belongs to step M).
+  d) The People extraction context offers UNKNOWN (TD-279 M, context v9).
 """
 
 import pytest
@@ -162,16 +161,15 @@ class TestConsumers:
 
 
 # =============================================================================
-# d) — extraction prompt not touched in step U
+# d) — extraction context (offered since step M)
 # =============================================================================
 
-class TestExtractionPromptUnchanged:
+class TestExtractionContext:
 
-    def test_people_context_does_not_offer_unknown(self, activity):
+    def test_people_context_offers_unknown(self, activity):
         from app_modules.ai_pipelines.prompts.transcript_signals.context import (
-            CONTEXT_VERSION, build_context_layer,
+            build_context_layer,
         )
         context = build_context_layer(activity, 'people')
         assert '"CHAMPION" (Champion)' in context
-        assert '"UNKNOWN"' not in context
-        assert CONTEXT_VERSION == 'v8'
+        assert '"UNKNOWN" (Unknown)' in context

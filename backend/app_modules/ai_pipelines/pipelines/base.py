@@ -279,7 +279,8 @@ class BasePipeline(ABC):
     # =========================================================================
 
     def _call_llm(self, *, system_prompt, context, request,
-                  max_tokens=None, timeout_s=None, provider_key=None):
+                  max_tokens=None, timeout_s=None, provider_key=None,
+                  response_schema=None):
         """
         One LLM call with one parse retry on PromptParseError.
 
@@ -306,6 +307,9 @@ class BasePipeline(ABC):
                            config, i.e. EXACTLY the pre-P1 call. Its
                            `reasoning_effort` is sent and temperature is then
                            None (not sent).
+            response_schema: dict -- OPTIONAL strict JSON schema of the
+                           answer (Structured Outputs, TD-279 M), sent as is
+                           to the provider. None -> not sent (pre-M call).
 
         Returns:
             tuple (parsed_content, sub_call_meta)
@@ -332,6 +336,8 @@ class BasePipeline(ABC):
                 'temperature': None,
                 'reasoning_effort': provider_config['reasoning_effort'],
             }
+        if response_schema is not None:
+            call_options['response_schema'] = response_schema
 
         sys_text, user_text = PromptBuilder.assemble(
             system=system_prompt,

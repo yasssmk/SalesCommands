@@ -107,7 +107,8 @@ def test_qualification_soft_error_partial_success(
     # Succeed on 0-1, timeout on 2 (techstack), succeed on 3.
     call_count = 0
 
-    def _call_llm_side_effect(*, system_prompt, context, request, provider_key=None):
+    def _call_llm_side_effect(*, system_prompt, context, request, provider_key=None,
+                               response_schema=None):
         nonlocal call_count
         idx = call_count
         call_count += 1
