@@ -252,6 +252,132 @@ class NextStepSignal(BaseSignal):
     )
 
     # =========================================================================
+    # SPRINT NEXT STEPS — the full activity proposal (all nullable / neutral
+    # default: rows created before stay valid, no data migration)
+    # =========================================================================
+
+    # The date as SAID in the transcript ("dans deux semaines, un mardi"),
+    # shown next to the resolved suggested_due_date.
+    suggested_date_text = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name=_('Suggested Date Text'),
+        help_text=_(
+            'The date as said in the transcript, kept next to the resolved '
+            'suggested_due_date.'
+        ),
+    )
+
+    # The DC step the LLM PROPOSES. Null = not deduced; the cycle's current
+    # step is computed at conversion and never stored here.
+    suggested_decision_step = models.ForeignKey(
+        'decision_cycles.DecisionStep',
+        on_delete=models.SET_NULL,
+        related_name='suggested_in_next_step_signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Suggested Decision Step'),
+        help_text=_(
+            'Decision cycle step proposed by the LLM for this next step. '
+            'Null when not deduced (the current step is then computed at '
+            'conversion, never stored).'
+        ),
+    )
+
+    # Topics to cover → Activity.description at conversion.
+    suggested_topics = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('Suggested Topics'),
+        help_text=_('Topics to cover; becomes the Activity description.'),
+    )
+
+    # Success criterion → part of Activity.call_to_action at conversion.
+    suggested_success_criterion = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('Suggested Success Criterion'),
+        help_text=_(
+            'What makes this next step a success; joins the objective in '
+            'Activity.call_to_action.'
+        ),
+    )
+
+    # A step internal to the prospect ("presentation to the board on the
+    # 15th"): the rep owns the activity, the prospect carries the action.
+    carried_by_prospect = models.BooleanField(
+        default=False,
+        verbose_name=_('Carried By Prospect'),
+        help_text=_(
+            'True when the prospect carries the action (a step of their '
+            'internal buying process); the rep stays the activity owner.'
+        ),
+    )
+
+    # The prospect-side persons this next step involves, as PeopleSignal
+    # (resolved by the server). suggested_contacts above stays DORMANT.
+    suggested_people = models.ManyToManyField(
+        'module_signals.PeopleSignal',
+        related_name='next_step_signals',
+        blank=True,
+        verbose_name=_('Suggested People'),
+        help_text=_(
+            'People (PeopleSignal) this next step involves; their contacts '
+            'become the activity contacts at conversion.'
+        ),
+    )
+
+    # Names said in the transcript that matched no People (kept as written).
+    suggested_people_names = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name=_('Suggested People Names'),
+        help_text=_(
+            'Prospect-side names (as written) that matched no PeopleSignal.'
+        ),
+    )
+
+    # Seller-side names, as written; the invited users are chosen at
+    # conversion (no name → User resolution).
+    suggested_internal_names = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name=_('Suggested Internal Names'),
+        help_text=_(
+            'Seller-side names as written; invited users are picked at '
+            'conversion.'
+        ),
+    )
+
+    # LINK to an EXISTING activity ("Lier"). Distinct from the provenance
+    # Activity.next_step_signal ("created from", reverse created_activities);
+    # several next steps may point to the same activity. Created and attached
+    # are mutually exclusive — enforced by the conversion / link service.
+    attached_activity = models.ForeignKey(
+        'module_activities.Activity',
+        on_delete=models.SET_NULL,
+        related_name='attached_next_step_signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Attached Activity'),
+        help_text=_(
+            'Existing activity this next step was linked to (not created '
+            'from it — see Activity.next_step_signal).'
+        ),
+    )
+
+    # Why the advice pass suggests this next step (shown + editable).
+    advice_rationale = models.TextField(
+        blank=True,
+        default='',
+        verbose_name=_('Advice Rationale'),
+        help_text=_(
+            'Explanation of an advised next step (why it is suggested).'
+        ),
+    )
+
+    # =========================================================================
     # META
     # =========================================================================
 

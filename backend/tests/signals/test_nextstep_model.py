@@ -577,3 +577,133 @@ class TestNextStepSignalCacheInvalidation:
         namespaces_hit = [ns_ for _, ns_ in cache_invalidation_calls]
         assert SIGNALS_CACHE_TAG in namespaces_hit
         assert SIGNAL_CLUSTERS_CACHE_TAG not in namespaces_hit
+
+
+# =============================================================================
+# SPRINT NEXT STEPS (bloc 1.1) — new structured fields, DB round trip
+# =============================================================================
+
+def _step(cycle, user, account, order=1):
+    from app_modules.decision_cycles.models import DecisionStep
+    step = DecisionStep(cycle=cycle, name=f'Step {order}', order=order)
+    step.save(user=user, client_id=account.client_id)
+    return step
+
+
+def _people(account, activity, user, full_name):
+    from app_modules.signals.constants import PeopleRole
+    from app_modules.signals.models import PeopleSignal
+    people = PeopleSignal(
+        account=account,
+        source_activity=activity,
+        full_name=full_name,
+        role=PeopleRole.UNKNOWN,
+        source=SignalSource.LLM_EXTRACTED,
+    )
+    people.save(user=user, client_id=account.client_id)
+    return people
+
+
+def _llm_next_step(account, activity, user, **fields):
+    ns = NextStepSignal(
+        account=account,
+        source_activity=activity,
+        suggested_title='Revue sécurité avec le DSI',
+        suggested_activity_type=ActivityType.MEETING,
+        source=SignalSource.LLM_EXTRACTED,
+        confidence=0.8,
+        **fields,
+    )
+    ns.save(user=user, client_id=account.client_id)
+    return ns
+
+
+class TestNextStepSignalStructuredFields:
+    """
+    Sprint Next steps (1.1): the next step carries a full activity proposal —
+    date source text, PROPOSED DC step, topics, success criterion, who carries
+    it, the People it names (resolved + unresolved names), internal names, the
+    activity it is attached to, the advice rationale. All nullable / neutral
+    default (no data migration).
+    """
+
+    def test_neutral_defaults_on_a_new_row(self, account, activity, user_a):
+        ns = _llm_next_step(account, activity, user_a)
+        ns.refresh_from_db()
+
+        assert ns.suggested_date_text == ''
+        assert ns.suggested_decision_step is None
+        assert ns.suggested_topics == ''
+        assert ns.suggested_success_criterion == ''
+        assert ns.carried_by_prospect is False
+        assert list(ns.suggested_people.all()) == []
+        assert ns.suggested_people_names == []
+        assert ns.suggested_internal_names == []
+        assert ns.attached_activity is None
+        assert ns.advice_rationale == ''
+
+    def test_values_round_trip(self, account, activity, decision_cycle, user_a):
+        from app_modules.activities.models import Activity
+
+        step = _step(decision_cycle, user_a, account)
+        people = _people(account, activity, user_a, 'Laurent Petit')
+        target = Activity(
+            title='Security review', activity_type=ActivityType.MEETING,
+            account=account, owner=user_a, decision_cycle=decision_cycle,
+            decision_step=step,
+        )
+        target.save(user=user_a, client_id=account.client_id)
+
+        ns = _llm_next_step(
+            account, activity, user_a,
+            suggested_date_text='dans deux semaines, un mardi',
+            suggested_decision_step=step,
+            suggested_topics='Hébergement UE, DPA, SOC 2',
+            suggested_success_criterion='Le DSI valide l\'hébergement',
+            carried_by_prospect=True,
+            suggested_people_names=['la DAF'],
+            suggested_internal_names=['Sophie'],
+            attached_activity=target,
+            advice_rationale='Aucun rendez-vous prévu avec le décideur sécurité.',
+        )
+        ns.suggested_people.set([people])
+        ns.refresh_from_db()
+
+        assert ns.suggested_date_text == 'dans deux semaines, un mardi'
+        assert ns.suggested_decision_step == step
+        assert ns.suggested_topics == 'Hébergement UE, DPA, SOC 2'
+        assert ns.suggested_success_criterion == 'Le DSI valide l\'hébergement'
+        assert ns.carried_by_prospect is True
+        assert list(ns.suggested_people.all()) == [people]
+        assert ns.suggested_people_names == ['la DAF']
+        assert ns.suggested_internal_names == ['Sophie']
+        assert ns.attached_activity == target
+        assert ns.advice_rationale.startswith('Aucun rendez-vous')
+
+        # Reverse accessors (no collision with DecisionStep.next_steps).
+        assert list(step.suggested_in_next_step_signals.all()) == [ns]
+        assert list(target.attached_next_step_signals.all()) == [ns]
+        assert list(people.next_step_signals.all()) == [ns]
+
+    def test_deleting_the_step_or_the_attached_activity_sets_null(
+        self, account, activity, decision_cycle, user_a,
+    ):
+        from app_modules.activities.models import Activity
+
+        step = _step(decision_cycle, user_a, account)
+        target = Activity(
+            title='Security review', activity_type=ActivityType.MEETING,
+            account=account, owner=user_a,
+        )
+        target.save(user=user_a, client_id=account.client_id)
+        ns = _llm_next_step(
+            account, activity, user_a,
+            suggested_decision_step=step, attached_activity=target,
+        )
+
+        step.delete()
+        target.delete()
+        ns.refresh_from_db()
+
+        assert ns.suggested_decision_step is None
+        assert ns.attached_activity is None
