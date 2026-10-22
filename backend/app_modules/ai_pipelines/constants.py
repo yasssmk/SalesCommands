@@ -79,6 +79,13 @@ class AIPipelineType(models.TextChoices):
                             created_signals_count is always 0; the
                             deliverable is the snapshot, not signals.
 
+      NEXT_STEPS_ADVICE   — produced by the next steps advice pass (Sprint
+                            Next steps): a 2nd LLM read, after the
+                            extraction, that proposes the next steps the
+                            follow-up is missing. Its NextStepSignal rows
+                            carry source_run = this run, which is how the
+                            "Conseillé" mark is read (no column).
+
     Adding new values:
       Each new pipeline (game plan generation, semantic retrieval,
       ...) adds one value here AND a corresponding orchestrator
@@ -90,6 +97,7 @@ class AIPipelineType(models.TextChoices):
     NEXT_STEPS         = 'NEXT_STEPS',         _('Next steps extraction')
     DEAL_HEALTH        = 'DEAL_HEALTH',        _('Deal health diagnostic')
     PREP_CALL          = 'PREP_CALL',          _('Prep call brief')
+    NEXT_STEPS_ADVICE  = 'NEXT_STEPS_ADVICE',  _('Next steps advice')
 
 
 # =============================================================================

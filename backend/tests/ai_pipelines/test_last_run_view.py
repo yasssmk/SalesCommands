@@ -202,3 +202,34 @@ class TestLastRunView:
 
         assert resp.status_code == 200
         assert resp.data['last_run']['error_message'] == ''
+
+
+# =============================================================================
+# Sprint Next steps (1.2) — the advice pass has its own pipeline type
+# =============================================================================
+
+@pytest.mark.django_db
+class TestNextStepsAdvicePipelineType:
+    """
+    The advice pass (2nd LLM read after the next steps extraction) records
+    its own AIPipelineRun type. The "Conseillé" mark of a next step is read
+    from source_run.pipeline_type, so the type must be a real choice and be
+    reported by the last-run endpoint like the other pipelines.
+    """
+
+    def test_advice_run_is_reported_by_last_run(self, authed_api_a, activity, user_a):
+        advice = _create_run(
+            activity, user_a, pipeline_type='NEXT_STEPS_ADVICE', input_hash='c' * 64,
+        )
+        advice.full_clean()   # a valid choice of AIPipelineRun.pipeline_type
+
+        resp = authed_api_a.get(f'{URL}?activity_id={activity.id}')
+
+        assert resp.status_code == 200
+        rbp = resp.data['runs_by_pipeline']
+        assert rbp['NEXT_STEPS_ADVICE'] is not None
+        assert rbp['NEXT_STEPS_ADVICE']['input_hash'] == 'c' * 64
+        assert rbp['NEXT_STEPS'] is None
+
+    def test_enum_value(self):
+        assert AIPipelineType.NEXT_STEPS_ADVICE == 'NEXT_STEPS_ADVICE'
