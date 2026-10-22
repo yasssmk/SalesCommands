@@ -220,6 +220,7 @@ class NextStepsPipeline(BasePipeline):
                         confidence_min=self.CONFIDENCE_MIN,
                         drop_inferred=self.DROP_INFERRED,
                         source_run=run,
+                        transcript=transcript,
                     )
 
                     self._log_sub_call(

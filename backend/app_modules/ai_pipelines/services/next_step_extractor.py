@@ -83,6 +83,7 @@ from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
 from .safety_filter import passes_safety_filter, safe_float
+from .transcript_text import TranscriptText
 
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,8 @@ class NextStepExtractor:
             user=user,
             client_id=client_id,
             confidence_min=0.5,
-            drop_inferred=True,
+            drop_inferred=False,
+            transcript=transcript,
         )
 
     The signature deliberately omits a `stage` parameter
@@ -129,6 +131,7 @@ class NextStepExtractor:
         confidence_min,
         drop_inferred,
         source_run=None,
+        transcript=None,
     ):
         """
         Apply safety filter + persist surviving next-step signals.
@@ -142,6 +145,11 @@ class NextStepExtractor:
                                        dropped (safety filter).
             drop_inferred:   bool -- if True, drop signals where
                                        is_inferred is True.
+            transcript:      str | None -- the analysed transcript; when
+                                       given, a speaker label of THIS
+                                       transcript copied at the head of
+                                       source_quote is removed (TD-282 (2),
+                                       same rule as TranscriptSignalExtractor).
 
         Returns:
             tuple (persisted, dropped_count)
@@ -162,6 +170,7 @@ class NextStepExtractor:
 
         persisted = []
         dropped_count = 0
+        transcript_text = TranscriptText(transcript) if transcript is not None else None
 
         for raw in raw_signals:
             if not isinstance(raw, dict):
@@ -172,6 +181,13 @@ class NextStepExtractor:
             if not passes_safety_filter(raw, confidence_min, drop_inferred):
                 dropped_count += 1
                 continue
+
+            # TD-282 (2): "Thomas Lefèvre: Envoyez-les..." -> "Envoyez-les..."
+            # when the prefix is a speaker label of THIS transcript (never
+            # another ":").
+            if transcript_text is not None and 'source_quote' in raw:
+                raw = {**raw, 'source_quote': transcript_text.strip_speaker_label(
+                    raw['source_quote'])}
 
             # --- Build the create() data dict ---
             data = self._build_next_step_data(raw, activity)

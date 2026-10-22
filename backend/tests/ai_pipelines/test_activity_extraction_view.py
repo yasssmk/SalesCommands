@@ -901,3 +901,77 @@ class TestNextStepInferredKept:
         assert NextStepSignal.objects.filter(
             source_activity=activity,
         ).count() == 0
+
+
+# =============================================================================
+# TD-282 (2) — a speaker label copied at the head of source_quote is removed
+# =============================================================================
+
+LABELLED_TRANSCRIPT = (
+    "Sophie Garnier: Je peux vous envoyer le DPA et le rapport SOC 2.\n"
+    "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.\n"
+    "Sophie Garnier: Entendu, ce sera fait.\n"
+)
+
+
+def _next_step_reply_with_quote(quote):
+    return (
+        '{"signals": [{'
+        '"suggested_title": "Send the DPA and the SOC 2 report", '
+        '"suggested_activity_type": "EMAIL", '
+        '"suggested_due_date": null, '
+        f'"source_quote": "{quote}", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}]}'
+    )
+
+
+@pytest.mark.django_db
+class TestNextStepSpeakerLabelStripped:
+    """
+    TD-282 (2): NextSteps has its own extractor and did not benefit from the
+    TD-279 strip of a speaker label copied at the head of source_quote. Only
+    a REAL label of this transcript is removed, never any other ":".
+    """
+
+    def _run(self, authed_api_a, activity):
+        with _apply_patches(_bypass_redis):
+            return authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': LABELLED_TRANSCRIPT,
+                    'run_qualification': False,
+                    'run_next_steps': True,
+                },
+                format='json',
+            )
+
+    def test_speaker_label_removed_from_quote(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        from app_modules.signals.models import NextStepSignal
+
+        fake_provider.replies = {'next_steps': _next_step_reply_with_quote(
+            "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.")}
+
+        resp = self._run(authed_api_a, activity)
+
+        assert resp.status_code == 200
+        signal = NextStepSignal.objects.get(source_activity=activity)
+        assert signal.source_quote == "Envoyez-les avant vendredi, s'il vous plaît."
+
+    def test_quote_without_real_label_kept_intact(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        from app_modules.signals.models import NextStepSignal
+
+        quote = 'Objectif : recevoir le DPA avant vendredi'
+        fake_provider.replies = {'next_steps': _next_step_reply_with_quote(quote)}
+
+        resp = self._run(authed_api_a, activity)
+
+        assert resp.status_code == 200
+        signal = NextStepSignal.objects.get(source_activity=activity)
+        assert signal.source_quote == quote
