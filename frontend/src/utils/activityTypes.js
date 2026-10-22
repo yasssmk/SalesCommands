@@ -50,3 +50,32 @@ export const ACTIVITY_TYPE_ICON_COLOR = "primary.main";
 export function getActivityTypeIcon(type) {
   return ACTIVITY_TYPE_ICON[type] || ACTIVITY_TYPE_ICON.OTHER;
 }
+
+// ==============================|| NEXT STEP → ACTIVITY CONVERSION ||============================== //
+//
+// Sprint Next steps 2.2b — MIRROR of backend/app_modules/activities/constants.py
+// (SCHEDULED_DATE_ACTIVITY_TYPES, NEXT_STEP_OBJECTIVE_PARTS_SEPARATOR,
+// NEXT_STEP_SUCCESS_CRITERION_LABEL), used by the ActivityModal pre-fill so the
+// form shows what the server would fill. Keep both sides in sync.
+
+// D6: for these types the next step's date is WHEN the activity happens
+// (scheduled_date); for every other type it is a deadline (due_date).
+export const SCHEDULED_DATE_ACTIVITY_TYPES = new Set(["MEETING", "CALL", "DEMO"]);
+
+export const NEXT_STEP_OBJECTIVE_PARTS_SEPARATOR = "\n\n";
+export const NEXT_STEP_SUCCESS_CRITERION_LABEL = "Success criterion: ";
+
+/**
+ * The Objective (call_to_action) composed from a next step: its objective, then
+ * its success criterion under its label ("" when it has neither).
+ * @param {Object} nextStep - a NextStepSignal payload
+ * @returns {string}
+ */
+export function nextStepObjective(nextStep) {
+  const parts = [];
+  if (nextStep?.suggested_objective) parts.push(nextStep.suggested_objective);
+  if (nextStep?.suggested_success_criterion) {
+    parts.push(NEXT_STEP_SUCCESS_CRITERION_LABEL + nextStep.suggested_success_criterion);
+  }
+  return parts.join(NEXT_STEP_OBJECTIVE_PARTS_SEPARATOR);
+}

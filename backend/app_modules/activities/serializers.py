@@ -24,6 +24,9 @@ from .services import ActivitySequenceService, SequenceScope
 from .services.next_step_materialization import (
     mark_next_step_materialised,
     next_step_activity_fields,
+    next_step_cycle_default,
+    next_step_step_default,
+    next_step_text_and_date_defaults,
     resolve_pending_next_step,
 )
 
@@ -947,6 +950,19 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 raise StandardizedValidationError(
                     AccountErrorMessages.ACCOUNT_NOT_FOUND
                 )
+
+            # =================================================================
+            # Next step being converted (optional — AI suggestion provenance).
+            # Resolved FIRST: its values fill the empty fields BEFORE the
+            # checks below (date required, step required with a cycle) —
+            # services/next_step_materialization.py.
+            # =================================================================
+            next_step_signal = resolve_pending_next_step(
+                attrs.pop('next_step_signal_id', None), client_id,
+            )
+            if next_step_signal:
+                attrs['_next_step_signal'] = next_step_signal
+                attrs.update(next_step_text_and_date_defaults(next_step_signal, attrs))
             
             # =================================================================
             # REQUIRED: At least one contact
@@ -1010,6 +1026,10 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     raise StandardizedValidationError(
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
+            elif next_step_signal:
+                cycle_default = next_step_cycle_default(next_step_signal, account)
+                if cycle_default is not None:
+                    attrs['decision_cycle'] = cycle_default
             
             # =================================================================
             # Validate decision_step (optional, requires cycle)
@@ -1032,6 +1052,18 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             
+            # Next step: the proposed step, else the cycle's current one.
+            if (
+                next_step_signal
+                and attrs.get('decision_cycle')
+                and not attrs.get('decision_step')
+            ):
+                step_default = next_step_step_default(
+                    next_step_signal, attrs['decision_cycle'],
+                )
+                if step_default is not None:
+                    attrs['decision_step'] = step_default
+
             # RULE: If cycle is provided, step is REQUIRED (pipeline steps are fixed)
             if attrs.get('decision_cycle') and not attrs.get('decision_step'):
                 raise StandardizedValidationError(
@@ -1054,15 +1086,6 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
 
-            # =================================================================
-            # Validate next_step_signal (optional — AI suggestion provenance)
-            # =================================================================
-            next_step_signal = resolve_pending_next_step(
-                attrs.pop('next_step_signal_id', None), client_id,
-            )
-            if next_step_signal:
-                attrs['_next_step_signal'] = next_step_signal
-
             return attrs
             
         except StandardizedValidationError:
@@ -1084,14 +1107,10 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         # Set owner to current user
         validated_data['owner'] = user
 
-        # Link the signal FK before creating the instance; S13: the signal's
-        # suggested_objective becomes call_to_action unless the payload sets
-        # one (services/next_step_materialization.py — shared with the
-        # create-with-entities path).
+        # Link the signal FK before creating the instance (its values were
+        # already applied to the empty fields in validate()).
         if next_step_signal:
-            validated_data.update(next_step_activity_fields(
-                next_step_signal, validated_data.get('call_to_action'),
-            ))
+            validated_data.update(next_step_activity_fields(next_step_signal))
 
         # Create instance
         instance = Activity(**validated_data)

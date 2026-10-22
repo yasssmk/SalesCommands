@@ -40,9 +40,15 @@ vi.mock("api/businessData/contacts", () => ({
   useGetContacts: () => ({ contacts: [], contactsLoading: false }),
 }));
 
+// The steps of the selected cycle — set per test (Sprint Next steps 2.2b).
+const cycleSteps = vi.hoisted(() => ({ list: [] }));
+
 vi.mock("api/accounts/decisionCycles", () => ({
   useGetDecisionCyclesByAccount: () => ({ cycles: [], cyclesLoading: false }),
-  useGetDecisionStepsByCycle: () => ({ steps: [], stepsLoading: false }),
+  useGetDecisionStepsByCycle: (cycleId) => ({
+    steps: cycleId ? cycleSteps.list : [],
+    stepsLoading: false,
+  }),
 }));
 
 vi.mock("utils/displayError", () => ({
@@ -115,6 +121,7 @@ function submit() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  cycleSteps.list = [];
 });
 
 describe("ActivityModal — create payload (bug (e): no previous_activity_id)", () => {
@@ -166,5 +173,103 @@ describe("ActivityModal — objective longer than 500 characters", () => {
 
     await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
     expect(createActivity.mock.calls[0][0].call_to_action).toBe(longObjective);
+  });
+});
+
+// Sprint Next steps 2.2b — the conversion pre-fills the form from the next
+// step (mirror of the backend defaults, activities/constants.py ↔
+// utils/activityTypes.js); everything stays editable.
+describe("ActivityModal — conversion pre-fill from the next step", () => {
+  function renderConversion(nextStep, props = {}) {
+    render(
+      <ActivityModal
+        open
+        onClose={() => {}}
+        accountId="acc1"
+        activity={null}
+        nextStepSignal={{ ...NEXT_STEP, ...nextStep }}
+        {...props}
+      />,
+    );
+  }
+
+  it("D6: an EMAIL / TASK next step date is a due date, not a scheduled date (bug c)", async () => {
+    renderConversion({ suggested_activity_type: "EMAIL", suggested_due_date: "2026-10-23" });
+    submit();
+
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    const payload = createActivity.mock.calls[0][0];
+    expect(payload.due_date).toBe("2026-10-23");
+    expect(payload.scheduled_date).toBeNull();
+  });
+
+  it("objective + success criterion → Objective, topics → Description", async () => {
+    renderConversion({
+      suggested_objective: "Lever le blocage sécurité",
+      suggested_success_criterion: "Le DSI valide l'hébergement",
+      suggested_topics: "Hébergement UE, DPA, SOC 2",
+    });
+    submit();
+
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    const payload = createActivity.mock.calls[0][0];
+    expect(payload.call_to_action).toBe(
+      "Lever le blocage sécurité\n\nSuccess criterion: Le DSI valide l'hébergement",
+    );
+    expect(payload.description).toBe("Hébergement UE, DPA, SOC 2");
+  });
+
+  it("contacts: the contacts of the next step's People are pre-selected", async () => {
+    renderConversion({
+      suggested_contacts: [{ id: "c1" }],
+      suggested_people: [
+        { id: "p1", full_name: "Laurent Petit", target_contact: { id: "c2" } },
+        { id: "p2", full_name: "la DAF", target_contact: null },
+        { id: "p3", full_name: "Thomas", target_contact: { id: "c1" } },
+      ],
+    });
+    submit();
+
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivity.mock.calls[0][0].contact_ids).toEqual(["c1", "c2"]);
+  });
+
+  it("DC step: the proposed step is pre-selected when it is a step of the cycle", async () => {
+    cycleSteps.list = [
+      { id: "s1", name: "Step 1", is_current: false },
+      { id: "s2", name: "Step 2", is_current: true },
+      { id: "s3", name: "Step 3", is_current: false },
+    ];
+    renderConversion({ suggested_decision_step: "s3" }, { decisionCycleId: "dc1" });
+
+    await waitFor(() => {
+      submit();
+      expect(createActivity).toHaveBeenCalledTimes(1);
+    });
+    expect(createActivity.mock.calls[0][0].decision_step_id).toBe("s3");
+  });
+
+  it("DC step: without a usable proposal the cycle's current step is pre-selected", async () => {
+    cycleSteps.list = [
+      { id: "s1", name: "Step 1", is_current: false },
+      { id: "s2", name: "Step 2", is_current: true },
+    ];
+    renderConversion({ suggested_decision_step: "other-cycle-step" }, { decisionCycleId: "dc1" });
+
+    await waitFor(() => {
+      submit();
+      expect(createActivity).toHaveBeenCalledTimes(1);
+    });
+    expect(createActivity.mock.calls[0][0].decision_step_id).toBe("s2");
+  });
+
+  it("Description longer than 2000 characters is converted whole (no cap)", async () => {
+    const longTopics = "Hébergement UE, DPA, SOC 2, réversibilité, localisation des sauvegardes. ".repeat(40).trim();
+    expect(longTopics.length).toBeGreaterThan(2000);
+    renderConversion({ suggested_topics: longTopics });
+    submit();
+
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivity.mock.calls[0][0].description).toBe(longTopics);
   });
 });

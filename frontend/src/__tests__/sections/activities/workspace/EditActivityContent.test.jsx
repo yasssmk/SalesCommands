@@ -231,6 +231,25 @@ describe("EditActivityContent — objective longer than 500 characters", () => {
   });
 });
 
+// Sprint Next steps 2.2b (Q2): the Description is never refused for its
+// length either — the column is unbounded (TextField).
+describe("EditActivityContent — description longer than 2000 characters", () => {
+  it("saves an activity whose description exceeds 2000 characters, whole", async () => {
+    const longDescription = "Points à couvrir : hébergement UE, DPA, SOC 2, réversibilité. ".repeat(40).trim();
+    expect(longDescription.length).toBeGreaterThan(2000);
+    renderEdit({ ...ACTIVITY, description: longDescription });
+    fireEvent.click(screen.getByTestId("inline-read-title"));
+    fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "New title" } });
+
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalledTimes(1));
+    expect(updateActivity.mock.calls[0][1].description).toBe(longDescription);
+  });
+});
+
 describe("EditActivityContent — date toggle exclusivity (cloned mechanics)", () => {
   it("a single click on the Scheduled date opens the date editor (toggle + picker)", () => {
     renderEdit();

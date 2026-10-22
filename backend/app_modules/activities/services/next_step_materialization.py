@@ -10,10 +10,21 @@ Both creation paths go through it:
 Contract (identical on both paths):
   1. resolve_pending_next_step — the signal must exist in the caller's
      tenant and be PENDING (one suggestion → one Activity), else 400.
-  2. next_step_activity_fields — the Activity carries the FK to the signal
-     (provenance) and, when the payload sets no objective, the signal's
-     suggested_objective as call_to_action. An explicit objective wins.
-  3. mark_next_step_materialised — the signal is validated, in the same
+  2. Defaults from the next step, applied ONLY where the create payload
+     leaves the field empty (an explicit value always wins), BEFORE the
+     callers' own checks (date required, step required with a cycle):
+       * next_step_text_and_date_defaults — description ← suggested_topics;
+         call_to_action ← objective + success criterion; date ←
+         suggested_due_date, as scheduled_date for the types of
+         SCHEDULED_DATE_ACTIVITY_TYPES, else as due_date (D6);
+       * next_step_cycle_default — the next step's own decision cycle (same
+         account) when the payload sends none;
+       * next_step_step_default — the proposed step when it belongs to the
+         activity's cycle, else that cycle's CURRENT step (computed here,
+         never stored on the signal).
+     No contact is ever added by the server.
+  3. next_step_activity_fields — the Activity carries the provenance FK.
+  4. mark_next_step_materialised — the signal is validated, in the same
      transaction as the Activity creation (both callers are atomic).
 """
 
@@ -21,6 +32,12 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 
 from core.error_messages import CoreErrorMessages
 from core.exceptions import StandardizedValidationError
+
+from ..constants import (
+    NEXT_STEP_OBJECTIVE_PARTS_SEPARATOR,
+    NEXT_STEP_SUCCESS_CRITERION_LABEL,
+    SCHEDULED_DATE_ACTIVITY_TYPES,
+)
 
 
 def resolve_pending_next_step(next_step_signal_id, client_id):
@@ -55,18 +72,99 @@ def resolve_pending_next_step(next_step_signal_id, client_id):
     return signal
 
 
-def next_step_activity_fields(signal, call_to_action=None):
+# =============================================================================
+# DEFAULTS FROM THE NEXT STEP (only where the payload is empty)
+# =============================================================================
+
+def next_step_objective(signal):
+    """call_to_action composed from the next step: the objective, then the
+    success criterion under its label ('' when the signal has neither)."""
+    parts = []
+    if signal.suggested_objective:
+        parts.append(signal.suggested_objective)
+    if signal.suggested_success_criterion:
+        parts.append(
+            NEXT_STEP_SUCCESS_CRITERION_LABEL + signal.suggested_success_criterion
+        )
+    return NEXT_STEP_OBJECTIVE_PARTS_SEPARATOR.join(parts)
+
+
+def next_step_text_and_date_defaults(signal, fields):
     """
-    The Activity fields that come from `signal`: the provenance FK and the
-    objective (`call_to_action`, the payload's value when it sets one, else
-    the signal's suggested_objective; unchanged when neither is set).
+    The description / call_to_action / date values the next step brings,
+    for the keys `fields` (Activity field names: activity_type, description,
+    call_to_action, scheduled_date, due_date) leaves empty.
     """
-    return {
-        'next_step_signal': signal,
-        'call_to_action':   (
-            call_to_action or signal.suggested_objective or call_to_action
-        ),
-    }
+    defaults = {}
+    if not fields.get('description') and signal.suggested_topics:
+        defaults['description'] = signal.suggested_topics
+    objective = next_step_objective(signal)
+    if not fields.get('call_to_action') and objective:
+        defaults['call_to_action'] = objective
+    if (
+        signal.suggested_due_date
+        and not fields.get('scheduled_date')
+        and not fields.get('due_date')
+    ):
+        date_field = (
+            'scheduled_date'
+            if fields.get('activity_type') in SCHEDULED_DATE_ACTIVITY_TYPES
+            else 'due_date'
+        )
+        defaults[date_field] = signal.suggested_due_date
+    return defaults
+
+
+def next_step_cycle_default(signal, account):
+    """The next step's decision cycle when it belongs to `account`, else
+    None."""
+    cycle = signal.decision_cycle
+    if cycle is not None and cycle.account_id == account.id:
+        return cycle
+    return None
+
+
+def current_decision_step(cycle):
+    """
+    The CURRENT step of `cycle`: the first step (by order) whose derived
+    status is not VALIDATED — the shared definition of DecisionStep.is_current
+    (StepStatusDerivationService + CycleAggregationService._compute_progress).
+    None when the cycle has no steps or all are validated.
+    """
+    from app_modules.decision_cycles.models import DecisionStep
+    from app_modules.decision_cycles.services import (
+        CycleAggregationService,
+        StepStatusDerivationService,
+    )
+
+    steps = list(
+        DecisionStep.objects.filter(cycle=cycle).prefetch_related('activities')
+    )
+    if not steps:
+        return None
+    derived = StepStatusDerivationService().derive_bulk(steps)
+    current_order = CycleAggregationService._compute_progress(
+        steps, derived
+    ).get('current_step_order')
+    return next((s for s in steps if s.order == current_order), None)
+
+
+def next_step_step_default(signal, cycle):
+    """The step proposed by the next step when it belongs to `cycle`, else
+    the current step of `cycle` (computed, never stored on the signal)."""
+    proposed = signal.suggested_decision_step
+    if proposed is not None and proposed.cycle_id == cycle.id:
+        return proposed
+    return current_decision_step(cycle)
+
+
+# =============================================================================
+# PROVENANCE + VALIDATION
+# =============================================================================
+
+def next_step_activity_fields(signal):
+    """The provenance FK the Activity carries (Activity.next_step_signal)."""
+    return {'next_step_signal': signal}
 
 
 def mark_next_step_materialised(signal, user):

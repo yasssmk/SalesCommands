@@ -75,6 +75,10 @@ import {
   displayErrorSnackbar,
   displaySuccessSnackbar,
 } from "utils/displayError";
+import {
+  SCHEDULED_DATE_ACTIVITY_TYPES,
+  nextStepObjective,
+} from "utils/activityTypes";
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -85,9 +89,8 @@ const validationSchema = Yup.object(
       .max(255, "Title must be at most 255 characters"),
     activity_type: Yup.string().required("Activity type is required"),
     status: Yup.string().required("Status is required"),
-    description: Yup.string()
-      .max(2000, "Description must be at most 2000 characters")
-      .nullable(),
+    // No length cap: the Description column is unbounded (Sprint Next steps 2.2b).
+    description: Yup.string().nullable(),
     // No length cap: the Objective column is unbounded (Sprint Next steps 2.2a, R3).
     call_to_action: Yup.string().nullable(),
     scheduled_date: Yup.date()
@@ -179,34 +182,53 @@ export default function ActivityModal({
     }));
   }, [cycles]);
 
-  // Pre-fill from nextStepSignal when converting an AI suggestion
+  // Pre-fill from nextStepSignal when converting an AI suggestion: its
+  // contacts, then the contacts of the People it involves (Sprint Next steps
+  // 2.2b — the server never adds a contact on its own), without duplicates.
   const signalContactIds = useMemo(() => {
-    if (!nextStepSignal?.suggested_contacts) return [];
-    return nextStepSignal.suggested_contacts.map((c) => c.id);
+    const ids = [
+      ...(nextStepSignal?.suggested_contacts || []).map((c) => c.id),
+      ...(nextStepSignal?.suggested_people || [])
+        .map((p) => p.target_contact?.id)
+        .filter(Boolean),
+    ];
+    return [...new Set(ids)];
   }, [nextStepSignal]);
+
+  // D6 (mirror of activities/constants.py): the next step's date is WHEN the
+  // activity happens for MEETING / CALL / DEMO, a deadline for other types.
+  const initialActivityType =
+    activity?.activity_type ||
+    nextStepSignal?.suggested_activity_type ||
+    defaultActivityType ||
+    "MEETING";
+  const nextStepDate = nextStepSignal?.suggested_due_date
+    ? dayjs(nextStepSignal.suggested_due_date)
+    : null;
+  const nextStepDateIsScheduled = SCHEDULED_DATE_ACTIVITY_TYPES.has(initialActivityType);
 
   // Build initial values
   const initialValues = useMemo(
     () => ({
       title: activity?.title || nextStepSignal?.suggested_title || "",
-      activity_type:
-        activity?.activity_type ||
-        nextStepSignal?.suggested_activity_type ||
-        defaultActivityType ||
-        "MEETING",
+      activity_type: initialActivityType,
       status: activity?.status || "PLANNED",
-      description: activity?.description || "",
+      description: activity?.description || nextStepSignal?.suggested_topics || "",
       call_to_action:
-        activity?.call_to_action || nextStepSignal?.suggested_objective || "",
+        activity?.call_to_action || nextStepObjective(nextStepSignal) || "",
       scheduled_date: activity?.scheduled_date
         ? dayjs(activity.scheduled_date)
-        : nextStepSignal?.suggested_due_date
-          ? dayjs(nextStepSignal.suggested_due_date)
+        : nextStepDateIsScheduled
+          ? nextStepDate
           : null,
       scheduled_time: activity?.scheduled_time
         ? dayjs(`2000-01-01T${activity.scheduled_time}`)
         : null,
-      due_date: activity?.due_date ? dayjs(activity.due_date) : null,
+      due_date: activity?.due_date
+        ? dayjs(activity.due_date)
+        : !activity && !nextStepDateIsScheduled
+          ? nextStepDate
+          : null,
       contact_ids:
         activity?.contacts?.map((c) => c.id) ||
         (signalContactIds.length > 0 ? signalContactIds : []),
@@ -389,6 +411,19 @@ export default function ActivityModal({
       setInlineStepStage("QUALIFICATION");
     }
   }, [open, initialValues, resetForm]);
+
+  // Declared AFTER the open/reset effect above so it runs after it and the
+  // reset does not wipe the pre-selected step.
+  // Converting a next step: once the cycle's steps are known, pre-select its
+  // proposed step when it is a step of this cycle, else the cycle's CURRENT
+  // step (mirror of the backend default, next_step_materialization.py).
+  useEffect(() => {
+    if (!nextStepSignal || activity || values.decision_step_id || !steps?.length) return;
+    const proposed = steps.find((s) => s.id === nextStepSignal.suggested_decision_step);
+    const current = steps.find((s) => s.is_current);
+    const chosen = proposed || current;
+    if (chosen) setFieldValue("decision_step_id", chosen.id);
+  }, [nextStepSignal, activity, values.decision_step_id, steps, setFieldValue]);
 
   const handleClose = () => {
     resetForm();

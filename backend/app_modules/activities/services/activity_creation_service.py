@@ -27,6 +27,9 @@ from ..constants import ActivityStatus
 from .next_step_materialization import (
     mark_next_step_materialised,
     next_step_activity_fields,
+    next_step_cycle_default,
+    next_step_step_default,
+    next_step_text_and_date_defaults,
     resolve_pending_next_step,
 )
 
@@ -108,12 +111,24 @@ class ActivityCreationService:
             next_step_signal = resolve_pending_next_step(
                 activity_data.get('next_step_signal_id'), self.client_id,
             )
+            if next_step_signal:
+                # Its values fill the empty fields (never override the payload).
+                activity_data = {
+                    **activity_data,
+                    **next_step_text_and_date_defaults(next_step_signal, activity_data),
+                }
             
             # Track IDs to link
             contact_ids = list(activity_data.get('contact_ids', []))
             cycle_id = activity_data.get('decision_cycle_id')
             step_id = activity_data.get('decision_step_id')
             source_activity_id = activity_data.get('source_activity_id')
+
+            # Next step: its own cycle when none is sent (nor created inline).
+            if next_step_signal and not cycle_id and not inline_cycle:
+                cycle_default = next_step_cycle_default(next_step_signal, account)
+                if cycle_default is not None:
+                    cycle_id = str(cycle_default.id)
 
             # The campaign this activity comes from, resolved BEFORE step 2 so a
             # cycle created below can be stamped with its origin at birth.
@@ -182,6 +197,17 @@ class ActivityCreationService:
                     raise StandardizedValidationError(
                         ActivityErrorMessages.CYCLE_CREATION_FAILED
                     )
+
+            # Next step: the proposed step, else the cycle's current one.
+            if next_step_signal and cycle_id and not step_id:
+                cycle = DecisionCycle.objects.filter(
+                    id=cycle_id, client_id=self.client_id, account=account,
+                ).first()
+                step_default = (
+                    next_step_step_default(next_step_signal, cycle) if cycle else None
+                )
+                if step_default is not None:
+                    step_id = str(step_default.id)
 
             # ==================================================================
             # STEP 3: Validate step belongs to cycle (if both provided)
@@ -450,10 +476,8 @@ class ActivityCreationService:
                     CoreErrorMessages.INVALID_FIELD.format(field='Activity Type')
                 )
             
-            call_to_action = (activity_data.get('call_to_action') or '').strip() or None
             next_step_fields = (
-                next_step_activity_fields(next_step_signal, call_to_action)
-                if next_step_signal else {'call_to_action': call_to_action}
+                next_step_activity_fields(next_step_signal) if next_step_signal else {}
             )
 
             activity = Activity(
@@ -464,6 +488,7 @@ class ActivityCreationService:
                 activity_type=activity_type,
                 status=activity_data.get('status', ActivityStatus.PLANNED),
                 description=(activity_data.get('description') or '').strip() or None,
+                call_to_action=(activity_data.get('call_to_action') or '').strip() or None,
                 scheduled_date=activity_data.get('scheduled_date'),
                 scheduled_time=activity_data.get('scheduled_time'),
                 due_date=activity_data.get('due_date'),
