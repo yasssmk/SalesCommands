@@ -24,6 +24,11 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 
 from ..models import Activity
 from ..constants import ActivityStatus
+from .next_step_materialization import (
+    mark_next_step_materialised,
+    next_step_activity_fields,
+    resolve_pending_next_step,
+)
 
 logger = get_logger(__name__)
 
@@ -96,6 +101,13 @@ class ActivityCreationService:
 
             # Activity owner resolution: explicit override, else the current user.
             resolved_owner = cycle_owner_override or self.user
+
+            # Next step being converted (optional): resolved BEFORE any inline
+            # entity is created, same contract as POST /module-activities/
+            # (services/next_step_materialization.py).
+            next_step_signal = resolve_pending_next_step(
+                activity_data.get('next_step_signal_id'), self.client_id,
+            )
             
             # Track IDs to link
             contact_ids = list(activity_data.get('contact_ids', []))
@@ -203,7 +215,10 @@ class ActivityCreationService:
                 step_id=step_id,
                 owner=resolved_owner,
                 source_activity_id=source_activity_id,
+                next_step_signal=next_step_signal,
             )
+            if next_step_signal:
+                mark_next_step_materialised(next_step_signal, self.user)
 
             # NO BACKFILL HERE. This used to write source_campaign on whatever
             # cycle the activity pointed at, "covering both inline cycle creation
@@ -410,6 +425,7 @@ class ActivityCreationService:
         step_id: str,
         owner=None,
         source_activity_id: str = None,
+        next_step_signal=None,
     ) -> Activity:
         """Create the activity with all relations."""
         try:
@@ -434,6 +450,12 @@ class ActivityCreationService:
                     CoreErrorMessages.INVALID_FIELD.format(field='Activity Type')
                 )
             
+            call_to_action = (activity_data.get('call_to_action') or '').strip() or None
+            next_step_fields = (
+                next_step_activity_fields(next_step_signal, call_to_action)
+                if next_step_signal else {'call_to_action': call_to_action}
+            )
+
             activity = Activity(
                 client_id=self.client_id,
                 account_id=activity_data.get('account_id'),
@@ -442,7 +464,6 @@ class ActivityCreationService:
                 activity_type=activity_type,
                 status=activity_data.get('status', ActivityStatus.PLANNED),
                 description=(activity_data.get('description') or '').strip() or None,
-                call_to_action=(activity_data.get('call_to_action') or '').strip() or None,
                 scheduled_date=activity_data.get('scheduled_date'),
                 scheduled_time=activity_data.get('scheduled_time'),
                 due_date=activity_data.get('due_date'),
@@ -451,6 +472,7 @@ class ActivityCreationService:
                 decision_cycle_id=cycle_id,
                 decision_step_id=step_id,
                 source_activity_id=source_activity_id,
+                **next_step_fields,
                 created_by=self.user,
                 updated_by=self.user,
             )

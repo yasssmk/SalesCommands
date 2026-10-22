@@ -144,3 +144,113 @@ class TestActivityCreateWithNextStepSignal:
 
         assert response.status_code == 201
         assert response.data['data'].get('next_step_signal') is None
+
+
+# =============================================================================
+# Bug (b) — the inline-entities path must materialise the next step too
+# =============================================================================
+
+@pytest.fixture
+def next_step_signal_with_objective(db, account, activity, user_a):
+    """PENDING NextStepSignal carrying an objective (tenant A)."""
+    from app_modules.signals.models import NextStepSignal
+    from app_modules.signals.constants import SignalSource
+
+    signal = NextStepSignal(
+        account=account,
+        source_activity=activity,
+        suggested_title='Meet the CFO',
+        suggested_activity_type='MEETING',
+        suggested_objective='Validate the budget with the CFO',
+        source_quote='We have to meet Isabelle, our CFO',
+        source=SignalSource.LLM_EXTRACTED,
+    )
+    signal.save(user=user_a, client_id=account.client_id)
+    return signal
+
+
+@pytest.mark.django_db
+class TestCreateWithEntitiesNextStepSignal:
+    """
+    POST /module-activities/create-with-entities/ with next_step_signal_id
+    (the path ActivityModal takes when the rep creates a contact inline while
+    converting a next step). Same contract as POST /module-activities/.
+    """
+
+    URL = '/module-activities/create-with-entities/'
+
+    def _payload(self, account, signal):
+        return {
+            'activity': {
+                'title': 'Meet the CFO',
+                'activity_type': 'MEETING',
+                'account_id': str(account.id),
+                'scheduled_date': '2026-11-20',
+                'next_step_signal_id': str(signal.id),
+            },
+            'inline_contact': {'first_name': 'Isabelle', 'last_name': 'Roux'},
+        }
+
+    def test_pending_signal_is_linked_validated_and_objective_carried(
+        self, authed_api_a, account, next_step_signal_with_objective,
+    ):
+        from app_modules.activities.models import Activity
+        from app_modules.signals.constants import SignalStatus
+
+        signal = next_step_signal_with_objective
+        response = authed_api_a.post(
+            self.URL, self._payload(account, signal), format='json',
+        )
+
+        assert response.status_code in (200, 201), response.data
+        created = Activity.objects.get(
+            client_id=account.client_id, title='Meet the CFO',
+        )
+        assert created.next_step_signal_id == signal.id
+        assert created.call_to_action == 'Validate the budget with the CFO'
+        signal.refresh_from_db()
+        assert signal.status == SignalStatus.VALIDATED
+
+    def test_explicit_objective_wins_over_the_signal(
+        self, authed_api_a, account, next_step_signal_with_objective,
+    ):
+        from app_modules.activities.models import Activity
+
+        payload = self._payload(account, next_step_signal_with_objective)
+        payload['activity']['call_to_action'] = 'Rep objective'
+
+        response = authed_api_a.post(self.URL, payload, format='json')
+
+        assert response.status_code in (200, 201), response.data
+        created = Activity.objects.get(
+            client_id=account.client_id, title='Meet the CFO',
+        )
+        assert created.call_to_action == 'Rep objective'
+
+    def test_validated_signal_returns_400_and_creates_nothing(
+        self, authed_api_a, account, next_step_signal_validated,
+    ):
+        from app_modules.activities.models import Activity
+        from app_modules.contacts.models import Contact
+
+        activities_before = Activity.objects.filter(client_id=account.client_id).count()
+        contacts_before = Contact.objects.filter(client_id=account.client_id).count()
+
+        response = authed_api_a.post(
+            self.URL, self._payload(account, next_step_signal_validated),
+            format='json',
+        )
+
+        assert response.status_code == 400
+        assert Activity.objects.filter(client_id=account.client_id).count() == activities_before
+        assert Contact.objects.filter(client_id=account.client_id).count() == contacts_before
+
+    def test_cross_tenant_signal_returns_400(
+        self, authed_api_a, account, other_tenant_next_step,
+    ):
+        response = authed_api_a.post(
+            self.URL, self._payload(account, other_tenant_next_step),
+            format='json',
+        )
+
+        assert response.status_code == 400
