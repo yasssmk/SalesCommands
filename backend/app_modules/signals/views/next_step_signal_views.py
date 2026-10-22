@@ -53,8 +53,10 @@ class NextStepSignalViewSet(BaseSignalViewSet):
 
     def get_queryset(self):
         """
-        Extend base queryset with the NextStep-specific
-        `suggested_contacts` M2M prefetch.
+        Extend base queryset with the NextStep-specific relations: the
+        `suggested_contacts` / `suggested_people` M2M (with each People's
+        contact) prefetched, the proposed step and the attached activity
+        joined.
 
         Universally-present FKs (account, source_activity, validated_by,
         requested_by on detail) are preloaded by BaseSignalViewSet.
@@ -64,5 +66,10 @@ class NextStepSignalViewSet(BaseSignalViewSet):
         otherwise).
         """
         qs = super().get_queryset()
-        qs = qs.prefetch_related('suggested_contacts', 'created_activities')
+        qs = qs.select_related('suggested_decision_step', 'attached_activity')
+        qs = qs.prefetch_related(
+            'suggested_contacts',
+            'created_activities',
+            'suggested_people__target_contact',
+        )
         return qs

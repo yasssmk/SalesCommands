@@ -553,3 +553,215 @@ class TestNextStepAPIMultiTenant:
             results = results.get('results', results)
         ids = {row['id'] for row in results}
         assert str(ns.id) not in ids
+
+
+# =============================================================================
+# SPRINT NEXT STEPS (1.3) — structured fields exposed (List / Detail) and
+# editable (PATCH), suggested_objective included
+# =============================================================================
+
+def _people(account, activity, user, full_name):
+    from app_modules.signals.constants import PeopleRole
+    from app_modules.signals.models import PeopleSignal
+    people = PeopleSignal(
+        account=account, source_activity=activity, full_name=full_name,
+        role=PeopleRole.UNKNOWN, source=SignalSource.LLM_EXTRACTED,
+    )
+    people.save(user=user, client_id=account.client_id)
+    return people
+
+
+def _step(cycle, user, order=1):
+    from app_modules.decision_cycles.models import DecisionStep
+    step = DecisionStep(cycle=cycle, name=f'Step {order}', order=order)
+    step.save(user=user, client_id=cycle.client_id)
+    return step
+
+
+def _llm_next_step(account, activity, user, **fields):
+    ns = NextStepSignal(
+        account=account, source_activity=activity,
+        suggested_title='Revue sécurité avec le DSI',
+        suggested_activity_type=ActivityType.MEETING,
+        source=SignalSource.LLM_EXTRACTED, confidence=0.8,
+        **fields,
+    )
+    ns.save(user=user, client_id=account.client_id)
+    return ns
+
+
+def _error_text(response):
+    error = response.json()['error']
+    return ' '.join(error) if isinstance(error, list) else error
+
+
+NEW_READ_FIELDS = {
+    'suggested_date_text', 'suggested_decision_step',
+    'suggested_decision_step_detail', 'suggested_topics',
+    'suggested_success_criterion', 'carried_by_prospect', 'suggested_people',
+    'suggested_people_names', 'suggested_internal_names', 'attached_activity',
+    'advice_rationale',
+}
+
+
+class TestNextStepStructuredFieldsAPI:
+
+    def test_patch_suggested_objective_is_persisted(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        ns = _llm_next_step(account, activity, user_a, suggested_objective='old')
+
+        response = authed_api_a.patch(
+            _url_detail(ns.id), {'suggested_objective': 'Valider le budget'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+        assert response.json()['data']['suggested_objective'] == 'Valider le budget'
+        ns.refresh_from_db()
+        assert ns.suggested_objective == 'Valider le budget'
+
+    def test_list_and_detail_expose_the_new_fields(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        ns = _llm_next_step(account, activity, user_a)
+
+        # GET retrieve returns the payload directly (no {success, data}).
+        detail = authed_api_a.get(_url_detail(ns.id)).json()
+        body = authed_api_a.get(
+            _url_list(), {'source_activity': str(activity.id)},
+        ).json()
+        # Same extraction as test_list_next_steps_filtered_by_source_activity.
+        results = body.get('results') or body.get('data', {}).get('results') or body
+        if isinstance(results, dict):
+            results = results.get('results', results)
+        row = next(r for r in results if r['id'] == str(ns.id))
+
+        assert NEW_READ_FIELDS <= set(detail)
+        assert NEW_READ_FIELDS <= set(row)
+        assert detail['carried_by_prospect'] is False
+        assert detail['suggested_people'] == []
+        assert detail['suggested_people_names'] == []
+        assert detail['attached_activity'] is None
+
+    def test_patch_the_new_fields(
+        self, authed_api_a, account, activity, decision_cycle, user_a,
+    ):
+        step = _step(decision_cycle, user_a)
+        people = _people(account, activity, user_a, 'Laurent Petit')
+        ns = _llm_next_step(account, activity, user_a, decision_cycle=decision_cycle)
+
+        response = authed_api_a.patch(_url_detail(ns.id), {
+            'suggested_date_text': 'dans deux semaines, un mardi',
+            'suggested_decision_step': str(step.id),
+            'suggested_topics': 'Hébergement UE, DPA',
+            'suggested_success_criterion': 'Le DSI valide l\'hébergement',
+            'carried_by_prospect': True,
+            'suggested_people': [str(people.id)],
+            'suggested_people_names': ['la DAF'],
+            'suggested_internal_names': ['Sophie'],
+            'advice_rationale': 'Aucun rendez-vous prévu avec le DSI.',
+        }, format='json')
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+        data = response.json()['data']
+        assert data['suggested_date_text'] == 'dans deux semaines, un mardi'
+        assert data['suggested_decision_step'] == str(step.id)
+        assert data['suggested_decision_step_detail']['name'] == step.name
+        assert data['suggested_topics'] == 'Hébergement UE, DPA'
+        assert data['carried_by_prospect'] is True
+        assert [p['id'] for p in data['suggested_people']] == [str(people.id)]
+        assert data['suggested_people'][0]['full_name'] == 'Laurent Petit'
+        assert data['suggested_people_names'] == ['la DAF']
+        assert data['suggested_internal_names'] == ['Sophie']
+        assert data['advice_rationale'] == 'Aucun rendez-vous prévu avec le DSI.'
+        ns.refresh_from_db()
+        assert ns.suggested_success_criterion == 'Le DSI valide l\'hébergement'
+        assert list(ns.suggested_people.all()) == [people]
+
+    def test_attached_activity_is_not_writable_by_patch(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        """The link to an existing activity goes through the link service
+        (bloc 2: validation + exclusivity with the created activity)."""
+        ns = _llm_next_step(account, activity, user_a)
+
+        response = authed_api_a.patch(
+            _url_detail(ns.id), {'attached_activity': str(activity.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.content
+        ns.refresh_from_db()
+        assert ns.attached_activity is None
+
+    def test_people_of_another_tenant_is_refused(
+        self, authed_api_a, account, activity, user_a,
+        other_tenant_account, other_tenant_activity, user_b,
+    ):
+        from core.error_messages import CoreErrorMessages
+        foreign = _people(other_tenant_account, other_tenant_activity, user_b, 'Marc')
+        ns = _llm_next_step(account, activity, user_a)
+
+        response = authed_api_a.patch(
+            _url_detail(ns.id), {'suggested_people': [str(foreign.id)]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        # Another tenant's object is indistinguishable from a missing id.
+        assert _error_text(response) == str(CoreErrorMessages.OBJECT_NOT_FOUND)
+        assert list(ns.suggested_people.all()) == []
+
+    def test_people_of_another_account_is_refused(
+        self, authed_api_a, account, activity, user_a,
+        other_account, other_account_activity,
+    ):
+        from core.error_messages import ContactErrorMessages
+        other = _people(other_account, other_account_activity, user_a, 'Isabelle Roux')
+        ns = _llm_next_step(account, activity, user_a)
+
+        response = authed_api_a.patch(
+            _url_detail(ns.id), {'suggested_people': [str(other.id)]},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert _error_text(response) == str(ContactErrorMessages.INVALID_ACCOUNT)
+        assert list(ns.suggested_people.all()) == []
+
+    def test_step_of_another_cycle_is_refused(
+        self, authed_api_a, account, activity, decision_cycle, user_a,
+    ):
+        from app_modules.decision_cycles.models import DecisionCycle
+        from core.error_messages import ActivityErrorMessages
+        other_cycle = DecisionCycle(
+            account=account, owner=user_a, name='Other cycle', is_active=True,
+        )
+        other_cycle.save(user=user_a, client_id=account.client_id)
+        foreign_step = _step(other_cycle, user_a)
+        ns = _llm_next_step(account, activity, user_a, decision_cycle=decision_cycle)
+
+        response = authed_api_a.patch(
+            _url_detail(ns.id), {'suggested_decision_step': str(foreign_step.id)},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert _error_text(response) == str(ActivityErrorMessages.STEP_MUST_BELONG_TO_CYCLE)
+        ns.refresh_from_db()
+        assert ns.suggested_decision_step is None
+
+    def test_names_must_be_a_list_of_strings(
+        self, authed_api_a, account, activity, user_a,
+    ):
+        ns = _llm_next_step(account, activity, user_a)
+
+        response = authed_api_a.patch(
+            _url_detail(ns.id), {'suggested_people_names': 'la DAF'},
+            format='json',
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        ns.refresh_from_db()
+        assert ns.suggested_people_names == []
