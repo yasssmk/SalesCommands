@@ -279,9 +279,6 @@ export default function ActivityModal({
 
             activityPayload.decision_step_id = values.decision_step_id || null;
 
-            if (previousActivityId) {
-              activityPayload.previous_activity_id = previousActivityId;
-            }
             if (sourceActivityId) {
               activityPayload.source_activity_id = sourceActivityId;
             }
@@ -302,9 +299,6 @@ export default function ActivityModal({
               values.decision_cycle_id || null;
             activityPayload.decision_step_id = values.decision_step_id || null;
 
-            if (previousActivityId) {
-              activityPayload.previous_activity_id = previousActivityId;
-            }
             if (sourceActivityId) {
               activityPayload.source_activity_id = sourceActivityId;
             }
