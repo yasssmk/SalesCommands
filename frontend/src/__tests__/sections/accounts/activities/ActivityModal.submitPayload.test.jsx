@@ -146,3 +146,25 @@ describe("ActivityModal — create payload (bug (e): no previous_activity_id)", 
     });
   });
 });
+
+// Sprint Next steps 2.2a (R3): a next step's long objective is converted
+// whole — no 500-character cap on the Objective any more.
+describe("ActivityModal — objective longer than 500 characters", () => {
+  it("converts a next step whose objective exceeds 500 characters, whole", async () => {
+    const longObjective = "Valider le budget 2027 avec la DAF et le contrôleur de gestion. ".repeat(12).trim();
+    expect(longObjective.length).toBeGreaterThan(500);
+    render(
+      <ActivityModal
+        open
+        onClose={() => {}}
+        accountId="acc1"
+        activity={null}
+        nextStepSignal={{ ...NEXT_STEP, suggested_objective: longObjective }}
+      />,
+    );
+    submit();
+
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivity.mock.calls[0][0].call_to_action).toBe(longObjective);
+  });
+});

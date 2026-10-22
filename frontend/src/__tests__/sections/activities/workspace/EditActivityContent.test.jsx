@@ -212,6 +212,25 @@ describe("EditActivityContent — click edit + global save", () => {
   });
 });
 
+// Sprint Next steps 2.2a (R3): the Objective (call_to_action) is never
+// refused for its length — the backend column is unbounded (TextField).
+describe("EditActivityContent — objective longer than 500 characters", () => {
+  it("saves an activity whose objective exceeds 500 characters, whole", async () => {
+    const longObjective = "Valider l'hébergement des données en Europe avec le DSI. ".repeat(20).trim();
+    expect(longObjective.length).toBeGreaterThan(500);
+    renderEdit({ ...ACTIVITY, call_to_action: longObjective });
+    fireEvent.click(screen.getByTestId("inline-read-title"));
+    fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "New title" } });
+
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalledTimes(1));
+    expect(updateActivity.mock.calls[0][1].call_to_action).toBe(longObjective);
+  });
+});
+
 describe("EditActivityContent — date toggle exclusivity (cloned mechanics)", () => {
   it("a single click on the Scheduled date opens the date editor (toggle + picker)", () => {
     renderEdit();

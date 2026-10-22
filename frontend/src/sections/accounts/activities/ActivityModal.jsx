@@ -88,9 +88,8 @@ const validationSchema = Yup.object(
     description: Yup.string()
       .max(2000, "Description must be at most 2000 characters")
       .nullable(),
-    call_to_action: Yup.string()
-      .max(500, "Activity objective must be at most 500 characters")
-      .nullable(),
+    // No length cap: the Objective column is unbounded (Sprint Next steps 2.2a, R3).
+    call_to_action: Yup.string().nullable(),
     scheduled_date: Yup.date()
       .nullable()
       .typeError("Please select a valid date")
