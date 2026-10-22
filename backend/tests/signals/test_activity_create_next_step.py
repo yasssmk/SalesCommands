@@ -13,6 +13,23 @@ import pytest
 from datetime import date
 
 
+def _error_text(response):
+    """The error message of a 400 (a list on the serializer path, a string
+    on the create-with-entities path)."""
+    error = response.json()['error']
+    return ' '.join(error) if isinstance(error, list) else error
+
+
+def _not_pending_message():
+    """The refusal of services/next_step_materialization.py — NOT the
+    SignalManager.validate one (NOT_PENDING_VALIDATED): the guard refuses
+    before anything is created."""
+    from core.error_messages import CoreErrorMessages
+    return str(CoreErrorMessages.INVALID_FIELD.format(
+        field='next_step_signal must be in PENDING status'
+    ))
+
+
 # =============================================================================
 # FIXTURES — NextStepSignal instances scoped to this test module
 # =============================================================================
@@ -121,6 +138,7 @@ class TestActivityCreateWithNextStepSignal:
         response = authed_api_a.post(self.URL, payload, format='json')
 
         assert response.status_code == 400
+        assert _error_text(response) == _not_pending_message()
         assert Activity.objects.filter(client_id=account.client_id).count() == count_before
 
     def test_create_with_cross_tenant_signal_returns_400(
@@ -242,6 +260,7 @@ class TestCreateWithEntitiesNextStepSignal:
         )
 
         assert response.status_code == 400
+        assert _error_text(response) == _not_pending_message()
         assert Activity.objects.filter(client_id=account.client_id).count() == activities_before
         assert Contact.objects.filter(client_id=account.client_id).count() == contacts_before
 
