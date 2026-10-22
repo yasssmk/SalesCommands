@@ -269,8 +269,14 @@ class ActivityExtractionView(BaseAPIView):
                 'activity_extraction.both_cached',
                 extra={
                     **log_ctx_idemp,
-                    'qualif_run_id':    str(qualif_cached_run.id),
-                    'nextsteps_run_id': str(nextsteps_cached_run.id),
+                    # A pipeline not requested (or skipped by the DC-only
+                    # guard) has no cached run.
+                    'qualif_run_id':    (
+                        str(qualif_cached_run.id) if qualif_cached_run else None
+                    ),
+                    'nextsteps_run_id': (
+                        str(nextsteps_cached_run.id) if nextsteps_cached_run else None
+                    ),
                 },
             )
             body = self._build_cached_body(
@@ -485,7 +491,10 @@ class ActivityExtractionView(BaseAPIView):
 
     def _build_cached_body(self, *, qualif_run, nextsteps_run, request):
         """
-        Build 409 response body when both pipelines are already extracted.
+        Build 409 response body when every requested pipeline is already
+        extracted. A pipeline that was not requested (or skipped by the
+        DC-only guard) has no run: its run is null and its signals empty,
+        same shape as _build_response_body.
 
         Note on cache replay scope (TD-11): the serialized signals are
         ALL signals matching source_activity, not only those produced by
@@ -504,17 +513,21 @@ class ActivityExtractionView(BaseAPIView):
             'code': 'ALREADY_EXTRACTED',
             'data': {
                 'status':                'SUCCESS',
-                'qualification_run':     self._serialize_run(
-                    qualif_run, from_cache=True,
+                'qualification_run':     (
+                    self._serialize_run(qualif_run, from_cache=True)
+                    if qualif_run is not None else None
                 ),
-                'next_steps_run':        self._serialize_run(
-                    nextsteps_run, from_cache=True,
+                'next_steps_run':        (
+                    self._serialize_run(nextsteps_run, from_cache=True)
+                    if nextsteps_run is not None else None
                 ),
-                'qualification_signals': self._serialize_cached_qualif_signals(
-                    qualif_run, ser_ctx,
+                'qualification_signals': (
+                    self._serialize_cached_qualif_signals(qualif_run, ser_ctx)
+                    if qualif_run is not None else self._empty_qualif_signals()
                 ),
-                'next_step_signals':     self._serialize_cached_nextstep_signals(
-                    nextsteps_run, ser_ctx,
+                'next_step_signals':     (
+                    self._serialize_cached_nextstep_signals(nextsteps_run, ser_ctx)
+                    if nextsteps_run is not None else []
                 ),
             },
         }

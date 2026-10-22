@@ -975,3 +975,69 @@ class TestNextStepSpeakerLabelStripped:
         assert resp.status_code == 200
         signal = NextStepSignal.objects.get(source_activity=activity)
         assert signal.source_quote == quote
+
+
+# =============================================================================
+# Bug (a) — 409 cache path when only ONE pipeline is requested / allowed
+# =============================================================================
+
+@pytest.mark.django_db
+class TestAlreadyExtractedSinglePipeline:
+    """
+    The "both cached" branch ran when every REQUESTED pipeline was cached,
+    but it read `.id` on both runs. With one pipeline skipped (campaign
+    activity -> next steps skipped by the DC-only guard, or the rep only
+    asked for one pipeline) the other run is None. A re-run must answer
+    409 ALREADY_EXTRACTED with the skipped pipeline's run null.
+    """
+
+    def _post(self, authed_api_a, activity, *, qualif, nextsteps):
+        with _apply_patches(_bypass_redis):
+            return authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': TRANSCRIPT,
+                    'run_qualification': qualif,
+                    'run_next_steps': nextsteps,
+                },
+                format='json',
+            )
+
+    def test_campaign_activity_rerun_returns_409(
+        self, authed_api_a, activity_without_cycle, patch_active_provider,
+        fake_provider,
+    ):
+        activity = activity_without_cycle
+        fake_provider.replies = {
+            **CANNED_REPLIES_HAPPY,
+            'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY,
+        }
+
+        first = self._post(authed_api_a, activity, qualif=True, nextsteps=True)
+        assert first.status_code == 200
+
+        second = self._post(authed_api_a, activity, qualif=True, nextsteps=True)
+
+        assert second.status_code == 409
+        body = second.json()
+        assert body['code'] == 'ALREADY_EXTRACTED'
+        assert body['data']['qualification_run']['from_cache'] is True
+        assert body['data']['next_steps_run'] is None
+        assert body['data']['next_step_signals'] == []
+
+    def test_next_steps_only_rerun_returns_409(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        fake_provider.replies = {'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY}
+
+        first = self._post(authed_api_a, activity, qualif=False, nextsteps=True)
+        assert first.status_code == 200
+
+        second = self._post(authed_api_a, activity, qualif=False, nextsteps=True)
+
+        assert second.status_code == 409
+        body = second.json()
+        assert body['code'] == 'ALREADY_EXTRACTED'
+        assert body['data']['next_steps_run']['from_cache'] is True
+        assert body['data']['qualification_run'] is None
