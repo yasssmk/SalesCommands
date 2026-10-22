@@ -195,6 +195,22 @@ PIPELINE_DROP_INFERRED = {
 
 
 # =============================================================================
+# TRANSCRIPT HEADER DATE (D7 / TD-281)
+# =============================================================================
+
+# A meeting export opens with a header line that carries the meeting's REAL
+# date -- "Atelier business case SalesCommands – Logistix - 2026/10/20 14:00
+# CEST - Transcript" (evals/td279/transcript_atelier.txt:1). That date is the
+# reference of every relative date said in the transcript; the activity's date
+# in the app is only the fallback (services/transcript_text.header_date).
+# ONLY this proven format is read, on the FIRST non-empty line; groups =
+# year, month, day.
+TRANSCRIPT_HEADER_DATE_PATTERN = (
+    r' - (\d{4})/(\d{2})/(\d{2}) \d{1,2}:\d{2}\b[^\n]* - Transcript\s*$'
+)
+
+
+# =============================================================================
 # PEOPLE ROLE IN THE PROMPT PACKS (prep_call / deal_health)
 # =============================================================================
 

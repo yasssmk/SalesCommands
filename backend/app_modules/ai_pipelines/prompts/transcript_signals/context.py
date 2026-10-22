@@ -67,6 +67,8 @@ from app_modules.signals.constants import (
 )
 from end_users.models import ClientAccount
 
+from ...services.transcript_text import header_date
+
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +97,10 @@ logger = logging.getLogger(__name__)
 # and the server links them). All stages + the next_steps context.
 # v9 (TD-279 M): People stage only -- the role list offers UNKNOWN (rendered
 # from PeopleRole, like the People response schema). Other stages unchanged.
-CONTEXT_VERSION = 'v9'
+# v10 (D7 / TD-281): SHARED session block -- the "Conversation date" is the
+# date of the transcript's export header when there is one, else the
+# activity's date (all stages + the next_steps context).
+CONTEXT_VERSION = 'v10'
 
 # Relative-date wordings named in the "Conversation date" line (v5).
 _RELATIVE_DATE_EXAMPLES = '"this year", "next year", "end of the year", "in June"'
@@ -115,7 +120,7 @@ _NO_TAXONOMY_STAGES = ('blocker', 'competitor')
 # PUBLIC ENTRY POINT
 # =============================================================================
 
-def build_context_layer(activity, target_stage):
+def build_context_layer(activity, target_stage, transcript=None):
     """
     Assemble the context block for one sub-call of the transcript_signals
     pipeline.
@@ -126,6 +131,8 @@ def build_context_layer(activity, target_stage):
         target_stage: One of _SUPPORTED_STAGES. Drives which canonical enums are
             exposed. 'pain_impact' is the merged stage (A2) and exposes the
             union of the pain and impact axes.
+        transcript: The analysed transcript (optional). Its export header,
+            when there is one, gives the Conversation date (v10).
 
     Returns:
         str: A ready-to-concatenate context block. Will be combined
@@ -154,7 +161,7 @@ def build_context_layer(activity, target_stage):
             f'Expected one of: {", ".join(_SUPPORTED_STAGES)}.'
         )
 
-    blocks = [_build_session_block(activity)]
+    blocks = [_build_session_block(activity, transcript)]
 
     # Taxonomy only for canonical-axis stages.
     # Blocker and competitor stages are intentionally session-only: no
@@ -173,7 +180,7 @@ def build_context_layer(activity, target_stage):
 # SESSION BLOCK -- Tenant + Account + Activity
 # =============================================================================
 
-def _build_session_block(activity):
+def _build_session_block(activity, transcript=None):
     """Render the commercial identity grounding block."""
     lines = ['SESSION CONTEXT']
 
@@ -200,7 +207,7 @@ def _build_session_block(activity):
     # without it the model must not guess one (every relative date -> null).
     activity_type = activity.get_activity_type_display() or 'Activity'
     lines.append(f'- Activity: {activity_type}')
-    activity_date = _resolve_activity_date(activity)
+    activity_date = _resolve_activity_date(activity, transcript)
     if activity_date:
         lines.append(
             f'- Conversation date: {activity_date} (the reference for EVERY '
@@ -242,19 +249,26 @@ def _resolve_tenant_name(client_id):
         return 'the seller'
 
 
-def _resolve_activity_date(activity):
+def _resolve_activity_date(activity, transcript=None):
     """
-    Best-effort human-readable date for the activity.
+    Best-effort date of the conversation -- the reference of every relative
+    date in the transcript.
 
     Priority:
-        1. completed_at  -- the activity actually took place.
-        2. scheduled_date -- the planned moment (date only; time of
+        1. the transcript's export header (D7 / TD-281, v10) -- the date the
+           meeting really took place, even when the transcript is imported
+           into an activity dated otherwise.
+        2. completed_at  -- the activity actually took place.
+        3. scheduled_date -- the planned moment (date only; time of
            day rarely helps signal extraction so it is omitted).
-        3. None -- the "Conversation date" line says it is not provided
+        4. None -- the "Conversation date" line says it is not provided
            (every relative date -> null, v5).
 
     ISO-8601 (YYYY-MM-DD) for unambiguous LLM parsing.
     """
+    transcript_date = header_date(transcript)
+    if transcript_date:
+        return transcript_date
     if activity.completed_at:
         return activity.completed_at.date().isoformat()
     if activity.scheduled_date:

@@ -1041,3 +1041,99 @@ class TestAlreadyExtractedSinglePipeline:
         assert body['code'] == 'ALREADY_EXTRACTED'
         assert body['data']['next_steps_run']['from_cache'] is True
         assert body['data']['qualification_run'] is None
+
+
+# =============================================================================
+# D7 / TD-281 — the reference date is the transcript header's date when there
+# is one, else the activity's date (shared session block, every stage)
+# =============================================================================
+
+HEADED_TRANSCRIPT = (
+    "Atelier business case SalesCommands – Logistix - 2026/10/20 14:00 CEST"
+    " - Transcript\n"
+    "Attendees\n"
+    "Isabelle Roux, Thomas Lefèvre, Sophie Garnier\n"
+    "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.\n"
+    "Sophie Garnier: Entendu, ce sera fait.\n"
+)
+
+HEADLESS_TRANSCRIPT = (
+    "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.\n"
+    "Sophie Garnier: Entendu, ce sera fait avant la fin de la semaine.\n"
+)
+
+
+@pytest.fixture
+def activity_scheduled_later(db, account, user_a):
+    """A DC activity planned on 2026-10-30 (never completed): its own date
+    differs from the date of the meeting the transcript records."""
+    import datetime
+
+    from app_modules.activities.models import Activity
+    from app_modules.activities.constants import ActivityType, ActivityStatus
+    from app_modules.decision_cycles.models import DecisionCycle
+
+    cycle = DecisionCycle(
+        account=account, owner=user_a, name='Header date cycle', is_active=True,
+    )
+    cycle.save(user=user_a, client_id=account.client_id)
+    a = Activity(
+        title='Business case workshop',
+        activity_type=ActivityType.MEETING,
+        status=ActivityStatus.PLANNED,
+        scheduled_date=datetime.date(2026, 10, 30),
+        account=account,
+        owner=user_a,
+        decision_cycle=cycle,
+    )
+    a.save(user=user_a, client_id=account.client_id)
+    return a
+
+
+@pytest.mark.django_db
+class TestConversationDateFromTranscriptHeader:
+
+    def _run(self, authed_api_a, activity, transcript):
+        with _apply_patches(_bypass_redis):
+            return authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': transcript,
+                    'run_qualification': True,
+                    'run_next_steps': True,
+                },
+                format='json',
+            )
+
+    @staticmethod
+    def _date_lines(fake_provider):
+        return {
+            line for call in fake_provider.calls
+            for line in call['user'].splitlines()
+            if line.startswith('- Conversation date:')
+        }
+
+    def test_header_date_is_the_reference_on_every_stage(
+        self, authed_api_a, activity_scheduled_later, patch_active_provider,
+        fake_provider,
+    ):
+        resp = self._run(authed_api_a, activity_scheduled_later, HEADED_TRANSCRIPT)
+
+        assert resp.status_code == 200
+        stages = {call['stage'] for call in fake_provider.calls}
+        assert 'next_steps' in stages and len(stages) > 1
+        lines = self._date_lines(fake_provider)
+        assert len(lines) == 1
+        assert lines.pop().startswith('- Conversation date: 2026-10-20 ')
+
+    def test_without_header_the_activity_date_is_kept(
+        self, authed_api_a, activity_scheduled_later, patch_active_provider,
+        fake_provider,
+    ):
+        resp = self._run(authed_api_a, activity_scheduled_later, HEADLESS_TRANSCRIPT)
+
+        assert resp.status_code == 200
+        lines = self._date_lines(fake_provider)
+        assert len(lines) == 1
+        assert lines.pop().startswith('- Conversation date: 2026-10-30 ')

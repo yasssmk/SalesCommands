@@ -108,7 +108,7 @@ class TestPeoplePersistence:
         # "registered on this activity", not "in this conversation" (TD-279);
         # v8 = no contact list at all (TD-279 B4b); v9 = People role list
         # offers UNKNOWN (TD-279 M).
-        assert result['run'].prompt_versions['context'] == 'v9'
+        assert result['run'].prompt_versions['context'] == 'v10'
         assert result['run'].status == AIPipelineStatus.SUCCESS
         people_prompt = fake_provider.calls_for('people')[0]['user']
         assert 'Extract PEOPLE signals' in people_prompt
@@ -647,7 +647,7 @@ class TestNoKnownPeopleListSentToTheLLM:
             PEOPLE_PROMPT_VERSION,
         )
         assert PEOPLE_PROMPT_VERSION == 'v9'
-        assert CONTEXT_VERSION == 'v9'
+        assert CONTEXT_VERSION == 'v10'
 
 
 # =============================================================================

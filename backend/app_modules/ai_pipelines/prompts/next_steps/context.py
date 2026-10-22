@@ -58,10 +58,12 @@ __all__ = ['CONTEXT_VERSION', 'build_context_layer']
 # v3 (TD-279 B3): the reused session block lists the contacts as "registered
 # on this activity", no longer "in this conversation".
 # v4 (TD-279 B4b): the reused session block no longer lists the contacts.
-CONTEXT_VERSION = 'v4'
+# v5 (D7 / TD-281): the reused session block takes the Conversation date from
+# the transcript's export header when there is one -- transcript_signals v10.
+CONTEXT_VERSION = 'v5'
 
 
-def build_context_layer(activity):
+def build_context_layer(activity, transcript=None):
     """
     Assemble the context block for the next-steps pipeline.
 
@@ -72,10 +74,12 @@ def build_context_layer(activity):
     Args:
         activity: app_modules.activities.models.Activity. Anchor for
             session grounding (tenant, account, activity).
+        transcript: The analysed transcript (optional). Its export header,
+            when there is one, gives the Conversation date (v5).
 
     Returns:
         str: A ready-to-concatenate context block. Will be combined
         with the request layer by PromptBuilder.assemble() to form the
         final user message.
     """
-    return _build_session_block(activity)
+    return _build_session_block(activity, transcript)

@@ -194,7 +194,7 @@ class NextStepsPipeline(BasePipeline):
         try:
             with transaction.atomic():
                 try:
-                    context_layer = build_context_layer(activity)
+                    context_layer = build_context_layer(activity, transcript)
                     request_layer = build_next_steps_request(transcript)
 
                     parsed, sub_call_meta = self._call_llm(

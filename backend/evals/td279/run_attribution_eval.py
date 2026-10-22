@@ -204,8 +204,9 @@ def _activity(tenant_name, conversation_date):
     )
 
 
-def _context(activity, stage):
-    context = ctx.build_context_layer(activity, target_stage=stage)
+def _context(activity, stage, transcript=None):
+    # Context v10 (D7): the Conversation date comes from the transcript header.
+    context = ctx.build_context_layer(activity, target_stage=stage, transcript=transcript)
     # Context v8: the registered contacts are never sent to the LLM.
     assert 'Criminelle' not in context
     return context
@@ -547,7 +548,7 @@ def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
     model = ai_config.PROVIDER_CONFIG[provider_key or ai_config.ACTIVE_PROVIDER]['model']
     transcript = TRANSCRIPTS[transcript_key].read_text(encoding='utf-8')
     activity = _activity(tenant_name, CONVERSATION_DATES[transcript_key])
-    context = _context(activity, stage)
+    context = _context(activity, stage, transcript)
     request = REQUEST_BUILDERS[stage](transcript)
     variant_dir = out_dir / name
     variant_dir.mkdir(parents=True, exist_ok=True)
