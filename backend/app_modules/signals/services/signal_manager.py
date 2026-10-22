@@ -353,6 +353,9 @@ class SignalManager:
                 SignalErrorMessages.NOT_PENDING_VALIDATED
             )
 
+        if isinstance(signal, NextStepSignal):
+            cls._check_next_step_has_one_activity(signal)
+
         signal.status       = SignalStatus.VALIDATED
         signal.validated_by = user
         signal.validated_at = timezone.now()
@@ -362,6 +365,26 @@ class SignalManager:
     # =========================================================================
     # REJECT
     # =========================================================================
+
+    @staticmethod
+    def _check_next_step_has_one_activity(signal):
+        """
+        Sprint Next steps (2.1) — a next step is validated by EXACTLY one
+        activity: created from it (Activity.next_step_signal) OR linked to it
+        (attached_activity), never none, never both. Every validation of a
+        next step comes through validate(): the validate endpoint and the
+        conversion / link services, which call it last inside their
+        transaction, so a refusal rolls their writes back.
+        """
+        created, linked = signal.has_created_activity, signal.has_linked_activity
+        if created and linked:
+            raise StandardizedValidationError(
+                SignalErrorMessages.NEXT_STEP_CREATED_AND_LINKED
+            )
+        if not (created or linked):
+            raise StandardizedValidationError(
+                SignalErrorMessages.NEXT_STEP_REQUIRES_ACTIVITY
+            )
 
     @classmethod
     def reject(cls, signal, user, reason: str = None) -> object:
@@ -426,6 +449,12 @@ class SignalManager:
                 SignalErrorMessages.ALREADY_PENDING
             )
 
+        # A resolved next step stays resolved: its activity is the reference.
+        if isinstance(signal, NextStepSignal) and signal.is_resolved:
+            raise StandardizedValidationError(
+                SignalErrorMessages.NEXT_STEP_RESOLVED
+            )
+
         signal.status       = SignalStatus.PENDING
         signal.validated_by = None
         signal.validated_at = None
@@ -475,6 +504,12 @@ class SignalManager:
                 SignalErrorMessages.NOT_EDITABLE.format(
                     status=signal.get_status_display()
                 )
+            )
+
+        # A resolved next step is frozen: the activity is the reference.
+        if isinstance(signal, NextStepSignal) and signal.is_resolved:
+            raise StandardizedValidationError(
+                SignalErrorMessages.NEXT_STEP_RESOLVED
             )
 
         # Snapshot original source_quote on first edit of an LLM-extracted signal

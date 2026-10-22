@@ -150,7 +150,7 @@ def _nextstep_payload(account, activity, contacts):
         'suggested_activity_type': ActivityType.EMAIL,
         'suggested_due_date': '2026-12-15',
         'suggested_contacts': [str(c.id) for c in contacts],
-        'source': SignalSource.MANUAL,
+        'source': SignalSource.LLM_EXTRACTED,
     }
 
 
@@ -159,7 +159,7 @@ def _mk_nextstep(account, activity, user, contacts):
         account=account, source_activity=activity,
         suggested_title='evolving',
         suggested_activity_type=ActivityType.EMAIL,
-        source=SignalSource.MANUAL,
+        source=SignalSource.LLM_EXTRACTED,
     )
     ns.save(user=user, client_id=account.client_id)
     ns.suggested_contacts.set(contacts)

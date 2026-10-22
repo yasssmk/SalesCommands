@@ -86,12 +86,16 @@ the same reasons as BlockerSignal:
     SIGNAL_CLUSTERS_CACHE_TAG). See
     app_modules/signals/signals/cache_invalidation.py.
 
-Lifecycle (inherited from BaseSignal)
--------------------------------------
-Standard SignalStatus flow:
-    MANUAL source    → status = VALIDATED at create
+Lifecycle (inherited from BaseSignal, narrowed in Sprint Next steps 2.1)
+-----------------------------------------------------------------------
+    MANUAL source    → REFUSED at create (save()): a next step typed by
+                       hand is an activity ("Set a next step manually").
     LLM_EXTRACTED    → status = PENDING at create; rep validates /
                        rejects via the dedicated endpoints.
+    VALIDATED        → only with EXACTLY one activity: created from it
+                       (Activity.next_step_signal) or linked to it
+                       (attached_activity) — SignalManager.validate.
+    Resolved (has its activity) → no reopen, no edit (SignalManager).
 
 The "validate" semantic on a NextStepSignal is the green light for
 the rep to materialise the suggestion into an actual Activity via the
@@ -131,6 +135,10 @@ from django.utils.translation import gettext_lazy as _
 
 from app_modules.activities.constants import ActivityType
 from core.client_scope import ClientScopeManager
+from core.error_messages import SignalErrorMessages
+from core.exceptions import StandardizedValidationError
+
+from ..constants import SignalSource
 
 from .base_model import BaseSignal
 
@@ -421,9 +429,40 @@ class NextStepSignal(BaseSignal):
 
         BaseSignal.save() then applies the shared business rules
         (MANUAL → VALIDATED + confidence cleared, LLM-create guard).
+
+        Sprint Next steps (2.1, PO decision): a next step is NEVER created
+        MANUAL — a next step typed by hand is an activity ("Set a next step
+        manually"). Refused here, before BaseSignal's rule 1 would make it
+        VALIDATED without any activity: the single point every creation goes
+        through (API → SignalManager.create → save, and any direct ORM save).
         """
+        if self._state.adding and self.source == SignalSource.MANUAL:
+            raise StandardizedValidationError(
+                SignalErrorMessages.NEXT_STEP_MANUAL_NOT_ALLOWED
+            )
         self.canonical_key = None
         super().save(*args, **kwargs)
+
+    # =========================================================================
+    # RESOLUTION — the activity a next step is resolved by (Sprint Next steps)
+    # =========================================================================
+
+    @property
+    def has_created_activity(self):
+        """An Activity was created from this next step
+        (Activity.next_step_signal)."""
+        return self.created_activities.exists()
+
+    @property
+    def has_linked_activity(self):
+        """This next step was linked to an existing activity."""
+        return self.attached_activity_id is not None
+
+    @property
+    def is_resolved(self):
+        """Resolved = it has its activity (created or linked); the activity
+        is then the reference: no reopen, no edit."""
+        return self.has_linked_activity or self.has_created_activity
 
     # =========================================================================
     # VALIDATION

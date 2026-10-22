@@ -55,18 +55,23 @@ def next_step_signal_pending(db, account, activity, user_a):
 
 @pytest.fixture
 def next_step_signal_validated(db, account, activity, user_a):
-    """VALIDATED NextStepSignal on tenant A."""
+    """VALIDATED NextStepSignal on tenant A — validated the only legitimate
+    way since Sprint Next steps 2.1: with its activity (here linked to an
+    existing one). MANUAL creation is refused for a next step."""
     from app_modules.signals.models import NextStepSignal
     from app_modules.signals.constants import SignalSource
+    from app_modules.signals.services import SignalManager
 
     signal = NextStepSignal(
         account=account,
         source_activity=activity,
         suggested_title='Send proposal',
         suggested_activity_type='EMAIL',
-        source=SignalSource.MANUAL,
+        source=SignalSource.LLM_EXTRACTED,
+        attached_activity=activity,
     )
     signal.save(user=user_a, client_id=account.client_id)
+    SignalManager.validate(signal, user=user_a)
     return signal
 
 

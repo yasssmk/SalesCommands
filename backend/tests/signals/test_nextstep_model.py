@@ -64,7 +64,7 @@ class TestNextStepSignalCanonicalKey:
             source_activity=activity,
             suggested_title='Envoyer récap chiffré',
             suggested_activity_type=ActivityType.EMAIL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.refresh_from_db()
@@ -97,7 +97,7 @@ class TestNextStepSignalClean:
             source_activity=None,
             suggested_title='orphan',
             suggested_activity_type=ActivityType.TASK,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         with pytest.raises(ValidationError) as exc:
             ns.full_clean()
@@ -110,7 +110,7 @@ class TestNextStepSignalClean:
             source_activity=activity,
             suggested_title='valid suggestion',
             suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         # full_clean() would also validate model fields — we only care about
         # the rule under test here, so we drive .clean() directly to isolate
@@ -132,7 +132,7 @@ class TestNextStepSignalSuggestedDueDate:
             suggested_title='no deadline',
             suggested_activity_type=ActivityType.EMAIL,
             suggested_due_date=None,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.refresh_from_db()
@@ -146,7 +146,7 @@ class TestNextStepSignalSuggestedDueDate:
             suggested_title='deadline set',
             suggested_activity_type=ActivityType.MEETING,
             suggested_due_date=target,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.refresh_from_db()
@@ -171,7 +171,7 @@ class TestNextStepSignalSuggestedContacts:
             source_activity=activity,
             suggested_title='Invite both',
             suggested_activity_type=ActivityType.MEETING,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.suggested_contacts.set([contact, contact_extra])
@@ -186,7 +186,7 @@ class TestNextStepSignalSuggestedContacts:
             source_activity=activity,
             suggested_title='no attendees',
             suggested_activity_type=ActivityType.TASK,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.refresh_from_db()
@@ -206,7 +206,7 @@ class TestNextStepSignalSuggestedContacts:
             source_activity=activity,
             suggested_title='attendee will be removed',
             suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.suggested_contacts.set([contact])
@@ -237,7 +237,7 @@ class TestNextStepSignalManagerDispatch:
                 'source_activity': activity,
                 'suggested_title': 'via SignalManager',
                 'suggested_activity_type': ActivityType.EMAIL,
-                'source': SignalSource.MANUAL,
+                'source': SignalSource.LLM_EXTRACTED,
             },
             user=user_a,
             client_id=account.client_id,
@@ -264,7 +264,7 @@ class TestNextStepSignalManagerDispatch:
                 'suggested_title': 'meeting with both',
                 'suggested_activity_type': ActivityType.MEETING,
                 'suggested_contacts': [contact, contact_extra],
-                'source': SignalSource.MANUAL,
+                'source': SignalSource.LLM_EXTRACTED,
             },
             user=user_a,
             client_id=account.client_id,
@@ -288,7 +288,7 @@ class TestNextStepSignalManagerDispatch:
             source_activity=activity,
             suggested_title='original',
             suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.suggested_contacts.set([contact])
@@ -313,17 +313,18 @@ class TestNextStepSignalManagerDispatch:
 # =============================================================================
 
 class TestNextStepSignalLifecycleAutoStatus:
-    """source value drives the initial status: MANUAL=VALIDATED, LLM_*=PENDING."""
+    """source value drives the initial status: LLM_* / EXTERNAL_RESEARCH =
+    PENDING. MANUAL is refused for a next step (Sprint Next steps 2.1 — see
+    test_nextstep_invariants.py), so it no longer starts VALIDATED."""
 
     @pytest.mark.parametrize(
         'source,expected_status',
         [
-            (SignalSource.MANUAL, SignalStatus.VALIDATED),
             (SignalSource.LLM_EXTRACTED, SignalStatus.PENDING),
             (SignalSource.LLM_MODIFIED, SignalStatus.PENDING),
             (SignalSource.EXTERNAL_RESEARCH, SignalStatus.PENDING),
         ],
-        ids=['manual->validated', 'llm_extracted->pending',
+        ids=['llm_extracted->pending',
              'llm_modified->pending', 'external_research->pending'],
     )
     def test_source_drives_initial_status(
@@ -363,9 +364,12 @@ class TestNextStepSignalLifecycleAutoStatus:
             ns.save(user=user_a, client_id=account.client_id)
         assert 'status' in exc.value.message_dict
 
-    def test_manual_source_clears_confidence(self, account, activity, user_a):
-        """Per BaseSignal.save() rule 1, MANUAL signals clear confidence even
-        if a value was passed in — manual signals are trusted by definition."""
+    def test_manual_source_is_refused_before_base_rule_1(self, account, activity, user_a):
+        """BaseSignal.save() rule 1 (MANUAL → VALIDATED, confidence cleared)
+        never applies to a next step: NextStepSignal.save() refuses MANUAL
+        first (Sprint Next steps 2.1) — nothing is written."""
+        from core.exceptions import StandardizedValidationError
+
         ns = NextStepSignal(
             account=account,
             source_activity=activity,
@@ -374,9 +378,9 @@ class TestNextStepSignalLifecycleAutoStatus:
             source=SignalSource.MANUAL,
             confidence=0.5,
         )
-        ns.save(user=user_a, client_id=account.client_id)
-        ns.refresh_from_db()
-        assert ns.confidence is None
+        with pytest.raises(StandardizedValidationError):
+            ns.save(user=user_a, client_id=account.client_id)
+        assert ns.pk is None or not NextStepSignal.objects.filter(pk=ns.pk).exists()
 
 
 # =============================================================================
@@ -405,7 +409,7 @@ class TestNextStepSignalActivityReverseFK:
             source_activity=activity,
             suggested_title='becomes an activity',
             suggested_activity_type=AT.MEETING,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
@@ -439,7 +443,7 @@ class TestNextStepSignalActivityReverseFK:
             source_activity=activity,
             suggested_title='will be deleted',
             suggested_activity_type=AT.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
@@ -523,7 +527,7 @@ class TestNextStepSignalCacheInvalidation:
             source_activity=activity,
             suggested_title='cache spy save',
             suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
@@ -546,7 +550,7 @@ class TestNextStepSignalCacheInvalidation:
             source_activity=activity,
             suggested_title='cluster guard',
             suggested_activity_type=ActivityType.MEETING,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
@@ -565,7 +569,7 @@ class TestNextStepSignalCacheInvalidation:
             source_activity=activity,
             suggested_title='delete spy',
             suggested_activity_type=ActivityType.TASK,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 

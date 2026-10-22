@@ -61,7 +61,7 @@ def _url_reject(pk):
 class TestCreateNextStepAPI:
     """POST /module-signals/next-steps/ — create-time business rules."""
 
-    def test_create_manual_next_step_forces_validated_status(
+    def test_create_next_step_echoes_the_structured_payload(
         self, authed_api_a, account, activity, contact, contact_extra,
     ):
         payload = {
@@ -71,7 +71,7 @@ class TestCreateNextStepAPI:
             'suggested_activity_type': ActivityType.EMAIL,
             'suggested_due_date': '2026-12-15',
             'suggested_contacts': [str(contact.id), str(contact_extra.id)],
-            'source': SignalSource.MANUAL,
+            'source': SignalSource.LLM_EXTRACTED,
         }
         response = authed_api_a.post(_url_list(), payload, format='json')
 
@@ -79,7 +79,9 @@ class TestCreateNextStepAPI:
         body = response.json()
         assert body['success'] is True
         data = body['data']
-        assert data['status'] == SignalStatus.VALIDATED
+        # MANUAL is refused for a next step (Sprint Next steps 2.1,
+        # test_nextstep_invariants.py): an API-created next step is PENDING.
+        assert data['status'] == SignalStatus.PENDING
         assert data['canonical_key'] is None
         # Shadow override: signal_category never serialized for NextStepSignal.
         assert 'signal_category' not in data
@@ -145,7 +147,7 @@ class TestCreateNextStepAPI:
             'account': str(account.id),
             'suggested_title': 'orphan',
             'suggested_activity_type': ActivityType.TASK,
-            'source': SignalSource.MANUAL,
+            'source': SignalSource.LLM_EXTRACTED,
         }
         response = authed_api_a.post(_url_list(), payload, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -160,7 +162,7 @@ class TestCreateNextStepAPI:
             'source_activity': str(activity.id),
             'suggested_title': '',
             'suggested_activity_type': ActivityType.EMAIL,
-            'source': SignalSource.MANUAL,
+            'source': SignalSource.LLM_EXTRACTED,
         }
         response = authed_api_a.post(_url_list(), payload, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -172,7 +174,7 @@ class TestCreateNextStepAPI:
             'account': str(account.id),
             'source_activity': str(activity.id),
             'suggested_title': 'missing type',
-            'source': SignalSource.MANUAL,
+            'source': SignalSource.LLM_EXTRACTED,
         }
         response = authed_api_a.post(_url_list(), payload, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -185,7 +187,7 @@ class TestCreateNextStepAPI:
             'source_activity': str(activity.id),
             'suggested_title': 'bad type',
             'suggested_activity_type': 'NOT_A_TYPE',
-            'source': SignalSource.MANUAL,
+            'source': SignalSource.LLM_EXTRACTED,
         }
         response = authed_api_a.post(_url_list(), payload, format='json')
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -199,7 +201,7 @@ class TestCreateNextStepAPI:
             'source_activity': str(activity.id),
             'suggested_title': 'no deadline',
             'suggested_activity_type': ActivityType.TASK,
-            'source': SignalSource.MANUAL,
+            'source': SignalSource.LLM_EXTRACTED,
         }
         response = authed_api_a.post(_url_list(), payload, format='json')
         assert response.status_code == status.HTTP_201_CREATED, response.content
@@ -214,7 +216,7 @@ class TestCreateNextStepAPI:
             'source_activity': str(activity.id),
             'suggested_title': 'no attendees',
             'suggested_activity_type': ActivityType.TASK,
-            'source': SignalSource.MANUAL,
+            'source': SignalSource.LLM_EXTRACTED,
         }
         response = authed_api_a.post(_url_list(), payload, format='json')
         assert response.status_code == status.HTTP_201_CREATED, response.content
@@ -236,14 +238,14 @@ class TestListRetrieveNextStepAPI:
         n1 = NextStepSignal(
             account=account, source_activity=activity,
             suggested_title='n1', suggested_activity_type=ActivityType.EMAIL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         n1.save(user=user_a, client_id=account.client_id)
 
         n2 = NextStepSignal(
             account=account, source_activity=activity,
             suggested_title='n2', suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         n2.save(user=user_a, client_id=account.client_id)
 
@@ -261,7 +263,7 @@ class TestListRetrieveNextStepAPI:
         n3 = NextStepSignal(
             account=account, source_activity=other_activity,
             suggested_title='n3-decoy', suggested_activity_type=AT.EMAIL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         n3.save(user=user_a, client_id=account.client_id)
 
@@ -292,7 +294,7 @@ class TestListRetrieveNextStepAPI:
             suggested_title='detail check',
             suggested_activity_type=ActivityType.MEETING,
             suggested_due_date=datetime.date(2027, 1, 10),
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.suggested_contacts.set([contact, contact_extra])
@@ -306,7 +308,7 @@ class TestListRetrieveNextStepAPI:
         assert data['suggested_title'] == 'detail check'
         assert data['suggested_activity_type'] == ActivityType.MEETING
         assert data['suggested_due_date'] == '2027-01-10'
-        assert data['status'] == SignalStatus.VALIDATED
+        assert data['status'] == SignalStatus.PENDING
         # Detail-only fields surface here (Detail extends List).
         assert 'validated_at' in data
         assert 'metadata' in data
@@ -323,7 +325,7 @@ class TestListRetrieveNextStepAPI:
             suggested_title='objective check',
             suggested_activity_type=ActivityType.CALL,
             suggested_objective='Confirm budget ownership before the demo.',
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
@@ -357,12 +359,16 @@ class TestValidateRejectNextStepAPI:
     def test_validate_pending_next_step_sets_validated_state(
         self, authed_api_a, account, activity, user_a,
     ):
+        # Sprint Next steps 2.1: a next step is validated with its activity
+        # (here an existing one it is linked to); without one → 400, see
+        # test_nextstep_invariants.py.
         pending = NextStepSignal(
             account=account, source_activity=activity,
             suggested_title='to validate',
             suggested_activity_type=ActivityType.EMAIL,
             source=SignalSource.LLM_EXTRACTED,
             confidence=0.7,
+            attached_activity=activity,
         )
         pending.save(user=user_a, client_id=account.client_id)
         assert pending.status == SignalStatus.PENDING
@@ -378,13 +384,18 @@ class TestValidateRejectNextStepAPI:
     def test_validate_already_validated_next_step_returns_400(
         self, authed_api_a, account, activity, user_a,
     ):
+        from app_modules.signals.services import SignalManager
+
+        # Validated the only legitimate way: with its activity (linked).
         validated = NextStepSignal(
             account=account, source_activity=activity,
             suggested_title='already validated',
             suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
+            attached_activity=activity,
         )
         validated.save(user=user_a, client_id=account.client_id)
+        SignalManager.validate(validated, user=user_a)
         assert validated.status == SignalStatus.VALIDATED
 
         response = authed_api_a.post(_url_validate(validated.id), {}, format='json')
@@ -429,7 +440,7 @@ class TestPatchNextStepAPI:
             account=account, source_activity=activity,
             suggested_title='original title',
             suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
@@ -453,7 +464,7 @@ class TestPatchNextStepAPI:
             account=account, source_activity=activity,
             suggested_title='evolving',
             suggested_activity_type=ActivityType.EMAIL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
         ns.suggested_contacts.set([contact])
@@ -480,7 +491,7 @@ class TestPatchNextStepAPI:
             suggested_title='dated',
             suggested_activity_type=ActivityType.TASK,
             suggested_due_date=datetime.date(2026, 12, 1),
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
@@ -509,7 +520,7 @@ class TestNextStepAPIMultiTenant:
             account=account, source_activity=activity,
             suggested_title='tenant-A only',
             suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
@@ -538,7 +549,7 @@ class TestNextStepAPIMultiTenant:
             account=account, source_activity=activity,
             suggested_title='tenant-A only',
             suggested_activity_type=ActivityType.CALL,
-            source=SignalSource.MANUAL,
+            source=SignalSource.LLM_EXTRACTED,
         )
         ns.save(user=user_a, client_id=account.client_id)
 
