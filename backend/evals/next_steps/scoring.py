@@ -209,6 +209,11 @@ def _raw_signals(parsed):
 
 
 def _filled(value):
+    """A new field the answer actually uses: a boolean only when true (v2
+    answers always carry carried_by_prospect), any other value when not
+    empty."""
+    if isinstance(value, bool):
+        return value
     return value not in (None, '', [], {})
 
 

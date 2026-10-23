@@ -207,10 +207,15 @@ def _create_case(key, tenant_name):
 # PROVIDERS
 # =============================================================================
 
-def _signal(title, type_, date, quote, confidence=0.9):
+def _signal(title, type_, date, quote, confidence=0.9, **v2):
+    """A dry-run answer entry, in the prompt v2 shape (14 fields)."""
     return {'suggested_title': title, 'suggested_activity_type': type_,
-            'suggested_due_date': date, 'suggested_objective': 'dry run',
-            'source_quote': quote, 'confidence': confidence, 'is_inferred': False}
+            'carried_by_prospect': False, 'suggested_due_date': date,
+            'suggested_date_text': '', 'suggested_decision_step': None,
+            'suggested_people_names': [], 'suggested_internal_names': [],
+            'suggested_objective': 'dry run', 'suggested_success_criterion': '',
+            'suggested_topics': '', 'source_quote': quote, 'confidence': confidence,
+            'is_inferred': False, **v2}
 
 
 # --dry-run answers: they exercise every metric (match, wrong date, duplicate,
@@ -219,7 +224,9 @@ def _signal(title, type_, date, quote, confidence=0.9):
 _DRY_RUN = {
     'atelier': [
         _signal('Envoyer le DPA et le rapport SOC 2', 'EMAIL', '2026-10-23',
-                "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît."),
+                "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.",
+                suggested_date_text='avant vendredi', suggested_decision_step='S2',
+                suggested_people_names=['Thomas'], suggested_internal_names=['Sophie']),
         _signal('Organiser le rendez-vous sécurité avec Laurent Petit', 'MEETING', '2026-11-03',
                 'Pour Laurent, privilégiez un mardi, il est en comité le reste de la semaine.'),
         _signal('Envoyer la première version du business case', 'TASK', '2026-10-30',
@@ -286,6 +293,10 @@ def _stored(signal):
         'decision_cycle_set': signal.decision_cycle_id is not None,
         'suggested_decision_step': (signal.suggested_decision_step.stage
                                     if signal.suggested_decision_step_id else None),
+        'suggested_date_text': signal.suggested_date_text,
+        # People linked by the server (3.4); the names it could not link stay
+        # in suggested_people_names.
+        'suggested_people': sorted(p.full_name for p in signal.suggested_people.all()),
         'suggested_people_names': signal.suggested_people_names,
         'suggested_internal_names': signal.suggested_internal_names,
         'suggested_topics': signal.suggested_topics,
@@ -341,7 +352,7 @@ def run_variant(key, n, out_dir, dry_run, tenant_name, forced_key=None):
             raise _failure(run)
         meta = {k: sub_call.get(k) for k in (
             'attempt', 'duration_ms', 'input_tokens', 'output_tokens', 'reasoning_tokens',
-            'model_used', 'emitted_count', 'dropped_by_safety_filter')}
+            'model_used', 'emitted_count', 'dropped_by_safety_filter', 'persist_counts')}
         # The raw answer the pipeline parsed (last attempt, same parser).
         parsed = PromptBuilder.parse_response(recorder.calls[-1]['raw_response'])
         return parsed, meta, {'persisted': stored, 'run_status': run.status}

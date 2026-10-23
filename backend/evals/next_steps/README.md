@@ -128,6 +128,9 @@ mais ne compte pas dans le rappel. La version prise en compte est celle du run
 | `fusions` / `fusion_detail` / `<id>_absorbed_by` | **fusion** : un next step apparié à un attendu X, dont la citation est la preuve (`quote_match`) d'un **autre** attendu Y **absent** de l'appel. Y a été absorbé par X (`X<-Y`). Si Y est présent, la citation est seulement partagée et ce n'est pas une fusion. Cas de la ligne de base : D absorbé par F, `F<-D` |
 | `emitted` / `persisted` | signaux de la réponse brute / stockés après filtre et extracteur |
 | `new_<champ>`, `<id>_carried_ok`, `people_names_not_in_transcript` | nouveaux champs du 1.1 (étape, personnes, sujets, critère, `carried_by_prospect`) : **N/A sur la ligne de base**, car le prompt v1 ne les émet pas ; ils sont comptés dès que le prompt les émet |
+| `meta.persist_counts` (dans `call_NN.json`) | compteurs de l'extracteur (3.4) : repères d'étape inconnus, doublons écartés dans la réponse, noms prospect liés à un People / gardés comme noms |
+| `persisted[].suggested_people` / `suggested_people_names` | People liés par le serveur / noms non liés (aucun ou ambigu). ⚠️ L'éval ne lance pas l'étape People : aucun PeopleSignal n'existe, donc tous les noms restent des noms ; le lien est prouvé par `tests/ai_pipelines/test_next_step_extractor_v2_fields.py` |
+| `new_carried_by_prospect` | nombre de next steps à **true** (un `false` ne compte pas : une réponse v2 porte toujours le champ) |
 | `prompt_leaks` | passages des transcriptions d'éval (suites de 5 mots, noms) trouvés dans le prompt **hors** de la transcription : doit être 0 |
 | `duration_ms` / `wall_ms` / `error_type` | durée de l'appel réussi / durée réelle, erreurs comprises / type d'erreur (timeout, parsing, troncature, refus, provider) |
 

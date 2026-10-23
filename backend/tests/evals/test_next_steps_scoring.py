@@ -395,3 +395,14 @@ def test_the_v1_and_the_final_version_are_two_distinct_items():
         transcript=_transcript('atelier'), prompt_version='v1')
     assert (m['I_present'], m['I_type_ok'], m['I_date_in_window']) == (True, True, True)
     assert (m['C_vendeur_present'], m['C_vendeur_absorbed_by'], m['unmatched']) == (False, '', 0)
+
+
+def test_a_false_flag_is_not_counted_as_a_filled_new_field():
+    """v2 answers always carry carried_by_prospect: only true counts."""
+    raw = [_ns('Envoyer le DPA', carried_by_prospect=False),
+           _ns('Isabelle présente au contrôleur de gestion', carried_by_prospect=True)]
+    m = scoring.score_call(
+        persisted=raw, parsed={'signals': raw},
+        items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
+        transcript=_transcript('atelier'), prompt_version='v2')
+    assert m['new_carried_by_prospect'] == 1
