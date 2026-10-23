@@ -294,4 +294,4 @@ class TestPromptsWithoutReferences:
         assert PEOPLE_PROMPT_VERSION == 'v9'
         assert BLOCKER_PROMPT_VERSION == 'v4'
         assert CONTEXT_VERSION == 'v10'
-        assert next_steps_context.CONTEXT_VERSION == 'v5'
+        assert next_steps_context.CONTEXT_VERSION == 'v6'   # v6: decision cycle block (3.2)

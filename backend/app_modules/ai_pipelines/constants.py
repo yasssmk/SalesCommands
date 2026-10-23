@@ -219,6 +219,16 @@ TRANSCRIPT_HEADER_DATE_PATTERN = (
 
 
 # =============================================================================
+# NEXT STEPS CONTEXT -- DECISION CYCLE (Sprint Next steps 3.2, context v6)
+# =============================================================================
+
+# Reference of a decision-cycle step in the next_steps context ("S4" = the
+# step of order 4): unique within a cycle, stable, short. The server maps a
+# reference the model returns back to the step through the same format.
+NEXT_STEPS_STEP_REF_FORMAT = 'S{order}'
+
+
+# =============================================================================
 # PEOPLE ROLE IN THE PROMPT PACKS (prep_call / deal_health)
 # =============================================================================
 

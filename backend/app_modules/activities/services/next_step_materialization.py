@@ -124,29 +124,44 @@ def next_step_cycle_default(signal, account):
     return None
 
 
-def current_decision_step(cycle):
+def decision_steps_state(cycle):
     """
-    The CURRENT step of `cycle`: the first step (by order) whose derived
-    status is not VALIDATED — the shared definition of DecisionStep.is_current
-    (StepStatusDerivationService + CycleAggregationService._compute_progress).
-    None when the cycle has no steps or all are validated.
+    The steps of `cycle` by order, as [(step, derived status, is_current)]:
+    the status derived from the step's activities (StepStatusDerivationService)
+    and the CURRENT mark — the first step whose derived status is not
+    VALIDATED, the shared definition of DecisionStep.is_current
+    (CycleAggregationService._compute_progress). [] without steps.
     """
+    from app_modules.decision_cycles.constants import DecisionStepStatus
     from app_modules.decision_cycles.models import DecisionStep
     from app_modules.decision_cycles.services import (
         CycleAggregationService,
         StepStatusDerivationService,
     )
 
-    steps = list(
-        DecisionStep.objects.filter(cycle=cycle).prefetch_related('activities')
+    steps = sorted(
+        DecisionStep.objects.filter(cycle=cycle).prefetch_related('activities'),
+        key=lambda s: s.order,
     )
     if not steps:
-        return None
+        return []
     derived = StepStatusDerivationService().derive_bulk(steps)
     current_order = CycleAggregationService._compute_progress(
         steps, derived
     ).get('current_step_order')
-    return next((s for s in steps if s.order == current_order), None)
+    return [
+        (s, derived.get(s.id, {}).get('status', DecisionStepStatus.NOT_STARTED),
+         s.order == current_order)
+        for s in steps
+    ]
+
+
+def current_decision_step(cycle):
+    """
+    The CURRENT step of `cycle` (decision_steps_state). None when the cycle
+    has no steps or all are validated.
+    """
+    return next((s for s, _status, current in decision_steps_state(cycle) if current), None)
 
 
 def next_step_step_default(signal, cycle):

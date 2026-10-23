@@ -107,8 +107,9 @@ class TestConversationDate:
         # of the Conversation date.
         assert CONTEXT_VERSION == 'v10'
 
-    def test_next_steps_context_version_is_v5(self):
-        assert next_steps_context.CONTEXT_VERSION == 'v5'
+    def test_next_steps_context_version(self):
+        # v5: the header date (D7); v6: + the decision cycle block (Next steps 3.2).
+        assert next_steps_context.CONTEXT_VERSION == 'v6'
 
     @pytest.mark.parametrize('stage', PIPELINE_STAGES)
     def test_dated_activity_gives_the_reference_for_relative_dates(self, stage, activity):
