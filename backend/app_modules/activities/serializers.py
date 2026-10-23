@@ -14,6 +14,7 @@ from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from end_users.models import User
 from django.db import transaction
+from django.utils import timezone
 
 from app_modules.notifications.models import NotificationCategory
 from app_modules.notifications.services import NotificationService
@@ -33,6 +34,14 @@ from .services.next_step_materialization import (
 # ============================================================================
 # HELPER SERIALIZERS
 # ============================================================================
+
+def _activity_reference_date(activity):
+    """ISO date an activity took place: completed_at, else scheduled_date,
+    else due_date (None without any)."""
+    if activity.completed_at:
+        return timezone.localtime(activity.completed_at).date().isoformat()
+    date = activity.scheduled_date or activity.due_date
+    return date.isoformat() if date else None
 
 class ActivityAccountSerializer(serializers.ModelSerializer):
     """Minimal account serializer for activity responses."""
@@ -440,6 +449,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     completed_by_name = serializers.SerializerMethodField(read_only=True)
     campaign_detail = serializers.SerializerMethodField(read_only=True)
     source_activity_detail = serializers.SerializerMethodField(read_only=True)
+    next_step_signal_detail = serializers.SerializerMethodField(read_only=True)
     no_answer_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
@@ -491,6 +501,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
             # AI suggestion provenance
             'next_step_signal',
+            'next_step_signal_detail',
 
             # Campaign retry tracking
             'no_answer_count',
@@ -614,6 +625,38 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             }
 
         return None
+
+    def get_next_step_signal_detail(self, obj):
+        """
+        Provenance of an activity CREATED from a next step (Sprint Next steps
+        2.5 — "From next step" line of the Context section): the next step's
+        title and the conversation it came from. None without an origin next
+        step (never created from one, or the next step was deleted —
+        SET_NULL).
+
+        Reads the FKs directly (at most two queries), never an annotation or
+        a prefetch: the detail endpoint's get_object()
+        (permissions/mixins.py) refetches the row without the retrieve
+        select_related.
+        """
+        if not obj.next_step_signal_id:
+            return None
+        signal = obj.next_step_signal
+        if signal is None:
+            return None
+        source = signal.source_activity
+        return {
+            'id':    str(signal.id),
+            'title': signal.suggested_title,
+            'source_activity': (
+                {
+                    'id':    str(source.id),
+                    'title': source.title,
+                    'date':  _activity_reference_date(source),
+                }
+                if source is not None else None
+            ),
+        }
     
     def get_next_activity_info(self, obj):
         if obj.decision_cycle_id:
