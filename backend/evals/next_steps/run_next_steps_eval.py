@@ -148,8 +148,11 @@ def _use_tenant_name(client_id, tenant_name):
 
 
 def _create_case(key, tenant_name):
-    """Tenant, rep, account Logistix, then the conversation with its contact
-    and its decision cycle (auto-created steps) by create_with_entities."""
+    """Tenant, rep, account Logistix, then the case's activities by
+    create_with_entities: its prior activities (COMPLETED, expected.json
+    prior_activities), then the conversation with its contact. The FIRST
+    activity creates the decision cycle inline (auto-created steps), the
+    next ones are put on its steps."""
     from app_modules.accounts.models import CompanyAccount
     from app_modules.activities.services.activity_creation_service import (
         ActivityCreationService,
@@ -166,24 +169,34 @@ def _create_case(key, tenant_name):
                                role=role, is_active=True)
     account = CompanyAccount(company_name='Logistix', has_buying_decision=True)
     account.save(user=user, client_id=tenant.id)
-    created = ActivityCreationService(user, tenant.id).create_with_entities(
-        activity_data={
-            'account_id': str(account.id),
-            'title': case['activity_title'],
-            'activity_type': ActivityType.MEETING,
-            'status': ActivityStatus.COMPLETED,
-            'scheduled_date': case['conversation_date'],
-        },
-        inline_contact=dict(case['contact']),
-        inline_cycle={'name': f'Logistix — {case["activity_title"]}'},
-        inline_step_stage=case['dc_stage'],
-    )
+    service = ActivityCreationService(user, tenant.id)
+    cycle = None
+
+    def create(title, activity_type, date, stage, **inline):
+        nonlocal cycle
+        data = {'account_id': str(account.id), 'title': title, 'activity_type': activity_type,
+                'status': ActivityStatus.COMPLETED, 'scheduled_date': date}
+        if cycle is None:
+            created = service.create_with_entities(
+                activity_data=data, inline_cycle={'name': f'Logistix — {case["activity_title"]}'},
+                inline_step_stage=stage, **inline)
+            cycle = created['cycle']
+        else:
+            data.update(decision_cycle_id=str(cycle.id),
+                        decision_step_id=str(cycle.steps.get(stage=stage).id))
+            created = service.create_with_entities(activity_data=data, **inline)
+        return created['activity']
+
+    for prior in case.get('prior_activities', []):
+        create(prior['title'], prior['activity_type'], prior['date'], prior['dc_stage'])
+    activity = create(case['activity_title'], ActivityType.MEETING, case['conversation_date'],
+                      case['dc_stage'], inline_contact=dict(case['contact']))
     _use_tenant_name(tenant.id, tenant_name)
-    activity = created['activity']
-    steps = list(created['cycle'].steps.order_by('order').values_list('stage', flat=True))
+    steps = list(cycle.steps.order_by('order').values_list('stage', flat=True))
     return user, activity, {
         'decision_cycle_steps': steps,
         'conversation_step': activity.decision_step.stage,
+        'prior_activities': [p['title'] for p in case.get('prior_activities', [])],
     }
 
 

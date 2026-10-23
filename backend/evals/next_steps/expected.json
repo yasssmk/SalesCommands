@@ -9,7 +9,28 @@
         "first_name": "Isabelle",
         "last_name": "Roux"
       },
-      "dc_stage": "BUSINESS_CASE"
+      "dc_stage": "BUSINESS_CASE",
+      "prior_activities": [
+        {
+          "title": "Premier échange",
+          "activity_type": "CALL",
+          "date": "2026-10-01",
+          "dc_stage": "QUALIFICATION"
+        },
+        {
+          "title": "Démo SalesCommands",
+          "activity_type": "MEETING",
+          "date": "2026-10-14",
+          "dc_stage": "TECHNICAL_FIT"
+        },
+        {
+          "title": "Validation de la solution",
+          "activity_type": "MEETING",
+          "date": "2026-10-16",
+          "dc_stage": "SOLUTION_VALIDATION"
+        }
+      ],
+      "_doc": "prior_activities : activités COMPLETED créées AVANT la conversation par la création standard (la première crée le cycle inline, les suivantes y sont rattachées sur leur étape) -- S1 à S3 validées, la conversation sur S4 = étape courante (cas réaliste)."
     },
     "logistix": {
       "file": "../td279/transcript_logistix.txt",

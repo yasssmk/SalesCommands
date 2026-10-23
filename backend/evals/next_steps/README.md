@@ -60,6 +60,14 @@ python evals/next_steps/run_next_steps_eval.py --dry-run --n 2
 | `atelier` | `../td279/transcript_atelier.txt` | 2026-10-20 | BUSINESS_CASE | A, B, C_prospect, C_vendeur (+ C_suivi, I, J, informatifs) |
 | `logistix` | `../td279/transcript_logistix.txt` | 2026-10-14 | QUALIFICATION | D (+ E, F, G, H, informatifs) |
 
+Le cas **atelier** est réaliste : trois activités COMPLETED sont créées avant
+la conversation par la création standard (`expected.json` `prior_activities`),
+sur S1 Qualification, S2 Technical Fit et S3 Solution Validation. La première
+crée le cycle inline, les suivantes y sont rattachées. S1 à S3 sont donc
+validées, et la conversation est sur S4 Business Case, qui est aussi l'étape
+courante : le contexte v6 porte `"current":true,"conversation":true` sur S4.
+Logistix a une seule activité, la conversation, sur S1.
+
 ## Vérité de référence (`expected.json`, à valider par le PO)
 
 | Id | Attendu | Requis à partir de | Types acceptés | Fenêtre de date (bornes incluses) |
