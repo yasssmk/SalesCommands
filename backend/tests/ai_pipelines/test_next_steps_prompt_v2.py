@@ -159,3 +159,37 @@ def test_an_answer_with_the_v2_fields_is_still_persisted(
     [signal] = NextStepsPipeline().run(transcript=TRANSCRIPT, activity=activity, user=user_a,
                                        client_id=account.client_id)['signals']
     assert signal.suggested_title == 'Relire la revue'
+
+
+class TestPoReviewCorrections:
+    """PO review of the v2 text (before any v2 measure): same version v2."""
+
+    def test_rule_3_an_unstated_follow_up_is_inferred(self, sent):
+        user = _flat(sent['user'])
+        assert ('a CALL only when the transcript explicitly plans that call, '
+                'with `is_inferred`: false') in user
+        assert ('a follow-up the transcript does not explicitly state is inferred: '
+                '`is_inferred`: true, its confidence set per the EPISTEMIC FILTER') in user
+
+    @pytest.mark.parametrize('mapping', [
+        'a qualification step for a first contact or a discovery',
+        'a technical fit step for integration, security, technical requirements or questionnaires',
+        'a solution validation step for a demo, a trial or a pilot',
+        'a business case step for value, ROI, pricing or budget',
+        'a closing step for a negotiation, procurement, the contract or the signature',
+    ])
+    def test_rule_4_maps_the_five_generic_steps(self, sent, mapping):
+        assert mapping in _flat(sent['user'])
+
+    def test_every_free_text_in_the_transcript_language(self, sent):
+        user = _flat(sent['user'])
+        assert ('Write every free text -- `suggested_title`, `suggested_objective`, '
+                '`suggested_topics`, `suggested_success_criterion` -- in the language of '
+                'the transcript') in user
+        assert '`source_quote` and `suggested_date_text` stay verbatim' in user
+
+    def test_still_version_v2(self):
+        from app_modules.ai_pipelines.prompts.next_steps.next_steps_v2 import (
+            NEXT_STEPS_PROMPT_VERSION,
+        )
+        assert NEXT_STEPS_PROMPT_VERSION == 'v2'

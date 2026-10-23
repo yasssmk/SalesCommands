@@ -18,15 +18,21 @@ What v2 changes (PO rules, Sprint Next steps 3.3)
   c) A step of the prospect's own internal process -> a TASK with
      `carried_by_prospect` true and the stated deadline, PLUS a seller
      follow-up (a CALL only when explicitly planned, else a TASK titled as a
-     follow-up).
+     follow-up -- a follow-up not explicitly said is `is_inferred` true).
   d) New fields: `suggested_decision_step` (a `ref` of the context, chosen
-     from the CONTENT of the action with the `conversation` / `current`
-     marks; null when none clearly matches), `suggested_people_names`
-     (prospect side, as written), `suggested_internal_names` (seller side),
-     `suggested_topics`, `suggested_success_criterion` (only when said or
-     deducible from what is said, else "").
+     from the CONTENT of the action -- a correspondence covering the 5
+     generic steps -- with the `conversation` / `current` marks; null when
+     none clearly matches), `suggested_people_names` (prospect side, as
+     written), `suggested_internal_names` (seller side), `suggested_topics`,
+     `suggested_success_criterion` (only when said or deducible from what is
+     said, else "").
   e) The model never chooses an activity to link: the server ranks the
      candidates (signals/services/next_step_link_service.py, 2.3).
+  f) Every free text (title, objective, topics, success criterion) in the
+     language of the transcript (LANGUAGE paragraph).
+
+The PO review corrections (rule 3 is_inferred, rule 4 on the 5 generic
+steps, the LANGUAGE paragraph) came before any v2 measure: same version v2.
 
 No example comes from the eval transcripts (evals/next_steps leak guard,
 checked in tests/ai_pipelines/test_next_steps_prompt_v2.py). The v1 TD-5
@@ -212,24 +218,27 @@ EMISSION RULES
 3. A step of the PROSPECT's own internal process -> a TASK with
    `carried_by_prospect`: true (an internal approval, a legal review, a
    budget decision, a signature on their side), with the deadline they
-   stated as its date. PLUS a seller follow-up as a
-   SEPARATE next step, `carried_by_prospect`: false: a CALL only when the
-   transcript explicitly plans that call, otherwise a TASK whose title
+   stated as its date. PLUS a seller follow-up as a SEPARATE next step,
+   `carried_by_prospect`: false: a CALL only when the transcript explicitly
+   plans that call, with `is_inferred`: false; otherwise a TASK whose title
    starts with "Follow up on" in the transcript's language (e.g. French
    "Retour sur ..."), dated on or right after the prospect's deadline when
-   one is said. Every other next step has `carried_by_prospect`: false.
+   one is said -- a follow-up the transcript does not explicitly state is
+   inferred: `is_inferred`: true, its confidence set per the EPISTEMIC
+   FILTER. Every other next step has `carried_by_prospect`: false.
    EXAMPLE: "Our legal team must approve the terms before the 30th" ->
    "Legal approval of the terms" (TASK, carried_by_prospect: true, due the
    30th) AND "Follow up on the legal approval" (TASK, carried_by_prospect:
-   false).
+   false, is_inferred: true -- nobody said it).
 
 4. `suggested_decision_step` is the `ref` of the step of the DECISION
    CYCLE context the action belongs to, chosen from the CONTENT of the
-   action: a first contact or a discovery call belongs to a qualification
-   step, a product demonstration or a technical validation to a solution
-   validation step, a value or pricing justification to a business case
-   step, a negotiation or a signature to a closing step -- match the
-   content against the step NAMES. Use the marks: "conversation" is the
+   action, matched against the step NAMES of the context: a qualification
+   step for a first contact or a discovery; a technical fit step for
+   integration, security, technical requirements or questionnaires; a
+   solution validation step for a demo, a trial or a pilot; a business case
+   step for value, ROI, pricing or budget; a closing step for a
+   negotiation, procurement, the contract or the signature. Use the marks: "conversation" is the
    step of THIS conversation, "current" is the step the deal is at; an
    action that continues the work of the conversation usually stays on its
    step. null when no step clearly matches, or when the context shows no
@@ -283,6 +292,13 @@ EMISSION RULES
 
 8. If NO next-step evidence is present anywhere in the transcript, return
    exactly: {{"signals": []}}
+
+LANGUAGE
+Write every free text -- `suggested_title`, `suggested_objective`,
+`suggested_topics`, `suggested_success_criterion` -- in the language of the
+transcript. The examples of this prompt are in English: transpose them,
+never copy their language. `source_quote` and `suggested_date_text` stay
+verbatim.
 
 DATES
 {RELATIVE_DATE_RULE}
