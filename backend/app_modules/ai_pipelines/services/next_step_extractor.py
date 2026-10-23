@@ -44,6 +44,16 @@ deferred to the rep during validation (the Next Steps Tab UI in
 Sprint F6 exposes a multi-contact selector). Tracked as TD-7 in
 TECH_DEBT.md.
 
+Quote check (Sprint Next steps 3.6)
+----------------------------------
+With the transcript, each stored next step's source_quote (speaker label
+removed) is checked by people_evidence.check_quote_evidence -- the TD-279
+"quote found in the transcript" step, nothing of the role. Not found -> the
+next step is KEPT, metadata.evidence_check = {status: "quote_not_found",
+detail: {parts, parts_found}} (PeopleEvidenceStatus values: the front's
+PEOPLE_EVIDENCE_PILL map applies), counted (quote_not_found); a quote found
+leaves no mark. Never a deletion.
+
 Prompt v2 fields (Sprint Next steps 3.4)
 ---------------------------------------
   * suggested_date_text (truncated to the column), carried_by_prospect
@@ -106,7 +116,9 @@ from core.exceptions import StandardizedValidationError
 import re
 
 from ..constants import NEXT_STEP_DEDUP_KEY, NEXT_STEPS_STEP_REF_FORMAT
+from ..constants import PeopleEvidenceStatus
 from .participant_refs import resolve_people_signal_by_name
+from .people_evidence import check_quote_evidence
 from .safety_filter import passes_safety_filter, safe_float
 from .transcript_text import TranscriptText, normalize_text
 
@@ -216,7 +228,7 @@ class NextStepExtractor:
         transcript_text = TranscriptText(transcript) if transcript is not None else None
         self.last_persist_counts = counts = {
             'step_ref_unknown': 0, 'deduplicated': 0,
-            'people_linked': 0, 'people_unlinked': 0,
+            'people_linked': 0, 'people_unlinked': 0, 'quote_not_found': 0,
         }
         seen_keys = set()
         people_candidates = None   # read once, on the first prospect name
@@ -275,6 +287,14 @@ class NextStepExtractor:
             data['suggested_people_names'] = kept
             if linked:
                 data['suggested_people'] = linked
+
+            # --- 3.6: the quote checked against the transcript (TD-279 step
+            # a)); not found -> KEPT and marked, never dropped ---
+            if transcript_text is not None:
+                status, detail = check_quote_evidence(data['source_quote'], transcript_text)
+                if status != PeopleEvidenceStatus.OK:
+                    counts['quote_not_found'] += 1
+                    data['metadata'] = {'evidence_check': {'status': status.value, 'detail': detail}}
 
             if source_run is not None:
                 data['source_run'] = source_run

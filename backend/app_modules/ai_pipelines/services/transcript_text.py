@@ -138,6 +138,21 @@ class TranscriptText:
             return quote
         return quote[match.end():]
 
+    def quote_parts(self, quote):
+        """
+        The parts of a quote split on the speaker labels of THIS transcript
+        ("... le former. Isabelle Roux: Et si ..." -> two parts), each
+        stripped, empty ones dropped; [] for a non-string. A quote without
+        such a label is one part.
+        """
+        if not isinstance(quote, str):
+            return []
+        if not self.labels:
+            return [quote.strip()] if quote.strip() else []
+        pattern = '|'.join(re.escape(label) for label in sorted(self.labels, key=len, reverse=True))
+        parts = re.split(rf'(?:^|(?<=\s))(?:{pattern})\s?:\s+', quote)
+        return [part.strip() for part in parts if part.strip()]
+
     @property
     def has_speaker_labels(self):
         return bool(self.labels)
