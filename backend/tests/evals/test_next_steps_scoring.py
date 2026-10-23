@@ -468,3 +468,75 @@ def test_the_recap_shows_the_step_column():
                for x in lines)
     assert next(x for x in lines if x.startswith('| atelier | A |')).endswith(
         "| 1/1 {'TECHNICAL_FIT': 1} |")
+
+
+# =============================================================================
+# BILINGUAL MATCH -- titles of the real runs (v2 titles are in English)
+# =============================================================================
+
+# VERBATIM titles of the PO runs, as quoted by the PO.
+REAL_TITLES = [
+    # v2 run out/20261023-125420, logistix: the meeting with Isabelle, present
+    # in the 20 calls -- scored F (5/20 D) by the French-only rules.
+    ('logistix', 'Meet Isabelle Roux to review the business case', ['D']),
+    ('logistix', 'Schedule business case meeting with Isabelle Roux', ['D']),
+    # gpt-4o-mini v1 baseline, logistix/call_01: the merged one (F <- D).
+    ('logistix', 'Prepare business case for Isabelle', ['F']),
+    # Terra v1 run, atelier.
+    ('atelier', 'Envoyer le DPA et le rapport SOC 2 à Thomas', ['A']),
+]
+
+
+@pytest.mark.parametrize('transcript, title, expected', REAL_TITLES)
+def test_real_titles(transcript, title, expected):
+    assert _matching(title, transcript) == expected
+
+
+# English titles in the style of the v2 run (NOT verbatim: the PO's lists of
+# titles did not reach this session) -- one per item at least, and the
+# ambiguous pairs D/F and I/C_prospect.
+@pytest.mark.parametrize('transcript, title, expected', [
+    ('atelier', 'Send DPA and SOC 2 report to Thomas before Friday', ['A']),
+    ('atelier', 'Share hosting and compliance documents with Laurent', ['A']),
+    ('atelier', 'Schedule security review meeting with Laurent Petit', ['B']),
+    ('atelier', 'Hold security meeting with the CIO on a Tuesday', ['B']),
+    ('atelier', 'Isabelle presents business case to management controller and Marc', ['C_prospect']),
+    ('atelier', 'Internal validation of the business case by Isabelle', ['C_prospect']),
+    ('atelier', 'Send first version of the business case to Isabelle', ['C_vendeur']),
+    ('atelier', 'Draft the ROI business case', ['C_vendeur']),
+    ('atelier', 'Follow up on business case validation with Isabelle', ['C_suivi']),
+    ('atelier', 'Follow up on the DPA review', []),        # a follow-up of A, not C_suivi
+    ('atelier', 'Send final business case to Isabelle before Nov 15', ['I']),
+    ('atelier', 'Deliver the final version of the business case', ['I']),
+    # I vs C_prospect: presenting / the controller / Marc -> C_prospect.
+    ('atelier', 'Present final business case to the management controller', ['C_prospect']),
+    ('atelier', 'Isabelle presents the final business case to Marc', ['C_prospect']),
+    ('atelier', 'Launch pilot with Karim in January', ['J']),
+    ('atelier', 'Train Karim and the key account team', ['J']),
+    # D vs F: the ACTION decides.
+    ('logistix', 'Meeting with Isabelle Roux (CFO) on the business case', ['D']),
+    ('logistix', 'Present the business case to the CFO', ['D']),
+    ('logistix', 'Build ROI business case for Isabelle', ['F']),
+    ('logistix', 'Draft business case with Claire for Isabelle', ['F']),
+    # Meeting AND preparing in one title: a meeting -> D, never F (PO rule).
+    ('logistix', 'Schedule meeting with Isabelle Roux to build the business case', ['D']),
+    ('logistix', 'Send technical documentation to Thomas', ['E']),
+    ('logistix', 'Schedule security session with the IT director', ['G']),
+    ('logistix', 'Send SOC 2 questionnaire ahead of the security review', ['H']),
+])
+def test_english_titles(transcript, title, expected):
+    assert _matching(title, transcript) == expected
+
+
+def test_the_titles_report_lists_every_stored_title_with_its_items():
+    from evals.next_steps.run_next_steps_eval import _titles_report
+    records = [{'variant': 'logistix', 'persisted': [
+        _ns('Meet Isabelle Roux to review the business case', 'MEETING'),
+        _ns('Prepare business case for Isabelle', 'TASK'),
+        _ns('Commander des croissants', 'TASK'),
+    ]}, {'variant': 'logistix', 'persisted': [
+        _ns('Meet Isabelle Roux to review the business case', 'MEETING')]}]
+    lines = _titles_report(records)
+    assert "| Meet Isabelle Roux to review the business case | 2 | {'MEETING': 2} | D |" in lines
+    assert "| Prepare business case for Isabelle | 1 | {'TASK': 1} | F |" in lines
+    assert "| Commander des croissants | 1 | {'TASK': 1} | — (non apparié) |" in lines

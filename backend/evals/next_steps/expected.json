@@ -1,5 +1,5 @@
 {
-  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses). `required_from` : version du prompt next_steps à partir de laquelle l'attendu compte dans le rappel (null = toujours informatif). `quote_match.any_of` : mots-clés (même syntaxe) qui reconnaissent la citation-justification PROPRE à l'attendu — sert à détecter une FUSION. `date_window` null : aucune date attendue (date non mesurée). `expected_step` : nom d'étape attendu (PipelineStep, ex. BUSINESS_CASE), comparé au nom d'étape STOCKÉ (persisted[].suggested_decision_step) du premier signal apparié ; N/A sur la ligne de base v1, qui n'émet pas d'étape.",
+  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses). `required_from` : version du prompt next_steps à partir de laquelle l'attendu compte dans le rappel (null = toujours informatif). `quote_match.any_of` : mots-clés (même syntaxe) qui reconnaissent la citation-justification PROPRE à l'attendu — sert à détecter une FUSION. `date_window` null : aucune date attendue (date non mesurée). `expected_step` : nom d'étape attendu (PipelineStep, ex. BUSINESS_CASE), comparé au nom d'étape STOCKÉ (persisted[].suggested_decision_step) du premier signal apparié ; N/A sur la ligne de base v1, qui n'émet pas d'étape. Mots-clés BILINGUES (FR + EN) depuis le run v2 (titres en anglais) ; un attendu se distingue d'un voisin par l'ACTION (D = rencontrer, F = préparer : un titre « meeting … business case » est D).",
   "transcripts": {
     "atelier": {
       "file": "../td279/transcript_atelier.txt",
@@ -69,17 +69,25 @@
         "all_of": [
           [
             "dpa",
+            "data processing agreement",
             "soc 2",
             "soc2",
             "documents de securite",
             "documentation de securite",
             "rapport de securite",
-            "security doc",
+            "security doc*",
+            "security report",
             "hebergement",
-            "conformite"
+            "hosting",
+            "conformite",
+            "compliance"
           ]
         ],
-        "none_of": []
+        "none_of": [
+          "follow*",
+          "relanc*",
+          "suivi"
+        ]
       },
       "expected_types": [
         "EMAIL"
@@ -114,6 +122,7 @@
             "petit",
             "dsi",
             "cio",
+            "it director",
             "securite",
             "security"
           ],
@@ -121,24 +130,32 @@
             "rendez vous",
             "rdv",
             "reunion",
-            "meeting",
+            "meet*",
             "rencontr*",
             "session",
             "entretien",
+            "schedule*",
+            "hold*",
+            "workshop",
+            "call",
+            "appel*",
+            "visio",
             "revue",
             "review",
             "organis*",
             "planifi*",
-            "call",
-            "appel*"
+            "plan"
           ]
         ],
         "none_of": [
           "dpa",
+          "data processing agreement",
           "soc 2",
           "soc2",
           "document*",
-          "rapport*"
+          "rapport*",
+          "report*",
+          "questionnaire"
         ]
       },
       "expected_types": [
@@ -172,6 +189,8 @@
           [
             "controleur",
             "controle de gestion",
+            "controller",
+            "management controller",
             "marc",
             "interne",
             "internal"
@@ -214,22 +233,29 @@
           [
             "envoy*",
             "envoi",
-            "send",
-            "prepar*",
-            "redig*",
-            "premiere version",
-            "v1",
-            "draft",
-            "brouillon",
-            "ebauche",
+            "send*",
+            "share*",
             "partag*",
+            "deliver*",
+            "transmet*",
+            "transmit*",
+            "prepar*",
+            "build*",
+            "draft*",
+            "redig*",
+            "elabor*",
             "constru*",
-            "elabor*"
+            "ebauche",
+            "brouillon",
+            "premiere version",
+            "first version",
+            "v1"
           ]
         ],
         "none_of": [
           "controleur",
           "controle de gestion",
+          "controller",
           "marc",
           "final*"
         ]
@@ -266,8 +292,21 @@
             "follow*",
             "faire le point",
             "point d etape",
+            "retour sur",
             "verifi*",
             "check*"
+          ],
+          [
+            "business case",
+            "cas d affaires",
+            "roi",
+            "retour sur investissement",
+            "valid*",
+            "approv*",
+            "presentation",
+            "controleur",
+            "controller",
+            "marc"
           ]
         ],
         "none_of": []
@@ -306,22 +345,25 @@
             "roux",
             "daf",
             "cfo",
+            "finance",
             "directrice financiere",
-            "direction financiere"
+            "direction financiere",
+            "finance director"
           ],
           [
             "rendez vous",
             "rdv",
             "reunion",
-            "meeting",
+            "meet*",
             "rencontr*",
             "session",
             "entretien",
-            "voir",
-            "organis*",
-            "planifi*",
+            "schedule*",
+            "hold*",
+            "workshop",
             "call",
             "appel*",
+            "visio",
             "present*"
           ]
         ],
@@ -357,7 +399,8 @@
             "doc",
             "docs",
             "documentation",
-            "technical doc*"
+            "technical doc*",
+            "integration guide"
           ]
         ],
         "none_of": [
@@ -399,16 +442,32 @@
             "cas d affaires",
             "roi",
             "retour sur investissement"
+          ],
+          [
+            "prepar*",
+            "build*",
+            "draft*",
+            "redig*",
+            "elabor*",
+            "constru*",
+            "ebauche",
+            "brouillon"
           ]
         ],
         "none_of": [
           "rendez vous",
           "rdv",
           "reunion",
-          "meeting",
+          "meet*",
           "rencontr*",
           "session",
           "entretien",
+          "schedule*",
+          "hold*",
+          "workshop",
+          "call",
+          "appel*",
+          "visio",
           "present*"
         ]
       },
@@ -440,29 +499,37 @@
             "securite",
             "security",
             "dsi",
-            "cio"
+            "cio",
+            "it director"
           ],
           [
-            "session",
             "rendez vous",
             "rdv",
             "reunion",
-            "meeting",
+            "meet*",
             "rencontr*",
+            "session",
             "entretien",
+            "schedule*",
+            "hold*",
+            "workshop",
+            "call",
+            "appel*",
+            "visio",
             "revue",
             "review",
             "organis*",
             "planifi*",
-            "call",
-            "appel*"
+            "plan"
           ]
         ],
         "none_of": [
           "questionnaire",
           "soc 2",
           "soc2",
-          "document*"
+          "document*",
+          "rapport*",
+          "report*"
         ]
       },
       "expected_types": [
@@ -534,7 +601,10 @@
         "none_of": [
           "controleur",
           "controle de gestion",
-          "marc"
+          "controller",
+          "management controller",
+          "marc",
+          "present*"
         ]
       },
       "expected_types": [
@@ -569,7 +639,9 @@
             "formation",
             "former",
             "training",
-            "karim"
+            "train*",
+            "karim",
+            "onboard*"
           ]
         ],
         "none_of": []

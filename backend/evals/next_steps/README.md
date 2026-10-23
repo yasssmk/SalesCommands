@@ -94,6 +94,13 @@ mais ne compte pas dans le rappel. La version prise en compte est celle du run
 
 ### Règles de match (tolérantes, documentées)
 
+- **Mots-clés bilingues (FR + EN).** Depuis le prompt v2, les titres sont en anglais ; les premières règles, écrites sur des titres français, faussaient le récap du run v2 (D compté F, fausses fusions `F<-D`). Un attendu se distingue d'un voisin par l'**action** :
+  - D = rencontrer (`meet*`, `schedule*`, `hold*`, `rendez vous`, `rencontr*`…) ;
+  - F = préparer (`prepar*`, `build*`, `draft*`…) ;
+  - un titre qui contient une action de réunion est D, jamais F.
+  Les titres réels des runs sont figés dans `tests/evals/test_next_steps_scoring.py` (`REAL_TITLES`).
+- `titles.md` (`titles_rescored.md` après un `--rescore`) liste chaque titre stocké, par variante, avec son nombre d'occurrences, ses types et les attendus qu'il apparie. C'est le contrôle des règles sur un run réel : un titre légitime « non apparié », ou apparié au mauvais attendu, se voit tout de suite.
+
 - Le match se fait sur le **titre** stocké, car la citation est une *justification* et plusieurs next steps peuvent partager la même.
 - Les mots-clés sont comparés sans casse ni accents, la ponctuation valant un espace (« SOC-2 » donne « soc 2 »).
 - Un mot-clé est un **mot entier**, sauf s'il se termine par `*`, auquel cas c'est un préfixe : `rencontr*` couvre « rencontre » et « rencontrer », mais `marc` ne couvre pas « marché ».

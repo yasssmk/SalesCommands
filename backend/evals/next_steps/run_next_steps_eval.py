@@ -47,6 +47,8 @@ Output (one folder per run, see --out; a non-empty folder is refused):
   <variant>/call_<NN>.json   system + user prompt sent, raw response(s),
                              parsed JSON, stored next steps, metrics
   summary.csv / summary.md   one row per call + the recap
+  titles.md                  every stored title, its occurrences, types and
+                             the expected items it matches (rule check)
 
 Usage (from backend/, with OPENAI_API_KEY in the environment):
   python evals/next_steps/run_next_steps_eval.py --n 20                    # production (Terra)
@@ -394,6 +396,7 @@ def rescore(out_dir):
     if not rows:
         sys.exit(f'No call_NN.json under {out_dir} -- nothing to rescore.')
     _write_summary(out_dir, rows, models_used, versions, suffix='_rescored')
+    _write_titles(out_dir, suffix='_rescored')
 
 
 # =============================================================================
@@ -499,6 +502,39 @@ def _recap(rows, prompt_version):
     ]
 
 
+def _titles_report(records):
+    """Every stored title, per variant, with its occurrences, its types and
+    the expected items it matches -- to check the match rules on a real run
+    (titles<suffix>.md)."""
+    lines = ['# Next steps — titres stockés et attendus appariés', '']
+    for key in VARIANTS:
+        seen = {}
+        for record in records:
+            if record['variant'] != key:
+                continue
+            for signal in record.get('persisted') or []:
+                title = signal.get('suggested_title') or ''
+                entry = seen.setdefault(title, {'n': 0, 'types': [], 'items': [
+                    i['id'] for i in _items(key) if scoring.matches(signal, i)]})
+                entry['n'] += 1
+                entry['types'].append(signal.get('suggested_activity_type') or '')
+        if not seen:
+            continue
+        lines += [f'## {key}', '', '| titre stocké | occurrences | types | attendus appariés |',
+                  '|---|---|---|---|']
+        for title, entry in sorted(seen.items(), key=lambda kv: (-kv[1]['n'], kv[0])):
+            lines.append(f'| {title} | {entry["n"]} | {count(entry["types"])} | '
+                         f'{", ".join(entry["items"]) or "— (non apparié)"} |')
+        lines.append('')
+    return lines
+
+
+def _write_titles(out_dir, suffix=''):
+    records = list(load_records(out_dir, VARIANTS))
+    (out_dir / f'titles{suffix}.md').write_text('\n'.join(_titles_report(records)) + '\n',
+                                               encoding='utf-8')
+
+
 def _write_summary(out_dir, rows, models_used, versions, suffix=''):
     write_summary(out_dir, rows, title='Next steps — récap', models_used=models_used,
                   versions=versions, recap=_recap(rows, versions.get('next_steps')),
@@ -538,6 +574,7 @@ def main():
         transaction.set_rollback(True)
     _write_summary(out_dir, rows, {name: model for name in names},
                    NextStepsPipeline.PROMPT_VERSIONS)
+    _write_titles(out_dir)
 
 
 if __name__ == '__main__':
