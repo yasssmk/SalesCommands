@@ -179,9 +179,12 @@ class TestPromptStructureCapture:
         assert sys_prompt.strip()
         assert 'MEDDPICC' in sys_prompt
 
-    def test_temperature_is_zero(self):
+    def test_no_temperature_on_the_reasoning_model(self):
+        """Sprint Next steps 3.1: gpt-5.6-terra, reasoning medium -- no
+        temperature sent (test_next_steps_structured_output.py)."""
         calls = self._provider.calls_for('next_steps')
-        assert calls[0]['temperature'] == 0.0
+        assert calls[0]['temperature'] is None
+        assert calls[0]['extra']['reasoning_effort'] == 'medium'
 
     def test_user_prompt_contains_source_quote_justification_rule(self):
         """
