@@ -52,6 +52,11 @@ class TestExpected:
                 for i in ('E', 'F', 'G', 'H')} == {
             'E': (['EMAIL'], None), 'F': (['TASK'], None),
             'G': (['MEETING'], None), 'H': (['EMAIL'], None)}
+        # Atelier informative items (PO, after the Terra v1 run).
+        assert (ITEMS['I']['expected_types'], ITEMS['I']['required_from'],
+                ITEMS['I']['date_window'][1]) == (['EMAIL'], None, '2026-11-15')
+        assert (ITEMS['J']['expected_types'], ITEMS['J']['required_from'],
+                ITEMS['J']['date_window']) == (['TASK'], None, None)
         assert ITEMS['A']['expected_types'] == ['EMAIL']
         assert ITEMS['A']['date_window'][1] == '2026-10-23'          # avant vendredi
         assert scoring.in_window('2026-11-03', ITEMS['B']['date_window'])
@@ -108,8 +113,14 @@ class TestTolerantMatch:
         ('Isabelle présente le business case au contrôleur de gestion puis à Marc', ['C_prospect']),
         ('Envoyer une première version du business case', ['C_vendeur']),
         ('Préparer le business case (ROI)', ['C_vendeur']),
-        # The final version is not the v1 of next week.
-        ('Finaliser le business case', []),
+        # The final version is not the v1 of next week: it is I.
+        ('Finaliser le business case', ['I']),
+        ('Envoyer la version finale du business case à Isabelle', ['I']),
+        ('Send final business case before Nov 15', ['I']),
+        # Isabelle presenting the final version is C_prospect, not I.
+        ('Isabelle présente le business case final au contrôleur de gestion', ['C_prospect']),
+        ('Lancer le pilote avec Karim', ['J']),
+        ('Former Karim et son équipe', ['J']),
         ('Relancer Isabelle sur la validation du business case', ['C_suivi']),
         ('Merci', []),
     ])
@@ -372,3 +383,15 @@ def test_the_recall_follows_the_prompt_version():
     assert line('v1', '| atelier | C_suivi').startswith('| atelier | C_suivi (info) |')
     assert recall('v2') == '1/5'
     assert line('v2', '| atelier | C_suivi').startswith('| atelier | C_suivi |')
+
+
+def test_the_v1_and_the_final_version_are_two_distinct_items():
+    """A run emitting only the final version: I present, C_vendeur absent and
+    not absorbed (I's quote is its own)."""
+    m = scoring.score_call(
+        persisted=[_ns('Envoyer la version finale du business case', 'EMAIL', '2026-11-14',
+                       quote='Il me faut la version finale avant le quinze novembre')],
+        parsed=None, items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
+        transcript=_transcript('atelier'), prompt_version='v1')
+    assert (m['I_present'], m['I_type_ok'], m['I_date_in_window']) == (True, True, True)
+    assert (m['C_vendeur_present'], m['C_vendeur_absorbed_by'], m['unmatched']) == (False, '', 0)

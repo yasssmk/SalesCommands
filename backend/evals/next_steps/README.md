@@ -57,7 +57,7 @@ python evals/next_steps/run_next_steps_eval.py --dry-run --n 2
 
 | Variante | Transcription | Date (en-tête) | Étape DC de la conversation | Attendus |
 |---|---|---|---|---|
-| `atelier` | `../td279/transcript_atelier.txt` | 2026-10-20 | BUSINESS_CASE | A, B, C_prospect, C_vendeur (+ C_suivi, informatif) |
+| `atelier` | `../td279/transcript_atelier.txt` | 2026-10-20 | BUSINESS_CASE | A, B, C_prospect, C_vendeur (+ C_suivi, I, J, informatifs) |
 | `logistix` | `../td279/transcript_logistix.txt` | 2026-10-14 | QUALIFICATION | D (+ E, F, G, H, informatifs) |
 
 ## Vérité de référence (`expected.json`, à valider par le PO)
@@ -70,6 +70,8 @@ python evals/next_steps/run_next_steps_eval.py --dry-run --n 2
 | C_vendeur | TASK vendeur : v1 du business case « la semaine prochaine » | v1 | TASK, EMAIL ⚠️ | 2026-10-26 → 2026-11-01 |
 | C_suivi | suivi / relance de la validation du business case | **v2** (informatif en v1) | tous | 2026-10-20 → 2026-11-15 |
 | D | MEETING avec Isabelle Roux (DAF), au plus tard fin novembre | v1 | MEETING | 2026-10-14 → 2026-11-30 |
+| I | EMAIL : version finale du business case | jamais (informatif) | EMAIL | 2026-10-20 → 2026-11-15 |
+| J | TASK : pilote / formation avec Karim | jamais (informatif) | TASK | aucune date attendue |
 | E | EMAIL : documentation technique pour Thomas | jamais (informatif) | EMAIL | aucune date attendue |
 | F | TASK : business case pour Isabelle | jamais (informatif) | TASK | aucune date attendue |
 | G | MEETING : session sécurité avec le DSI | jamais (informatif) | MEETING | aucune date attendue |
@@ -100,7 +102,8 @@ mais ne compte pas dans le rappel. La version prise en compte est celle du run
 1. **C_vendeur** accepte EMAIL en plus de TASK (« on vous envoie une première version »). Faut-il TASK seul ?
 2. **C_suivi** : j'ai lu « plus un suivi » comme une relance de la validation du business case. Est-ce bien ça, ou bien le récapitulatif promis « ce soir » ? C_suivi reste informatif, il ne compte pas dans « attendus requis trouvés ».
 3. **B** : la fenêtre va du 2 au 6/11 (la semaine « dans deux semaines »). Faut-il exiger exactement le mardi 3/11 ?
-4. Côté logistix, les next steps légitimes sont maintenant des attendus **informatifs** (E à H) ; « non appariés » ne compte donc plus que le vrai bruit. Restent hors vérité, et comptés « non appariés » : la version finale du business case (atelier) et le récapitulatif.
+4. Les next steps légitimes sont maintenant des attendus **informatifs** : E à H côté logistix, I (version finale) et J (pilote avec Karim) côté atelier. « Non appariés » ne compte donc plus que le vrai bruit ; seul le récapitulatif reste hors vérité.
+6. La preuve propre de **I** (« version finale », « quinze novembre ») fait apparaître les fusions v1 ↔ version finale : une v1 justifiée par l'échéance du 15/11 quand la version finale manque donne `C_vendeur<-I`, et une version finale qui cite toute la phrase quand C_prospect manque donne `I<-C_prospect`. C'est voulu, c'est la règle « v1 ≠ version finale » du prompt v2.
 5. **C_prospect**, preuve propre : seulement la présentation (« contrôleur de gestion », « puis à Marc »). Avec « version finale / quinze novembre », la v1 vendeur qui cite l'échéance d'Isabelle compterait comme une fusion.
 
 ## Métriques (par appel dans `summary.csv`, agrégées sur N dans `summary.md`)

@@ -478,6 +478,82 @@
           "questionnaire"
         ]
       }
+    },
+    {
+      "id": "I",
+      "transcript": "atelier",
+      "required_from": null,
+      "label": "EMAIL : envoyer la version finale du business case, au plus tard le 15/11 (INFORMATIF)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "business case",
+            "cas d affaires",
+            "roi",
+            "retour sur investissement"
+          ],
+          [
+            "final*",
+            "version finale"
+          ]
+        ],
+        "none_of": [
+          "controleur",
+          "controle de gestion",
+          "marc"
+        ]
+      },
+      "expected_types": [
+        "EMAIL"
+      ],
+      "date_window": [
+        "2026-10-20",
+        "2026-11-15"
+      ],
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "version finale",
+          "quinze novembre",
+          "15 novembre"
+        ]
+      }
+    },
+    {
+      "id": "J",
+      "transcript": "atelier",
+      "required_from": null,
+      "label": "TASK : pilote / formation avec Karim (INFORMATIF)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "pilot*",
+            "formation",
+            "former",
+            "training",
+            "karim"
+          ]
+        ],
+        "none_of": []
+      },
+      "expected_types": [
+        "TASK"
+      ],
+      "date_window": null,
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "pilote",
+          "karim",
+          "le former"
+        ]
+      }
     }
   ]
 }
