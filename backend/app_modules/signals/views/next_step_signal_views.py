@@ -12,6 +12,9 @@ Cluster cache invalidation is intentionally left at the base default
 the NextStepSignal model docstring and signals/cache_invalidation.py.
 """
 
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
 from ..models import NextStepSignal
 from ..serializers import (
     NextStepSignalListSerializer,
@@ -19,6 +22,8 @@ from ..serializers import (
     NextStepSignalCreateSerializer,
     NextStepSignalUpdateSerializer,
 )
+from ..serializers.next_step_serializer import _compact_activity
+from ..services.next_step_link_service import link_candidates
 from .base_views import BaseSignalViewSet
 
 
@@ -73,3 +78,43 @@ class NextStepSignalViewSet(BaseSignalViewSet):
             'suggested_people__target_contact',
         )
         return qs
+
+    # =========================================================================
+    # LINK TO AN EXISTING ACTIVITY — candidates (Sprint Next steps 2.3)
+    # =========================================================================
+
+    @action(detail=True, methods=['get'], url_path='link-candidates')
+    def link_candidates(self, request, pk=None):
+        """
+        GET /next-steps/{id}/link-candidates/
+
+        The open activities of the next step's decision cycle it can be
+        linked to, ranked by NEXT_STEP_LINK_RANKING
+        (services/next_step_link_service.py), each with the values of the
+        ranking criteria; the first one is the "link" proposal.
+        get_object() keeps the tenant scope (another tenant → 404).
+        """
+        signal = self.get_object()
+        candidates = [
+            {
+                **_compact_activity(activity),
+                'decision_step': (
+                    {'id': str(activity.decision_step.id),
+                     'name': activity.decision_step.name}
+                    if activity.decision_step_id else None
+                ),
+                'shared_people_count': criteria['shared_people'],
+                'same_step':           criteria['same_step'],
+                'same_type':           criteria['same_type'],
+                'date_distance_days':  criteria['date_distance_days'],
+            }
+            for activity, criteria in link_candidates(signal)
+        ]
+        return Response({
+            'success': True,
+            'data': {
+                'proposed_activity_id': candidates[0]['id'] if candidates else None,
+                'candidates':           candidates,
+            },
+        })
+
