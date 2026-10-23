@@ -78,14 +78,17 @@ from django.db import transaction  # noqa: E402
 from app_modules.activities.constants import ActivityStatus, ActivityType  # noqa: E402
 from app_modules.ai_pipelines import config as ai_config  # noqa: E402
 from app_modules.ai_pipelines.constants import AIPipelineStatus  # noqa: E402
-from app_modules.ai_pipelines.pipelines.next_steps import NextStepsPipeline  # noqa: E402
-from app_modules.ai_pipelines.prompts.base import PromptBuilder, PromptParseError  # noqa: E402
-from app_modules.ai_pipelines.prompts.next_steps.context import build_context_layer  # noqa: E402
-from app_modules.ai_pipelines.prompts.next_steps.next_steps_v1 import (  # noqa: E402
+# The prompt builders AS THE PIPELINE IMPORTS THEM (its current request
+# version, v2 since 3.3) -- the preflight leak guard and prompt_<variant>.txt
+# then render exactly the prompt sent.
+from app_modules.ai_pipelines.pipelines.next_steps import (  # noqa: E402
+    NextStepsPipeline,
+    SYSTEM_PROMPT,
+    build_context_layer,
     build_next_steps_request,
 )
+from app_modules.ai_pipelines.prompts.base import PromptBuilder, PromptParseError  # noqa: E402
 from app_modules.ai_pipelines.prompts.transcript_signals import context as session_ctx  # noqa: E402
-from app_modules.ai_pipelines.prompts.transcript_signals.system import SYSTEM_PROMPT  # noqa: E402
 from app_modules.ai_pipelines.providers import (  # noqa: E402
     get_provider,
     provider_supports_response_schema,
