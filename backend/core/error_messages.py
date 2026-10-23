@@ -465,6 +465,18 @@ class SignalErrorMessages:
     NEXT_STEP_MANUAL_NOT_ALLOWED = _(
         "A next step cannot be created manually: create the activity instead."
     )
+    # Link to an existing activity (2.4): the target must be a link candidate
+    # (an open activity of the next step's decision cycle, not its own
+    # conversation) ...
+    NEXT_STEP_LINK_TARGET_INVALID = _(
+        "A next step can only be linked to an open activity of its decision "
+        "cycle."
+    )
+    # ... and only the fields of the differences screen can be updated.
+    NEXT_STEP_LINK_UPDATE_NOT_ALLOWED = _(
+        "Linking a next step can only update the activity type, dates, step, "
+        "objective, description and contacts."
+    )
 
     # -----------------------------------------------------------------
     # Legacy — kept for backward compatibility (ObjectiveSignal may

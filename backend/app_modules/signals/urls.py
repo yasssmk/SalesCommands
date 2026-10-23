@@ -283,6 +283,11 @@ def get_urlpatterns():
             NextStepSignalViewSet.as_view({'get': 'link_candidates'}),
             name='next-step-link-candidates',
         ),
+        path(
+            'next-steps/<uuid:pk>/attach-activity/',
+            NextStepSignalViewSet.as_view({'post': 'attach_activity'}),
+            name='next-step-attach-activity',
+        ),
 
         # =====================================================================
         # PEOPLE SIGNALS

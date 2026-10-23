@@ -1,6 +1,14 @@
 # app_modules/signals/services/next_step_link_service.py
 """
-Next step "link to an existing activity" candidates (Sprint Next steps 2.3).
+Next step "link to an existing activity" (Sprint Next steps 2.3 / 2.4).
+
+  * link_candidates   — the activities a next step can be linked to, ranked;
+  * link_differences  — what the next step proposes that differs from one of
+                        those activities (the differences screen), by section;
+  * attach_next_step  — the link itself, with the changes the rep chose.
+
+Candidates
+----------
 
 link_candidates(signal) — the OPEN activities (NON_TERMINAL_STATUSES) of the
 next step's decision cycle, same tenant, the next step's own conversation
@@ -20,13 +28,40 @@ next step's decision cycle, same tenant, the next step's own conversation
 Ties end on created_at then id — a stable order. The first candidate is the
 "link" proposal. A next step without a decision cycle has no candidate
 (next steps are DC-only).
+
+Differences (one dict per candidate; a section without difference is absent)
+-----------
+  activity_type / date / decision_step — single-choice fields:
+                    {current, proposed}; the proposed date field follows D6 on
+                    the activity's type (SCHEDULED_DATE_ACTIVITY_TYPES);
+  call_to_action / description — texts: {current, proposed} (the UI offers to
+                    append the proposal);
+  contacts        — {to_add}: the next step's contacts missing on the activity.
+
+Link (attach_next_step), in ONE transaction (the caller's)
+----
+  the `updates` the rep chose (NEXT_STEP_LINK_UPDATE_FIELDS only) are applied
+  through ActivityUpdateSerializer — same validations, campaign lock COND-1
+  included — no other field is touched; then attached_activity is set and the
+  signal validated LAST (SignalManager.validate: the 2.1 invariants), so any
+  refusal rolls the updates back.
 """
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 
-from app_modules.activities.constants import NON_TERMINAL_STATUSES
+from app_modules.activities.constants import (
+    NON_TERMINAL_STATUSES,
+    SCHEDULED_DATE_ACTIVITY_TYPES,
+)
+from core.error_messages import CoreErrorMessages, SignalErrorMessages
+from core.exceptions import StandardizedValidationError
 
-from ..constants import NEXT_STEP_LINK_RANKING
+from ..constants import (
+    NEXT_STEP_LINK_RANKING,
+    NEXT_STEP_LINK_UPDATE_FIELDS,
+    SignalStatus,
+)
 
 
 def _signal_contact_ids(signal):
@@ -74,17 +109,14 @@ _SORT_KEY = {
 }
 
 
-def link_candidates(signal):
-    """
-    The ranked open activities `signal` can be linked to, as
-    [(activity, criteria)], best first ([] without a decision cycle).
-    """
+def _candidate_activities(signal):
+    """The activities `signal` can be linked to (unranked): the open ones of
+    its decision cycle, same tenant, its own conversation excepted."""
     from app_modules.activities.models import Activity
 
     if signal.decision_cycle_id is None:
-        return []
-
-    activities = (
+        return Activity.objects.none()
+    return (
         Activity.objects
         .filter(
             client_id=signal.client_id,
@@ -92,6 +124,16 @@ def link_candidates(signal):
             status__in=NON_TERMINAL_STATUSES,
         )
         .exclude(id=signal.source_activity_id)
+    )
+
+
+def link_candidates(signal):
+    """
+    The ranked open activities `signal` can be linked to, as
+    [(activity, criteria)], best first ([] without a decision cycle).
+    """
+    activities = (
+        _candidate_activities(signal)
         .select_related('decision_step')
         .prefetch_related('contacts')
     )
@@ -108,3 +150,144 @@ def link_candidates(signal):
         pair[0].id,
     ))
     return ranked
+
+
+# =============================================================================
+# DIFFERENCES next step ↔ activity
+# =============================================================================
+
+def _signal_contacts(signal):
+    """The contacts the next step involves (its People's contacts + its
+    suggested contacts), ordered by name."""
+    contacts = {
+        p.target_contact.id: p.target_contact
+        for p in signal.suggested_people.all()
+        if p.target_contact_id
+    }
+    contacts.update({c.id: c for c in signal.suggested_contacts.all()})
+    return sorted(contacts.values(), key=lambda c: (c.last_name, c.first_name, str(c.id)))
+
+
+def _date_value(field, value):
+    return {'field': field, 'value': value.isoformat()} if value else None
+
+
+def _step_value(step):
+    return {'id': str(step.id), 'name': step.name} if step is not None else None
+
+
+def link_differences(signal, activity):
+    """What `signal` proposes that differs from `activity`, by section
+    (module docstring); {} when nothing differs."""
+    from app_modules.activities.services.next_step_materialization import (
+        next_step_objective,
+    )
+
+    differences = {}
+
+    if signal.suggested_activity_type != activity.activity_type:
+        differences['activity_type'] = {
+            'current':  activity.activity_type,
+            'proposed': signal.suggested_activity_type,
+        }
+
+    if signal.suggested_due_date:
+        current = (
+            _date_value('scheduled_date', activity.scheduled_date)
+            or _date_value('due_date', activity.due_date)
+        )
+        proposed = _date_value(
+            'scheduled_date'
+            if activity.activity_type in SCHEDULED_DATE_ACTIVITY_TYPES
+            else 'due_date',
+            signal.suggested_due_date,
+        )
+        if current != proposed:
+            differences['date'] = {'current': current, 'proposed': proposed}
+
+    proposed_step = signal.suggested_decision_step
+    if (
+        proposed_step is not None
+        and proposed_step.cycle_id == activity.decision_cycle_id
+        and proposed_step.id != activity.decision_step_id
+    ):
+        differences['decision_step'] = {
+            'current':  _step_value(activity.decision_step),
+            'proposed': _step_value(proposed_step),
+        }
+
+    for field, proposed_text in (
+        ('call_to_action', next_step_objective(signal)),
+        ('description',    signal.suggested_topics),
+    ):
+        current_text = getattr(activity, field) or ''
+        if proposed_text and proposed_text != current_text:
+            differences[field] = {'current': current_text, 'proposed': proposed_text}
+
+    on_activity = {c.id for c in activity.contacts.all()}
+    to_add = [c for c in _signal_contacts(signal) if c.id not in on_activity]
+    if to_add:
+        differences['contacts'] = {'to_add': [
+            {'id': str(c.id), 'first_name': c.first_name, 'last_name': c.last_name}
+            for c in to_add
+        ]}
+
+    return differences
+
+
+# =============================================================================
+# LINK — attach the next step to an existing activity
+# =============================================================================
+
+def attach_next_step(signal, activity_id, updates, request):
+    """
+    Link `signal` to the candidate activity `activity_id`, applying the
+    `updates` the rep chose (module docstring). MUST run inside the caller's
+    transaction: the signal is validated LAST so a refusal rolls everything
+    back.
+
+    Raises:
+        StandardizedValidationError — updates outside
+        NEXT_STEP_LINK_UPDATE_FIELDS, signal not PENDING, unknown /
+        other-tenant activity, activity not a link candidate, invalid
+        updates (ActivityUpdateSerializer), 2.1 invariants.
+    """
+    from app_modules.activities.models import Activity
+    from app_modules.activities.serializers import ActivityUpdateSerializer
+    from .signal_manager import SignalManager
+
+    updates = updates or {}
+    if not isinstance(updates, dict) or set(updates) - NEXT_STEP_LINK_UPDATE_FIELDS:
+        raise StandardizedValidationError(
+            SignalErrorMessages.NEXT_STEP_LINK_UPDATE_NOT_ALLOWED
+        )
+    if signal.status != SignalStatus.PENDING:
+        raise StandardizedValidationError(SignalErrorMessages.NOT_PENDING_VALIDATED)
+
+    try:
+        activity = Activity.objects.get(id=activity_id, client_id=signal.client_id)
+    except (Activity.DoesNotExist, DjangoValidationError, ValueError, TypeError):
+        raise StandardizedValidationError(CoreErrorMessages.OBJECT_NOT_FOUND)
+    if not _candidate_activities(signal).filter(id=activity.id).exists():
+        raise StandardizedValidationError(
+            SignalErrorMessages.NEXT_STEP_LINK_TARGET_INVALID
+        )
+
+    # The chosen changes only — contacts are ADDED to the current ones.
+    payload = {k: v for k, v in updates.items() if k != 'add_contact_ids'}
+    to_add = updates.get('add_contact_ids') or []
+    if to_add:
+        payload['contact_ids'] = [
+            str(pk) for pk in activity.contacts.values_list('id', flat=True)
+        ] + [str(pk) for pk in to_add]
+    if payload:
+        serializer = ActivityUpdateSerializer(
+            activity, data=payload, partial=True, context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+    signal.attached_activity = activity
+    signal.save(user=request.user)
+    return SignalManager.validate(signal, user=request.user)
+

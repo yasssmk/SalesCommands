@@ -677,3 +677,17 @@ NEXT_STEP_LINK_RANKING = (
     'same_type',
     'closest_date',
 )
+
+# The activity fields the rep may change when LINKING a next step to an
+# existing activity (attach-activity `updates`) — exactly the sections of the
+# differences screen. `add_contact_ids` ADDS contacts (never removes).
+NEXT_STEP_LINK_UPDATE_FIELDS = frozenset({
+    'activity_type',
+    'scheduled_date',
+    'scheduled_time',
+    'due_date',
+    'decision_step_id',
+    'call_to_action',
+    'description',
+    'add_contact_ids',
+})

@@ -12,8 +12,12 @@ Cluster cache invalidation is intentionally left at the base default
 the NextStepSignal model docstring and signals/cache_invalidation.py.
 """
 
+from django.db import transaction
 from rest_framework.decorators import action
 from rest_framework.response import Response
+
+from core.logging import ctx_from_request, get_logger
+from core.logging.audit import audit_log
 
 from ..models import NextStepSignal
 from ..serializers import (
@@ -23,8 +27,15 @@ from ..serializers import (
     NextStepSignalUpdateSerializer,
 )
 from ..serializers.next_step_serializer import _compact_activity
-from ..services.next_step_link_service import link_candidates
+from ..services.next_step_link_service import (
+    attach_next_step,
+    link_candidates,
+    link_differences,
+)
 from .base_views import BaseSignalViewSet
+
+
+logger = get_logger(__name__)
 
 
 class NextStepSignalViewSet(BaseSignalViewSet):
@@ -91,8 +102,12 @@ class NextStepSignalViewSet(BaseSignalViewSet):
         The open activities of the next step's decision cycle it can be
         linked to, ranked by NEXT_STEP_LINK_RANKING
         (services/next_step_link_service.py), each with the values of the
-        ranking criteria; the first one is the "link" proposal.
-        get_object() keeps the tenant scope (another tenant → 404).
+        ranking criteria AND its `differences` with the next step (2.4 — a
+        difference belongs to a (next step, activity) pair and the candidates
+        are exactly the valid link targets, so one call gives the UI the
+        list and every differences screen, nothing to recompute); the first
+        one is the "link" proposal. get_object() keeps the tenant scope
+        (another tenant → 404).
         """
         signal = self.get_object()
         candidates = [
@@ -107,6 +122,7 @@ class NextStepSignalViewSet(BaseSignalViewSet):
                 'same_step':           criteria['same_step'],
                 'same_type':           criteria['same_type'],
                 'date_distance_days':  criteria['date_distance_days'],
+                'differences':         link_differences(signal, activity),
             }
             for activity, criteria in link_candidates(signal)
         ]
@@ -117,4 +133,45 @@ class NextStepSignalViewSet(BaseSignalViewSet):
                 'candidates':           candidates,
             },
         })
+
+    @action(detail=True, methods=['post'], url_path='attach-activity')
+    @transaction.atomic
+    def attach_activity(self, request, pk=None):
+        """
+        POST /next-steps/{id}/attach-activity/  {activity_id, updates}
+
+        Link the next step to an existing candidate activity, applying the
+        changes the rep chose on the differences screen — all in this one
+        transaction, the signal validated last
+        (services/next_step_link_service.attach_next_step).
+        """
+        ctx    = ctx_from_request(request)
+        signal = self.get_object()
+
+        logger.info(f"{self.model_label}_attach_requested", extra={
+            **ctx, 'signal_id': str(signal.id),
+        })
+
+        updates = request.data.get('updates') or {}
+        updated = attach_next_step(
+            signal, request.data.get('activity_id'), updates, request,
+        )
+
+        audit_log(
+            event=f'{self.model_label}_attached',
+            action='update',
+            actor_id=str(request.user.id),
+            client_id=str(self.get_client_id()),
+            target_type=self.model_label,
+            target_id=str(updated.id),
+            fields_changed=['attached_activity', 'status', 'validated_by', 'validated_at'],
+            outcome='success',
+            extra={
+                'activity_id':      str(updated.attached_activity_id),
+                'activity_updates': sorted(updates) if isinstance(updates, dict) else [],
+            },
+        )
+
+        output = self.detail_serializer_class(updated, context={'request': request})
+        return Response({'success': True, 'data': output.data})
 
