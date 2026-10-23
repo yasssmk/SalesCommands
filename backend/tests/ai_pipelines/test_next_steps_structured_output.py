@@ -88,12 +88,13 @@ class TestNextStepsCall:
         assert run.model_name == TERRA
         assert [c['model_used'] for c in run.sub_calls] == [TERRA]
 
-    def test_a_strict_schema_of_the_v1_output(
-        self, account, activity, user_a, fake_provider, patch_active_provider,
-    ):
-        _run(account, activity, user_a, fake_provider)
-        [call] = fake_provider.calls_for('next_steps')
-        schema = call['extra']['response_schema']
+    def test_a_strict_schema_of_the_v1_output(self):
+        """The v1 schema (the baseline module, kept): since 3.3 the pipeline
+        sends the v2 one (test_next_steps_prompt_v2.py)."""
+        from app_modules.ai_pipelines.prompts.next_steps.next_steps_v1 import (
+            NEXT_STEPS_RESPONSE_SCHEMA,
+        )
+        schema = NEXT_STEPS_RESPONSE_SCHEMA
         assert schema['name'] == 'next_steps_signals'
         root = schema['schema']
         assert root['additionalProperties'] is False
@@ -143,7 +144,7 @@ class TestPromptUnchanged:
     def test_versions(self):
         from app_modules.ai_pipelines.pipelines.next_steps import NextStepsPipeline
         assert NextStepsPipeline.PROMPT_VERSIONS == {
-            'system': 'v1', 'context': 'v6', 'next_steps': 'v1'}   # context v6: 3.2
+            'system': 'v1', 'context': 'v6', 'next_steps': 'v2'}   # context v6: 3.2, v2: 3.3
 
     def test_request_and_system_text_are_byte_identical_to_3_0(self):
         from app_modules.ai_pipelines.prompts.next_steps.next_steps_v1 import (
