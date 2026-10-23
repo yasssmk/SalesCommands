@@ -27,6 +27,7 @@ __all__ = [
     'name_appears_in_text',
     'ordered_participants',
     'resolve_participant_by_name',
+    'resolve_people_signal_by_name',
     'resolve_speaker_label',
 ]
 
@@ -137,6 +138,45 @@ def resolve_participant_by_name(stated_name, activity):
         (_contact_name_parts(contact), contact)
         for contact in ordered_participants(activity)
     ])
+
+
+def resolve_people_signal_by_name(stated_name, people_signals):
+    """
+    Sprint Next steps 3.4: the PeopleSignal a prospect name as written (a
+    next step's suggested_people_names) designates, among `people_signals`
+    (the caller scopes them) -- the SAME word rule (_best_unique_match),
+    applied to IDENTITIES:
+
+      * identity = the signal's contact when it has one, else its full name
+        normalised (lowercase, no accents); an unnamed signal without contact
+        is no identity;
+      * several identities tie on the best score -> None (ambiguous: the
+        name is kept as written); a first name alone therefore links only
+        when one identity bears it;
+      * the identity found -> its MOST RECENT signal (created_at, then id).
+
+    Returns:
+        PeopleSignal | None
+    """
+    identities = {}
+    for signal in people_signals:
+        if signal.target_contact_id:
+            key = ('contact', signal.target_contact_id)
+            parts = _contact_name_parts(signal.target_contact)
+        else:
+            name = _normalize_person_name(signal.full_name or '')
+            if not name:
+                continue
+            key = ('name', name)
+            parts = _written_name_parts(signal.full_name)
+        identities.setdefault(key, (parts, []))[1].append(signal)
+
+    key = _best_unique_match(stated_name, [
+        (parts, key) for key, (parts, _signals) in identities.items()
+    ])
+    if key is None:
+        return None
+    return max(identities[key][1], key=lambda s: (s.created_at, str(s.pk)))
 
 
 def resolve_speaker_label(stated_name, labels):

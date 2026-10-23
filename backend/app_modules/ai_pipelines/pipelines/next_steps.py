@@ -269,7 +269,8 @@ class NextStepsPipeline(BasePipeline):
                     else:
                         raw_signals = []
 
-                    persisted, dropped_count = NextStepExtractor().persist_extracted(
+                    extractor = NextStepExtractor()
+                    persisted, dropped_count = extractor.persist_extracted(
                         raw_signals=raw_signals,
                         activity=activity,
                         user=user,
@@ -287,6 +288,7 @@ class NextStepsPipeline(BasePipeline):
                         parsed=parsed,
                         error=None,
                         dropped_count=dropped_count,
+                        persist_counts=extractor.last_persist_counts,
                     )
 
                 # --- Specific subclasses first, then generic LLMProviderError ---

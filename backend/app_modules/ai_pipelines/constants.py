@@ -229,6 +229,19 @@ NEXT_STEPS_STEP_REF_FORMAT = 'S{order}'
 
 
 # =============================================================================
+# NEXT STEPS PERSISTENCE -- DEDUP WITHIN ONE ANSWER (Sprint Next steps 3.4)
+# =============================================================================
+
+# Two next steps of the SAME LLM answer (one transcript) with the same values
+# on these fields -- text compared normalised (transcript_text.normalize_text:
+# case, whitespace, quotes) -- are one action: the first is kept, the others
+# are dropped (counted). Never applied across activities. Conservative on
+# purpose: a paraphrased title is NOT merged (one distinct action = one next
+# step, prompt v2 rule 1); the eval measures what remains.
+NEXT_STEP_DEDUP_KEY = ('suggested_title', 'suggested_activity_type', 'suggested_due_date')
+
+
+# =============================================================================
 # PEOPLE ROLE IN THE PROMPT PACKS (prep_call / deal_health)
 # =============================================================================
 
