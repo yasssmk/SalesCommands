@@ -144,7 +144,7 @@ class TestPromptUnchanged:
     def test_versions(self):
         from app_modules.ai_pipelines.pipelines.next_steps import NextStepsPipeline
         assert NextStepsPipeline.PROMPT_VERSIONS == {
-            'system': 'v1', 'context': 'v6', 'next_steps': 'v2'}   # context v6: 3.2, v2: 3.3
+            'system': 'v1', 'context': 'v6', 'next_steps': 'v3'}   # context v6: 3.2, v2: 3.3, v3
 
     def test_request_and_system_text_are_byte_identical_to_3_0(self):
         from app_modules.ai_pipelines.prompts.next_steps.next_steps_v1 import (

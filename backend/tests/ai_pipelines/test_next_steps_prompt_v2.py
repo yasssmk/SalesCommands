@@ -56,8 +56,10 @@ class TestVersionsAndSchema:
 
     def test_the_pipeline_sends_prompt_v2(self):
         from app_modules.ai_pipelines.pipelines.next_steps import NextStepsPipeline
+        # The pipeline sends v3 = v2 + a DATES rule: every v2 rule below holds
+        # on the prompt sent (test_next_steps_prompt_v3.py).
         assert NextStepsPipeline.PROMPT_VERSIONS == {
-            'system': 'v1', 'context': 'v6', 'next_steps': 'v2'}
+            'system': 'v1', 'context': 'v6', 'next_steps': 'v3'}
 
     def test_the_v1_module_is_kept_unchanged(self):
         from app_modules.ai_pipelines.prompts.next_steps.next_steps_v1 import (

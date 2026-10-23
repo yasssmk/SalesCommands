@@ -45,8 +45,9 @@ The pipeline has its OWN PROVIDER_CONFIG entry, config.NEXT_STEPS_PROVIDER
 (default `openai_next_steps`: gpt-5.6-terra, reasoning medium -- hence no
 temperature sent), used for the call AND the run row (model_name). The
 answer is constrained by NEXT_STEPS_RESPONSE_SCHEMA (Structured Outputs,
-strict), the exact shape of the request it goes with (v2 since Sprint
-Next steps 3.3: 14 fields; v1, 7 fields, kept as the measured baseline).
+strict), the exact shape of the request it goes with (v3 = v2 + a DATES
+rule, the v2 schema of 14 fields; v1, 7 fields, kept as the measured
+baseline).
 
 check_next_steps_provider() is this pipeline's load-time guard: the entry
 must exist in PROVIDER_CONFIG and, since a schema is sent, its provider must
@@ -136,9 +137,9 @@ from ..prompts.next_steps.context import (
     build_context_layer,
     CONTEXT_VERSION,
 )
-# Prompt v2 (Sprint Next steps 3.3); next_steps_v1.py is kept unchanged as
-# the measured baseline.
-from ..prompts.next_steps.next_steps_v2 import (
+# Prompt v3 (v2 + the PERIOD date rule); next_steps_v1.py and
+# next_steps_v2.py are kept unchanged, both measured.
+from ..prompts.next_steps.next_steps_v3 import (
     build_next_steps_request,
     NEXT_STEPS_PROMPT_VERSION,
     NEXT_STEPS_RESPONSE_SCHEMA,
