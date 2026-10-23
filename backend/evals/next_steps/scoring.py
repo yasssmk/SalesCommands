@@ -54,6 +54,7 @@ BASELINE_PROMPT_VERSIONS = ('v1',)
 _ITEM_KEYS = {'id', 'transcript', 'required_from', 'label', 'match', 'expected_types',
               'date_window', 'carried_by_prospect', 'quote_match', 'expected_step'}
 _VERSION_RE = re.compile(r'^v(\d+)$')
+_GROUP_KEYS = {'id', 'transcript', 'required_from', 'label', 'members', 'carried_by_prospect'}
 
 
 # =============================================================================
@@ -90,6 +91,17 @@ def validate_expected(data):
                 raise ValueError(f'item {item["id"]}: empty date window')
     if not seen:
         raise ValueError('no expected item')
+    items = {item['id']: item for item in data['items']}
+    for group in data.get('combined') or []:
+        missing = _GROUP_KEYS - set(group)
+        if missing:
+            raise ValueError(f'combined {group.get("id")}: missing {sorted(missing)}')
+        if group['id'] in seen:
+            raise ValueError(f'combined {group["id"]}: duplicate id')
+        seen.add(group['id'])
+        for member in group['members']:
+            if member not in items or items[member]['transcript'] != group['transcript']:
+                raise ValueError(f'combined {group["id"]}: unknown member {member} of its transcript')
     return data
 
 
@@ -228,7 +240,7 @@ def _filled(value):
     return value not in (None, '', [], {})
 
 
-def score_call(*, persisted, parsed, items, transcript, prompt_version, leaks=None):
+def score_call(*, persisted, parsed, items, transcript, prompt_version, leaks=None, groups=()):
     """
     The metrics of one call.
 
@@ -242,6 +254,9 @@ def score_call(*, persisted, parsed, items, transcript, prompt_version, leaks=No
         transcript:     str.
         prompt_version: NEXT_STEPS_PROMPT_VERSION of the call.
         leaks:          prompt_leaks() of the prompt sent (None: not checked).
+        groups:         the combined items of this transcript: present when one
+                        of their members is; carried_by_prospect checked on
+                        EVERY present member (N/A on the baseline).
     """
     text = TranscriptText(transcript)
     raw = _raw_signals(parsed)
@@ -298,6 +313,14 @@ def score_call(*, persisted, parsed, items, transcript, prompt_version, leaks=No
         metrics[f'{key}_carried_ok'] = (
             None if baseline or not hits or first.get('carried_by_prospect') is None
             else first['carried_by_prospect'] == item['carried_by_prospect']
+        )
+    for group in groups:
+        present = [m for m in group['members'] if metrics[f'{m}_present']]
+        metrics[f'{group["id"]}_present'] = bool(present)
+        metrics[f'{group["id"]}_members'] = '+'.join(present)
+        metrics[f'{group["id"]}_carried_ok'] = (
+            None if baseline or not present
+            else all(metrics[f'{m}_carried_ok'] is True for m in present)
         )
     metrics['duplicates'] = duplicates
     metrics['fusions'] = len(fusions)

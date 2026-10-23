@@ -1,5 +1,5 @@
 {
-  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses). `required_from` : version du prompt next_steps à partir de laquelle l'attendu compte dans le rappel (null = toujours informatif). `quote_match.any_of` : mots-clés (même syntaxe) qui reconnaissent la citation-justification PROPRE à l'attendu — sert à détecter une FUSION. `date_window` null : aucune date attendue (date non mesurée). `expected_step` : nom d'étape attendu (PipelineStep, ex. BUSINESS_CASE), comparé au nom d'étape STOCKÉ (persisted[].suggested_decision_step) du premier signal apparié ; N/A sur la ligne de base v1, qui n'émet pas d'étape. Mots-clés BILINGUES (FR + EN) depuis le run v2 (titres en anglais) ; un attendu se distingue d'un voisin par l'ACTION (D = rencontrer, F = préparer : un titre « meeting … business case » est D).",
+  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses). `required_from` : version du prompt next_steps à partir de laquelle l'attendu compte dans le rappel (null = toujours informatif). `quote_match.any_of` : mots-clés (même syntaxe) qui reconnaissent la citation-justification PROPRE à l'attendu — sert à détecter une FUSION. `date_window` null : aucune date attendue (date non mesurée). `expected_step` : nom d'étape attendu (PipelineStep, ex. BUSINESS_CASE), comparé au nom d'étape STOCKÉ (persisted[].suggested_decision_step) du premier signal apparié ; N/A sur la ligne de base v1, qui n'émet pas d'étape. Mots-clés BILINGUES (FR + EN) depuis le run v2 (titres en anglais) ; un attendu se distingue d'un voisin par l'ACTION (D = rencontrer, F = préparer : un titre « meeting … business case » est D). `combined` : attendus EXIGÉS composés d'autres attendus (présent si l'un des `members` est présent ; carried_by_prospect vérifié sur chaque membre présent) -- les membres restent des lignes de détail.",
   "transcripts": {
     "atelier": {
       "file": "../td279/transcript_atelier.txt",
@@ -180,8 +180,8 @@
     {
       "id": "C_prospect",
       "transcript": "atelier",
-      "required_from": "v1",
-      "label": "TASK portée par le PROSPECT : Isabelle présente le business case au contrôleur de gestion puis à Marc (aucune date dite pour la présentation)",
+      "required_from": null,
+      "label": "TASK portée par le PROSPECT : Isabelle présente le business case au contrôleur de gestion puis à Marc (aucune date dite pour la présentation) -- ligne de détail de C_interne (informative)",
       "match": {
         "fields": [
           "suggested_title"
@@ -717,8 +717,8 @@
     {
       "id": "K",
       "transcript": "atelier",
-      "required_from": "v2",
-      "label": "TASK portée par le PROSPECT : business case validé avant la clôture du budget 2027 (15/12)",
+      "required_from": null,
+      "label": "TASK portée par le PROSPECT : business case validé avant la clôture du budget 2027 (15/12) -- ligne de détail de C_interne (informative)",
       "match": {
         "fields": [
           "suggested_title"
@@ -760,6 +760,19 @@
         ]
       },
       "expected_step": "BUSINESS_CASE"
+    }
+  ],
+  "combined": [
+    {
+      "id": "C_interne",
+      "transcript": "atelier",
+      "required_from": "v1",
+      "label": "Validation interne du prospect = C_prospect ∪ K : présent si l'un des deux l'est, carried_by_prospect attendu vrai (PO, après le run v3)",
+      "members": [
+        "C_prospect",
+        "K"
+      ],
+      "carried_by_prospect": true
     }
   ]
 }

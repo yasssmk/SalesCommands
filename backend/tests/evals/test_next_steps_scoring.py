@@ -42,11 +42,17 @@ class TestExpected:
 
     def test_the_po_ground_truth(self):
         required = {i['id'] for i in EXPECTED['items'] if scoring.is_required(i, 'v1')}
-        assert required == {'A', 'B', 'C_prospect', 'C_vendeur', 'D'}
-        # C_suivi and K: informative in v1, required from prompt v2 on.
-        assert (ITEMS['C_suivi']['required_from'], ITEMS['K']['required_from']) == ('v2', 'v2')
-        assert {i['id'] for i in EXPECTED['items'] if scoring.is_required(i, 'v2')} == \
-            required | {'C_suivi', 'K'}
+        assert required == {'A', 'B', 'C_vendeur', 'D'}
+        # The prospect's internal validation, required: C_prospect OR K (PO,
+        # after the v3 run) -- the two are informative detail lines.
+        assert [(g['id'], g['members'], g['required_from'], g['carried_by_prospect'])
+                for g in EXPECTED['combined']] == [
+            ('C_interne', ['C_prospect', 'K'], 'v1', True)]
+        assert (ITEMS['C_prospect']['required_from'], ITEMS['K']['required_from']) == (None, None)
+        # C_suivi: informative in v1, required from prompt v2 on.
+        assert ITEMS['C_suivi']['required_from'] == 'v2'
+        assert {i['id'] for i in EXPECTED['items'] if scoring.is_required(i, 'v3')} == \
+            required | {'C_suivi'}
         # K (PO, after the v2 run): the prospect validates the business case
         # before the 2027 budget closes.
         assert (ITEMS['K']['expected_types'], ITEMS['K']['carried_by_prospect'],
@@ -375,7 +381,8 @@ def test_the_recall_follows_the_prompt_version():
     metrics = scoring.score_call(
         persisted=persisted, parsed=None,
         items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
-        transcript=_transcript('atelier'), prompt_version='v1')
+        transcript=_transcript('atelier'), prompt_version='v1',
+        groups=[g for g in EXPECTED['combined'] if g['transcript'] == 'atelier'])
     rows = [{'variant': 'atelier', 'call': 1, 'error': '', 'error_type': '',
              'duration_ms': 1, 'wall_ms': 1, **metrics}]
 
@@ -389,7 +396,7 @@ def test_the_recall_follows_the_prompt_version():
 
     assert recall('v1') == '0/4'
     assert line('v1', '| atelier | C_suivi').startswith('| atelier | C_suivi (info) |')
-    assert recall('v2') == '1/6'          # + C_suivi and K
+    assert recall('v2') == '1/5'          # A, B, C_vendeur, C_suivi, C_interne
     assert line('v2', '| atelier | C_suivi').startswith('| atelier | C_suivi |')
 
 
@@ -468,7 +475,8 @@ def test_the_recap_shows_the_step_column():
     metrics = scoring.score_call(
         persisted=[_ns('Envoyer le DPA', 'EMAIL', suggested_decision_step='TECHNICAL_FIT')],
         parsed=None, items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
-        transcript=_transcript('atelier'), prompt_version='v2')
+        transcript=_transcript('atelier'), prompt_version='v2',
+        groups=[g for g in EXPECTED['combined'] if g['transcript'] == 'atelier'])
     rows = [{'variant': 'atelier', 'call': 1, 'error': '', 'error_type': '',
              'duration_ms': 1, 'wall_ms': 1, **metrics}]
     lines = _recap(rows, 'v2')
@@ -679,3 +687,63 @@ def test_k_the_prospect_validation_before_the_budget_closes():
     assert (m['K_present'], m['K_type_ok'], m['K_date_in_window'], m['K_carried_ok'],
             m['K_step_ok']) == (True, True, True, True, True)
     assert m['C_suivi_present'] is False
+
+
+
+# =============================================================================
+# COMBINED ITEM -- the prospect's internal validation = C_prospect OR K
+# =============================================================================
+
+class TestCombined:
+
+    GROUPS = [g for g in EXPECTED['combined'] if g['transcript'] == 'atelier']
+
+    def _score(self, persisted, version='v3'):
+        return scoring.score_call(
+            persisted=persisted, parsed={'signals': persisted},
+            items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
+            transcript=_transcript('atelier'), prompt_version=version, groups=self.GROUPS)
+
+    @pytest.mark.parametrize('titles, members', [
+        (['Present the business case to the controller and Marc'], 'C_prospect'),
+        (['Validate the business case for the 2027 budget'], 'K'),
+        (['Present the business case to the controller and Marc',
+          'Validate the business case for the 2027 budget'], 'C_prospect+K'),
+    ])
+    def test_present_when_one_member_is(self, titles, members):
+        m = self._score([_ns(t, carried_by_prospect=True) for t in titles])
+        assert (m['C_interne_present'], m['C_interne_members'], m['C_interne_carried_ok']) == \
+            (True, members, True)
+
+    def test_absent_when_no_member_is(self):
+        m = self._score([_ns('Send the DPA and SOC 2 report', 'EMAIL')])
+        assert (m['C_interne_present'], m['C_interne_members'], m['C_interne_carried_ok']) == \
+            (False, '', None)
+
+    def test_carried_is_checked_on_every_present_member(self):
+        m = self._score([_ns('Present the business case to Marc', carried_by_prospect=True),
+                         _ns('Validate the business case internally', carried_by_prospect=False)])
+        assert m['C_interne_carried_ok'] is False
+
+    def test_carried_is_na_on_the_baseline(self):
+        m = self._score([_ns('Present the business case to Marc')], version='v1')
+        assert (m['C_interne_present'], m['C_interne_carried_ok']) == (True, None)
+
+    def test_a_group_with_an_unknown_member_is_refused(self):
+        data = copy.deepcopy(EXPECTED)
+        data['combined'][0]['members'] = ['C_prospect', 'Z']
+        with pytest.raises(ValueError, match='member'):
+            scoring.validate_expected(data)
+
+    def test_the_recap_reads_the_atelier_recall_on_5n(self):
+        from evals.next_steps.run_next_steps_eval import _recap
+        metrics = self._score([_ns('Validate the business case for the 2027 budget',
+                                   carried_by_prospect=True)])
+        rows = [{'variant': 'atelier', 'call': 1, 'error': '', 'error_type': '',
+                 'duration_ms': 1, 'wall_ms': 1, **metrics}]
+        lines = _recap(rows, 'v3')
+        noise = lines[lines.index(next(h for h in lines if h.startswith('## Bruit'))):]
+        assert next(x for x in noise if x.startswith('| atelier | 1 |')).split(' | ')[2] == '1/5'
+        assert any(x.startswith("| atelier | C_interne = C_prospect ∪ K {'K': 1} | 1/1 |")
+                   for x in lines)
+        assert any(x.startswith('| atelier | K (info) |') for x in lines)

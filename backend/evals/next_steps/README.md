@@ -87,6 +87,8 @@ Logistix a une seule activité, la conversation, sur S1.
 | G | MEETING : session sécurité avec le DSI | jamais (informatif) | MEETING | aucune date attendue |
 | H | EMAIL : questionnaire SOC 2 en amont | jamais (informatif) | EMAIL | aucune date attendue |
 
+**Attendu combiné `C_interne` (exigé, à partir de v1) = C_prospect ∪ K.** C'est la validation interne du prospect : il est présent si l'un des deux l'est, et `carried_by_prospect` est vérifié sur **chaque** membre présent. C_prospect et K restent des lignes de détail informatives. Le rappel atelier de v3 se lit donc sur 5N : A, B, C_vendeur, C_suivi et C_interne.
+
 `required_from` dit à partir de quelle version du prompt next_steps l'attendu
 compte dans le rappel (« attendus requis trouvés »). Les versions sont
 comparées par leur numéro (v2 < v10). En dessous de sa version, ou avec

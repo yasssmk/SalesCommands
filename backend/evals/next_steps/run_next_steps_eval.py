@@ -137,6 +137,11 @@ def _items(key):
     return [item for item in EXPECTED['items'] if item['transcript'] == key]
 
 
+def _groups(key):
+    """The combined items of a transcript (expected.json `combined`)."""
+    return [group for group in EXPECTED.get('combined') or [] if group['transcript'] == key]
+
+
 # =============================================================================
 # TEST CASE — created through the standard services, rolled back
 # =============================================================================
@@ -378,6 +383,7 @@ def _score(record):
         transcript=_transcript(record['transcript']),
         prompt_version=(record.get('prompt_versions') or {}).get('next_steps'),
         leaks=leaks,
+        groups=_groups(record['transcript']),
     )
 
 
@@ -438,6 +444,16 @@ def _recap(rows, prompt_version):
         n = len(vrows)
         timings.append(timing_line(key, vrows))
         required = [i for i in _items(key) if scoring.is_required(i, prompt_version)]
+        required_groups = [g for g in _groups(key) if scoring.is_required(g, prompt_version)]
+        for group in _groups(key):
+            g = group['id']
+            present = [r for r in vrows if r[f'{g}_present']]
+            members = count(r[f'{g}_members'] for r in present)
+            expected.append(
+                f'| {key} | {g} = {" ∪ ".join(group["members"])}{f" {members}" if members else ""}'
+                f'{"" if group in required_groups else " (info)"} | {len(present)}/{n} | - | - | - | - | '
+                f'{_rate((r[f"{g}_carried_ok"] for r in present), none="N/A")} | - | - | - | - |'
+            )
         for item in _items(key):
             p = item['id']
             present = [r for r in vrows if r[f'{p}_present']]
@@ -454,9 +470,10 @@ def _recap(rows, prompt_version):
                 f'{count(r[f"{p}_absorbed_by"] for r in vrows if r[f"{p}_absorbed_by"]) or "-"} | '
                 f'{_step_cell(present, p)} |'
             )
-        found = [sum(1 for i in required if r[f'{i["id"]}_present']) for r in vrows]
+        found = [sum(1 for i in required + required_groups if r[f'{i["id"]}_present'])
+                 for r in vrows]
         noise.append(
-            f'| {key} | {n} | {sum(found)}/{n * len(required)} | '
+            f'| {key} | {n} | {sum(found)}/{n * (len(required) + len(required_groups))} | '
             f'{_span([r["emitted"] for r in vrows])} | {_span([r["persisted"] for r in vrows])} | '
             f'{sum(r["inventions"] for r in vrows)} ({sum(1 for r in vrows if r["inventions"])}/{n}) | '
             f'{sum(r["inventions_raw"] for r in vrows)} | '
