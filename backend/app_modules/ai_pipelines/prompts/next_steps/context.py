@@ -35,7 +35,10 @@ JSON (no taxonomy, still):
   * its steps by order -- `ref` (NEXT_STEPS_STEP_REF_FORMAT, "S4"), `name`,
     `status` DERIVED from the step's activities, `current` on the step the
     deal is at (decision_steps_state: the shared definitions of the step
-    status and of DecisionStep.is_current);
+    status and of DecisionStep.is_current), `conversation` on the step of
+    the analysed conversation (Activity.decision_step) -- the two marks may
+    differ (a conversation on Business Case while Qualification is still
+    open);
   * its OPEN activities (NON_TERMINAL_STATUSES), in the
     ActivitySequenceService order, the conversation itself excepted --
     `title`, `type`, `date` (scheduled, else due), `step` (ref), `people`:
@@ -81,8 +84,9 @@ __all__ = ['CONTEXT_VERSION', 'build_context_layer']
 # v5 (D7 / TD-281): the reused session block takes the Conversation date from
 # the transcript's export header when there is one -- transcript_signals v10.
 # v6 (Sprint Next steps 3.2): + the decision cycle block -- steps (ref, name,
-# derived status, current) and open activities (title, type, date, step,
-# first names).
+# derived status, current, conversation) and open activities (title, type,
+# date, step, first names). The `conversation` mark was added before v6 was
+# ever measured or shipped: same version.
 CONTEXT_VERSION = 'v6'
 
 
@@ -128,21 +132,23 @@ def _build_decision_cycle_block(activity):
     return '\n'.join([
         'DECISION CYCLE (the deal this conversation belongs to)',
         '- Steps, in order (ref = step reference; status derived from the step\'s '
-        'activities; "current" = the step the deal is at):',
-        _compact(_steps(activity.decision_cycle)),
+        'activities; "current" = the step the deal is at; "conversation" = the '
+        'step of THIS conversation):',
+        _compact(_steps(activity.decision_cycle, activity.decision_step_id)),
         '- Open activities already in this cycle, the conversation itself excepted '
         '(people: first names only):',
         _compact(_open_activities(activity)),
     ])
 
 
-def _steps(cycle):
+def _steps(cycle, conversation_step_id):
     from app_modules.activities.services.next_step_materialization import (
         decision_steps_state,
     )
     return [
         {'ref': _step_ref(step.order), 'name': step.name, 'status': status,
-         **({'current': True} if current else {})}
+         **({'current': True} if current else {}),
+         **({'conversation': True} if step.id == conversation_step_id else {})}
         for step, status, current in decision_steps_state(cycle)
     ]
 

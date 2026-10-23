@@ -6,7 +6,9 @@ prompt sent).
 
   * the steps of the DC, in order: reference (S<order>), name, DERIVED status
     (StepStatusDerivationService), the "current" mark (first non-validated
-    step -- the shared definition, CycleAggregationService);
+    step -- the shared definition, CycleAggregationService) AND the
+    "conversation" mark (the step of the analysed conversation,
+    Activity.decision_step) -- two marks that may differ;
   * the OPEN activities of the DC (PLANNED / ON_HOLD), in the
     ActivitySequenceService order, the conversation itself excepted: title,
     type, date (scheduled, else due), step reference, people by FIRST NAME
@@ -110,9 +112,36 @@ class TestDecisionCycleContext:
             {'ref': 'S1', 'name': steps[0].name, 'status': 'VALIDATED'},
             {'ref': 'S2', 'name': steps[1].name, 'status': 'VALIDATED'},
             {'ref': 'S3', 'name': steps[2].name, 'status': 'VALIDATED'},
-            {'ref': 'S4', 'name': steps[3].name, 'status': 'IN_PROGRESS', 'current': True},
+            {'ref': 'S4', 'name': steps[3].name, 'status': 'IN_PROGRESS', 'current': True,
+             'conversation': True},
             {'ref': 'S5', 'name': steps[4].name, 'status': 'NOT_STARTED'},
         ]) in context
+
+    def test_the_conversation_step_differs_from_the_current_step(
+        self, account, user_a, fake_provider, patch_active_provider,
+    ):
+        """The conversation is on S4 (Business Case) while S1-S3 are empty: the
+        current step is S1 -- the prompt carries BOTH marks."""
+        from app_modules.activities.services.activity_creation_service import (
+            ActivityCreationService,
+        )
+        created = ActivityCreationService(user_a, account.client_id).create_with_entities(
+            activity_data={'account_id': str(account.id), 'title': 'Atelier ROI',
+                           'activity_type': ActivityType.MEETING,
+                           'status': ActivityStatus.COMPLETED},
+            inline_cycle={'name': 'Deal Acme'}, inline_step_stage='BUSINESS_CASE',
+        )
+        conversation = created['activity']
+        names = [s.name for s in created['cycle'].steps.order_by('order')]
+        context = _run(conversation, user_a, fake_provider)
+        assert _compact([
+            {'ref': 'S1', 'name': names[0], 'status': 'NOT_STARTED', 'current': True},
+            {'ref': 'S2', 'name': names[1], 'status': 'NOT_STARTED'},
+            {'ref': 'S3', 'name': names[2], 'status': 'NOT_STARTED'},
+            {'ref': 'S4', 'name': names[3], 'status': 'STALLED', 'conversation': True},
+            {'ref': 'S5', 'name': names[4], 'status': 'NOT_STARTED'},
+        ]) in context
+        assert '"conversation" = the step of THIS conversation' in context
 
     def test_the_open_activities_of_the_cycle(
         self, deal, user_a, fake_provider, patch_active_provider,
