@@ -410,6 +410,14 @@ def _span(values):
     return f'{min(values)}-{max(values)}' if values else '-'
 
 
+def _step_cell(present, item_id):
+    """'x/y {step: calls}' of the stored steps of an item ('N/A' on the
+    baseline prompt, '-' when absent)."""
+    rate = _rate((r[f'{item_id}_step_ok'] for r in present), none='N/A' if present else '-')
+    seen = count(r[f'{item_id}_step'] or 'null' for r in present)
+    return f'{rate} {seen}' if rate not in ('N/A', '-') else rate
+
+
 def _fusions(vrows):
     """'total {X<-Y: calls}' of the fusions of a variant ('0' without)."""
     detail = count(d for r in vrows for d in r['fusion_detail'].split('; ') if d)
@@ -440,7 +448,8 @@ def _recap(rows, prompt_version):
                 f'{_rate((r[f"{p}_carried_ok"] for r in present), none="N/A")} | '
                 f'{count(r[f"{p}_type"] for r in present) or "-"} | '
                 f'{count(r[f"{p}_date"] or "null" for r in present) or "-"} | '
-                f'{count(r[f"{p}_absorbed_by"] for r in vrows if r[f"{p}_absorbed_by"]) or "-"} |'
+                f'{count(r[f"{p}_absorbed_by"] for r in vrows if r[f"{p}_absorbed_by"]) or "-"} | '
+                f'{_step_cell(present, p)} |'
             )
         found = [sum(1 for i in required if r[f'{i["id"]}_present']) for r in vrows]
         noise.append(
@@ -472,8 +481,8 @@ def _recap(rows, prompt_version):
         '',
         '| variante | attendu | présent | type correct | date dans la fenêtre | '
         'date absente | doublons | carried_by_prospect | types vus | dates vues | '
-        'absorbé par (appels où il manque) |',
-        '|---|---|---|---|---|---|---|---|---|---|---|',
+        'absorbé par (appels où il manque) | étape correcte (étapes vues) |',
+        '|---|---|---|---|---|---|---|---|---|---|---|---|',
         *expected, '',
         '## Bruit et inventions (totaux sur N appels)',
         '',

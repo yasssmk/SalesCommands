@@ -52,7 +52,7 @@ NEW_FIELDS = (
 BASELINE_PROMPT_VERSIONS = ('v1',)
 
 _ITEM_KEYS = {'id', 'transcript', 'required_from', 'label', 'match', 'expected_types',
-              'date_window', 'carried_by_prospect', 'quote_match'}
+              'date_window', 'carried_by_prospect', 'quote_match', 'expected_step'}
 _VERSION_RE = re.compile(r'^v(\d+)$')
 
 
@@ -76,6 +76,8 @@ def validate_expected(data):
         match = item['match']
         if not match.get('fields') or not match.get('all_of') or not all(match['all_of']):
             raise ValueError(f'item {item["id"]}: match needs fields and non-empty all_of groups')
+        if item['expected_step'] not in _step_names():
+            raise ValueError(f'item {item["id"]}: expected_step must be a PipelineStep value')
         if not (item['quote_match'].get('any_of') or []):
             raise ValueError(f'item {item["id"]}: quote_match needs a non-empty any_of')
         if item['required_from'] is not None and not _VERSION_RE.match(str(item['required_from'])):
@@ -87,6 +89,13 @@ def validate_expected(data):
     if not seen:
         raise ValueError('no expected item')
     return data
+
+
+def _step_names():
+    """The generic step names (decision_cycles PipelineStep) -- an
+    expected_step is one of them."""
+    from app_modules.decision_cycles.constants import PipelineStep
+    return set(PipelineStep.values)
 
 
 def load_expected(path):
@@ -276,6 +285,13 @@ def score_call(*, persisted, parsed, items, transcript, prompt_version, leaks=No
         )
         metrics[f'{key}_date_missing'] = bool(hits) and not first.get('suggested_due_date')
         metrics[f'{key}_absorbed_by'] = '+'.join(sorted(set(absorbed_by.get(key, []))))
+        # The stored step name vs the expected one (no step stored = wrong);
+        # N/A on the baseline prompt, which emits no step.
+        metrics[f'{key}_step'] = first.get('suggested_decision_step') or ''
+        metrics[f'{key}_step_ok'] = (
+            None if baseline or not hits
+            else first.get('suggested_decision_step') == item['expected_step']
+        )
         # New field (1.1): N/A on the baseline prompt, which does not emit it.
         metrics[f'{key}_carried_ok'] = (
             None if baseline or not hits or first.get('carried_by_prospect') is None

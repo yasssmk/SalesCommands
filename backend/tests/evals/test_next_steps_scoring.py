@@ -406,3 +406,65 @@ def test_a_false_flag_is_not_counted_as_a_filled_new_field():
         items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
         transcript=_transcript('atelier'), prompt_version='v2')
     assert m['new_carried_by_prospect'] == 1
+
+
+# =============================================================================
+# EXPECTED STEP (PO, before the v2 measure)
+# =============================================================================
+
+def test_the_po_expected_steps():
+    assert {i: ITEMS[i]['expected_step'] for i in ITEMS} == {
+        'A': 'TECHNICAL_FIT', 'B': 'TECHNICAL_FIT', 'E': 'TECHNICAL_FIT',
+        'G': 'TECHNICAL_FIT', 'H': 'TECHNICAL_FIT',
+        'C_prospect': 'BUSINESS_CASE', 'C_vendeur': 'BUSINESS_CASE', 'C_suivi': 'BUSINESS_CASE',
+        'I': 'BUSINESS_CASE', 'D': 'BUSINESS_CASE', 'F': 'BUSINESS_CASE',
+        'J': 'SOLUTION_VALIDATION',
+    }
+
+
+def test_an_unknown_expected_step_is_refused():
+    data = copy.deepcopy(EXPECTED)
+    data['items'][0]['expected_step'] = 'TECH_FIT'
+    with pytest.raises(ValueError, match='expected_step'):
+        scoring.validate_expected(data)
+
+
+class TestStepMetric:
+
+    def _score(self, persisted, version='v2'):
+        return scoring.score_call(
+            persisted=persisted, parsed={'signals': persisted},
+            items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
+            transcript=_transcript('atelier'), prompt_version=version)
+
+    def test_the_stored_step_name_is_compared_on_the_present(self):
+        m = self._score([
+            _ns('Envoyer le DPA et le SOC 2', 'EMAIL', suggested_decision_step='TECHNICAL_FIT'),
+            _ns('Réunion sécurité avec Laurent Petit', 'MEETING',
+                suggested_decision_step='BUSINESS_CASE'),
+            _ns('Envoyer une première version du business case', 'TASK',
+                suggested_decision_step=None),
+        ])
+        assert (m['A_step_ok'], m['A_step']) == (True, 'TECHNICAL_FIT')
+        assert (m['B_step_ok'], m['B_step']) == (False, 'BUSINESS_CASE')
+        assert (m['C_vendeur_step_ok'], m['C_vendeur_step']) == (False, '')   # no step = wrong
+        assert m['C_prospect_step_ok'] is None                              # absent
+
+    def test_na_on_the_baseline_prompt(self):
+        m = self._score([_ns('Envoyer le DPA', 'EMAIL')], version='v1')
+        assert m['A_step_ok'] is None
+
+
+def test_the_recap_shows_the_step_column():
+    from evals.next_steps.run_next_steps_eval import _recap
+    metrics = scoring.score_call(
+        persisted=[_ns('Envoyer le DPA', 'EMAIL', suggested_decision_step='TECHNICAL_FIT')],
+        parsed=None, items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
+        transcript=_transcript('atelier'), prompt_version='v2')
+    rows = [{'variant': 'atelier', 'call': 1, 'error': '', 'error_type': '',
+             'duration_ms': 1, 'wall_ms': 1, **metrics}]
+    lines = _recap(rows, 'v2')
+    assert any(x.startswith('| variante | attendu |') and x.endswith('étape correcte (étapes vues) |')
+               for x in lines)
+    assert next(x for x in lines if x.startswith('| atelier | A |')).endswith(
+        "| 1/1 {'TECHNICAL_FIT': 1} |")

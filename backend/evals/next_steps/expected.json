@@ -1,5 +1,5 @@
 {
-  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses). `required_from` : version du prompt next_steps à partir de laquelle l'attendu compte dans le rappel (null = toujours informatif). `quote_match.any_of` : mots-clés (même syntaxe) qui reconnaissent la citation-justification PROPRE à l'attendu — sert à détecter une FUSION. `date_window` null : aucune date attendue (date non mesurée).",
+  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses). `required_from` : version du prompt next_steps à partir de laquelle l'attendu compte dans le rappel (null = toujours informatif). `quote_match.any_of` : mots-clés (même syntaxe) qui reconnaissent la citation-justification PROPRE à l'attendu — sert à détecter une FUSION. `date_window` null : aucune date attendue (date non mesurée). `expected_step` : nom d'étape attendu (PipelineStep, ex. BUSINESS_CASE), comparé au nom d'étape STOCKÉ (persisted[].suggested_decision_step) du premier signal apparié ; N/A sur la ligne de base v1, qui n'émet pas d'étape.",
   "transcripts": {
     "atelier": {
       "file": "../td279/transcript_atelier.txt",
@@ -96,7 +96,8 @@
           "soc2",
           "envoyez les avant vendredi"
         ]
-      }
+      },
+      "expected_step": "TECHNICAL_FIT"
     },
     {
       "id": "B",
@@ -155,7 +156,8 @@
           "privilegiez un mardi",
           "en comite le reste"
         ]
-      }
+      },
+      "expected_step": "TECHNICAL_FIT"
     },
     {
       "id": "C_prospect",
@@ -190,7 +192,8 @@
           "controleur de gestion",
           "puis a marc"
         ]
-      }
+      },
+      "expected_step": "BUSINESS_CASE"
     },
     {
       "id": "C_vendeur",
@@ -244,7 +247,8 @@
         "any_of": [
           "premiere version du business case"
         ]
-      }
+      },
+      "expected_step": "BUSINESS_CASE"
     },
     {
       "id": "C_suivi",
@@ -284,7 +288,8 @@
           "glisse d un an",
           "budget 2027 se boucle"
         ]
-      }
+      },
+      "expected_step": "BUSINESS_CASE"
     },
     {
       "id": "D",
@@ -335,7 +340,8 @@
           "rendez vous avec isabelle",
           "voit isabelle"
         ]
-      }
+      },
+      "expected_step": "BUSINESS_CASE"
     },
     {
       "id": "E",
@@ -375,7 +381,8 @@
           "connecteur salesforce",
           "sso"
         ]
-      }
+      },
+      "expected_step": "TECHNICAL_FIT"
     },
     {
       "id": "F",
@@ -416,7 +423,8 @@
           "retour sur investissement",
           "roi"
         ]
-      }
+      },
+      "expected_step": "BUSINESS_CASE"
     },
     {
       "id": "G",
@@ -469,7 +477,8 @@
           "reticent",
           "bloque le dernier projet"
         ]
-      }
+      },
+      "expected_step": "TECHNICAL_FIT"
     },
     {
       "id": "H",
@@ -498,7 +507,8 @@
         "any_of": [
           "questionnaire"
         ]
-      }
+      },
+      "expected_step": "TECHNICAL_FIT"
     },
     {
       "id": "I",
@@ -541,7 +551,8 @@
           "quinze novembre",
           "15 novembre"
         ]
-      }
+      },
+      "expected_step": "BUSINESS_CASE"
     },
     {
       "id": "J",
@@ -574,7 +585,8 @@
           "karim",
           "le former"
         ]
-      }
+      },
+      "expected_step": "SOLUTION_VALIDATION"
     }
   ]
 }
