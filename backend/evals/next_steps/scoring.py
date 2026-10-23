@@ -8,6 +8,11 @@ unit-tested (tests/evals/test_next_steps_scoring.py).
   * normalize / keyword_in / matches  — the TOLERANT match of a next step
                                         with an expected item (README.md);
   * in_window                         — the date is in the item's window;
+  * is_required                       — the item counts in the recall for
+                                        a prompt version (required_from);
+  * quote_matches / fusion            — a next step matched to an item whose
+                                        quote is the evidence of ANOTHER,
+                                        absent, item (that item was absorbed);
   * is_invented                       — the quote is NOT in the transcript
                                         (production rule: TranscriptText,
                                         the check a) of people_evidence.py);
@@ -46,8 +51,9 @@ NEW_FIELDS = (
 )
 BASELINE_PROMPT_VERSIONS = ('v1',)
 
-_ITEM_KEYS = {'id', 'transcript', 'required', 'label', 'match', 'expected_types',
-              'date_window', 'carried_by_prospect'}
+_ITEM_KEYS = {'id', 'transcript', 'required_from', 'label', 'match', 'expected_types',
+              'date_window', 'carried_by_prospect', 'quote_match'}
+_VERSION_RE = re.compile(r'^v(\d+)$')
 
 
 # =============================================================================
@@ -70,9 +76,14 @@ def validate_expected(data):
         match = item['match']
         if not match.get('fields') or not match.get('all_of') or not all(match['all_of']):
             raise ValueError(f'item {item["id"]}: match needs fields and non-empty all_of groups')
-        start, end = (datetime.date.fromisoformat(d) for d in item['date_window'])
-        if start > end:
-            raise ValueError(f'item {item["id"]}: empty date window')
+        if not (item['quote_match'].get('any_of') or []):
+            raise ValueError(f'item {item["id"]}: quote_match needs a non-empty any_of')
+        if item['required_from'] is not None and not _VERSION_RE.match(str(item['required_from'])):
+            raise ValueError(f'item {item["id"]}: required_from must be null or "v<N>"')
+        if item['date_window'] is not None:
+            start, end = (datetime.date.fromisoformat(d) for d in item['date_window'])
+            if start > end:
+                raise ValueError(f'item {item["id"]}: empty date window')
     if not seen:
         raise ValueError('no expected item')
     return data
@@ -80,6 +91,18 @@ def validate_expected(data):
 
 def load_expected(path):
     return validate_expected(json.loads(Path(path).read_text(encoding='utf-8')))
+
+
+def _version_number(version):
+    match = _VERSION_RE.match(str(version or ''))
+    return int(match.group(1)) if match else None
+
+
+def is_required(item, prompt_version):
+    """The item counts in the recall from its `required_from` prompt version
+    on (null: always informative)."""
+    since, current = _version_number(item['required_from']), _version_number(prompt_version)
+    return since is not None and current is not None and current >= since
 
 
 # =============================================================================
@@ -118,13 +141,22 @@ def matches(signal, item):
 
 def in_window(date, window):
     """True / False for an ISO date against [start, end] (inclusive); None
-    when there is no (valid) date."""
+    when there is no (valid) date or no window (no date expected)."""
+    if window is None:
+        return None
     try:
         value = datetime.date.fromisoformat(str(date))
     except (TypeError, ValueError):
         return None
     start, end = (datetime.date.fromisoformat(d) for d in window)
     return start <= value <= end
+
+
+def quote_matches(signal, item):
+    """The signal's quote carries the evidence of `item` (a keyword of its
+    quote_match.any_of)."""
+    quote = normalize(signal.get('source_quote'))
+    return any(keyword_in(k, quote) for k in item['quote_match']['any_of'])
 
 
 # =============================================================================
@@ -204,10 +236,25 @@ def score_call(*, persisted, parsed, items, transcript, prompt_version, leaks=No
         'inventions': sum(1 for s in persisted if is_invented(s.get('source_quote'), text)),
         'inventions_raw': sum(1 for s in raw if is_invented(s.get('source_quote'), text)),
     }
+    hits_of = {item['id']: [i for i, s in enumerate(persisted) if matches(s, item)]
+               for item in items}
+    # Fusion: a next step matched to X whose quote is the evidence of another
+    # item Y ABSENT from the call — Y was absorbed by X (Y present: a shared
+    # justification, not a fusion).
+    absorbed_by, fusions = {}, []
+    for item in items:
+        for i in hits_of[item['id']]:
+            lost = [other['id'] for other in items
+                    if other['id'] != item['id'] and not hits_of[other['id']]
+                    and quote_matches(persisted[i], other)]
+            for other in lost:
+                absorbed_by.setdefault(other, []).append(item['id'])
+            if lost:
+                fusions.append(f'{item["id"]}<-{"+".join(lost)}')
     matched_any = set()
     duplicates = 0
     for item in items:
-        hits = [i for i, s in enumerate(persisted) if matches(s, item)]
+        hits = hits_of[item['id']]
         matched_any.update(hits)
         duplicates += max(len(hits) - 1, 0)
         first = persisted[hits[0]] if hits else {}
@@ -223,12 +270,15 @@ def score_call(*, persisted, parsed, items, transcript, prompt_version, leaks=No
             in_window(first.get('suggested_due_date'), item['date_window']) if hits else None
         )
         metrics[f'{key}_date_missing'] = bool(hits) and not first.get('suggested_due_date')
+        metrics[f'{key}_absorbed_by'] = '+'.join(sorted(set(absorbed_by.get(key, []))))
         # New field (1.1): N/A on the baseline prompt, which does not emit it.
         metrics[f'{key}_carried_ok'] = (
             None if baseline or not hits or first.get('carried_by_prospect') is None
             else first['carried_by_prospect'] == item['carried_by_prospect']
         )
     metrics['duplicates'] = duplicates
+    metrics['fusions'] = len(fusions)
+    metrics['fusion_detail'] = '; '.join(fusions)
     titles = [normalize(s.get('suggested_title')) for s in persisted]
     metrics['duplicate_titles'] = len(titles) - len(set(titles))
     metrics['unmatched'] = len(persisted) - len(matched_any)

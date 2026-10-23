@@ -367,7 +367,15 @@ def _span(values):
     return f'{min(values)}-{max(values)}' if values else '-'
 
 
-def _recap(rows):
+def _fusions(vrows):
+    """'total {X<-Y: calls}' of the fusions of a variant ('0' without)."""
+    detail = count(d for r in vrows for d in r['fusion_detail'].split('; ') if d)
+    return f'{sum(r["fusions"] for r in vrows)} {detail}' if detail else '0'
+
+
+def _recap(rows, prompt_version):
+    """The recap tables; an item counts in the recall when required for the
+    run's next_steps prompt version (expected.json required_from)."""
     timings, expected, noise, new_fields = [], [], [], []
     for key in VARIANTS:
         vrows = [r for r in rows if r['variant'] == key]
@@ -375,12 +383,12 @@ def _recap(rows):
             continue
         n = len(vrows)
         timings.append(timing_line(key, vrows))
-        required = [i for i in _items(key) if i['required']]
+        required = [i for i in _items(key) if scoring.is_required(i, prompt_version)]
         for item in _items(key):
             p = item['id']
             present = [r for r in vrows if r[f'{p}_present']]
             expected.append(
-                f'| {key} | {p}{"" if item["required"] else " (info)"} | '
+                f'| {key} | {p}{"" if item in required else " (info)"} | '
                 f'{len(present)}/{n} | '
                 f'{_rate(r[f"{p}_type_ok"] for r in present)} | '
                 f'{_rate(r[f"{p}_date_in_window"] for r in present)} | '
@@ -388,7 +396,8 @@ def _recap(rows):
                 f'{sum(1 for r in present if r[f"{p}_matches"] > 1)}/{len(present)} | '
                 f'{_rate((r[f"{p}_carried_ok"] for r in present), none="N/A")} | '
                 f'{count(r[f"{p}_type"] for r in present) or "-"} | '
-                f'{count(r[f"{p}_date"] or "null" for r in present) or "-"} |'
+                f'{count(r[f"{p}_date"] or "null" for r in present) or "-"} | '
+                f'{count(r[f"{p}_absorbed_by"] for r in vrows if r[f"{p}_absorbed_by"]) or "-"} |'
             )
         found = [sum(1 for i in required if r[f'{i["id"]}_present']) for r in vrows]
         noise.append(
@@ -399,7 +408,8 @@ def _recap(rows):
             f'{sum(r["unmatched"] for r in vrows)} | {sum(r["duplicates"] for r in vrows)} | '
             f'{sum(r["duplicate_titles"] for r in vrows)} | '
             f'{_span([r["prompt_leaks"] for r in vrows if r["prompt_leaks"] is not None])} | '
-            f'{sum(1 for r in vrows if r["error"])} |'
+            f'{sum(1 for r in vrows if r["error"])} | '
+            f'{_fusions(vrows)} |'
         )
         for field in (*scoring.NEW_FIELDS, 'people_names_not_in_transcript'):
             column = f'new_{field}' if field in scoring.NEW_FIELDS else field
@@ -418,15 +428,16 @@ def _recap(rows):
         '## Attendus (next steps STOCKÉS ; un appel en erreur compte « absent »)',
         '',
         '| variante | attendu | présent | type correct | date dans la fenêtre | '
-        'date absente | doublons | carried_by_prospect | types vus | dates vues |',
-        '|---|---|---|---|---|---|---|---|---|---|',
+        'date absente | doublons | carried_by_prospect | types vus | dates vues | '
+        'absorbé par (appels où il manque) |',
+        '|---|---|---|---|---|---|---|---|---|---|---|',
         *expected, '',
         '## Bruit et inventions (totaux sur N appels)',
         '',
         '| variante | appels | attendus requis trouvés | émis (min-max) | stockés (min-max) | '
         'inventions stockées (appels) | inventions brutes | non appariés | doublons | '
-        'titres identiques | fuites prompt | erreurs |',
-        '|---|---|---|---|---|---|---|---|---|---|---|---|',
+        'titres identiques | fuites prompt | erreurs | fusions (détail) |',
+        '|---|---|---|---|---|---|---|---|---|---|---|---|---|',
         *noise, '',
         '## Nouveaux champs (comptés sur la réponse brute)',
         '',
@@ -438,7 +449,8 @@ def _recap(rows):
 
 def _write_summary(out_dir, rows, models_used, versions, suffix=''):
     write_summary(out_dir, rows, title='Next steps — récap', models_used=models_used,
-                  versions=versions, recap=_recap(rows), suffix=suffix)
+                  versions=versions, recap=_recap(rows, versions.get('next_steps')),
+                  suffix=suffix)
 
 
 # =============================================================================

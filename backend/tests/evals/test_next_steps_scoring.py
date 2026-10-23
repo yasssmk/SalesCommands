@@ -2,7 +2,8 @@
 """
 Sprint Next steps 3.0 — scoring of the next_steps eval
 (evals/next_steps/scoring.py + expected.json): tolerant match, invention,
-date window, ground-truth validity, leak guard. Pure functions, no database.
+date window, ground-truth validity, required_from, fusion, leak guard. Pure
+functions, no database.
 """
 
 import copy
@@ -40,8 +41,17 @@ def _matching(title, transcript):
 class TestExpected:
 
     def test_the_po_ground_truth(self):
-        required = {i['id'] for i in EXPECTED['items'] if i['required']}
+        required = {i['id'] for i in EXPECTED['items'] if scoring.is_required(i, 'v1')}
         assert required == {'A', 'B', 'C_prospect', 'C_vendeur', 'D'}
+        # C_suivi: informative in v1, required from prompt v2 on.
+        assert ITEMS['C_suivi']['required_from'] == 'v2'
+        assert {i['id'] for i in EXPECTED['items'] if scoring.is_required(i, 'v2')} == \
+            required | {'C_suivi'}
+        # Logistix informative items (never in the recall).
+        assert {i: (ITEMS[i]['expected_types'], ITEMS[i]['required_from'])
+                for i in ('E', 'F', 'G', 'H')} == {
+            'E': (['EMAIL'], None), 'F': (['TASK'], None),
+            'G': (['MEETING'], None), 'H': (['EMAIL'], None)}
         assert ITEMS['A']['expected_types'] == ['EMAIL']
         assert ITEMS['A']['date_window'][1] == '2026-10-23'          # avant vendredi
         assert scoring.in_window('2026-11-03', ITEMS['B']['date_window'])
@@ -62,6 +72,8 @@ class TestExpected:
         (lambda d: d['items'][0].update(date_window=['2026-11-02', '2026-11-01']), 'empty date window'),
         (lambda d: d['items'][1].update(id=d['items'][0]['id']), 'duplicate id'),
         (lambda d: d['items'][0]['match'].update(all_of=[[]]), 'all_of'),
+        (lambda d: d['items'][0].update(required_from='two'), 'required_from'),
+        (lambda d: d['items'][0]['quote_match'].update(any_of=[]), 'quote_match'),
     ])
     def test_a_malformed_ground_truth_is_refused(self, breakage, message):
         data = copy.deepcopy(EXPECTED)
@@ -109,8 +121,12 @@ class TestTolerantMatch:
         ('Présenter le business case à la DAF', ['D']),
         ('Meeting with the CFO', ['D']),
         # Preparing the business case is not the meeting.
-        ('Préparer le business case pour Isabelle', []),
-        ('Envoyer la documentation technique à Thomas', []),
+        ('Préparer le business case pour Isabelle', ['F']),
+        ('Envoyer la documentation technique à Thomas', ['E']),
+        ('Prepare business case for Isabelle', ['F']),
+        ('Organiser une session de sécurité avec le DSI', ['G']),
+        ('Envoyer le questionnaire SOC 2', ['H']),
+        ('Merci', []),
     ])
     def test_logistix_titles(self, title, expected):
         assert _matching(title, 'logistix') == expected
@@ -137,6 +153,21 @@ class TestDateWindow:
     ])
     def test_in_window(self, date, expected):
         assert scoring.in_window(date, self.WINDOW) is expected
+
+    def test_no_window_means_no_date_expected(self):
+        assert scoring.in_window('2026-10-22', None) is None
+
+
+class TestRequiredFrom:
+
+    @pytest.mark.parametrize('required_from, version, expected', [
+        ('v1', 'v1', True), ('v1', 'v2', True),
+        ('v2', 'v1', False), ('v2', 'v2', True), ('v2', 'v10', True),
+        (None, 'v2', False),          # informative
+        ('v1', None, False),          # unknown prompt version
+    ])
+    def test_is_required(self, required_from, version, expected):
+        assert scoring.is_required({'required_from': required_from}, version) is expected
 
 
 # =============================================================================
@@ -226,6 +257,13 @@ class TestScoreCall:
         assert later['new_carried_by_prospect'] == 1
         assert later['people_names_not_in_transcript'] == 0
 
+    def test_a_date_on_an_item_without_window_is_not_scored(self):
+        m = scoring.score_call(
+            persisted=[_ns('Envoyer la documentation technique à Thomas', 'EMAIL', '2026-10-20',
+                           quote="On a un connecteur Salesforce natif et le SSO Azure est supporté.")],
+            parsed=None, items=[ITEMS['E']], transcript=_transcript('logistix'), prompt_version='v1')
+        assert (m['E_present'], m['E_type_ok'], m['E_date_in_window']) == (True, True, None)
+
     def test_a_failed_call_scores_every_item_absent(self):
         m = scoring.score_call(persisted=[], parsed=None, items=list(ITEMS.values()),
                                transcript=_transcript('atelier'), prompt_version='v1')
@@ -261,3 +299,76 @@ class TestLeakGuard:
 
     def test_a_transcript_name_in_an_example_is_a_leak(self):
         assert self._leaks('Example: Laurent Petit, CIO', 'x') == ['Laurent Petit']
+
+
+# =============================================================================
+# FUSION — a next step matched to an item, justified by ANOTHER absent item
+# =============================================================================
+
+class TestFusion:
+
+    RDV_ISABELLE = 'Mais avant ça, on devra forcément faire un rendez-vous avec Isabelle Roux, notre DAF.'
+
+    def _score(self, persisted):
+        return scoring.score_call(
+            persisted=persisted, parsed={'signals': persisted},
+            items=[i for i in EXPECTED['items'] if i['transcript'] == 'logistix'],
+            transcript=_transcript('logistix'), prompt_version='v1')
+
+    def test_the_po_baseline_case_d_absorbed_by_f(self):
+        """logistix/call_01 of the PO baseline: the meeting with Isabelle merged
+        into "Prepare business case for Isabelle" (TASK), quoting the meeting."""
+        m = self._score([_ns('Prepare business case for Isabelle', 'TASK', '2026-11-30',
+                             quote=self.RDV_ISABELLE)])
+        assert (m['D_present'], m['F_present']) == (False, True)
+        assert m['D_absorbed_by'] == 'F'
+        assert (m['fusions'], m['fusion_detail']) == (1, 'F<-D')
+        assert m['unmatched'] == 0
+
+    def test_a_shared_justification_is_not_a_fusion(self):
+        """D is present: F quoting the same sentence absorbed nothing."""
+        m = self._score([
+            _ns('Rendez-vous avec Isabelle Roux (DAF)', 'MEETING', quote=self.RDV_ISABELLE),
+            _ns('Prepare business case for Isabelle', 'TASK', quote=self.RDV_ISABELLE),
+        ])
+        assert (m['D_present'], m['F_present'], m['fusions'], m['D_absorbed_by']) == \
+            (True, True, 0, '')
+
+    def test_an_own_quote_is_not_a_fusion(self):
+        m = self._score([_ns('Prepare business case for Isabelle', 'TASK',
+                             quote='elle voudra voir un business case avec un retour sur '
+                                   'investissement chiffré.')])
+        assert (m['F_present'], m['fusions'], m['D_absorbed_by']) == (True, 0, '')
+
+    def test_an_unmatched_next_step_never_fuses(self):
+        m = self._score([_ns('Commander des croissants', quote=self.RDV_ISABELLE)])
+        assert (m['fusions'], m['unmatched'], m['D_absorbed_by']) == (0, 1, '')
+
+
+# =============================================================================
+# RECAP — the recall follows the run's prompt version (required_from)
+# =============================================================================
+
+def test_the_recall_follows_the_prompt_version():
+    from evals.next_steps.run_next_steps_eval import _recap
+
+    persisted = [_ns('Relancer Isabelle sur la validation', 'CALL')]    # C_suivi only
+    metrics = scoring.score_call(
+        persisted=persisted, parsed=None,
+        items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
+        transcript=_transcript('atelier'), prompt_version='v1')
+    rows = [{'variant': 'atelier', 'call': 1, 'error': '', 'error_type': '',
+             'duration_ms': 1, 'wall_ms': 1, **metrics}]
+
+    def line(version, start, section='## Attendus'):
+        lines = _recap(rows, version)
+        return next(x for x in lines[lines.index(next(h for h in lines if h.startswith(section))):]
+                    if x.startswith(start))
+
+    def recall(version):
+        return line(version, '| atelier | 1 |', section='## Bruit').split(' | ')[2]
+
+    assert recall('v1') == '0/4'
+    assert line('v1', '| atelier | C_suivi').startswith('| atelier | C_suivi (info) |')
+    assert recall('v2') == '1/5'
+    assert line('v2', '| atelier | C_suivi').startswith('| atelier | C_suivi |')

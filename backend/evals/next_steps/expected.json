@@ -1,5 +1,5 @@
 {
-  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses).",
+  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses). `required_from` : version du prompt next_steps à partir de laquelle l'attendu compte dans le rappel (null = toujours informatif). `quote_match.any_of` : mots-clés (même syntaxe) qui reconnaissent la citation-justification PROPRE à l'attendu — sert à détecter une FUSION. `date_window` null : aucune date attendue (date non mesurée).",
   "transcripts": {
     "atelier": {
       "file": "../td279/transcript_atelier.txt",
@@ -39,7 +39,7 @@
     {
       "id": "A",
       "transcript": "atelier",
-      "required": true,
+      "required_from": "v1",
       "label": "EMAIL : envoyer le DPA et le SOC 2 (vendeur), avant vendredi",
       "match": {
         "fields": [
@@ -67,12 +67,20 @@
         "2026-10-20",
         "2026-10-23"
       ],
-      "carried_by_prospect": false
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "dpa",
+          "soc 2",
+          "soc2",
+          "envoyez les avant vendredi"
+        ]
+      }
     },
     {
       "id": "B",
       "transcript": "atelier",
-      "required": true,
+      "required_from": "v1",
       "label": "MEETING sécurité avec Laurent Petit (DSI), dans deux semaines, un mardi (~2026-11-03)",
       "match": {
         "fields": [
@@ -118,12 +126,20 @@
         "2026-11-02",
         "2026-11-06"
       ],
-      "carried_by_prospect": false
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "rendez vous securite",
+          "dans deux semaines",
+          "privilegiez un mardi",
+          "en comite le reste"
+        ]
+      }
     },
     {
       "id": "C_prospect",
       "transcript": "atelier",
-      "required": true,
+      "required_from": "v1",
       "label": "TASK portée par le PROSPECT : Isabelle présente le business case au contrôleur de gestion puis à Marc, avant le 15/11",
       "match": {
         "fields": [
@@ -147,12 +163,18 @@
         "2026-10-20",
         "2026-11-15"
       ],
-      "carried_by_prospect": true
+      "carried_by_prospect": true,
+      "quote_match": {
+        "any_of": [
+          "controleur de gestion",
+          "puis a marc"
+        ]
+      }
     },
     {
       "id": "C_vendeur",
       "transcript": "atelier",
-      "required": true,
+      "required_from": "v1",
       "label": "TASK vendeur : envoyer une première version (v1) du business case, la semaine prochaine",
       "match": {
         "fields": [
@@ -196,13 +218,18 @@
         "2026-10-26",
         "2026-11-01"
       ],
-      "carried_by_prospect": false
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "premiere version du business case"
+        ]
+      }
     },
     {
       "id": "C_suivi",
       "transcript": "atelier",
-      "required": false,
-      "label": "Suivi / relance de la validation du business case (INFORMATIF, interprétation à valider PO)",
+      "required_from": "v2",
+      "label": "Suivi / relance de la validation du business case (informatif en v1, exigé à partir du prompt v2)",
       "match": {
         "fields": [
           "suggested_title"
@@ -230,12 +257,18 @@
         "2026-10-20",
         "2026-11-15"
       ],
-      "carried_by_prospect": false
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "glisse d un an",
+          "budget 2027 se boucle"
+        ]
+      }
     },
     {
       "id": "D",
       "transcript": "logistix",
-      "required": true,
+      "required_from": "v1",
       "label": "MEETING avec Isabelle Roux (DAF), au plus tard le 2026-11-30",
       "match": {
         "fields": [
@@ -275,7 +308,176 @@
         "2026-10-14",
         "2026-11-30"
       ],
-      "carried_by_prospect": false
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "rendez vous avec isabelle",
+          "voit isabelle"
+        ]
+      }
+    },
+    {
+      "id": "E",
+      "transcript": "logistix",
+      "required_from": null,
+      "label": "EMAIL : envoyer la documentation technique à Thomas (INFORMATIF)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "doc",
+            "docs",
+            "documentation",
+            "technical doc*"
+          ]
+        ],
+        "none_of": [
+          "soc 2",
+          "soc2",
+          "questionnaire",
+          "securite",
+          "security"
+        ]
+      },
+      "expected_types": [
+        "EMAIL"
+      ],
+      "date_window": null,
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "documentation",
+          "doc technique",
+          "s integre",
+          "connecteur salesforce",
+          "sso"
+        ]
+      }
+    },
+    {
+      "id": "F",
+      "transcript": "logistix",
+      "required_from": null,
+      "label": "TASK : préparer le business case pour Isabelle (INFORMATIF)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "business case",
+            "cas d affaires",
+            "roi",
+            "retour sur investissement"
+          ]
+        ],
+        "none_of": [
+          "rendez vous",
+          "rdv",
+          "reunion",
+          "meeting",
+          "rencontr*",
+          "session",
+          "entretien",
+          "present*"
+        ]
+      },
+      "expected_types": [
+        "TASK"
+      ],
+      "date_window": null,
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "business case",
+          "retour sur investissement",
+          "roi"
+        ]
+      }
+    },
+    {
+      "id": "G",
+      "transcript": "logistix",
+      "required_from": null,
+      "label": "MEETING : session sécurité avec le DSI (INFORMATIF)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "securite",
+            "security",
+            "dsi",
+            "cio"
+          ],
+          [
+            "session",
+            "rendez vous",
+            "rdv",
+            "reunion",
+            "meeting",
+            "rencontr*",
+            "entretien",
+            "revue",
+            "review",
+            "organis*",
+            "planifi*",
+            "call",
+            "appel*"
+          ]
+        ],
+        "none_of": [
+          "questionnaire",
+          "soc 2",
+          "soc2",
+          "document*"
+        ]
+      },
+      "expected_types": [
+        "MEETING"
+      ],
+      "date_window": null,
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "session de securite",
+          "convaincre notre dsi",
+          "reticent",
+          "bloque le dernier projet"
+        ]
+      }
+    },
+    {
+      "id": "H",
+      "transcript": "logistix",
+      "required_from": null,
+      "label": "EMAIL : envoyer le questionnaire SOC 2 en amont (INFORMATIF)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "questionnaire",
+            "soc 2",
+            "soc2"
+          ]
+        ],
+        "none_of": []
+      },
+      "expected_types": [
+        "EMAIL"
+      ],
+      "date_window": null,
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
+          "questionnaire"
+        ]
+      }
     }
   ]
 }
