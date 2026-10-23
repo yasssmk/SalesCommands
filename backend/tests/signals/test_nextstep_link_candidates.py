@@ -196,3 +196,26 @@ def test_ranking_order_is_a_constant():
     assert NEXT_STEP_LINK_RANKING == (
         'shared_people', 'same_step', 'same_type', 'closest_date',
     )
+
+
+def test_without_next_step_date_the_reference_is_the_project_local_date(
+    authed_api_a, account, activity, decision_cycle, user_a, monkeypatch,
+):
+    """'Today' is the project's local date (timezone.localdate), not the
+    server clock's date (date.today)."""
+    from django.utils import timezone
+
+    monkeypatch.setattr(timezone, 'localdate', lambda *a, **k: datetime.date(2030, 1, 1))
+    ns = NextStepSignal(
+        account=account, source_activity=activity, decision_cycle=decision_cycle,
+        suggested_title='sans date', suggested_activity_type=ActivityType.CALL,
+        source=SignalSource.LLM_EXTRACTED,
+    )
+    ns.save(user=user_a, client_id=account.client_id)
+    _activity(account, user_a, 'dated', cycle=decision_cycle,
+              date=datetime.date(2030, 1, 11))
+
+    response = authed_api_a.get(_url(ns.id))
+
+    assert response.status_code == status.HTTP_200_OK, response.content
+    assert response.json()['data']['candidates'][0]['date_distance_days'] == 10

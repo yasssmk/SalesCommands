@@ -14,14 +14,15 @@ next step's decision cycle, same tenant, the next step's own conversation
   same_type     — the activity has the proposed type;
   closest_date  — gap in days between the activity's date (scheduled_date,
                   else due_date) and the next step's date (suggested_due_date,
-                  else today); an activity without a date comes last.
+                  else today in the project's time zone, timezone.localdate);
+                  an activity without a date comes last.
 
 Ties end on created_at then id — a stable order. The first candidate is the
 "link" proposal. A next step without a decision cycle has no candidate
 (next steps are DC-only).
 """
 
-import datetime
+from django.utils import timezone
 
 from app_modules.activities.constants import NON_TERMINAL_STATUSES
 
@@ -95,7 +96,7 @@ def link_candidates(signal):
         .prefetch_related('contacts')
     )
     signal_contacts = _signal_contact_ids(signal)
-    reference_date = signal.suggested_due_date or datetime.date.today()
+    reference_date = signal.suggested_due_date or timezone.localdate()
 
     ranked = [
         (activity, _criteria(activity, signal, signal_contacts, reference_date))
