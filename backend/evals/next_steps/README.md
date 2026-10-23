@@ -74,12 +74,14 @@ Logistix a une seule activité, la conversation, sur S1.
 |---|---|---|---|---|
 | A | EMAIL : envoyer le DPA et le SOC 2 (vendeur), avant vendredi | v1 | EMAIL | 2026-10-20 → 2026-10-23 |
 | B | MEETING sécurité avec Laurent Petit (DSI), « dans deux semaines, un mardi » | v1 | MEETING | 2026-11-02 → 2026-11-06 (2026-11-03 attendu) |
-| C_prospect | TASK **portée par le prospect** : Isabelle présente au contrôleur de gestion puis à Marc | v1 | TASK | 2026-10-20 → 2026-11-15 |
+| C_prospect | TASK **portée par le prospect** : Isabelle présente au contrôleur de gestion puis à Marc | v1 | TASK | aucune date attendue (aucune date dite pour la présentation) |
 | C_vendeur | TASK vendeur : v1 du business case « la semaine prochaine » | v1 | TASK, EMAIL ⚠️ | 2026-10-26 → 2026-11-01 |
-| C_suivi | suivi / relance de la validation du business case | **v2** (informatif en v1) | tous | 2026-10-20 → 2026-11-15 |
+| C_suivi | suivi vendeur de l'échéance du prospect (présentation, validation, budget) ; sans citation propre (inféré) | **v2** (informatif en v1) | tous | 2026-11-15 → 2026-12-16 |
 | D | MEETING avec Isabelle Roux (DAF), au plus tard fin novembre | v1 | MEETING | 2026-10-14 → 2026-11-30 |
 | I | EMAIL : version finale du business case | jamais (informatif) | EMAIL | 2026-10-20 → 2026-11-15 |
-| J | TASK : pilote / formation avec Karim | jamais (informatif) | TASK | aucune date attendue |
+| J | TASK : lancer le pilote avec Karim | jamais (informatif) | TASK | aucune date attendue |
+| J2 | TASK : former Karim pour le pilote | jamais (informatif) | TASK, MEETING | aucune date attendue |
+| K | TASK portée par le **prospect** : business case validé avant la clôture du budget 2027 | **v2** | TASK | 2026-12-14 → 2026-12-15 |
 | E | EMAIL : documentation technique pour Thomas | jamais (informatif) | EMAIL | aucune date attendue |
 | F | TASK : business case pour Isabelle | jamais (informatif) | TASK | aucune date attendue |
 | G | MEETING : session sécurité avec le DSI | jamais (informatif) | MEETING | aucune date attendue |

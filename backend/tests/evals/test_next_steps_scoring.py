@@ -43,10 +43,19 @@ class TestExpected:
     def test_the_po_ground_truth(self):
         required = {i['id'] for i in EXPECTED['items'] if scoring.is_required(i, 'v1')}
         assert required == {'A', 'B', 'C_prospect', 'C_vendeur', 'D'}
-        # C_suivi: informative in v1, required from prompt v2 on.
-        assert ITEMS['C_suivi']['required_from'] == 'v2'
+        # C_suivi and K: informative in v1, required from prompt v2 on.
+        assert (ITEMS['C_suivi']['required_from'], ITEMS['K']['required_from']) == ('v2', 'v2')
         assert {i['id'] for i in EXPECTED['items'] if scoring.is_required(i, 'v2')} == \
-            required | {'C_suivi'}
+            required | {'C_suivi', 'K'}
+        # K (PO, after the v2 run): the prospect validates the business case
+        # before the 2027 budget closes.
+        assert (ITEMS['K']['expected_types'], ITEMS['K']['carried_by_prospect'],
+                ITEMS['K']['date_window'], ITEMS['K']['expected_step']) == (
+            ['TASK'], True, ['2026-12-14', '2026-12-15'], 'BUSINESS_CASE')
+        # C_prospect: the presentation, no date said; C_suivi follows the
+        # prospect's deadline, budget included.
+        assert ITEMS['C_prospect']['date_window'] is None
+        assert ITEMS['C_suivi']['date_window'] == ['2026-11-15', '2026-12-16']
         # Logistix informative items (never in the recall).
         assert {i: (ITEMS[i]['expected_types'], ITEMS[i]['required_from'])
                 for i in ('E', 'F', 'G', 'H')} == {
@@ -61,7 +70,6 @@ class TestExpected:
         assert ITEMS['A']['date_window'][1] == '2026-10-23'          # avant vendredi
         assert scoring.in_window('2026-11-03', ITEMS['B']['date_window'])
         assert ITEMS['B']['expected_types'] == ['MEETING']
-        assert ITEMS['C_prospect']['date_window'][1] == '2026-11-15'
         assert ITEMS['C_prospect']['carried_by_prospect'] is True
         assert ITEMS['D']['date_window'][1] == '2026-11-30'
         assert ITEMS['D']['expected_types'] == ['MEETING']
@@ -78,7 +86,7 @@ class TestExpected:
         (lambda d: d['items'][1].update(id=d['items'][0]['id']), 'duplicate id'),
         (lambda d: d['items'][0]['match'].update(all_of=[[]]), 'all_of'),
         (lambda d: d['items'][0].update(required_from='two'), 'required_from'),
-        (lambda d: d['items'][0]['quote_match'].update(any_of=[]), 'quote_match'),
+        (lambda d: d['items'][0]['quote_match'].pop('any_of'), 'quote_match'),
     ])
     def test_a_malformed_ground_truth_is_refused(self, breakage, message):
         data = copy.deepcopy(EXPECTED)
@@ -120,7 +128,7 @@ class TestTolerantMatch:
         # Isabelle presenting the final version is C_prospect, not I.
         ('Isabelle présente le business case final au contrôleur de gestion', ['C_prospect']),
         ('Lancer le pilote avec Karim', ['J']),
-        ('Former Karim et son équipe', ['J']),
+        ('Former Karim et son équipe', ['J2']),
         ('Relancer Isabelle sur la validation du business case', ['C_suivi']),
         ('Merci', []),
     ])
@@ -381,7 +389,7 @@ def test_the_recall_follows_the_prompt_version():
 
     assert recall('v1') == '0/4'
     assert line('v1', '| atelier | C_suivi').startswith('| atelier | C_suivi (info) |')
-    assert recall('v2') == '1/5'
+    assert recall('v2') == '1/6'          # + C_suivi and K
     assert line('v2', '| atelier | C_suivi').startswith('| atelier | C_suivi |')
 
 
@@ -418,7 +426,7 @@ def test_the_po_expected_steps():
         'G': 'TECHNICAL_FIT', 'H': 'TECHNICAL_FIT',
         'C_prospect': 'BUSINESS_CASE', 'C_vendeur': 'BUSINESS_CASE', 'C_suivi': 'BUSINESS_CASE',
         'I': 'BUSINESS_CASE', 'D': 'BUSINESS_CASE', 'F': 'BUSINESS_CASE',
-        'J': 'SOLUTION_VALIDATION',
+        'J': 'SOLUTION_VALIDATION', 'J2': 'SOLUTION_VALIDATION', 'K': 'BUSINESS_CASE',
     }
 
 
@@ -474,16 +482,122 @@ def test_the_recap_shows_the_step_column():
 # BILINGUAL MATCH -- titles of the real runs (v2 titles are in English)
 # =============================================================================
 
-# VERBATIM titles of the PO runs, as quoted by the PO.
+# VERBATIM titles of the PO runs (distinct titles), with the item each one
+# must match -- [] = a legitimate unmatched next step. No real title may
+# fall on a wrong item.
 REAL_TITLES = [
-    # v2 run out/20261023-125420, logistix: the meeting with Isabelle, present
-    # in the 20 calls -- scored F (5/20 D) by the French-only rules.
-    ('logistix', 'Meet Isabelle Roux to review the business case', ['D']),
-    ('logistix', 'Schedule business case meeting with Isabelle Roux', ['D']),
-    # gpt-4o-mini v1 baseline, logistix/call_01: the merged one (F <- D).
-    ('logistix', 'Prepare business case for Isabelle', ['F']),
     # Terra v1 run, atelier.
     ('atelier', 'Envoyer le DPA et le rapport SOC 2 à Thomas', ['A']),
+    # gpt-4o-mini v1 baseline, logistix/call_01: the merged one (F <- D).
+    ('logistix', 'Prepare business case for Isabelle', ['F']),
+    # v2 run out/20261023-125420, logistix (45 distinct titles).
+    ('logistix', 'Send the SOC 2 security questionnaire', ['H']),
+    ('logistix', 'Organize a security session with the DSI', ['G']),
+    ('logistix', 'Meet Isabelle Roux to review the business case', ['D']),
+    ('logistix', 'Prepare a quantified ROI business case for Isabelle Roux', ['F']),
+    ('logistix', 'Meet with Isabelle Roux to review the business case', ['D']),
+    ('logistix', 'Send Salesforce and Azure AD integration documentation', ['E']),
+    ('logistix', 'Send Salesforce and Azure AD technical documentation', ['E']),
+    ('logistix', 'Prepare a quantified ROI business case', ['F']),
+    ('logistix', 'Send Salesforce and Azure AD SSO technical documentation', ['E']),
+    ('logistix', "Organize a security session with Logistix's DSI", ['G']),
+    ('logistix', 'Send technical integration documentation', ['E']),
+    ('logistix', 'Send SOC 2 security questionnaire', ['H']),
+    ('logistix', 'Hold business case meeting with Isabelle Roux', ['D']),
+    ('logistix', 'Organize a security review session with the DSI', ['G']),
+    ('logistix', 'Send technical integration documentation to Thomas', ['E']),
+    ('logistix', 'Schedule a security review session with the DSI', ['G']),
+    ('logistix', 'Send the SOC 2 questionnaire', ['H']),
+    ('logistix', 'Obtain DAF validation of the ROI', []),
+    ('logistix', "Follow up on the DAF's ROI validation", []),
+    ('logistix', 'Prepare the ROI business case for Isabelle Roux', ['F']),
+    ('logistix', 'Schedule business case meeting with Isabelle Roux', ['D']),
+    ('logistix', 'Organize security session with Logistix DSI', ['G']),
+    ('logistix', 'Send SOC 2 questionnaire before the DSI security session', ['H']),
+    ('logistix', 'Prepare a quantified ROI business case for the CFO', ['F']),
+    ('logistix', 'Send meeting recap', []),
+    ('logistix', 'Prepare quantified ROI business case', ['F']),
+    ('logistix', 'Prepare quantified ROI business case for Isabelle', ['F']),
+    ('logistix', 'Send SOC 2 security questionnaire before DSI security session', ['H']),
+    ('logistix', "Organize security review session with Logistix's DSI", ['G']),
+    ('logistix', 'Schedule a security session with the DSI', ['G']),
+    ('logistix', 'Schedule business-case meeting with Isabelle Roux', ['D']),
+    ('logistix', 'Send SOC 2 questionnaire before the DSI security review', ['H']),
+    ('logistix', 'Follow up on the Isabelle Roux business-case review', []),
+    ('logistix', 'Send Salesforce integration and Azure AD SSO documentation', ['E']),
+    ('logistix', 'Send Salesforce and Azure AD technical documentation to Thomas', ['E']),
+    ('logistix', 'Prepare quantified ROI business case for Isabelle Roux', ['F']),
+    ('logistix', 'Send the SOC 2 questionnaire for DSI security review', ['H']),
+    ('logistix', 'Obtain DSI security validation', []),
+    ('logistix', 'Prepare the ROI business case for Isabelle', ['F']),
+    ('logistix', 'Meet with Isabelle to review the business case', ['D']),
+    ('logistix', 'Prepare quantified ROI business case for Finance', ['F']),
+    ('logistix', 'Schedule Finance meeting with Isabelle Roux', ['D']),
+    ('logistix', 'Organize security review session with the DSI', ['G']),
+    ('logistix', 'Prepare a quantified ROI business case for Isabelle', ['F']),
+    ('logistix', 'Send a meeting recap to Logistix', []),
+    # v2 run out/20261023-125420, atelier (61 distinct titles).
+    ('atelier', 'Launch the pilot with Karim', ['J']),
+    ('atelier', 'Train Karim for the pilot', ['J2']),
+    ('atelier', 'Send the first version of the business case', ['C_vendeur']),
+    ('atelier', 'Hold a security review meeting with Laurent Petit', ['B']),
+    ('atelier', 'Send the DPA and SOC 2 report', ['A']),
+    ('atelier', 'Validate the business case for the 2027 budget', ['K']),
+    ('atelier', 'Hold security meeting with Laurent Petit', ['B']),
+    ('atelier', 'Follow up on business case validation', ['C_suivi']),
+    ('atelier', 'Hold a security meeting with Laurent Petit', ['B']),
+    ('atelier', 'Send DPA and SOC 2 report to Logistix', ['A']),
+    ('atelier', 'Launch pilot with Karim', ['J']),
+    ('atelier', 'Follow up on business-case validation', ['C_suivi']),
+    ('atelier', 'Deliver the final business case', ['I']),
+    ('atelier', 'Send the final business case', ['I']),
+    ('atelier', 'Present the final business case to the finance controller', ['C_prospect']),
+    ('atelier', 'Present the final business case to Marc', ['C_prospect']),
+    ('atelier', 'Present the final business case to the management controller and Marc', ['C_prospect']),
+    ('atelier', 'Send the DPA and SOC 2 report to Thomas and Laurent', ['A']),
+    ('atelier', 'Send first version of the business case', ['C_vendeur']),
+    ('atelier', 'Send DPA and SOC 2 report to Thomas', ['A']),
+    ('atelier', 'Send the DPA and SOC 2 report to Logistix', ['A']),
+    ('atelier', 'Send DPA and SOC 2 report to Thomas and Laurent', ['A']),
+    ('atelier', 'Hold security review meeting with Laurent Petit', ['B']),
+    ('atelier', 'Send the final business case to Isabelle', ['I']),
+    ('atelier', 'Present the final business case to the controller and Marc', ['C_prospect']),
+    ('atelier', 'Follow up on the internal business-case review', ['C_suivi']),
+    ('atelier', 'Launch a pilot with Karim in January', ['J']),
+    ('atelier', 'Follow up on 2027 budget validation', ['C_suivi']),
+    ('atelier', 'Launch a pilot with Karim', ['J']),
+    ('atelier', 'Validate the business case before the 2027 budget closes', ['K']),
+    ('atelier', 'Send the final business case for finance and executive review', ['I']),
+    ('atelier', 'Validate the business case internally', ['K']),
+    ('atelier', 'Follow up on internal business-case validation', ['C_suivi']),
+    ('atelier', 'Send DPA and SOC 2 report for security review', ['A']),
+    ('atelier', 'Send the first business-case version', ['C_vendeur']),
+    ('atelier', 'Deliver the final business case for finance and executive review', ['I']),
+    ('atelier', 'Present the business case to the controller and Marc', ['C_prospect']),
+    ('atelier', 'Follow up on 2027 budget business-case validation', ['C_suivi']),
+    ('atelier', 'Email the DPA and SOC 2 report to Thomas and Laurent', ['A']),
+    ('atelier', 'Deliver the final business case to Isabelle', ['I']),
+    ('atelier', 'Send final business case for internal presentation', ['I']),
+    ('atelier', 'Follow up on the 2027 budget business-case validation', ['C_suivi']),
+    ('atelier', 'Send final version of the business case', ['I']),
+    ('atelier', 'Launch pilot with Karim in January', ['J']),
+    ('atelier', 'Send the final business case for internal presentation', ['I']),
+    ('atelier', 'Follow up on the business-case validation', ['C_suivi']),
+    ('atelier', 'Schedule the security meeting with Laurent Petit', ['B']),
+    ('atelier', 'Present the final business case to the finance controller and Marc', ['C_prospect']),
+    ('atelier', 'Follow up on the final business-case presentation', ['C_suivi']),
+    ('atelier', 'Complete internal business-case validation before budget closure', ['K']),
+    ('atelier', 'Follow up on business-case validation before budget closure', ['C_suivi']),
+    ('atelier', 'Present the business case to the finance controller and Marc', ['C_prospect']),
+    ('atelier', 'Complete the 2027 budget decision', ['K']),
+    ('atelier', 'Follow up on the 2027 budget decision', ['C_suivi']),
+    ('atelier', 'Follow up on the business case validation', ['C_suivi']),
+    ('atelier', 'Hold security review with Laurent Petit', ['B']),
+    ('atelier', 'Present the business case to the controller', ['C_prospect']),
+    ('atelier', 'Present the business case to Marc', ['C_prospect']),
+    ('atelier', 'Hold a security review with Laurent Petit', ['B']),
+    ('atelier', 'Follow up on the internal business-case presentation', ['C_suivi']),
+    ('atelier', 'Launch the pilot with Karim in January', ['J']),
 ]
 
 
@@ -501,7 +615,7 @@ def test_real_titles(transcript, title, expected):
     ('atelier', 'Schedule security review meeting with Laurent Petit', ['B']),
     ('atelier', 'Hold security meeting with the CIO on a Tuesday', ['B']),
     ('atelier', 'Isabelle presents business case to management controller and Marc', ['C_prospect']),
-    ('atelier', 'Internal validation of the business case by Isabelle', ['C_prospect']),
+    ('atelier', 'Internal validation of the business case by Isabelle', ['K']),
     ('atelier', 'Send first version of the business case to Isabelle', ['C_vendeur']),
     ('atelier', 'Draft the ROI business case', ['C_vendeur']),
     ('atelier', 'Follow up on business case validation with Isabelle', ['C_suivi']),
@@ -512,7 +626,10 @@ def test_real_titles(transcript, title, expected):
     ('atelier', 'Present final business case to the management controller', ['C_prospect']),
     ('atelier', 'Isabelle presents the final business case to Marc', ['C_prospect']),
     ('atelier', 'Launch pilot with Karim in January', ['J']),
-    ('atelier', 'Train Karim and the key account team', ['J']),
+    ('atelier', 'Train Karim and the key account team', ['J2']),
+    # C_prospect needs the ACTION of presenting; I excludes presenting.
+    ('atelier', 'Marc approves the 2027 budget', ['K']),
+    ('atelier', 'Present the final business case internally', ['C_prospect']),
     # D vs F: the ACTION decides.
     ('logistix', 'Meeting with Isabelle Roux (CFO) on the business case', ['D']),
     ('logistix', 'Present the business case to the CFO', ['D']),
@@ -540,3 +657,25 @@ def test_the_titles_report_lists_every_stored_title_with_its_items():
     assert "| Meet Isabelle Roux to review the business case | 2 | {'MEETING': 2} | D |" in lines
     assert "| Prepare business case for Isabelle | 1 | {'TASK': 1} | F |" in lines
     assert "| Commander des croissants | 1 | {'TASK': 1} | — (non apparié) |" in lines
+
+
+def test_launching_the_pilot_and_training_karim_are_two_items_no_duplicate():
+    persisted = [_ns('Launch the pilot with Karim', 'TASK'), _ns('Train Karim for the pilot', 'TASK')]
+    m = scoring.score_call(
+        persisted=persisted, parsed={'signals': persisted},
+        items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
+        transcript=_transcript('atelier'), prompt_version='v2')
+    assert (m['J_present'], m['J2_present'], m['J_matches'], m['J2_matches']) == (True, True, 1, 1)
+    assert (m['duplicates'], m['unmatched']) == (0, 0)
+
+
+def test_k_the_prospect_validation_before_the_budget_closes():
+    persisted = [_ns('Validate the business case for the 2027 budget', 'TASK', '2026-12-15',
+                     carried_by_prospect=True, suggested_decision_step='BUSINESS_CASE')]
+    m = scoring.score_call(
+        persisted=persisted, parsed={'signals': persisted},
+        items=[i for i in EXPECTED['items'] if i['transcript'] == 'atelier'],
+        transcript=_transcript('atelier'), prompt_version='v2')
+    assert (m['K_present'], m['K_type_ok'], m['K_date_in_window'], m['K_carried_ok'],
+            m['K_step_ok']) == (True, True, True, True, True)
+    assert m['C_suivi_present'] is False

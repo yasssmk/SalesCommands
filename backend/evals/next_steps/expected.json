@@ -143,6 +143,7 @@
             "revue",
             "review",
             "organis*",
+            "organiz*",
             "planifi*",
             "plan"
           ]
@@ -180,31 +181,45 @@
       "id": "C_prospect",
       "transcript": "atelier",
       "required_from": "v1",
-      "label": "TASK portée par le PROSPECT : Isabelle présente le business case au contrôleur de gestion puis à Marc, avant le 15/11",
+      "label": "TASK portée par le PROSPECT : Isabelle présente le business case au contrôleur de gestion puis à Marc (aucune date dite pour la présentation)",
       "match": {
         "fields": [
           "suggested_title"
         ],
         "all_of": [
           [
+            "present*"
+          ],
+          [
             "controleur",
             "controle de gestion",
             "controller",
             "management controller",
             "marc",
+            "internal*",
             "interne",
-            "internal"
+            "en interne"
           ]
         ],
-        "none_of": []
+        "none_of": [
+          "follow*",
+          "relanc*",
+          "suivi",
+          "envoy*",
+          "envoi",
+          "send*",
+          "share*",
+          "partag*",
+          "deliver*",
+          "transmet*",
+          "transmit*",
+          "email*"
+        ]
       },
       "expected_types": [
         "TASK"
       ],
-      "date_window": [
-        "2026-10-20",
-        "2026-11-15"
-      ],
+      "date_window": null,
       "carried_by_prospect": true,
       "quote_match": {
         "any_of": [
@@ -280,7 +295,7 @@
       "id": "C_suivi",
       "transcript": "atelier",
       "required_from": "v2",
-      "label": "Suivi / relance de la validation du business case (informatif en v1, exigé à partir du prompt v2)",
+      "label": "Suivi vendeur de l'échéance du prospect (présentation, validation, budget) -- exigé à partir du prompt v2 ; pas de citation propre (suivi inféré)",
       "match": {
         "fields": [
           "suggested_title"
@@ -304,6 +319,8 @@
             "valid*",
             "approv*",
             "presentation",
+            "budget",
+            "decision",
             "controleur",
             "controller",
             "marc"
@@ -318,15 +335,12 @@
         "TASK"
       ],
       "date_window": [
-        "2026-10-20",
-        "2026-11-15"
+        "2026-11-15",
+        "2026-12-16"
       ],
       "carried_by_prospect": false,
       "quote_match": {
-        "any_of": [
-          "glisse d un an",
-          "budget 2027 se boucle"
-        ]
+        "any_of": []
       },
       "expected_step": "BUSINESS_CASE"
     },
@@ -519,6 +533,7 @@
             "revue",
             "review",
             "organis*",
+            "organiz*",
             "planifi*",
             "plan"
           ]
@@ -604,7 +619,13 @@
           "controller",
           "management controller",
           "marc",
-          "present*"
+          "present",
+          "presents",
+          "presente",
+          "presenter",
+          "follow*",
+          "relanc*",
+          "suivi"
         ]
       },
       "expected_types": [
@@ -628,7 +649,7 @@
       "id": "J",
       "transcript": "atelier",
       "required_from": null,
-      "label": "TASK : pilote / formation avec Karim (INFORMATIF)",
+      "label": "TASK : lancer le pilote avec Karim (INFORMATIF)",
       "match": {
         "fields": [
           "suggested_title"
@@ -636,15 +657,16 @@
         "all_of": [
           [
             "pilot*",
-            "formation",
-            "former",
-            "training",
-            "train*",
-            "karim",
-            "onboard*"
+            "pilote"
           ]
         ],
-        "none_of": []
+        "none_of": [
+          "train*",
+          "training",
+          "former",
+          "formation",
+          "onboard*"
+        ]
       },
       "expected_types": [
         "TASK"
@@ -653,12 +675,91 @@
       "carried_by_prospect": false,
       "quote_match": {
         "any_of": [
-          "pilote",
-          "karim",
+          "lance le pilote",
+          "pour un pilote"
+        ]
+      },
+      "expected_step": "SOLUTION_VALIDATION"
+    },
+    {
+      "id": "J2",
+      "transcript": "atelier",
+      "required_from": null,
+      "label": "TASK : former Karim pour le pilote (INFORMATIF)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "train*",
+            "training",
+            "former",
+            "formation",
+            "onboard*"
+          ]
+        ],
+        "none_of": []
+      },
+      "expected_types": [
+        "TASK",
+        "MEETING"
+      ],
+      "date_window": null,
+      "carried_by_prospect": false,
+      "quote_match": {
+        "any_of": [
           "le former"
         ]
       },
       "expected_step": "SOLUTION_VALIDATION"
+    },
+    {
+      "id": "K",
+      "transcript": "atelier",
+      "required_from": "v2",
+      "label": "TASK portée par le PROSPECT : business case validé avant la clôture du budget 2027 (15/12)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "valid*",
+            "approv*",
+            "decision"
+          ],
+          [
+            "business case",
+            "cas d affaires",
+            "roi",
+            "retour sur investissement",
+            "budget"
+          ]
+        ],
+        "none_of": [
+          "follow*",
+          "relanc*",
+          "suivi"
+        ]
+      },
+      "expected_types": [
+        "TASK"
+      ],
+      "date_window": [
+        "2026-12-14",
+        "2026-12-15"
+      ],
+      "carried_by_prospect": true,
+      "quote_match": {
+        "any_of": [
+          "budget 2027 se boucle",
+          "quinze decembre",
+          "n est pas valide avant",
+          "glisse d un an"
+        ]
+      },
+      "expected_step": "BUSINESS_CASE"
     }
   ]
 }

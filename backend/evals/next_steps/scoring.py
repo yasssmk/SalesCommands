@@ -78,8 +78,10 @@ def validate_expected(data):
             raise ValueError(f'item {item["id"]}: match needs fields and non-empty all_of groups')
         if item['expected_step'] not in _step_names():
             raise ValueError(f'item {item["id"]}: expected_step must be a PipelineStep value')
-        if not (item['quote_match'].get('any_of') or []):
-            raise ValueError(f'item {item["id"]}: quote_match needs a non-empty any_of')
+        # An EMPTY any_of: the item has no quote of its own (an inferred
+        # follow-up) -- it is never absorbed.
+        if not isinstance(item['quote_match'].get('any_of'), list):
+            raise ValueError(f'item {item["id"]}: quote_match needs an any_of list')
         if item['required_from'] is not None and not _VERSION_RE.match(str(item['required_from'])):
             raise ValueError(f'item {item["id"]}: required_from must be null or "v<N>"')
         if item['date_window'] is not None:
