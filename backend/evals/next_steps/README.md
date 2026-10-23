@@ -25,13 +25,19 @@ Plomberie commune avec `evals/td279` : `evals/common/eval_kit.py` (RecordingProv
 ## Commandes (depuis `backend/`, avec `OPENAI_API_KEY` dans l'environnement)
 
 ```bash
-# La ligne de base : 2 variantes x 20 appels = 40 appels gpt-4o-mini
+# La production : 2 variantes x 20 appels = 40 appels. Depuis la 3.1, c'est
+# gpt-5.6-terra + Structured Outputs (config.NEXT_STEPS_PROVIDER = openai_next_steps)
 python evals/next_steps/run_next_steps_eval.py --n 20
+
+# gpt-4o-mini, AVEC le schéma que le pipeline envoie désormais. Ce n'est PAS
+# la ligne de base 3.0 (sans schéma) : son dossier de run reste la référence.
+python evals/next_steps/run_next_steps_eval.py --n 20 --model gpt-4o-mini
 
 # Une variante, quelques appels
 python evals/next_steps/run_next_steps_eval.py --n 3 --only atelier
 
-# Forcer un modèle DÉCLARÉ dans ai_pipelines/config.py PROVIDER_CONFIG
+# Forcer un autre modèle DÉCLARÉ dans ai_pipelines/config.py PROVIDER_CONFIG
+# (un provider sans support du schéma, comme Claude, est refusé avant tout appel)
 python evals/next_steps/run_next_steps_eval.py --n 20 --model gpt-5.4-mini-2026-03-17
 
 # Recalculer le récap d'un run à partir des réponses enregistrées (après une
@@ -42,7 +48,7 @@ python evals/next_steps/run_next_steps_eval.py --rescore evals/next_steps/out/<s
 python evals/next_steps/run_next_steps_eval.py --dry-run --n 2
 ```
 
-**Coût et durée estimés de `--n 20`** (gpt-4o-mini, 40 appels séquentiels) :
+**Coût et durée estimés de `--n 20` sur la ligne de base gpt-4o-mini** (40 appels séquentiels ; pour Terra, voir `meta.reasoning_tokens` et `duration_ms` d'un premier run) :
 - le prompt fait environ 10 à 12 k caractères, soit environ 3 k tokens en entrée ; la réponse, environ 0,5 à 1 k tokens en sortie ;
 - au tarif public de gpt-4o-mini (0,15 $ par million de tokens en entrée, 0,60 $ par million en sortie, à vérifier), cela fait environ 0,001 $ par appel, donc **moins de 0,10 $ au total**, retries de parsing compris ;
 - comptez **5 à 10 minutes** au total, environ 8 à 15 s par appel. Le pire cas est d'environ 20 minutes (timeout de 30 s à chaque appel).

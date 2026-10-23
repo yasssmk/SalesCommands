@@ -10,6 +10,13 @@ everything it creates (tenant, user, account, contact, decision cycle and
 its steps, conversation, run rows, next steps) is rolled back: one
 savepoint per call, the whole run inside one transaction never committed.
 
+Model: the pipeline's production entry (config.NEXT_STEPS_PROVIDER --
+gpt-5.6-terra + Structured Outputs since 3.1); --model forces another
+DECLARED entry. The pipeline sends its response schema whatever the model
+(--model gpt-4o-mini = gpt-4o-mini WITH the schema, not the 3.0 baseline,
+which had none: its run folder stays the reference); a provider without
+schema support is refused before any call.
+
 Real path, end to end:
 
   * the conversation is created by the standard service
@@ -42,7 +49,8 @@ Output (one folder per run, see --out; a non-empty folder is refused):
   summary.csv / summary.md   one row per call + the recap
 
 Usage (from backend/, with OPENAI_API_KEY in the environment):
-  python evals/next_steps/run_next_steps_eval.py --n 20
+  python evals/next_steps/run_next_steps_eval.py --n 20                    # production (Terra)
+  python evals/next_steps/run_next_steps_eval.py --n 20 --model gpt-4o-mini  # 4o-mini + schema
   python evals/next_steps/run_next_steps_eval.py --n 3 --only atelier
   python evals/next_steps/run_next_steps_eval.py --dry-run      # no API call
   python evals/next_steps/run_next_steps_eval.py --rescore evals/next_steps/out/<stamp>
@@ -78,7 +86,10 @@ from app_modules.ai_pipelines.prompts.next_steps.next_steps_v1 import (  # noqa:
 )
 from app_modules.ai_pipelines.prompts.transcript_signals import context as session_ctx  # noqa: E402
 from app_modules.ai_pipelines.prompts.transcript_signals.system import SYSTEM_PROMPT  # noqa: E402
-from app_modules.ai_pipelines.providers import get_provider  # noqa: E402
+from app_modules.ai_pipelines.providers import (  # noqa: E402
+    get_provider,
+    provider_supports_response_schema,
+)
 from app_modules.ai_pipelines.providers.base import (  # noqa: E402
     LLMCallResult,
     LLMProviderError,
@@ -105,7 +116,12 @@ from evals.next_steps import scoring  # noqa: E402
 EXPECTED = scoring.load_expected(HERE / 'expected.json')
 CASES = EXPECTED['transcripts']
 VARIANTS = tuple(CASES)                     # one variant per transcript
-MODELS = declared_models()
+# The pipeline's own entry wins for its model (gpt-5.6-terra is also the
+# People entry's model).
+MODELS = {
+    **declared_models(),
+    ai_config.PROVIDER_CONFIG[ai_config.NEXT_STEPS_PROVIDER]['model']: ai_config.NEXT_STEPS_PROVIDER,
+}
 
 
 def _transcript(key):
@@ -274,7 +290,7 @@ def _failure(run):
 
 
 def run_variant(key, n, out_dir, dry_run, tenant_name, forced_key=None):
-    provider_key = forced_key or ai_config.ACTIVE_PROVIDER
+    provider_key = forced_key or ai_config.NEXT_STEPS_PROVIDER
     provider = DryRunProvider() if dry_run else get_provider(provider_key)
     model = ai_config.PROVIDER_CONFIG[provider_key]['model']
     transcript = _transcript(key)
@@ -308,8 +324,8 @@ def run_variant(key, n, out_dir, dry_run, tenant_name, forced_key=None):
         if run.status != AIPipelineStatus.SUCCESS:
             raise _failure(run)
         meta = {k: sub_call.get(k) for k in (
-            'attempt', 'duration_ms', 'input_tokens', 'output_tokens', 'model_used',
-            'emitted_count', 'dropped_by_safety_filter')}
+            'attempt', 'duration_ms', 'input_tokens', 'output_tokens', 'reasoning_tokens',
+            'model_used', 'emitted_count', 'dropped_by_safety_filter')}
         # The raw answer the pipeline parsed (last attempt, same parser).
         parsed = PromptBuilder.parse_response(recorder.calls[-1]['raw_response'])
         return parsed, meta, {'persisted': stored, 'run_status': run.status}
@@ -461,19 +477,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     add_common_arguments(
         parser, VARIANTS, MODELS,
-        model_help='force a model DECLARED in ai_pipelines/config.py PROVIDER_CONFIG; '
-                   'default: the active provider (the NextStepsPipeline production model)',
+        model_help='force a model DECLARED in ai_pipelines/config.py PROVIDER_CONFIG '
+                   '(sent WITH the pipeline\'s response schema); default: the pipeline\'s production '
+                   'entry (config.NEXT_STEPS_PROVIDER)',
     )
     args = parser.parse_args()
+    forced_key = MODELS[args.model] if args.model else None
+    if forced_key and not provider_supports_response_schema(forced_key):
+        sys.exit(f'--model {args.model}: its provider does not support the response schema '
+                 f'the next_steps pipeline sends.')
 
     if args.rescore:
         rescore(Path(args.rescore))
         return
 
     out_dir = prepare_out_dir(args.out, HERE)
-    forced_key = MODELS[args.model] if args.model else None
     names = args.only or list(VARIANTS)
-    model = ai_config.PROVIDER_CONFIG[forced_key or ai_config.ACTIVE_PROVIDER]['model']
+    model = ai_config.PROVIDER_CONFIG[forced_key or ai_config.NEXT_STEPS_PROVIDER]['model']
     rows = []
     # Everything created by the run is rolled back at the end.
     with transaction.atomic():

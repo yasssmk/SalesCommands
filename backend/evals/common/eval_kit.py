@@ -91,9 +91,14 @@ def error_type(exc):
 
 def declared_models():
     """--model choices: ONLY the models declared in the repo config (never
-    invented) -> PROVIDER_CONFIG key."""
+    invented) -> PROVIDER_CONFIG key. A model declared by several entries
+    maps to the FIRST one (gpt-5.6-terra -> openai_people, as before
+    openai_next_steps existed); a script may prefer its own entry."""
     from app_modules.ai_pipelines import config as ai_config
-    return {cfg['model']: key for key, cfg in ai_config.PROVIDER_CONFIG.items()}
+    models = {}
+    for key, cfg in ai_config.PROVIDER_CONFIG.items():
+        models.setdefault(cfg['model'], key)
+    return models
 
 
 # =============================================================================
