@@ -181,12 +181,22 @@ class TestPoReviewCorrections:
     def test_rule_4_maps_the_five_generic_steps(self, sent, mapping):
         assert mapping in _flat(sent['user'])
 
-    def test_every_free_text_in_the_transcript_language(self, sent):
+    def test_every_free_text_in_english(self, sent):
+        """PO decision (reverses the previous one, same v2): free text in
+        English, quotes and date text verbatim in the transcript language."""
         user = _flat(sent['user'])
         assert ('Write every free text -- `suggested_title`, `suggested_objective`, '
-                '`suggested_topics`, `suggested_success_criterion` -- in the language of '
-                'the transcript') in user
-        assert '`source_quote` and `suggested_date_text` stay verbatim' in user
+                '`suggested_topics`, `suggested_success_criterion` -- in ENGLISH, whatever '
+                'the language of the transcript') in user
+        assert ('`source_quote` and `suggested_date_text` stay verbatim, in the language '
+                'of the transcript') in user
+        assert 'in the language of the transcript. The examples' not in user
+        assert "in the transcript's language" not in user
+
+    def test_the_follow_up_title_starts_with_follow_up_on(self, sent):
+        user = _flat(sent['user'])
+        assert 'otherwise a TASK whose title starts with "Follow up on",' in user
+        assert 'Retour sur' not in user
 
     def test_still_version_v2(self):
         from app_modules.ai_pipelines.prompts.next_steps.next_steps_v2 import (

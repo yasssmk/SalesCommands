@@ -28,11 +28,14 @@ What v2 changes (PO rules, Sprint Next steps 3.3)
      said, else "").
   e) The model never chooses an activity to link: the server ranks the
      candidates (signals/services/next_step_link_service.py, 2.3).
-  f) Every free text (title, objective, topics, success criterion) in the
-     language of the transcript (LANGUAGE paragraph).
+  f) Every free text (title, objective, topics, success criterion) in
+     ENGLISH; source_quote and suggested_date_text verbatim, in the language
+     of the transcript (LANGUAGE paragraph). The follow-up title starts with
+     "Follow up on".
 
 The PO review corrections (rule 3 is_inferred, rule 4 on the 5 generic
-steps, the LANGUAGE paragraph) came before any v2 measure: same version v2.
+steps, the LANGUAGE paragraph -- first "the transcript's language", then,
+PO decision, English) came before any v2 measure: same version v2.
 
 No example comes from the eval transcripts (evals/next_steps leak guard,
 checked in tests/ai_pipelines/test_next_steps_prompt_v2.py). The v1 TD-5
@@ -221,9 +224,8 @@ EMISSION RULES
    stated as its date. PLUS a seller follow-up as a SEPARATE next step,
    `carried_by_prospect`: false: a CALL only when the transcript explicitly
    plans that call, with `is_inferred`: false; otherwise a TASK whose title
-   starts with "Follow up on" in the transcript's language (e.g. French
-   "Retour sur ..."), dated on or right after the prospect's deadline when
-   one is said -- a follow-up the transcript does not explicitly state is
+   starts with "Follow up on", dated on or right after the prospect's
+   deadline when one is said -- a follow-up the transcript does not explicitly state is
    inferred: `is_inferred`: true, its confidence set per the EPISTEMIC
    FILTER. Every other next step has `carried_by_prospect`: false.
    EXAMPLE: "Our legal team must approve the terms before the 30th" ->
@@ -251,8 +253,8 @@ EMISSION RULES
 5. `suggested_objective` is the OBJECTIVE of the action: what it achieves
    and why it matters -- the stakes from BOTH angles, the prospect's (what
    they get out of it) and the seller's (how it advances the deal). 1-3
-   concise sentences in the transcript's language; NOT a restatement of the
-   title, NOT a quote. Emit "" only when the transcript gives no basis.
+   concise sentences in English; NOT a restatement of the title, NOT a
+   quote. Emit "" only when the transcript gives no basis.
    `suggested_success_criterion` is what makes the action a success, ONLY
    when it is said, or deducible from what is said; otherwise "". Never a
    generic criterion.
@@ -295,10 +297,9 @@ EMISSION RULES
 
 LANGUAGE
 Write every free text -- `suggested_title`, `suggested_objective`,
-`suggested_topics`, `suggested_success_criterion` -- in the language of the
-transcript. The examples of this prompt are in English: transpose them,
-never copy their language. `source_quote` and `suggested_date_text` stay
-verbatim.
+`suggested_topics`, `suggested_success_criterion` -- in ENGLISH, whatever
+the language of the transcript. `source_quote` and `suggested_date_text`
+stay verbatim, in the language of the transcript.
 
 DATES
 {RELATIVE_DATE_RULE}
