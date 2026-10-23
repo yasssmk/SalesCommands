@@ -1,0 +1,281 @@
+{
+  "_doc": "Vérité de référence de l'éval next_steps (Sprint Next steps 3.0) — À VALIDER PAR LE PO. Lue par scoring.py ; règles de match dans README.md § Vérité de référence. Mots-clés : comparés sans casse ni accents, en MOT ENTIER ; un '*' final en fait un préfixe ('rencontr*' couvre rencontre / rencontrer ; 'marc' ne couvre pas 'marché'). Un signal correspond à un attendu quand CHAQUE groupe de all_of a au moins un mot-clé dans ses champs `fields`, et qu'aucun mot-clé de none_of n'y est. Le type et la date ne servent PAS au match : ils sont mesurés à part (type correct, date dans la fenêtre, bornes incluses).",
+  "transcripts": {
+    "atelier": {
+      "file": "../td279/transcript_atelier.txt",
+      "conversation_date": "2026-10-20",
+      "activity_title": "Atelier business case",
+      "contact": {
+        "first_name": "Isabelle",
+        "last_name": "Roux"
+      },
+      "dc_stage": "BUSINESS_CASE"
+    },
+    "logistix": {
+      "file": "../td279/transcript_logistix.txt",
+      "conversation_date": "2026-10-14",
+      "activity_title": "Démo SalesCommands",
+      "contact": {
+        "first_name": "Claire",
+        "last_name": "Dubois"
+      },
+      "dc_stage": "QUALIFICATION"
+    }
+  },
+  "leak_guard": {
+    "_doc": "Garde anti-fuite (point 7) : aucun de ces noms, ni aucune suite de ngram_words mots d'une transcription, ne doit figurer dans le prompt hors de la transcription elle-même.",
+    "ngram_words": 5,
+    "names": [
+      "Isabelle Roux",
+      "Thomas Lefèvre",
+      "Laurent Petit",
+      "Sophie Garnier",
+      "Julien Moreau",
+      "Claire Dubois",
+      "Nadia Benali"
+    ]
+  },
+  "items": [
+    {
+      "id": "A",
+      "transcript": "atelier",
+      "required": true,
+      "label": "EMAIL : envoyer le DPA et le SOC 2 (vendeur), avant vendredi",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "dpa",
+            "soc 2",
+            "soc2",
+            "documents de securite",
+            "documentation de securite",
+            "rapport de securite",
+            "security doc",
+            "hebergement",
+            "conformite"
+          ]
+        ],
+        "none_of": []
+      },
+      "expected_types": [
+        "EMAIL"
+      ],
+      "date_window": [
+        "2026-10-20",
+        "2026-10-23"
+      ],
+      "carried_by_prospect": false
+    },
+    {
+      "id": "B",
+      "transcript": "atelier",
+      "required": true,
+      "label": "MEETING sécurité avec Laurent Petit (DSI), dans deux semaines, un mardi (~2026-11-03)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "laurent",
+            "petit",
+            "dsi",
+            "cio",
+            "securite",
+            "security"
+          ],
+          [
+            "rendez vous",
+            "rdv",
+            "reunion",
+            "meeting",
+            "rencontr*",
+            "session",
+            "entretien",
+            "revue",
+            "review",
+            "organis*",
+            "planifi*",
+            "call",
+            "appel*"
+          ]
+        ],
+        "none_of": [
+          "dpa",
+          "soc 2",
+          "soc2",
+          "document*",
+          "rapport*"
+        ]
+      },
+      "expected_types": [
+        "MEETING"
+      ],
+      "date_window": [
+        "2026-11-02",
+        "2026-11-06"
+      ],
+      "carried_by_prospect": false
+    },
+    {
+      "id": "C_prospect",
+      "transcript": "atelier",
+      "required": true,
+      "label": "TASK portée par le PROSPECT : Isabelle présente le business case au contrôleur de gestion puis à Marc, avant le 15/11",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "controleur",
+            "controle de gestion",
+            "marc",
+            "interne",
+            "internal"
+          ]
+        ],
+        "none_of": []
+      },
+      "expected_types": [
+        "TASK"
+      ],
+      "date_window": [
+        "2026-10-20",
+        "2026-11-15"
+      ],
+      "carried_by_prospect": true
+    },
+    {
+      "id": "C_vendeur",
+      "transcript": "atelier",
+      "required": true,
+      "label": "TASK vendeur : envoyer une première version (v1) du business case, la semaine prochaine",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "business case",
+            "cas d affaires",
+            "roi",
+            "retour sur investissement"
+          ],
+          [
+            "envoy*",
+            "envoi",
+            "send",
+            "prepar*",
+            "redig*",
+            "premiere version",
+            "v1",
+            "draft",
+            "brouillon",
+            "ebauche",
+            "partag*",
+            "constru*",
+            "elabor*"
+          ]
+        ],
+        "none_of": [
+          "controleur",
+          "controle de gestion",
+          "marc",
+          "final*"
+        ]
+      },
+      "expected_types": [
+        "TASK",
+        "EMAIL"
+      ],
+      "date_window": [
+        "2026-10-26",
+        "2026-11-01"
+      ],
+      "carried_by_prospect": false
+    },
+    {
+      "id": "C_suivi",
+      "transcript": "atelier",
+      "required": false,
+      "label": "Suivi / relance de la validation du business case (INFORMATIF, interprétation à valider PO)",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "suivi",
+            "relanc*",
+            "follow*",
+            "faire le point",
+            "point d etape",
+            "verifi*",
+            "check*"
+          ]
+        ],
+        "none_of": []
+      },
+      "expected_types": [
+        "CALL",
+        "EMAIL",
+        "MEETING",
+        "TASK"
+      ],
+      "date_window": [
+        "2026-10-20",
+        "2026-11-15"
+      ],
+      "carried_by_prospect": false
+    },
+    {
+      "id": "D",
+      "transcript": "logistix",
+      "required": true,
+      "label": "MEETING avec Isabelle Roux (DAF), au plus tard le 2026-11-30",
+      "match": {
+        "fields": [
+          "suggested_title"
+        ],
+        "all_of": [
+          [
+            "isabelle",
+            "roux",
+            "daf",
+            "cfo",
+            "directrice financiere",
+            "direction financiere"
+          ],
+          [
+            "rendez vous",
+            "rdv",
+            "reunion",
+            "meeting",
+            "rencontr*",
+            "session",
+            "entretien",
+            "voir",
+            "organis*",
+            "planifi*",
+            "call",
+            "appel*",
+            "present*"
+          ]
+        ],
+        "none_of": []
+      },
+      "expected_types": [
+        "MEETING"
+      ],
+      "date_window": [
+        "2026-10-14",
+        "2026-11-30"
+      ],
+      "carried_by_prospect": false
+    }
+  ]
+}
