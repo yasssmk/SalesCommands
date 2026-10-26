@@ -59,10 +59,11 @@ vi.mock("api/signals/signalCounts", () => ({
 }));
 // The aggregated endpoint: the next steps for a next-steps query; nothing for
 // the Signals band halo (the other types).
+const mockMutateList = vi.fn();
 vi.mock("api/signals/aggregatedSignals", () => ({
   default: (args) => ({
     signals: (args?.signalTypes || []).includes("next-steps") ? mockNextSteps : [],
-    loading: false, error: null, mutate: vi.fn(),
+    loading: false, error: null, mutate: mockMutateList,
   }),
 }));
 // The former data source of the band (before 5.3) — same next steps, so a
@@ -98,7 +99,12 @@ vi.mock("api/signals/signals", () => ({
   updateSignal: vi.fn(async (_type, id, payload) => ({
     success: true, data: mockPatchResponse ?? { id, ...payload },
   })),
+  // 5.6 — the link candidates and the next step read back from the server.
+  useNextStepLinkCandidates: vi.fn(() => ({ candidates: mockCandidates, candidatesLoading: false })),
+  getSignal: vi.fn(async () => ({ success: true, data: mockServerNextStep })),
 }));
+let mockCandidates = [];
+let mockServerNextStep = null;
 vi.mock("api/accounts/decisionCycles", () => ({
   useGetDecisionStepsByCycle: vi.fn(() => ({
     steps: [
@@ -108,8 +114,20 @@ vi.mock("api/accounts/decisionCycles", () => ({
     stepsLoading: false,
   })),
 }));
+// The real ActivityModal is out of scope; this stand-in exposes what the flow
+// relies on: the next step it is pre-filled from, onSuccess then onClose (the
+// real modal's order on a successful create), or onClose alone (cancel).
 vi.mock("sections/accounts/activities/ActivityModal", () => ({
-  default: ({ open }) => (open ? <div data-testid="activity-modal" /> : null),
+  default: ({ open, nextStepSignal, onSuccess, onClose }) =>
+    open ? (
+      <div data-testid="activity-modal">
+        <span data-testid="modal-prefill">{nextStepSignal?.suggested_title ?? ""}</span>
+        <button type="button" onClick={() => { onSuccess?.({ id: "act-new" }); onClose(); }}>
+          modal-create
+        </button>
+        <button type="button" onClick={() => onClose()}>modal-cancel</button>
+      </div>
+    ) : null,
 }));
 vi.mock("components/signals/SignalEditDrawer", () => ({
   default: ({ open }) => (open ? <div data-testid="legacy-signal-edit-drawer" /> : null),
@@ -118,7 +136,8 @@ vi.mock("components/signals/SignalEditDrawer", () => ({
 import ActivityWorkspacePage from "views/activities/workspace";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import {
-  validateSignal, rejectSignal, reopenSignal, updateSignal, useGetSignalsByAccount,
+  validateSignal, rejectSignal, reopenSignal, updateSignal, useGetSignalsByAccount, getSignal,
+  useNextStepLinkCandidates,
 } from "api/signals/signals";
 import { useGetDecisionStepsByCycle } from "api/accounts/decisionCycles";
 
@@ -194,10 +213,10 @@ describe("Next steps band — part 2, to validate (5.3)", () => {
     expect(nextStepRow.outerHTML).toBe(painRow.outerHTML);
   });
 
-  it("the row ✓ never validates: it opens the detail drawer", async () => {
+  it("the row ✓ never validates: it opens the validation flow (5.6)", async () => {
     renderPage();
     fireEvent.click(within(rowOf("Send the DPA")).getByLabelText("Validate signal"));
-    expect(await screen.findByTestId(DETAIL)).toBeInTheDocument();
+    expect(await screen.findByTestId("next-step-validate-flow")).toBeInTheDocument();
     expect(validateSignal).not.toHaveBeenCalled();
   });
 
@@ -443,8 +462,8 @@ describe("Next steps band — the detail view (5.4)", () => {
     expect(screen.getByRole("button", { name: /\bEdit\b/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /check-circle Validate/ }));
     expect(validateSignal).not.toHaveBeenCalled();
-    // Until the validation flow (5.6): the existing Create path, ActivityModal.
-    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
+    // 5.6: the validation flow, step 1.
+    expect(await screen.findByTestId("next-step-validate-flow")).toBeInTheDocument();
   });
 
   it("Reject from the detail calls rejectSignal", async () => {
@@ -612,5 +631,109 @@ describe("Next steps band — the edit view (5.5)", () => {
     const detail = await screen.findByTestId(DETAIL);
     expect(within(detail).getByText("Send the DPA and SOC 2 report")).toBeInTheDocument();
     expect(updateSignal).not.toHaveBeenCalled();
+  });
+});
+
+// ==============================|| 5.6 — THE VALIDATION FLOW, STEP 1 + CREATE ||============================== //
+
+const CANDIDATE = { ...compactActivity({ id: "act-30", title: "Security review" }),
+  decision_step: null, shared_people_count: 1, same_step: true, same_type: true,
+  date_distance_days: 0, differences: {} };
+
+describe("Next steps band — the validation flow, step 1 + Create (5.6)", () => {
+  const FLOW = "next-step-validate-flow";
+  const openFlowFromRow = async ({ candidates = [], activity = dcActivity() } = {}) => {
+    mockCandidates = candidates;
+    mockServerNextStep = richPending({ status: "VALIDATED",
+      linked_activity: compactActivity({ id: "act-new", title: "Send the DPA" }) });
+    renderPage(activity, [richPending()]);
+    fireEvent.click(within(rowOf("Send the DPA and SOC 2 report")).getByLabelText("Validate signal"));
+    return screen.findByTestId(FLOW);
+  };
+  const choose = (label) => fireEvent.click(screen.getByRole("radio", { name: label }));
+  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+  it("the row ✓ opens step 1 in the coque: stepper, Create or Link, Back / Next", async () => {
+    const flow = await openFlowFromRow({ candidates: [CANDIDATE] });
+    expect(within(screen.getByTestId("coque-panel")).getByTestId("coque-title"))
+      .toHaveTextContent("Validate next step");
+    expect(within(flow).getByText("How do you resolve this next step?")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Create the activity" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Link to an existing activity" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled(); // nothing chosen
+    expect(useNextStepLinkCandidates).toHaveBeenCalledWith("ns-rich");
+    expect(validateSignal).not.toHaveBeenCalled();
+  });
+
+  it("the detail's Validate opens step 1 too", async () => {
+    mockCandidates = [];
+    renderPage(dcActivity(), [richPending()]);
+    fireEvent.click(rowOf("Send the DPA and SOC 2 report"));
+    await screen.findByTestId(DETAIL);
+    fireEvent.click(screen.getByRole("button", { name: /check-circle Validate/ }));
+    expect(await screen.findByTestId(FLOW)).toBeInTheDocument();
+  });
+
+  it("Link is disabled, with a message, when there is no candidate", async () => {
+    await openFlowFromRow({ candidates: [] });
+    expect(screen.getByRole("radio", { name: "Link to an existing activity" })).toBeDisabled();
+    expect(screen.getByText("No open activity in this cycle")).toBeInTheDocument();
+  });
+
+  it("Create → Next opens the ActivityModal pre-filled from the next step", async () => {
+    await openFlowFromRow();
+    choose("Create the activity");
+    next();
+    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
+    expect(screen.getByTestId("modal-prefill")).toHaveTextContent("Send the DPA and SOC 2 report");
+  });
+
+  it("on success, the detail re-opens VALIDATED and resolved, read back from the server", async () => {
+    await openFlowFromRow();
+    choose("Create the activity");
+    next();
+    fireEvent.click(screen.getByRole("button", { name: "modal-create" }));
+    const detail = await screen.findByTestId(DETAIL);
+    expect(getSignal).toHaveBeenCalledWith("next-steps", "ns-rich");
+    expect(within(screen.getByTestId("coque-panel")).getByText("Validated")).toBeInTheDocument();
+    expect(within(detail).getByTestId("next-step-activity")).toBeInTheDocument();
+    expect(mockMutateList).toHaveBeenCalled(); // the list (and its 3rd line) is refreshed
+    expect(validateSignal).not.toHaveBeenCalled();
+  });
+
+  it("cancelling the modal returns to step 1, nothing written", async () => {
+    await openFlowFromRow();
+    choose("Create the activity");
+    next();
+    fireEvent.click(screen.getByRole("button", { name: "modal-cancel" }));
+    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
+    expect(screen.getByTestId(FLOW)).toBeInTheDocument();
+    expect(getSignal).not.toHaveBeenCalled();
+    expect(updateSignal).not.toHaveBeenCalled();
+    expect(validateSignal).not.toHaveBeenCalled();
+  });
+
+  it("Back returns to the detail", async () => {
+    await openFlowFromRow();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByTestId(DETAIL)).toBeInTheDocument();
+  });
+
+  it("Link: the choice is there; its step 2 comes in 5.7", async () => {
+    await openFlowFromRow({ candidates: [CANDIDATE] });
+    choose("Link to an existing activity");
+    expect(screen.getByRole("radio", { name: "Link to an existing activity" })).toBeChecked();
+    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
+  });
+
+  it("COMPLETED: the flow is available; CANCELLED: no way in", async () => {
+    await openFlowFromRow({ activity: dcActivity({ status: "COMPLETED" }) });
+    cleanup();
+    renderPage(dcActivity({ status: "CANCELLED" }), [richPending()]);
+    expect(within(rowOf("Send the DPA and SOC 2 report")).queryByLabelText("Validate signal")).toBeNull();
+    fireEvent.click(rowOf("Send the DPA and SOC 2 report"));
+    await screen.findByTestId(DETAIL);
+    expect(screen.queryByRole("button", { name: /check-circle Validate/ })).not.toBeInTheDocument();
   });
 });

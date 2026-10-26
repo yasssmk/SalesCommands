@@ -96,6 +96,8 @@ vi.mock("api/signals/signals", () => ({
   validateSignal: vi.fn(() => Promise.resolve({ success: true })),
   rejectSignal: vi.fn(() => Promise.resolve({ success: true })),
   reopenSignal: vi.fn(() => Promise.resolve({ success: true })),
+  useNextStepLinkCandidates: vi.fn(() => ({ candidates: [], candidatesLoading: false })),
+  getSignal: vi.fn(() => Promise.resolve({ success: true, data: {} })),
   updateSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
@@ -238,10 +240,10 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.getByTestId("next-step-detail-body")).toBeInTheDocument();
   });
 
-  it("the row ✓ opens the detail and validates nothing", () => {
+  it("the row ✓ opens the validation flow and validates nothing", () => {
     renderTab();
     fireEvent.click(screen.getByLabelText("Validate signal"));
-    expect(screen.getByTestId("next-step-detail-body")).toBeInTheDocument();
+    expect(screen.getByTestId("next-step-validate-flow")).toBeInTheDocument();
     expect(validateSignal).not.toHaveBeenCalled();
   });
 

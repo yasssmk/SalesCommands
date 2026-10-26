@@ -17,7 +17,7 @@ import { PlusOutlined, RocketOutlined } from "@ant-design/icons";
 
 // Project imports
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import { rejectSignal, reopenSignal } from "api/signals/signals";
+import { getSignal, rejectSignal, reopenSignal } from "api/signals/signals";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -35,6 +35,7 @@ import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingAct
 import { ACTIVITY_STATUSES } from "api/accounts/activities";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
 import EditNextStepContent from "sections/activities/workspace/EditNextStepContent";
+import NextStepValidateFlow from "sections/activities/nextSteps/NextStepValidateFlow";
 
 // The next steps of the activity, all 3 statuses (To validate / Validated /
 // Rejected), in one page — the same aggregated query shape as the Signals band.
@@ -127,6 +128,23 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     setActivityModalOpen(true);
   }, []);
 
+  // The validation flow (5.6), in the coque: step 1 = Create or Link. Opened by
+  // the row ✓ and the detail's Validate; Back returns to the detail. Create
+  // opens the pre-filled ActivityModal over it — a cancel leaves step 1 shown.
+  const openFlow = useCallback(
+    (signal) => {
+      openDrawer(
+        <NextStepValidateFlow
+          nextStep={signal}
+          onCreate={handleConvert}
+          onBack={() => openDetail(signal)}
+        />,
+        { title: "Validate next step" },
+      );
+    },
+    [openDrawer, handleConvert, openDetail],
+  );
+
   const handleAddManually = useCallback(() => {
     setConvertSignal(null);
     setActivityModalOpen(true);
@@ -185,11 +203,10 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   );
 
   // Nothing here calls validateSignal: a next step is validated only with its
-  // activity (rule 2.1). The row ✓ opens the detail; the detail's Validate opens
-  // the existing Create path (ActivityModal pre-filled) until the validation
-  // flow (5.6) takes its place.
+  // activity (rule 2.1) — the server validates it when the activity is created
+  // from it. The detail's Validate opens the validation flow.
   detailHandlersRef.current = {
-    onValidate: handleConvert,
+    onValidate: openFlow,
     onReject: handleReject,
     onEdit: handleEdit,
     onReopen: handleReopen,
@@ -211,12 +228,24 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     [handleOpenActivity],
   );
 
-  const handleConvertSuccess = useCallback(() => {
+  const handleConvertSuccess = useCallback(async () => {
     mutateAll();
     mutateCounts?.();
-    // The detail shown was the next step before its conversion.
-    closeDrawer();
-  }, [mutateAll, mutateCounts, closeDrawer]);
+    if (!convertSignal) {
+      // A manual next step: no next step to show.
+      closeDrawer();
+      return;
+    }
+    // The next step is now VALIDATED and resolved by its activity: read it
+    // back from the server and re-open its detail.
+    const result = await getSignal("next-steps", convertSignal.id);
+    if (result.success) {
+      openDetail({ ...result.data, _signalType: "next-steps" });
+    } else {
+      displayErrorSnackbar(result);
+      closeDrawer();
+    }
+  }, [mutateAll, mutateCounts, convertSignal, openDetail, closeDrawer]);
 
   const handleCreateActivity = useCallback(
     (activityType, options = {}) => {
@@ -258,7 +287,7 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
               signals={nextStepSignals}
               loading={loading}
               onSelect={openDetail}
-              onValidate={isLocked ? undefined : openDetail}
+              onValidate={isLocked ? undefined : openFlow}
               onReject={isLocked ? undefined : handleReject}
               renderExtra={renderExtra}
               emptyMessage="No next-step suggestions for this activity"
