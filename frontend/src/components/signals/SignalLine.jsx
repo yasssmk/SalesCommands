@@ -64,7 +64,7 @@ const SCOPE_TYPES = new Set([
   "constraints",
 ]);
 
-function formatShortDate(dateStr) {
+export function formatShortDate(dateStr) {
   if (!dateStr) return null;
   try {
     return new Date(dateStr).toLocaleDateString("en-GB", {
@@ -160,6 +160,9 @@ function formatOriginContact(contact) {
  * Layout:
  *   Line 1 — [type chip, when showTypeChip] + full message (wraps, no clamp).
  *   Line 2 — meta: date · contact · scope · light status chip.
+ *   Line 3 — `extra` (optional, generic): any node a caller adds under the
+ *            meta line (e.g. the activity of a resolved next step). Absent
+ *            unless the caller passes it.
  *
  * `showTypeChip` lets a caller hide the type chip when the surrounding section
  * already names the type (grouped views); flat views keep it (only type cue).
@@ -176,6 +179,7 @@ export default function SignalLine({
   showStatusChip = true,
   showContactOverflow = true,
   showPeopleIdentity = false,
+  extra = null,
 }) {
   const isRejected = signal.status === "REJECTED";
 
@@ -367,6 +371,9 @@ export default function SignalLine({
           />
         )}
       </Stack>
+
+      {/* Line 3 (optional): the caller's extra content. */}
+      {extra && <Box data-testid="signal-line-extra">{extra}</Box>}
       </Box>
 
       {/* Inline actions (validation worklist) — ✓ validate / ✗ reject, to the
@@ -471,4 +478,6 @@ SignalLine.propTypes = {
       (default false — DC/Account keep the full_name message; true in the
       Activity validation list). */
   showPeopleIdentity: PropTypes.bool,
+  /** Optional 3rd line under the meta line (generic; absent by default). */
+  extra: PropTypes.node,
 };

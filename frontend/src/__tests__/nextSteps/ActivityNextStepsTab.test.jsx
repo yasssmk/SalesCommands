@@ -6,6 +6,7 @@ import {
   screen,
   fireEvent,
   cleanup,
+  waitFor,
 } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //
@@ -75,16 +76,12 @@ const mockNextStepSignals = [
   },
 ];
 
-vi.mock("hooks/useActivityAllSignals", () => ({
+vi.mock("api/signals/aggregatedSignals", () => ({
   default: vi.fn(() => ({
-    qualificationSignals: [],
-    techStackSignals: [],
-    blockerSignals: [],
-    nextStepSignals: mockNextStepSignals,
-    allSignals: mockNextStepSignals,
+    signals: mockNextStepSignals,
     loading: false,
     error: null,
-    mutateAll: mockMutateAll,
+    mutate: mockMutateAll,
   })),
 }));
 
@@ -99,26 +96,9 @@ vi.mock("api/signals/signals", () => ({
   updateSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
-vi.mock("api/accounts/activities", () => ({
+vi.mock("api/accounts/activities", async (importOriginal) => ({
+  ...(await importOriginal()),
   createActivity: vi.fn(() => Promise.resolve({ success: true, data: {} })),
-  ACTIVITY_TYPES: {
-    CALL: "CALL",
-    EMAIL: "EMAIL",
-    MEETING: "MEETING",
-    TASK: "TASK",
-    LINKEDIN: "LINKEDIN",
-    OTHER: "OTHER",
-  },
-  ACTIVITY_TYPE_LABELS: {
-    CALL: "Phone Call",
-    EMAIL: "Email",
-    MEETING: "Meeting",
-    TASK: "Task",
-    LINKEDIN: "LinkedIn Message",
-    OTHER: "Other",
-  },
-  ACTIVITY_STATUS_LABELS: { PLANNED: "Planned" },
-  ACTIVITY_STATUS_COLORS: { PLANNED: "default" },
   useGetActivityChoices: vi.fn(() => ({ choicesLoading: false })),
 }));
 
@@ -181,14 +161,16 @@ vi.mock("sections/activities/nextSteps/NextStepSuggestionDrawer", () => ({
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
-import { rejectSignal } from "api/signals/signals";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
+import { rejectSignal, validateSignal } from "api/signals/signals";
+import AphoriqTheme from "../_utils/aphoriqTheme";
 
 // ==============================|| TEST ACTIVITY ||============================== //
 
 const mockActivity = {
   id: "activity-123",
   account: "account-456",
-  status: "COMPLETED",
+  status: "PLANNED",
   decision_step: "step-1",
   decision_cycle: "dc-1",
   sequence_context: {
@@ -197,6 +179,24 @@ const mockActivity = {
 };
 
 // ==============================|| TESTS ||============================== //
+//
+// Sprint Next steps 5.3 — the band in 4 parts: (1) the next planned step,
+// (2-3) the generic SignalsValidationList filtered on next-steps (the row ✓
+// opens the drawer, never validates; ✗ rejects; a resolved next step carries
+// its activity on the row's 3rd line), (4) "Set a next step manually". The
+// former AI suggestion cards, filter bar and summary line are gone.
+
+const renderTab = (props = {}) =>
+  render(
+    <AphoriqTheme>
+      <ActivityNextStepsTab
+        activity={mockActivity}
+        isLocked={false}
+        mutateCounts={mockMutateCounts}
+        {...props}
+      />
+    </AphoriqTheme>,
+  );
 
 describe("ActivityNextStepsTab", () => {
   beforeEach(() => {
@@ -207,210 +207,98 @@ describe("ActivityNextStepsTab", () => {
     cleanup();
   });
 
-  it("renders AI Suggestions section with sorted signals (PENDING first)", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
+  it("reads the next steps from the aggregated endpoint, all 3 statuses", () => {
+    renderTab();
+    expect(useAggregatedSignals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityId: "activity-123",
+        signalTypes: ["next-steps"],
+        statuses: ["PENDING", "VALIDATED", "REJECTED"],
+      }),
     );
+  });
 
-    expect(screen.getByText("AI Suggestions")).toBeInTheDocument();
+  it("lists the pending next steps in the generic validation list", () => {
+    renderTab();
+    expect(screen.getByText("To validate")).toBeInTheDocument();
     expect(screen.getByText("Follow up on pricing")).toBeInTheDocument();
-    expect(screen.getByText("Send proposal")).toBeInTheDocument();
+    expect(screen.getByText("Validated")).toBeInTheDocument();
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
   });
 
-  it("renders the suggested objective on the suggestion card", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(
-      screen.getByText(
-        "Lock the pricing narrative with the CFO before Q4 close",
-      ),
-    ).toBeInTheDocument();
+  it("no AI suggestion card, filter bar or summary line any more", () => {
+    renderTab();
+    expect(screen.queryByText("AI Suggestions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Convert to Activity")).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByText(/AI suggestion to handle/)).not.toBeInTheDocument();
   });
 
-  it("renders Upcoming Activities section", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
+  it("renders the next planned step section", () => {
+    renderTab();
+    expect(screen.getByText("Next planned step")).toBeInTheDocument();
     expect(screen.getByTestId("upcoming-activities-section")).toBeInTheDocument();
   });
 
-  it("hides REJECTED signals by default", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.queryByText("Schedule demo")).not.toBeInTheDocument();
-  });
-
-  it("shows REJECTED signals when Include rejected is checked", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    const checkbox = screen.getByRole("checkbox");
-    fireEvent.click(checkbox);
-
-    expect(screen.getByText("Schedule demo")).toBeInTheDocument();
-  });
-
-  it("shows Convert to Activity button for PENDING signals", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText("Convert to Activity")).toBeInTheDocument();
-  });
-
-  it("opens convert modal when clicking Convert to Activity", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Convert to Activity"));
-
-    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
-  });
-
-  it("opens drawer when clicking on a suggestion card", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
+  it("opens the drawer when clicking a next step", () => {
+    renderTab();
     fireEvent.click(screen.getByText("Follow up on pricing"));
-
     expect(screen.getByTestId("suggestion-drawer")).toBeInTheDocument();
   });
 
-  it("shows Converted to link for VALIDATED signals with linked activity", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText(/Converted to:/)).toBeInTheDocument();
-    expect(screen.getByText("Send proposal email")).toBeInTheDocument();
+  it("the row ✓ opens the drawer and validates nothing", () => {
+    renderTab();
+    fireEvent.click(screen.getByLabelText("Validate signal"));
+    expect(screen.getByTestId("suggestion-drawer")).toBeInTheDocument();
+    expect(validateSignal).not.toHaveBeenCalled();
   });
 
-  it("calls rejectSignal and mutates when rejecting a suggestion", async () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Reject"));
-
+  it("the row ✗ calls rejectSignal and mutates", async () => {
+    renderTab();
+    fireEvent.click(screen.getByLabelText("Reject signal"));
     expect(rejectSignal).toHaveBeenCalledWith("next-steps", "ns1");
+    await waitFor(() => expect(mockMutateAll).toHaveBeenCalled());
+    expect(mockMutateCounts).toHaveBeenCalled();
   });
 
-  it("shows summary line with correct counts", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(
-      screen.getByText(/1 AI suggestion to handle/),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/1 activity created/)).toBeInTheDocument();
+  it("a resolved next step shows its activity on the 3rd line", () => {
+    renderTab();
+    fireEvent.click(screen.getByText("Validated"));
+    expect(screen.getByText("Send proposal email")).toBeInTheDocument();
+    expect(screen.getAllByTestId("signal-line-extra")).toHaveLength(1);
   });
 
-  it("shows Add manually button", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText("Add manually")).toBeInTheDocument();
-  });
-
-  it("hides action buttons when isLocked", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={true}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.queryByText("Convert to Activity")).not.toBeInTheDocument();
-    expect(screen.queryByText("Reject")).not.toBeInTheDocument();
+  it("shows the 'Set a next step manually' button", () => {
+    renderTab();
+    expect(screen.getByText("Set a next step manually")).toBeInTheDocument();
     expect(screen.queryByText("Add manually")).not.toBeInTheDocument();
   });
 
-  it("shows the Next planned step heading", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
+  it("hides 'Set a next step manually' when isLocked", () => {
+    renderTab({ isLocked: true });
+    expect(screen.queryByText("Set a next step manually")).not.toBeInTheDocument();
+  });
 
-    expect(screen.getByText("Next planned step")).toBeInTheDocument();
+  it("opens the activity modal from 'Set a next step manually'", () => {
+    renderTab();
+    fireEvent.click(screen.getByText("Set a next step manually"));
+    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
   });
 });
 
-// ==============================|| DC-ONLY AI SUGGESTIONS GUARD ||============================== //
+// ==============================|| DC-ONLY GUARD ||============================== //
 //
-// PO decision (1-bis): the AI SUGGESTIONS block (AISuggestionCard list of
-// NextStepSignal) is a DC-only feature. In a campaign context (no
-// decision_cycle) it must NOT be proposed. Everything else — "Add
-// manually", Upcoming Activities — stays. The tab itself stays visible
-// (that is asserted in ActivityTabs.test.jsx).
+// PO decision (1-bis): the next steps extracted by the AI (parts 2-3) are a
+// DC-only feature. In a campaign context (no decision_cycle) they are NOT
+// proposed. Parts 1 (next planned step) and 4 ("Set a next step manually")
+// stay. The tab itself stays visible (asserted in ActivityTabs.test.jsx).
 
 const mockActivityNoDc = {
   ...mockActivity,
   decision_cycle: null,
 };
 
-describe("ActivityNextStepsTab — DC-only AI suggestions", () => {
+describe("ActivityNextStepsTab — DC-only parts 2-3", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -419,42 +307,21 @@ describe("ActivityNextStepsTab — DC-only AI suggestions", () => {
     cleanup();
   });
 
-  it("does NOT render the AI Suggestions block without a decision cycle", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivityNoDc}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.queryByText("AI Suggestions")).not.toBeInTheDocument();
+  it("does NOT render the next steps to validate without a decision cycle", () => {
+    renderTab({ activity: mockActivityNoDc });
+    expect(screen.queryByText("To validate")).not.toBeInTheDocument();
     expect(screen.queryByText("Follow up on pricing")).not.toBeInTheDocument();
   });
 
-  it("still renders 'Add manually' without a decision cycle (manual path stays)", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivityNoDc}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText("Add manually")).toBeInTheDocument();
+  it("still renders parts 1 and 4 without a decision cycle", () => {
+    renderTab({ activity: mockActivityNoDc });
+    expect(screen.getByText("Next planned step")).toBeInTheDocument();
+    expect(screen.getByText("Set a next step manually")).toBeInTheDocument();
   });
 
-  it("renders the AI Suggestions block AND 'Add manually' with a decision cycle", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText("AI Suggestions")).toBeInTheDocument();
+  it("renders parts 2-3 AND 'Set a next step manually' with a decision cycle", () => {
+    renderTab();
     expect(screen.getByText("Follow up on pricing")).toBeInTheDocument();
-    expect(screen.getByText("Add manually")).toBeInTheDocument();
+    expect(screen.getByText("Set a next step manually")).toBeInTheDocument();
   });
 });

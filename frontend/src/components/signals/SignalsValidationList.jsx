@@ -109,6 +109,7 @@ export default function SignalsValidationList({
   onSelect,
   onValidate,
   onReject,
+  renderExtra,
   loading = false,
   emptyMessage = "No signals found for this activity",
 }) {
@@ -203,6 +204,7 @@ export default function SignalsValidationList({
                           showStatusChip={false}
                           showContactOverflow={false}
                           showPeopleIdentity
+                          extra={renderExtra?.(signal, type) ?? null}
                         />
                       ))}
                     </Box>
@@ -232,6 +234,8 @@ SignalsValidationList.propTypes = {
   onValidate: PropTypes.func,
   /** Inline reject on a pending row — (signal, signalType) => Promise. */
   onReject: PropTypes.func,
+  /** Optional (signal, signalType) => node — SignalLine's 3rd line (`extra`). */
+  renderExtra: PropTypes.func,
   loading: PropTypes.bool,
   emptyMessage: PropTypes.string,
 };

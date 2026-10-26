@@ -21,6 +21,7 @@ import {
   CloseCircleOutlined,
   EditOutlined,
   EyeOutlined,
+  ReloadOutlined,
   RobotOutlined,
 } from "@ant-design/icons";
 
@@ -29,6 +30,7 @@ import DrawerFieldRow from "components/display/DrawerFieldRow";
 import DrawerSection from "components/display/DrawerSection";
 import SignalStatusChip from "components/chips/SignalStatusChip";
 import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
+import { getResolvedActivity } from "sections/activities/nextSteps/NextStepActivityLine";
 
 const DRAWER_WIDTH = 400;
 
@@ -62,6 +64,7 @@ export default function NextStepSuggestionDrawer({
   onConvert,
   onReject,
   onEdit,
+  onReopen,
   onViewActivity,
   isLocked,
 }) {
@@ -71,6 +74,11 @@ export default function NextStepSuggestionDrawer({
   const isValidated = signal.status === "VALIDATED";
   const isRejected = signal.status === "REJECTED";
   const linked = signal.linked_activity;
+  // Rule 2.1: a RESOLVED next step (it has its activity, created or linked) can
+  // be neither reopened nor edited — the activity is the reference. Any other
+  // decided next step can be reopened, as every signal.
+  const isResolved = Boolean(getResolvedActivity(signal));
+  const canReopen = (isValidated || isRejected) && !isResolved;
   const contactsText = formatContacts(signal.suggested_contacts);
 
   return (
@@ -204,7 +212,7 @@ export default function NextStepSuggestionDrawer({
       {/* Actions */}
       <Box sx={{ px: 2.5, py: 2 }}>
         <Stack direction="row" spacing={1} justifyContent="flex-end">
-          {!isLocked && (
+          {!isLocked && !isResolved && (
             <Button
               variant="outlined"
               size="small"
@@ -235,6 +243,16 @@ export default function NextStepSuggestionDrawer({
                 Convert to Activity
               </Button>
             </>
+          )}
+          {canReopen && !isLocked && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<ReloadOutlined style={{ fontSize: 14 }} />}
+              onClick={() => onReopen?.(signal)}
+            >
+              Reopen
+            </Button>
           )}
           {isValidated && linked && (
             <Button
@@ -280,11 +298,14 @@ NextStepSuggestionDrawer.propTypes = {
       status_display: PropTypes.string,
       scheduled_date: PropTypes.string,
     }),
+    attached_activity: PropTypes.object,
   }),
   onClose: PropTypes.func.isRequired,
   onConvert: PropTypes.func,
   onReject: PropTypes.func,
   onEdit: PropTypes.func,
+  /** Reopen a decided, non-resolved next step — (signal) => void. */
+  onReopen: PropTypes.func,
   onViewActivity: PropTypes.func,
   isLocked: PropTypes.bool,
 };

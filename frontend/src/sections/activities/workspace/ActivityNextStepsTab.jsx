@@ -3,57 +3,53 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 // MUI
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
-import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import {
-  PlusOutlined,
-  InboxOutlined,
-  RocketOutlined,
-} from "@ant-design/icons";
+import { PlusOutlined, RocketOutlined } from "@ant-design/icons";
 
 // Project imports
-import useActivityAllSignals from "hooks/useActivityAllSignals";
-import { useGetSignalChoices } from "api/signals/signals";
-import { rejectSignal } from "api/signals/signals";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
+import {
+  useGetSignalChoices,
+  rejectSignal,
+  reopenSignal,
+} from "api/signals/signals";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
 
-import AISuggestionCard from "components/cards/nextSteps/AISuggestionCard";
-import NextStepsFilterBar from "sections/activities/nextSteps/NextStepsFilterBar";
+import SignalsValidationList from "components/signals/SignalsValidationList";
 import NextStepSuggestionDrawer from "sections/activities/nextSteps/NextStepSuggestionDrawer";
+import NextStepActivityLine, {
+  getResolvedActivity,
+} from "sections/activities/nextSteps/NextStepActivityLine";
 import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
-// ==============================|| SORT HELPERS ||============================== //
-
-const STATUS_ORDER = { PENDING: 0, VALIDATED: 1, REJECTED: 2 };
-
-function sortSignals(signals) {
-  return [...signals].sort((a, b) => {
-    const orderA = STATUS_ORDER[a.status] ?? 3;
-    const orderB = STATUS_ORDER[b.status] ?? 3;
-    if (orderA !== orderB) return orderA - orderB;
-    const dateA = a.suggested_due_date || "";
-    const dateB = b.suggested_due_date || "";
-    return dateA.localeCompare(dateB);
-  });
-}
+// The next steps of the activity, all 3 statuses (To validate / Validated /
+// Rejected), in one page — the same aggregated query shape as the Signals band.
+const NEXT_STEP_TYPES = ["next-steps"];
+const STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
+const PAGE_SIZE = 100;
 
 // ==============================|| ACTIVITY NEXT STEPS TAB ||============================== //
 
+// The "Next steps" band, in 4 parts (Sprint Next steps 5.x):
+//   1. the next planned step (activity.next_planned_step);
+//   2. the next steps to validate and 3. the validated (resolved, with their
+//      activity on the row's 3rd line) and rejected ones — the generic
+//      SignalsValidationList, DC-only;
+//   4. "Set a next step manually" (ActivityModal).
 export default function ActivityNextStepsTab({
   activity,
   isLocked,
@@ -64,13 +60,20 @@ export default function ActivityNextStepsTab({
   const accountId = activity?.account;
 
   // Data
-  const { nextStepSignals, loading, error, mutateAll } =
-    useActivityAllSignals(activityId);
+  const {
+    signals: nextStepSignals,
+    loading,
+    error,
+    mutate: mutateAll,
+  } = useAggregatedSignals({
+    activityId,
+    statuses: STATUSES,
+    signalTypes: NEXT_STEP_TYPES,
+    ordering: "date-desc",
+    page: 1,
+    pageSize: PAGE_SIZE,
+  });
   const { choices, choicesLoading } = useGetSignalChoices();
-
-  // Filter state
-  const [activeFilter, setActiveFilter] = useState("all-active");
-  const [includeRejected, setIncludeRejected] = useState(false);
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -85,36 +88,6 @@ export default function ActivityNextStepsTab({
   // Edit dialog state
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editSignal, setEditSignal] = useState(null);
-
-  // ==============================|| FILTERED + SORTED SIGNALS ||============================== //
-
-  const filteredSignals = useMemo(() => {
-    if (!nextStepSignals) return [];
-
-    const filtered = nextStepSignals.filter((s) => {
-      if (s.status === "REJECTED") return includeRejected;
-
-      if (activeFilter === "all-active") {
-        return s.status === "PENDING" || s.status === "VALIDATED";
-      }
-      return s.status === activeFilter;
-    });
-
-    return sortSignals(filtered);
-  }, [nextStepSignals, activeFilter, includeRejected]);
-
-  const pendingCount = useMemo(
-    () => (nextStepSignals || []).filter((s) => s.status === "PENDING").length,
-    [nextStepSignals],
-  );
-
-  const convertedCount = useMemo(
-    () =>
-      (nextStepSignals || []).filter(
-        (s) => s.status === "VALIDATED" && s.linked_activity,
-      ).length,
-    [nextStepSignals],
-  );
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -158,6 +131,41 @@ export default function ActivityNextStepsTab({
     [mutateAll, mutateCounts, handleCloseDrawer],
   );
 
+  const handleReopen = useCallback(
+    async (signal) => {
+      const result = await reopenSignal("next-steps", signal.id);
+      if (result.success) {
+        displaySuccessSnackbar("Signal reopened — now pending");
+        mutateAll();
+        mutateCounts?.();
+        handleCloseDrawer();
+      } else {
+        displayErrorSnackbar(result);
+      }
+    },
+    [mutateAll, mutateCounts, handleCloseDrawer],
+  );
+
+  // The row ✓ validates NOTHING: a next step is validated only with its
+  // activity (rule 2.1) — it opens the detail drawer, where the flow starts.
+  const handleValidate = handleSelect;
+
+  const handleOpenActivity = useCallback(
+    (id) => router.push(`/activities/${id}`),
+    [router],
+  );
+
+  // SignalLine's 3rd line — only on a RESOLVED next step (its activity).
+  const renderExtra = useCallback(
+    (signal) => {
+      const resolved = getResolvedActivity(signal);
+      return resolved ? (
+        <NextStepActivityLine activity={resolved} onOpen={handleOpenActivity} />
+      ) : null;
+    },
+    [handleOpenActivity],
+  );
+
   const handleViewActivity = useCallback(
     (linkedActivity) => {
       if (linkedActivity?.id) {
@@ -187,180 +195,11 @@ export default function ActivityNextStepsTab({
     [],
   );
 
-  // ==============================|| LOADING / ERROR ||============================== //
-
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" py={6}>
-        <CircularProgress size={28} />
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Box display="flex" justifyContent="center" py={6}>
-        <Typography color="error">Failed to load next steps</Typography>
-      </Box>
-    );
-  }
-
-  const hasAnySignals = nextStepSignals && nextStepSignals.length > 0;
-
-  // ==============================|| EMPTY STATE ||============================== //
-
-  if (!hasAnySignals) {
-    return (
-      <Box py={6}>
-        <Stack spacing={2} alignItems="center" textAlign="center">
-          <InboxOutlined style={{ fontSize: 48, color: "#8c8c8c" }} />
-          <Typography variant="h6" color="text.secondary">
-            No next-step suggestions yet
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            maxWidth={400}
-          >
-            Run an AI analysis from the Notes tab to extract next-step
-            suggestions, or add an activity manually.
-          </Typography>
-          {!isLocked && (
-            <Button
-              variant="outlined"
-              startIcon={<PlusOutlined style={{ fontSize: 14 }} />}
-              onClick={handleAddManually}
-            >
-              Add manually
-            </Button>
-          )}
-        </Stack>
-
-        {/* Part 1 — the next planned step (always shown when in sequence) */}
-        {activity?.sequence_context && (
-          <Box mt={4}>
-            <Typography variant="h6" sx={{ mb: 1.5 }}>
-              <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
-              Next planned step
-            </Typography>
-            <UpcomingActivitiesSection
-              activity={activity}
-              onCreateActivity={handleCreateActivity}
-              isLocked={isLocked}
-            />
-          </Box>
-        )}
-
-        {/* Add activity modal */}
-        {accountId && (
-          <ActivityModal
-            open={activityModalOpen}
-            onClose={() => {
-              setActivityModalOpen(false);
-              setConvertSignal(null);
-              setManualActivityType(null);
-              setConvertFromCampaign(false);
-            }}
-            activity={null}
-            accountId={accountId}
-            decisionStepId={activity?.decision_step || null}
-            decisionCycleId={convertFromCampaign ? null : (activity?.decision_cycle || null)}
-            defaultActivityType={convertSignal?.suggested_activity_type || manualActivityType || "MEETING"}
-            previousActivityId={activity?.id}
-            sourceActivityId={convertFromCampaign ? activity?.id : null}
-            nextStepSignal={convertSignal}
-            onSuccess={handleConvertSuccess}
-          />
-        )}
-      </Box>
-    );
-  }
-
-  // ==============================|| MAIN RENDER ||============================== //
+  // ==============================|| RENDER ||============================== //
 
   return (
     <Box>
-      {/* Header row — title + add button */}
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={2}
-      >
-        <Typography variant="h6">Next Steps</Typography>
-        {!isLocked && (
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<PlusOutlined style={{ fontSize: 14 }} />}
-            onClick={handleAddManually}
-          >
-            Add manually
-          </Button>
-        )}
-      </Stack>
-
-      {/* Summary line */}
-      <Typography variant="body2" color="text.secondary" mb={1.5}>
-        {pendingCount > 0 &&
-          `${pendingCount} AI suggestion${pendingCount > 1 ? "s" : ""} to handle`}
-        {pendingCount > 0 && convertedCount > 0 && " · "}
-        {convertedCount > 0 &&
-          `${convertedCount} activit${convertedCount > 1 ? "ies" : "y"} created`}
-      </Typography>
-
-      {/* Filter bar */}
-      <NextStepsFilterBar
-        activeFilter={activeFilter}
-        onChange={setActiveFilter}
-        includeRejected={includeRejected}
-        onToggleRejected={setIncludeRejected}
-        signals={nextStepSignals}
-      />
-
-      {/* AI Suggestions — DC-only: extracted next-step suggestions are not
-          proposed in a campaign context (activity without a decision_cycle).
-          Mirrors the backend guard. The manual path and the next planned step
-          below stay available regardless. */}
-      {Boolean(activity?.decision_cycle) && (
-        <Box mt={2}>
-          {filteredSignals.length > 0 ? (
-            <Box mb={3}>
-              <Typography
-                variant="subtitle2"
-                color="text.secondary"
-                mb={1}
-                fontWeight={600}
-              >
-                AI Suggestions
-              </Typography>
-              <Stack spacing={1.5}>
-                {filteredSignals.map((signal) => (
-                  <AISuggestionCard
-                    key={signal.id}
-                    signal={signal}
-                    onConvert={handleConvert}
-                    onEdit={handleEdit}
-                    onReject={handleReject}
-                    onViewActivity={handleViewActivity}
-                    onSelect={handleSelect}
-                    isLocked={isLocked}
-                  />
-                ))}
-              </Stack>
-            </Box>
-          ) : (
-            <Box py={4} textAlign="center">
-              <Typography variant="body2" color="text.secondary">
-                No suggestions match the current filter.
-              </Typography>
-            </Box>
-          )}
-        </Box>
-      )}
-
       {/* Part 1 — the next planned step */}
-      <Divider sx={{ my: 2 }} />
       <Typography variant="h6" sx={{ mb: 1.5 }}>
         <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
         Next planned step
@@ -371,6 +210,44 @@ export default function ActivityNextStepsTab({
         isLocked={isLocked}
       />
 
+      {/* Parts 2-3 — to validate / validated / rejected. DC-only: extracted
+          next-step suggestions are not proposed in a campaign context
+          (activity without a decision_cycle). Mirrors the backend guard. */}
+      {Boolean(activity?.decision_cycle) && (
+        <>
+          <Divider sx={{ my: 2 }} />
+          {error && !nextStepSignals.length ? (
+            <Box display="flex" justifyContent="center" py={4}>
+              <Typography color="error">Failed to load next steps</Typography>
+            </Box>
+          ) : (
+            <SignalsValidationList
+              signals={nextStepSignals}
+              loading={loading}
+              onSelect={handleSelect}
+              onValidate={handleValidate}
+              onReject={handleReject}
+              renderExtra={renderExtra}
+              emptyMessage="No next-step suggestions for this activity"
+            />
+          )}
+        </>
+      )}
+
+      {/* Part 4 — a next step typed by hand is an activity */}
+      {!isLocked && (
+        <Box mt={2}>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<PlusOutlined style={{ fontSize: 14 }} />}
+            onClick={handleAddManually}
+          >
+            Set a next step manually
+          </Button>
+        </Box>
+      )}
+
       {/* Suggestion Drawer */}
       <NextStepSuggestionDrawer
         open={drawerOpen}
@@ -379,6 +256,7 @@ export default function ActivityNextStepsTab({
         onConvert={handleConvert}
         onReject={handleReject}
         onEdit={handleEdit}
+        onReopen={handleReopen}
         onViewActivity={handleViewActivity}
         isLocked={isLocked}
       />
