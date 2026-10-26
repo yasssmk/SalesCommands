@@ -30,6 +30,7 @@ import LinkOutlined from '@ant-design/icons/LinkOutlined';
 
 // Centralized activity-type glyph + uniform primary colour role (P5).
 import { getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR } from 'utils/activityTypes';
+import { ACTIVITY_STATUS_LABELS, ACTIVITY_STATUS_COLORS } from 'api/accounts/activities';
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -42,21 +43,10 @@ const TYPE_LABELS = {
   OTHER: 'Other'
 };
 
-const STATUS_LABELS = {
-  PLANNED: 'Planned',
-  IN_PROGRESS: 'In Progress',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled',
-  OVERDUE: 'Overdue'
-};
+// The activity statuses of the app (+ the OVERDUE display status).
+const STATUS_LABELS = { ...ACTIVITY_STATUS_LABELS, OVERDUE: 'Overdue' };
 
-const STATUS_COLORS = {
-  PLANNED: 'default',
-  IN_PROGRESS: 'info',
-  COMPLETED: 'success',
-  CANCELLED: 'error',
-  OVERDUE: 'error'
-};
+const STATUS_COLORS = { ...ACTIVITY_STATUS_COLORS, OVERDUE: 'error' };
 
 // ==============================|| ACTIVITY MINI CARD ||============================== //
 
@@ -208,7 +198,7 @@ export default function ActivityMiniCard({
               bgcolor: displayStatus === 'COMPLETED' ? 'success.main' 
                 : displayStatus === 'CANCELLED' ? 'error.main'
                 : displayStatus === 'OVERDUE' ? 'error.main'
-                : displayStatus === 'IN_PROGRESS' ? 'info.main'
+                : displayStatus === 'ON_HOLD' ? 'warning.main'
                 : 'grey.400',
               flexShrink: 0
             }}

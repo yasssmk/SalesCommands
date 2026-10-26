@@ -3,7 +3,6 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 
 // MUI
@@ -32,29 +31,28 @@ export default function UpcomingActivitiesSection({
   const router = useRouter();
   const theme = useTheme();
 
+  // Part 1 of the "Next steps" band: the ONE next planned step, chosen and
+  // ordered by the server (activity.next_planned_step) — no client re-sort.
   const sequenceContext = activity?.sequence_context;
-  const nextActivities = sequenceContext?.next_activities || [];
+  const nextPlannedStep = activity?.next_planned_step || null;
+  const plannedActivity = nextPlannedStep?.activity || null;
+  const bornCycle =
+    nextPlannedStep?.source === "BORN_DECISION_CYCLE"
+      ? nextPlannedStep.decision_cycle
+      : null;
   const isInSequence =
     Boolean(activity?.decision_cycle) || Boolean(activity?.campaign_detail);
   const isCampaignActivity =
     Boolean(activity?.campaign_detail) && !activity?.decision_cycle;
+  // Hidden once a Decision Cycle was born from this activity.
   const showConversionCta =
     isCampaignActivity &&
+    !bornCycle &&
     (activity?.outcome === "SUCCESSFUL" ||
       activity?.outcome === "MEETING_SCHEDULED");
   const isLastInSequence =
     sequenceContext?.position != null &&
     sequenceContext?.position === sequenceContext?.total;
-
-  const sorted = useMemo(
-    () =>
-      [...nextActivities].sort((a, b) => {
-        const dateA = a.scheduled_date || a.due_date || "";
-        const dateB = b.scheduled_date || b.due_date || "";
-        return dateA.localeCompare(dateB);
-      }),
-    [nextActivities],
-  );
 
   const handleNavigate = (activityId) => {
     if (activityId) {
@@ -87,7 +85,7 @@ export default function UpcomingActivitiesSection({
         </Typography>
         <Typography variant="caption" color="text.disabled">
           Link this activity to a Decision Cycle from the Overview tab to see
-          upcoming activities.
+          its next planned step.
         </Typography>
       </Box>
     );
@@ -139,17 +137,23 @@ export default function UpcomingActivitiesSection({
         </Stack>
       )}
 
-      {/* Activity list */}
-      {sorted.length > 0 ? (
-        <Stack spacing={1}>
-          {sorted.map((act) => (
-            <ActivityMiniCard
-              key={act.id}
-              activity={act}
-              onNavigate={handleNavigate}
-            />
-          ))}
-        </Stack>
+      {/* The decision cycle born from this activity */}
+      {bornCycle && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mb: 1 }}
+        >
+          {`In decision cycle ${bornCycle.name}`}
+        </Typography>
+      )}
+
+      {/* The next planned step */}
+      {plannedActivity ? (
+        <ActivityMiniCard
+          activity={plannedActivity}
+          onNavigate={handleNavigate}
+        />
       ) : (
         <Box
           sx={{
@@ -165,12 +169,22 @@ export default function UpcomingActivitiesSection({
             color="text.secondary"
             textAlign="center"
           >
-            {!isLocked && isLastInSequence
-              ? "This is the last activity in the sequence. Create a follow-up to continue the cycle."
-              : !isLocked
-                ? "No activities scheduled after this one. Create a follow-up to continue."
-                : "No upcoming activities in this sequence yet."}
+            {bornCycle
+              ? "No activity planned in this decision cycle yet."
+              : "No next step planned yet."}
           </Typography>
+          {!isLocked && !bornCycle && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              component="p"
+              textAlign="center"
+            >
+              {isLastInSequence
+                ? "This is the last activity in the sequence. Create a follow-up to continue the cycle."
+                : "Create a follow-up to continue."}
+            </Typography>
+          )}
         </Box>
       )}
 

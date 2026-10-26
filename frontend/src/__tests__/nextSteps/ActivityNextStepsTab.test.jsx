@@ -384,7 +384,7 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.queryByText("Add manually")).not.toBeInTheDocument();
   });
 
-  it("shows Upcoming Activities heading", () => {
+  it("shows the Next planned step heading", () => {
     render(
       <ActivityNextStepsTab
         activity={mockActivity}
@@ -393,7 +393,7 @@ describe("ActivityNextStepsTab", () => {
       />,
     );
 
-    expect(screen.getByText("Upcoming Activities")).toBeInTheDocument();
+    expect(screen.getByText("Next planned step")).toBeInTheDocument();
   });
 });
 

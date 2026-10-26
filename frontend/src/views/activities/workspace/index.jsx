@@ -311,9 +311,9 @@ export default function ActivityWorkspacePage() {
             </CollapsibleStrip>
           </SignalsHaloBox>
 
-          {/* Next step — open when analysed */}
+          {/* Next steps — open when analysed */}
           <CollapsibleStrip
-            title="Next step"
+            title="Next steps"
             icon={RightCircleOutlined}
             defaultExpanded={analyzed}
           >

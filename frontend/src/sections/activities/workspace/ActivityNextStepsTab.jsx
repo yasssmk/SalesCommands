@@ -236,12 +236,12 @@ export default function ActivityNextStepsTab({
           )}
         </Stack>
 
-        {/* Upcoming Activities section (always shown when in sequence) */}
+        {/* Part 1 — the next planned step (always shown when in sequence) */}
         {activity?.sequence_context && (
           <Box mt={4}>
             <Typography variant="h6" sx={{ mb: 1.5 }}>
               <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
-              Upcoming Activities
+              Next planned step
             </Typography>
             <UpcomingActivitiesSection
               activity={activity}
@@ -320,7 +320,7 @@ export default function ActivityNextStepsTab({
 
       {/* AI Suggestions — DC-only: extracted next-step suggestions are not
           proposed in a campaign context (activity without a decision_cycle).
-          Mirrors the backend guard. The manual path and Upcoming Activities
+          Mirrors the backend guard. The manual path and the next planned step
           below stay available regardless. */}
       {Boolean(activity?.decision_cycle) && (
         <Box mt={2}>
@@ -359,11 +359,11 @@ export default function ActivityNextStepsTab({
         </Box>
       )}
 
-      {/* Upcoming Activities section */}
+      {/* Part 1 — the next planned step */}
       <Divider sx={{ my: 2 }} />
       <Typography variant="h6" sx={{ mb: 1.5 }}>
         <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
-        Upcoming Activities
+        Next planned step
       </Typography>
       <UpcomingActivitiesSection
         activity={activity}

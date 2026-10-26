@@ -20,11 +20,11 @@ vi.mock("api/accounts/activities", () => ({
   },
   ACTIVITY_STATUS_LABELS: {
     PLANNED: "Planned",
-    IN_PROGRESS: "In Progress",
+    ON_HOLD: "On hold",
   },
   ACTIVITY_STATUS_COLORS: {
     PLANNED: "default",
-    IN_PROGRESS: "primary",
+    ON_HOLD: "warning",
   },
 }));
 
@@ -34,6 +34,8 @@ import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingAct
 
 // ==============================|| FIXTURES ||============================== //
 
+// 5.2 — the section shows the ONE next planned step chosen by the server
+// (activity.next_planned_step); sequence_context.next_activities is not listed.
 const mockActivity = {
   id: "act-1",
   decision_cycle: "dc-1",
@@ -41,26 +43,30 @@ const mockActivity = {
   sequence_context: {
     next_activities: [
       {
-        id: "act-2",
-        title: "Follow-up call",
-        activity_type: "CALL",
-        status: "PLANNED",
-        is_overdue: false,
-        scheduled_date: "2026-06-20",
-        due_date: null,
-        decision_step_name: "Discovery",
-      },
-      {
         id: "act-3",
         title: "Send proposal",
         activity_type: "EMAIL",
-        status: "IN_PROGRESS",
+        status: "ON_HOLD",
         is_overdue: false,
         scheduled_date: "2026-06-15",
         due_date: null,
         decision_step_name: null,
       },
     ],
+  },
+  next_planned_step: {
+    source: "DECISION_CYCLE",
+    decision_cycle: { id: "dc-1", name: "Deal Acme" },
+    activity: {
+      id: "act-2",
+      title: "Follow-up call",
+      activity_type: "CALL",
+      status: "PLANNED",
+      is_overdue: false,
+      scheduled_date: "2026-06-20",
+      due_date: null,
+      decision_step_name: "Discovery",
+    },
   },
 };
 
@@ -78,6 +84,7 @@ const emptySequenceActivity = {
   sequence_context: {
     next_activities: [],
   },
+  next_planned_step: null,
 };
 
 // ==============================|| TESTS ||============================== //
@@ -88,7 +95,7 @@ afterEach(() => {
 });
 
 describe("UpcomingActivitiesSection", () => {
-  it("renders activity cards sorted by date", () => {
+  it("renders only the next planned step (no client re-sort of the sequence)", () => {
     render(
       <UpcomingActivitiesSection
         activity={mockActivity}
@@ -96,10 +103,8 @@ describe("UpcomingActivitiesSection", () => {
       />,
     );
 
-    const cards = screen.getAllByText(/Follow-up call|Send proposal/);
-    expect(cards).toHaveLength(2);
-    expect(screen.getByText("Send proposal")).toBeInTheDocument();
     expect(screen.getByText("Follow-up call")).toBeInTheDocument();
+    expect(screen.queryByText("Send proposal")).not.toBeInTheDocument();
   });
 
   it("shows quick-create buttons when not locked", () => {
@@ -166,7 +171,7 @@ describe("UpcomingActivitiesSection", () => {
     expect(screen.getByText("No sequence linked.")).toBeInTheDocument();
   });
 
-  it("shows empty state when sequence has no next activities", () => {
+  it("shows empty state when no next step is planned", () => {
     render(
       <UpcomingActivitiesSection
         activity={emptySequenceActivity}
@@ -174,9 +179,8 @@ describe("UpcomingActivitiesSection", () => {
       />,
     );
 
-    expect(
-      screen.getByText("No activities scheduled after this one. Create a follow-up to continue."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("No next step planned yet.")).toBeInTheDocument();
+    expect(screen.getByText("Create a follow-up to continue.")).toBeInTheDocument();
   });
 
   it("shows step name chip when present", () => {

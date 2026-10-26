@@ -34,7 +34,12 @@ vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
 }));
 vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: class {} }));
 
-vi.mock("api/accounts/activities", () => ({ updateActivity: vi.fn() }));
+// importOriginal: the legacy ActivityMiniCard reads the app's activity status
+// constants (5.2).
+vi.mock("api/accounts/activities", async (importOriginal) => ({
+  ...(await importOriginal()),
+  updateActivity: vi.fn(),
+}));
 vi.mock("api/businessData/contacts", () => ({
   useGetContacts: () => ({ contacts: [], contactsLoading: false }),
 }));
