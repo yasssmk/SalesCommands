@@ -189,3 +189,17 @@ def test_in_progress_is_gone_from_the_sequence_service():
     import inspect
     from app_modules.activities.services import activity_sequence_service
     assert 'IN_PROGRESS' not in inspect.getsource(activity_sequence_service)
+
+
+def test_b_a_born_dc_with_nothing_open_still_names_the_dc(authed_api_a, account, user_a, chain):
+    """5.2 (Q6): the "Start Decision Cycle" button must hide once a DC was born
+    from the activity, even when that DC has nothing open -- the step keeps the
+    DC, with no activity (the UI says so)."""
+    call = chain(1, ActivityStatus.COMPLETED, _days(-2))
+    dc = _cycle(account, user_a, 'Deal Logistix')
+    _activity(account, user_a, 'Discovery meeting', status=ActivityStatus.COMPLETED,
+              date=_days(-1), cycle=dc, type_=ActivityType.MEETING, source_activity=call)
+    step = _get(authed_api_a, call)['next_planned_step']
+    assert step == {'source': 'BORN_DECISION_CYCLE',
+                    'decision_cycle': {'id': str(dc.id), 'name': 'Deal Logistix'},
+                    'activity': None}

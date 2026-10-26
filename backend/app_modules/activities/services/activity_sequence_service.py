@@ -172,7 +172,8 @@ class ActivitySequenceService:
             (source DECISION_CYCLE);
           * campaign activity that gave birth to a DC (an activity whose
             source_activity is this one, in a DC) -> the first open activity
-            of THAT DC (source BORN_DECISION_CYCLE);
+            of THAT DC (source BORN_DECISION_CYCLE) -- with nothing open, the
+            DC is still returned, `activity` None (5.2);
           * other campaign activity -> the next step of the target's chain
             (the CAMPAIGN scope of get_sequence_context: sequence_position);
           * nothing -> None.
@@ -181,7 +182,8 @@ class ActivitySequenceService:
 
         Returns:
             {'source', 'decision_cycle': {id, name} | None,
-             'activity': the _format_activity_for_response shape} | None
+             'activity': the _format_activity_for_response shape (None only
+             for a born DC with nothing open)} | None
         """
         from ..models import Activity
         from ..constants import ActivityStatus
@@ -203,8 +205,15 @@ class ActivitySequenceService:
             .first()
         )
         if born is not None:
+            # The born DC is named even with nothing open (5.2, Q6: the UI
+            # hides "Start Decision Cycle" once a DC was born).
             return cls._next_in_cycle('BORN_DECISION_CYCLE', born.decision_cycle,
-                                      activity.client_id)
+                                      activity.client_id) or {
+                'source': 'BORN_DECISION_CYCLE',
+                'decision_cycle': {'id': str(born.decision_cycle.id),
+                                   'name': born.decision_cycle.name},
+                'activity': None,
+            }
         context = cls.get_sequence_context(activity, SequenceScope.CAMPAIGN)
         upcoming = (context or {}).get('next_activities') or []
         if not upcoming:
