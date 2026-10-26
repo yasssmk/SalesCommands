@@ -27,7 +27,10 @@ const mockRouterPush = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockRouterPush }),
+  usePathname: () => "/activities/activity-123",
 }));
+// The workspace coque in push mode (large screen).
+vi.mock("@mui/material/useMediaQuery", () => ({ default: vi.fn(() => false) }));
 
 const mockNextStepSignals = [
   {
@@ -148,22 +151,12 @@ vi.mock("sections/activities/nextSteps/UpcomingActivitiesSection", () => ({
   ),
 }));
 
-vi.mock("sections/activities/nextSteps/NextStepSuggestionDrawer", () => ({
-  default: ({ open, signal, onClose }) =>
-    open && signal ? (
-      <div data-testid="suggestion-drawer">
-        <span>{signal.suggested_title}</span>
-        <button onClick={onClose} aria-label="Close drawer">Close</button>
-      </div>
-    ) : null,
-}));
-
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
 import { rejectSignal, validateSignal } from "api/signals/signals";
-import AphoriqTheme from "../_utils/aphoriqTheme";
+import WorkspaceCoque from "../_utils/workspaceCoque";
 
 // ==============================|| TEST ACTIVITY ||============================== //
 
@@ -188,13 +181,13 @@ const mockActivity = {
 
 const renderTab = (props = {}) =>
   render(
-    <AphoriqTheme>
+    <WorkspaceCoque>
       <ActivityNextStepsTab
         activity={mockActivity}
         mutateCounts={mockMutateCounts}
         {...props}
       />
-    </AphoriqTheme>,
+    </WorkspaceCoque>,
   );
 
 describe("ActivityNextStepsTab", () => {
@@ -239,16 +232,16 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.getByTestId("upcoming-activities-section")).toBeInTheDocument();
   });
 
-  it("opens the drawer when clicking a next step", () => {
+  it("opens the detail in the workspace coque when clicking a next step", () => {
     renderTab();
     fireEvent.click(screen.getByText("Follow up on pricing"));
-    expect(screen.getByTestId("suggestion-drawer")).toBeInTheDocument();
+    expect(screen.getByTestId("next-step-detail-body")).toBeInTheDocument();
   });
 
-  it("the row ✓ opens the drawer and validates nothing", () => {
+  it("the row ✓ opens the detail and validates nothing", () => {
     renderTab();
     fireEvent.click(screen.getByLabelText("Validate signal"));
-    expect(screen.getByTestId("suggestion-drawer")).toBeInTheDocument();
+    expect(screen.getByTestId("next-step-detail-body")).toBeInTheDocument();
     expect(validateSignal).not.toHaveBeenCalled();
   });
 

@@ -12,12 +12,17 @@
 //     Reopen offered except on a resolved next step (rule 2.1);
 //   part 4 — "Set a next step manually" (was "Add manually") → ActivityModal;
 //   outside a DC (DC-only guard) parts 2-3 are hidden, parts 1 and 4 stay.
-// The band, ActivityNextStepsTab, SignalsValidationList, SignalLine and the next
-// step drawer are REAL; data hooks, API calls and the other bands are mocked.
+// 5.4 — the next step DETAIL opens in the single workspace coque (as the 8 other
+// types), on the standard chassis (NextStepDetailView, section B of 5.0):
+// ① Proposal ② People ③ Purpose ④ Source (+ quote badge) ⑤ Activity when
+// resolved; "Unknown" in full for an empty field; advice_rationale never shown;
+// a resolved next step is read-only (rule 2.1).
+// The band, ActivityNextStepsTab, SignalsValidationList, SignalLine, the coque
+// and the detail are REAL; data hooks, API calls and the other bands are mocked.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
-import AphoriqTheme from "../_utils/aphoriqTheme";
+import WorkspaceCoque from "../_utils/workspaceCoque";
 
 const mockPush = vi.fn();
 let mockActivity;
@@ -26,7 +31,11 @@ let mockNextSteps;
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "act-1" }),
   useRouter: () => ({ push: mockPush }),
+  usePathname: () => "/activities/act-1",
+  useSearchParams: () => new URLSearchParams(),
 }));
+// The coque in push mode (large screen), as in workspaceDrawer tests.
+vi.mock("@mui/material/useMediaQuery", () => ({ default: vi.fn(() => false) }));
 vi.mock("@mui/x-date-pickers/DatePicker", () => ({ DatePicker: () => <input /> }));
 vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
   LocalizationProvider: ({ children }) => <>{children}</>,
@@ -92,7 +101,8 @@ import ActivityWorkspacePage from "views/activities/workspace";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import { validateSignal, rejectSignal, reopenSignal } from "api/signals/signals";
 
-const render = (ui) => rtlRender(<AphoriqTheme>{ui}</AphoriqTheme>);
+const render = (ui) => rtlRender(<WorkspaceCoque>{ui}</WorkspaceCoque>);
+const DETAIL = "next-step-detail-body";
 
 const THOMAS = { id: "c-1", first_name: "Thomas", last_name: "Lefèvre", job_title: "CTO" };
 
@@ -166,7 +176,7 @@ describe("Next steps band — part 2, to validate (5.3)", () => {
   it("the row ✓ never validates: it opens the detail drawer", async () => {
     renderPage();
     fireEvent.click(within(rowOf("Send the DPA")).getByLabelText("Validate signal"));
-    expect(await screen.findByText("AI Suggestion")).toBeInTheDocument();
+    expect(await screen.findByTestId(DETAIL)).toBeInTheDocument();
     expect(validateSignal).not.toHaveBeenCalled();
   });
 
@@ -204,7 +214,7 @@ describe("Next steps band — part 3, validated / rejected (5.3)", () => {
     fireEvent.click(within(rowOf("Book the security review"))
       .getByRole("link", { name: "Open activity Security review" }));
     expect(mockPush).toHaveBeenCalledWith("/activities/act-20");
-    expect(screen.queryByText("AI Suggestion")).not.toBeInTheDocument();
+    expect(screen.queryByTestId(DETAIL)).not.toBeInTheDocument();
   });
 
   it("a rejected next step can be reopened", async () => {
@@ -219,7 +229,7 @@ describe("Next steps band — part 3, validated / rejected (5.3)", () => {
     renderPage();
     expand("Validated");
     fireEvent.click(rowOf("Book the security review"));
-    expect(await screen.findByText("AI Suggestion")).toBeInTheDocument();
+    expect(await screen.findByTestId(DETAIL)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Reopen/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /\bEdit\b/ })).not.toBeInTheDocument();
   });
@@ -250,7 +260,7 @@ describe("Next steps band — the lock of the activity (PO decision)", () => {
   const openRow = async (title, section) => {
     if (section) expand(section);
     fireEvent.click(rowOf(title));
-    return screen.findByText("AI Suggestion");
+    return screen.findByTestId(DETAIL);
   };
 
   it("COMPLETED: part 4, quick-create and the row actions are available", () => {
@@ -261,12 +271,12 @@ describe("Next steps band — the lock of the activity (PO decision)", () => {
     expect(within(rowOf("Send the DPA")).getByLabelText("Reject signal")).toBeInTheDocument();
   });
 
-  it("COMPLETED: the drawer offers Edit, Reject and Convert on a pending next step", async () => {
+  it("COMPLETED: the drawer offers Edit, Reject and Validate on a pending next step", async () => {
     renderPage(dcActivity({ status: "COMPLETED" }));
     await openRow("Send the DPA");
     expect(screen.getByRole("button", { name: /\bEdit\b/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /close-circle Reject/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Convert to Activity/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /check-circle Validate/ })).toBeInTheDocument();
   });
 
   it("COMPLETED: a rejected next step can be reopened", async () => {
@@ -288,10 +298,161 @@ describe("Next steps band — the lock of the activity (PO decision)", () => {
     await openRow("Send the DPA");
     expect(screen.queryByRole("button", { name: /\bEdit\b/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /close-circle Reject/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Convert to Activity/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /check-circle Validate/ })).not.toBeInTheDocument();
     cleanup();
     renderPage(dcActivity({ status: "CANCELLED" }));
     await openRow("Train Karim", "Rejected");
     expect(screen.queryByRole("button", { name: /Reopen/ })).not.toBeInTheDocument();
+  });
+});
+
+// ==============================|| 5.4 — THE DETAIL VIEW ||============================== //
+
+const ISABELLE = { id: "c-2", first_name: "Isabelle", last_name: "Roux", job_title: "CFO" };
+
+const richPending = (over = {}) => nextStep({
+  id: "ns-rich", suggested_title: "Send the DPA and SOC 2 report",
+  suggested_activity_type: "EMAIL", suggested_activity_type_display: "Email",
+  suggested_due_date: "2026-10-23", suggested_date_text: "before Friday",
+  suggested_decision_step: "step-4",
+  suggested_decision_step_detail: { id: "step-4", name: "Technical Fit", order: 4 },
+  carried_by_prospect: false,
+  suggested_people: [
+    { id: "p-1", full_name: "Thomas Lefèvre", role: "CHAMPION", target_contact: THOMAS },
+    { id: "p-2", full_name: "Karim Benali", role: "UNKNOWN", target_contact: null },
+  ],
+  suggested_people_names: ["Laurent"],
+  suggested_internal_names: ["Sophie"],
+  suggested_objective: "Unblock the security review",
+  suggested_success_criterion: "The DSI signs off the DPA",
+  suggested_topics: "DPA, SOC 2 scope",
+  source_quote: "Envoyez-les avant vendredi.",
+  metadata: { evidence_check: { status: "quote_not_found", detail: { parts: 1, parts_found: 0 } } },
+  advice_rationale: "ADVICE-RATIONALE-NEVER-SHOWN",
+  source_context: { activity: { id: "act-0" }, contacts: [THOMAS, ISABELLE] },
+  ...over,
+});
+
+const bare = (over = {}) => nextStep({
+  id: "ns-bare", suggested_title: "Follow up", suggested_activity_type: "TASK",
+  suggested_due_date: null, suggested_date_text: "", suggested_decision_step: null,
+  suggested_decision_step_detail: null, carried_by_prospect: false,
+  suggested_people: [], suggested_people_names: [], suggested_internal_names: [],
+  suggested_objective: "", suggested_success_criterion: "", suggested_topics: "",
+  source_quote: "", metadata: {}, ...over,
+});
+
+const section = (testId) => screen.getByTestId(testId);
+
+describe("Next steps band — the detail view (5.4)", () => {
+  const openDetail = async (nextSteps, title, sectionName) => {
+    renderPage(dcActivity(), nextSteps);
+    if (sectionName) expand(sectionName);
+    fireEvent.click(rowOf(title));
+    return screen.findByTestId(DETAIL);
+  };
+
+  it("opens in the workspace coque, titled with the type, with its status pill", async () => {
+    await openDetail([richPending()], "Send the DPA and SOC 2 report");
+    const coque = screen.getByTestId("coque-panel");
+    expect(within(coque).getByTestId(DETAIL)).toBeInTheDocument();
+    expect(within(coque).getByTestId("coque-title")).toHaveTextContent("Next step");
+    expect(within(coque).getByText("Pending")).toBeInTheDocument();
+  });
+
+  it("① Proposal: title, type, date + the date as said, DC step, carried by", async () => {
+    await openDetail([richPending()], "Send the DPA and SOC 2 report");
+    const proposal = section("next-step-proposal");
+    expect(within(screen.getByTestId(DETAIL)).getByText("Send the DPA and SOC 2 report")).toBeInTheDocument();
+    expect(within(proposal).getByText("Email")).toBeInTheDocument();
+    expect(within(proposal).getByText("23 Oct 2026 · “before Friday”")).toBeInTheDocument();
+    expect(within(proposal).getByText("Technical Fit")).toBeInTheDocument();
+    expect(within(proposal).getByText("Seller")).toBeInTheDocument();
+  });
+
+  it("② People: the People (contact or name), the names not linked, the internal names", async () => {
+    await openDetail([richPending()], "Send the DPA and SOC 2 report");
+    const people = section("next-step-people");
+    expect(within(people).getByText("Thomas Lefèvre")).toBeInTheDocument();
+    expect(within(people).getByText(/Karim Benali/)).toBeInTheDocument();
+    expect(within(people).getByText(/Laurent/)).toBeInTheDocument();
+    expect(within(people).getByText("Sophie")).toBeInTheDocument();
+  });
+
+  it("③ Purpose: objective, success criterion, topics", async () => {
+    await openDetail([richPending()], "Send the DPA and SOC 2 report");
+    const purpose = section("next-step-purpose");
+    expect(within(purpose).getByText("Unblock the security review")).toBeInTheDocument();
+    expect(within(purpose).getByText("The DSI signs off the DPA")).toBeInTheDocument();
+    expect(within(purpose).getByText("DPA, SOC 2 scope")).toBeInTheDocument();
+  });
+
+  it("④ Source: quote, the 'quote not found' badge, participants, origin link", async () => {
+    await openDetail([richPending()], "Send the DPA and SOC 2 report");
+    const source = section("next-step-source");
+    expect(within(source).getByText(/Envoyez-les avant vendredi/)).toBeInTheDocument();
+    expect(within(source).getByText("Quote not found in the transcript")).toBeInTheDocument();
+    expect(within(source).getByText(/Isabelle/)).toBeInTheDocument();
+    fireEvent.click(within(source).getByRole("button", { name: /View origin activity/ }));
+    expect(mockPush).toHaveBeenCalledWith("/activities/act-0");
+  });
+
+  it("no badge for a faithful quote; no origin link when the origin is this activity", async () => {
+    await openDetail([richPending({ metadata: {}, source_context: { activity: { id: "act-1" },
+      contacts: [THOMAS] } })], "Send the DPA and SOC 2 report");
+    const source = section("next-step-source");
+    expect(within(source).queryByText("Quote not found in the transcript")).toBeNull();
+    expect(within(source).queryByRole("button", { name: /View origin activity/ })).toBeNull();
+  });
+
+  it("'Unknown' in full for each empty field", async () => {
+    await openDetail([bare()], "Follow up");
+    expect(within(section("next-step-proposal")).getAllByText("Unknown")).toHaveLength(2); // date, step
+    expect(within(section("next-step-people")).getAllByText("Unknown")).toHaveLength(2); // prospect, internal
+    expect(within(section("next-step-purpose")).getAllByText("Unknown")).toHaveLength(3);
+  });
+
+  it("advice_rationale never appears", async () => {
+    await openDetail([richPending()], "Send the DPA and SOC 2 report");
+    expect(screen.queryByText(/ADVICE-RATIONALE-NEVER-SHOWN/)).toBeNull();
+  });
+
+  it("a pending next step: Edit / Reject / Validate; Validate never calls validateSignal", async () => {
+    await openDetail([richPending()], "Send the DPA and SOC 2 report");
+    expect(screen.getByRole("button", { name: /\bEdit\b/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /check-circle Validate/ }));
+    expect(validateSignal).not.toHaveBeenCalled();
+    // Until the validation flow (5.6): the existing Create path, ActivityModal.
+    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
+  });
+
+  it("Reject from the detail calls rejectSignal", async () => {
+    await openDetail([richPending()], "Send the DPA and SOC 2 report");
+    fireEvent.click(screen.getByRole("button", { name: /close-circle Reject/ }));
+    await waitFor(() => expect(rejectSignal).toHaveBeenCalledWith("next-steps", "ns-rich"));
+  });
+
+  it("a resolved next step: ⑤ Activity links to it; no action at all (rule 2.1)", async () => {
+    await openDetail([richPending({ status: "VALIDATED", linked_activity: compactActivity() })],
+      "Send the DPA and SOC 2 report", "Validated");
+    const activitySection = section("next-step-activity");
+    fireEvent.click(within(activitySection)
+      .getByRole("link", { name: "Open activity Security review" }));
+    expect(mockPush).toHaveBeenCalledWith("/activities/act-20");
+  });
+
+  it("a resolved next step shows no Edit / Reject / Validate / Reopen", async () => {
+    await openDetail([richPending({ status: "VALIDATED", attached_activity: compactActivity() })],
+      "Send the DPA and SOC 2 report", "Validated");
+    for (const name of [/\bEdit\b/, /close-circle Reject/, /check-circle Validate/, /Reopen/]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+  });
+
+  it("a rejected next step: Reopen from the detail calls reopenSignal", async () => {
+    await openDetail([richPending({ status: "REJECTED" })], "Send the DPA and SOC 2 report",
+      "Rejected");
+    fireEvent.click(screen.getByRole("button", { name: /Reopen/ }));
+    await waitFor(() => expect(reopenSignal).toHaveBeenCalledWith("next-steps", "ns-rich"));
   });
 });

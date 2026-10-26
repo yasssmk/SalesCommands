@@ -3,7 +3,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 // MUI
@@ -28,7 +28,10 @@ import {
 } from "utils/displayError";
 
 import SignalsValidationList from "components/signals/SignalsValidationList";
-import NextStepSuggestionDrawer from "sections/activities/nextSteps/NextStepSuggestionDrawer";
+import SignalDetailPanel from "components/signals/SignalDetailPanel";
+import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
+import { getSignalTypeLabel } from "utils/signalTypes";
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import NextStepActivityLine, {
   getResolvedActivity,
 } from "sections/activities/nextSteps/NextStepActivityLine";
@@ -83,9 +86,9 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   });
   const { choices, choicesLoading } = useGetSignalChoices();
 
-  // Drawer state
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerSignal, setDrawerSignal] = useState(null);
+  // The single workspace drawer coque: the next step detail is injected there,
+  // as the detail of every other signal type (ActivitySignalsTab).
+  const { openDrawer, closeDrawer } = useWorkspaceDrawer();
 
   // Activity modal state (convert from signal OR manual add OR campaign conversion)
   const [activityModalOpen, setActivityModalOpen] = useState(false);
@@ -99,15 +102,34 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
 
   // ==============================|| HANDLERS ||============================== //
 
-  const handleSelect = useCallback((signal) => {
-    setDrawerSignal(signal);
-    setDrawerOpen(true);
-  }, []);
-
-  const handleCloseDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    setDrawerSignal(null);
-  }, []);
+  // Open (or re-open after a status change) the detail in the coque. The
+  // lifecycle handlers are read from a ref (they in turn re-open the detail) —
+  // the ActivitySignalsTab pattern.
+  const detailHandlersRef = useRef(null);
+  const openDetail = useCallback(
+    (signal) => {
+      const h = detailHandlersRef.current;
+      openDrawer(
+        <SignalDetailPanel
+          signal={signal}
+          signalType="next-steps"
+          onValidate={h.onValidate}
+          onReject={h.onReject}
+          onEdit={h.onEdit}
+          onReopen={h.onReopen}
+          isLocked={isLocked}
+          currentActivityId={activityId}
+          headerInCoque
+        />,
+        {
+          title: getSignalTypeLabel("next-steps"),
+          status: signal.status,
+          statusMap: SIGNAL_STATUS_PILL,
+        },
+      );
+    },
+    [openDrawer, isLocked, activityId],
+  );
 
   const handleConvert = useCallback((signal) => {
     setConvertSignal(signal);
@@ -131,12 +153,12 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
         displaySuccessSnackbar("Suggestion rejected");
         mutateAll();
         mutateCounts?.();
-        handleCloseDrawer();
+        openDetail({ ...signal, status: "REJECTED" });
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts, handleCloseDrawer],
+    [mutateAll, mutateCounts, openDetail],
   );
 
   const handleReopen = useCallback(
@@ -146,17 +168,24 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
         displaySuccessSnackbar("Signal reopened — now pending");
         mutateAll();
         mutateCounts?.();
-        handleCloseDrawer();
+        openDetail({ ...signal, status: "PENDING" });
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts, handleCloseDrawer],
+    [mutateAll, mutateCounts, openDetail],
   );
 
-  // The row ✓ validates NOTHING: a next step is validated only with its
-  // activity (rule 2.1) — it opens the detail drawer, where the flow starts.
-  const handleValidate = handleSelect;
+  // Nothing here calls validateSignal: a next step is validated only with its
+  // activity (rule 2.1). The row ✓ opens the detail; the detail's Validate opens
+  // the existing Create path (ActivityModal pre-filled) until the validation
+  // flow (5.6) takes its place.
+  detailHandlersRef.current = {
+    onValidate: handleConvert,
+    onReject: handleReject,
+    onEdit: handleEdit,
+    onReopen: handleReopen,
+  };
 
   const handleOpenActivity = useCallback(
     (id) => router.push(`/activities/${id}`),
@@ -174,19 +203,12 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     [handleOpenActivity],
   );
 
-  const handleViewActivity = useCallback(
-    (linkedActivity) => {
-      if (linkedActivity?.id) {
-        router.push(`/activities/${linkedActivity.id}/workspace?tab=overview`);
-      }
-    },
-    [router],
-  );
-
   const handleConvertSuccess = useCallback(() => {
     mutateAll();
     mutateCounts?.();
-  }, [mutateAll, mutateCounts]);
+    // The detail shown was the next step before its conversion.
+    closeDrawer();
+  }, [mutateAll, mutateCounts, closeDrawer]);
 
   const handleEditSuccess = useCallback(() => {
     mutateAll();
@@ -232,8 +254,8 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
             <SignalsValidationList
               signals={nextStepSignals}
               loading={loading}
-              onSelect={handleSelect}
-              onValidate={isLocked ? undefined : handleValidate}
+              onSelect={openDetail}
+              onValidate={isLocked ? undefined : openDetail}
               onReject={isLocked ? undefined : handleReject}
               renderExtra={renderExtra}
               emptyMessage="No next-step suggestions for this activity"
@@ -255,19 +277,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
           </Button>
         </Box>
       )}
-
-      {/* Suggestion Drawer */}
-      <NextStepSuggestionDrawer
-        open={drawerOpen}
-        signal={drawerSignal}
-        onClose={handleCloseDrawer}
-        onConvert={handleConvert}
-        onReject={handleReject}
-        onEdit={handleEdit}
-        onReopen={handleReopen}
-        onViewActivity={handleViewActivity}
-        isLocked={isLocked}
-      />
 
       {/* Activity modal (convert from signal or manual add) */}
       {accountId && (
