@@ -223,7 +223,7 @@ function bandTitlesInOrder() {
   return screen
     .getAllByRole("button")
     .map((b) => b.textContent.trim())
-    .filter((t) => ["Preparation", "Source", "Signals", "Next step"].includes(t));
+    .filter((t) => ["Preparation", "Source", "Signals", "Next steps"].includes(t));
 }
 
 // ==============================|| TESTS ||============================== //
@@ -267,7 +267,7 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
       "Preparation",
       "Source",
       "Signals",
-      "Next step",
+      "Next steps",
     ]);
   });
 
@@ -275,7 +275,7 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
     setupRouter();
     setActivityType("EMAIL");
     renderPage();
-    expect(bandTitlesInOrder()).toEqual(["Source", "Signals", "Next step"]);
+    expect(bandTitlesInOrder()).toEqual(["Source", "Signals", "Next steps"]);
     expect(screen.queryByText("Preparation")).not.toBeInTheDocument();
   });
 
