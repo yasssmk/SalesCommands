@@ -452,8 +452,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     campaign_detail = serializers.SerializerMethodField(read_only=True)
     source_activity_detail = serializers.SerializerMethodField(read_only=True)
     next_step_signal_detail = serializers.SerializerMethodField(read_only=True)
-    # Sprint Next steps 5.8a (B2): the DEDUCED participants, read-only.
-    participants = serializers.SerializerMethodField(read_only=True)
     no_answer_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
@@ -507,7 +505,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             # AI suggestion provenance
             'next_step_signal',
             'next_step_signal_detail',
-            'participants',
 
             # Campaign retry tracking
             'no_answer_count',
@@ -631,33 +628,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             }
 
         return None
-
-    def get_participants(self, obj):
-        """
-        The activity's DEDUCED participants (Sprint Next steps 5.8a, B2):
-        its contacts, then the People of the next steps that created it or
-        are linked to it, deduplicated by identity
-        (services/activity_participants.py). Each entry: source, contact
-        (the contacts_detail shape, or None) and people ({id, full_name,
-        role, role_display}, or None for a plain contact). Read-only.
-        """
-        from .services.activity_participants import get_activity_participants
-        return [
-            {
-                'source':  p['source'],
-                'contact': ActivityContactSerializer(p['contact']).data if p['contact'] else None,
-                'people':  (
-                    {
-                        'id':           str(p['people'].id),
-                        'full_name':    p['people'].full_name,
-                        'role':         p['people'].role,
-                        'role_display': p['people'].get_role_display(),
-                    }
-                    if p['people'] is not None else None
-                ),
-            }
-            for p in get_activity_participants(obj)
-        ]
 
     def get_next_step_signal_detail(self, obj):
         """

@@ -24,7 +24,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import { CloseOutlined, LinkOutlined, PlusOutlined } from "@ant-design/icons";
+import { CloseOutlined, LinkOutlined } from "@ant-design/icons";
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
@@ -1988,8 +1988,8 @@ TechStackDetailView.propTypes = {
 // the ACTIVITY coque ONLY. PO section order (5.0, B):
 //   §1 Proposal — the title heads the shared summary box; type, date (+ the
 //      date as said), DC step, who carries it;
-//   §2 People — the People (their contact when linked, else their name), the
-//      names not linked to a People, the internal names;
+//   §2 People — the names the next step CITES (its People's names and the
+//      names not linked, alike, as text — PO rule 5.8c), the internal names;
 //   §3 Purpose — objective, success criterion, topics;
 //   §4 Source — quote + the server quote check (3.6: PEOPLE_EVIDENCE_PILL, the
 //      same values), participants, origin link;
@@ -1998,6 +1998,16 @@ TechStackDetailView.propTypes = {
 // never displayed (dormant capacity). A RESOLVED next step is read-only
 // (rule 2.1): no Edit / Reject / Validate / Reopen.
 const NEXT_STEP_UNKNOWN = "Unknown";
+
+// The names a next step cites: its People's (full_name, else their contact's
+// name) then the names not linked — one list, no distinction (5.8c).
+function nextStepCitedNames(signal) {
+  const peopleNames = (signal.suggested_people ?? []).map((p) =>
+    p.full_name ||
+    `${p.target_contact?.first_name ?? ""} ${p.target_contact?.last_name ?? ""}`.trim(),
+  );
+  return [...peopleNames, ...(signal.suggested_people_names ?? [])].filter(Boolean);
+}
 
 function nextStepDateLabel(signal) {
   const date = formatDate(signal.suggested_due_date);
@@ -2011,7 +2021,6 @@ function NextStepDetailView({
   onReject,
   onEdit,
   onReopen,
-  onAddPerson,
   onOpenActivity,
   onClose,
   headerInCoque,
@@ -2033,11 +2042,9 @@ function NextStepDetailView({
   );
   const evidenceStatus = signal.metadata?.evidence_check?.status;
 
-  const people = signal.suggested_people ?? [];
-  // 5.8b (B0): a name not linked can become a People — not on a resolved
-  // next step (frozen, rule 2.1) nor in a locked band.
-  const canAddPerson = Boolean(onAddPerson) && !isLocked && !resolvedActivity;
-  const unlinkedNames = signal.suggested_people_names ?? [];
+  // 5.8c (PO rule): a next step CITES names — those of its People and those
+  // not linked — shown alike, as text, never as persons.
+  const citedNames = nextStepCitedNames(signal);
   const internalNames = signal.suggested_internal_names ?? [];
 
   const unknown = (
@@ -2135,45 +2142,12 @@ function NextStepDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — People: the People (contact when linked, else the name),
-            the names not linked to a People, the internal names. */}
+        {/* Section 2 — People: the names the next step cites (prospect side),
+            then the internal names — text only, no action. */}
         <SectionHeader index={2} title="People" sx={{ mb: 1 }} />
         <Box data-testid="next-step-people">
           {label("Prospect")}
-          {people.length > 0 || unlinkedNames.length > 0 ? (
-            <Stack spacing={0.25} sx={{ mb: 1.25 }}>
-              {people.map((p) =>
-                p.target_contact ? (
-                  <ContactInline key={p.id} contact={p.target_contact} variant="body2" />
-                ) : (
-                  <Typography key={p.id} variant="body2" color="text.primary">
-                    {p.full_name}
-                  </Typography>
-                ),
-              )}
-              {unlinkedNames.map((n) => (
-                <Stack key={n} direction="row" spacing={1} alignItems="center">
-                  <Typography variant="body2" color="text.secondary">
-                    {n}
-                  </Typography>
-                  {canAddPerson && (
-                    <Button
-                      variant="text"
-                      size="small"
-                      aria-label={`Add ${n} as person`}
-                      onClick={() => onAddPerson(signal, n)}
-                      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
-                      sx={{ color: theme.aphoriQ?.accent, px: 0, textTransform: "none" }}
-                    >
-                      Add as person
-                    </Button>
-                  )}
-                </Stack>
-              ))}
-            </Stack>
-          ) : (
-            <Typography variant="body2" sx={{ mb: 1.25 }}>{unknown}</Typography>
-          )}
+          <Box sx={{ mb: 1.25 }}>{textOrUnknown(citedNames.join(" · "))}</Box>
           {label("Internal")}
           {textOrUnknown(internalNames.join(" · "))}
         </Box>
@@ -2260,8 +2234,6 @@ NextStepDetailView.propTypes = {
   onReject: PropTypes.func,
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
-  /** (signal, name) => void — "Add as person" on a name not linked (5.8b). */
-  onAddPerson: PropTypes.func,
   onOpenActivity: PropTypes.func,
   /** When provided, renders the close (×) inside the detail header. */
   onClose: PropTypes.func,
@@ -2285,7 +2257,6 @@ export default function SignalDetailContent({
   onReject,
   onEdit,
   onReopen,
-  onAddPerson,
   onOpenActivity,
   onClose,
   headerInCoque,
@@ -2474,7 +2445,6 @@ export default function SignalDetailContent({
         onReject={onReject}
         onEdit={onEdit}
         onReopen={onReopen}
-        onAddPerson={onAddPerson}
         onOpenActivity={onOpenActivity}
         onClose={onClose}
         headerInCoque={headerInCoque}
@@ -2570,8 +2540,6 @@ SignalDetailContent.propTypes = {
   onReject: PropTypes.func,
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
-  /** Next step detail only: "Add as person" on a name not linked (5.8b). */
-  onAddPerson: PropTypes.func,
   onOpenActivity: PropTypes.func,
   /** Objective detail only: when set, renders the close (×) in the detail
       header (the Activity coque suppresses its own cross). */

@@ -258,8 +258,8 @@ QualifyDialog.propTypes = {
 // ==============================|| QUALIFIED PERSON CARD ||============================== //
 
 function QualifiedPersonCard({ person }) {
-  // A People without contact (e.g. "Add as person", Sprint Next steps 5.8b)
-  // is named by its full_name; "Unknown" only when it has neither.
+  // A People without contact is named by its full_name (exposed by the DC
+  // People view since Sprint Next steps 5.8a); "Unknown" only when it has neither.
   const contactName = person.target_contact
     ? contactDisplayName(person.target_contact)
     : person.full_name || contactDisplayName(null);

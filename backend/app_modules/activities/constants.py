@@ -95,12 +95,3 @@ SCHEDULED_DATE_ACTIVITY_TYPES = frozenset({
 # (the label alone heads the criterion when there is no objective).
 NEXT_STEP_OBJECTIVE_PARTS_SEPARATOR = '\n\n'
 NEXT_STEP_SUCCESS_CRITERION_LABEL = 'Success criterion: '
-
-
-# Sprint Next steps 5.8a (PO decision B2) -- where a DEDUCED participant of an
-# activity comes from (ActivitySerializer.participants, read-only): one of the
-# activity's contacts, or a People of a next step that created it / is linked
-# to it.
-class ParticipantSource:
-    CONTACT = 'CONTACT'
-    NEXT_STEP = 'NEXT_STEP'

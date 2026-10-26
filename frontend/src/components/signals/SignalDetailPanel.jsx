@@ -32,7 +32,6 @@ export default function SignalDetailPanel({
   onReject,
   onEdit,
   onReopen,
-  onAddPerson,
   isLocked,
   currentActivityId,
   inlineClose,
@@ -60,7 +59,6 @@ export default function SignalDetailPanel({
       onReject={onReject}
       onEdit={onEdit}
       onReopen={onReopen}
-      onAddPerson={onAddPerson}
       onOpenActivity={openOriginActivity}
       onClose={inlineClose ? closeDrawer : undefined}
       headerInCoque={headerInCoque}
@@ -79,8 +77,6 @@ SignalDetailPanel.propTypes = {
   onReject: PropTypes.func,
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
-  /** Next step detail only: "Add as person" on a name not linked (5.8b). */
-  onAddPerson: PropTypes.func,
   isLocked: PropTypes.bool,
   /** The activity currently being viewed (Activity surface); absent on DC/Account. */
   currentActivityId: PropTypes.string,

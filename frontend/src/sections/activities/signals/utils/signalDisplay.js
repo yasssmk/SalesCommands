@@ -26,11 +26,6 @@ export const USAGE_SCOPE = {
   UNKNOWN: "UNKNOWN",
 };
 
-// Backend PeopleRole UNKNOWN (role to qualify) and SignalSource MANUAL — the
-// People created by hand from a name ("Add as person", Sprint Next steps 5.8b).
-export const PEOPLE_ROLE_UNKNOWN = "UNKNOWN";
-export const SIGNAL_SOURCE_MANUAL = "MANUAL";
-
 // A TechStack signal's usage, with the PO rule "the departments PRIME over the
 // scale": when at least one usage department is designated, the department
 // names are the usage and the scale is not shown. Shared by TechDetailBlock

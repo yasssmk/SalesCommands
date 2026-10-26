@@ -1,14 +1,11 @@
-// frontend/src/__tests__/nextSteps/ContextParticipantsPage.test.jsx
+// frontend/src/__tests__/nextSteps/ContextExternalContactsPage.test.jsx
 //
-// Sprint Next steps 5.8b (PO decision B2) — the Context section of the Activity
-// workspace PAGE as really rendered shows the activity's DEDUCED participants
-// (activity.participants, backend 5.8a) in "External contacts", with the
-// existing PersonRow:
-//   - a participant with a contact = as today: its row opens the Contact fiche
-//     (ContactDrawerContent) in the coque;
-//   - a People WITHOUT contact = a NON-interactive PersonRow, suffix
-//     "<role_display> · no contact" (the job / department muted style); a click
-//     does nothing (option A).
+// Sprint Next steps 5.8c (PO rule: a next step neither creates nor describes
+// any person) — the deduced participants (B2, 5.8a/5.8b) are WITHDRAWN: the
+// "External contacts" of the Context section, on the Activity workspace PAGE
+// as really rendered, are the activity's own contacts (contacts_detail) again,
+// even if a payload still carried `participants`. A contact row opens the
+// Contact fiche in the coque, as before.
 // The page, the Context section and the coque are REAL; the other bands and
 // the data hooks are mocked.
 
@@ -95,37 +92,21 @@ const external = () => screen.getByText("External contacts").parentElement.paren
 
 afterEach(() => cleanup());
 
-describe("Context — the deduced participants in External contacts (5.8b)", () => {
-  it("lists the participants: the contacts, then the People of the next steps", () => {
+describe("Context — External contacts are the activity's contacts (5.8c)", () => {
+  it("the contacts only — a People from a next step is not listed", () => {
     mockActivity = activityWith(PARTICIPANTS);
     render(<ActivityWorkspacePage />);
     const col = external();
     expect(within(col).getByText("Thomas Lefèvre")).toBeInTheDocument();
-    expect(within(col).getByText("Karim Benali")).toBeInTheDocument();
-    expect(within(col).getByText("Laurent Dubois")).toBeInTheDocument();
+    expect(within(col).queryByText("Karim Benali")).toBeNull();
+    expect(within(col).queryByText("Laurent Dubois")).toBeNull();
+    expect(within(col).queryByText(/no contact/)).toBeNull();
   });
 
-  it("a participant with a contact opens the Contact fiche, as today", () => {
-    mockActivity = activityWith(PARTICIPANTS);
-    render(<ActivityWorkspacePage />);
-    fireEvent.click(within(external()).getByText("Laurent Dubois"));
-    expect(screen.getByTestId("contact-fiche")).toHaveTextContent("c-9");
-  });
-
-  it("a People without contact: '<role> · no contact', not clickable", () => {
-    mockActivity = activityWith(PARTICIPANTS);
-    render(<ActivityWorkspacePage />);
-    const karim = within(external()).getByText("Karim Benali");
-    expect(karim.closest("p").textContent).toBe("Karim Benali · Unknown · no contact");
-    expect(karim).not.toHaveAttribute("role", "button");
-    fireEvent.click(karim);
-    expect(screen.queryByTestId("contact-fiche")).not.toBeInTheDocument();
-  });
-
-  it("without participants in the payload, the contacts as before", () => {
+  it("a contact opens the Contact fiche, as before", () => {
     mockActivity = activityWith(undefined);
     render(<ActivityWorkspacePage />);
-    expect(within(external()).getByText("Thomas Lefèvre")).toBeInTheDocument();
-    expect(within(external()).queryByText("Karim Benali")).toBeNull();
+    fireEvent.click(within(external()).getByText("Thomas Lefèvre"));
+    expect(screen.getByTestId("contact-fiche")).toHaveTextContent("c-1");
   });
 });

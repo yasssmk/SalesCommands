@@ -104,10 +104,7 @@ vi.mock("api/signals/signals", () => ({
   getSignal: vi.fn(async () => ({ success: true, data: mockServerNextStep })),
   // 5.7 — the link.
   attachNextStepToActivity: vi.fn(async () => mockAttachResult),
-  // 5.8b — "Add as person".
-  createSignal: vi.fn(async () => mockCreateResult),
 }));
-let mockCreateResult = { success: true, data: { id: "p-new" } };
 let mockAttachResult = { success: true, data: {} };
 let mockCandidates = [];
 let mockServerNextStep = null;
@@ -143,7 +140,7 @@ import ActivityWorkspacePage from "views/activities/workspace";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import {
   validateSignal, rejectSignal, reopenSignal, updateSignal, useGetSignalsByAccount, getSignal,
-  useNextStepLinkCandidates, attachNextStepToActivity, createSignal,
+  useNextStepLinkCandidates, attachNextStepToActivity,
 } from "api/signals/signals";
 import { displayErrorSnackbar } from "utils/displayError";
 import { useGetDecisionStepsByCycle } from "api/accounts/decisionCycles";
@@ -417,12 +414,10 @@ describe("Next steps band — the detail view (5.4)", () => {
     expect(within(proposal).getByText("Seller")).toBeInTheDocument();
   });
 
-  it("② People: the People (contact or name), the names not linked, the internal names", async () => {
+  it("② People: the names cited (5.8c) and the internal names", async () => {
     await openDetail([richPending()], "Send the DPA and SOC 2 report");
     const people = section("next-step-people");
-    expect(within(people).getByText("Thomas Lefèvre")).toBeInTheDocument();
-    expect(within(people).getByText(/Karim Benali/)).toBeInTheDocument();
-    expect(within(people).getByText(/Laurent/)).toBeInTheDocument();
+    expect(within(people).getByText("Thomas Lefèvre · Karim Benali · Laurent")).toBeInTheDocument();
     expect(within(people).getByText("Sophie")).toBeInTheDocument();
   });
 
@@ -936,72 +931,40 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
   });
 });
 
-// ==============================|| 5.8b — "ADD AS PERSON" ||============================== //
+// ==============================|| 5.8c — THE NAMES CITED ||============================== //
+//
+// PO rule: a next step neither creates nor describes any person, it CITES
+// names. The detail shows the cited names (the names of its suggested_people
+// + suggested_people_names) as plain text — no linked / not-linked
+// distinction (no contact identity, no job title), no action.
 
-describe("Next steps band — 'Add as person' on a name not linked (5.8b, B0)", () => {
-  const openDetailOf = async (ns, activity = dcActivity(), section) => {
-    mockCreateResult = { success: true, data: { id: "p-new" } };
-    mockPatchResponse = null;
-    mockServerNextStep = richPending({
-      suggested_people: [
-        ...richPending().suggested_people,
-        { id: "p-new", full_name: "Laurent", role: "UNKNOWN", target_contact: null },
-      ],
-      suggested_people_names: [],
-    });
-    renderPage(activity, [ns]);
-    if (section) expand(section);
-    fireEvent.click(rowOf(ns.suggested_title));
+describe("Next steps band — the names cited, as text (5.8c)", () => {
+  const openRich = async (over = {}) => {
+    renderPage(dcActivity(), [richPending(over)]);
+    fireEvent.click(rowOf("Send the DPA and SOC 2 report"));
     return screen.findByTestId(DETAIL);
   };
-  const addLaurent = () => fireEvent.click(screen.getByRole("button", { name: "Add Laurent as person" }));
 
-  it("each name not linked offers 'Add as person'", async () => {
-    const detail = await openDetailOf(richPending());
-    expect(within(detail).getByRole("button", { name: "Add Laurent as person" })).toBeInTheDocument();
-    // a People already linked offers nothing
-    expect(within(detail).queryByRole("button", { name: /Add Karim/ })).toBeNull();
+  it("the cited names, in one plain line, linked or not", async () => {
+    await openRich();
+    const people = section("next-step-people");
+    expect(within(people).getByText("Thomas Lefèvre · Karim Benali · Laurent")).toBeInTheDocument();
   });
 
-  it("creates a MANUAL People (role UNKNOWN, full_name, account, decision_cycle)", async () => {
-    await openDetailOf(richPending());
-    addLaurent();
-    await waitFor(() => expect(createSignal).toHaveBeenCalled());
-    expect(createSignal).toHaveBeenCalledWith("people", {
-      role: "UNKNOWN", full_name: "Laurent", account: "acc-1", source: "MANUAL",
-      decision_cycle: "dc-1",
-    });
+  it("no distinction: no contact identity (job title) for a linked People", async () => {
+    await openRich();
+    expect(within(section("next-step-people")).queryByText(/CTO/)).toBeNull();
   });
 
-  it("then PATCHes the next step: People added, name removed; the detail is read back", async () => {
-    await openDetailOf(richPending());
-    addLaurent();
-    await waitFor(() => expect(updateSignal).toHaveBeenCalled());
-    expect(updateSignal).toHaveBeenCalledWith("next-steps", "ns-rich", {
-      suggested_people: ["p-1", "p-2", "p-new"], suggested_people_names: [],
-    });
-    await waitFor(() => expect(getSignal).toHaveBeenCalledWith("next-steps", "ns-rich"));
-    const detail = await screen.findByTestId(DETAIL);
-    await waitFor(() =>
-      expect(within(detail).queryByRole("button", { name: "Add Laurent as person" })).toBeNull());
-    expect(within(section("next-step-people")).getByText("Laurent")).toBeInTheDocument();
-    expect(mockMutateList).toHaveBeenCalled();
+  it("no action on a name: no 'Add as person'", async () => {
+    await openRich();
+    expect(screen.queryByRole("button", { name: /as person/ })).toBeNull();
+    expect(within(section("next-step-people")).queryAllByRole("button")).toHaveLength(0);
   });
 
-  it("a refused creation: the standard error, the next step untouched", async () => {
-    await openDetailOf(richPending());
-    mockCreateResult = { success: false, status: 400, error: "nope" };
-    addLaurent();
-    await waitFor(() => expect(displayErrorSnackbar).toHaveBeenCalledWith(mockCreateResult));
-    expect(updateSignal).not.toHaveBeenCalled();
-  });
-
-  it("not on a resolved next step, nor in a CANCELLED activity", async () => {
-    await openDetailOf(richPending({ status: "VALIDATED", linked_activity: compactActivity() }),
-      dcActivity(), "Validated");
-    expect(screen.queryByRole("button", { name: "Add Laurent as person" })).toBeNull();
-    cleanup();
-    await openDetailOf(richPending(), dcActivity({ status: "CANCELLED" }));
-    expect(screen.queryByRole("button", { name: "Add Laurent as person" })).toBeNull();
+  it("a linked People without full_name is cited by its contact's name", async () => {
+    await openRich({ suggested_people: [{ id: "p-1", full_name: "", role: "CHAMPION",
+      target_contact: THOMAS }], suggested_people_names: [] });
+    expect(within(section("next-step-people")).getByText("Thomas Lefèvre")).toBeInTheDocument();
   });
 });
