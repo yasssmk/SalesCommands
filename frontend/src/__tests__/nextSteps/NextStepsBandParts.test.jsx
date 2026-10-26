@@ -121,7 +121,7 @@ const NEXT_STEPS = [
 ];
 
 const dcActivity = (over = {}) => ({
-  // PLANNED: a COMPLETED / CANCELLED activity is read-only (page isLocked).
+  // PLANNED by default; the lock of a COMPLETED / CANCELLED activity is tested below.
   id: "act-1", title: "Atelier", activity_type: "MEETING", status: "PLANNED",
   account: "acc-1", decision_cycle: "dc-1", campaign_detail: null,
   sequence_context: { position: 1, total: 1, next_activities: [] },
@@ -239,5 +239,59 @@ describe("Next steps band — part 4 and the DC-only guard (5.3)", () => {
     expect(screen.queryByText("Send the DPA")).not.toBeInTheDocument();
     expect(screen.getByText("Next planned step")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Set a next step manually/ })).toBeInTheDocument();
+  });
+});
+
+// PO decision (after 5.3): the Next steps band IGNORES the lock of a COMPLETED
+// activity — the conversation is over, its next steps are handled now (part 4,
+// row actions, Edit, Reject, Convert, Reopen); a CANCELLED activity stays
+// locked. One predicate, at the band's central point.
+describe("Next steps band — the lock of the activity (PO decision)", () => {
+  const openRow = async (title, section) => {
+    if (section) expand(section);
+    fireEvent.click(rowOf(title));
+    return screen.findByText("AI Suggestion");
+  };
+
+  it("COMPLETED: part 4, quick-create and the row actions are available", () => {
+    renderPage(dcActivity({ status: "COMPLETED" }));
+    expect(screen.getByRole("button", { name: /Set a next step manually/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Meeting/ })).toBeInTheDocument();
+    expect(within(rowOf("Send the DPA")).getByLabelText("Validate signal")).toBeInTheDocument();
+    expect(within(rowOf("Send the DPA")).getByLabelText("Reject signal")).toBeInTheDocument();
+  });
+
+  it("COMPLETED: the drawer offers Edit, Reject and Convert on a pending next step", async () => {
+    renderPage(dcActivity({ status: "COMPLETED" }));
+    await openRow("Send the DPA");
+    expect(screen.getByRole("button", { name: /\bEdit\b/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /close-circle Reject/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Convert to Activity/ })).toBeInTheDocument();
+  });
+
+  it("COMPLETED: a rejected next step can be reopened", async () => {
+    renderPage(dcActivity({ status: "COMPLETED" }));
+    await openRow("Train Karim", "Rejected");
+    expect(screen.getByRole("button", { name: /Reopen/ })).toBeInTheDocument();
+  });
+
+  it("CANCELLED: read-only — no part 4, no quick-create, no row action", () => {
+    renderPage(dcActivity({ status: "CANCELLED" }));
+    expect(screen.queryByRole("button", { name: /Set a next step manually/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Meeting/ })).not.toBeInTheDocument();
+    expect(within(rowOf("Send the DPA")).queryByLabelText("Validate signal")).toBeNull();
+    expect(within(rowOf("Send the DPA")).queryByLabelText("Reject signal")).toBeNull();
+  });
+
+  it("CANCELLED: the drawer offers no action, no Reopen", async () => {
+    renderPage(dcActivity({ status: "CANCELLED" }));
+    await openRow("Send the DPA");
+    expect(screen.queryByRole("button", { name: /\bEdit\b/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /close-circle Reject/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Convert to Activity/ })).not.toBeInTheDocument();
+    cleanup();
+    renderPage(dcActivity({ status: "CANCELLED" }));
+    await openRow("Train Karim", "Rejected");
+    expect(screen.queryByRole("button", { name: /Reopen/ })).not.toBeInTheDocument();
   });
 });

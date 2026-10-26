@@ -33,6 +33,7 @@ import NextStepActivityLine, {
   getResolvedActivity,
 } from "sections/activities/nextSteps/NextStepActivityLine";
 import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
+import { ACTIVITY_STATUSES } from "api/accounts/activities";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 
@@ -42,6 +43,15 @@ const NEXT_STEP_TYPES = ["next-steps"];
 const STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
 const PAGE_SIZE = 100;
 
+// The band's own lock (PO decision): it IGNORES the read-only state of a
+// COMPLETED activity — the conversation is over and its next steps are handled
+// now — and stays read-only only for these statuses.
+export const NEXT_STEPS_LOCKED_STATUSES = [ACTIVITY_STATUSES.CANCELLED];
+
+export function isNextStepsBandLocked(activity) {
+  return NEXT_STEPS_LOCKED_STATUSES.includes(activity?.status);
+}
+
 // ==============================|| ACTIVITY NEXT STEPS TAB ||============================== //
 
 // The "Next steps" band, in 4 parts (Sprint Next steps 5.x):
@@ -50,12 +60,10 @@ const PAGE_SIZE = 100;
 //      activity on the row's 3rd line) and rejected ones — the generic
 //      SignalsValidationList, DC-only;
 //   4. "Set a next step manually" (ActivityModal).
-export default function ActivityNextStepsTab({
-  activity,
-  isLocked,
-  mutateCounts,
-}) {
+export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   const router = useRouter();
+  // The single lock predicate of the band (parts 1-4, row actions, drawer).
+  const isLocked = isNextStepsBandLocked(activity);
   const activityId = activity?.id;
   const accountId = activity?.account;
 
@@ -225,8 +233,8 @@ export default function ActivityNextStepsTab({
               signals={nextStepSignals}
               loading={loading}
               onSelect={handleSelect}
-              onValidate={handleValidate}
-              onReject={handleReject}
+              onValidate={isLocked ? undefined : handleValidate}
+              onReject={isLocked ? undefined : handleReject}
               renderExtra={renderExtra}
               emptyMessage="No next-step suggestions for this activity"
             />
@@ -313,6 +321,5 @@ ActivityNextStepsTab.propTypes = {
     sequence_context: PropTypes.object,
     campaign_detail: PropTypes.object,
   }),
-  isLocked: PropTypes.bool,
   mutateCounts: PropTypes.func,
 };

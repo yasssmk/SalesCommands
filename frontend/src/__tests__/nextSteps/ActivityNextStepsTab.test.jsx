@@ -191,7 +191,6 @@ const renderTab = (props = {}) =>
     <AphoriqTheme>
       <ActivityNextStepsTab
         activity={mockActivity}
-        isLocked={false}
         mutateCounts={mockMutateCounts}
         {...props}
       />
@@ -274,9 +273,16 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.queryByText("Add manually")).not.toBeInTheDocument();
   });
 
-  it("hides 'Set a next step manually' when isLocked", () => {
-    renderTab({ isLocked: true });
+  it("a CANCELLED activity locks the band: no 'Set a next step manually', no row action", () => {
+    renderTab({ activity: { ...mockActivity, status: "CANCELLED" } });
     expect(screen.queryByText("Set a next step manually")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Validate signal")).not.toBeInTheDocument();
+  });
+
+  it("a COMPLETED activity does NOT lock the band (PO decision)", () => {
+    renderTab({ activity: { ...mockActivity, status: "COMPLETED" } });
+    expect(screen.getByText("Set a next step manually")).toBeInTheDocument();
+    expect(screen.getByLabelText("Validate signal")).toBeInTheDocument();
   });
 
   it("opens the activity modal from 'Set a next step manually'", () => {

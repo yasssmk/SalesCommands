@@ -317,9 +317,9 @@ export default function ActivityWorkspacePage() {
             icon={RightCircleOutlined}
             defaultExpanded={analyzed}
           >
+            {/* The band owns its lock (COMPLETED stays workable). */}
             <ActivityNextStepsTab
               activity={activity}
-              isLocked={isLocked}
               mutateCounts={mutateCounts}
             />
           </CollapsibleStrip>
