@@ -226,6 +226,11 @@ export default function ActivityContextSection({ activity }) {
   const owner = activity.owner_detail;
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
+  // Sprint Next steps 5.8b (B2): the DEDUCED participants (contacts + People of
+  // the next steps that created / are linked to the activity, backend 5.8a).
+  // Absent from a payload → the contacts, as before.
+  const participants =
+    activity.participants ?? contacts.map((c) => ({ contact: c, people: null }));
   const hasProvenance = Boolean(activity.source_activity_detail);
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
@@ -300,22 +305,31 @@ export default function ActivityContextSection({ activity }) {
 
           <Box>
             <ColumnHeader label="External contacts" />
-            {contacts.length > 0 ? (
+            {participants.length > 0 ? (
               <Stack spacing={0.5}>
-                {contacts.map((c) => (
-                  <PersonRow
-                    key={c.id}
-                    interactive
-                    onClick={() =>
-                      openDrawer(
-                        <ContactDrawerContent contactId={c.id} activity={activity} />,
-                        { title: "Contact" },
-                      )
-                    }
-                    name={personName(c)}
-                    suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
-                  />
-                ))}
+                {participants.map(({ contact: c, people }) =>
+                  c ? (
+                    <PersonRow
+                      key={c.id}
+                      interactive
+                      onClick={() =>
+                        openDrawer(
+                          <ContactDrawerContent contactId={c.id} activity={activity} />,
+                          { title: "Contact" },
+                        )
+                      }
+                      name={personName(c)}
+                      suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
+                    />
+                  ) : (
+                    // A People without contact: named, not clickable (no fiche).
+                    <PersonRow
+                      key={people.id}
+                      name={people.full_name}
+                      suffix={[people.role_display, "no contact"].filter(Boolean).join(" · ")}
+                    />
+                  ),
+                )}
               </Stack>
             ) : (
               <Typography variant="body2" sx={emptyItalic}>

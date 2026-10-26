@@ -17,7 +17,13 @@ import { PlusOutlined, RocketOutlined } from "@ant-design/icons";
 
 // Project imports
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import { getSignal, rejectSignal, reopenSignal } from "api/signals/signals";
+import {
+  createSignal,
+  getSignal,
+  rejectSignal,
+  reopenSignal,
+  updateSignal,
+} from "api/signals/signals";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -27,6 +33,10 @@ import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
 import { getSignalTypeLabel } from "utils/signalTypes";
+import {
+  PEOPLE_ROLE_UNKNOWN,
+  SIGNAL_SOURCE_MANUAL,
+} from "sections/activities/signals/utils/signalDisplay";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import NextStepActivityLine, {
   getResolvedActivity,
@@ -109,6 +119,7 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
           onReject={h.onReject}
           onEdit={h.onEdit}
           onReopen={h.onReopen}
+          onAddPerson={h.onAddPerson}
           isLocked={isLocked}
           currentActivityId={activityId}
           headerInCoque
@@ -128,10 +139,10 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     setActivityModalOpen(true);
   }, []);
 
-  // A next step just resolved (created OR linked activity): it is now
-  // VALIDATED — read it back from the server, refresh the list (3rd line) and
-  // re-open its detail.
-  const showResolved = useCallback(
+  // Read a next step back from the server after a write (resolved by its
+  // created OR linked activity — now VALIDATED —, or a People added), refresh
+  // the list (3rd line) and re-open its detail.
+  const showFromServer = useCallback(
     async (signal) => {
       mutateAll();
       mutateCounts?.();
@@ -156,12 +167,12 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
           nextStep={signal}
           onCreate={handleConvert}
           onBack={() => openDetail(signal)}
-          onLinked={showResolved}
+          onLinked={showFromServer}
         />,
         { title: "Validate next step" },
       );
     },
-    [openDrawer, handleConvert, openDetail, showResolved],
+    [openDrawer, handleConvert, openDetail, showFromServer],
   );
 
   const handleAddManually = useCallback(() => {
@@ -221,6 +232,37 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     [mutateAll, mutateCounts, openDetail],
   );
 
+  // 5.8b (B0) — "Add as person": a name not linked becomes a MANUAL People of
+  // the DC (role UNKNOWN, full_name — the PeopleTab creation pattern), then the
+  // next step is PATCHed (the People added, the name removed) and read back.
+  // No contact is created.
+  const handleAddPerson = useCallback(
+    async (signal, name) => {
+      const created = await createSignal("people", {
+        role: PEOPLE_ROLE_UNKNOWN,
+        full_name: name,
+        account: accountId,
+        source: SIGNAL_SOURCE_MANUAL,
+        decision_cycle: activity?.decision_cycle,
+      });
+      if (!created.success) {
+        displayErrorSnackbar(created);
+        return;
+      }
+      const patched = await updateSignal("next-steps", signal.id, {
+        suggested_people: [...(signal.suggested_people ?? []).map((p) => p.id), created.data.id],
+        suggested_people_names: (signal.suggested_people_names ?? []).filter((n) => n !== name),
+      });
+      if (!patched.success) {
+        displayErrorSnackbar(patched);
+        return;
+      }
+      displaySuccessSnackbar("Person added");
+      showFromServer(signal);
+    },
+    [accountId, activity?.decision_cycle, showFromServer],
+  );
+
   // Nothing here calls validateSignal: a next step is validated only with its
   // activity (rule 2.1) — the server validates it when the activity is created
   // from it. The detail's Validate opens the validation flow.
@@ -229,6 +271,7 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     onReject: handleReject,
     onEdit: handleEdit,
     onReopen: handleReopen,
+    onAddPerson: handleAddPerson,
   };
 
   const handleOpenActivity = useCallback(
@@ -249,14 +292,14 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
 
   const handleConvertSuccess = useCallback(() => {
     if (convertSignal) {
-      showResolved(convertSignal);
+      showFromServer(convertSignal);
       return;
     }
     // A manual next step: no next step to show.
     mutateAll();
     mutateCounts?.();
     closeDrawer();
-  }, [convertSignal, showResolved, mutateAll, mutateCounts, closeDrawer]);
+  }, [convertSignal, showFromServer, mutateAll, mutateCounts, closeDrawer]);
 
   const handleCreateActivity = useCallback(
     (activityType, options = {}) => {

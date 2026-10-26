@@ -104,7 +104,10 @@ vi.mock("api/signals/signals", () => ({
   getSignal: vi.fn(async () => ({ success: true, data: mockServerNextStep })),
   // 5.7 — the link.
   attachNextStepToActivity: vi.fn(async () => mockAttachResult),
+  // 5.8b — "Add as person".
+  createSignal: vi.fn(async () => mockCreateResult),
 }));
+let mockCreateResult = { success: true, data: { id: "p-new" } };
 let mockAttachResult = { success: true, data: {} };
 let mockCandidates = [];
 let mockServerNextStep = null;
@@ -140,7 +143,7 @@ import ActivityWorkspacePage from "views/activities/workspace";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import {
   validateSignal, rejectSignal, reopenSignal, updateSignal, useGetSignalsByAccount, getSignal,
-  useNextStepLinkCandidates, attachNextStepToActivity,
+  useNextStepLinkCandidates, attachNextStepToActivity, createSignal,
 } from "api/signals/signals";
 import { displayErrorSnackbar } from "utils/displayError";
 import { useGetDecisionStepsByCycle } from "api/accounts/decisionCycles";
@@ -930,5 +933,75 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
     await openStep2();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByText("How do you resolve this next step?")).toBeInTheDocument();
+  });
+});
+
+// ==============================|| 5.8b — "ADD AS PERSON" ||============================== //
+
+describe("Next steps band — 'Add as person' on a name not linked (5.8b, B0)", () => {
+  const openDetailOf = async (ns, activity = dcActivity(), section) => {
+    mockCreateResult = { success: true, data: { id: "p-new" } };
+    mockPatchResponse = null;
+    mockServerNextStep = richPending({
+      suggested_people: [
+        ...richPending().suggested_people,
+        { id: "p-new", full_name: "Laurent", role: "UNKNOWN", target_contact: null },
+      ],
+      suggested_people_names: [],
+    });
+    renderPage(activity, [ns]);
+    if (section) expand(section);
+    fireEvent.click(rowOf(ns.suggested_title));
+    return screen.findByTestId(DETAIL);
+  };
+  const addLaurent = () => fireEvent.click(screen.getByRole("button", { name: "Add Laurent as person" }));
+
+  it("each name not linked offers 'Add as person'", async () => {
+    const detail = await openDetailOf(richPending());
+    expect(within(detail).getByRole("button", { name: "Add Laurent as person" })).toBeInTheDocument();
+    // a People already linked offers nothing
+    expect(within(detail).queryByRole("button", { name: /Add Karim/ })).toBeNull();
+  });
+
+  it("creates a MANUAL People (role UNKNOWN, full_name, account, decision_cycle)", async () => {
+    await openDetailOf(richPending());
+    addLaurent();
+    await waitFor(() => expect(createSignal).toHaveBeenCalled());
+    expect(createSignal).toHaveBeenCalledWith("people", {
+      role: "UNKNOWN", full_name: "Laurent", account: "acc-1", source: "MANUAL",
+      decision_cycle: "dc-1",
+    });
+  });
+
+  it("then PATCHes the next step: People added, name removed; the detail is read back", async () => {
+    await openDetailOf(richPending());
+    addLaurent();
+    await waitFor(() => expect(updateSignal).toHaveBeenCalled());
+    expect(updateSignal).toHaveBeenCalledWith("next-steps", "ns-rich", {
+      suggested_people: ["p-1", "p-2", "p-new"], suggested_people_names: [],
+    });
+    await waitFor(() => expect(getSignal).toHaveBeenCalledWith("next-steps", "ns-rich"));
+    const detail = await screen.findByTestId(DETAIL);
+    await waitFor(() =>
+      expect(within(detail).queryByRole("button", { name: "Add Laurent as person" })).toBeNull());
+    expect(within(section("next-step-people")).getByText("Laurent")).toBeInTheDocument();
+    expect(mockMutateList).toHaveBeenCalled();
+  });
+
+  it("a refused creation: the standard error, the next step untouched", async () => {
+    await openDetailOf(richPending());
+    mockCreateResult = { success: false, status: 400, error: "nope" };
+    addLaurent();
+    await waitFor(() => expect(displayErrorSnackbar).toHaveBeenCalledWith(mockCreateResult));
+    expect(updateSignal).not.toHaveBeenCalled();
+  });
+
+  it("not on a resolved next step, nor in a CANCELLED activity", async () => {
+    await openDetailOf(richPending({ status: "VALIDATED", linked_activity: compactActivity() }),
+      dcActivity(), "Validated");
+    expect(screen.queryByRole("button", { name: "Add Laurent as person" })).toBeNull();
+    cleanup();
+    await openDetailOf(richPending(), dcActivity({ status: "CANCELLED" }));
+    expect(screen.queryByRole("button", { name: "Add Laurent as person" })).toBeNull();
   });
 });

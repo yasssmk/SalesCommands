@@ -24,7 +24,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import { CloseOutlined, LinkOutlined } from "@ant-design/icons";
+import { CloseOutlined, LinkOutlined, PlusOutlined } from "@ant-design/icons";
 
 // Project imports
 import SignalTypeChip from "components/chips/SignalTypeChip";
@@ -2011,6 +2011,7 @@ function NextStepDetailView({
   onReject,
   onEdit,
   onReopen,
+  onAddPerson,
   onOpenActivity,
   onClose,
   headerInCoque,
@@ -2033,6 +2034,9 @@ function NextStepDetailView({
   const evidenceStatus = signal.metadata?.evidence_check?.status;
 
   const people = signal.suggested_people ?? [];
+  // 5.8b (B0): a name not linked can become a People — not on a resolved
+  // next step (frozen, rule 2.1) nor in a locked band.
+  const canAddPerson = Boolean(onAddPerson) && !isLocked && !resolvedActivity;
   const unlinkedNames = signal.suggested_people_names ?? [];
   const internalNames = signal.suggested_internal_names ?? [];
 
@@ -2147,11 +2151,25 @@ function NextStepDetailView({
                   </Typography>
                 ),
               )}
-              {unlinkedNames.length > 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  {unlinkedNames.join(" · ")}
-                </Typography>
-              )}
+              {unlinkedNames.map((n) => (
+                <Stack key={n} direction="row" spacing={1} alignItems="center">
+                  <Typography variant="body2" color="text.secondary">
+                    {n}
+                  </Typography>
+                  {canAddPerson && (
+                    <Button
+                      variant="text"
+                      size="small"
+                      aria-label={`Add ${n} as person`}
+                      onClick={() => onAddPerson(signal, n)}
+                      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+                      sx={{ color: theme.aphoriQ?.accent, px: 0, textTransform: "none" }}
+                    >
+                      Add as person
+                    </Button>
+                  )}
+                </Stack>
+              ))}
             </Stack>
           ) : (
             <Typography variant="body2" sx={{ mb: 1.25 }}>{unknown}</Typography>
@@ -2242,6 +2260,8 @@ NextStepDetailView.propTypes = {
   onReject: PropTypes.func,
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
+  /** (signal, name) => void — "Add as person" on a name not linked (5.8b). */
+  onAddPerson: PropTypes.func,
   onOpenActivity: PropTypes.func,
   /** When provided, renders the close (×) inside the detail header. */
   onClose: PropTypes.func,
@@ -2265,6 +2285,7 @@ export default function SignalDetailContent({
   onReject,
   onEdit,
   onReopen,
+  onAddPerson,
   onOpenActivity,
   onClose,
   headerInCoque,
@@ -2453,6 +2474,7 @@ export default function SignalDetailContent({
         onReject={onReject}
         onEdit={onEdit}
         onReopen={onReopen}
+        onAddPerson={onAddPerson}
         onOpenActivity={onOpenActivity}
         onClose={onClose}
         headerInCoque={headerInCoque}
@@ -2548,6 +2570,8 @@ SignalDetailContent.propTypes = {
   onReject: PropTypes.func,
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
+  /** Next step detail only: "Add as person" on a name not linked (5.8b). */
+  onAddPerson: PropTypes.func,
   onOpenActivity: PropTypes.func,
   /** Objective detail only: when set, renders the close (×) in the detail
       header (the Activity coque suppresses its own cross). */
