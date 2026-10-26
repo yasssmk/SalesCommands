@@ -146,7 +146,7 @@ class ActivitySequenceService:
             ranked_activities, current_rank, activity.status
         )
         
-        # Get next activities (only PENDING: PLANNED/IN_PROGRESS)
+        # Get next activities (only the OPEN ones: NON_TERMINAL_STATUSES)
         next_activities = cls._get_pending_activities_after_rank(
             ranked_activities, current_rank, activity.status
         )
@@ -160,6 +160,73 @@ class ActivitySequenceService:
             'next_activities': next_activities,
         }
     
+    @classmethod
+    def get_next_planned_step(cls, activity) -> Optional[Dict[str, Any]]:
+        """
+        Sprint Next steps 5.1 -- the ONE next step already planned for an
+        activity, per the PO matrix:
+
+          * DC activity (born from a campaign or not) -> the first OPEN
+            activity of its decision cycle in the server ranking
+            (_annotate_with_rank), never the activity itself
+            (source DECISION_CYCLE);
+          * campaign activity that gave birth to a DC (an activity whose
+            source_activity is this one, in a DC) -> the first open activity
+            of THAT DC (source BORN_DECISION_CYCLE);
+          * other campaign activity -> the next step of the target's chain
+            (the CAMPAIGN scope of get_sequence_context: sequence_position);
+          * nothing -> None.
+
+        Open = NON_TERMINAL_STATUSES (ON_HOLD included).
+
+        Returns:
+            {'source', 'decision_cycle': {id, name} | None,
+             'activity': the _format_activity_for_response shape} | None
+        """
+        from ..models import Activity
+        from ..constants import ActivityStatus
+
+        if activity.decision_cycle_id:
+            return cls._next_in_cycle(
+                'DECISION_CYCLE', activity.decision_cycle, activity.client_id,
+                exclude_id=activity.id,
+            )
+        if not activity.campaign_id:
+            return None
+        born = (
+            Activity.objects
+            .filter(source_activity=activity, client_id=activity.client_id,
+                    decision_cycle__isnull=False)
+            .exclude(status=ActivityStatus.CANCELLED)
+            .select_related('decision_cycle')
+            .order_by('created_at')
+            .first()
+        )
+        if born is not None:
+            return cls._next_in_cycle('BORN_DECISION_CYCLE', born.decision_cycle,
+                                      activity.client_id)
+        context = cls.get_sequence_context(activity, SequenceScope.CAMPAIGN)
+        upcoming = (context or {}).get('next_activities') or []
+        if not upcoming:
+            return None
+        return {'source': 'CAMPAIGN', 'decision_cycle': None, 'activity': upcoming[0]}
+
+    @classmethod
+    def _next_in_cycle(cls, source, cycle, client_id, exclude_id=None):
+        """The first open activity of `cycle` in the server ranking (the
+        activity `exclude_id` excepted), as a next planned step -- None when
+        there is none."""
+        from ..constants import NON_TERMINAL_STATUSES
+
+        for entry in cls.get_sequence_for_scope(SequenceScope.DECISION_CYCLE, cycle.id, client_id):
+            if entry['status'] in NON_TERMINAL_STATUSES and entry['id'] != exclude_id:
+                return {
+                    'source': source,
+                    'decision_cycle': {'id': str(cycle.id), 'name': cycle.name},
+                    'activity': cls._format_activity_for_response(entry),
+                }
+        return None
+
     @classmethod
     def get_previous_activities(
         cls,
@@ -558,7 +625,7 @@ class ActivitySequenceService:
         Behavior depends on current activity status:
         - COMPLETED: previous = most recent COMPLETED before current rank
           (shows what was done before this completed work)
-        - PLANNED/IN_PROGRESS: previous = closest activity before by rank,
+        - an open one (PLANNED / ON_HOLD): previous = closest activity before by rank,
           any non-CANCELLED status (shows sequential context)
         """
         if current_status == 'COMPLETED':
@@ -594,16 +661,19 @@ class ActivitySequenceService:
         """
         Get PENDING activities relative to current activity.
         
-        Only returns activities with status PLANNED or IN_PROGRESS.
+        Only returns the OPEN activities (NON_TERMINAL_STATUSES: PLANNED,
+        ON_HOLD -- a paused campaign step is still to come; Sprint Next steps
+        5.1, R13: no "in progress" status exists).
         Skips COMPLETED and CANCELLED activities.
         
         Behavior depends on current activity status:
         - COMPLETED: ALL pending activities in scope are "next"
         (remaining work regardless of chronological rank)
-        - PLANNED/IN_PROGRESS: only pending with rank > current
+        - an open one: only pending with rank > current
         (respects sequence order for non-completed activities)
         """
-        pending_statuses = ('PLANNED', 'IN_PROGRESS')
+        from ..constants import NON_TERMINAL_STATUSES
+        pending_statuses = NON_TERMINAL_STATUSES
         
         if current_status == 'COMPLETED':
             # For completed activities, all remaining pending work is "next"

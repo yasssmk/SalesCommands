@@ -436,6 +436,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Sequence context (NEW - dynamic calculation based on scope)
     # Replaces manual previous/next with calculated sequence
     sequence_context = serializers.SerializerMethodField(read_only=True)
+    # Sprint Next steps 5.1: the ONE next step already planned (PO matrix).
+    next_planned_step = serializers.SerializerMethodField(read_only=True)
 
     # Next Step Agreement (computed fields for UX logic)
     no_next_step_reason_display = serializers.SerializerMethodField(read_only=True)
@@ -495,6 +497,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             
             # Sequence context (NEW - dynamic playlist calculation)
             'sequence_context',
+            'next_planned_step',
             
             # Future fields (stubs)
             'transcript', 'preparation_notes',
@@ -712,6 +715,15 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
         return None
     
+    def get_next_planned_step(self, obj):
+        """
+        The ONE next step already planned for this activity
+        (ActivitySequenceService.get_next_planned_step: DC first, a campaign
+        activity that gave birth to a DC follows that DC, else the campaign
+        chain), or None -- the "Next steps" section's first part.
+        """
+        return ActivitySequenceService.get_next_planned_step(obj)
+
     def get_sequence_context(self, obj):
         """
         Get the dynamic sequence context for this activity.
