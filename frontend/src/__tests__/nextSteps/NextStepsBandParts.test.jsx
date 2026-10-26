@@ -102,7 +102,10 @@ vi.mock("api/signals/signals", () => ({
   // 5.6 — the link candidates and the next step read back from the server.
   useNextStepLinkCandidates: vi.fn(() => ({ candidates: mockCandidates, candidatesLoading: false })),
   getSignal: vi.fn(async () => ({ success: true, data: mockServerNextStep })),
+  // 5.7 — the link.
+  attachNextStepToActivity: vi.fn(async () => mockAttachResult),
 }));
+let mockAttachResult = { success: true, data: {} };
 let mockCandidates = [];
 let mockServerNextStep = null;
 vi.mock("api/accounts/decisionCycles", () => ({
@@ -137,8 +140,9 @@ import ActivityWorkspacePage from "views/activities/workspace";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import {
   validateSignal, rejectSignal, reopenSignal, updateSignal, useGetSignalsByAccount, getSignal,
-  useNextStepLinkCandidates,
+  useNextStepLinkCandidates, attachNextStepToActivity,
 } from "api/signals/signals";
+import { displayErrorSnackbar } from "utils/displayError";
 import { useGetDecisionStepsByCycle } from "api/accounts/decisionCycles";
 
 const render = (ui) => rtlRender(<WorkspaceCoque>{ui}</WorkspaceCoque>);
@@ -720,7 +724,7 @@ describe("Next steps band — the validation flow, step 1 + Create (5.6)", () =>
     expect(await screen.findByTestId(DETAIL)).toBeInTheDocument();
   });
 
-  it("Link: the choice is there; its step 2 comes in 5.7", async () => {
+  it("Link can be chosen when there are candidates", async () => {
     await openFlowFromRow({ candidates: [CANDIDATE] });
     choose("Link to an existing activity");
     expect(screen.getByRole("radio", { name: "Link to an existing activity" })).toBeChecked();
@@ -735,5 +739,196 @@ describe("Next steps band — the validation flow, step 1 + Create (5.6)", () =>
     fireEvent.click(rowOf("Send the DPA and SOC 2 report"));
     await screen.findByTestId(DETAIL);
     expect(screen.queryByRole("button", { name: /check-circle Validate/ })).not.toBeInTheDocument();
+  });
+});
+
+// ==============================|| 5.7 — THE LINK FLOW, STEPS 2 AND 3 ||============================== //
+
+const FULL_DIFF = {
+  activity_type: { current: "CALL", proposed: "MEETING" },
+  date: { current: { field: "scheduled_date", value: "2026-10-28" },
+          proposed: { field: "scheduled_date", value: "2026-11-03" } },
+  decision_step: { current: { id: "step-4", name: "Technical Fit" },
+                   proposed: { id: "step-5", name: "Business Case" } },
+  call_to_action: { current: "Check the SSO", proposed: "Unblock the security review" },
+  description: { current: "", proposed: "DPA, SOC 2 scope" },
+  contacts: { to_add: [{ id: "c-9", first_name: "Laurent", last_name: "Dubois" }] },
+};
+
+const linkCandidate = (over = {}) => ({
+  id: "act-31", title: "Call Thomas", activity_type: "CALL", activity_type_display: "Call",
+  status: "PLANNED", status_display: "Planned", scheduled_date: "2026-10-28", due_date: null,
+  decision_step: { id: "step-4", name: "Technical Fit" },
+  shared_people_count: 2, same_step: true, same_type: true, date_distance_days: 0,
+  differences: FULL_DIFF, ...over,
+});
+
+const CANDIDATES = [
+  linkCandidate(),
+  linkCandidate({ id: "act-32", title: "Pricing review", activity_type: "MEETING",
+    decision_step: null, shared_people_count: 0, same_step: false, same_type: false,
+    date_distance_days: 5, differences: {} }),
+];
+
+describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
+  const FLOW = "next-step-validate-flow";
+  const openStep2 = async (candidates = CANDIDATES) => {
+    mockCandidates = candidates;
+    mockAttachResult = { success: true, data: {} };
+    mockServerNextStep = richPending({ status: "VALIDATED",
+      attached_activity: compactActivity({ id: "act-31", title: "Call Thomas" }) });
+    renderPage(dcActivity(), [richPending()]);
+    fireEvent.click(within(rowOf("Send the DPA and SOC 2 report")).getByLabelText("Validate signal"));
+    await screen.findByTestId(FLOW);
+    fireEvent.click(screen.getByRole("radio", { name: "Link to an existing activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    return screen.findByTestId("link-candidates");
+  };
+  const openStep3 = async (candidates) => {
+    await openStep2(candidates);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    return screen.findByTestId("link-differences");
+  };
+  const confirm = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(attachNextStepToActivity).toHaveBeenCalled());
+  };
+  const sentUpdates = () => attachNextStepToActivity.mock.calls[0][2];
+
+  it("step 2: the candidates in the SERVER order, the first 'Proposed' and pre-selected", async () => {
+    const list = await openStep2();
+    const rows = within(list).getAllByTestId(/^link-candidate-/);
+    expect(rows.map((r) => r.dataset.testid)).toEqual(["link-candidate-act-31", "link-candidate-act-32"]);
+    expect(within(rows[0]).getByText("Proposed")).toBeInTheDocument();
+    expect(within(rows[1]).queryByText("Proposed")).toBeNull();
+    expect(within(rows[0]).getByRole("radio")).toBeChecked();
+    expect(within(rows[1]).getByRole("radio")).not.toBeChecked();
+  });
+
+  it("step 2: each candidate is the existing ActivityMiniCard + a readable 'Why'", async () => {
+    const list = await openStep2();
+    const [first, second] = within(list).getAllByTestId(/^link-candidate-/);
+    expect(within(first).getByText("Call Thomas")).toBeInTheDocument();
+    expect(within(first).getByText("Technical Fit")).toBeInTheDocument(); // the card's step chip
+    expect(within(first).getByText(
+      "Why: 2 people in common · same step · same type · same day")).toBeInTheDocument();
+    expect(within(second).getByText(
+      "Why: no people in common · other step · other type · 5 days apart")).toBeInTheDocument();
+  });
+
+  it("step 3: one section per difference", async () => {
+    const diff = await openStep3();
+    for (const key of ["activity_type", "date", "decision_step", "call_to_action", "description", "contacts"]) {
+      expect(within(diff).getByTestId(`link-diff-${key}`)).toBeInTheDocument();
+    }
+    expect(within(diff).getByRole("radio", { name: "Keep: Phone Call" })).toBeChecked();
+    expect(within(diff).getByRole("radio", { name: "Use proposed: Meeting" })).not.toBeChecked();
+    expect(within(diff).getByRole("radio", { name: "Keep: 28 Oct 2026" })).toBeChecked();
+    expect(within(diff).getByRole("radio", { name: "Keep: Technical Fit" })).toBeChecked();
+    expect(within(diff).getByRole("checkbox", { name: "Append to the current objective" })).not.toBeChecked();
+    expect(within(diff).getByRole("checkbox", { name: "Add Laurent Dubois" })).not.toBeChecked();
+  });
+
+  it("step 3: a section without difference is ABSENT", async () => {
+    const diff = await openStep3([linkCandidate({ differences: {
+      activity_type: { current: "CALL", proposed: "MEETING" } } })]);
+    expect(within(diff).getByTestId("link-diff-activity_type")).toBeInTheDocument();
+    for (const key of ["date", "decision_step", "call_to_action", "description", "contacts"]) {
+      expect(within(diff).queryByTestId(`link-diff-${key}`)).toBeNull();
+    }
+  });
+
+  it("updates EXACT — nothing changed: {}", async () => {
+    await openStep3();
+    await confirm();
+    expect(attachNextStepToActivity).toHaveBeenCalledWith("ns-rich", "act-31", {});
+  });
+
+  it("updates EXACT — the proposed type taken", async () => {
+    await openStep3();
+    fireEvent.click(screen.getByRole("radio", { name: "Use proposed: Meeting" }));
+    await confirm();
+    expect(sentUpdates()).toEqual({ activity_type: "MEETING" });
+  });
+
+  it("updates EXACT — the proposed date and step taken", async () => {
+    await openStep3();
+    fireEvent.click(screen.getByRole("radio", { name: "Use proposed: 3 Nov 2026" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Use proposed: Business Case" }));
+    await confirm();
+    expect(sentUpdates()).toEqual({ scheduled_date: "2026-11-03", decision_step_id: "step-5" });
+  });
+
+  it("updates EXACT — a proposed DUE date goes to due_date (its own field)", async () => {
+    await openStep3([linkCandidate({ activity_type: "TASK", differences: {
+      date: { current: null, proposed: { field: "due_date", value: "2026-11-03" } } } })]);
+    expect(screen.getByRole("radio", { name: "Keep: No date" })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "Use proposed: 3 Nov 2026" }));
+    await confirm();
+    expect(sentUpdates()).toEqual({ due_date: "2026-11-03" });
+  });
+
+  it("updates EXACT — a text appended (edited) to the current one", async () => {
+    await openStep3();
+    fireEvent.change(screen.getByTestId("link-text-call_to_action"),
+      { target: { value: "Unblock the security review with the DSI" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Append to the current objective" }));
+    await confirm();
+    expect(sentUpdates()).toEqual({
+      call_to_action: "Check the SSO\n\nUnblock the security review with the DSI",
+    });
+  });
+
+  it("updates EXACT — one contact checked", async () => {
+    await openStep3();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Add Laurent Dubois" }));
+    await confirm();
+    expect(sentUpdates()).toEqual({ add_contact_ids: ["c-9"] });
+  });
+
+  it("a candidate without difference: Confirm directly from step 2", async () => {
+    await openStep2();
+    fireEvent.click(within(screen.getByTestId("link-candidate-act-32")).getByRole("radio"));
+    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    await confirm();
+    expect(attachNextStepToActivity).toHaveBeenCalledWith("ns-rich", "act-32", {});
+  });
+
+  it("after Confirm, the detail is read back VALIDATED, resolved by the LINKED activity", async () => {
+    await openStep3();
+    await confirm();
+    const detail = await screen.findByTestId(DETAIL);
+    expect(getSignal).toHaveBeenCalledWith("next-steps", "ns-rich");
+    expect(within(screen.getByTestId("coque-panel")).getByText("Validated")).toBeInTheDocument();
+    expect(within(detail).getByTestId("next-step-activity")).toHaveTextContent("Call Thomas");
+    expect(mockMutateList).toHaveBeenCalled();
+    expect(validateSignal).not.toHaveBeenCalled();
+  });
+
+  it("a server refusal: the standard error, we stay on the step, nothing lost", async () => {
+    await openStep3();
+    mockAttachResult = { success: false, status: 400, error: "COND-1" };
+    fireEvent.click(screen.getByRole("radio", { name: "Use proposed: Meeting" }));
+    await confirm();
+    expect(displayErrorSnackbar).toHaveBeenCalledWith(mockAttachResult);
+    expect(screen.getByTestId("link-differences")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Use proposed: Meeting" })).toBeChecked();
+    expect(getSignal).not.toHaveBeenCalled();
+  });
+
+  it("Back from step 3 to step 2, then Next: nothing lost", async () => {
+    await openStep3();
+    fireEvent.click(screen.getByRole("radio", { name: "Use proposed: Meeting" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByTestId("link-candidates")).toBeInTheDocument();
+    expect(within(screen.getByTestId("link-candidate-act-31")).getByRole("radio")).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("radio", { name: "Use proposed: Meeting" })).toBeChecked();
+  });
+
+  it("Back from step 2 returns to step 1", async () => {
+    await openStep2();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByText("How do you resolve this next step?")).toBeInTheDocument();
   });
 });

@@ -128,6 +128,24 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     setActivityModalOpen(true);
   }, []);
 
+  // A next step just resolved (created OR linked activity): it is now
+  // VALIDATED — read it back from the server, refresh the list (3rd line) and
+  // re-open its detail.
+  const showResolved = useCallback(
+    async (signal) => {
+      mutateAll();
+      mutateCounts?.();
+      const result = await getSignal("next-steps", signal.id);
+      if (result.success) {
+        openDetail({ ...result.data, _signalType: "next-steps" });
+      } else {
+        displayErrorSnackbar(result);
+        closeDrawer();
+      }
+    },
+    [mutateAll, mutateCounts, openDetail, closeDrawer],
+  );
+
   // The validation flow (5.6), in the coque: step 1 = Create or Link. Opened by
   // the row ✓ and the detail's Validate; Back returns to the detail. Create
   // opens the pre-filled ActivityModal over it — a cancel leaves step 1 shown.
@@ -138,11 +156,12 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
           nextStep={signal}
           onCreate={handleConvert}
           onBack={() => openDetail(signal)}
+          onLinked={showResolved}
         />,
         { title: "Validate next step" },
       );
     },
-    [openDrawer, handleConvert, openDetail],
+    [openDrawer, handleConvert, openDetail, showResolved],
   );
 
   const handleAddManually = useCallback(() => {
@@ -228,24 +247,16 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     [handleOpenActivity],
   );
 
-  const handleConvertSuccess = useCallback(async () => {
-    mutateAll();
-    mutateCounts?.();
-    if (!convertSignal) {
-      // A manual next step: no next step to show.
-      closeDrawer();
+  const handleConvertSuccess = useCallback(() => {
+    if (convertSignal) {
+      showResolved(convertSignal);
       return;
     }
-    // The next step is now VALIDATED and resolved by its activity: read it
-    // back from the server and re-open its detail.
-    const result = await getSignal("next-steps", convertSignal.id);
-    if (result.success) {
-      openDetail({ ...result.data, _signalType: "next-steps" });
-    } else {
-      displayErrorSnackbar(result);
-      closeDrawer();
-    }
-  }, [mutateAll, mutateCounts, convertSignal, openDetail, closeDrawer]);
+    // A manual next step: no next step to show.
+    mutateAll();
+    mutateCounts?.();
+    closeDrawer();
+  }, [convertSignal, showResolved, mutateAll, mutateCounts, closeDrawer]);
 
   const handleCreateActivity = useCallback(
     (activityType, options = {}) => {

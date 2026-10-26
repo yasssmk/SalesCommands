@@ -87,6 +87,7 @@ const endpoints = {
   nextStepsReject: (id) => `/module-signals/next-steps/${id}/reject/`,
   nextStepsReopen: (id) => `/module-signals/next-steps/${id}/reopen/`,
   nextStepsLinkCandidates: (id) => `/module-signals/next-steps/${id}/link-candidates/`,
+  nextStepsAttachActivity: (id) => `/module-signals/next-steps/${id}/attach-activity/`,
 
   // People
   people: "/module-signals/people/",
@@ -603,6 +604,43 @@ export async function updateSignal(signalType, signalId, payload) {
 
   const url = getDetailEndpoint(signalType, signalId);
   const result = await api.patch(url, payload);
+
+  if (result.success) {
+    revalidateSignalLists();
+    const data = result.data?.data ?? result.data;
+    return { success: true, data };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status ?? 0,
+    response: result.response ?? null,
+  };
+}
+
+/**
+ * ATTACH A NEXT STEP TO AN EXISTING ACTIVITY (Sprint Next steps 5.7)
+ *
+ * POST /module-signals/next-steps/{id}/attach-activity/ {activity_id, updates}
+ * — links the next step to a link candidate, applying the `updates` the rep
+ * chose (NEXT_STEP_LINK_UPDATE_FIELDS); the server validates the next step
+ * last, in the same transaction.
+ *
+ * @param {string} signalId   - NextStepSignal UUID
+ * @param {string} activityId - The candidate activity UUID
+ * @param {Object} updates    - The chosen changes ({} = none)
+ * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
+ */
+export async function attachNextStepToActivity(signalId, activityId, updates) {
+  if (!signalId || !isValidUUID(signalId)) {
+    return { success: false, error: "Invalid signal ID format", status: 400 };
+  }
+
+  const result = await api.post(endpoints.nextStepsAttachActivity(signalId), {
+    activity_id: activityId,
+    updates,
+  });
 
   if (result.success) {
     revalidateSignalLists();
