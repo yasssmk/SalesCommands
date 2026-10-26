@@ -86,20 +86,41 @@ vi.mock("components/signals/SignalsHaloBox", () => ({ default: ({ children }) =>
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(), displayErrorSnackbar: vi.fn(),
 }));
+let mockDcPeople = [];
+let mockPatchResponse = null;
 vi.mock("api/signals/signals", () => ({
   useGetSignalChoices: () => ({ choices: {}, choicesLoading: false }),
   validateSignal: vi.fn(async () => ({ success: true })),
   rejectSignal: vi.fn(async () => ({ success: true })),
   reopenSignal: vi.fn(async () => ({ success: true })),
+  // 5.5 — the DC People (the People picker) and the PATCH.
+  useGetSignalsByAccount: vi.fn(() => ({ signals: mockDcPeople, signalsLoading: false })),
+  updateSignal: vi.fn(async (_type, id, payload) => ({
+    success: true, data: mockPatchResponse ?? { id, ...payload },
+  })),
+}));
+vi.mock("api/accounts/decisionCycles", () => ({
+  useGetDecisionStepsByCycle: vi.fn(() => ({
+    steps: [
+      { id: "step-4", name: "Technical Fit", order: 4 },
+      { id: "step-5", name: "Business Case", order: 5 },
+    ],
+    stepsLoading: false,
+  })),
 }));
 vi.mock("sections/accounts/activities/ActivityModal", () => ({
   default: ({ open }) => (open ? <div data-testid="activity-modal" /> : null),
 }));
-vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
+vi.mock("components/signals/SignalEditDrawer", () => ({
+  default: ({ open }) => (open ? <div data-testid="legacy-signal-edit-drawer" /> : null),
+}));
 
 import ActivityWorkspacePage from "views/activities/workspace";
 import SignalsValidationList from "components/signals/SignalsValidationList";
-import { validateSignal, rejectSignal, reopenSignal } from "api/signals/signals";
+import {
+  validateSignal, rejectSignal, reopenSignal, updateSignal, useGetSignalsByAccount,
+} from "api/signals/signals";
+import { useGetDecisionStepsByCycle } from "api/accounts/decisionCycles";
 
 const render = (ui) => rtlRender(<WorkspaceCoque>{ui}</WorkspaceCoque>);
 const DETAIL = "next-step-detail-body";
@@ -454,5 +475,142 @@ describe("Next steps band — the detail view (5.4)", () => {
       "Rejected");
     fireEvent.click(screen.getByRole("button", { name: /Reopen/ }));
     await waitFor(() => expect(reopenSignal).toHaveBeenCalledWith("next-steps", "ns-rich"));
+  });
+});
+
+// ==============================|| 5.5 — THE EDIT VIEW ||============================== //
+
+const DC_PEOPLE = [
+  { id: "p-1", full_name: "Thomas Lefèvre", status: "VALIDATED", target_contact: THOMAS },
+  { id: "p-2", full_name: "Karim Benali", status: "PENDING", target_contact: null },
+  { id: "p-3", full_name: "Laurent Dubois", status: "PENDING", target_contact: null },
+  { id: "p-9", full_name: "Rejected Person", status: "REJECTED", target_contact: null },
+];
+
+describe("Next steps band — the edit view (5.5)", () => {
+  const openEdit = async (ns = richPending()) => {
+    mockDcPeople = DC_PEOPLE;
+    mockPatchResponse = null;
+    renderPage(dcActivity(), [ns]);
+    fireEvent.click(rowOf(ns.suggested_title));
+    await screen.findByTestId(DETAIL);
+    fireEvent.click(screen.getByRole("button", { name: /\bEdit\b/ }));
+    return screen.findByTestId("next-step-edit");
+  };
+  const save = async () => {
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(updateSignal).toHaveBeenCalled());
+  };
+  const payload = () => updateSignal.mock.calls[0][2];
+  const editText = (name, text) => {
+    fireEvent.click(screen.getByTestId(`inline-read-${name}`));
+    fireEvent.change(screen.getByTestId(`inline-input-${name}`), { target: { value: text } });
+  };
+  const pick = (name, optionLabel) => {
+    fireEvent.click(screen.getByTestId(`inline-read-${name}`));
+    fireEvent.click(screen.getByRole("option", { name: optionLabel }));
+  };
+
+  it("Edit opens EditNextStepContent in the coque — not the legacy dialog", async () => {
+    await openEdit();
+    expect(within(screen.getByTestId("coque-panel")).getByTestId("coque-title"))
+      .toHaveTextContent("Edit next step");
+    expect(screen.queryByTestId("legacy-signal-edit-drawer")).not.toBeInTheDocument();
+  });
+
+  it("is pre-filled with the next step, in the detail's sections", async () => {
+    const edit = await openEdit();
+    for (const text of ["Send the DPA and SOC 2 report", "Email", "before Friday", "Technical Fit",
+      "Seller", "Thomas Lefèvre", "Karim Benali", "Laurent", "Sophie",
+      "Unblock the security review", "The DSI signs off the DPA", "DPA, SOC 2 scope"]) {
+      expect(within(edit).getAllByText(text, { exact: false }).length).toBeGreaterThan(0);
+    }
+    expect(within(edit).queryByText(/ADVICE-RATIONALE/)).toBeNull();
+  });
+
+  it("Save is disabled while nothing changed", async () => {
+    await openEdit();
+    expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
+  });
+
+  it("PATCHes ONLY the changed field", async () => {
+    await openEdit();
+    editText("suggested_title", "Send the signed DPA");
+    await save();
+    expect(updateSignal).toHaveBeenCalledWith("next-steps", "ns-rich",
+      { suggested_title: "Send the signed DPA" });
+  });
+
+  it("a required title cannot be emptied", async () => {
+    await openEdit();
+    editText("suggested_title", "  ");
+    // Formik validates asynchronously.
+    await waitFor(() => expect(screen.getByRole("button", { name: /save/i })).toBeDisabled());
+    expect(updateSignal).not.toHaveBeenCalled();
+  });
+
+  it("the DC step is chosen among the steps of the cycle", async () => {
+    await openEdit();
+    expect(useGetDecisionStepsByCycle).toHaveBeenCalledWith("dc-1");
+    pick("suggested_decision_step", "Business Case");
+    await save();
+    expect(payload()).toEqual({ suggested_decision_step: "step-5" });
+  });
+
+  it("carried by the prospect", async () => {
+    await openEdit();
+    pick("carried_by_prospect", "Prospect");
+    await save();
+    expect(payload()).toEqual({ carried_by_prospect: true });
+  });
+
+  it("People: picked among the DC People that are not rejected", async () => {
+    await openEdit();
+    expect(useGetSignalsByAccount).toHaveBeenCalledWith("acc-1", "people",
+      expect.objectContaining({ filters: { decision_cycle_id: "dc-1" } }));
+    fireEvent.click(screen.getByTestId("add-suggested_people"));
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(screen.queryByRole("option", { name: "Rejected Person" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Thomas Lefèvre" })).toBeNull(); // already chosen
+    fireEvent.click(screen.getByRole("option", { name: "Laurent Dubois" }));
+    fireEvent.click(screen.getByTestId("confirm-add-suggested_people"));
+    fireEvent.click(screen.getByTestId("remove-suggested_people-p-2"));
+    await save();
+    expect(payload()).toEqual({ suggested_people: ["p-1", "p-3"] });
+  });
+
+  it("names not linked / internal names are pills", async () => {
+    await openEdit();
+    fireEvent.click(screen.getByTestId("remove-suggested_people_names-Laurent"));
+    fireEvent.click(screen.getByTestId("add-suggested_internal_names"));
+    fireEvent.change(screen.getByTestId("input-add-suggested_internal_names"),
+      { target: { value: "Marc" } });
+    fireEvent.click(screen.getByTestId("confirm-add-suggested_internal_names"));
+    await save();
+    expect(payload()).toEqual({ suggested_people_names: [], suggested_internal_names: ["Sophie", "Marc"] });
+  });
+
+  it("long texts: objective, success criterion, topics", async () => {
+    await openEdit();
+    editText("suggested_success_criterion", "The DSI signs the DPA by Friday");
+    await save();
+    expect(payload()).toEqual({ suggested_success_criterion: "The DSI signs the DPA by Friday" });
+  });
+
+  it("after Save, back to the detail, updated", async () => {
+    await openEdit();
+    editText("suggested_title", "Send the signed DPA");
+    await save();
+    const detail = await screen.findByTestId(DETAIL);
+    expect(within(detail).getByText("Send the signed DPA")).toBeInTheDocument();
+  });
+
+  it("Cancel returns to the detail without saving", async () => {
+    await openEdit();
+    editText("suggested_title", "Something else");
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    const detail = await screen.findByTestId(DETAIL);
+    expect(within(detail).getByText("Send the DPA and SOC 2 report")).toBeInTheDocument();
+    expect(updateSignal).not.toHaveBeenCalled();
   });
 });

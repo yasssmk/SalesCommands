@@ -17,11 +17,7 @@ import { PlusOutlined, RocketOutlined } from "@ant-design/icons";
 
 // Project imports
 import useAggregatedSignals from "api/signals/aggregatedSignals";
-import {
-  useGetSignalChoices,
-  rejectSignal,
-  reopenSignal,
-} from "api/signals/signals";
+import { rejectSignal, reopenSignal } from "api/signals/signals";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
@@ -38,7 +34,7 @@ import NextStepActivityLine, {
 import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
 import { ACTIVITY_STATUSES } from "api/accounts/activities";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
-import SignalEditDrawer from "components/signals/SignalEditDrawer";
+import EditNextStepContent from "sections/activities/workspace/EditNextStepContent";
 
 // The next steps of the activity, all 3 statuses (To validate / Validated /
 // Rejected), in one page — the same aggregated query shape as the Signals band.
@@ -84,7 +80,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     page: 1,
     pageSize: PAGE_SIZE,
   });
-  const { choices, choicesLoading } = useGetSignalChoices();
 
   // The single workspace drawer coque: the next step detail is injected there,
   // as the detail of every other signal type (ActivitySignalsTab).
@@ -95,10 +90,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   const [convertSignal, setConvertSignal] = useState(null);
   const [manualActivityType, setManualActivityType] = useState(null);
   const [convertFromCampaign, setConvertFromCampaign] = useState(false);
-
-  // Edit dialog state
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editSignal, setEditSignal] = useState(null);
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -141,10 +132,27 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     setActivityModalOpen(true);
   }, []);
 
-  const handleEdit = useCallback((signal) => {
-    setEditSignal(signal);
-    setEditDialogOpen(true);
-  }, []);
+  // Edit in the coque (EditNextStepContent), then back to the detail —
+  // the chassis edit of every other signal type.
+  const handleEdit = useCallback(
+    (signal) => {
+      openDrawer(
+        <EditNextStepContent
+          nextStep={signal}
+          accountId={accountId}
+          decisionCycleId={activity?.decision_cycle}
+          onSaved={(updated) => {
+            mutateAll();
+            mutateCounts?.();
+            openDetail(updated ?? signal);
+          }}
+          onCancel={() => openDetail(signal)}
+        />,
+        { title: "Edit next step" },
+      );
+    },
+    [openDrawer, accountId, activity?.decision_cycle, mutateAll, mutateCounts, openDetail],
+  );
 
   const handleReject = useCallback(
     async (signal) => {
@@ -209,11 +217,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     // The detail shown was the next step before its conversion.
     closeDrawer();
   }, [mutateAll, mutateCounts, closeDrawer]);
-
-  const handleEditSuccess = useCallback(() => {
-    mutateAll();
-    mutateCounts?.();
-  }, [mutateAll, mutateCounts]);
 
   const handleCreateActivity = useCallback(
     (activityType, options = {}) => {
@@ -300,20 +303,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
         />
       )}
 
-      {/* Signal edit dialog */}
-      <SignalEditDrawer context="activity"
-        open={editDialogOpen}
-        onClose={() => {
-          setEditDialogOpen(false);
-          setEditSignal(null);
-        }}
-        onSuccess={handleEditSuccess}
-        signal={editSignal}
-        signalType="next-steps"
-        accountId={accountId || ""}
-        choices={choices}
-        choicesLoading={choicesLoading}
-      />
     </Box>
   );
 }
