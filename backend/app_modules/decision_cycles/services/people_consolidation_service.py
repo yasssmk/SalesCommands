@@ -98,6 +98,8 @@ class PeopleConsolidationService:
                 'signal_id': str(sig.id),
                 'role': sig.role,
                 'role_display': sig.get_role_display(),
+                # 5.8a: a People without contact is named by its full_name.
+                'full_name': sig.full_name,
                 'influence': sig.influence,
                 'influence_display': sig.get_influence_display() if sig.influence else None,
                 'target_contact': self._compact_contact(sig.target_contact),
