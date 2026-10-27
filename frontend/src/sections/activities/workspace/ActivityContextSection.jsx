@@ -10,10 +10,13 @@
 //           carry no handler yet — the drawer is wired in a later sprint. No
 //           email/phone on the rows.
 //   ── hairline ──  (only when there is provenance)
-//   Origin: a single provenance line (where the activity was born), a branch
-//           icon + TWO separate accent links (context, then activity) to live
-//           routes. The current campaign/DC rattachement is NOT shown here
-//           (it lives in the header).
+//   Origin: a provenance line (where the activity was born), a branch icon +
+//           TWO separate accent links (context, then activity) to live
+//           routes; then (5.9) one line per CONVERSATION the activity comes
+//           from through next steps (activity.next_step_origins: the one
+//           whose next step created it + those whose next steps were linked
+//           to it), « From next step › <conversation> · <date> ». The current
+//           campaign/DC rattachement is NOT shown here (it lives in the header).
 // Read-only: the only navigation is the accent links to live routes. No editing,
 // no ComingSoon, no Previous/Next. Weights/colours/sizes come from the theme.
 
@@ -158,11 +161,28 @@ function AccentLink({ href, bold = false, children }) {
 
 AccentLink.propTypes = { href: PropTypes.string.isRequired, bold: PropTypes.bool, children: PropTypes.node };
 
-// ==============================|| ORIGIN — PROVENANCE (single line) ||============================== //
+// ==============================|| ORIGIN — PROVENANCE ||============================== //
 
-function ProvenanceLine({ activity }) {
+// The shell of a provenance line: the branch icon + a muted body.
+function ProvenanceRow({ children, ...rest }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
+  return (
+    <Stack direction="row" spacing={1} alignItems="flex-start" {...rest}>
+      <Box sx={{ mt: 0.25, flexShrink: 0 }}>
+        <BranchesOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
+      </Box>
+      <Typography variant="body2" sx={{ color: aq.text.muted, minWidth: 0 }}>
+        {children}
+      </Typography>
+    </Stack>
+  );
+}
+
+ProvenanceRow.propTypes = { children: PropTypes.node };
+
+function ProvenanceLine({ activity }) {
+  const aq = useTheme().aphoriQ;
   const src = activity.source_activity_detail;
   const type = src.source_context?.type;
   const ctxName = src.source_context?.name;
@@ -199,19 +219,30 @@ function ProvenanceLine({ activity }) {
     body = <>{"From "}{titleNode || ctxName}</>;
   }
 
-  return (
-    <Stack direction="row" spacing={1} alignItems="flex-start">
-      <Box sx={{ mt: 0.25, flexShrink: 0 }}>
-        <BranchesOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
-      </Box>
-      <Typography variant="body2" sx={{ color: aq.text.muted, minWidth: 0 }}>
-        {body}
-      </Typography>
-    </Stack>
-  );
+  return <ProvenanceRow>{body}</ProvenanceRow>;
 }
 
 ProvenanceLine.propTypes = { activity: PropTypes.object };
+
+// A conversation the activity comes from through a next step (5.9): its
+// title (→ the conversation) and its date.
+function NextStepOriginLine({ origin }) {
+  const aq = useTheme().aphoriQ;
+  const sep = <Box component="span" sx={{ color: aq.text.muted }}>{" › "}</Box>;
+  const date = formatDate(origin.date);
+  return (
+    <ProvenanceRow data-testid="next-step-origin-line">
+      {"From next step"}
+      {sep}
+      <AccentLink href={`/activities/${origin.id}`}>{origin.title}</AccentLink>
+      {date && ` · ${date}`}
+    </ProvenanceRow>
+  );
+}
+
+NextStepOriginLine.propTypes = {
+  origin: PropTypes.shape({ id: PropTypes.string, title: PropTypes.string, date: PropTypes.string }),
+};
 
 // ==============================|| ACTIVITY CONTEXT SECTION ||============================== //
 
@@ -226,7 +257,8 @@ export default function ActivityContextSection({ activity }) {
   const owner = activity.owner_detail;
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
-  const hasProvenance = Boolean(activity.source_activity_detail);
+  const nextStepOrigins = activity.next_step_origins || [];
+  const hasProvenance = Boolean(activity.source_activity_detail) || nextStepOrigins.length > 0;
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
 
@@ -332,7 +364,12 @@ export default function ActivityContextSection({ activity }) {
         {hasProvenance && (
           <>
             <GroupRule />
-            <ProvenanceLine activity={activity} />
+            <Stack spacing={0.75}>
+              {activity.source_activity_detail && <ProvenanceLine activity={activity} />}
+              {nextStepOrigins.map((origin) => (
+                <NextStepOriginLine key={origin.id} origin={origin} />
+              ))}
+            </Stack>
           </>
         )}
       </Stack>

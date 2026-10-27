@@ -147,3 +147,73 @@ describe("Context — no owner email: « First Last · Owner »", () => {
     expect(screen.getByText("Ann Owner").closest("p").textContent).toBe("Ann Owner · Owner");
   });
 });
+
+// ==============================|| 5.9 — PROVENANCE FROM NEXT STEPS ||============================== //
+//
+// PO (5.9, widened): an activity coming from next steps shows, in the Origin
+// group of Context, the CONVERSATIONS they came from — the one whose next step
+// CREATED it and those whose next steps were LINKED to it — one line each
+// (the server dedupes, sorts by date and leaves REJECTED out:
+// activity.next_step_origins), with the existing ProvenanceLine shell +
+// AccentLink: « From next step › <conversation> · <date> », click → the
+// conversation.
+
+describe("Context — provenance from next steps (5.9)", () => {
+  const ORIGINS = [
+    { id: "act-10", title: "Atelier business case", date: "2026-10-20" },
+    { id: "act-11", title: "Call RSSI", date: "2026-11-03" },
+  ];
+  const lines = () => screen.queryAllByTestId("next-step-origin-line");
+
+  it("one line per conversation, in the server's order, with its date", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: ORIGINS });
+    render(<ActivityWorkspacePage />);
+    expect(lines().map((l) => l.textContent)).toEqual([
+      "From next step › Atelier business case · 20 Oct 2026",
+      "From next step › Call RSSI · 3 Nov 2026",
+    ]);
+  });
+
+  it("a click → the conversation (the existing AccentLink)", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: ORIGINS });
+    render(<ActivityWorkspacePage />);
+    const link = within(lines()[0]).getByRole("link", { name: "Atelier business case" });
+    expect(link).toHaveAttribute("href", "/activities/act-10");
+  });
+
+  it("the ProvenanceLine shell: the branch icon, the muted text", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: ORIGINS });
+    render(<ActivityWorkspacePage />);
+    const line = lines()[0];
+    expect(line.querySelector(".anticon-branches")).not.toBeNull();
+    expect(within(line).getByText(/From next step/)).toHaveStyle({ color: testTheme.aphoriQ.text.muted });
+  });
+
+  it("an undated conversation: no date", () => {
+    mockActivity = activityWith(undefined, {
+      next_step_origins: [{ id: "act-12", title: "Notes sans date", date: null }],
+    });
+    render(<ActivityWorkspacePage />);
+    expect(lines().map((l) => l.textContent)).toEqual(["From next step › Notes sans date"]);
+  });
+
+  it("with a campaign provenance too: both, the campaign line first", () => {
+    mockActivity = activityWith(undefined, {
+      next_step_origins: ORIGINS.slice(0, 1),
+      source_activity_detail: {
+        id: "act-5", title: "Cold call", source_context: { type: "CAMPAIGN", id: "camp-1", name: "Q4 push" },
+      },
+    });
+    render(<ActivityWorkspacePage />);
+    const campaign = screen.getByText(/From campaign/);
+    expect(campaign.compareDocumentPosition(lines()[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(lines()).toHaveLength(1);
+  });
+
+  it("no next step origin and no other provenance: no Origin group", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: [] });
+    const { container } = render(<ActivityWorkspacePage />);
+    expect(lines()).toHaveLength(0);
+    expect(container.querySelector('[data-testid="ctx-card"] .anticon-branches')).toBeNull();
+  });
+});

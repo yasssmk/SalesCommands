@@ -452,6 +452,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     campaign_detail = serializers.SerializerMethodField(read_only=True)
     source_activity_detail = serializers.SerializerMethodField(read_only=True)
     next_step_signal_detail = serializers.SerializerMethodField(read_only=True)
+    next_step_origins = serializers.SerializerMethodField(read_only=True)
     no_answer_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
@@ -505,6 +506,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             # AI suggestion provenance
             'next_step_signal',
             'next_step_signal_detail',
+            'next_step_origins',
 
             # Campaign retry tracking
             'no_answer_count',
@@ -661,6 +663,46 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             ),
         }
     
+    def get_next_step_origins(self, obj):
+        """
+        The CONVERSATIONS this activity comes from through next steps (Sprint
+        Next steps 5.9, provenance widened): the source activity of the next
+        step that CREATED it (Activity.next_step_signal) and of the next
+        steps LINKED to it afterwards (attached_next_step_signals) —
+        [{id, title, date}], one entry per conversation, sorted by
+        conversation date (oldest first, undated last). A REJECTED next step
+        is left out.
+
+        Direct reads (one query), never a prefetch: the detail endpoint's
+        get_object() refetches the row without the retrieve select_related
+        (see get_next_step_signal_detail).
+        """
+        from django.db.models import Q
+        from app_modules.signals.constants import SignalStatus
+        from app_modules.signals.models import NextStepSignal
+
+        scope = Q(attached_activity_id=obj.id)
+        if obj.next_step_signal_id:
+            scope |= Q(id=obj.next_step_signal_id)
+        next_steps = (
+            NextStepSignal.objects
+            .filter(scope, client_id=obj.client_id, source_activity__isnull=False)
+            .exclude(status=SignalStatus.REJECTED)
+            .select_related('source_activity')
+        )
+        conversations = {}
+        for ns in next_steps:
+            source = ns.source_activity
+            conversations.setdefault(source.id, {
+                'id':    str(source.id),
+                'title': source.title,
+                'date':  _activity_reference_date(source),
+            })
+        return sorted(
+            conversations.values(),
+            key=lambda c: (c['date'] is None, c['date'] or '', c['title'] or ''),
+        )
+
     def get_next_activity_info(self, obj):
         if obj.decision_cycle_id:
             context = ActivitySequenceService.get_sequence_context(
