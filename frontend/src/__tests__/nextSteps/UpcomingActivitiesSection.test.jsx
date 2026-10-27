@@ -1,7 +1,8 @@
 // frontend/src/__tests__/nextSteps/UpcomingActivitiesSection.test.jsx
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
+import AphoriqTheme from "../_utils/aphoriqTheme";
 
 // ==============================|| MOCKS ||============================== //
 
@@ -31,6 +32,9 @@ vi.mock("api/accounts/activities", () => ({
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
 import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
+
+// The empty states are the shared EmptyState (aphoriQ theme, 5.8f).
+const render = (ui) => rtlRender(<AphoriqTheme>{ui}</AphoriqTheme>);
 
 // ==============================|| FIXTURES ||============================== //
 
@@ -145,6 +149,8 @@ describe("UpcomingActivitiesSection", () => {
     );
 
     expect(screen.getByText("No sequence linked.")).toBeInTheDocument();
+    // 5.8f — the Overview tab is gone: no text sends there.
+    expect(screen.queryByText(/Overview tab/)).not.toBeInTheDocument();
   });
 
   it("shows empty state when no next step is planned", () => {
@@ -156,7 +162,8 @@ describe("UpcomingActivitiesSection", () => {
     );
 
     expect(screen.getByText("No next step planned yet.")).toBeInTheDocument();
-    expect(screen.getByText("Create a follow-up to continue.")).toBeInTheDocument();
+    // 5.8f — the creation is the band's "+ Add next step": no stale hint.
+    expect(screen.queryByText(/Create a follow-up/)).not.toBeInTheDocument();
   });
 
   it("shows step name chip when present", () => {

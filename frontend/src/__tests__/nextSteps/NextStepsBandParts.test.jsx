@@ -3,8 +3,8 @@
 // Sprint Next steps 5.3 — parts 2 to 4 of the "Next steps" band, on the Activity
 // workspace PAGE as really rendered (views/activities/workspace/index.jsx):
 //   part 2 "To validate" — the generic SignalsValidationList filtered on
-//     next-steps (useAggregatedSignals), SignalLine lines 1-2 IDENTICAL to the
-//     other types; the row ✓ validates NOTHING (it opens the detail drawer until
+//     next-steps (useAggregatedSignals), SignalLine line 1 IDENTICAL to the
+//     other types (line 2: the 5.8f PO exception); the row ✓ validates NOTHING (it opens the detail drawer until
 //     the flow lands in 5.6); ✗ = the existing rejectSignal;
 //   part 3 — Validated = RESOLVED next steps, with SignalLine's generic optional
 //     3rd line `extra` (→ title · type · date · status pill of the activity
@@ -253,7 +253,9 @@ describe("Next steps band — part 2, to validate (5.3)", () => {
     expect(screen.queryByText("AI Suggestions")).not.toBeInTheDocument();
   });
 
-  it("lines 1-2 are IDENTICAL to another type's row in the validation list", () => {
+  // 5.8f — line 1 stays IDENTICAL to another type's row; line 2 is the PO
+  // exception (type · action date · names cited, NextStepsBandReadability).
+  it("line 1 is IDENTICAL to another type's row in the validation list", () => {
     renderPage();
     const nextStepRow = rowOf("Send the DPA");
     const { container } = render(
@@ -264,7 +266,9 @@ describe("Next steps band — part 2, to validate (5.3)", () => {
       />,
     );
     const painRow = container.querySelector('[data-testid="signal-line"]');
-    expect(nextStepRow.outerHTML).toBe(painRow.outerHTML);
+    const line1 = (row) => row.firstElementChild.firstElementChild.outerHTML;
+    expect(line1(nextStepRow)).toBe(line1(painRow));
+    expect(within(nextStepRow).getByTestId("next-step-line-meta")).toBeInTheDocument();
   });
 
   it("the row ✓ never validates: it opens the validation flow (5.6)", async () => {
@@ -1214,7 +1218,8 @@ describe("Next steps band — '+ Add next step' (5.8e)", () => {
     renderPage();
     const pill = screen.getByRole("button", { name: "+ Add next step" });
     expect(pill).toHaveAttribute("data-testid", "status-pill");
-    const header = screen.getByText("Next planned step").closest('[data-testid="next-planned-step-header"]');
+    // 5.8f — the header is the sub-block's CollapsibleStrip header.
+    const header = screen.getByText("Next planned step").closest("[aria-expanded]");
     expect(within(header).getByRole("button", { name: "+ Add next step" })).toBe(pill);
   });
 

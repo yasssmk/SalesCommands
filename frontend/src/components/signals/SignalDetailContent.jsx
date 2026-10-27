@@ -50,7 +50,8 @@ import {
   getPeopleHeadline,
   getTechUsage,
   getUsageScopeLabel,
-  getCitedPersonName,
+  getNextStepCitedNames,
+  NEXT_STEP_UNKNOWN,
   USAGE_SCOPE,
 } from "sections/activities/signals/utils/signalDisplay";
 
@@ -1999,14 +2000,6 @@ TechStackDetailView.propTypes = {
 // An empty field reads "Unknown" in full (TechStack rule). advice_rationale is
 // never displayed (dormant capacity). A RESOLVED next step is read-only
 // (rule 2.1): no Edit / Reject / Validate / Reopen.
-const NEXT_STEP_UNKNOWN = "Unknown";
-
-// The names a next step cites: its People's (full_name, else their contact's
-// name) then the names not linked — one list, no distinction (5.8c).
-function nextStepCitedNames(signal) {
-  const peopleNames = (signal.suggested_people ?? []).map(getCitedPersonName);
-  return [...peopleNames, ...(signal.suggested_people_names ?? [])].filter(Boolean);
-}
 
 function nextStepDateLabel(signal) {
   const date = formatDate(signal.suggested_due_date);
@@ -2043,7 +2036,7 @@ function NextStepDetailView({
 
   // 5.8c (PO rule): a next step CITES names — those of its People and those
   // not linked — shown alike, as text, never as persons.
-  const citedNames = nextStepCitedNames(signal);
+  const citedNames = getNextStepCitedNames(signal);
 
   const unknown = (
     <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>

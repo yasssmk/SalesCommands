@@ -48,6 +48,7 @@ import ActivitySignalsTab, {
 } from "sections/activities/workspace/ActivitySignalsTab";
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
 import SignalsHaloBox from "components/signals/SignalsHaloBox";
+import { NEXT_STEPS_BAND_QUERY, hasSuggestedNextSteps } from "utils/nextStepsBand";
 
 // The Signals band halo reads the COMPLETE validable set (all 3 statuses).
 const HALO_STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
@@ -93,6 +94,24 @@ export default function ActivityWorkspacePage() {
   );
   const bandTotalSignals = bandSignals.length;
 
+  // Next steps band HALO + their share of the header counter (5.8f): fetched
+  // HERE too (the band body unmounts while collapsed), with the band's own
+  // query (utils/nextStepsBand — the same SWR key as its list). DC-only: outside
+  // a decision cycle the suggestions are neither proposed nor counted.
+  const { signals: nextStepSignals } = useAggregatedSignals({
+    activityId,
+    ...NEXT_STEPS_BAND_QUERY,
+  });
+  const hasSuggestions = hasSuggestedNextSteps(activity);
+  const bandNextSteps = useMemo(
+    () => (hasSuggestions ? nextStepSignals : []),
+    [hasSuggestions, nextStepSignals],
+  );
+  const nextStepsPendingCount = useMemo(
+    () => bandNextSteps.filter((s) => s.status === "PENDING").length,
+    [bandNextSteps],
+  );
+
   // Pipeline runner — owned here so pipelineState is accessible to header (F4)
   const pipelineRunner = usePipelineRunner({
     onSuccess: () => {
@@ -137,8 +156,9 @@ export default function ActivityWorkspacePage() {
     counts,
     // The "N to validate" badge reads the COMPLETE pending count (8 validable
     // types, same aggregate as the Signals list + halo) so header = list; the
-    // /counts/ badge source only covered 6 types.
-    pendingCount: bandPendingCount,
+    // /counts/ badge source only covered 6 types. Plus the PENDING next steps
+    // (5.8f) — what remains to validate on the whole page.
+    pendingCount: bandPendingCount + nextStepsPendingCount,
     // The neutral "N signals" fallback (shown when 0 pending) reads the same
     // 8-type aggregate total — never counts (which totals only 6 types).
     totalCount: bandTotalSignals,
@@ -311,18 +331,25 @@ export default function ActivityWorkspacePage() {
             </CollapsibleStrip>
           </SignalsHaloBox>
 
-          {/* Next steps — open when analysed */}
-          <CollapsibleStrip
-            title="Next steps"
-            icon={RightCircleOutlined}
-            defaultExpanded={analyzed}
+          {/* Next steps — open when analysed. The same validation-state halo
+              as the Signals band (SignalsHaloBox), on its own next steps. */}
+          <SignalsHaloBox
+            pendingCount={nextStepsPendingCount}
+            totalSignals={bandNextSteps.length}
+            data-testid="next-steps-halo"
           >
-            {/* The band owns its lock (COMPLETED stays workable). */}
-            <ActivityNextStepsTab
-              activity={activity}
-              mutateCounts={mutateCounts}
-            />
-          </CollapsibleStrip>
+            <CollapsibleStrip
+              title="Next steps"
+              icon={RightCircleOutlined}
+              defaultExpanded={analyzed}
+            >
+              {/* The band owns its lock (COMPLETED stays workable). */}
+              <ActivityNextStepsTab
+                activity={activity}
+                mutateCounts={mutateCounts}
+              />
+            </CollapsibleStrip>
+          </SignalsHaloBox>
         </Stack>
 
       {/* Modals (Delete) */}

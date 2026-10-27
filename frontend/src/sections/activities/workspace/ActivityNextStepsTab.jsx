@@ -9,11 +9,7 @@ import { useRouter } from "next/navigation";
 // MUI
 import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
-import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
-
-// Icons
-import { RocketOutlined } from "@ant-design/icons";
 
 // Project imports
 import useAggregatedSignals from "api/signals/aggregatedSignals";
@@ -23,6 +19,7 @@ import {
   displayErrorSnackbar,
 } from "utils/displayError";
 
+import CollapsibleStrip from "components/display/CollapsibleStrip";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
@@ -42,12 +39,7 @@ import ActivityModal from "sections/accounts/activities/ActivityModal";
 import EditNextStepContent from "sections/activities/workspace/EditNextStepContent";
 import EditActivityContent from "sections/activities/workspace/EditActivityContent";
 import NextStepValidateFlow from "sections/activities/nextSteps/NextStepValidateFlow";
-
-// The next steps of the activity, all 3 statuses (To validate / Validated /
-// Rejected), in one page — the same aggregated query shape as the Signals band.
-const NEXT_STEP_TYPES = ["next-steps"];
-const STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
-const PAGE_SIZE = 100;
+import { NEXT_STEPS_BAND_QUERY, hasSuggestedNextSteps } from "utils/nextStepsBand";
 
 // The band's own lock (PO decision): it IGNORES the read-only state of a
 // COMPLETED activity — the conversation is over and its next steps are handled
@@ -60,7 +52,10 @@ export function isNextStepsBandLocked(activity) {
 
 // ==============================|| ACTIVITY NEXT STEPS TAB ||============================== //
 
-// The "Next steps" band, in 4 parts (Sprint Next steps 5.x):
+// The "Next steps" band, in 4 parts (Sprint Next steps 5.x), as TWO sub-blocks
+// (5.8f) with the Signals band's section header (CollapsibleStrip):
+// "Next planned step" (part 1 + its "+ Add next step" pill) then "Suggested
+// next steps" (parts 2-3):
 //   1. the next planned step (activity.next_planned_step);
 //   2. the next steps to validate and 3. the validated (resolved, with their
 //      activity on the row's 3rd line) and rejected ones — the generic
@@ -83,14 +78,7 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     loading,
     error,
     mutate: mutateAll,
-  } = useAggregatedSignals({
-    activityId,
-    statuses: STATUSES,
-    signalTypes: NEXT_STEP_TYPES,
-    ordering: "date-desc",
-    page: 1,
-    pageSize: PAGE_SIZE,
-  });
+  } = useAggregatedSignals({ activityId, ...NEXT_STEPS_BAND_QUERY });
 
   // The single workspace drawer coque: the next step detail is injected there,
   // as the detail of every other signal type (ActivitySignalsTab).
@@ -299,77 +287,86 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
 
   return (
     <Box>
-      {/* Part 1 — the next planned step; "+ Add next step" on its right (5.8e) */}
-      <Stack
-        direction="row"
-        alignItems="center"
-        justifyContent="space-between"
-        spacing={1}
-        sx={{ mb: 1.5 }}
-        data-testid="next-planned-step-header"
-      >
-        <Typography variant="h6">
-          <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
-          Next planned step
-        </Typography>
-        {!isLocked && (
-          <ClickablePill
-            label="+ Add next step"
-            active
-            onClick={() => setTypesOpen((open) => !open)}
-          />
+      <Stack spacing={1.5}>
+        {/* Sub-block 1 — the next planned step; "+ Add next step" on the right
+            of its header (5.8e). The pill never folds the sub-block (its
+            click / key stop at it). */}
+        <Box data-testid="next-planned-step-block">
+          <CollapsibleStrip
+            title="Next planned step"
+            defaultExpanded
+            meta={
+              isLocked ? undefined : (
+                <Box
+                  component="span"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <ClickablePill
+                    label="+ Add next step"
+                    active
+                    onClick={() => setTypesOpen((open) => !open)}
+                  />
+                </Box>
+              )
+            }
+          >
+            {!isLocked && typesOpen && (
+              <Stack
+                direction="row"
+                spacing={0.75}
+                flexWrap="wrap"
+                useFlexGap
+                sx={{ mb: 1.5 }}
+                data-testid="add-next-step-types"
+              >
+                {Object.values(ACTIVITY_TYPES).map((type) => (
+                  <ClickablePill
+                    key={type}
+                    label={ACTIVITY_TYPE_LABELS[type] || type}
+                    onClick={() => {
+                      setTypesOpen(false);
+                      openCreate({ activityType: type });
+                    }}
+                  />
+                ))}
+              </Stack>
+            )}
+            <UpcomingActivitiesSection
+              activity={activity}
+              onCreateActivity={handleCreateActivity}
+              isLocked={isLocked}
+            />
+          </CollapsibleStrip>
+        </Box>
+
+        {/* Sub-block 2 — the suggested next steps: to validate / validated /
+            rejected. DC-only: extracted next-step suggestions are not proposed
+            in a campaign context (activity without a decision_cycle). Mirrors
+            the backend guard. One type only → no type-group header. */}
+        {hasSuggestedNextSteps(activity) && (
+          <Box data-testid="suggested-next-steps-block">
+            <CollapsibleStrip title="Suggested next steps" defaultExpanded>
+              {error && !nextStepSignals.length ? (
+                <Box display="flex" justifyContent="center" py={4}>
+                  <Typography color="error">Failed to load next steps</Typography>
+                </Box>
+              ) : (
+                <SignalsValidationList
+                  signals={nextStepSignals}
+                  loading={loading}
+                  onSelect={openDetail}
+                  onValidate={isLocked ? undefined : openFlow}
+                  onReject={isLocked ? undefined : handleReject}
+                  renderExtra={renderExtra}
+                  showTypeHeaders={false}
+                  emptyMessage="No next-step suggestions for this activity"
+                />
+              )}
+            </CollapsibleStrip>
+          </Box>
         )}
       </Stack>
-      {!isLocked && typesOpen && (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          flexWrap="wrap"
-          useFlexGap
-          sx={{ mb: 1.5 }}
-          data-testid="add-next-step-types"
-        >
-          {Object.values(ACTIVITY_TYPES).map((type) => (
-            <ClickablePill
-              key={type}
-              label={ACTIVITY_TYPE_LABELS[type] || type}
-              onClick={() => {
-                setTypesOpen(false);
-                openCreate({ activityType: type });
-              }}
-            />
-          ))}
-        </Stack>
-      )}
-      <UpcomingActivitiesSection
-        activity={activity}
-        onCreateActivity={handleCreateActivity}
-        isLocked={isLocked}
-      />
-
-      {/* Parts 2-3 — to validate / validated / rejected. DC-only: extracted
-          next-step suggestions are not proposed in a campaign context
-          (activity without a decision_cycle). Mirrors the backend guard. */}
-      {Boolean(activity?.decision_cycle) && (
-        <>
-          <Divider sx={{ my: 2 }} />
-          {error && !nextStepSignals.length ? (
-            <Box display="flex" justifyContent="center" py={4}>
-              <Typography color="error">Failed to load next steps</Typography>
-            </Box>
-          ) : (
-            <SignalsValidationList
-              signals={nextStepSignals}
-              loading={loading}
-              onSelect={openDetail}
-              onValidate={isLocked ? undefined : openFlow}
-              onReject={isLocked ? undefined : handleReject}
-              renderExtra={renderExtra}
-              emptyMessage="No next-step suggestions for this activity"
-            />
-          )}
-        </>
-      )}
 
       {/* "Start Decision Cycle" — the one ActivityModal left in the band (a
           campaign activity converted into a new cycle; debt: not migrated). */}

@@ -36,6 +36,17 @@ export function getCitedPersonName(people) {
   );
 }
 
+// The names a next step cites: its People's (full_name, else their contact's
+// name) then the names not linked — one list, no distinction (5.8c). Shared by
+// the next step detail and its SignalLine (line 2, 5.8f).
+export function getNextStepCitedNames(signal) {
+  const peopleNames = (signal?.suggested_people ?? []).map(getCitedPersonName);
+  return [...peopleNames, ...(signal?.suggested_people_names ?? [])].filter(Boolean);
+}
+
+// An empty next step field reads this, in full (TechStack rule).
+export const NEXT_STEP_UNKNOWN = "Unknown";
+
 // A TechStack signal's usage, with the PO rule "the departments PRIME over the
 // scale": when at least one usage department is designated, the department
 // names are the usage and the scale is not shown. Shared by TechDetailBlock

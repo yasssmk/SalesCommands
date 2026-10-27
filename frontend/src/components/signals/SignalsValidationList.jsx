@@ -110,6 +110,7 @@ export default function SignalsValidationList({
   onValidate,
   onReject,
   renderExtra,
+  showTypeHeaders = true,
   loading = false,
   emptyMessage = "No signals found for this activity",
 }) {
@@ -182,14 +183,17 @@ export default function SignalsValidationList({
                     <Box key={type}>
                       {/* Type group = a plain muted header (uniform tone, NOT a
                           per-type colour) + its rows. No nested collapse — the
-                          only fold is at the status-section level above. */}
-                      <Typography
-                        variant="subtitle2"
-                        color="text.secondary"
-                        sx={{ fontWeight: 500, mb: 0.75 }}
-                      >
-                        {getSignalTypeLabel(type) ?? type}
-                      </Typography>
+                          only fold is at the status-section level above. A
+                          single-type list (the Next steps band) drops it. */}
+                      {showTypeHeaders && (
+                        <Typography
+                          variant="subtitle2"
+                          color="text.secondary"
+                          sx={{ fontWeight: 500, mb: 0.75 }}
+                        >
+                          {getSignalTypeLabel(type) ?? type}
+                        </Typography>
+                      )}
                       {typeSignals.map((signal) => (
                         <SignalLine
                           key={signal.id}
@@ -236,6 +240,8 @@ SignalsValidationList.propTypes = {
   onReject: PropTypes.func,
   /** Optional (signal, signalType) => node — SignalLine's 3rd line (`extra`). */
   renderExtra: PropTypes.func,
+  /** The type-group headers (default true); false for a single-type list. */
+  showTypeHeaders: PropTypes.bool,
   loading: PropTypes.bool,
   emptyMessage: PropTypes.string,
 };

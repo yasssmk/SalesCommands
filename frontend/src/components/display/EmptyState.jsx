@@ -31,6 +31,7 @@ export default function EmptyState({
 
   return (
     <Box
+      data-testid="empty-state"
       sx={{
         display: "flex",
         justifyContent: "center",

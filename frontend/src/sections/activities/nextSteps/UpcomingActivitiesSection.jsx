@@ -19,6 +19,7 @@ import RocketOutlined from "@ant-design/icons/RocketOutlined";
 
 // Project imports
 import ActivityMiniCard from "components/cards/activities/ActivityMiniCard";
+import EmptyState from "components/display/EmptyState";
 
 // ==============================|| UPCOMING ACTIVITIES SECTION ||============================== //
 
@@ -32,7 +33,6 @@ export default function UpcomingActivitiesSection({
 
   // Part 1 of the "Next steps" band: the ONE next planned step, chosen and
   // ordered by the server (activity.next_planned_step) — no client re-sort.
-  const sequenceContext = activity?.sequence_context;
   const nextPlannedStep = activity?.next_planned_step || null;
   const plannedActivity = nextPlannedStep?.activity || null;
   const bornCycle =
@@ -49,9 +49,6 @@ export default function UpcomingActivitiesSection({
     !bornCycle &&
     (activity?.outcome === "SUCCESSFUL" ||
       activity?.outcome === "MEETING_SCHEDULED");
-  const isLastInSequence =
-    sequenceContext?.position != null &&
-    sequenceContext?.position === sequenceContext?.total;
 
   const handleNavigate = (activityId) => {
     if (activityId) {
@@ -59,34 +56,16 @@ export default function UpcomingActivitiesSection({
     }
   };
 
+  // Empty states: the shared EmptyState (aphoriQ theme), compact.
   if (!isInSequence) {
     return (
-      <Box
-        sx={{
-          p: 3,
-          borderRadius: 1,
-          bgcolor: theme.palette.grey[50],
-          border: "1px dashed",
-          borderColor: theme.palette.grey[200],
-          opacity: 0.7,
-          textAlign: "center",
-        }}
-      >
-        <LinkOutlined
-          style={{
-            fontSize: 32,
-            color: theme.palette.grey[400],
-            marginBottom: 8,
-          }}
-        />
-        <Typography variant="body2" color="text.disabled" sx={{ mb: 0.5 }}>
-          No sequence linked.
-        </Typography>
-        <Typography variant="caption" color="text.disabled">
-          Link this activity to a Decision Cycle from the Overview tab to see
-          its next planned step.
-        </Typography>
-      </Box>
+      <EmptyState
+        icon={LinkOutlined}
+        title="No sequence linked."
+        iconSize="xl"
+        titleVariant="body2"
+        py={2}
+      />
     );
   }
 
@@ -110,37 +89,15 @@ export default function UpcomingActivitiesSection({
           onNavigate={handleNavigate}
         />
       ) : (
-        <Box
-          sx={{
-            p: 2,
-            borderRadius: 1,
-            bgcolor: theme.palette.grey[50],
-            border: "1px dashed",
-            borderColor: theme.palette.grey[300],
-          }}
-        >
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            textAlign="center"
-          >
-            {bornCycle
+        <EmptyState
+          title={
+            bornCycle
               ? "No activity planned in this decision cycle yet."
-              : "No next step planned yet."}
-          </Typography>
-          {!isLocked && !bornCycle && (
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              component="p"
-              textAlign="center"
-            >
-              {isLastInSequence
-                ? "This is the last activity in the sequence. Create a follow-up to continue the cycle."
-                : "Create a follow-up to continue."}
-            </Typography>
-          )}
-        </Box>
+              : "No next step planned yet."
+          }
+          titleVariant="body2"
+          py={2}
+        />
       )}
 
       {/* Campaign → Decision Cycle conversion CTA */}
