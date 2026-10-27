@@ -8,12 +8,12 @@ import { useRouter } from "next/navigation";
 
 // MUI
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
+import Stack from "@mui/material/Stack";
 import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import { PlusOutlined, RocketOutlined } from "@ant-design/icons";
+import { RocketOutlined } from "@ant-design/icons";
 
 // Project imports
 import useAggregatedSignals from "api/signals/aggregatedSignals";
@@ -32,7 +32,12 @@ import NextStepActivityLine, {
   getResolvedActivity,
 } from "sections/activities/nextSteps/NextStepActivityLine";
 import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
-import { ACTIVITY_STATUSES } from "api/accounts/activities";
+import {
+  ACTIVITY_STATUSES,
+  ACTIVITY_TYPES,
+  ACTIVITY_TYPE_LABELS,
+} from "api/accounts/activities";
+import ClickablePill from "components/chips/ClickablePill";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
 import EditNextStepContent from "sections/activities/workspace/EditNextStepContent";
 import EditActivityContent from "sections/activities/workspace/EditActivityContent";
@@ -60,7 +65,8 @@ export function isNextStepsBandLocked(activity) {
 //   2. the next steps to validate and 3. the validated (resolved, with their
 //      activity on the row's 3rd line) and rejected ones — the generic
 //      SignalsValidationList, DC-only;
-//   4. "Set a next step manually".
+//   4. "+ Add next step" (5.8e): a pill of part 1's header → a row of the 7
+//      ActivityType pills → the creation with that type.
 // Every activity creation of the band opens in the coque (EditActivityContent,
 // create mode — Sprint Next steps 5.8d); ActivityModal stays only for "Start
 // Decision Cycle" (a campaign activity converted into a new cycle).
@@ -93,6 +99,8 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   // Activity modal state (convert from signal OR manual add OR campaign conversion)
   // "Start Decision Cycle" (campaign → new cycle) — the one ActivityModal left.
   const [startCycleOpen, setStartCycleOpen] = useState(false);
+  // "+ Add next step" — the row of type pills is shown.
+  const [typesOpen, setTypesOpen] = useState(false);
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -191,7 +199,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     [openDrawer, openCreate, openDetail, showFromServer],
   );
 
-  const handleAddManually = useCallback(() => openCreate(), [openCreate]);
 
   // Edit in the coque (EditNextStepContent), then back to the detail —
   // the chassis edit of every other signal type.
@@ -292,11 +299,48 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
 
   return (
     <Box>
-      {/* Part 1 — the next planned step */}
-      <Typography variant="h6" sx={{ mb: 1.5 }}>
-        <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
-        Next planned step
-      </Typography>
+      {/* Part 1 — the next planned step; "+ Add next step" on its right (5.8e) */}
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="space-between"
+        spacing={1}
+        sx={{ mb: 1.5 }}
+        data-testid="next-planned-step-header"
+      >
+        <Typography variant="h6">
+          <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
+          Next planned step
+        </Typography>
+        {!isLocked && (
+          <ClickablePill
+            label="+ Add next step"
+            active
+            onClick={() => setTypesOpen((open) => !open)}
+          />
+        )}
+      </Stack>
+      {!isLocked && typesOpen && (
+        <Stack
+          direction="row"
+          spacing={0.75}
+          flexWrap="wrap"
+          useFlexGap
+          sx={{ mb: 1.5 }}
+          data-testid="add-next-step-types"
+        >
+          {Object.values(ACTIVITY_TYPES).map((type) => (
+            <ClickablePill
+              key={type}
+              label={ACTIVITY_TYPE_LABELS[type] || type}
+              onClick={() => {
+                setTypesOpen(false);
+                openCreate({ activityType: type });
+              }}
+            />
+          ))}
+        </Stack>
+      )}
       <UpcomingActivitiesSection
         activity={activity}
         onCreateActivity={handleCreateActivity}
@@ -325,20 +369,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
             />
           )}
         </>
-      )}
-
-      {/* Part 4 — a next step typed by hand is an activity */}
-      {!isLocked && (
-        <Box mt={2}>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined style={{ fontSize: 14 }} />}
-            onClick={handleAddManually}
-          >
-            Set a next step manually
-          </Button>
-        </Box>
       )}
 
       {/* "Start Decision Cycle" — the one ActivityModal left in the band (a

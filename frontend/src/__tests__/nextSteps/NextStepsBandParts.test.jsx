@@ -10,7 +10,8 @@
 //     3rd line `extra` (→ title · type · date · status pill of the activity
 //     created OR linked; click → the activity); Rejected in the signal format,
 //     Reopen offered except on a resolved next step (rule 2.1);
-//   part 4 — "Set a next step manually" (was "Add manually") → ActivityModal;
+//   part 4 — (5.8e) the "+ Add next step" pill of part 1's header → a row of
+//     the 7 ActivityType pills → the creation in the coque with that type;
 //   outside a DC (DC-only guard) parts 2-3 are hidden, parts 1 and 4 stay.
 // 5.4 — the next step DETAIL opens in the single workspace coque (as the 8 other
 // types), on the standard chassis (NextStepDetailView, section B of 5.0):
@@ -23,6 +24,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
+import { testTheme } from "../_utils/aphoriqTheme";
 
 const mockPush = vi.fn();
 let mockActivity;
@@ -223,6 +225,13 @@ const dcActivity = (over = {}) => ({
   next_planned_step: null, ...over,
 });
 
+// 5.8e — "+ Add next step" → a type pill → the creation drawer with that type.
+const addNextStep = (typeLabel) => {
+  fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
+  fireEvent.click(within(screen.getByTestId("add-next-step-types"))
+    .getByRole("button", { name: typeLabel }));
+};
+
 const rowOf = (title) => screen.getByText(title).closest('[data-testid="signal-line"]');
 const expand = (section) => fireEvent.click(screen.getByText(section));
 
@@ -321,12 +330,12 @@ describe("Next steps band — part 3, validated / rejected (5.3)", () => {
 });
 
 describe("Next steps band — part 4 and the DC-only guard (5.3)", () => {
-  it("'Set a next step manually' (renamed) opens the creation in the coque (5.8d)", () => {
+  it("no 'Set a next step manually' any more (5.8e): '+ Add next step' replaces it", () => {
     renderPage();
     expect(screen.queryByText("Add manually")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Set a next step manually/ }));
+    expect(screen.queryByRole("button", { name: /Set a next step manually/ })).toBeNull();
+    addNextStep("Meeting");
     expect(screen.getByTestId("activity-create")).toBeInTheDocument();
-    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
   });
 
   it("outside a DC: parts 2-3 hidden, parts 1 and 4 stay", () => {
@@ -334,7 +343,7 @@ describe("Next steps band — part 4 and the DC-only guard (5.3)", () => {
     expect(screen.queryByText("To validate")).not.toBeInTheDocument();
     expect(screen.queryByText("Send the DPA")).not.toBeInTheDocument();
     expect(screen.getByText("Next planned step")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Set a next step manually/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
   });
 });
 
@@ -351,8 +360,7 @@ describe("Next steps band — the lock of the activity (PO decision)", () => {
 
   it("COMPLETED: part 4, quick-create and the row actions are available", () => {
     renderPage(dcActivity({ status: "COMPLETED" }));
-    expect(screen.getByRole("button", { name: /Set a next step manually/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Meeting/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
     expect(within(rowOf("Send the DPA")).getByLabelText("Validate signal")).toBeInTheDocument();
     expect(within(rowOf("Send the DPA")).getByLabelText("Reject signal")).toBeInTheDocument();
   });
@@ -373,8 +381,7 @@ describe("Next steps band — the lock of the activity (PO decision)", () => {
 
   it("CANCELLED: read-only — no part 4, no quick-create, no row action", () => {
     renderPage(dcActivity({ status: "CANCELLED" }));
-    expect(screen.queryByRole("button", { name: /Set a next step manually/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Meeting/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Add next step" })).not.toBeInTheDocument();
     expect(within(rowOf("Send the DPA")).queryByLabelText("Validate signal")).toBeNull();
     expect(within(rowOf("Send the DPA")).queryByLabelText("Reject signal")).toBeNull();
   });
@@ -1151,7 +1158,7 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
   it("a campaign activity (no DC): the DC is chosen by the user", async () => {
     mockCited = [];
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
-    fireEvent.click(screen.getByRole("button", { name: /Set a next step manually/ }));
+    addNextStep("Meeting");
     const create = await screen.findByTestId(CREATE);
     expect(within(create).getByTestId("inline-read-decision_cycle")).toHaveTextContent("No decision cycle");
     fireEvent.click(within(create).getByTestId("inline-read-decision_cycle"));
@@ -1194,5 +1201,87 @@ describe("Next steps band — the creation form waits for its defaults (5.8e)", 
     // Well past the response.
     await new Promise((r) => setTimeout(r, 300));
     expect(screen.getByTestId("inline-input-title")).toHaveValue("My own title");
+  });
+});
+
+
+// ==============================|| 5.8e — "+ ADD NEXT STEP" ||============================== //
+
+describe("Next steps band — '+ Add next step' (5.8e)", () => {
+  const TYPES = ["Phone Call", "Email", "Meeting", "Demo", "Task", "LinkedIn", "Other"];
+
+  it("a pill to the right of the 'Next planned step' header", () => {
+    renderPage();
+    const pill = screen.getByRole("button", { name: "+ Add next step" });
+    expect(pill).toHaveAttribute("data-testid", "status-pill");
+    const header = screen.getByText("Next planned step").closest('[data-testid="next-planned-step-header"]');
+    expect(within(header).getByRole("button", { name: "+ Add next step" })).toBe(pill);
+  });
+
+  it("no quick-create chips any more", () => {
+    renderPage();
+    // (the chips' accessible name carries their icon: "plus Meeting")
+    for (const label of ["Meeting", "Call", "Email", "Task"]) {
+      expect(screen.queryByRole("button", { name: new RegExp(label) })).toBeNull();
+    }
+  });
+
+  it("a click: a row of the 7 ActivityType pills, in the constant's order", () => {
+    renderPage();
+    expect(screen.queryByTestId("add-next-step-types")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
+    const row = screen.getByTestId("add-next-step-types");
+    const pills = within(row).getAllByRole("button");
+    expect(pills.map((p) => p.textContent)).toEqual(TYPES);
+    pills.forEach((p) => expect(p).toHaveAttribute("data-testid", "status-pill"));
+  });
+
+  it("a type pill → the creation drawer with that type", async () => {
+    renderPage();
+    addNextStep("Demo");
+    const create = await screen.findByTestId("activity-create");
+    expect(within(create).getByTestId("inline-read-type")).toHaveTextContent("Demo");
+    expect(within(screen.getByTestId("coque-panel")).getByTestId("coque-title"))
+      .toHaveTextContent("New activity");
+  });
+
+  it("the same clickable pill as the scope pills of the surface", () => {
+    renderPage();
+    const pill = screen.getByRole("button", { name: "+ Add next step" });
+    expect(pill).toHaveAttribute("tabindex", "0");
+    expect(pill).toHaveAttribute("data-testid", "status-pill");
+  });
+
+  it("the scope pills' colours: '+ Add next step' active, the type pills inactive", () => {
+    renderPage();
+    const add = screen.getByRole("button", { name: "+ Add next step" });
+    expect(add).toHaveStyle({ color: testTheme.palette.primary.main });
+    fireEvent.click(add);
+    within(screen.getByTestId("add-next-step-types")).getAllByRole("button")
+      .forEach((p) => expect(p).toHaveStyle({ color: testTheme.palette.text.secondary }));
+  });
+
+  it("keyboard: Enter opens the type row, Space on a type opens the creation", async () => {
+    renderPage();
+    fireEvent.keyDown(screen.getByRole("button", { name: "+ Add next step" }), { key: "Enter" });
+    fireEvent.keyDown(within(screen.getByTestId("add-next-step-types"))
+      .getByRole("button", { name: "Task" }), { key: " " });
+    const create = await screen.findByTestId("activity-create");
+    expect(within(create).getByTestId("inline-read-type")).toHaveTextContent("Task");
+  });
+
+  it("a type pick closes the type row", async () => {
+    renderPage();
+    addNextStep("Email");
+    await screen.findByTestId("activity-create");
+    expect(screen.queryByTestId("add-next-step-types")).toBeNull();
+  });
+
+  it("a campaign activity: available; a CANCELLED activity: hidden", () => {
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
+    cleanup();
+    renderPage(dcActivity({ status: "CANCELLED" }));
+    expect(screen.queryByRole("button", { name: "+ Add next step" })).toBeNull();
   });
 });

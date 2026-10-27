@@ -13,7 +13,6 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import LinkOutlined from "@ant-design/icons/LinkOutlined";
 import TrophyOutlined from "@ant-design/icons/TrophyOutlined";
 import RocketOutlined from "@ant-design/icons/RocketOutlined";
@@ -93,50 +92,6 @@ export default function UpcomingActivitiesSection({
 
   return (
     <Box>
-      {/* Quick-create chips */}
-      {!isLocked && !isCampaignActivity && (
-        <Stack
-          direction="row"
-          spacing={1}
-          flexWrap="wrap"
-          useFlexGap
-          sx={{ mb: 2 }}
-        >
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => onCreateActivity("MEETING")}
-          >
-            Meeting
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => onCreateActivity("CALL")}
-          >
-            Call
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => onCreateActivity("EMAIL")}
-          >
-            Email
-          </Button>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlusOutlined />}
-            onClick={() => onCreateActivity("TASK")}
-          >
-            Task
-          </Button>
-        </Stack>
-      )}
-
       {/* The decision cycle born from this activity */}
       {bornCycle && (
         <Typography

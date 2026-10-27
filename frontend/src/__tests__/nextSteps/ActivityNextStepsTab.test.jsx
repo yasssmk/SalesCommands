@@ -7,6 +7,7 @@ import {
   fireEvent,
   cleanup,
   waitFor,
+  within,
 } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //
@@ -154,13 +155,7 @@ vi.mock("components/signals/SignalEditDrawer", () => ({
 }));
 
 vi.mock("sections/activities/nextSteps/UpcomingActivitiesSection", () => ({
-  default: ({ activity, onCreateActivity, isLocked }) => (
-    <div data-testid="upcoming-activities-section">
-      {!isLocked && (
-        <button onClick={() => onCreateActivity("MEETING")}>Quick Meeting</button>
-      )}
-    </div>
-  ),
+  default: () => <div data-testid="upcoming-activities-section" />,
 }));
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
@@ -188,8 +183,8 @@ const mockActivity = {
 // Sprint Next steps 5.3 — the band in 4 parts: (1) the next planned step,
 // (2-3) the generic SignalsValidationList filtered on next-steps (the row ✓
 // opens the drawer, never validates; ✗ rejects; a resolved next step carries
-// its activity on the row's 3rd line), (4) "Set a next step manually". The
-// former AI suggestion cards, filter bar and summary line are gone.
+// its activity on the row's 3rd line), (4) "Set a next step manually" —
+// replaced in 5.8e by "+ Add next step" (header of part 1). The former AI suggestion cards, filter bar and summary line are gone.
 
 const renderTab = (props = {}) =>
   render(
@@ -272,27 +267,31 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.getAllByTestId("signal-line-extra")).toHaveLength(1);
   });
 
-  it("shows the 'Set a next step manually' button", () => {
+  // 5.8e — "+ Add next step" replaces "Set a next step manually" and the chips.
+  const ADD = { name: "+ Add next step" };
+
+  it("shows the '+ Add next step' pill, and no 'Set a next step manually'", () => {
     renderTab();
-    expect(screen.getByText("Set a next step manually")).toBeInTheDocument();
-    expect(screen.queryByText("Add manually")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", ADD)).toBeInTheDocument();
+    expect(screen.queryByText("Set a next step manually")).not.toBeInTheDocument();
   });
 
-  it("a CANCELLED activity locks the band: no 'Set a next step manually', no row action", () => {
+  it("a CANCELLED activity locks the band: no '+ Add next step', no row action", () => {
     renderTab({ activity: { ...mockActivity, status: "CANCELLED" } });
-    expect(screen.queryByText("Set a next step manually")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", ADD)).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Validate signal")).not.toBeInTheDocument();
   });
 
   it("a COMPLETED activity does NOT lock the band (PO decision)", () => {
     renderTab({ activity: { ...mockActivity, status: "COMPLETED" } });
-    expect(screen.getByText("Set a next step manually")).toBeInTheDocument();
+    expect(screen.getByRole("button", ADD)).toBeInTheDocument();
     expect(screen.getByLabelText("Validate signal")).toBeInTheDocument();
   });
 
-  it("opens the activity creation in the coque from 'Set a next step manually' (5.8d)", () => {
+  it("opens the activity creation in the coque from a type pill of '+ Add next step'", () => {
     renderTab();
-    fireEvent.click(screen.getByText("Set a next step manually"));
+    fireEvent.click(screen.getByRole("button", ADD));
+    fireEvent.click(within(screen.getByTestId("add-next-step-types")).getByRole("button", { name: "Meeting" }));
     expect(screen.getByTestId("activity-create")).toBeInTheDocument();
     expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
   });
@@ -302,8 +301,7 @@ describe("ActivityNextStepsTab", () => {
 //
 // PO decision (1-bis): the next steps extracted by the AI (parts 2-3) are a
 // DC-only feature. In a campaign context (no decision_cycle) they are NOT
-// proposed. Parts 1 (next planned step) and 4 ("Set a next step manually")
-// stay. The tab itself stays visible (asserted in ActivityTabs.test.jsx).
+// proposed. Part 1 (next planned step) and "+ Add next step" (5.8e) stay. The tab itself stays visible (asserted in ActivityTabs.test.jsx).
 
 const mockActivityNoDc = {
   ...mockActivity,
@@ -325,15 +323,15 @@ describe("ActivityNextStepsTab — DC-only parts 2-3", () => {
     expect(screen.queryByText("Follow up on pricing")).not.toBeInTheDocument();
   });
 
-  it("still renders parts 1 and 4 without a decision cycle", () => {
+  it("still renders part 1 and '+ Add next step' without a decision cycle", () => {
     renderTab({ activity: mockActivityNoDc });
     expect(screen.getByText("Next planned step")).toBeInTheDocument();
-    expect(screen.getByText("Set a next step manually")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
   });
 
-  it("renders parts 2-3 AND 'Set a next step manually' with a decision cycle", () => {
+  it("renders parts 2-3 AND '+ Add next step' with a decision cycle", () => {
     renderTab();
     expect(screen.getByText("Follow up on pricing")).toBeInTheDocument();
-    expect(screen.getByText("Set a next step manually")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
   });
 });

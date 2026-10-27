@@ -40,6 +40,7 @@ import CloseOutlined from "@ant-design/icons/CloseOutlined";
 // Project
 import MultiSelectFilter from "components/filters/MultiSelectFilter";
 import StatusPill from "components/chips/StatusPill";
+import ClickablePill from "components/chips/ClickablePill";
 import { SCOPE_PILL_COLORS } from "utils/objectiveScope";
 
 // Normalise a signal payload's department list ([{id,name}] | [id]) to the
@@ -130,25 +131,14 @@ export default function ScopeDepartmentsField({
       >
         {scopeOptions.map(({ key, label }) => {
           const isActive = scope === key;
-          const c = isActive ? SCOPE_PILL_COLORS.active : SCOPE_PILL_COLORS.inactive;
           return (
-            <StatusPill
+            <ClickablePill
               key={key}
               data-testid={`scope-pill-${key}`}
-              role="button"
-              tabIndex={0}
-              aria-pressed={isActive}
+              active={isActive}
+              pressed={isActive}
               onClick={() => chooseScope(key)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  chooseScope(key);
-                }
-              }}
               label={label}
-              colorText={c.colorText}
-              colorBg={c.colorBg}
-              sx={{ cursor: "pointer" }}
             />
           );
         })}

@@ -107,35 +107,9 @@ describe("UpcomingActivitiesSection", () => {
     expect(screen.queryByText("Send proposal")).not.toBeInTheDocument();
   });
 
-  it("shows quick-create buttons when not locked", () => {
-    render(
-      <UpcomingActivitiesSection
-        activity={mockActivity}
-        onCreateActivity={vi.fn()}
-      />,
-    );
-
-    const buttons = screen.getAllByRole("button");
-    const buttonLabels = buttons.map((b) => b.textContent);
-    expect(buttonLabels).toContain("Meeting");
-    expect(buttonLabels).toContain("Call");
-    expect(buttonLabels).toContain("Email");
-    expect(buttonLabels).toContain("Task");
-  });
-
-  it("hides quick-create buttons when locked", () => {
-    render(
-      <UpcomingActivitiesSection
-        activity={mockActivity}
-        onCreateActivity={vi.fn()}
-        isLocked
-      />,
-    );
-
-    expect(screen.queryByText("Meeting")).not.toBeInTheDocument();
-  });
-
-  it("calls onCreateActivity with type on quick-create click", () => {
+  // 5.8e — creation goes through "+ Add next step" (the band header): the
+  // section no longer carries quick-create chips.
+  it("shows no quick-create chips", () => {
     const onCreateActivity = vi.fn();
     render(
       <UpcomingActivitiesSection
@@ -144,8 +118,10 @@ describe("UpcomingActivitiesSection", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("Meeting"));
-    expect(onCreateActivity).toHaveBeenCalledWith("MEETING");
+    for (const label of ["Meeting", "Call", "Email", "Task"]) {
+      expect(screen.queryByRole("button", { name: new RegExp(`^(plus )?${label}$`) })).not.toBeInTheDocument();
+    }
+    expect(onCreateActivity).not.toHaveBeenCalled();
   });
 
   it("navigates on card click", () => {
