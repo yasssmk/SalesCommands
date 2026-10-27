@@ -38,6 +38,7 @@ import dayjs from "dayjs";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
 import FormHelperText from "@mui/material/FormHelperText";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
@@ -565,7 +566,36 @@ PeopleSection.propTypes = {
 
 // ==============================|| EDIT ACTIVITY CONTENT ||============================== //
 
-export default function EditActivityContent({
+// The creation waits for its defaults (Sprint Next steps 5.8e): the names cited
+// with their account contacts are read first, the drawer's loading indicator
+// meanwhile; the form mounts once, with its final initial values, and is never
+// re-initialised afterwards (a typing is never lost).
+export default function EditActivityContent(props) {
+  if (props.mode !== "create") return <ActivityForm {...props} />;
+  return <CreateActivityGate {...props} />;
+}
+
+function CreateActivityGate(props) {
+  const theme = useTheme();
+  const { citedContacts, citedLoading } = useNextStepCitedContacts(props.nextStep?.id ?? null);
+  if (citedLoading) {
+    return (
+      <DrawerContentLayout>
+        <Box
+          data-testid="activity-create-loading"
+          sx={{ display: "flex", justifyContent: "center", py: 4 }}
+        >
+          <CircularProgress size={theme.iconSizes.md} />
+        </Box>
+      </DrawerContentLayout>
+    );
+  }
+  return <ActivityForm {...props} citedContacts={citedContacts} />;
+}
+
+CreateActivityGate.propTypes = { nextStep: PropTypes.object };
+
+function ActivityForm({
   activity,
   onSaved,
   mode = "edit",
@@ -573,6 +603,7 @@ export default function EditActivityContent({
   decisionCycleId,
   nextStep,
   activityType,
+  citedContacts = [],
   onCreated,
   onCancel,
 }) {
@@ -587,18 +618,10 @@ export default function EditActivityContent({
   // A NEW activity is never a campaign activity.
   const isCampaign = !isCreate && Boolean(activity?.campaign_detail);
 
-  // Creation from a next step: the names it cites, with the account contact
-  // the server matched (TD-279 rule) — read before the pre-fill.
-  const { citedContacts, citedLoading } = useNextStepCitedContacts(
-    isCreate ? nextStep?.id ?? null : null,
-  );
-  const defaults = useMemo(
-    () =>
-      isCreate
-        ? activityDefaultsFromNextStep(nextStep, { activityType, citedContacts })
-        : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isCreate, nextStep?.id, activityType, citedLoading],
+  // Creation: the defaults, computed ONCE — the gate mounted this form with the
+  // names cited and their account contacts (TD-279 rule, server) already read.
+  const [defaults] = useState(() =>
+    isCreate ? activityDefaultsFromNextStep(nextStep, { activityType, citedContacts }) : null,
   );
 
   // Memoized so the reference is STABLE across renders — with a fresh inline
@@ -675,7 +698,8 @@ export default function EditActivityContent({
   };
 
   const formik = useFormik({
-    enableReinitialize: true,
+    // Edit: follows the activity; creation: never re-initialised after mount.
+    enableReinitialize: !isCreate,
     validationSchema: isCreate ? createValidationSchema : validationSchema,
     initialValues,
     onSubmit: async (values, { setSubmitting }) => {
@@ -866,6 +890,20 @@ export default function EditActivityContent({
     </DrawerContentLayout>
   );
 }
+
+ActivityForm.propTypes = {
+  activity: PropTypes.object,
+  onSaved: PropTypes.func,
+  mode: PropTypes.oneOf(["edit", "create"]),
+  accountId: PropTypes.string,
+  decisionCycleId: PropTypes.string,
+  nextStep: PropTypes.object,
+  activityType: PropTypes.string,
+  /** Create: the names cited with their account contact (read by the gate). */
+  citedContacts: PropTypes.arrayOf(PropTypes.object),
+  onCreated: PropTypes.func,
+  onCancel: PropTypes.func,
+};
 
 EditActivityContent.propTypes = {
   /** The activity to edit (its *_detail fields seed the values). Edit mode. */

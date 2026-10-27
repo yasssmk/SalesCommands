@@ -123,9 +123,23 @@ vi.mock("api/signals/signals", () => ({
   // 5.7 — the link.
   attachNextStepToActivity: vi.fn(async () => mockAttachResult),
   // 5.8d — the names cited with their account contact (server, TD-279 rule).
-  useNextStepCitedContacts: vi.fn(() => ({ citedContacts: mockCited, citedLoading: false })),
+  // mockCitedDelayMs > 0: the response arrives that long after the mount.
+  useNextStepCitedContacts: vi.fn(() => mockUseCited()),
 }));
 let mockCited = [];
+let mockCitedDelayMs = 0;
+function mockUseCited() {
+  const { useState, useEffect } = require("react");
+  const [ready, setReady] = useState(mockCitedDelayMs === 0);
+  useEffect(() => {
+    if (ready) return undefined;
+    const t = setTimeout(() => setReady(true), mockCitedDelayMs);
+    return () => clearTimeout(t);
+  }, [ready]);
+  return ready
+    ? { citedContacts: mockCited, citedLoading: false }
+    : { citedContacts: [], citedLoading: true };
+}
 let mockAttachResult = { success: true, data: {} };
 let mockCandidates = [];
 let mockServerNextStep = null;
@@ -218,7 +232,7 @@ const renderPage = (activity = dcActivity(), nextSteps = NEXT_STEPS) => {
   return render(<ActivityWorkspacePage />);
 };
 
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); mockCitedDelayMs = 0; });
 
 describe("Next steps band — part 2, to validate (5.3)", () => {
   it("lists the pending next steps in the generic validation list", () => {
@@ -1142,5 +1156,43 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(within(create).getByTestId("inline-read-decision_cycle")).toHaveTextContent("No decision cycle");
     fireEvent.click(within(create).getByTestId("inline-read-decision_cycle"));
     expect(screen.getByRole("option", { name: "Deal Acme" })).toBeInTheDocument();
+  });
+});
+
+
+// ==============================|| 5.8e (1) — NO RE-INITIALISATION AFTER MOUNT ||============================== //
+//
+// The creation drawer shows its form only once its default values are ready
+// (the cited-contacts read included) — the existing drawer loading indicator
+// meanwhile — and never re-initialises after the mount: a typing is never lost.
+
+describe("Next steps band — the creation form waits for its defaults (5.8e)", () => {
+  const openCreateDelayed = async () => {
+    mockCandidates = [];
+    mockCitedDelayMs = 150;
+    mockCited = [{ name: "Laurent", contact: LAURENT_CONTACT }];
+    renderPage(dcActivity(), [richPending()]);
+    fireEvent.click(within(rowOf("Send the DPA and SOC 2 report")).getByLabelText("Validate signal"));
+    await screen.findByTestId("next-step-validate-flow");
+    fireEvent.click(screen.getByRole("radio", { name: "Create the activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  };
+
+  it("while cited-contacts is pending: the loading indicator, no form", async () => {
+    await openCreateDelayed();
+    expect(screen.getByTestId("activity-create-loading")).toBeInTheDocument();
+    expect(screen.queryByTestId("activity-create")).toBeNull();
+    const create = await screen.findByTestId("activity-create", {}, { timeout: 1000 });
+    expect(within(create).getByText("Laurent Dubois")).toBeInTheDocument();
+  });
+
+  it("a typing is never overwritten by the late response", async () => {
+    await openCreateDelayed();
+    // Type as soon as a title field exists.
+    fireEvent.click(await screen.findByTestId("inline-read-title", {}, { timeout: 1000 }));
+    fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "My own title" } });
+    // Well past the response.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getByTestId("inline-input-title")).toHaveValue("My own title");
   });
 });
