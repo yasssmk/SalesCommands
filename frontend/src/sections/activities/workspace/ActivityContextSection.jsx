@@ -277,7 +277,9 @@ export default function ActivityContextSection({ activity }) {
                   openDrawer(<UserDrawerContent userId={owner.id} />, { title: "Team member" })
                 }
                 name={personName(owner)}
-                suffix="owner"
+                // « First Last · email » — never "owner" (5.8h, the activity
+                // drawer's rule).
+                suffix={owner.email || undefined}
               />
             )}
             {invited.map((u) => (

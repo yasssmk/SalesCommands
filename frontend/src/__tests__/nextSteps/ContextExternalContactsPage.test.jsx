@@ -12,6 +12,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
+import { testTheme } from "../_utils/aphoriqTheme";
 
 let mockActivity;
 
@@ -108,5 +109,31 @@ describe("Context — External contacts are the activity's contacts (5.8c)", () 
     render(<ActivityWorkspacePage />);
     fireEvent.click(within(external()).getByText("Thomas Lefèvre"));
     expect(screen.getByTestId("contact-fiche")).toHaveTextContent("c-1");
+  });
+});
+
+// 5.8h (4) — the owner in the Context section: « First Last · email », never
+// "· owner" (the column says it) — the same rule as the activity drawer.
+describe("Context — the owner reads 'First Last · email' (5.8h)", () => {
+  const OWNER = { id: "u-1", first_name: "Ann", last_name: "Owner", full_name: "Ann Owner",
+                  email: "ann@acme.test" };
+  const TEAMMATE = { id: "u-2", first_name: "Tess", last_name: "Mate", full_name: "Tess Mate",
+                     email: "tess@acme.test" };
+
+  it("the owner: name + email in the muted suffix, no '· owner'", () => {
+    mockActivity = activityWith(undefined, { owner_detail: OWNER, invited_users_detail: [TEAMMATE] });
+    render(<ActivityWorkspacePage />);
+    const name = screen.getByText("Ann Owner");
+    const row = name.closest("p");
+    expect(row).toHaveTextContent("Ann Owner · ann@acme.test");
+    expect(row.textContent).not.toMatch(/· owner/);
+    expect(screen.queryByText(/· owner/)).toBeNull();
+    expect(within(row).getByText(/ann@acme\.test/)).toHaveStyle({ color: testTheme.aphoriQ.text.muted });
+  });
+
+  it("an invited teammate keeps its row unchanged (« · invited », no email)", () => {
+    mockActivity = activityWith(undefined, { owner_detail: OWNER, invited_users_detail: [TEAMMATE] });
+    render(<ActivityWorkspacePage />);
+    expect(screen.getByText("Tess Mate").closest("p").textContent).toBe("Tess Mate · invited");
   });
 });
