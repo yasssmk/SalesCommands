@@ -1047,15 +1047,16 @@ const LAURENT_CONTACT = { id: "c-9", first_name: "Laurent", last_name: "Dubois",
 
 describe("Next steps band — the activity creation in the coque (5.8d)", () => {
   const CREATE = "activity-create";
-  const openCreateFromFlow = async (ns = richPending(), activity = dcActivity()) => {
+  const DEFAULT_CITED = [
+    { name: "Karim Benali", contact: null },
+    { name: "Thomas Lefèvre", contact: THOMAS },
+    { name: "Laurent", contact: LAURENT_CONTACT },
+  ];
+  const openCreateFromFlow = async (ns = richPending(), activity = dcActivity(), cited = DEFAULT_CITED) => {
     mockCandidates = [];
     mockCreateActivityResult = { success: true, data: { id: "act-new" } };
     mockServerNextStep = richPending({ status: "VALIDATED", linked_activity: compactActivity() });
-    mockCited = [
-      { name: "Karim Benali", contact: null },
-      { name: "Thomas Lefèvre", contact: THOMAS },
-      { name: "Laurent", contact: LAURENT_CONTACT },
-    ];
+    mockCited = cited;
     renderPage(activity, [ns]);
     fireEvent.click(within(rowOf(ns.suggested_title)).getByLabelText("Validate signal"));
     await screen.findByTestId("next-step-validate-flow");
@@ -1097,6 +1098,36 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
 
   // 5.8g (b) — the owner: « First Last » (bold, a name) + « · email » in the
   // muted suffix style; the word "owner" is gone (the caption says it).
+  // 5.8h (2) — a REJECTED People is never used by the pre-fill: neither its
+  // contact (target_contact) nor its name (the server's cited-contacts
+  // already leaves it out).
+  const REJECTED_THOMAS = { id: "p-1", full_name: "Thomas Lefèvre", role: "CHAMPION",
+                            status: "REJECTED", target_contact: THOMAS };
+  const KARIM = { id: "p-2", full_name: "Karim Benali", role: "UNKNOWN", status: "PENDING",
+                  target_contact: null };
+  const CITED_WITHOUT_REJECTED = [
+    { name: "Karim Benali", contact: null },
+    { name: "Laurent", contact: LAURENT_CONTACT },
+  ];
+
+  it("a REJECTED People: its contact is never pre-selected", async () => {
+    const create = await openCreateFromFlow(
+      richPending({ suggested_people: [REJECTED_THOMAS, KARIM] }), dcActivity(), CITED_WITHOUT_REJECTED,
+    );
+    expect(within(create).queryByText("Thomas Lefèvre")).toBeNull();
+    expect(within(create).getByText("Laurent Dubois")).toBeInTheDocument();
+  });
+
+  it("a REJECTED People: its name never reaches the description", async () => {
+    const create = await openCreateFromFlow(
+      richPending({ suggested_activity_type: "TASK", suggested_people: [REJECTED_THOMAS, KARIM] }),
+      dcActivity(), CITED_WITHOUT_REJECTED,
+    );
+    const description = within(create).getByTestId("inline-read-description");
+    expect(description).toHaveTextContent("Mentioned: Karim Benali, Laurent");
+    expect(description.textContent).not.toMatch(/Thomas/);
+  });
+
   it("the owner reads 'First Last · email', never '· owner'", async () => {
     const create = await openCreateFromFlow();
     const owner = within(create).getByTestId("activity-owner");

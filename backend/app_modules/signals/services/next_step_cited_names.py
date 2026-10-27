@@ -10,7 +10,8 @@ describes any person, it cites names, used only to create the activity).
   * the contact: a People linked to a contact of the account -> that
     contact; any other name -> participant_refs.resolve_contact_by_name,
     THE TD-279 word rule, among the contacts of the next step's ACCOUNT
-    (same tenant AND account) -- never a guess (tie / no match -> None).
+    (same tenant AND account) -- never a guess (tie / no match -> None);
+  * a REJECTED People is never used (5.8h): neither its name nor its contact.
 
 Read-only.
 """
@@ -19,6 +20,7 @@ from app_modules.ai_pipelines.services.participant_refs import (
     account_contacts,
     resolve_contact_by_name,
 )
+from app_modules.signals.constants import SignalStatus
 
 
 def _people_name(people):
@@ -33,7 +35,12 @@ def next_step_cited_contacts(signal):
     """[(name, Contact | None)] for the names `signal` cites."""
     contacts = account_contacts(signal.client_id, signal.account_id)
     cited = []
-    for people in signal.suggested_people.select_related('target_contact'):
+    usable_people = (
+        signal.suggested_people
+        .exclude(status=SignalStatus.REJECTED)
+        .select_related('target_contact')
+    )
+    for people in usable_people:
         name = _people_name(people)
         if not name:
             continue

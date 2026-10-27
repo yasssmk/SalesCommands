@@ -20,7 +20,10 @@ import CheckSquareOutlined from "@ant-design/icons/CheckSquareOutlined";
 import LinkedinOutlined from "@ant-design/icons/LinkedinOutlined";
 import QuestionCircleOutlined from "@ant-design/icons/QuestionCircleOutlined";
 
-import { getNextStepCitedNames } from "sections/activities/signals/utils/signalDisplay";
+import {
+  getNextStepCitedNames,
+  getNextStepUsablePeople,
+} from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| ACTIVITY TYPE ICON (centralized) ||============================== //
 
@@ -122,7 +125,7 @@ export function activityDefaultsFromNextStep(nextStep, context = {}) {
   // 2.2b: the next step's contacts, then its People's contacts.
   const baseContacts = [
     ...(nextStep?.suggested_contacts || []),
-    ...(nextStep?.suggested_people || []).map((p) => p.target_contact).filter(Boolean),
+    ...getNextStepUsablePeople(nextStep).map((p) => p.target_contact).filter(Boolean),
   ];
 
   const cited = context.citedContacts || [];

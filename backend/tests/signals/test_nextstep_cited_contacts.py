@@ -13,7 +13,10 @@ the matched contacts are pre-selected, the others recalled as "Mentioned").
     _best_unique_match -- not a second algorithm) applied to the contacts
     of the ACCOUNT (same tenant AND account): a tie -> null (never a guess),
     no match -> null;
-  * tenant guard: another tenant's next step -> 404.
+  * tenant guard: another tenant's next step -> 404;
+  * 5.8h (2): a REJECTED People is never used -- neither its name nor its
+    contact; the compact People of the next step payload carries its status
+    so the front pre-fill can apply the same rule.
 """
 
 import pytest
@@ -21,7 +24,7 @@ from django.urls import reverse
 from rest_framework import status
 
 from app_modules.activities.constants import ActivityType
-from app_modules.signals.constants import PeopleRole, SignalSource
+from app_modules.signals.constants import PeopleRole, SignalSource, SignalStatus
 from app_modules.signals.models import NextStepSignal, PeopleSignal
 
 
@@ -111,3 +114,49 @@ def test_the_rule_is_the_td279_one():
     import inspect
     from app_modules.ai_pipelines.services import participant_refs
     assert 'resolve_contact_by_name(' in inspect.getsource(participant_refs.resolve_participant_by_name)
+
+
+# =============================================================================
+# 5.8h (2) -- a REJECTED People is never used
+# =============================================================================
+
+def _reject(people, user):
+    people.status = SignalStatus.REJECTED
+    people.save(user=user, client_id=people.client_id)
+    return people
+
+
+def test_a_rejected_people_is_never_cited(authed_api_a, setup, account, activity, user_a):
+    """A REJECTED People linked to a contact: neither its name nor its
+    contact (the others unchanged)."""
+    rejected = _reject(
+        _people(account, activity, user_a, 'Laurent Dubois', setup['laurent']), user_a,
+    )
+    setup['ns'].suggested_people.add(rejected)
+    cited = _cited(authed_api_a.get(_url(setup['ns'].id)))
+    assert ('Laurent Dubois', str(setup['laurent'].id)) not in cited
+    assert 'Laurent Dubois' not in [name for name, _ in cited]
+    # The non-rejected People are still cited.
+    assert ('the CFO', str(setup['isabelle'].id)) in cited
+    assert ('Karim Benali', None) in cited
+
+
+def test_the_compact_people_carries_its_status(authed_api_a, setup, account, activity, user_a):
+    rejected = _reject(_people(account, activity, user_a, 'Paul Rejected'), user_a)
+    setup['ns'].suggested_people.add(rejected)
+    for url in (reverse('module_signals:next-step-detail', kwargs={'pk': setup['ns'].id}),
+                reverse('module_signals:next-step-list')):
+        ns = _next_step_in(authed_api_a.get(url).json(), setup['ns'].id)
+        statuses = {p['full_name']: p['status'] for p in ns['suggested_people']}
+        assert statuses['Paul Rejected'] == SignalStatus.REJECTED
+        assert statuses['Karim Benali'] == SignalStatus.PENDING
+
+
+def _next_step_in(body, pk):
+    """The next step in a detail (bare) or list (wrapped / paginated) body."""
+    body = body.get('data', body) if isinstance(body, dict) else body
+    if isinstance(body, dict) and body.get('id') == str(pk):
+        return body
+    rows = body.get('results', body) if isinstance(body, dict) else body
+    return next(n for n in rows if n['id'] == str(pk))
+

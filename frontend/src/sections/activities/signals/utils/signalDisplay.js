@@ -36,11 +36,21 @@ export function getCitedPersonName(people) {
   );
 }
 
-// The names a next step cites: its People's (full_name, else their contact's
-// name) then the names not linked — one list, no distinction (5.8c). Shared by
-// the next step detail and its SignalLine (line 2, 5.8f).
+// A REJECTED People is never used (5.8h) — the server's cited-contacts rule.
+export const PEOPLE_UNUSABLE_STATUSES = ["REJECTED"];
+
+// The People a next step cites that may be used (not REJECTED).
+export function getNextStepUsablePeople(signal) {
+  return (signal?.suggested_people ?? []).filter(
+    (p) => !PEOPLE_UNUSABLE_STATUSES.includes(p?.status),
+  );
+}
+
+// The names a next step cites: its usable People's (full_name, else their
+// contact's name) then the names not linked — one list, no distinction
+// (5.8c). Used by the activity pre-fill (activityDefaultsFromNextStep).
 export function getNextStepCitedNames(signal) {
-  const peopleNames = (signal?.suggested_people ?? []).map(getCitedPersonName);
+  const peopleNames = getNextStepUsablePeople(signal).map(getCitedPersonName);
   return [...peopleNames, ...(signal?.suggested_people_names ?? [])].filter(Boolean);
 }
 

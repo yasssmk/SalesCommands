@@ -131,6 +131,8 @@ class _NextStepDisplayMixin:
                 'id':             str(p.id),
                 'full_name':      p.full_name,
                 'role':           p.role,
+                # 5.8h: a REJECTED People is never used (the pre-fill reads it).
+                'status':         p.status,
                 'target_contact': (
                     {
                         'id':         str(p.target_contact.id),
