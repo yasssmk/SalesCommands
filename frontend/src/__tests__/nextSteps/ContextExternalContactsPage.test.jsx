@@ -210,6 +210,33 @@ describe("Context — provenance from next steps (5.9)", () => {
     expect(lines()).toHaveLength(1);
   });
 
+  // 5.9b (1) — a conversation already shown by the provenance line
+  // (source_activity) is not shown a second time as « From next step ».
+  it("the conversation of the provenance line is not repeated", () => {
+    mockActivity = activityWith(undefined, {
+      next_step_origins: ORIGINS,
+      source_activity_detail: {
+        id: "act-10", title: "Atelier business case",
+        source_context: { type: "DECISION_CYCLE", id: "dc-1", name: "Deal Acme" },
+      },
+    });
+    render(<ActivityWorkspacePage />);
+    expect(lines().map((l) => l.textContent)).toEqual(["From next step › Call RSSI · 3 Nov 2026"]);
+    expect(screen.getAllByRole("link", { name: "Atelier business case" })).toHaveLength(1);
+  });
+
+  it("a provenance without source activity (a DC directly) filters nothing", () => {
+    mockActivity = activityWith(undefined, {
+      next_step_origins: ORIGINS,
+      source_activity_detail: {
+        id: null, title: null,
+        source_context: { type: "DECISION_CYCLE", id: "dc-1", name: "Deal Acme" },
+      },
+    });
+    render(<ActivityWorkspacePage />);
+    expect(lines()).toHaveLength(2);
+  });
+
   it("no next step origin and no other provenance: no Origin group", () => {
     mockActivity = activityWith(undefined, { next_step_origins: [] });
     const { container } = render(<ActivityWorkspacePage />);

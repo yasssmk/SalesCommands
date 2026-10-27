@@ -257,7 +257,12 @@ export default function ActivityContextSection({ activity }) {
   const owner = activity.owner_detail;
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
-  const nextStepOrigins = activity.next_step_origins || [];
+  // A conversation already shown by the provenance line (its source
+  // activity) is not repeated as « From next step » (5.9b).
+  const provenanceActivityId = activity.source_activity_detail?.id || null;
+  const nextStepOrigins = (activity.next_step_origins || []).filter(
+    (origin) => !provenanceActivityId || origin.id !== provenanceActivityId,
+  );
   const hasProvenance = Boolean(activity.source_activity_detail) || nextStepOrigins.length > 0;
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
