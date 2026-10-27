@@ -131,15 +131,14 @@ export default function EditNextStepContent({
 }) {
   const { closeDrawer } = useWorkspaceDrawer();
 
-  // The DC step = one of the cycle's steps.
+  // The DC step = one of the cycle's steps — those only (5.8g): no "Unknown"
+  // choice (an unset step still READS "Unknown", the placeholder).
   const { steps } = useGetDecisionStepsByCycle(decisionCycleId);
   const stepOptions = useMemo(
-    () => [
-      { value: "", label: "Unknown" },
-      ...[...steps]
+    () =>
+      [...steps]
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((s) => ({ value: String(s.id), label: s.name })),
-    ],
     [steps],
   );
 

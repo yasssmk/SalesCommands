@@ -632,6 +632,25 @@ describe("Next steps band — the edit view (5.5)", () => {
     expect(payload()).toEqual({ suggested_decision_step: "step-5" });
   });
 
+  // 5.8g (a) — the DC step: the cycle's steps only, never an "Unknown" choice.
+  it("the DC step choices: the steps of the cycle only, in order, no 'Unknown'", async () => {
+    // The cycle's steps as the server may send them (unordered).
+    const original = useGetDecisionStepsByCycle.getMockImplementation();
+    useGetDecisionStepsByCycle.mockImplementation(() => ({
+      steps: [{ id: "step-5", name: "Business Case", order: 5 },
+              { id: "step-4", name: "Technical Fit", order: 4 }],
+      stepsLoading: false,
+    }));
+    try {
+      await openEdit();
+      fireEvent.click(screen.getByTestId("inline-read-suggested_decision_step"));
+      expect(screen.getAllByRole("option").map((o) => o.textContent))
+        .toEqual(["Technical Fit", "Business Case"]);
+    } finally {
+      useGetDecisionStepsByCycle.mockImplementation(original);
+    }
+  });
+
   it("carried by the prospect", async () => {
     await openEdit();
     pick("carried_by_prospect", "Prospect");
