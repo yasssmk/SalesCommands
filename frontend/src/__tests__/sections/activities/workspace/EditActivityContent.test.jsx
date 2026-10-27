@@ -339,6 +339,15 @@ describe("EditActivityContent — People (draft + global save, no per-row PATCH)
     await waitFor(() => expect(save).toBeDisabled());
   });
 
+  // 5.8g (b) — the same owner rule in edit mode: « First Last · email », no
+  // "owner" word (the caption "Activity owner" says it).
+  it("the owner reads 'First Last · email', never '· owner'", () => {
+    renderEdit({ ...ACTIVITY, owner_detail: { ...ACTIVITY.owner_detail, email: "ann@acme.test" } });
+    const owner = screen.getByTestId("activity-owner");
+    expect(owner).toHaveTextContent("Ann Owner · ann@acme.test");
+    expect(owner.textContent).not.toMatch(/· owner/);
+  });
+
   it("+ Add owner reveals AsyncUserSelect and its 2nd-arg value fills the slot", () => {
     renderEdit({ ...ACTIVITY, owner_detail: null });
     expect(screen.getByTestId("add-owner")).toBeInTheDocument();

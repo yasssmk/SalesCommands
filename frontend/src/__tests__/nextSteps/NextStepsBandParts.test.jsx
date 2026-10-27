@@ -55,10 +55,11 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
   createActivityWithEntities: vi.fn(async () => mockCreateActivityResult),
 }));
 let mockCreateActivityResult = { success: true, data: { id: "act-new" } };
+const mockAuthUser = { id: "u-1", first_name: "Yasmine", last_name: "Kawi", email: "yasmine@acme.test" };
 vi.mock("@mui/x-date-pickers/TimePicker", () => ({ TimePicker: () => <input /> }));
 vi.mock("hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: "u-1", first_name: "Yasmine", last_name: "Kawi" }, tenantId: "t-1" }),
-  default: () => ({ user: { id: "u-1", first_name: "Yasmine", last_name: "Kawi" }, tenantId: "t-1" }),
+  useAuth: () => ({ user: mockAuthUser, tenantId: "t-1" }),
+  default: () => ({ user: mockAuthUser, tenantId: "t-1" }),
 }));
 // The inline contact sub-form → a one-click save (as in the ActivityModal tests).
 vi.mock("sections/accounts/activities/components", async (importOriginal) => ({
@@ -1115,6 +1116,32 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(within(create).getByText("Yasmine Kawi")).toBeInTheDocument();
     expect(within(create).queryByTestId("remove-owner")).toBeNull();
     expect(within(create).queryByTestId("add-owner")).toBeNull();
+  });
+
+  // 5.8g (b) — the owner: « First Last » (bold, a name) + « · email » in the
+  // muted suffix style; the word "owner" is gone (the caption says it).
+  it("the owner reads 'First Last · email', never '· owner'", async () => {
+    const create = await openCreateFromFlow();
+    const owner = within(create).getByTestId("activity-owner");
+    expect(owner).toHaveTextContent("Activity ownerYasmine Kawi · yasmine@acme.test");
+    expect(owner.textContent).not.toMatch(/· owner/);
+    const name = within(owner).getByText("Yasmine Kawi");
+    // PersonRow's name: bold (sx "bold" → the theme's bold weight).
+    expect(name.closest("p")).toHaveStyle({ fontWeight: testTheme.typography.fontWeightBold });
+    const suffix = within(owner).getByText(/yasmine@acme\.test/);
+    expect(suffix).toHaveStyle({ color: testTheme.aphoriQ.text.muted });
+  });
+
+  // 5.8g (b) — "+ Add contact" / "+ New contact": the standard gap between
+  // actions (the drawer's actions: theme spacing 1), never stuck together.
+  it("'+ Add contact' and '+ New contact' sit apart with the standard gap", async () => {
+    const create = await openCreateFromFlow();
+    const add = within(create).getByTestId("add-contact");
+    const inline = within(create).getByTestId("add-inline-contact");
+    const row = within(create).getByTestId("contact-add-actions");
+    expect(row).toContainElement(add);
+    expect(row).toContainElement(inline);
+    expect(row).toHaveStyle({ display: "flex", gap: testTheme.spacing(1) });
   });
 
   it("Save is enabled at once (a valid pre-fill) and creates with the EXACT payload", async () => {

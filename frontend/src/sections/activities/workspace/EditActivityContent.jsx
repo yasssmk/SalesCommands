@@ -407,21 +407,24 @@ function PeopleSection({
 
   const invited = values.invited || [];
   const contacts = values.contacts || [];
+  const ownerSuffix = values.owner?.email || undefined;
 
   return (
     <Stack data-testid="people-section" spacing={1.5}>
-      {/* Activity owner — single required slot */}
-      <Box>
+      {/* Activity owner — single required slot. Read « First Last · email »:
+          the name (bold) + the email in the muted suffix (5.8g); never
+          "owner" — the caption says it. */}
+      <Box data-testid="activity-owner">
         {caption("Activity owner", true)}
         {ownerReadOnly ? (
           // Creation: the creator is the owner (server rule) — named, read-only.
-          <PersonRow name={personName(values.owner)} suffix="owner" />
+          <PersonRow name={personName(values.owner)} suffix={ownerSuffix} />
         ) : locked ? (
-          values.owner ? <PersonRow name={personName(values.owner)} suffix="owner" /> : emptyLine("No owner")
+          values.owner ? <PersonRow name={personName(values.owner)} suffix={ownerSuffix} /> : emptyLine("No owner")
         ) : values.owner ? (
           <PersonEditRow
             name={personName(values.owner)}
-            suffix="owner"
+            suffix={ownerSuffix}
             onRemove={() => setFieldValue("owner", null)}
             removeTestId="remove-owner"
           />
@@ -494,26 +497,23 @@ function PeopleSection({
                 removeTestId={`remove-contact-${c.id}`}
               />
             ))}
-        {!locked &&
-          (addContact ? (
-            <AsyncContactSelect
-              data-testid="contact-select"
-              value={null}
-              excludeIds={contacts.map((c) => c.id)}
-              onChange={(_event, contact) => {
-                // dedup guard — never push a contact already selected (belt + braces)
-                if (contact && !contacts.some((x) => x.id === contact.id)) {
-                  setFieldValue("contacts", [...contacts, contact]);
-                }
-                setAddContact(false);
-              }}
-              filters={{ account_id: accountId }}
-              label=""
-              placeholder="Search contacts…"
-            />
-          ) : (
-            addButton(() => setAddContact(true), "add-contact", "Add contact")
-          ))}
+        {!locked && addContact && (
+          <AsyncContactSelect
+            data-testid="contact-select"
+            value={null}
+            excludeIds={contacts.map((c) => c.id)}
+            onChange={(_event, contact) => {
+              // dedup guard — never push a contact already selected (belt + braces)
+              if (contact && !contacts.some((x) => x.id === contact.id)) {
+                setFieldValue("contacts", [...contacts, contact]);
+              }
+              setAddContact(false);
+            }}
+            filters={{ account_id: accountId }}
+            label=""
+            placeholder="Search contacts…"
+          />
+        )}
         {/* Creation: a contact created on the fly (create-with-entities). */}
         {allowInlineContact && values.inline_contact && (
           <PersonEditRow
@@ -523,7 +523,7 @@ function PeopleSection({
             removeTestId="remove-inline-contact"
           />
         )}
-        {allowInlineContact && !values.inline_contact && (addInlineContact ? (
+        {allowInlineContact && !values.inline_contact && addInlineContact && (
           <InlineContactForm
             onSave={(contact) => {
               setFieldValue("inline_contact", contact);
@@ -531,9 +531,14 @@ function PeopleSection({
             }}
             onCancel={() => setAddInlineContact(false)}
           />
-        ) : (
-          addButton(() => setAddInlineContact(true), "add-inline-contact", "New contact")
-        ))}
+        )}
+        {/* The add actions — one row, the standard gap between actions (the
+            drawer's: theme spacing 1), never stuck together (5.8g). */}
+        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" data-testid="contact-add-actions">
+          {!locked && !addContact && addButton(() => setAddContact(true), "add-contact", "Add contact")}
+          {allowInlineContact && !values.inline_contact && !addInlineContact &&
+            addButton(() => setAddInlineContact(true), "add-inline-contact", "New contact")}
+        </Stack>
         {/* Creation from a next step: the names cited no contact matched. */}
         {mentionedNames.length > 0 && (
           <Typography
