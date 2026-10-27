@@ -266,6 +266,34 @@ describe("5.8f — two sub-blocks, the Signals band's section header", () => {
     expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
   });
 
+  // 5.8g (d) — on a FOLDED sub-block, "+ Add next step" unfolds it (the type
+  // row is in its body); on an open one it only toggles the type row.
+  it("on a folded 'Next planned step', the pill unfolds it and shows the type row", () => {
+    renderPage();
+    fireEvent.click(screen.getByText("Next planned step"));
+    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
+    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("add-next-step-types")).toBeVisible();
+  });
+
+  it("folded after the type row was opened: the pill unfolds it, the row stays open", () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
+    fireEvent.click(screen.getByText("Next planned step"));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
+    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("add-next-step-types")).toBeInTheDocument();
+  });
+
+  it("the header still folds / unfolds the sub-block", () => {
+    renderPage();
+    fireEvent.click(screen.getByText("Next planned step"));
+    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByText("Next planned step"));
+    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("outside a DC: 'Next planned step' only (DC-only guard)", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
     expect(screen.getByText("Next planned step")).toBeInTheDocument();

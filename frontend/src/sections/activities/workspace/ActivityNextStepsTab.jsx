@@ -87,8 +87,21 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   // Activity modal state (convert from signal OR manual add OR campaign conversion)
   // "Start Decision Cycle" (campaign → new cycle) — the one ActivityModal left.
   const [startCycleOpen, setStartCycleOpen] = useState(false);
-  // "+ Add next step" — the row of type pills is shown.
+  // "+ Add next step" — the row of type pills is shown; the "Next planned
+  // step" sub-block is open (controlled: the pill unfolds it, 5.8g).
   const [typesOpen, setTypesOpen] = useState(false);
+  const [plannedOpen, setPlannedOpen] = useState(true);
+
+  // On a folded sub-block the pill unfolds it and shows the type row (which
+  // lives in its body); on an open one it toggles the type row.
+  const handleAddNextStep = useCallback(() => {
+    if (!plannedOpen) {
+      setPlannedOpen(true);
+      setTypesOpen(true);
+      return;
+    }
+    setTypesOpen((open) => !open);
+  }, [plannedOpen]);
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -292,9 +305,12 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
             of its header (5.8e). The pill never folds the sub-block (its
             click / key stop at it). */}
         <Box data-testid="next-planned-step-block">
+          {/* The pill sits in `meta` — CollapsibleStrip has no action slot
+              (debt, traced at closure). */}
           <CollapsibleStrip
             title="Next planned step"
-            defaultExpanded
+            expanded={plannedOpen}
+            onExpandedChange={setPlannedOpen}
             meta={
               isLocked ? undefined : (
                 <Box
@@ -305,7 +321,7 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
                   <ClickablePill
                     label="+ Add next step"
                     active
-                    onClick={() => setTypesOpen((open) => !open)}
+                    onClick={handleAddNextStep}
                   />
                 </Box>
               )
