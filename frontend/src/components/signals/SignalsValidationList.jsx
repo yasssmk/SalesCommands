@@ -35,6 +35,7 @@ import { ThunderboltOutlined } from "@ant-design/icons";
 
 // Project imports
 import CollapsibleStrip from "components/display/CollapsibleStrip";
+import EmptyState from "components/display/EmptyState";
 import InfoNotice from "components/display/InfoNotice";
 import SignalLine from "components/signals/SignalLine";
 // Only the type LABEL is used here; the SIG-1 per-type colours (getSignalTypeColor /
@@ -123,23 +124,10 @@ export default function SignalsValidationList({
     );
   }
 
-  // Business-empty is information, not an error (neutral tone).
+  // Business-empty is information, not an error (neutral tone): the shared
+  // EmptyState (aphoriQ theme, 5.8g — no hardcoded colour or size).
   if (!signals.length) {
-    return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="200px"
-      >
-        <Stack spacing={1} alignItems="center" textAlign="center">
-          <ThunderboltOutlined style={{ fontSize: 36, color: "#8c8c8c" }} />
-          <Typography variant="body2" color="text.secondary">
-            {emptyMessage}
-          </Typography>
-        </Stack>
-      </Box>
-    );
+    return <EmptyState icon={ThunderboltOutlined} description={emptyMessage} />;
   }
 
   // Bucket by status once.

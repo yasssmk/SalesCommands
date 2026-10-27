@@ -804,3 +804,17 @@ describe("ActivitySignalsTab — AI review notice in 'To validate' (T5b)", () =>
     expect(screen.queryByText(AI_NOTICE)).not.toBeInTheDocument();
   });
 });
+
+// 5.8g (d) — the empty validation list is the shared EmptyState (aphoriQ
+// theme): no hardcoded hex colour.
+describe("ActivitySignalsTab — the empty state (5.8g)", () => {
+  it("no signal at all → the shared EmptyState, zero hex colour", () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [], count: 0 }));
+    const { container } = render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    const message = screen.getByText("No signals for this activity");
+    expect(message.closest('[data-testid="empty-state"]')).not.toBeNull();
+    container.querySelectorAll("[style]").forEach((el) => {
+      expect(el.getAttribute("style")).not.toMatch(/#[0-9a-f]{3,6}\b|rgb\(140, 140, 140\)/i);
+    });
+  });
+});

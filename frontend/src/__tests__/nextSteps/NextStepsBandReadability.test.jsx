@@ -329,6 +329,17 @@ describe("5.8f — removed: Divider, dashed boxes, stale texts, the 'Next step' 
     });
   });
 
+  // 5.8g (d) — no suggestion → the shared EmptyState, zero hex colour.
+  it("no suggestion: the shared EmptyState, zero hex colour", () => {
+    renderPage(dcActivity(), []);
+    const block = screen.getByTestId("suggested-next-steps-block");
+    const message = within(block).getByText("No next-step suggestions for this activity");
+    expect(message.closest('[data-testid="empty-state"]')).not.toBeNull();
+    block.querySelectorAll("[style]").forEach((el) => {
+      expect(el.getAttribute("style")).not.toMatch(/#[0-9a-f]{3,6}\b|rgb\(140, 140, 140\)/i);
+    });
+  });
+
   it("no 'Next step' type-group header over the rows", () => {
     renderPage();
     const block = screen.getByTestId("suggested-next-steps-block");
