@@ -112,28 +112,38 @@ describe("Context — External contacts are the activity's contacts (5.8c)", () 
   });
 });
 
-// 5.8h (4) — the owner in the Context section: « First Last · email », never
-// "· owner" (the column says it) — the same rule as the activity drawer.
-describe("Context — the owner reads 'First Last · email' (5.8h)", () => {
+// 5.8h (4) + 5.9 (PO) — the owner in the Context section: « First Last ·
+// Owner · email ». The "Internal team" column has no "Activity owner" title,
+// so the « · Owner » marker stays HERE (only the creation drawer, whose
+// caption says it, drops "owner").
+describe("Context — the owner reads 'First Last · Owner · email'", () => {
   const OWNER = { id: "u-1", first_name: "Ann", last_name: "Owner", full_name: "Ann Owner",
                   email: "ann@acme.test" };
   const TEAMMATE = { id: "u-2", first_name: "Tess", last_name: "Mate", full_name: "Tess Mate",
                      email: "tess@acme.test" };
 
-  it("the owner: name + email in the muted suffix, no '· owner'", () => {
+  it("the owner: name + « · Owner » + email, in the muted suffix", () => {
     mockActivity = activityWith(undefined, { owner_detail: OWNER, invited_users_detail: [TEAMMATE] });
     render(<ActivityWorkspacePage />);
     const name = screen.getByText("Ann Owner");
     const row = name.closest("p");
-    expect(row).toHaveTextContent("Ann Owner · ann@acme.test");
-    expect(row.textContent).not.toMatch(/· owner/);
-    expect(screen.queryByText(/· owner/)).toBeNull();
-    expect(within(row).getByText(/ann@acme\.test/)).toHaveStyle({ color: testTheme.aphoriQ.text.muted });
+    expect(row.textContent).toBe("Ann Owner · Owner · ann@acme.test");
+    expect(within(row).getByText(/Owner · ann@acme\.test/)).toHaveStyle({ color: testTheme.aphoriQ.text.muted });
   });
 
   it("an invited teammate keeps its row unchanged (« · invited », no email)", () => {
     mockActivity = activityWith(undefined, { owner_detail: OWNER, invited_users_detail: [TEAMMATE] });
     render(<ActivityWorkspacePage />);
     expect(screen.getByText("Tess Mate").closest("p").textContent).toBe("Tess Mate · invited");
+  });
+});
+
+describe("Context — no owner email: « First Last · Owner »", () => {
+  it("the marker stays without an email", () => {
+    mockActivity = activityWith(undefined, {
+      owner_detail: { id: "u-1", first_name: "Ann", last_name: "Owner", full_name: "Ann Owner" },
+    });
+    render(<ActivityWorkspacePage />);
+    expect(screen.getByText("Ann Owner").closest("p").textContent).toBe("Ann Owner · Owner");
   });
 });

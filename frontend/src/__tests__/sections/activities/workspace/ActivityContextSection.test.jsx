@@ -122,9 +122,9 @@ describe("ActivityContextSection — mockup copy", () => {
     // no avatars anywhere
     expect(container.querySelector(".MuiAvatar-root")).toBeNull();
     expect(screen.getByText("Admin Tenant A")).toBeInTheDocument();
-    // 5.8h — the owner reads « First Last · email », never "· owner".
-    expect(screen.queryByText(/· owner/)).not.toBeInTheDocument();
-    expect(screen.getByText("Admin Tenant A").closest("p")).toHaveTextContent("Admin Tenant A · admin@test.com");
+    // 5.8h + 5.9 — the owner reads « First Last · Owner · email ».
+    expect(screen.getByText("Admin Tenant A").closest("p").textContent)
+      .toBe("Admin Tenant A · Owner · admin@test.com");
     expect(screen.getByText("Chevalier Iki")).toBeInTheDocument();
     expect(screen.getByText(/· HR/)).toBeInTheDocument();
     // no coordinates on people rows

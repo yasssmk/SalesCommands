@@ -277,9 +277,10 @@ export default function ActivityContextSection({ activity }) {
                   openDrawer(<UserDrawerContent userId={owner.id} />, { title: "Team member" })
                 }
                 name={personName(owner)}
-                // « First Last · email » — never "owner" (5.8h, the activity
-                // drawer's rule).
-                suffix={owner.email || undefined}
+                // « First Last · Owner · email »: this column has no "Activity
+                // owner" title, so the marker stays here (5.9, PO) — only the
+                // creation drawer, whose caption says it, drops "owner".
+                suffix={["Owner", owner.email].filter(Boolean).join(" · ")}
               />
             )}
             {invited.map((u) => (
