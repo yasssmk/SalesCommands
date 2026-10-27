@@ -48,6 +48,24 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
     activity: mockActivity, activityLoading: false, activityError: null, mutateActivity: vi.fn(),
   }),
   updateActivity: vi.fn(),
+  // 5.8d — the creation in the coque.
+  createActivity: vi.fn(async () => mockCreateActivityResult),
+  createActivityWithEntities: vi.fn(async () => mockCreateActivityResult),
+}));
+let mockCreateActivityResult = { success: true, data: { id: "act-new" } };
+vi.mock("@mui/x-date-pickers/TimePicker", () => ({ TimePicker: () => <input /> }));
+vi.mock("hooks/useAuth", () => ({
+  useAuth: () => ({ user: { id: "u-1", first_name: "Yasmine", last_name: "Kawi" }, tenantId: "t-1" }),
+  default: () => ({ user: { id: "u-1", first_name: "Yasmine", last_name: "Kawi" }, tenantId: "t-1" }),
+}));
+// The inline contact sub-form → a one-click save (as in the ActivityModal tests).
+vi.mock("sections/accounts/activities/components", async (importOriginal) => ({
+  ...(await importOriginal()),
+  InlineContactForm: ({ onSave }) => (
+    <button type="button" onClick={() => onSave({ first_name: "Isabelle", last_name: "Roux" })}>
+      save inline contact
+    </button>
+  ),
 }));
 vi.mock("api/aiPipelines/lastRun", () => ({
   useGetLastExtractionRun: () => ({
@@ -104,11 +122,19 @@ vi.mock("api/signals/signals", () => ({
   getSignal: vi.fn(async () => ({ success: true, data: mockServerNextStep })),
   // 5.7 — the link.
   attachNextStepToActivity: vi.fn(async () => mockAttachResult),
+  // 5.8d — the names cited with their account contact (server, TD-279 rule).
+  useNextStepCitedContacts: vi.fn(() => ({ citedContacts: mockCited, citedLoading: false })),
 }));
+let mockCited = [];
 let mockAttachResult = { success: true, data: {} };
 let mockCandidates = [];
 let mockServerNextStep = null;
 vi.mock("api/accounts/decisionCycles", () => ({
+  useGetDecisionCyclesByAccount: vi.fn(() => ({
+    cycles: [{ id: "dc-1", name: "Deal Acme", is_active: true },
+             { id: "dc-2", name: "Deal Other", is_active: true }],
+    cyclesLoading: false,
+  })),
   useGetDecisionStepsByCycle: vi.fn(() => ({
     steps: [
       { id: "step-4", name: "Technical Fit", order: 4 },
@@ -143,6 +169,7 @@ import {
   useNextStepLinkCandidates, attachNextStepToActivity,
 } from "api/signals/signals";
 import { displayErrorSnackbar } from "utils/displayError";
+import { createActivity, createActivityWithEntities } from "api/accounts/activities";
 import { useGetDecisionStepsByCycle } from "api/accounts/decisionCycles";
 
 const render = (ui) => rtlRender(<WorkspaceCoque>{ui}</WorkspaceCoque>);
@@ -280,11 +307,12 @@ describe("Next steps band — part 3, validated / rejected (5.3)", () => {
 });
 
 describe("Next steps band — part 4 and the DC-only guard (5.3)", () => {
-  it("'Set a next step manually' (renamed) opens the ActivityModal", () => {
+  it("'Set a next step manually' (renamed) opens the creation in the coque (5.8d)", () => {
     renderPage();
     expect(screen.queryByText("Add manually")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Set a next step manually/ }));
-    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
+    expect(screen.getByTestId("activity-create")).toBeInTheDocument();
+    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
   });
 
   it("outside a DC: parts 2-3 hidden, parts 1 and 4 stay", () => {
@@ -701,19 +729,21 @@ describe("Next steps band — the validation flow, step 1 + Create (5.6)", () =>
     expect(screen.getByText("No open activity in this cycle")).toBeInTheDocument();
   });
 
-  it("Create → Next opens the ActivityModal pre-filled from the next step", async () => {
+  it("Create → Next opens the creation IN THE COQUE, pre-filled from the next step (5.8d)", async () => {
     await openFlowFromRow();
     choose("Create the activity");
     next();
-    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
-    expect(screen.getByTestId("modal-prefill")).toHaveTextContent("Send the DPA and SOC 2 report");
+    const create = await screen.findByTestId("activity-create");
+    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
+    expect(within(create).getByText("Send the DPA and SOC 2 report")).toBeInTheDocument();
   });
 
   it("on success, the detail re-opens VALIDATED and resolved, read back from the server", async () => {
     await openFlowFromRow();
     choose("Create the activity");
     next();
-    fireEvent.click(screen.getByRole("button", { name: "modal-create" }));
+    await screen.findByTestId("activity-create");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     const detail = await screen.findByTestId(DETAIL);
     expect(getSignal).toHaveBeenCalledWith("next-steps", "ns-rich");
     expect(within(screen.getByTestId("coque-panel")).getByText("Validated")).toBeInTheDocument();
@@ -722,13 +752,14 @@ describe("Next steps band — the validation flow, step 1 + Create (5.6)", () =>
     expect(validateSignal).not.toHaveBeenCalled();
   });
 
-  it("cancelling the modal returns to step 1, nothing written", async () => {
+  it("cancelling the creation returns to step 1, nothing written", async () => {
     await openFlowFromRow();
     choose("Create the activity");
     next();
-    fireEvent.click(screen.getByRole("button", { name: "modal-cancel" }));
-    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
-    expect(screen.getByTestId(FLOW)).toBeInTheDocument();
+    await screen.findByTestId("activity-create");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await screen.findByTestId(FLOW)).toBeInTheDocument();
+    expect(createActivity).not.toHaveBeenCalled();
     expect(getSignal).not.toHaveBeenCalled();
     expect(updateSignal).not.toHaveBeenCalled();
     expect(validateSignal).not.toHaveBeenCalled();
@@ -984,5 +1015,132 @@ describe("Next steps band — the names cited, as text (5.8c)", () => {
     await openRich({ suggested_people: [{ id: "p-1", full_name: "", role: "CHAMPION",
       target_contact: THOMAS }], suggested_people_names: [] });
     expect(within(section("next-step-people")).getByText("Thomas Lefèvre")).toBeInTheDocument();
+  });
+});
+
+
+// ==============================|| 5.8d (3/3) — CREATION IN THE COQUE ||============================== //
+
+const LAURENT_CONTACT = { id: "c-9", first_name: "Laurent", last_name: "Dubois", full_name: "Laurent Dubois" };
+
+describe("Next steps band — the activity creation in the coque (5.8d)", () => {
+  const CREATE = "activity-create";
+  const openCreateFromFlow = async (ns = richPending(), activity = dcActivity()) => {
+    mockCandidates = [];
+    mockCreateActivityResult = { success: true, data: { id: "act-new" } };
+    mockServerNextStep = richPending({ status: "VALIDATED", linked_activity: compactActivity() });
+    mockCited = [
+      { name: "Karim Benali", contact: null },
+      { name: "Thomas Lefèvre", contact: THOMAS },
+      { name: "Laurent", contact: LAURENT_CONTACT },
+    ];
+    renderPage(activity, [ns]);
+    fireEvent.click(within(rowOf(ns.suggested_title)).getByLabelText("Validate signal"));
+    await screen.findByTestId("next-step-validate-flow");
+    fireEvent.click(screen.getByRole("radio", { name: "Create the activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    return screen.findByTestId(CREATE);
+  };
+  const saveButton = () => screen.getByRole("button", { name: "Save" });
+
+  it("titled 'New activity' in the coque; no ActivityModal", async () => {
+    await openCreateFromFlow();
+    expect(within(screen.getByTestId("coque-panel")).getByTestId("coque-title"))
+      .toHaveTextContent("New activity");
+    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
+  });
+
+  it("pre-filled by activityDefaultsFromNextStep (+ the cited names' contacts, 'Mentioned')", async () => {
+    const create = await openCreateFromFlow();
+    expect(within(create).getByText("Send the DPA and SOC 2 report")).toBeInTheDocument();
+    expect(within(create).getByText("Thomas Lefèvre")).toBeInTheDocument();
+    expect(within(create).getByText("Laurent Dubois")).toBeInTheDocument();
+    expect(within(create).getByTestId("mentioned-names")).toHaveTextContent("Mentioned: Karim Benali");
+  });
+
+  it("the DC is pre-filled from the context and modifiable; the step = the proposed one", async () => {
+    const create = await openCreateFromFlow();
+    expect(within(create).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
+    expect(within(create).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
+    fireEvent.click(within(create).getByTestId("inline-read-decision_cycle"));
+    expect(screen.getByRole("option", { name: "Deal Other" })).toBeInTheDocument();
+  });
+
+  it("the owner = the user's NAME, read-only", async () => {
+    const create = await openCreateFromFlow();
+    expect(within(create).getByText("Yasmine Kawi")).toBeInTheDocument();
+    expect(within(create).queryByTestId("remove-owner")).toBeNull();
+    expect(within(create).queryByTestId("add-owner")).toBeNull();
+  });
+
+  it("Save is enabled at once (a valid pre-fill) and creates with the EXACT payload", async () => {
+    await openCreateFromFlow();
+    expect(saveButton()).toBeEnabled();
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivity.mock.calls[0][0]).toEqual({
+      title: "Send the DPA and SOC 2 report",
+      activity_type: "EMAIL",
+      status: "PLANNED",
+      description: "DPA, SOC 2 scope\n\nInternal: Sophie",
+      call_to_action: "Unblock the security review\n\nSuccess criterion: The DSI signs off the DPA",
+      scheduled_date: null,
+      scheduled_time: null,
+      due_date: "2026-10-23",
+      contact_ids: ["c-1", "c-9"],
+      invited_user_ids: [],
+      account_id: "acc-1",
+      decision_cycle_id: "dc-1",
+      decision_step_id: "step-4",
+      next_step_signal_id: "ns-rich",
+    });
+    expect(createActivityWithEntities).not.toHaveBeenCalled();
+  });
+
+  it("a contact created on the fly goes through create-with-entities", async () => {
+    const create = await openCreateFromFlow();
+    fireEvent.click(within(create).getByTestId("add-inline-contact"));
+    fireEvent.click(screen.getByRole("button", { name: "save inline contact" }));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(createActivityWithEntities).toHaveBeenCalledTimes(1));
+    const body = createActivityWithEntities.mock.calls[0][0];
+    expect(body.inline_contact).toEqual({ first_name: "Isabelle", last_name: "Roux" });
+    expect(body.inline_cycle).toBeNull();
+    expect(body.activity.next_step_signal_id).toBe("ns-rich");
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("Save is disabled only by an invalid form (title emptied)", async () => {
+    const create = await openCreateFromFlow();
+    fireEvent.click(within(create).getByTestId("inline-read-title"));
+    fireEvent.change(within(create).getByTestId("inline-input-title"), { target: { value: " " } });
+    await waitFor(() => expect(saveButton()).toBeDisabled());
+  });
+
+  it("a server refusal: the standard error, the form stays", async () => {
+    await openCreateFromFlow();
+    mockCreateActivityResult = { success: false, status: 400, error: "nope" };
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(displayErrorSnackbar).toHaveBeenCalledWith(mockCreateActivityResult));
+    expect(screen.getByTestId(CREATE)).toBeInTheDocument();
+    expect(getSignal).not.toHaveBeenCalled();
+  });
+
+  it("'Start Decision Cycle' keeps the ActivityModal (debt, not migrated)", () => {
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" },
+      outcome: "SUCCESSFUL" }));
+    fireEvent.click(screen.getByRole("button", { name: /Start Decision Cycle/ }));
+    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
+    expect(screen.queryByTestId("activity-create")).not.toBeInTheDocument();
+  });
+
+  it("a campaign activity (no DC): the DC is chosen by the user", async () => {
+    mockCited = [];
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
+    fireEvent.click(screen.getByRole("button", { name: /Set a next step manually/ }));
+    const create = await screen.findByTestId(CREATE);
+    expect(within(create).getByTestId("inline-read-decision_cycle")).toHaveTextContent("No decision cycle");
+    fireEvent.click(within(create).getByTestId("inline-read-decision_cycle"));
+    expect(screen.getByRole("option", { name: "Deal Acme" })).toBeInTheDocument();
   });
 });

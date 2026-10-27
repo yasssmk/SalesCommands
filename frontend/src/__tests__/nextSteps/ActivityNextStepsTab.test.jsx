@@ -20,6 +20,7 @@ vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
 vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({
   AdapterDayjs: class {},
 }));
+vi.mock("@mui/x-date-pickers/TimePicker", () => ({ TimePicker: () => <input /> }));
 
 const mockMutateAll = vi.fn();
 const mockMutateCounts = vi.fn();
@@ -79,6 +80,14 @@ const mockNextStepSignals = [
   },
 ];
 
+// 5.8d — the creation in the coque reads the user (owner) and the cycles.
+vi.mock("hooks/useAuth", () => ({
+  useAuth: () => ({ user: { id: "u-1", first_name: "Yasmine", last_name: "Kawi" }, tenantId: "t-1" }),
+}));
+vi.mock("api/accounts/decisionCycles", () => ({
+  useGetDecisionCyclesByAccount: () => ({ cycles: [], cyclesLoading: false }),
+  useGetDecisionStepsByCycle: () => ({ steps: [], stepsLoading: false }),
+}));
 vi.mock("api/signals/aggregatedSignals", () => ({
   default: vi.fn(() => ({
     signals: mockNextStepSignals,
@@ -98,6 +107,7 @@ vi.mock("api/signals/signals", () => ({
   reopenSignal: vi.fn(() => Promise.resolve({ success: true })),
   useNextStepLinkCandidates: vi.fn(() => ({ candidates: [], candidatesLoading: false })),
   getSignal: vi.fn(() => Promise.resolve({ success: true, data: {} })),
+  useNextStepCitedContacts: vi.fn(() => ({ citedContacts: [], citedLoading: false })),
   updateSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
@@ -280,10 +290,11 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.getByLabelText("Validate signal")).toBeInTheDocument();
   });
 
-  it("opens the activity modal from 'Set a next step manually'", () => {
+  it("opens the activity creation in the coque from 'Set a next step manually' (5.8d)", () => {
     renderTab();
     fireEvent.click(screen.getByText("Set a next step manually"));
-    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
+    expect(screen.getByTestId("activity-create")).toBeInTheDocument();
+    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
   });
 });
 

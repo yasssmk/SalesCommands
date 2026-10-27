@@ -14,11 +14,21 @@
 //
 // Formik + Yup (title required, at-least-one-date, owner required, contacts
 // min 1); no hardcoded hex/px.
+//
+// Sprint Next steps 5.8d — CREATION mode (mode="create"): the SAME form, a
+// second submit (createActivity, or createActivityWithEntities with a contact
+// created on the fly — InlineContactForm). Pre-filled by
+// activityDefaultsFromNextStep (the single 2.2b source; + the cited names'
+// account contacts, the others recalled as "Mentioned"). Extra fields: the
+// decision cycle (pre-filled from the context, modifiable) and its step (the
+// next step's proposal, else the cycle's current step). The owner is the
+// user's name, read-only (the server makes the creator the owner). Save is
+// disabled only by an invalid form.
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
@@ -44,7 +54,21 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
-import { updateActivity, ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
+import {
+  createActivity,
+  createActivityWithEntities,
+  updateActivity,
+  ACTIVITY_TYPES,
+  ACTIVITY_TYPE_LABELS,
+} from "api/accounts/activities";
+import {
+  useGetDecisionCyclesByAccount,
+  useGetDecisionStepsByCycle,
+} from "api/accounts/decisionCycles";
+import { useNextStepCitedContacts } from "api/signals/signals";
+import { useAuth } from "hooks/useAuth";
+import { activityDefaultsFromNextStep } from "utils/activityTypes";
+import { InlineContactForm } from "sections/accounts/activities/components";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
@@ -54,28 +78,53 @@ import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 
 // ==============================|| VALIDATION ||============================== //
 
+const FIELD_RULES = {
+  title: Yup.string().trim().required("Title is required").max(255, "Title must be at most 255 characters"),
+  activity_type: Yup.string().required("Activity type is required"),
+  // No length cap: the Objective column is unbounded (Sprint Next steps 2.2a, R3).
+  call_to_action: Yup.string().nullable(),
+  // No length cap: the Description column is unbounded (Sprint Next steps 2.2b).
+  description: Yup.string().nullable(),
+  scheduled_date: Yup.date()
+    .nullable()
+    .typeError("Please select a valid date")
+    .when("due_date", {
+      is: (dueDate) => !dueDate,
+      then: (schema) => schema.required("A scheduled date or a due date is required"),
+      otherwise: (schema) => schema.nullable(),
+    }),
+  due_date: Yup.date().nullable().typeError("Please select a valid date"),
+};
+
+const DATE_PAIR = [["scheduled_date", "due_date"]];
+
 const validationSchema = Yup.object(
   {
-    title: Yup.string().trim().required("Title is required").max(255, "Title must be at most 255 characters"),
-    activity_type: Yup.string().required("Activity type is required"),
-    // No length cap: the Objective column is unbounded (Sprint Next steps 2.2a, R3).
-    call_to_action: Yup.string().nullable(),
-    // No length cap: the Description column is unbounded (Sprint Next steps 2.2b).
-    description: Yup.string().nullable(),
-    scheduled_date: Yup.date()
-      .nullable()
-      .typeError("Please select a valid date")
-      .when("due_date", {
-        is: (dueDate) => !dueDate,
-        then: (schema) => schema.required("A scheduled date or a due date is required"),
-        otherwise: (schema) => schema.nullable(),
-      }),
-    due_date: Yup.date().nullable().typeError("Please select a valid date"),
+    ...FIELD_RULES,
     // owner is NOT NULL backend — Formik keeps the invariant, never sends null.
     owner: Yup.object().nullable().required("An owner is required"),
     contacts: Yup.array().min(1, "At least one contact is required"),
   },
-  [["scheduled_date", "due_date"]],
+  DATE_PAIR,
+);
+
+// Creation: the owner is the creator (read-only, never sent); at least one
+// contact — selected, or created on the fly; a step once a cycle is chosen.
+const createValidationSchema = Yup.object(
+  {
+    ...FIELD_RULES,
+    contacts: Yup.array().when("inline_contact", {
+      is: (inline) => Boolean(inline),
+      then: (schema) => schema,
+      otherwise: (schema) => schema.min(1, "At least one contact is required"),
+    }),
+    decision_step_id: Yup.string().when("decision_cycle_id", {
+      is: (cycle) => Boolean(cycle),
+      then: (schema) => schema.required("Please select a step for this cycle"),
+      otherwise: (schema) => schema.nullable(),
+    }),
+  },
+  DATE_PAIR,
 );
 
 // ==============================|| HELPERS ||============================== //
@@ -314,12 +363,22 @@ PersonEditRow.propTypes = {
 // owner: single required slot (× empties it visually, but Formik keeps owner
 // required so a null owner_id is never sent). invited: optional removable list.
 // contacts: removable list, min 1 (Formik blocks Save when empty).
-function PeopleSection({ values, setFieldValue, errors, accountId, locked = false }) {
+function PeopleSection({
+  values,
+  setFieldValue,
+  errors,
+  accountId,
+  locked = false,
+  ownerReadOnly = false,
+  allowInlineContact = false,
+  mentionedNames = [],
+}) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const [addOwner, setAddOwner] = useState(false);
   const [addInvited, setAddInvited] = useState(false);
   const [addContact, setAddContact] = useState(false);
+  const [addInlineContact, setAddInlineContact] = useState(false);
 
   const caption = (t, withHint = false) => (
     <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
@@ -353,7 +412,10 @@ function PeopleSection({ values, setFieldValue, errors, accountId, locked = fals
       {/* Activity owner — single required slot */}
       <Box>
         {caption("Activity owner", true)}
-        {locked ? (
+        {ownerReadOnly ? (
+          // Creation: the creator is the owner (server rule) — named, read-only.
+          <PersonRow name={personName(values.owner)} suffix="owner" />
+        ) : locked ? (
           values.owner ? <PersonRow name={personName(values.owner)} suffix="owner" /> : emptyLine("No owner")
         ) : values.owner ? (
           <PersonEditRow
@@ -451,6 +513,36 @@ function PeopleSection({ values, setFieldValue, errors, accountId, locked = fals
           ) : (
             addButton(() => setAddContact(true), "add-contact", "Add contact")
           ))}
+        {/* Creation: a contact created on the fly (create-with-entities). */}
+        {allowInlineContact && values.inline_contact && (
+          <PersonEditRow
+            name={personName(values.inline_contact)}
+            suffix="new contact"
+            onRemove={() => setFieldValue("inline_contact", null)}
+            removeTestId="remove-inline-contact"
+          />
+        )}
+        {allowInlineContact && !values.inline_contact && (addInlineContact ? (
+          <InlineContactForm
+            onSave={(contact) => {
+              setFieldValue("inline_contact", contact);
+              setAddInlineContact(false);
+            }}
+            onCancel={() => setAddInlineContact(false)}
+          />
+        ) : (
+          addButton(() => setAddInlineContact(true), "add-inline-contact", "New contact")
+        ))}
+        {/* Creation from a next step: the names cited no contact matched. */}
+        {mentionedNames.length > 0 && (
+          <Typography
+            variant="caption"
+            data-testid="mentioned-names"
+            sx={{ color: aq.text.muted, display: "block", mt: 0.5 }}
+          >
+            {`Mentioned: ${mentionedNames.join(", ")}`}
+          </Typography>
+        )}
         {!locked && Boolean(errors.contacts) && <FormHelperText error>{errors.contacts}</FormHelperText>}
       </Box>
     </Stack>
@@ -459,6 +551,12 @@ function PeopleSection({ values, setFieldValue, errors, accountId, locked = fals
 
 PeopleSection.propTypes = {
   locked: PropTypes.bool,
+  /** Creation: the owner (the creator) is shown, not editable. */
+  ownerReadOnly: PropTypes.bool,
+  /** Creation: a contact can be created on the fly (InlineContactForm). */
+  allowInlineContact: PropTypes.bool,
+  /** Creation from a next step: the cited names no contact matched. */
+  mentionedNames: PropTypes.arrayOf(PropTypes.string),
   values: PropTypes.object.isRequired,
   setFieldValue: PropTypes.func.isRequired,
   errors: PropTypes.object.isRequired,
@@ -467,39 +565,137 @@ PeopleSection.propTypes = {
 
 // ==============================|| EDIT ACTIVITY CONTENT ||============================== //
 
-export default function EditActivityContent({ activity, onSaved }) {
+export default function EditActivityContent({
+  activity,
+  onSaved,
+  mode = "edit",
+  accountId: createAccountId,
+  decisionCycleId,
+  nextStep,
+  activityType,
+  onCreated,
+  onCancel,
+}) {
   const { closeDrawer } = useWorkspaceDrawer();
-  const accountId = activity?.account_detail?.id || activity?.account || null;
+  const { user } = useAuth();
+  const isCreate = mode === "create";
+  const accountId = isCreate
+    ? createAccountId
+    : activity?.account_detail?.id || activity?.account || null;
   // COND-1 — a campaign activity has date / contacts / owner / invited set by the
   // campaign: those fields are locked (read-only) and never sent in the PATCH.
-  const isCampaign = Boolean(activity?.campaign_detail);
+  // A NEW activity is never a campaign activity.
+  const isCampaign = !isCreate && Boolean(activity?.campaign_detail);
+
+  // Creation from a next step: the names it cites, with the account contact
+  // the server matched (TD-279 rule) — read before the pre-fill.
+  const { citedContacts, citedLoading } = useNextStepCitedContacts(
+    isCreate ? nextStep?.id ?? null : null,
+  );
+  const defaults = useMemo(
+    () =>
+      isCreate
+        ? activityDefaultsFromNextStep(nextStep, { activityType, citedContacts })
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isCreate, nextStep?.id, activityType, citedLoading],
+  );
 
   // Memoized so the reference is STABLE across renders — with a fresh inline
   // object each render, enableReinitialize's compare (fresh dayjs objects) is
   // fragile and can reset the form under a picker interaction. Keyed on the
   // frozen activity's id (the injected node snapshots the activity).
   const initialValues = useMemo(
-    () => ({
-      title: activity?.title || "",
-      activity_type: activity?.activity_type || "",
-      scheduled_date: activity?.scheduled_date ? dayjs(activity.scheduled_date) : null,
-      scheduled_time: activity?.scheduled_time ? dayjs(`2000-01-01T${activity.scheduled_time}`) : null,
-      due_date: activity?.due_date ? dayjs(activity.due_date) : null,
-      call_to_action: activity?.call_to_action || "",
-      description: activity?.description || "",
-      owner: activity?.owner_detail || null,
-      invited: activity?.invited_users_detail || [],
-      contacts: activity?.contacts_detail || [],
-    }),
+    () =>
+      isCreate
+        ? {
+            title: defaults.title,
+            activity_type: defaults.activity_type,
+            scheduled_date: defaults.scheduled_date ? dayjs(defaults.scheduled_date) : null,
+            scheduled_time: null,
+            due_date: defaults.due_date ? dayjs(defaults.due_date) : null,
+            call_to_action: defaults.call_to_action,
+            description: defaults.description,
+            owner: user || null,
+            invited: [],
+            contacts: defaults.contacts,
+            inline_contact: null,
+            decision_cycle_id: decisionCycleId || "",
+            // The next step's proposed step (a step of its own cycle — the
+            // server checks it), else the cycle's current one (effect below).
+            decision_step_id:
+              decisionCycleId && nextStep?.suggested_decision_step
+                ? String(nextStep.suggested_decision_step)
+                : "",
+          }
+        : {
+            title: activity?.title || "",
+            activity_type: activity?.activity_type || "",
+            scheduled_date: activity?.scheduled_date ? dayjs(activity.scheduled_date) : null,
+            scheduled_time: activity?.scheduled_time ? dayjs(`2000-01-01T${activity.scheduled_time}`) : null,
+            due_date: activity?.due_date ? dayjs(activity.due_date) : null,
+            call_to_action: activity?.call_to_action || "",
+            description: activity?.description || "",
+            owner: activity?.owner_detail || null,
+            invited: activity?.invited_users_detail || [],
+            contacts: activity?.contacts_detail || [],
+          },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activity?.id],
+    [activity?.id, defaults],
   );
+
+  const submitCreate = async (values) => {
+    const payload = {
+      title: values.title.trim(),
+      activity_type: values.activity_type,
+      status: "PLANNED",
+      description: values.description?.trim() || null,
+      call_to_action: values.call_to_action?.trim() || null,
+      scheduled_date: fmtDate(values.scheduled_date),
+      scheduled_time:
+        values.scheduled_date && values.scheduled_time
+          ? dayjs(values.scheduled_time).format("HH:mm:ss")
+          : null,
+      due_date: fmtDate(values.due_date),
+      contact_ids: (values.contacts || []).map((c) => c.id),
+      invited_user_ids: (values.invited || []).map((u) => u.id),
+      account_id: accountId,
+      decision_cycle_id: values.decision_cycle_id || null,
+      decision_step_id: values.decision_step_id || null,
+    };
+    if (nextStep?.id) payload.next_step_signal_id = nextStep.id;
+    return values.inline_contact
+      ? createActivityWithEntities({
+          activity: payload,
+          inline_contact: values.inline_contact,
+          inline_cycle: null,
+          inline_step_stage: null,
+        })
+      : createActivity(payload);
+  };
 
   const formik = useFormik({
     enableReinitialize: true,
-    validationSchema,
+    validationSchema: isCreate ? createValidationSchema : validationSchema,
     initialValues,
     onSubmit: async (values, { setSubmitting }) => {
+      if (isCreate) {
+        try {
+          const result = await submitCreate(values);
+          if (result?.success) {
+            displaySuccessSnackbar("Activity created");
+            if (onCreated) onCreated(result.data);
+            else closeDrawer();
+          } else {
+            displayErrorSnackbar(result);
+          }
+        } catch (err) {
+          displayErrorSnackbar(err);
+        } finally {
+          setSubmitting(false);
+        }
+        return;
+      }
       // Always-editable fields.
       const payload = {
         title: values.title.trim(),
@@ -539,13 +735,41 @@ export default function EditActivityContent({ activity, onSaved }) {
 
   const { values, errors, setFieldValue } = formik;
 
+  // Creation: the account's cycles, and the chosen cycle's steps.
+  const { cycles } = useGetDecisionCyclesByAccount(isCreate ? accountId : null);
+  const { steps } = useGetDecisionStepsByCycle(isCreate ? values.decision_cycle_id : null);
+  const cycleOptions = useMemo(
+    () => (cycles || []).map((c) => ({ value: String(c.id), label: c.name })),
+    [cycles],
+  );
+  const stepOptions = useMemo(
+    () =>
+      [...(steps || [])]
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((st) => ({ value: String(st.id), label: st.name })),
+    [steps],
+  );
+  // The step: the next step's proposal when it is a step of the chosen cycle,
+  // else the cycle's CURRENT step (mirror of the backend default,
+  // next_step_materialization.py — as ActivityModal).
+  useEffect(() => {
+    if (!isCreate || values.decision_step_id || !steps?.length) return;
+    const proposed = steps.find((st) => String(st.id) === String(nextStep?.suggested_decision_step));
+    const chosen = proposed || steps.find((st) => st.is_current);
+    if (chosen) setFieldValue("decision_step_id", String(chosen.id));
+  }, [isCreate, steps, values.decision_step_id, nextStep?.suggested_decision_step, setFieldValue]);
+
   return (
     <DrawerContentLayout
       onSave={formik.handleSubmit}
-      onCancel={() => closeDrawer()}
-      saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
+      onCancel={() => (onCancel ? onCancel() : closeDrawer())}
+      saveDisabled={
+        isCreate
+          ? !formik.isValid || formik.isSubmitting
+          : !formik.isValid || !formik.dirty || formik.isSubmitting
+      }
     >
-      <Stack spacing={1.5}>
+      <Stack spacing={1.5} data-testid={isCreate ? "activity-create" : undefined}>
         {/* (1) Title + Type */}
         <InlineEditableValue
           name="title"
@@ -564,6 +788,37 @@ export default function EditActivityContent({ activity, onSaved }) {
           value={values.activity_type}
           onChange={(v) => setFieldValue("activity_type", v)}
         />
+
+        {/* Creation: the decision cycle (pre-filled, modifiable) and its step. */}
+        {isCreate && (
+          <>
+            <InlineEditableValue
+              name="decision_cycle"
+              label="Decision cycle"
+              type="select"
+              options={[{ value: "", label: "No decision cycle" }, ...cycleOptions]}
+              value={values.decision_cycle_id}
+              onChange={(v) => {
+                setFieldValue("decision_cycle_id", v);
+                setFieldValue("decision_step_id", "");
+              }}
+              placeholder="No decision cycle"
+            />
+            {values.decision_cycle_id && (
+              <InlineEditableValue
+                name="decision_step"
+                label="DC step"
+                type="select"
+                options={stepOptions}
+                value={values.decision_step_id}
+                onChange={(v) => setFieldValue("decision_step_id", v)}
+                placeholder="No step"
+                error={Boolean(errors.decision_step_id)}
+                helperText={errors.decision_step_id}
+              />
+            )}
+          </>
+        )}
 
         <Filet />
 
@@ -603,6 +858,9 @@ export default function EditActivityContent({ activity, onSaved }) {
           errors={errors}
           accountId={accountId}
           locked={isCampaign}
+          ownerReadOnly={isCreate}
+          allowInlineContact={isCreate}
+          mentionedNames={isCreate ? defaults.mentionedNames : []}
         />
       </Stack>
     </DrawerContentLayout>
@@ -610,8 +868,22 @@ export default function EditActivityContent({ activity, onSaved }) {
 }
 
 EditActivityContent.propTypes = {
-  /** The activity to edit (its *_detail fields seed the values). */
-  activity: PropTypes.object.isRequired,
+  /** The activity to edit (its *_detail fields seed the values). Edit mode. */
+  activity: PropTypes.object,
   /** Optional callback fired after a successful save (before the coque closes). */
   onSaved: PropTypes.func,
+  /** "edit" (default) or "create" (Sprint Next steps 5.8d). */
+  mode: PropTypes.oneOf(["edit", "create"]),
+  /** Create: the account of the new activity. */
+  accountId: PropTypes.string,
+  /** Create: the decision cycle pre-filled from the context (modifiable). */
+  decisionCycleId: PropTypes.string,
+  /** Create: the next step the activity is created from (pre-fill + provenance). */
+  nextStep: PropTypes.object,
+  /** Create: the type imposed by the entry point. */
+  activityType: PropTypes.string,
+  /** Create: fired with the created activity (the caller decides what follows). */
+  onCreated: PropTypes.func,
+  /** Optional Cancel handler (default: the coque closes). */
+  onCancel: PropTypes.func,
 };

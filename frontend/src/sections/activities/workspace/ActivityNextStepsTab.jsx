@@ -35,6 +35,7 @@ import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingAct
 import { ACTIVITY_STATUSES } from "api/accounts/activities";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
 import EditNextStepContent from "sections/activities/workspace/EditNextStepContent";
+import EditActivityContent from "sections/activities/workspace/EditActivityContent";
 import NextStepValidateFlow from "sections/activities/nextSteps/NextStepValidateFlow";
 
 // The next steps of the activity, all 3 statuses (To validate / Validated /
@@ -59,7 +60,10 @@ export function isNextStepsBandLocked(activity) {
 //   2. the next steps to validate and 3. the validated (resolved, with their
 //      activity on the row's 3rd line) and rejected ones — the generic
 //      SignalsValidationList, DC-only;
-//   4. "Set a next step manually" (ActivityModal).
+//   4. "Set a next step manually".
+// Every activity creation of the band opens in the coque (EditActivityContent,
+// create mode — Sprint Next steps 5.8d); ActivityModal stays only for "Start
+// Decision Cycle" (a campaign activity converted into a new cycle).
 export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   const router = useRouter();
   // The single lock predicate of the band (parts 1-4, row actions, drawer).
@@ -87,10 +91,8 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   const { openDrawer, closeDrawer } = useWorkspaceDrawer();
 
   // Activity modal state (convert from signal OR manual add OR campaign conversion)
-  const [activityModalOpen, setActivityModalOpen] = useState(false);
-  const [convertSignal, setConvertSignal] = useState(null);
-  const [manualActivityType, setManualActivityType] = useState(null);
-  const [convertFromCampaign, setConvertFromCampaign] = useState(false);
+  // "Start Decision Cycle" (campaign → new cycle) — the one ActivityModal left.
+  const [startCycleOpen, setStartCycleOpen] = useState(false);
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -123,11 +125,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     [openDrawer, isLocked, activityId],
   );
 
-  const handleConvert = useCallback((signal) => {
-    setConvertSignal(signal);
-    setActivityModalOpen(true);
-  }, []);
-
   // Read a next step back from the server once resolved (by its created OR
   // linked activity — now VALIDATED), refresh the list (3rd line) and re-open
   // its detail.
@@ -146,28 +143,55 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     [mutateAll, mutateCounts, openDetail, closeDrawer],
   );
 
+  // An activity creation in the coque (5.8d). From a next step: pre-filled
+  // from it; on success the next step — now resolved — is read back (5.6),
+  // Cancel returns to where the creation started. Otherwise (a manual next
+  // step): the standard behaviour — the list refreshes and the coque closes.
+  const openCreate = useCallback(
+    ({ nextStep = null, activityType, onCancel } = {}) => {
+      openDrawer(
+        <EditActivityContent
+          mode="create"
+          accountId={accountId}
+          decisionCycleId={activity?.decision_cycle || null}
+          nextStep={nextStep}
+          activityType={activityType}
+          onCreated={() => {
+            if (nextStep) {
+              showFromServer(nextStep);
+            } else {
+              mutateAll();
+              mutateCounts?.();
+              closeDrawer();
+            }
+          }}
+          onCancel={onCancel}
+        />,
+        { title: "New activity" },
+      );
+    },
+    [openDrawer, accountId, activity?.decision_cycle, showFromServer, mutateAll, mutateCounts, closeDrawer],
+  );
+
   // The validation flow (5.6), in the coque: step 1 = Create or Link. Opened by
   // the row ✓ and the detail's Validate; Back returns to the detail. Create
-  // opens the pre-filled ActivityModal over it — a cancel leaves step 1 shown.
+  // opens the creation in the coque — its Cancel returns to step 1.
   const openFlow = useCallback(
     (signal) => {
       openDrawer(
         <NextStepValidateFlow
           nextStep={signal}
-          onCreate={handleConvert}
+          onCreate={(ns) => openCreate({ nextStep: ns, onCancel: () => openFlow(ns) })}
           onBack={() => openDetail(signal)}
           onLinked={showFromServer}
         />,
         { title: "Validate next step" },
       );
     },
-    [openDrawer, handleConvert, openDetail, showFromServer],
+    [openDrawer, openCreate, openDetail, showFromServer],
   );
 
-  const handleAddManually = useCallback(() => {
-    setConvertSignal(null);
-    setActivityModalOpen(true);
-  }, []);
+  const handleAddManually = useCallback(() => openCreate(), [openCreate]);
 
   // Edit in the coque (EditNextStepContent), then back to the detail —
   // the chassis edit of every other signal type.
@@ -246,25 +270,22 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
     [handleOpenActivity],
   );
 
-  const handleConvertSuccess = useCallback(() => {
-    if (convertSignal) {
-      showFromServer(convertSignal);
-      return;
-    }
-    // A manual next step: no next step to show.
+  const handleStartCycleSuccess = useCallback(() => {
     mutateAll();
     mutateCounts?.();
-    closeDrawer();
-  }, [convertSignal, showFromServer, mutateAll, mutateCounts, closeDrawer]);
+  }, [mutateAll, mutateCounts]);
 
+  // Part 1's creation buttons: a type → the creation in the coque; "Start
+  // Decision Cycle" (campaign → new cycle) → ActivityModal (debt: not migrated).
   const handleCreateActivity = useCallback(
     (activityType, options = {}) => {
-      setConvertSignal(null);
-      setManualActivityType(activityType || null);
-      setConvertFromCampaign(Boolean(options.convertFromCampaign));
-      setActivityModalOpen(true);
+      if (options.convertFromCampaign) {
+        setStartCycleOpen(true);
+        return;
+      }
+      openCreate({ activityType });
     },
-    [],
+    [openCreate],
   );
 
   // ==============================|| RENDER ||============================== //
@@ -320,25 +341,20 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
         </Box>
       )}
 
-      {/* Activity modal (convert from signal or manual add) */}
+      {/* "Start Decision Cycle" — the one ActivityModal left in the band (a
+          campaign activity converted into a new cycle; debt: not migrated). */}
       {accountId && (
         <ActivityModal
-          open={activityModalOpen}
-          onClose={() => {
-            setActivityModalOpen(false);
-            setConvertSignal(null);
-            setManualActivityType(null);
-            setConvertFromCampaign(false);
-          }}
+          open={startCycleOpen}
+          onClose={() => setStartCycleOpen(false)}
           activity={null}
           accountId={accountId}
           decisionStepId={activity?.decision_step || null}
-          decisionCycleId={convertFromCampaign ? null : (activity?.decision_cycle || null)}
-          defaultActivityType={convertSignal?.suggested_activity_type || manualActivityType || "MEETING"}
+          decisionCycleId={null}
+          defaultActivityType="MEETING"
           previousActivityId={activity?.id}
-          sourceActivityId={convertFromCampaign ? activity?.id : null}
-          nextStepSignal={convertSignal}
-          onSuccess={handleConvertSuccess}
+          sourceActivityId={activity?.id}
+          onSuccess={handleStartCycleSuccess}
         />
       )}
 

@@ -88,6 +88,7 @@ const endpoints = {
   nextStepsReopen: (id) => `/module-signals/next-steps/${id}/reopen/`,
   nextStepsLinkCandidates: (id) => `/module-signals/next-steps/${id}/link-candidates/`,
   nextStepsAttachActivity: (id) => `/module-signals/next-steps/${id}/attach-activity/`,
+  nextStepsCitedContacts: (id) => `/module-signals/next-steps/${id}/cited-contacts/`,
 
   // People
   people: "/module-signals/people/",
@@ -470,6 +471,32 @@ export function useNextStepLinkCandidates(signalId) {
       candidatesError: error,
     };
   }, [data, isLoading, error]);
+}
+
+/**
+ * NEXT STEP CITED CONTACTS (Sprint Next steps 5.8d)
+ *
+ * GET /module-signals/next-steps/{id}/cited-contacts/ — the names the next
+ * step cites, each with the account contact it designates without
+ * ambiguity (server-side, the TD-279 name rule), or null.
+ *
+ * @param {string|null} signalId - NextStepSignal UUID (null → disabled)
+ * @returns {Object} { citedContacts: [{name, contact}], citedLoading }
+ */
+export function useNextStepCitedContacts(signalId) {
+  const { tenantId } = useAuth();
+  const url =
+    signalId && isValidUUID(signalId) ? endpoints.nextStepsCitedContacts(signalId) : null;
+
+  const { data, isLoading } = useSWR(tenantKey(url, tenantId), {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+  });
+
+  return useMemo(() => {
+    const payload = data?.data ?? data ?? {};
+    return { citedContacts: payload.cited ?? [], citedLoading: Boolean(url) && isLoading };
+  }, [data, isLoading, url]);
 }
 
 /**

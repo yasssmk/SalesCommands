@@ -27,6 +27,7 @@ vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
   LocalizationProvider: ({ children }) => <>{children}</>,
 }));
 vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({ AdapterDayjs: class {} }));
+vi.mock("@mui/x-date-pickers/TimePicker", () => ({ TimePicker: () => <input /> }));
 
 vi.mock("api/accounts/activities", async (importOriginal) => ({
   ...(await importOriginal()),
