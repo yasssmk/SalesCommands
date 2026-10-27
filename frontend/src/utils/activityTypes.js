@@ -89,8 +89,9 @@ export function nextStepObjective(nextStep) {
 //
 // Sprint Next steps 5.8d — activityDefaultsFromNextStep: the SINGLE source of the
 // activity pre-fill from a next step (2.2b), used by ActivityModal and the coque
-// creation drawer. PO rule (5.8c): a next step CITES names, used only to create
-// the activity — as contacts for the types below, in the description otherwise.
+// creation drawer. PO rule (5.8c, symmetric 5.8h): a next step CITES names, used
+// only to create the activity — as contacts for the types below (a People's
+// target_contact or a name the server matched), in the description otherwise.
 
 // The types whose cited names become the activity's contacts.
 export const CITED_NAMES_AS_CONTACTS_TYPES = new Set(["MEETING", "CALL", "EMAIL"]);
@@ -122,16 +123,20 @@ export function activityDefaultsFromNextStep(nextStep, context = {}) {
   const scheduled = SCHEDULED_DATE_ACTIVITY_TYPES.has(activityType);
   const citedAsContacts = CITED_NAMES_AS_CONTACTS_TYPES.has(activityType);
 
-  // 2.2b: the next step's contacts, then its People's contacts.
-  const baseContacts = [
-    ...(nextStep?.suggested_contacts || []),
-    ...getNextStepUsablePeople(nextStep).map((p) => p.target_contact).filter(Boolean),
-  ];
-
+  // 2.2b: the next step's contacts. The PERSONS it cites become contacts —
+  // whether from a People's target_contact or matched from a name — ONLY for
+  // MEETING / CALL / EMAIL (PO rule, symmetric, 5.8h); the other types get
+  // their names in the description.
   const cited = context.citedContacts || [];
-  const contacts = citedAsContacts
-    ? uniqueById([...baseContacts, ...cited.map((c) => c.contact).filter(Boolean)])
-    : uniqueById(baseContacts);
+  const contacts = uniqueById([
+    ...(nextStep?.suggested_contacts || []),
+    ...(citedAsContacts
+      ? [
+          ...getNextStepUsablePeople(nextStep).map((p) => p.target_contact).filter(Boolean),
+          ...cited.map((c) => c.contact).filter(Boolean),
+        ]
+      : []),
+  ]);
   const mentionedNames = citedAsContacts
     ? cited.filter((c) => !c.contact).map((c) => c.name)
     : [];

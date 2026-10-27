@@ -1128,6 +1128,31 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(description.textContent).not.toMatch(/Thomas/);
   });
 
+  // 5.8h (3) — the PO rule, symmetric: contacts — from a People's
+  // target_contact or from a name — ONLY for MEETING / CALL / EMAIL; the other
+  // types get the names in the description, no contact.
+  it("another type (TASK): no contact pre-selected, even a People's target_contact", async () => {
+    const create = await openCreateFromFlow(richPending({ suggested_activity_type: "TASK" }));
+    const people = within(create).getByTestId("people-section");
+    expect(within(people).queryByText("Thomas Lefèvre")).toBeNull();
+    expect(within(people).queryByText("Laurent Dubois")).toBeNull();
+    expect(within(create).getByTestId("inline-read-description"))
+      .toHaveTextContent("Mentioned: Thomas Lefèvre, Karim Benali, Laurent");
+  });
+
+  it("MEETING / CALL / EMAIL: the People's contact and the matched names, as before", async () => {
+    // Isabelle: a People's target_contact the server's cited-contacts does
+    // NOT return — only the People link brings her.
+    const create = await openCreateFromFlow(richPending({
+      suggested_activity_type: "CALL",
+      suggested_people: [{ id: "p-4", full_name: "Isabelle Roux", role: "CHAMPION",
+                           status: "PENDING", target_contact: ISABELLE }],
+    }));
+    const people = within(create).getByTestId("people-section");
+    expect(within(people).getByText("Isabelle Roux")).toBeInTheDocument();
+    expect(within(people).getByText("Laurent Dubois")).toBeInTheDocument();
+  });
+
   it("the owner reads 'First Last · email', never '· owner'", async () => {
     const create = await openCreateFromFlow();
     const owner = within(create).getByTestId("activity-owner");

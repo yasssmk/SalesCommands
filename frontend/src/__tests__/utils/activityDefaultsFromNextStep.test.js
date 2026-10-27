@@ -5,7 +5,8 @@
 // ActivityModal and the coque creation drawer.
 //   * title, type (the entry point's type wins), date by D6, objective +
 //     success criterion, description = topics (unchanged 2.2b rules);
-//   * contacts: the next step's contacts + its People's contacts (2.2b);
+//   * contacts: the next step's contacts + (MEETING / CALL / EMAIL only, 5.8h)
+//     its People's contacts (2.2b);
 //   * names cited (PO rule 5.8c): for MEETING / CALL / EMAIL, the account
 //     contacts the server matched WITHOUT ambiguity (context.citedContacts,
 //     GET cited-contacts — the TD-279 rule) are added, the other names are
@@ -66,9 +67,11 @@ describe("activityDefaultsFromNextStep (5.8d)", () => {
     }
   });
 
-  it("another type: the names cited go to the description, no contact from a name", () => {
+  // 5.8h (3) — symmetric: no contact at all for another type, not even a
+  // People's target_contact.
+  it("another type: the names cited go to the description, no contact", () => {
     const d = activityDefaultsFromNextStep(NS, { activityType: "TASK", citedContacts: CITED });
-    expect(d.contacts.map((c) => c.id)).toEqual(["c-1"]); // the People's contact (2.2b)
+    expect(d.contacts.map((c) => c.id)).toEqual([]);
     expect(d.mentionedNames).toEqual([]);
     expect(d.description).toBe(
       "DPA, SOC 2\n\nMentioned: Thomas Lefèvre, Laurent, Marc\n\nInternal: Sophie");
