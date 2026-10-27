@@ -26,6 +26,16 @@ export const USAGE_SCOPE = {
   UNKNOWN: "UNKNOWN",
 };
 
+// Sprint Next steps (PO rule 5.8c): a next step CITES names. The name it cites
+// for one of its People: the People's full_name, else its contact's name.
+export function getCitedPersonName(people) {
+  const contact = people?.target_contact;
+  return (
+    people?.full_name ||
+    `${contact?.first_name ?? ""} ${contact?.last_name ?? ""}`.trim()
+  );
+}
+
 // A TechStack signal's usage, with the PO rule "the departments PRIME over the
 // scale": when at least one usage department is designated, the department
 // names are the usage and the scale is not shown. Shared by TechDetailBlock

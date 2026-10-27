@@ -176,7 +176,6 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
       openDrawer(
         <EditNextStepContent
           nextStep={signal}
-          accountId={accountId}
           decisionCycleId={activity?.decision_cycle}
           onSaved={(updated) => {
             mutateAll();
@@ -188,7 +187,7 @@ export default function ActivityNextStepsTab({ activity, mutateCounts }) {
         { title: "Edit next step" },
       );
     },
-    [openDrawer, accountId, activity?.decision_cycle, mutateAll, mutateCounts, openDetail],
+    [openDrawer, activity?.decision_cycle, mutateAll, mutateCounts, openDetail],
   );
 
   const handleReject = useCallback(

@@ -8,14 +8,19 @@
 // changed fields; onSaved(updatedSignal) returns to the detail.
 //
 // Sections = EXACTLY the detail's (NextStepDetailView): §1 Proposal (title,
-// type, date + the date as said, DC step, carried by) → §2 People (the DC
-// People, the names not linked, the internal names — as pills) → §3 Purpose
+// type, date + the date as said, DC step, carried by) → §2 People (the names
+// cited — one list of pills, the detail's) → §3 Purpose
 // (long texts) → §4 Source (the quote).
 //
 // Writable fields = NextStepSignalUpdateSerializer's, minus the two the UI
 // never sends: suggested_contacts (dormant, TD-7) and advice_rationale
 // (dormant capacity, PO). The DC step is one of the cycle's steps (the server
-// refuses any other); the People are the DC's, rejected ones excluded.
+// refuses any other). PO rule (5.8c/5.8d): a next step CITES names — one list
+// of "Names cited" (its People's names, then suggested_people_names), edited as
+// free text: a name added → suggested_people_names; a People's name removed →
+// that People leaves suggested_people; a name removed → it leaves
+// suggested_people_names. No People picker; suggested_people changes in no
+// other way. The internal names are not shown (dormant data).
 //
 // Theme tokens only. Limits come from signalValidationRules.js.
 
@@ -33,7 +38,7 @@ import Stack from "@mui/material/Stack";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
-import { updateSignal, useGetSignalsByAccount } from "api/signals/signals";
+import { updateSignal } from "api/signals/signals";
 import { useGetDecisionStepsByCycle } from "api/accounts/decisionCycles";
 import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
@@ -43,6 +48,7 @@ import InlineEditableValue from "components/drawer/InlineEditableValue";
 import InlineDateField from "components/drawer/InlineDateField";
 import PillsField from "components/drawer/PillsField";
 import { NEXT_STEP_TITLE_MAX_LENGTH } from "sections/activities/signals/signalValidationRules";
+import { getCitedPersonName } from "sections/activities/signals/utils/signalDisplay";
 
 // "Carried by" is a boolean on the model; the select holds these two keys.
 const CARRIED_BY = { PROSPECT: "PROSPECT", SELLER: "SELLER" };
@@ -56,18 +62,21 @@ const TYPE_OPTIONS = Object.entries(ACTIVITY_TYPE_LABELS).map(([value, label]) =
   label,
 }));
 
-const REJECTED = "REJECTED";
+// "Names cited" pills: a People's name is keyed by its People (so removing it
+// unlinks that People), a name not linked by itself.
+const PEOPLE_PILL_PREFIX = "people:";
 
-// A People (signal payload or DC list item) → its pill label.
-function personLabel(p) {
-  const contact = p?.target_contact;
-  const contactName = contact
-    ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim()
-    : "";
-  return p?.full_name || contactName || "—";
+function citedNamePills(nextStep) {
+  return [
+    ...(nextStep?.suggested_people ?? []).map((p) => ({
+      value: `${PEOPLE_PILL_PREFIX}${p.id}`,
+      label: getCitedPersonName(p) || "—",
+    })),
+    ...(nextStep?.suggested_people_names ?? []).map((n) => ({ value: n, label: n })),
+  ];
 }
 
-const toNamePills = (names) => (names ?? []).map((n) => ({ value: n, label: n }));
+const isPeoplePill = (pill) => pill.value.startsWith(PEOPLE_PILL_PREFIX);
 
 // ==============================|| VALIDATION ||============================== //
 
@@ -91,9 +100,11 @@ function toPayload(values) {
     suggested_date_text: values.suggested_date_text,
     suggested_decision_step: values.suggested_decision_step || null,
     carried_by_prospect: values.carried_by === CARRIED_BY.PROSPECT,
-    suggested_people: values.people.map((p) => p.value),
-    suggested_people_names: values.people_names.map((n) => n.value),
-    suggested_internal_names: values.internal_names.map((n) => n.value),
+    // The People still cited (in their order) — never a new one.
+    suggested_people: values.cited_names
+      .filter(isPeoplePill)
+      .map((p) => p.value.slice(PEOPLE_PILL_PREFIX.length)),
+    suggested_people_names: values.cited_names.filter((p) => !isPeoplePill(p)).map((p) => p.label),
     suggested_objective: values.suggested_objective,
     suggested_success_criterion: values.suggested_success_criterion,
     suggested_topics: values.suggested_topics,
@@ -114,7 +125,6 @@ function changedFields(initialValues, values) {
 
 export default function EditNextStepContent({
   nextStep,
-  accountId,
   decisionCycleId,
   onSaved,
   onCancel,
@@ -133,19 +143,6 @@ export default function EditNextStepContent({
     [steps],
   );
 
-  // The People = the DC's People, rejected ones excluded.
-  const { signals: dcPeople } = useGetSignalsByAccount(accountId, "people", {
-    pageSize: 100,
-    filters: { decision_cycle_id: decisionCycleId },
-  });
-  const peopleOptions = useMemo(
-    () =>
-      (dcPeople ?? [])
-        .filter((p) => p.status !== REJECTED)
-        .map((p) => ({ value: String(p.id), label: personLabel(p) })),
-    [dcPeople],
-  );
-
   const initialValues = useMemo(
     () => ({
       suggested_title: nextStep?.suggested_title || "",
@@ -156,12 +153,7 @@ export default function EditNextStepContent({
         ? String(nextStep.suggested_decision_step)
         : "",
       carried_by: nextStep?.carried_by_prospect ? CARRIED_BY.PROSPECT : CARRIED_BY.SELLER,
-      people: (nextStep?.suggested_people ?? []).map((p) => ({
-        value: String(p.id),
-        label: personLabel(p),
-      })),
-      people_names: toNamePills(nextStep?.suggested_people_names),
-      internal_names: toNamePills(nextStep?.suggested_internal_names),
+      cited_names: citedNamePills(nextStep),
       suggested_objective: nextStep?.suggested_objective || "",
       suggested_success_criterion: nextStep?.suggested_success_criterion || "",
       suggested_topics: nextStep?.suggested_topics || "",
@@ -270,26 +262,10 @@ export default function EditNextStepContent({
         <Stack spacing={1.5}>
           <SectionHeader index={2} title="People" subtitle="Who takes part in the proposed activity." />
           <PillsField
-            name="suggested_people"
-            label="Prospect"
-            items={values.people}
-            onChange={set("people")}
-            options={peopleOptions}
-            addLabel="Add person"
-            emptyText="Unknown"
-          />
-          <PillsField
-            name="suggested_people_names"
-            label="Names not linked to a person"
-            items={values.people_names}
-            onChange={set("people_names")}
-            addLabel="Add name"
-          />
-          <PillsField
-            name="suggested_internal_names"
-            label="Internal"
-            items={values.internal_names}
-            onChange={set("internal_names")}
+            name="cited_names"
+            label="Names cited"
+            items={values.cited_names}
+            onChange={set("cited_names")}
             addLabel="Add name"
             emptyText="Unknown"
           />
@@ -357,15 +333,12 @@ EditNextStepContent.propTypes = {
     carried_by_prospect: PropTypes.bool,
     suggested_people: PropTypes.arrayOf(PropTypes.object),
     suggested_people_names: PropTypes.arrayOf(PropTypes.string),
-    suggested_internal_names: PropTypes.arrayOf(PropTypes.string),
     suggested_objective: PropTypes.string,
     suggested_success_criterion: PropTypes.string,
     suggested_topics: PropTypes.string,
     source_quote: PropTypes.string,
   }).isRequired,
-  /** The account — scopes the People picker. */
-  accountId: PropTypes.string,
-  /** The decision cycle — its steps and its People. */
+  /** The decision cycle — its steps. */
   decisionCycleId: PropTypes.string,
   /** Fired after a successful save with the updated next step — the caller
       revalidates and returns to the detail. Absent → the drawer closes. */

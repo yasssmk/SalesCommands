@@ -414,11 +414,12 @@ describe("Next steps band — the detail view (5.4)", () => {
     expect(within(proposal).getByText("Seller")).toBeInTheDocument();
   });
 
-  it("② People: the names cited (5.8c) and the internal names", async () => {
+  it("② People: the names cited (5.8c); NO internal names (5.8d, dormant data)", async () => {
     await openDetail([richPending()], "Send the DPA and SOC 2 report");
     const people = section("next-step-people");
     expect(within(people).getByText("Thomas Lefèvre · Karim Benali · Laurent")).toBeInTheDocument();
-    expect(within(people).getByText("Sophie")).toBeInTheDocument();
+    expect(within(people).queryByText("Sophie")).toBeNull();
+    expect(within(screen.getByTestId(DETAIL)).queryByText("Internal")).toBeNull();
   });
 
   it("③ Purpose: objective, success criterion, topics", async () => {
@@ -450,7 +451,7 @@ describe("Next steps band — the detail view (5.4)", () => {
   it("'Unknown' in full for each empty field", async () => {
     await openDetail([bare()], "Follow up");
     expect(within(section("next-step-proposal")).getAllByText("Unknown")).toHaveLength(2); // date, step
-    expect(within(section("next-step-people")).getAllByText("Unknown")).toHaveLength(2); // prospect, internal
+    expect(within(section("next-step-people")).getAllByText("Unknown")).toHaveLength(1); // names cited
     expect(within(section("next-step-purpose")).getAllByText("Unknown")).toHaveLength(3);
   });
 
@@ -542,7 +543,7 @@ describe("Next steps band — the edit view (5.5)", () => {
   it("is pre-filled with the next step, in the detail's sections", async () => {
     const edit = await openEdit();
     for (const text of ["Send the DPA and SOC 2 report", "Email", "before Friday", "Technical Fit",
-      "Seller", "Thomas Lefèvre", "Karim Benali", "Laurent", "Sophie",
+      "Seller", "Thomas Lefèvre", "Karim Benali", "Laurent",
       "Unblock the security review", "The DSI signs off the DPA", "DPA, SOC 2 scope"]) {
       expect(within(edit).getAllByText(text, { exact: false }).length).toBeGreaterThan(0);
     }
@@ -585,30 +586,47 @@ describe("Next steps band — the edit view (5.5)", () => {
     expect(payload()).toEqual({ carried_by_prospect: true });
   });
 
-  it("People: picked among the DC People that are not rejected", async () => {
-    await openEdit();
-    expect(useGetSignalsByAccount).toHaveBeenCalledWith("acc-1", "people",
-      expect.objectContaining({ filters: { decision_cycle_id: "dc-1" } }));
-    fireEvent.click(screen.getByTestId("add-suggested_people"));
-    fireEvent.click(screen.getByRole("button", { name: "Open" }));
-    expect(screen.queryByRole("option", { name: "Rejected Person" })).toBeNull();
-    expect(screen.queryByRole("option", { name: "Thomas Lefèvre" })).toBeNull(); // already chosen
-    fireEvent.click(screen.getByRole("option", { name: "Laurent Dubois" }));
-    fireEvent.click(screen.getByTestId("confirm-add-suggested_people"));
-    fireEvent.click(screen.getByTestId("remove-suggested_people-p-2"));
-    await save();
-    expect(payload()).toEqual({ suggested_people: ["p-1", "p-3"] });
+  // 5.8d (commit 1): ONE list of "Names cited" pills (free text) = the detail's
+  // list; no People picker, no "Internal".
+  it("Names cited: one list — the People's names then the names not linked", async () => {
+    const edit = await openEdit();
+    const field = within(edit).getByTestId("pills-field-cited_names");
+    expect(within(field).getByText("Names cited")).toBeInTheDocument();
+    for (const name of ["Thomas Lefèvre", "Karim Benali", "Laurent"]) {
+      expect(within(field).getByText(name)).toBeInTheDocument();
+    }
   });
 
-  it("names not linked / internal names are pills", async () => {
+  it("no People picker, no 'Internal' in the edit", async () => {
+    const edit = await openEdit();
+    expect(useGetSignalsByAccount).not.toHaveBeenCalled();
+    expect(within(edit).queryByTestId("pills-field-suggested_people")).toBeNull();
+    expect(within(edit).queryByText("Internal")).toBeNull();
+    expect(within(edit).queryByText("Sophie")).toBeNull();
+    expect(within(edit).queryByText("Names not linked to a person")).toBeNull();
+  });
+
+  it("PATCH EXACT — a name ADDED goes to suggested_people_names", async () => {
     await openEdit();
-    fireEvent.click(screen.getByTestId("remove-suggested_people_names-Laurent"));
-    fireEvent.click(screen.getByTestId("add-suggested_internal_names"));
-    fireEvent.change(screen.getByTestId("input-add-suggested_internal_names"),
-      { target: { value: "Marc" } });
-    fireEvent.click(screen.getByTestId("confirm-add-suggested_internal_names"));
+    fireEvent.click(screen.getByTestId("add-cited_names"));
+    fireEvent.change(screen.getByTestId("input-add-cited_names"), { target: { value: "Marc" } });
+    fireEvent.click(screen.getByTestId("confirm-add-cited_names"));
     await save();
-    expect(payload()).toEqual({ suggested_people_names: [], suggested_internal_names: ["Sophie", "Marc"] });
+    expect(payload()).toEqual({ suggested_people_names: ["Laurent", "Marc"] });
+  });
+
+  it("PATCH EXACT — a LINKED name removed: its People leaves suggested_people", async () => {
+    await openEdit();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Karim Benali" }));
+    await save();
+    expect(payload()).toEqual({ suggested_people: ["p-1"] });
+  });
+
+  it("PATCH EXACT — a name NOT linked removed: it leaves suggested_people_names", async () => {
+    await openEdit();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Laurent" }));
+    await save();
+    expect(payload()).toEqual({ suggested_people_names: [] });
   });
 
   it("long texts: objective, success criterion, topics", async () => {

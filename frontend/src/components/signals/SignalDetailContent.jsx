@@ -50,6 +50,7 @@ import {
   getPeopleHeadline,
   getTechUsage,
   getUsageScopeLabel,
+  getCitedPersonName,
   USAGE_SCOPE,
 } from "sections/activities/signals/utils/signalDisplay";
 
@@ -1989,7 +1990,8 @@ TechStackDetailView.propTypes = {
 //   §1 Proposal — the title heads the shared summary box; type, date (+ the
 //      date as said), DC step, who carries it;
 //   §2 People — the names the next step CITES (its People's names and the
-//      names not linked, alike, as text — PO rule 5.8c), the internal names;
+//      names not linked, alike, as text — PO rule 5.8c); the internal names
+//      are not shown (5.8d, dormant data);
 //   §3 Purpose — objective, success criterion, topics;
 //   §4 Source — quote + the server quote check (3.6: PEOPLE_EVIDENCE_PILL, the
 //      same values), participants, origin link;
@@ -2002,10 +2004,7 @@ const NEXT_STEP_UNKNOWN = "Unknown";
 // The names a next step cites: its People's (full_name, else their contact's
 // name) then the names not linked — one list, no distinction (5.8c).
 function nextStepCitedNames(signal) {
-  const peopleNames = (signal.suggested_people ?? []).map((p) =>
-    p.full_name ||
-    `${p.target_contact?.first_name ?? ""} ${p.target_contact?.last_name ?? ""}`.trim(),
-  );
+  const peopleNames = (signal.suggested_people ?? []).map(getCitedPersonName);
   return [...peopleNames, ...(signal.suggested_people_names ?? [])].filter(Boolean);
 }
 
@@ -2045,7 +2044,6 @@ function NextStepDetailView({
   // 5.8c (PO rule): a next step CITES names — those of its People and those
   // not linked — shown alike, as text, never as persons.
   const citedNames = nextStepCitedNames(signal);
-  const internalNames = signal.suggested_internal_names ?? [];
 
   const unknown = (
     <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
@@ -2143,13 +2141,12 @@ function NextStepDetailView({
         <Divider sx={{ my: 2 }} />
 
         {/* Section 2 — People: the names the next step cites (prospect side),
-            then the internal names — text only, no action. */}
+            text only, no action. The internal names are not shown (5.8d: no
+            way to tie them to a user; dormant data). */}
         <SectionHeader index={2} title="People" sx={{ mb: 1 }} />
         <Box data-testid="next-step-people">
           {label("Prospect")}
-          <Box sx={{ mb: 1.25 }}>{textOrUnknown(citedNames.join(" · "))}</Box>
-          {label("Internal")}
-          {textOrUnknown(internalNames.join(" · "))}
+          {textOrUnknown(citedNames.join(" · "))}
         </Box>
 
         <Divider sx={{ my: 2 }} />
