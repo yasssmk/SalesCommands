@@ -50,7 +50,6 @@ import {
   getPeopleHeadline,
   getTechUsage,
   getUsageScopeLabel,
-  getNextStepCitedNames,
   NEXT_STEP_UNKNOWN,
   USAGE_SCOPE,
 } from "sections/activities/signals/utils/signalDisplay";
@@ -1990,13 +1989,12 @@ TechStackDetailView.propTypes = {
 // the ACTIVITY coque ONLY. PO section order (5.0, B):
 //   §1 Proposal — the title heads the shared summary box; type, date (+ the
 //      date as said), DC step, who carries it;
-//   §2 People — the names the next step CITES (its People's names and the
-//      names not linked, alike, as text — PO rule 5.8c); the internal names
-//      are not shown (5.8d, dormant data);
-//   §3 Purpose — objective, success criterion, topics;
-//   §4 Source — quote + the server quote check (3.6: PEOPLE_EVIDENCE_PILL, the
+//   §2 Purpose — objective, success criterion, topics;
+//   §3 Source — quote + the server quote check (3.6: PEOPLE_EVIDENCE_PILL, the
 //      same values), participants, origin link;
-//   §5 Activity — ONLY when resolved: the activity created from it or linked.
+//   §4 Activity — ONLY when resolved: the activity created from it or linked.
+// No People section (5.8g, PO): the names a next step cites (and its internal
+// names) are not shown — the data stays, used only by the creation pre-fill.
 // An empty field reads "Unknown" in full (TechStack rule). advice_rationale is
 // never displayed (dormant capacity). A RESOLVED next step is read-only
 // (rule 2.1): no Edit / Reject / Validate / Reopen.
@@ -2033,10 +2031,6 @@ function NextStepDetailView({
     originActivityId && onOpenActivity && originActivityId !== currentActivityId,
   );
   const evidenceStatus = signal.metadata?.evidence_check?.status;
-
-  // 5.8c (PO rule): a next step CITES names — those of its People and those
-  // not linked — shown alike, as text, never as persons.
-  const citedNames = getNextStepCitedNames(signal);
 
   const unknown = (
     <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
@@ -2133,19 +2127,12 @@ function NextStepDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — People: the names the next step cites (prospect side),
-            text only, no action. The internal names are not shown (5.8d: no
-            way to tie them to a user; dormant data). */}
-        <SectionHeader index={2} title="People" sx={{ mb: 1 }} />
-        <Box data-testid="next-step-people">
-          {label("Prospect")}
-          {textOrUnknown(citedNames.join(" · "))}
-        </Box>
+        {/* No People section (5.8g, PO): the names a next step cites are not
+            shown — the data stays in base, used only by the activity creation
+            pre-fill (cited-contacts). */}
 
-        <Divider sx={{ my: 2 }} />
-
-        {/* Section 3 — Purpose. */}
-        <SectionHeader index={3} title="Purpose" sx={{ mb: 1 }} />
+        {/* Section 2 — Purpose. */}
+        <SectionHeader index={2} title="Purpose" sx={{ mb: 1 }} />
         <Box data-testid="next-step-purpose">
           {label("Objective")}
           <Box sx={{ mb: 1.25 }}>{textOrUnknown(signal.suggested_objective)}</Box>
@@ -2159,7 +2146,7 @@ function NextStepDetailView({
 
         {/* Section 4 — Source: the quote + the server quote check + who said
             it, with an optional link to the origin activity (People treatment). */}
-        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        <SectionHeader index={3} title="Source" sx={{ mb: 1 }} />
         <Box data-testid="next-step-source">
           {signal.source_quote ? (
             <SourceQuoteBlock quote={signal.source_quote} />
@@ -2205,7 +2192,7 @@ function NextStepDetailView({
         {resolvedActivity && (
           <>
             <Divider sx={{ my: 2 }} />
-            <SectionHeader index={5} title="Activity" sx={{ mb: 1 }} />
+            <SectionHeader index={4} title="Activity" sx={{ mb: 1 }} />
             <Box data-testid="next-step-activity">
               <NextStepActivityLine
                 activity={resolvedActivity}

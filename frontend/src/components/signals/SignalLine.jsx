@@ -36,7 +36,6 @@ import {
   getTechSummary,
   formatTargetDepartments,
   getPeopleName,
-  getNextStepCitedNames,
   NEXT_STEP_UNKNOWN,
 } from "sections/activities/signals/utils/signalDisplay";
 import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
@@ -82,8 +81,8 @@ export function formatShortDate(dateStr) {
 }
 
 // Line 2 of a NEXT STEP (Sprint Next steps 5.8f, PO exception): what the
-// proposed activity is — type · action date · names cited — instead of the
-// generic creation date · origin contact. The date is the due date (formatted
+// proposed activity is — type · action date — instead of the generic creation
+// date · origin contact. The names cited are not shown (5.8g, PO). The date is the due date (formatted
 // as every date of the line), else the date as said, else "Unknown".
 function getNextStepLineMeta(signal) {
   const type = signal.suggested_activity_type;
@@ -96,7 +95,6 @@ function getNextStepLineMeta(signal) {
       ACTIVITY_TYPE_LABELS[type] || signal.suggested_activity_type_display || null,
     dateLabel:
       formatShortDate(signal.suggested_due_date) || dateAsSaid || NEXT_STEP_UNKNOWN,
-    names: getNextStepCitedNames(signal).join(", "),
   };
 }
 
@@ -183,8 +181,8 @@ function formatOriginContact(contact) {
  * Layout:
  *   Line 1 — [type chip, when showTypeChip] + full message (wraps, no clamp).
  *   Line 2 — meta: date · contact · scope · light status chip. A next step
- *            reads type · action date · names cited instead (5.8f), on the
- *            same meta row.
+ *            reads type · action date instead (5.8f/5.8g), on the same meta
+ *            row.
  *   Line 3 — `extra` (optional, generic): any node a caller adds under the
  *            meta line (e.g. the activity of a resolved next step). Absent
  *            unless the caller passes it.
@@ -314,7 +312,7 @@ export default function SignalLine({
       </Stack>
 
       {/* Line 2 (meta): date · contact · scope · light status — for a next
-          step: type · action date · names cited (5.8f), same row template. */}
+          step: type · action date (5.8f/5.8g), same row template. */}
       <Stack
         direction="row"
         alignItems="center"
@@ -351,22 +349,6 @@ export default function SignalLine({
             <CalendarOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
             <Typography variant="caption" color="text.secondary" noWrap>
               {nextStepMeta.dateLabel}
-            </Typography>
-          </Stack>
-        )}
-
-        {/* Next step — the names cited (text, never persons) */}
-        {nextStepMeta?.names && (
-          <Stack
-            direction="row"
-            spacing={0.5}
-            alignItems="center"
-            sx={{ flexShrink: 1, minWidth: 0 }}
-            data-testid="next-step-line-names"
-          >
-            <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {nextStepMeta.names}
             </Typography>
           </Stack>
         )}

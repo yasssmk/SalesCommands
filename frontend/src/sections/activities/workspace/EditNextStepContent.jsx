@@ -8,19 +8,15 @@
 // changed fields; onSaved(updatedSignal) returns to the detail.
 //
 // Sections = EXACTLY the detail's (NextStepDetailView): §1 Proposal (title,
-// type, date + the date as said, DC step, carried by) → §2 People (the names
-// cited — one list of pills, the detail's) → §3 Purpose
-// (long texts) → §4 Source (the quote).
+// type, date + the date as said, DC step, carried by) → §2 Purpose (long
+// texts) → §3 Source (the quote).
 //
-// Writable fields = NextStepSignalUpdateSerializer's, minus the two the UI
-// never sends: suggested_contacts (dormant, TD-7) and advice_rationale
-// (dormant capacity, PO). The DC step is one of the cycle's steps (the server
-// refuses any other). PO rule (5.8c/5.8d): a next step CITES names — one list
-// of "Names cited" (its People's names, then suggested_people_names), edited as
-// free text: a name added → suggested_people_names; a People's name removed →
-// that People leaves suggested_people; a name removed → it leaves
-// suggested_people_names. No People picker; suggested_people changes in no
-// other way. The internal names are not shown (dormant data).
+// Writable fields = NextStepSignalUpdateSerializer's, minus those the UI never
+// sends: suggested_contacts (dormant, TD-7), advice_rationale (dormant
+// capacity, PO) and — 5.8g, PO — the names cited (suggested_people,
+// suggested_people_names, suggested_internal_names): not shown, never sent, the
+// data stays (used only by the activity creation pre-fill). The DC step is one
+// of the cycle's steps (the server refuses any other).
 //
 // Theme tokens only. Limits come from signalValidationRules.js.
 
@@ -46,9 +42,7 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import InlineDateField from "components/drawer/InlineDateField";
-import PillsField from "components/drawer/PillsField";
 import { NEXT_STEP_TITLE_MAX_LENGTH } from "sections/activities/signals/signalValidationRules";
-import { getCitedPersonName } from "sections/activities/signals/utils/signalDisplay";
 
 // "Carried by" is a boolean on the model; the select holds these two keys.
 const CARRIED_BY = { PROSPECT: "PROSPECT", SELLER: "SELLER" };
@@ -61,22 +55,6 @@ const TYPE_OPTIONS = Object.entries(ACTIVITY_TYPE_LABELS).map(([value, label]) =
   value,
   label,
 }));
-
-// "Names cited" pills: a People's name is keyed by its People (so removing it
-// unlinks that People), a name not linked by itself.
-const PEOPLE_PILL_PREFIX = "people:";
-
-function citedNamePills(nextStep) {
-  return [
-    ...(nextStep?.suggested_people ?? []).map((p) => ({
-      value: `${PEOPLE_PILL_PREFIX}${p.id}`,
-      label: getCitedPersonName(p) || "—",
-    })),
-    ...(nextStep?.suggested_people_names ?? []).map((n) => ({ value: n, label: n })),
-  ];
-}
-
-const isPeoplePill = (pill) => pill.value.startsWith(PEOPLE_PILL_PREFIX);
 
 // ==============================|| VALIDATION ||============================== //
 
@@ -100,11 +78,6 @@ function toPayload(values) {
     suggested_date_text: values.suggested_date_text,
     suggested_decision_step: values.suggested_decision_step || null,
     carried_by_prospect: values.carried_by === CARRIED_BY.PROSPECT,
-    // The People still cited (in their order) — never a new one.
-    suggested_people: values.cited_names
-      .filter(isPeoplePill)
-      .map((p) => p.value.slice(PEOPLE_PILL_PREFIX.length)),
-    suggested_people_names: values.cited_names.filter((p) => !isPeoplePill(p)).map((p) => p.label),
     suggested_objective: values.suggested_objective,
     suggested_success_criterion: values.suggested_success_criterion,
     suggested_topics: values.suggested_topics,
@@ -152,7 +125,6 @@ export default function EditNextStepContent({
         ? String(nextStep.suggested_decision_step)
         : "",
       carried_by: nextStep?.carried_by_prospect ? CARRIED_BY.PROSPECT : CARRIED_BY.SELLER,
-      cited_names: citedNamePills(nextStep),
       suggested_objective: nextStep?.suggested_objective || "",
       suggested_success_criterion: nextStep?.suggested_success_criterion || "",
       suggested_topics: nextStep?.suggested_topics || "",
@@ -257,24 +229,9 @@ export default function EditNextStepContent({
 
         <Divider />
 
-        {/* ---- SECTION 2 — People (as the detail) ---- */}
+        {/* ---- SECTION 2 — Purpose (as the detail) ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={2} title="People" subtitle="Who takes part in the proposed activity." />
-          <PillsField
-            name="cited_names"
-            label="Names cited"
-            items={values.cited_names}
-            onChange={set("cited_names")}
-            addLabel="Add name"
-            emptyText="Unknown"
-          />
-        </Stack>
-
-        <Divider />
-
-        {/* ---- SECTION 3 — Purpose (as the detail) ---- */}
-        <Stack spacing={1.5}>
-          <SectionHeader index={3} title="Purpose" subtitle="What the proposed activity is for." />
+          <SectionHeader index={2} title="Purpose" subtitle="What the proposed activity is for." />
           <InlineEditableValue
             name="suggested_objective"
             label="Objective"
@@ -303,9 +260,9 @@ export default function EditNextStepContent({
 
         <Divider />
 
-        {/* ---- SECTION 4 — Source (last, as the detail) ---- */}
+        {/* ---- SECTION 3 — Source (last, as the detail) ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={4} title="Source" subtitle="Where does this signal come from" />
+          <SectionHeader index={3} title="Source" subtitle="Where does this signal come from" />
           <InlineEditableValue
             name="source_quote"
             label="Quote"
@@ -330,8 +287,6 @@ EditNextStepContent.propTypes = {
     suggested_date_text: PropTypes.string,
     suggested_decision_step: PropTypes.string,
     carried_by_prospect: PropTypes.bool,
-    suggested_people: PropTypes.arrayOf(PropTypes.object),
-    suggested_people_names: PropTypes.arrayOf(PropTypes.string),
     suggested_objective: PropTypes.string,
     suggested_success_criterion: PropTypes.string,
     suggested_topics: PropTypes.string,

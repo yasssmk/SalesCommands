@@ -9,8 +9,8 @@
 //   * gone: the Divider, the dashed boxes in raw MUI colours (→ the shared
 //     EmptyState, aphoriQ theme), "Create a follow-up to continue.", "… from
 //     the Overview tab …", the redundant "Next step" type-group header;
-//   * line 2 of a next step = type · action date · names cited (PO exception;
-//     a next-steps branch of SignalLine, same line template);
+//   * line 2 of a next step = type · action date (PO exception; a next-steps
+//     branch of SignalLine, same line template) — 5.8g: no names cited;
 //   * the band HALO: the same SignalsHaloBox as the Signals band;
 //   * the activity header "N to validate" counter includes the PENDING next
 //     steps.
@@ -311,18 +311,22 @@ describe("5.8f — removed: Divider, dashed boxes, stale texts, the 'Next step' 
 
 // ==============================|| LINE 2 ||============================== //
 
-describe("5.8f — line 2 of a next step: type · action date · names cited", () => {
+describe("5.8f/5.8g — line 2 of a next step: type · action date (no names cited)", () => {
   const meta = (title) => within(rowOf(title)).getByTestId("next-step-line-meta");
 
-  it("the type, the due date formatted as elsewhere, the names cited", () => {
+  it("the type then the due date formatted as elsewhere — nothing else", () => {
     renderPage();
     const m = meta("Send the DPA");
     expect(within(m).getByTestId("next-step-line-type")).toHaveTextContent("Email");
     expect(within(m).getByTestId("next-step-line-date")).toHaveTextContent("3 Nov 2026");
-    expect(within(m).getByTestId("next-step-line-names")).toHaveTextContent("Isabelle Roux, Karim");
-    // In this order.
     expect(m.textContent.indexOf("Email")).toBeLessThan(m.textContent.indexOf("3 Nov 2026"));
-    expect(m.textContent.indexOf("3 Nov 2026")).toBeLessThan(m.textContent.indexOf("Isabelle Roux"));
+  });
+
+  it("5.8g — no names cited on the line (the data is there, not shown)", () => {
+    renderPage();
+    const row = rowOf("Send the DPA");
+    expect(within(row).queryByTestId("next-step-line-names")).toBeNull();
+    expect(within(row).queryByText(/Isabelle Roux|Karim/)).toBeNull();
   });
 
   it("not the generic meta: neither the creation date nor the origin contact", () => {
@@ -343,11 +347,9 @@ describe("5.8f — line 2 of a next step: type · action date · names cited", (
     expect(within(meta("Train Karim")).getByTestId("next-step-line-date")).toHaveTextContent("Unknown");
   });
 
-  it("the type label of the surface ('Phone Call'); no name cited → no names item", () => {
-    renderPage(dcActivity(), [nextStep({ suggested_activity_type: "CALL",
-                                         suggested_people: [], suggested_people_names: [] })]);
+  it("the type label of the surface ('Phone Call')", () => {
+    renderPage(dcActivity(), [nextStep({ suggested_activity_type: "CALL" })]);
     expect(within(meta("Send the DPA")).getByTestId("next-step-line-type")).toHaveTextContent("Phone Call");
-    expect(within(meta("Send the DPA")).queryByTestId("next-step-line-names")).toBeNull();
   });
 
   it("the same line template: the line-2 meta row of every signal", () => {

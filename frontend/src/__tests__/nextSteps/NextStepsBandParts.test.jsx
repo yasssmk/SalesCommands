@@ -15,7 +15,8 @@
 //   outside a DC (DC-only guard) parts 2-3 are hidden, parts 1 and 4 stay.
 // 5.4 — the next step DETAIL opens in the single workspace coque (as the 8 other
 // types), on the standard chassis (NextStepDetailView, section B of 5.0):
-// ① Proposal ② People ③ Purpose ④ Source (+ quote badge) ⑤ Activity when
+// ① Proposal ② Purpose ③ Source (+ quote badge) ④ Activity when (5.8g: no
+// People section — the names cited are not shown)
 // resolved; "Unknown" in full for an empty field; advice_rationale never shown;
 // a resolved next step is read-only (rule 2.1).
 // The band, ActivityNextStepsTab, SignalsValidationList, SignalLine, the coque
@@ -468,15 +469,7 @@ describe("Next steps band — the detail view (5.4)", () => {
     expect(within(proposal).getByText("Seller")).toBeInTheDocument();
   });
 
-  it("② People: the names cited (5.8c); NO internal names (5.8d, dormant data)", async () => {
-    await openDetail([richPending()], "Send the DPA and SOC 2 report");
-    const people = section("next-step-people");
-    expect(within(people).getByText("Thomas Lefèvre · Karim Benali · Laurent")).toBeInTheDocument();
-    expect(within(people).queryByText("Sophie")).toBeNull();
-    expect(within(screen.getByTestId(DETAIL)).queryByText("Internal")).toBeNull();
-  });
-
-  it("③ Purpose: objective, success criterion, topics", async () => {
+  it("② Purpose: objective, success criterion, topics", async () => {
     await openDetail([richPending()], "Send the DPA and SOC 2 report");
     const purpose = section("next-step-purpose");
     expect(within(purpose).getByText("Unblock the security review")).toBeInTheDocument();
@@ -484,7 +477,7 @@ describe("Next steps band — the detail view (5.4)", () => {
     expect(within(purpose).getByText("DPA, SOC 2 scope")).toBeInTheDocument();
   });
 
-  it("④ Source: quote, the 'quote not found' badge, participants, origin link", async () => {
+  it("③ Source: quote, the 'quote not found' badge, participants, origin link", async () => {
     await openDetail([richPending()], "Send the DPA and SOC 2 report");
     const source = section("next-step-source");
     expect(within(source).getByText(/Envoyez-les avant vendredi/)).toBeInTheDocument();
@@ -505,7 +498,6 @@ describe("Next steps band — the detail view (5.4)", () => {
   it("'Unknown' in full for each empty field", async () => {
     await openDetail([bare()], "Follow up");
     expect(within(section("next-step-proposal")).getAllByText("Unknown")).toHaveLength(2); // date, step
-    expect(within(section("next-step-people")).getAllByText("Unknown")).toHaveLength(1); // names cited
     expect(within(section("next-step-purpose")).getAllByText("Unknown")).toHaveLength(3);
   });
 
@@ -597,8 +589,7 @@ describe("Next steps band — the edit view (5.5)", () => {
   it("is pre-filled with the next step, in the detail's sections", async () => {
     const edit = await openEdit();
     for (const text of ["Send the DPA and SOC 2 report", "Email", "before Friday", "Technical Fit",
-      "Seller", "Thomas Lefèvre", "Karim Benali", "Laurent",
-      "Unblock the security review", "The DSI signs off the DPA", "DPA, SOC 2 scope"]) {
+      "Seller", "Unblock the security review", "The DSI signs off the DPA", "DPA, SOC 2 scope"]) {
       expect(within(edit).getAllByText(text, { exact: false }).length).toBeGreaterThan(0);
     }
     expect(within(edit).queryByText(/ADVICE-RATIONALE/)).toBeNull();
@@ -659,47 +650,12 @@ describe("Next steps band — the edit view (5.5)", () => {
     expect(payload()).toEqual({ carried_by_prospect: true });
   });
 
-  // 5.8d (commit 1): ONE list of "Names cited" pills (free text) = the detail's
-  // list; no People picker, no "Internal".
-  it("Names cited: one list — the People's names then the names not linked", async () => {
-    const edit = await openEdit();
-    const field = within(edit).getByTestId("pills-field-cited_names");
-    expect(within(field).getByText("Names cited")).toBeInTheDocument();
-    for (const name of ["Thomas Lefèvre", "Karim Benali", "Laurent"]) {
-      expect(within(field).getByText(name)).toBeInTheDocument();
-    }
-  });
-
   it("no People picker, no 'Internal' in the edit", async () => {
     const edit = await openEdit();
     expect(useGetSignalsByAccount).not.toHaveBeenCalled();
     expect(within(edit).queryByTestId("pills-field-suggested_people")).toBeNull();
     expect(within(edit).queryByText("Internal")).toBeNull();
     expect(within(edit).queryByText("Sophie")).toBeNull();
-    expect(within(edit).queryByText("Names not linked to a person")).toBeNull();
-  });
-
-  it("PATCH EXACT — a name ADDED goes to suggested_people_names", async () => {
-    await openEdit();
-    fireEvent.click(screen.getByTestId("add-cited_names"));
-    fireEvent.change(screen.getByTestId("input-add-cited_names"), { target: { value: "Marc" } });
-    fireEvent.click(screen.getByTestId("confirm-add-cited_names"));
-    await save();
-    expect(payload()).toEqual({ suggested_people_names: ["Laurent", "Marc"] });
-  });
-
-  it("PATCH EXACT — a LINKED name removed: its People leaves suggested_people", async () => {
-    await openEdit();
-    fireEvent.click(screen.getByRole("button", { name: "Remove Karim Benali" }));
-    await save();
-    expect(payload()).toEqual({ suggested_people: ["p-1"] });
-  });
-
-  it("PATCH EXACT — a name NOT linked removed: it leaves suggested_people_names", async () => {
-    await openEdit();
-    fireEvent.click(screen.getByRole("button", { name: "Remove Laurent" }));
-    await save();
-    expect(payload()).toEqual({ suggested_people_names: [] });
   });
 
   it("long texts: objective, success criterion, topics", async () => {
@@ -1025,41 +981,62 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
   });
 });
 
-// ==============================|| 5.8c — THE NAMES CITED ||============================== //
+// ==============================|| 5.8g (c) — THE NAMES CITED, NOT SHOWN ||============================== //
 //
-// PO rule: a next step neither creates nor describes any person, it CITES
-// names. The detail shows the cited names (the names of its suggested_people
-// + suggested_people_names) as plain text — no linked / not-linked
-// distinction (no contact identity, no job title), no action.
+// PO decision (5.8g, replaces the 5.8c display): the names a next step cites
+// (its suggested_people + suggested_people_names) are NOT shown anywhere in
+// the next step UI — no People section in the detail nor in the edit; line 2
+// = type · date. The data stays in base (never sent by the edit); the contacts
+// pre-fill of the creation (cited-contacts, 5.8d) is kept.
 
-describe("Next steps band — the names cited, as text (5.8c)", () => {
+describe("Next steps band — the names cited are not shown (5.8g)", () => {
   const openRich = async (over = {}) => {
     renderPage(dcActivity(), [richPending(over)]);
     fireEvent.click(rowOf("Send the DPA and SOC 2 report"));
     return screen.findByTestId(DETAIL);
   };
+  const badgeOf = (container, title) =>
+    within(container).getByText(title).previousSibling?.textContent;
 
-  it("the cited names, in one plain line, linked or not", async () => {
-    await openRich();
-    const people = section("next-step-people");
-    expect(within(people).getByText("Thomas Lefèvre · Karim Benali · Laurent")).toBeInTheDocument();
+  it("the detail: no People section, no name cited", async () => {
+    const detail = await openRich();
+    expect(within(detail).queryByTestId("next-step-people")).toBeNull();
+    expect(within(detail).queryByText("People")).toBeNull();
+    for (const name of [/Karim Benali/, /^Laurent$/, /Thomas Lefèvre · Karim/]) {
+      expect(within(detail).queryByText(name)).toBeNull();
+    }
+    expect(within(detail).queryByText("Internal")).toBeNull();
   });
 
-  it("no distinction: no contact identity (job title) for a linked People", async () => {
-    await openRich();
-    expect(within(section("next-step-people")).queryByText(/CTO/)).toBeNull();
+  it("the detail sections: ① Proposal ② Purpose ③ Source", async () => {
+    const detail = await openRich();
+    expect(badgeOf(detail, "Proposal")).toBe("1");
+    expect(badgeOf(detail, "Purpose")).toBe("2");
+    expect(badgeOf(detail, "Source")).toBe("3");
   });
 
-  it("no action on a name: no 'Add as person'", async () => {
+  it("the edit: no People section, no 'Names cited'; sections ① ② ③", async () => {
     await openRich();
-    expect(screen.queryByRole("button", { name: /as person/ })).toBeNull();
-    expect(within(section("next-step-people")).queryAllByRole("button")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: /\bEdit\b/ }));
+    const edit = await screen.findByTestId("next-step-edit");
+    expect(within(edit).queryByTestId("pills-field-cited_names")).toBeNull();
+    expect(within(edit).queryByText("People")).toBeNull();
+    expect(within(edit).queryByText("Names cited")).toBeNull();
+    expect(within(edit).queryByText("Karim Benali")).toBeNull();
+    expect(badgeOf(edit, "Proposal")).toBe("1");
+    expect(badgeOf(edit, "Purpose")).toBe("2");
+    expect(badgeOf(edit, "Source")).toBe("3");
   });
 
-  it("a linked People without full_name is cited by its contact's name", async () => {
-    await openRich({ suggested_people: [{ id: "p-1", full_name: "", role: "CHAMPION",
-      target_contact: THOMAS }], suggested_people_names: [] });
-    expect(within(section("next-step-people")).getByText("Thomas Lefèvre")).toBeInTheDocument();
+  it("the data stays: the edit never sends suggested_people / suggested_people_names", async () => {
+    await openRich();
+    fireEvent.click(screen.getByRole("button", { name: /\bEdit\b/ }));
+    await screen.findByTestId("next-step-edit");
+    fireEvent.click(screen.getByTestId("inline-read-suggested_title"));
+    fireEvent.change(screen.getByTestId("inline-input-suggested_title"), { target: { value: "Send the DPA" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(updateSignal).toHaveBeenCalled());
+    expect(updateSignal.mock.calls[0][2]).toEqual({ suggested_title: "Send the DPA" });
   });
 });
 
