@@ -16,12 +16,12 @@ from end_users.models import User
 from django.db import transaction
 from django.utils import timezone
 
-from app_modules.notifications.models import NotificationCategory
-from app_modules.notifications.services import NotificationService
-
 from .models import Activity
 from .constants import ActivityStatus, NoNextStepReason
 from .services import ActivitySequenceService, SequenceScope
+# The invited users: ONE validation + ONE notification, shared with
+# create-with-entities (ActivityCreationService).
+from .services.activity_invitations import notify_invited_users, resolve_invited_users
 from .services.next_step_materialization import (
     mark_next_step_materialised,
     next_step_activity_fields,
@@ -865,51 +865,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
 
 # ============================================================================
-# INVITATION NOTIFICATION HELPER
-# ============================================================================
-
-def notify_invited_users(activity, users, actor):
-    """
-    Emit an activity-invitation notification to each newly invited user.
-
-    Runs on transaction commit so invitations are only sent once the
-    activity (and its M2M) are persisted. The self-notify guard in
-    NotificationService.emit() skips the inviter (actor).
-
-    Args:
-        activity: The saved Activity instance.
-        users:    Iterable of newly invited User instances.
-        actor:    The user performing the invitation.
-    """
-    recipient_ids = [u.id for u in users]
-    if not recipient_ids:
-        return
-
-    # Primitives captured outside the commit closure for the rich title
-    # and the routing payload the frontend deep-links with.
-    client_id = activity.client_id
-    activity_id = activity.id
-    actor_name = actor.get_full_name() or actor.email
-    account_name = activity.account.company_name
-    title = f"{actor_name} invited you to {activity.title} · {account_name}"
-
-    def _emit():
-        for recipient_id in recipient_ids:
-            NotificationService.emit(
-                client_id=client_id,
-                recipient=recipient_id,
-                actor=actor,
-                category=NotificationCategory.ACTIVITY_INVITATION,
-                title=title,
-                related_object_type='activity',
-                related_object_id=activity_id,
-                payload={'activity_id': str(activity_id)},
-            )
-
-    transaction.on_commit(_emit)
-
-
-# ============================================================================
 # CREATE SERIALIZER
 # ============================================================================
 
@@ -1055,15 +1010,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # =================================================================
             invited_user_ids = attrs.pop('invited_user_ids', [])
             if invited_user_ids:
-                invited_users = User.objects.filter(
-                    id__in=invited_user_ids,
-                    client_account_id=client_id
-                )
-                if invited_users.count() != len(invited_user_ids):
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_FIELD.format(field='Some invited users not found')
-                    )
-                attrs['_invited_users'] = list(invited_users)
+                attrs['_invited_users'] = resolve_invited_users(invited_user_ids, client_id)
             
             # =================================================================
             # Validate decision_cycle (optional)

@@ -24,6 +24,7 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 
 from ..models import Activity
 from ..constants import ActivityStatus
+from .activity_invitations import notify_invited_users, resolve_invited_users
 from .next_step_materialization import (
     mark_next_step_materialised,
     next_step_activity_fields,
@@ -104,6 +105,14 @@ class ActivityCreationService:
 
             # Activity owner resolution: explicit override, else the current user.
             resolved_owner = cycle_owner_override or self.user
+
+            # The invited teammates — the standard create path's validation
+            # (users of the tenant only), BEFORE any inline entity is created.
+            invited_user_ids = list(activity_data.get('invited_user_ids') or [])
+            invited_users = (
+                resolve_invited_users(invited_user_ids, self.client_id)
+                if invited_user_ids else []
+            )
 
             # Next step being converted (optional): resolved BEFORE any inline
             # entity is created, same contract as POST /module-activities/
@@ -245,6 +254,12 @@ class ActivityCreationService:
             )
             if next_step_signal:
                 mark_next_step_materialised(next_step_signal, self.user)
+
+            # The invited teammates, as the standard create path: set, then
+            # notified on commit (the inviter skipped).
+            if invited_users:
+                activity.invited_users.set(invited_users)
+                notify_invited_users(activity, invited_users, actor=self.user)
 
             # NO BACKFILL HERE. This used to write source_campaign on whatever
             # cycle the activity pointed at, "covering both inline cycle creation
