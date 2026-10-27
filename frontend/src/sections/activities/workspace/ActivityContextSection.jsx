@@ -45,6 +45,7 @@ import PersonRow from "components/display/PersonRow";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
 import UserDrawerContent from "sections/activities/workspace/UserDrawerContent";
+import { personName, personNameAndEmail } from "utils/personLabel";
 
 // ==============================|| FORMAT HELPERS ||============================== //
 
@@ -86,10 +87,6 @@ function getSchedule(activity) {
   return { label: "Scheduled", value: null };
 }
 
-function personName(p) {
-  if (!p) return null;
-  return p.full_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.email || null;
-}
 
 // ==============================|| SHARED SMALL PIECES ||============================== //
 
@@ -255,6 +252,7 @@ export default function ActivityContextSection({ activity }) {
 
   const schedule = getSchedule(activity);
   const owner = activity.owner_detail;
+  const ownerLabel = personNameAndEmail(owner);
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
   // A conversation already shown by the provenance line (its source
@@ -313,11 +311,12 @@ export default function ActivityContextSection({ activity }) {
                 onClick={() =>
                   openDrawer(<UserDrawerContent userId={owner.id} />, { title: "Team member" })
                 }
-                name={personName(owner)}
-                // « First Last · Owner · email »: this column has no "Activity
-                // owner" title, so the marker stays here (5.9, PO) — only the
-                // creation drawer, whose caption says it, drops "owner".
-                suffix={["Owner", owner.email].filter(Boolean).join(" · ")}
+                name={ownerLabel.name}
+                // « First Last · Owner · email » (the shared label, 5.9b): this
+                // column has no "Activity owner" title, so the marker stays
+                // here (5.9, PO) — only the creation drawer, whose caption
+                // says it, drops "owner".
+                suffix={["Owner", ownerLabel.email].filter(Boolean).join(" · ")}
               />
             )}
             {invited.map((u) => (

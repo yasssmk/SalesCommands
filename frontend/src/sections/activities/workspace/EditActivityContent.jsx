@@ -68,6 +68,7 @@ import {
 } from "api/accounts/decisionCycles";
 import { useNextStepCitedContacts } from "api/signals/signals";
 import { useAuth } from "hooks/useAuth";
+import { personName, personNameAndEmail } from "utils/personLabel";
 import { activityDefaultsFromNextStep } from "utils/activityTypes";
 import { InlineContactForm } from "sections/accounts/activities/components";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
@@ -143,9 +144,6 @@ function readDate(v) {
 }
 function readTime(t) {
   return t ? dayjs(t).format("h:mm A") : null;
-}
-function personName(p) {
-  return p?.full_name || [p?.first_name, p?.last_name].filter(Boolean).join(" ") || p?.email || null;
 }
 
 // ==============================|| INTERNAL FILET ||============================== //
@@ -407,7 +405,9 @@ function PeopleSection({
 
   const invited = values.invited || [];
   const contacts = values.contacts || [];
-  const ownerSuffix = values.owner?.email || undefined;
+  // The owner: « First Last · email » (the shared label, 5.9b).
+  const ownerLabel = personNameAndEmail(values.owner);
+  const ownerSuffix = ownerLabel.email || undefined;
 
   return (
     <Stack data-testid="people-section" spacing={1.5}>
@@ -418,12 +418,12 @@ function PeopleSection({
         {caption("Activity owner", true)}
         {ownerReadOnly ? (
           // Creation: the creator is the owner (server rule) — named, read-only.
-          <PersonRow name={personName(values.owner)} suffix={ownerSuffix} />
+          <PersonRow name={ownerLabel.name} suffix={ownerSuffix} />
         ) : locked ? (
-          values.owner ? <PersonRow name={personName(values.owner)} suffix={ownerSuffix} /> : emptyLine("No owner")
+          values.owner ? <PersonRow name={ownerLabel.name} suffix={ownerSuffix} /> : emptyLine("No owner")
         ) : values.owner ? (
           <PersonEditRow
-            name={personName(values.owner)}
+            name={ownerLabel.name}
             suffix={ownerSuffix}
             onRemove={() => setFieldValue("owner", null)}
             removeTestId="remove-owner"

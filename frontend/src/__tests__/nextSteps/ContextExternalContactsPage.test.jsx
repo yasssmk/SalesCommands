@@ -244,3 +244,15 @@ describe("Context — provenance from next steps (5.9)", () => {
     expect(container.querySelector('[data-testid="ctx-card"] .anticon-branches')).toBeNull();
   });
 });
+
+// 5.9b (2) — the shared label: an owner truly without a name reads its email
+// ONCE (« email · Owner »), never « email · Owner · email ».
+describe("Context — an owner without a name: the email once (5.9b)", () => {
+  it("« ann@acme.test · Owner »", () => {
+    mockActivity = activityWith(undefined, {
+      owner_detail: { id: "u-1", first_name: "", last_name: "", full_name: "", email: "ann@acme.test" },
+    });
+    render(<ActivityWorkspacePage />);
+    expect(screen.getByText("ann@acme.test").closest("p").textContent).toBe("ann@acme.test · Owner");
+  });
+});

@@ -56,7 +56,15 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
   createActivityWithEntities: vi.fn(async () => mockCreateActivityResult),
 }));
 let mockCreateActivityResult = { success: true, data: { id: "act-new" } };
-const mockAuthUser = { id: "u-1", first_name: "Yasmine", last_name: "Kawi", email: "yasmine@acme.test" };
+// useAuth().user in its REAL shape: the auth payload of the backend
+// (core.auth_service.auth_user_payload — login / current user / refresh,
+// pinned by tests/integration/end_users/test_auth_user_payload_names.py).
+const AUTH_USER = {
+  id: "u-1", name: "Yasmine Kawi", first_name: "Yasmine", last_name: "Kawi",
+  email: "yasmine@acme.test", role: "Individual", role_tier: "individual", avatar: null,
+  client_id: "t-1", client_name: "Tenant A",
+};
+let mockAuthUser = AUTH_USER;
 vi.mock("@mui/x-date-pickers/TimePicker", () => ({ TimePicker: () => <input /> }));
 vi.mock("hooks/useAuth", () => ({
   useAuth: () => ({ user: mockAuthUser, tenantId: "t-1" }),
@@ -1163,6 +1171,27 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(name.closest("p")).toHaveStyle({ fontWeight: testTheme.typography.fontWeightBold });
     const suffix = within(owner).getByText(/yasmine@acme\.test/);
     expect(suffix).toHaveStyle({ color: testTheme.aphoriQ.text.muted });
+  });
+
+  // 5.9b (2) — the owner label, from the REAL auth user shape: « First Last ·
+  // email »; the email ONCE when the name is truly missing.
+  it("the real auth user: « First Last · email », never the email twice", async () => {
+    const create = await openCreateFromFlow();
+    const owner = within(create).getByTestId("activity-owner");
+    expect(within(owner).getByText("Yasmine Kawi").closest("p").textContent)
+      .toBe("Yasmine Kawi · yasmine@acme.test");
+  });
+
+  it("a user truly without a name: the email once", async () => {
+    mockAuthUser = { ...AUTH_USER, name: "", first_name: "", last_name: "" };
+    try {
+      const create = await openCreateFromFlow();
+      const owner = within(create).getByTestId("activity-owner");
+      expect(within(owner).getByText(/yasmine@acme\.test/).closest("p").textContent)
+        .toBe("yasmine@acme.test");
+    } finally {
+      mockAuthUser = AUTH_USER;
+    }
   });
 
   // 5.8g (b) — "+ Add contact" / "+ New contact": the standard gap between
