@@ -24,8 +24,10 @@ import unicodedata
 
 
 __all__ = [
+    'account_contacts',
     'name_appears_in_text',
     'ordered_participants',
+    'resolve_contact_by_name',
     'resolve_participant_by_name',
     'resolve_people_signal_by_name',
     'resolve_speaker_label',
@@ -43,6 +45,24 @@ def ordered_participants(activity):
     return list(
         activity.contacts
         .filter(client_id=activity.client_id, account_id=activity.account_id)
+        .select_related('standard_department')
+        .order_by('last_name', 'first_name', 'id')
+    )
+
+
+def account_contacts(client_id, account_id):
+    """
+    Sprint Next steps 5.8d: the contacts of an ACCOUNT, filtered on its
+    tenant AND account, in the same deterministic order as
+    ordered_participants (last_name, first_name, id).
+
+    Returns:
+        list[Contact] -- possibly empty.
+    """
+    from app_modules.contacts.models import Contact
+    return list(
+        Contact.objects
+        .filter(client_id=client_id, account_id=account_id)
         .select_related('standard_department')
         .order_by('last_name', 'first_name', 'id')
     )
@@ -134,9 +154,21 @@ def resolve_participant_by_name(stated_name, activity):
     Returns:
         Contact | None
     """
+    return resolve_contact_by_name(stated_name, ordered_participants(activity))
+
+
+def resolve_contact_by_name(stated_name, contacts):
+    """
+    The contact a name as written designates among `contacts` (the caller
+    scopes them: the activity's participants, Sprint Next steps 5.8d the
+    contacts of the account) -- THE TD-279 word rule (_best_unique_match),
+    never a guess: missing name, no match or a tie -> None.
+
+    Returns:
+        Contact | None
+    """
     return _best_unique_match(stated_name, [
-        (_contact_name_parts(contact), contact)
-        for contact in ordered_participants(activity)
+        (_contact_name_parts(contact), contact) for contact in contacts
     ])
 
 

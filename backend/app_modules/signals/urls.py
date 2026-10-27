@@ -279,6 +279,11 @@ def get_urlpatterns():
             name='next-step-reopen',
         ),
         path(
+            'next-steps/<uuid:pk>/cited-contacts/',
+            NextStepSignalViewSet.as_view({'get': 'cited_contacts'}),
+            name='next-step-cited-contacts',
+        ),
+        path(
             'next-steps/<uuid:pk>/link-candidates/',
             NextStepSignalViewSet.as_view({'get': 'link_candidates'}),
             name='next-step-link-candidates',

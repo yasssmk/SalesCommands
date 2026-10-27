@@ -179,6 +179,36 @@ describe("ActivityModal — objective longer than 500 characters", () => {
 // Sprint Next steps 2.2b — the conversion pre-fills the form from the next
 // step (mirror of the backend defaults, activities/constants.py ↔
 // utils/activityTypes.js); everything stays editable.
+describe("ActivityModal — the shared pre-fill, names cited (5.8d)", () => {
+  function renderConversion(nextStep) {
+    render(
+      <ActivityModal open onClose={() => {}} accountId="acc1" activity={null}
+        nextStepSignal={{ ...NEXT_STEP, ...nextStep }} />,
+    );
+  }
+
+  it("a TASK next step: the names cited and the internal names go to the description", async () => {
+    renderConversion({
+      suggested_activity_type: "TASK", suggested_topics: "DPA",
+      suggested_people_names: ["Laurent", "Marc"], suggested_internal_names: ["Sophie"],
+    });
+    submit();
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivity.mock.calls[0][0].description).toBe(
+      "DPA\n\nMentioned: Laurent, Marc\n\nInternal: Sophie");
+  });
+
+  it("a MEETING next step: the internal names go to the description, not the names cited", async () => {
+    renderConversion({
+      suggested_topics: "DPA", suggested_people_names: ["Laurent"],
+      suggested_internal_names: ["Sophie"],
+    });
+    submit();
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivity.mock.calls[0][0].description).toBe("DPA\n\nInternal: Sophie");
+  });
+});
+
 describe("ActivityModal — conversion pre-fill from the next step", () => {
   function renderConversion(nextStep, props = {}) {
     render(

@@ -32,6 +32,7 @@ from ..services.next_step_link_service import (
     link_candidates,
     link_differences,
 )
+from ..services.next_step_cited_names import next_step_cited_contacts
 from .base_views import BaseSignalViewSet
 
 
@@ -93,6 +94,33 @@ class NextStepSignalViewSet(BaseSignalViewSet):
     # =========================================================================
     # LINK TO AN EXISTING ACTIVITY — candidates (Sprint Next steps 2.3)
     # =========================================================================
+
+    @action(detail=True, methods=['get'], url_path='cited-contacts')
+    def cited_contacts(self, request, pk=None):
+        """
+        GET /next-steps/{id}/cited-contacts/
+
+        Sprint Next steps 5.8d: the names the next step CITES, each with the
+        contact of its ACCOUNT it designates without ambiguity, or null
+        (services/next_step_cited_names.py -- the TD-279 name rule). Read
+        by the activity pre-fill. get_object() keeps the tenant scope
+        (another tenant -> 404).
+        """
+        from app_modules.activities.serializers import ActivityContactSerializer
+
+        signal = self.get_object()
+        return Response({
+            'success': True,
+            'data': {
+                'cited': [
+                    {
+                        'name':    name,
+                        'contact': ActivityContactSerializer(contact).data if contact else None,
+                    }
+                    for name, contact in next_step_cited_contacts(signal)
+                ],
+            },
+        })
 
     @action(detail=True, methods=['get'], url_path='link-candidates')
     def link_candidates(self, request, pk=None):

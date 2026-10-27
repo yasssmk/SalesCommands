@@ -76,9 +76,11 @@ import {
   displaySuccessSnackbar,
 } from "utils/displayError";
 import {
-  SCHEDULED_DATE_ACTIVITY_TYPES,
-  nextStepObjective,
+  activityDefaultsFromNextStep,
 } from "utils/activityTypes";
+
+// A YYYY-MM-DD pre-fill value → the pickers' dayjs (null stays null).
+const toDay = (value) => (value ? dayjs(value) : null);
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -182,61 +184,48 @@ export default function ActivityModal({
     }));
   }, [cycles]);
 
-  // Pre-fill from nextStepSignal when converting an AI suggestion: its
-  // contacts, then the contacts of the People it involves (Sprint Next steps
-  // 2.2b — the server never adds a contact on its own), without duplicates.
-  const signalContactIds = useMemo(() => {
-    const ids = [
-      ...(nextStepSignal?.suggested_contacts || []).map((c) => c.id),
-      ...(nextStepSignal?.suggested_people || [])
-        .map((p) => p.target_contact?.id)
-        .filter(Boolean),
-    ];
-    return [...new Set(ids)];
-  }, [nextStepSignal]);
-
-  // D6 (mirror of activities/constants.py): the next step's date is WHEN the
-  // activity happens for MEETING / CALL / DEMO, a deadline for other types.
+  // Pre-fill from nextStepSignal when converting an AI suggestion — the
+  // SHARED source of the 2.2b pre-fill (activityDefaultsFromNextStep, Sprint
+  // Next steps 5.8d): title, type, date by D6, objective + success criterion,
+  // description (topics, the cited names for the non-contact types, the
+  // internal names), contacts (the next step's + its People's — the server
+  // never adds a contact on its own).
   const initialActivityType =
     activity?.activity_type ||
     nextStepSignal?.suggested_activity_type ||
     defaultActivityType ||
     "MEETING";
-  const nextStepDate = nextStepSignal?.suggested_due_date
-    ? dayjs(nextStepSignal.suggested_due_date)
-    : null;
-  const nextStepDateIsScheduled = SCHEDULED_DATE_ACTIVITY_TYPES.has(initialActivityType);
+  const nextStepDefaults = useMemo(
+    () => activityDefaultsFromNextStep(nextStepSignal, { activityType: initialActivityType }),
+    [nextStepSignal, initialActivityType],
+  );
 
   // Build initial values
   const initialValues = useMemo(
     () => ({
-      title: activity?.title || nextStepSignal?.suggested_title || "",
+      title: activity?.title || nextStepDefaults.title || "",
       activity_type: initialActivityType,
       status: activity?.status || "PLANNED",
-      description: activity?.description || nextStepSignal?.suggested_topics || "",
-      call_to_action:
-        activity?.call_to_action || nextStepObjective(nextStepSignal) || "",
+      description: activity?.description || nextStepDefaults.description || "",
+      call_to_action: activity?.call_to_action || nextStepDefaults.call_to_action || "",
       scheduled_date: activity?.scheduled_date
         ? dayjs(activity.scheduled_date)
-        : nextStepDateIsScheduled
-          ? nextStepDate
-          : null,
+        : toDay(nextStepDefaults.scheduled_date),
       scheduled_time: activity?.scheduled_time
         ? dayjs(`2000-01-01T${activity.scheduled_time}`)
         : null,
       due_date: activity?.due_date
         ? dayjs(activity.due_date)
-        : !activity && !nextStepDateIsScheduled
-          ? nextStepDate
+        : !activity
+          ? toDay(nextStepDefaults.due_date)
           : null,
       contact_ids:
-        activity?.contacts?.map((c) => c.id) ||
-        (signalContactIds.length > 0 ? signalContactIds : []),
+        activity?.contacts?.map((c) => c.id) || nextStepDefaults.contacts.map((c) => c.id),
       has_inline_contact: false,
       decision_cycle_id: activity?.decision_cycle || decisionCycleId || "",
       decision_step_id: activity?.decision_step || decisionStepId || "",
     }),
-    [activity, nextStepSignal, signalContactIds, defaultActivityType, decisionCycleId, decisionStepId],
+    [activity, nextStepDefaults, initialActivityType, decisionCycleId, decisionStepId],
   );
 
   // Formik setup
