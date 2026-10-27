@@ -153,6 +153,13 @@ class NextStepSignal(BaseSignal):
       - suggested_due_date      : DateField, nullable
       - suggested_contacts      : M2M to Contact, blank=True
 
+    Conversion into an Activity (services/next_step_materialization.py):
+      The server adds NO contact at conversion — the activity's contacts
+      are the ones the rep sends. The creation form pre-fills them from
+      the persons the next step cites (front activityDefaultsFromNextStep:
+      a People's target_contact or a name matched by cited-contacts, for
+      MEETING / CALL / EMAIL only; a REJECTED People is never used).
+
     Required context (via clean()):
       - source_activity — every suggestion must be tied to its
         originating conversation.
@@ -331,8 +338,9 @@ class NextStepSignal(BaseSignal):
         blank=True,
         verbose_name=_('Suggested People'),
         help_text=_(
-            'People (PeopleSignal) this next step involves; their contacts '
-            'become the activity contacts at conversion.'
+            'People (PeopleSignal) this next step cites. The server adds no '
+            'contact at conversion: the activity creation form may pre-fill '
+            'its contacts from them (MEETING / CALL / EMAIL only).'
         ),
     )
 
