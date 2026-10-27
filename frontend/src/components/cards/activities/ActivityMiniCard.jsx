@@ -6,6 +6,7 @@ import PropTypes from "prop-types";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
+import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
@@ -17,18 +18,24 @@ import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import RobotOutlined from "@ant-design/icons/RobotOutlined";
 
 // Project imports
+import StatusPill from "components/chips/StatusPill";
+import { formatShortDate } from "components/signals/SignalLine";
+import { getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR } from "utils/activityTypes";
 import {
-  ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_COLORS,
+  ACTIVITY_STATUS_CHIP_COLORS,
+  ACTIVITY_OVERDUE_LABEL,
+  ACTIVITY_OVERDUE_CHIP_COLORS,
 } from "api/accounts/activities";
 
 // ==============================|| ACTIVITY MINI CARD ||============================== //
-
-function formatDate(dateStr) {
-  if (!dateStr) return null;
-  return new Date(dateStr).toLocaleDateString();
-}
+//
+// Sprint Next steps 5.9b (PO) — ONE line: left the type ICON
+// (getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR — no type chip) + the title;
+// right step · date · the status pill (the shared StatusPill, the activity
+// status tables, "Overdue" when late). Under the md breakpoint, back to two
+// lines (title, then the meta). Consumers: UpcomingActivitiesSection (the next
+// planned step), NextStepValidateFlow (the link candidates).
 
 export default function ActivityMiniCard({
   activity: activityItem,
@@ -38,13 +45,23 @@ export default function ActivityMiniCard({
 }) {
   const theme = useTheme();
 
-  const displayDate = activityItem.scheduled_date || activityItem.due_date;
-  const stepName = activityItem.decision_step_name;
+  const TypeIcon = getActivityTypeIcon(activityItem.activity_type);
+  const meta = [
+    activityItem.decision_step_name,
+    formatShortDate(activityItem.scheduled_date || activityItem.due_date),
+  ].filter(Boolean);
   const fromAI = Boolean(activityItem.next_step_signal);
+  const statusLabel = activityItem.is_overdue
+    ? ACTIVITY_OVERDUE_LABEL
+    : ACTIVITY_STATUS_LABELS[activityItem.status] || activityItem.status;
+  const statusColors = activityItem.is_overdue
+    ? ACTIVITY_OVERDUE_CHIP_COLORS
+    : ACTIVITY_STATUS_CHIP_COLORS[activityItem.status] || ACTIVITY_STATUS_CHIP_COLORS.PLANNED;
 
   return (
     <Card
       variant="outlined"
+      data-testid="activity-mini-card"
       sx={{
         p: 1.5,
         cursor: "pointer",
@@ -56,75 +73,48 @@ export default function ActivityMiniCard({
       }}
       onClick={() => onNavigate(activityItem.id)}
     >
-      <Stack spacing={1}>
-        {/* Row 1: Type + Title */}
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <Chip
-            label={
-              ACTIVITY_TYPE_LABELS[activityItem.activity_type] ||
-              activityItem.activity_type
-            }
-            size="small"
-            variant="outlined"
-            sx={{ minWidth: 80 }}
-          />
-          <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1 }}>
-            {activityItem.title}
-          </Typography>
-          {showUnlink && (
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUnlink?.();
-              }}
-              sx={{ ml: "auto" }}
-            >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-          )}
-        </Stack>
-
-        {/* Row 2: Meta info (step, date, status, from-AI) */}
+      <Stack
+        data-testid="activity-mini-card-row"
+        direction={{ xs: "column", md: "row" }}
+        alignItems={{ xs: "stretch", md: "center" }}
+        spacing={1}
+      >
+        {/* Left: type icon + title */}
         <Stack
+          data-testid="activity-mini-card-main"
           direction="row"
           spacing={1}
           alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
+          sx={{ flex: 1, minWidth: 0 }}
         >
-          {stepName && (
-            <Chip
-              label={stepName}
-              size="small"
-              variant="filled"
-              sx={{
-                height: 20,
-                fontSize: "0.7rem",
-                bgcolor: theme.palette.grey[100],
-                color: theme.palette.text.secondary,
-              }}
-            />
-          )}
-          {displayDate && (
-            <Typography variant="caption" color="text.secondary">
-              {formatDate(displayDate)}
+          <Box
+            data-testid="activity-mini-card-type-icon"
+            sx={{ display: "flex", flexShrink: 0, color: ACTIVITY_TYPE_ICON_COLOR }}
+          >
+            <TypeIcon style={{ fontSize: theme.iconSizes.sm }} />
+          </Box>
+          <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1, minWidth: 0 }}>
+            {activityItem.title}
+          </Typography>
+        </Stack>
+
+        {/* Right: step · date · status pill (+ from AI, unlink) */}
+        <Stack
+          data-testid="activity-mini-card-meta"
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{ flexShrink: 0 }}
+        >
+          {meta.length > 0 && (
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {meta.join(" · ")}
             </Typography>
           )}
-          <Chip
-            label={
-              activityItem.is_overdue
-                ? "Overdue"
-                : ACTIVITY_STATUS_LABELS[activityItem.status] ||
-                  activityItem.status
-            }
-            size="small"
-            color={
-              activityItem.is_overdue
-                ? "error"
-                : ACTIVITY_STATUS_COLORS[activityItem.status] || "default"
-            }
-            sx={{ height: 20, fontSize: "0.7rem" }}
+          <StatusPill
+            label={statusLabel}
+            colorText={statusColors.text}
+            colorBg={statusColors.background}
           />
           {fromAI && (
             <Chip
@@ -135,6 +125,17 @@ export default function ActivityMiniCard({
               variant="outlined"
               sx={{ height: 20, fontSize: "0.7rem" }}
             />
+          )}
+          {showUnlink && (
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                onUnlink?.();
+              }}
+            >
+              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+            </IconButton>
           )}
         </Stack>
       </Stack>

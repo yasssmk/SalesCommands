@@ -12,8 +12,8 @@
 // other bands are mocked.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
-import AphoriqTheme from "../_utils/aphoriqTheme";
+import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import AphoriqTheme, { testTheme } from "../_utils/aphoriqTheme";
 
 const mockPush = vi.fn();
 let mockActivity;
@@ -162,5 +162,68 @@ describe("Next steps band — part 1, the next planned step (5.2)", () => {
     render(<ActivityWorkspacePage />);
     expect(screen.getByText("No next step planned yet.")).toBeInTheDocument();
     expect(screen.queryByText("Security review")).not.toBeInTheDocument();
+  });
+});
+
+// ==============================|| 5.9b (3) — THE NEXT PLANNED STEP CARD ||============================== //
+//
+// PO: the shared ActivityMiniCard (components/cards/activities) — the type
+// ICON (getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR) replaces the type chip;
+// everything on ONE line: left icon + title, right step · date · status pill
+// (the shared StatusPill); under the md breakpoint, back to two lines.
+
+const styleText = () => Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+const classesOf = (el) => (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
+
+describe("Next planned step card — one line, the type icon (5.9b)", () => {
+  const renderCard = (over = {}) => {
+    mockActivity = dcActivity({ source: "DECISION_CYCLE", decision_cycle: { id: "dc-1", name: "Deal Acme" },
+                                activity: planned({ activity_type: "CALL", ...over }) });
+    render(<ActivityWorkspacePage />);
+    return screen.getByTestId("activity-mini-card");
+  };
+
+  it("the type icon replaces the type chip", () => {
+    const card = renderCard();
+    expect(card.querySelector(".anticon-phone")).not.toBeNull();
+    expect(within(card).queryByText("Phone Call")).toBeNull();
+    expect(card.querySelector(".MuiChip-root")).toBeNull();
+  });
+
+  it("left: icon + title; right: step · date · status pill", () => {
+    const card = renderCard();
+    const left = within(card).getByTestId("activity-mini-card-main");
+    const right = within(card).getByTestId("activity-mini-card-meta");
+    expect(left.querySelector(".anticon-phone")).not.toBeNull();
+    expect(left).toHaveTextContent("Security review");
+    expect(right.textContent).toBe("Technical Fit · 3 Nov 2026Planned");
+    expect(within(right).getByTestId("status-pill")).toHaveTextContent("Planned");
+  });
+
+  it("ONE line from md, two lines below (the responsive row)", () => {
+    const card = renderCard();
+    const row = within(card).getByTestId("activity-mini-card-row");
+    const css = styleText();
+    const [cls] = classesOf(row).filter((c) =>
+      new RegExp(`@media \\(min-width:900px\\)\\{\\.${c}\\{[^}]*flex-direction:row`).test(css));
+    expect(cls).toBeTruthy();
+    expect(css).toMatch(new RegExp(`\\.${cls}\\{[^}]*flex-direction:column`));
+  });
+
+  it("an overdue activity: the 'Overdue' pill", () => {
+    const card = renderCard({ is_overdue: true });
+    expect(within(within(card).getByTestId("activity-mini-card-meta")).getByTestId("status-pill"))
+      .toHaveTextContent("Overdue");
+  });
+
+  it("no step, no date: the status pill alone on the right", () => {
+    const card = renderCard({ decision_step_name: null, scheduled_date: null });
+    expect(within(card).getByTestId("activity-mini-card-meta").textContent).toBe("Planned");
+  });
+
+  it("the type icon carries the type colour token", () => {
+    const card = renderCard();
+    const icon = within(card).getByTestId("activity-mini-card-type-icon");
+    expect(icon).toHaveStyle({ color: testTheme.palette.primary.main });
   });
 });

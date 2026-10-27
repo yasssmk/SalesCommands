@@ -12,22 +12,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockRouterPush }),
 }));
 
-vi.mock("api/accounts/activities", () => ({
-  ACTIVITY_TYPE_LABELS: {
-    CALL: "Phone Call",
-    EMAIL: "Email",
-    MEETING: "Meeting",
-    TASK: "Task",
-  },
-  ACTIVITY_STATUS_LABELS: {
-    PLANNED: "Planned",
-    ON_HOLD: "On hold",
-  },
-  ACTIVITY_STATUS_COLORS: {
-    PLANNED: "default",
-    ON_HOLD: "warning",
-  },
-}));
+// The real activity tables (labels, status pill colours): the card reads
+// several of them (5.9b) — api/accounts/activities is not mocked.
 
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
@@ -166,7 +152,7 @@ describe("UpcomingActivitiesSection", () => {
     expect(screen.queryByText(/Create a follow-up/)).not.toBeInTheDocument();
   });
 
-  it("shows step name chip when present", () => {
+  it("shows the step name in the card's meta when present", () => {
     render(
       <UpcomingActivitiesSection
         activity={mockActivity}
@@ -174,6 +160,6 @@ describe("UpcomingActivitiesSection", () => {
       />,
     );
 
-    expect(screen.getByText("Discovery")).toBeInTheDocument();
+    expect(screen.getByTestId("activity-mini-card-meta")).toHaveTextContent(/^Discovery · /);
   });
 });

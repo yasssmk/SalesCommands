@@ -865,7 +865,8 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
     const list = await openStep2();
     const [first, second] = within(list).getAllByTestId(/^link-candidate-/);
     expect(within(first).getByText("Call Thomas")).toBeInTheDocument();
-    expect(within(first).getByText("Technical Fit")).toBeInTheDocument(); // the card's step chip
+    // The card's meta (5.9b: step · date, one line).
+    expect(within(first).getByTestId("activity-mini-card-meta")).toHaveTextContent(/^Technical Fit · /);
     expect(within(first).getByText(
       "Why: 2 people in common · same step · same type · same day")).toBeInTheDocument();
     expect(within(second).getByText(

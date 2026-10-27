@@ -1,10 +1,8 @@
 // frontend/src/__tests__/components/cards/ActivityMiniCard.linkedinLabel.test.jsx
 //
-// The LINKEDIN activity type shows the shortened label "LinkedIn" (not the old
-// "LinkedIn Message") wherever ACTIVITY_TYPE_LABELS is displayed. ActivityMiniCard
-// is a real consumer (renders ACTIVITY_TYPE_LABELS[activity_type] as a chip), so
-// this guards the front label at the consumer, aligned with the backend
-// activity_type_display.
+// The LINKEDIN activity type on ActivityMiniCard. Since 5.9b (PO) the card shows
+// the type ICON (getActivityTypeIcon), no type chip / label any more: a LINKEDIN
+// activity carries the LinkedIn icon and never the old "LinkedIn Message".
 //
 // The real api/accounts/activities module is used here (not mocked) so the test
 // reads the actual label constant.
@@ -12,6 +10,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 
+import AphoriqTheme from "../../_utils/aphoriqTheme";
 import ActivityMiniCard from "components/cards/activities/ActivityMiniCard";
 
 afterEach(cleanup);
@@ -27,10 +26,12 @@ function mk(overrides = {}) {
   };
 }
 
-describe("ActivityMiniCard — LINKEDIN label", () => {
-  it("renders the LINKEDIN type as 'LinkedIn'", () => {
-    render(<ActivityMiniCard activity={mk()} onNavigate={vi.fn()} />);
-    expect(screen.getByText("LinkedIn")).toBeInTheDocument();
+describe("ActivityMiniCard — LINKEDIN type", () => {
+  it("renders the LINKEDIN type as the LinkedIn icon, no 'LinkedIn Message'", () => {
+    const { container } = render(
+      <AphoriqTheme><ActivityMiniCard activity={mk()} onNavigate={vi.fn()} /></AphoriqTheme>,
+    );
+    expect(container.querySelector(".anticon-linkedin")).not.toBeNull();
     expect(screen.queryByText("LinkedIn Message")).not.toBeInTheDocument();
   });
 });
