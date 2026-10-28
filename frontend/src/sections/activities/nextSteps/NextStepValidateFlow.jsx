@@ -95,24 +95,28 @@ const TEXT_FIELDS = [
 
 const TEXT_SEPARATOR = "\n\n";
 
-// "Why" this candidate, read from the ranking criteria.
+// "Why" this candidate, read from the ranking criteria (PO decision A,
+// 5.10b): ONLY the criteria that match — « N people in common » (N > 0),
+// « Same step », « Same type » — then always the date gap (« 29 days apart »,
+// « Same day », nothing without a date). No negative criterion; "" when
+// nothing applies.
 export function linkCandidateWhy(c) {
   const n = c.shared_people_count ?? 0;
-  const people =
-    n === 0 ? "no people in common" : `${n} ${n === 1 ? "person" : "people"} in common`;
   const d = c.date_distance_days;
-  const date =
+  const dateGap =
     d === null || d === undefined
-      ? "no date"
+      ? null
       : d === 0
-        ? "same day"
+        ? "Same day"
         : `${d} ${d === 1 ? "day" : "days"} apart`;
   return [
-    people,
-    c.same_step ? "same step" : "other step",
-    c.same_type ? "same type" : "other type",
-    date,
-  ].join(" · ");
+    n > 0 ? `${n} ${n === 1 ? "person" : "people"} in common` : null,
+    c.same_step ? "Same step" : null,
+    c.same_type ? "Same type" : null,
+    dateGap,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 const hasDifferences = (c) => Object.keys(c?.differences ?? {}).length > 0;
@@ -336,9 +340,11 @@ function CandidatesStep({ candidates, selectedId, onSelect }) {
               onNavigate={() => onSelect(c.id)}
               layout={ACTIVITY_MINI_CARD_LAYOUTS.DRAWER}
             />
-            <Typography variant="caption" color="text.secondary">
-              {`Why: ${linkCandidateWhy(c)}`}
-            </Typography>
+            {linkCandidateWhy(c) && (
+              <Typography variant="caption" color="text.secondary">
+                {`Why: ${linkCandidateWhy(c)}`}
+              </Typography>
+            )}
           </Stack>
         </Stack>
       ))}

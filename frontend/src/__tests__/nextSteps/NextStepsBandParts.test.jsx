@@ -867,10 +867,10 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
     expect(within(first).getByText("Call Thomas")).toBeInTheDocument();
     // The card's meta (5.9b: step · date, one line).
     expect(within(first).getByTestId("activity-mini-card-meta")).toHaveTextContent(/^Technical Fit · /);
+    // 5.10b (3): only the criteria that match, then the date gap.
     expect(within(first).getByText(
-      "Why: 2 people in common · same step · same type · same day")).toBeInTheDocument();
-    expect(within(second).getByText(
-      "Why: no people in common · other step · other type · 5 days apart")).toBeInTheDocument();
+      "Why: 2 people in common · Same step · Same type · Same day")).toBeInTheDocument();
+    expect(within(second).getByText("Why: 5 days apart")).toBeInTheDocument();
   });
 
   // 5.10b (2) — the card in the drawer: the "drawer" layout of the SAME
@@ -926,6 +926,44 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
     const card = within(within(list).getAllByTestId(/^link-candidate-/)[0]).getByTestId("activity-mini-card");
     const pill = within(within(card).getByTestId("activity-mini-card-meta")).getByTestId("status-pill");
     expect(rulesOf(pill)).toMatch(/margin-left:auto/);
+  });
+
+  // 5.10b (3) — PO decision A: the "Why" line shows ONLY the criteria that
+  // match (« N people in common » when N > 0, « Same step », « Same type »),
+  // then always the date gap (« 29 days apart », « Same day », nothing without
+  // a date). No negative criterion any more.
+  const whyCase = (id, over) => linkCandidate({ id, title: `Candidate ${id}`, shared_people_count: 0,
+    same_step: false, same_type: false, date_distance_days: null, differences: {}, ...over });
+  const whyOf = (list, id) => within(list).getByTestId(`link-candidate-${id}`);
+
+  it("Why: only the matching criteria, then the date gap", async () => {
+    const list = await openStep2([
+      whyCase("w-neg", { date_distance_days: 8 }),
+      whyCase("w-part", { same_step: true, date_distance_days: 29 }),
+      whyCase("w-pos", { shared_people_count: 2, same_step: true, same_type: true, date_distance_days: 0 }),
+      whyCase("w-one", { shared_people_count: 1, same_type: true, date_distance_days: 1 }),
+    ]);
+    expect(within(whyOf(list, "w-neg")).getByText("Why: 8 days apart")).toBeInTheDocument();
+    expect(within(whyOf(list, "w-part")).getByText("Why: Same step · 29 days apart")).toBeInTheDocument();
+    expect(within(whyOf(list, "w-pos")).getByText(
+      "Why: 2 people in common · Same step · Same type · Same day")).toBeInTheDocument();
+    expect(within(whyOf(list, "w-one")).getByText(
+      "Why: 1 person in common · Same type · 1 day apart")).toBeInTheDocument();
+  });
+
+  it("Why: never a negative criterion", async () => {
+    const list = await openStep2([whyCase("w-neg", { date_distance_days: 8 }), whyCase("w-pos2",
+      { shared_people_count: 3, date_distance_days: 2 })]);
+    expect(within(list).queryByText(/no people in common|other step|other type|no date/i)).toBeNull();
+  });
+
+  it("Why without a date: the matching criteria only; nothing matches → no Why line", async () => {
+    const list = await openStep2([
+      whyCase("w-nodate", { same_step: true, same_type: true }),
+      whyCase("w-empty", {}),
+    ]);
+    expect(within(whyOf(list, "w-nodate")).getByText("Why: Same step · Same type")).toBeInTheDocument();
+    expect(within(whyOf(list, "w-empty")).queryByText(/^Why:/)).toBeNull();
   });
 
   it("step 3: one section per difference", async () => {
