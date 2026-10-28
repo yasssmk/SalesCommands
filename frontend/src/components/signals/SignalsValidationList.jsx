@@ -114,6 +114,7 @@ export default function SignalsValidationList({
   showTypeHeaders = true,
   loading = false,
   emptyMessage = "No signals found for this activity",
+  emptyAction,
 }) {
   // Loading with nothing to show yet → spinner.
   if (loading && !signals.length) {
@@ -127,7 +128,7 @@ export default function SignalsValidationList({
   // Business-empty is information, not an error (neutral tone): the shared
   // EmptyState (aphoriQ theme, 5.8g — no hardcoded colour or size).
   if (!signals.length) {
-    return <EmptyState icon={ThunderboltOutlined} description={emptyMessage} />;
+    return <EmptyState icon={ThunderboltOutlined} description={emptyMessage} action={emptyAction} />;
   }
 
   // Bucket by status once.
@@ -232,4 +233,6 @@ SignalsValidationList.propTypes = {
   showTypeHeaders: PropTypes.bool,
   loading: PropTypes.bool,
   emptyMessage: PropTypes.string,
+  /** Optional node under the empty state's text — the EmptyState `action`. */
+  emptyAction: PropTypes.node,
 };

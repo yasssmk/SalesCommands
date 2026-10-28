@@ -102,8 +102,15 @@ const dcActivity = (over = {}) => ({
 
 // The Source band is folded by default: unfold it.
 const openSource = () => fireEvent.click(screen.getByText("Source"));
-const sourceRunAI = () => screen.getByRole("button", { name: /Run AI Analysis/ });
-const bandRunAI = () => within(screen.getByTestId("next-steps-extraction")).getByRole("button", { name: /Run AI on transcript/ });
+// The Source's Run AI (same label as the band's since 5.12e): the one outside
+// the Next steps band.
+const sourceRunAI = () => {
+  const band = screen.queryByTestId("next-steps-band");
+  const [button] = screen.getAllByRole("button", { name: /Run AI Analysis/ })
+    .filter((b) => !band || !band.contains(b));
+  return button;
+};
+const bandRunAI = () => within(screen.getByTestId("next-steps-extraction")).getByRole("button", { name: "Run AI Analysis" });
 
 afterEach(() => cleanup());
 

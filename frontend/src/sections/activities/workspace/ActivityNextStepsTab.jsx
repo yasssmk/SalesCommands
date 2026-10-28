@@ -59,11 +59,11 @@ const NEXT_STEPS_ONLY_OBJECTIVES = { qualification: false, nextSteps: true };
 //   2. the suggested next steps — to validate, validated (resolved, with their
 //      activity on the row's 3rd line), rejected: the generic
 //      SignalsValidationList, DC-only (hasSuggestedNextSteps);
-//   3. under the list's empty state, the AI action (5.12c): only without any
-//      next step — the shared Run AI action as a pill (RunAIAnalysisButton,
-//      the page's pipelineRunner), next steps only pre-checked, while the
-//      NEXT STEPS extraction never ran; « AI already ran · <date> » after —
-//      DC-only;
+//   3. in the list's empty state (EmptyState `action`, 5.12e), the AI action:
+//      only without any next step — the shared Run AI action as a pill
+//      (RunAIAnalysisButton, the Source's label, the page's pipelineRunner),
+//      next steps only pre-checked, while the NEXT STEPS extraction never
+//      ran; « AI already ran · <date> » after — DC-only;
 //   4. "+ Add next step" (5.8e): a pill → a row of the 7 ActivityType pills →
 //      the creation with that type — DC-only.
 // The next planned step is shown in Context (5.12 A-bis), not here. The page
@@ -107,6 +107,29 @@ export default function ActivityNextStepsTab({
   const nextStepsRun = runsByPipeline?.NEXT_STEPS || null;
   const showsAIAction =
     Boolean(pipelineRunner) && !loading && !error && nextStepSignals.length === 0;
+  // 3. The AI action, IN the list's empty state (the shared EmptyState's
+  // `action`: centred, under its text — 5.12e): the NEXT STEPS extraction
+  // never ran → the Source band's Run AI action as a pill (same label,
+  // predicate, wizard, runner, "Analyzing…"), next steps only; it already
+  // ran → « AI already ran · <date> », no action.
+  const aiAction = showsAIAction ? (
+    <Box data-testid="next-steps-extraction">
+      {nextStepsRun ? (
+        <Typography variant="caption" color="text.secondary">
+          {`AI already ran · ${formatShortDate(nextStepsRun.last_run_at)}`}
+        </Typography>
+      ) : (
+        <RunAIAnalysisButton
+          activity={activity}
+          pipelineRunner={pipelineRunner}
+          lastRun={lastRun}
+          runsByPipeline={runsByPipeline}
+          defaultObjectives={NEXT_STEPS_ONLY_OBJECTIVES}
+          variant={RUN_AI_TRIGGER_VARIANTS.PILL}
+        />
+      )}
+    </Box>
+  ) : null;
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -338,33 +361,8 @@ export default function ActivityNextStepsTab({
                 renderExtra={renderExtra}
                 showTypeHeaders={false}
                 emptyMessage="No next-step suggestions for this activity"
+                emptyAction={aiAction}
               />
-            )}
-
-            {/* 3. The AI action, under the list's empty state (5.12c): only
-                when the activity has NO next step (any status). The NEXT
-                STEPS extraction never ran → the Source band's Run AI action
-                as a pill (same predicate, wizard, runner, "Analyzing…"), next
-                steps only; it already ran → « AI already ran · <date> »,
-                no action. */}
-            {showsAIAction && (
-              <Box data-testid="next-steps-extraction" sx={{ mt: 1.5 }}>
-                {nextStepsRun ? (
-                  <Typography variant="caption" color="text.secondary">
-                    {`AI already ran · ${formatShortDate(nextStepsRun.last_run_at)}`}
-                  </Typography>
-                ) : (
-                  <RunAIAnalysisButton
-                    activity={activity}
-                    pipelineRunner={pipelineRunner}
-                    lastRun={lastRun}
-                    runsByPipeline={runsByPipeline}
-                    label="Run AI on transcript"
-                    defaultObjectives={NEXT_STEPS_ONLY_OBJECTIVES}
-                    variant={RUN_AI_TRIGGER_VARIANTS.PILL}
-                  />
-                )}
-              </Box>
             )}
           </Box>
         )}

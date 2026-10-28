@@ -104,8 +104,8 @@ import ActivityWorkspacePage from "views/activities/workspace";
 const render = (ui) => rtlRender(<AphoriqTheme>{ui}</AphoriqTheme>);
 
 const TRANSCRIPT = "We agreed on a security review with the CISO next month. ".repeat(3);
-// 5.12c (3): a pill, labelled « Run AI on transcript » (normal case).
-const EXTRACT_LABEL = "Run AI on transcript";
+// 5.12c (3): a pill. 5.12e (3): labelled « Run AI Analysis », as in Source.
+const EXTRACT_LABEL = "Run AI Analysis";
 const nextStep = (over = {}) => ({
   id: "ns-p", _signalType: "next-steps", signal_type: "next-steps", status: "PENDING",
   suggested_title: "Send the DPA", suggested_activity_type: "EMAIL",
@@ -139,18 +139,21 @@ afterEach(() => {
 });
 
 describe("Next steps band — the layout (5.12 B)", () => {
-  // 5.12c (3): the AI action sits UNDER the list's empty state, in the
-  // sections' zone, above « + Add next step ».
-  it("DC activity: the sections (empty state, then the AI action) → « + Add next step »", () => {
+  // 5.12e (3): the AI action sits INSIDE the list's empty state (the shared
+  // EmptyState's `action`), centred, right under its text, aligned on its icon.
+  it("DC activity: the AI action is in the empty state, right under its text, centred", () => {
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     const sections = within(band()).getByTestId("suggested-next-steps-block");
-    const empty = within(sections).getByText("No next-step suggestions for this activity");
-    const extraction = within(sections).getByTestId("next-steps-extraction");
-    const add = within(band()).getByTestId("add-next-step");
-    expect(follows(empty, extraction)).toBe(true);
-    expect(follows(extraction, add)).toBe(true);
-    expect(sections.contains(add)).toBe(false);
+    const empty = within(sections).getByTestId("empty-state");
+    const text = within(empty).getByText("No next-step suggestions for this activity");
+    const extraction = within(empty).getByTestId("next-steps-extraction");
+    expect(follows(text, extraction)).toBe(true);
+    // The EmptyState column: the icon, the text, then the action — centred.
+    const column = text.parentElement;
+    expect(column.contains(empty.querySelector(".anticon"))).toBe(true);
+    expect(column.contains(extraction)).toBe(true);
+    expect(column).toHaveStyle({ alignItems: "center" });
   });
 
   it("the « Next planned step » sub-block is gone: no title, no card, no empty state", () => {
@@ -183,11 +186,11 @@ describe("Next steps band — the AI action (5.12 B, 5.12c (3))", () => {
 
   // Homogeneity (PO): no MUI button action in the band — pills, as
   // « + Add next step ».
-  it("a ClickablePill « Run AI on transcript » — the « + Add next step » pill, no MUI button", () => {
+  it("a ClickablePill « Run AI Analysis » (the Source's label) — the « + Add next step » pill, no MUI button", () => {
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     expect(pill()).toHaveAttribute("data-testid", "status-pill");
-    expect(pill()).toHaveTextContent(/^Run AI on transcript$/);
+    expect(pill()).toHaveTextContent(/^Run AI Analysis$/);
     expect(pill().className).toBe(within(band()).getByRole("button", { name: "+ Add next step" }).className);
     expect(band().querySelector(".MuiButton-root")).toBeNull();
   });
@@ -199,11 +202,11 @@ describe("Next steps band — the AI action (5.12 B, 5.12c (3))", () => {
     expect(within(band()).queryByText(/AI already ran/)).toBeNull();
   });
 
-  it("no next step and NEXT STEPS already ran → « AI already ran · <short date> », no action", () => {
+  it("no next step and NEXT STEPS already ran → « AI already ran · <short date> », no action, in the empty state", () => {
     mockRunsByPipeline = NEXT_STEPS_RAN;
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
-    const extraction = within(band()).getByTestId("next-steps-extraction");
+    const extraction = within(within(band()).getByTestId("empty-state")).getByTestId("next-steps-extraction");
     expect(extraction.textContent).toBe("AI already ran · 3 Nov 2026");
     expect(within(extraction).queryByRole("button")).toBeNull();
     expect(within(extraction).getByText(/AI already ran/)).toHaveStyle({ color: testTheme.palette.text.secondary });
