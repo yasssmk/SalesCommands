@@ -18,6 +18,7 @@ import Typography from '@mui/material/Typography';
 import EditableTextBlock from 'components/EditableTextBlock';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import RunAIAnalysisButton, { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
+import { isActivitySignalsLocked, TRANSCRIPT_FIELD } from 'utils/activitySignalsLock';
 
 // assets
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
@@ -137,16 +138,17 @@ export default function ActivityNotesTab({
           isLocked={isLocked}
         />
 
-        {/* Transcript section */}
+        {/* Transcript section — its own lock (CANCELLED only, 5.12d): a
+            transcript can be added after the call. The notes keep isLocked. */}
         <EditableTextBlock
           label="Transcript"
-          field="transcript"
+          field={TRANSCRIPT_FIELD}
           initialValue={transcript}
           rows={15}
           placeholder="Paste the call transcript or email content here..."
           showCharCount
           onSave={onSave}
-          isLocked={isLocked}
+          isLocked={isActivitySignalsLocked(activity)}
         />
 
         {/* Last analyzed caption */}
@@ -179,8 +181,8 @@ export default function ActivityNotesTab({
 
         {/* Run AI Analysis button (+ its 2-step wizard) */}
         <Box display="flex" justifyContent="flex-end">
-          {/* The AI action has its own lock (CANCELLED only, 5.12c); the
-              notes and transcript keep the page lock (isLocked). */}
+          {/* The AI action has its own lock (CANCELLED only, 5.12c), as the
+              transcript (5.12d); the notes keep the page lock (isLocked). */}
           <RunAIAnalysisButton
             activity={activity}
             pipelineRunner={pipelineRunner}

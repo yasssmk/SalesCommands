@@ -13,3 +13,8 @@ export const ACTIVITY_SIGNALS_LOCKED_STATUSES = [ACTIVITY_STATUSES.CANCELLED];
 export function isActivitySignalsLocked(activity) {
   return ACTIVITY_SIGNALS_LOCKED_STATUSES.includes(activity?.status);
 }
+
+// 5.12d (PO) — the TRANSCRIPT field of the Source band follows this lock too
+// (it feeds the AI action, locked on CANCELLED only): a transcript can be
+// added after the call. The other Source fields keep the page lock.
+export const TRANSCRIPT_FIELD = "transcript";
