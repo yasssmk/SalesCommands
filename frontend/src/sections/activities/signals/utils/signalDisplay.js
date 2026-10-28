@@ -122,20 +122,6 @@ export function formatSuggestedContacts(contacts) {
     .join(" · ");
 }
 
-export function getPeopleSummary(signal) {
-  const role = signal.role_display || signal.role || "";
-  const contact = signal.target_contact;
-  const dept = signal.target_department;
-  const name = contact
-    ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim()
-    : null;
-  const deptName = dept?.name ?? null;
-  if (name && deptName) return `${role} — ${name} (${deptName})`;
-  if (name) return `${role} — ${name}`;
-  if (deptName) return `${role} — ${deptName}`;
-  return role || "—";
-}
-
 // A People signal's person name: the linked contact (first + last) first,
 // else the full_name as stated, else the job title as said (TD-279 D,
 // metadata.job_title -- "contrôleur de gestion"), else "Unnamed person".
@@ -150,16 +136,10 @@ export function getPeopleName(signal) {
 }
 
 // People detail headline on the Activity chassis: "Name — Role (Department)".
-// Distinct from getPeopleSummary above ("Role — Name (Dept)", contact-only
-// name, no full_name).
 export function getPeopleHeadline(signal) {
   const name = getPeopleName(signal);
   const role = signal?.role_display || signal?.role || "";
   const deptName = signal?.target_department?.name ?? null;
   const head = role ? `${name} — ${role}` : name;
   return deptName ? `${head} (${deptName})` : head;
-}
-
-export function getConstraintSummary(signal) {
-  return signal.summary || "—";
 }
