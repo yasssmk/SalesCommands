@@ -15,10 +15,11 @@ import WorkspaceCoque from "../_utils/workspaceCoque";
 import { testTheme } from "../_utils/aphoriqTheme";
 
 let mockActivity;
+const mockPush = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "act-1" }),
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: mockPush }),
   usePathname: () => "/activities/act-1",
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -254,5 +255,86 @@ describe("Context — an owner without a name: the email once (5.9b)", () => {
     });
     render(<ActivityWorkspacePage />);
     expect(screen.getByText("ann@acme.test").closest("p").textContent).toBe("ann@acme.test · Owner");
+  });
+});
+
+// ==============================|| 5.12 — PREVIOUS / NEXT IN CONTEXT ||============================== //
+//
+// PO (5.12): the "Next planned step" card moves from the Next steps band to
+// the Context section. Context gets ONE block gathering the previous and the
+// next: the existing provenance lines (« From next step › … », unchanged),
+// then « Next planned step » — the SAME ActivityMiniCard (layout "row"), a
+// click → the activity. One of the two missing: only the other line; both
+// missing: no block. No new query: activity.next_planned_step (the server).
+
+describe("Context — the previous / next block (5.12)", () => {
+  const ORIGIN = { id: "act-10", title: "Atelier business case", date: "2026-10-20" };
+  const PLANNED = {
+    id: "act-20", title: "Security workshop", activity_type: "MEETING", status: "PLANNED",
+    scheduled_date: "2026-11-12", decision_step_name: null, is_overdue: false,
+  };
+  const ctx = () => screen.getByTestId("ctx-card");
+  const block = () => within(ctx()).queryByTestId("ctx-prev-next");
+  const planned = { next_planned_step: { source: "SEQUENCE", activity: PLANNED, decision_cycle: null } };
+
+  afterEach(() => mockPush.mockReset());
+
+  it("only the next: the « Next planned step » card is in Context", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: [], ...planned });
+    render(<ActivityWorkspacePage />);
+    const line = within(block()).getByTestId("next-planned-step-line");
+    expect(within(line).getByText("Next planned step")).toBeInTheDocument();
+    const card = within(line).getByTestId("activity-mini-card");
+    expect(within(card).getByText("Security workshop")).toBeInTheDocument();
+    expect(within(block()).queryAllByTestId("next-step-origin-line")).toHaveLength(0);
+  });
+
+  it("the card is the shared ActivityMiniCard in its « row » layout", () => {
+    mockActivity = activityWith(undefined, planned);
+    render(<ActivityWorkspacePage />);
+    const card = within(block()).getByTestId("activity-mini-card");
+    // Row layout: the title on ONE line (noWrap) — the drawer layout wraps it.
+    expect(within(card).getByText("Security workshop")).toHaveClass("MuiTypography-noWrap");
+  });
+
+  it("a click on the card → the planned activity", () => {
+    mockActivity = activityWith(undefined, planned);
+    render(<ActivityWorkspacePage />);
+    fireEvent.click(within(block()).getByTestId("activity-mini-card"));
+    expect(mockPush).toHaveBeenCalledWith("/activities/act-20");
+  });
+
+  it("only the previous: the provenance line, no next planned step", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN] });
+    render(<ActivityWorkspacePage />);
+    expect(within(block()).getAllByTestId("next-step-origin-line")).toHaveLength(1);
+    expect(within(block()).queryByTestId("next-planned-step-line")).toBeNull();
+    expect(within(ctx()).queryByText("Next planned step")).toBeNull();
+  });
+
+  it("both: ONE block, the previous then the next", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN], ...planned });
+    render(<ActivityWorkspacePage />);
+    expect(within(ctx()).getAllByTestId("ctx-prev-next")).toHaveLength(1);
+    const previous = within(block()).getByTestId("next-step-origin-line");
+    const next = within(block()).getByTestId("next-planned-step-line");
+    expect(previous.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("none: no block at all", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: [], next_planned_step: null });
+    render(<ActivityWorkspacePage />);
+    expect(block()).toBeNull();
+    expect(within(ctx()).queryByTestId("activity-mini-card")).toBeNull();
+    // Only the People hairline: no rule for an absent block.
+    expect(within(ctx()).getAllByTestId("ctx-sep")).toHaveLength(1);
+  });
+
+  it("a next_planned_step without activity: no next line (as « none »)", () => {
+    mockActivity = activityWith(undefined, {
+      next_planned_step: { source: "BORN_DECISION_CYCLE", activity: null, decision_cycle: { id: "dc-9", name: "Deal" } },
+    });
+    render(<ActivityWorkspacePage />);
+    expect(block()).toBeNull();
   });
 });

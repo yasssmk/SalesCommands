@@ -9,21 +9,28 @@
 //           avatar). External contact names look clickable (pointer + hover) but
 //           carry no handler yet — the drawer is wired in a later sprint. No
 //           email/phone on the rows.
-//   ── hairline ──  (only when there is provenance)
-//   Origin: a provenance line (where the activity was born), a branch icon +
-//           TWO separate accent links (context, then activity) to live
+//   ── hairline ──  (only when there is a previous or a next)
+//   Previous / next (5.12): ONE block —
+//     the previous: a provenance line (where the activity was born), a branch
+//           icon + TWO separate accent links (context, then activity) to live
 //           routes; then (5.9) one line per CONVERSATION the activity comes
 //           from through next steps (activity.next_step_origins: the one
 //           whose next step created it + those whose next steps were linked
-//           to it), « From next step › <conversation> · <date> ». The current
-//           campaign/DC rattachement is NOT shown here (it lives in the header).
-// Read-only: the only navigation is the accent links to live routes. No editing,
-// no ComingSoon, no Previous/Next. Weights/colours/sizes come from the theme.
+//           to it), « From next step › <conversation> · <date> »;
+//     the next: « Next planned step », the shared ActivityMiniCard (layout
+//           "row") of activity.next_planned_step (chosen by the server), a
+//           click → the activity.
+//   One of the two missing: only the other; both missing: no block. The
+//   current campaign/DC rattachement is NOT shown here (it lives in the header).
+// Read-only: the only navigation is the accent links and the next planned
+// step card, to live routes. No editing, no ComingSoon. Weights/colours/sizes
+// come from the theme.
 
 "use client";
 
 import PropTypes from "prop-types";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
@@ -39,6 +46,7 @@ import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 import Surface from "components/display/Surface";
 import LabeledValue from "components/display/LabeledValue";
 import PersonRow from "components/display/PersonRow";
+import ActivityMiniCard, { ACTIVITY_MINI_CARD_LAYOUTS } from "components/cards/activities/ActivityMiniCard";
 
 // Drawer — clicking a person opens its read-only fiche in the coque
 // (external contact → Contact fiche; internal team member → User fiche).
@@ -241,6 +249,26 @@ NextStepOriginLine.propTypes = {
   origin: PropTypes.shape({ id: PropTypes.string, title: PropTypes.string, date: PropTypes.string }),
 };
 
+// ==============================|| NEXT — THE NEXT PLANNED STEP ||============================== //
+
+// The next planned step (5.12): its label, then the shared card — a click →
+// the activity (as the band did).
+function NextPlannedStepLine({ plannedActivity }) {
+  const router = useRouter();
+  return (
+    <Box data-testid="next-planned-step-line">
+      <ColumnHeader label="Next planned step" />
+      <ActivityMiniCard
+        activity={plannedActivity}
+        layout={ACTIVITY_MINI_CARD_LAYOUTS.ROW}
+        onNavigate={(activityId) => activityId && router.push(`/activities/${activityId}`)}
+      />
+    </Box>
+  );
+}
+
+NextPlannedStepLine.propTypes = { plannedActivity: PropTypes.object.isRequired };
+
 // ==============================|| ACTIVITY CONTEXT SECTION ||============================== //
 
 export default function ActivityContextSection({ activity }) {
@@ -262,6 +290,7 @@ export default function ActivityContextSection({ activity }) {
     (origin) => !provenanceActivityId || origin.id !== provenanceActivityId,
   );
   const hasProvenance = Boolean(activity.source_activity_detail) || nextStepOrigins.length > 0;
+  const plannedActivity = activity.next_planned_step?.activity || null;
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
 
@@ -364,15 +393,20 @@ export default function ActivityContextSection({ activity }) {
           </Box>
         </TwoColRow>
 
-        {/* Group 3 — Origin (provenance only, conditional) */}
-        {hasProvenance && (
+        {/* Group 3 — Previous / next (each conditional, 5.12) */}
+        {(hasProvenance || plannedActivity) && (
           <>
             <GroupRule />
-            <Stack spacing={0.75}>
-              {activity.source_activity_detail && <ProvenanceLine activity={activity} />}
-              {nextStepOrigins.map((origin) => (
-                <NextStepOriginLine key={origin.id} origin={origin} />
-              ))}
+            <Stack spacing={1.5} data-testid="ctx-prev-next">
+              {hasProvenance && (
+                <Stack spacing={0.75}>
+                  {activity.source_activity_detail && <ProvenanceLine activity={activity} />}
+                  {nextStepOrigins.map((origin) => (
+                    <NextStepOriginLine key={origin.id} origin={origin} />
+                  ))}
+                </Stack>
+              )}
+              {plannedActivity && <NextPlannedStepLine plannedActivity={plannedActivity} />}
             </Stack>
           </>
         )}
