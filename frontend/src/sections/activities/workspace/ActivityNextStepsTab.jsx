@@ -28,7 +28,10 @@ import NextStepActivityLine, {
   getResolvedActivity,
 } from "sections/activities/nextSteps/NextStepActivityLine";
 import CampaignConversionCta from "sections/activities/nextSteps/CampaignConversionCta";
-import RunAIAnalysisButton from "sections/activities/workspace/RunAIAnalysisButton";
+import RunAIAnalysisButton, {
+  RUN_AI_TRIGGER_VARIANTS,
+} from "sections/activities/workspace/RunAIAnalysisButton";
+import { formatShortDate } from "components/signals/SignalLine";
 import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import ClickablePill from "components/chips/ClickablePill";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
@@ -56,8 +59,11 @@ const NEXT_STEPS_ONLY_OBJECTIVES = { qualification: false, nextSteps: true };
 //   2. the suggested next steps — to validate, validated (resolved, with their
 //      activity on the row's 3rd line), rejected: the generic
 //      SignalsValidationList, DC-only (hasSuggestedNextSteps);
-//   3. the extraction: the shared Run AI Analysis action (RunAIAnalysisButton,
-//      the page's pipelineRunner), next steps only pre-checked — DC-only;
+//   3. under the list's empty state, the AI action (5.12c): only without any
+//      next step — the shared Run AI action as a pill (RunAIAnalysisButton,
+//      the page's pipelineRunner), next steps only pre-checked, while the
+//      NEXT STEPS extraction never ran; « AI already ran · <date> » after —
+//      DC-only;
 //   4. "+ Add next step" (5.8e): a pill → a row of the 7 ActivityType pills →
 //      the creation with that type — DC-only.
 // The next planned step is shown in Context (5.12 A-bis), not here. The page
@@ -96,6 +102,11 @@ export default function ActivityNextStepsTab({
   // "+ Add next step" — the pill toggles the row of type pills (5.8e).
   const [typesOpen, setTypesOpen] = useState(false);
   const isDcActivity = hasSuggestedNextSteps(activity);
+  // The AI action (5.12c): only without any next step (the band's own list —
+  // no new query), and once that list is known (loaded, no error).
+  const nextStepsRun = runsByPipeline?.NEXT_STEPS || null;
+  const showsAIAction =
+    Boolean(pipelineRunner) && !loading && !error && nextStepSignals.length === 0;
 
   // ==============================|| HANDLERS ||============================== //
 
@@ -329,21 +340,32 @@ export default function ActivityNextStepsTab({
                 emptyMessage="No next-step suggestions for this activity"
               />
             )}
-          </Box>
-        )}
 
-        {/* 3. The extraction — the Source band's Run AI action (same display
-            conditions, the page's pipelineRunner), next steps only. DC-only. */}
-        {isDcActivity && pipelineRunner && (
-          <Box data-testid="next-steps-extraction" display="flex" justifyContent="flex-end">
-            <RunAIAnalysisButton
-              activity={activity}
-              pipelineRunner={pipelineRunner}
-              lastRun={lastRun}
-              runsByPipeline={runsByPipeline}
-              label="Run AI on transcript to extract next steps"
-              defaultObjectives={NEXT_STEPS_ONLY_OBJECTIVES}
-            />
+            {/* 3. The AI action, under the list's empty state (5.12c): only
+                when the activity has NO next step (any status). The NEXT
+                STEPS extraction never ran → the Source band's Run AI action
+                as a pill (same predicate, wizard, runner, "Analyzing…"), next
+                steps only; it already ran → « AI already ran · <date> »,
+                no action. */}
+            {showsAIAction && (
+              <Box data-testid="next-steps-extraction" sx={{ mt: 1.5 }}>
+                {nextStepsRun ? (
+                  <Typography variant="caption" color="text.secondary">
+                    {`AI already ran · ${formatShortDate(nextStepsRun.last_run_at)}`}
+                  </Typography>
+                ) : (
+                  <RunAIAnalysisButton
+                    activity={activity}
+                    pipelineRunner={pipelineRunner}
+                    lastRun={lastRun}
+                    runsByPipeline={runsByPipeline}
+                    label="Run AI on transcript"
+                    defaultObjectives={NEXT_STEPS_ONLY_OBJECTIVES}
+                    variant={RUN_AI_TRIGGER_VARIANTS.PILL}
+                  />
+                )}
+              </Box>
+            )}
           </Box>
         )}
 

@@ -110,6 +110,8 @@ describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
     render(<ActivityWorkspacePage />);
     openSource();
     expect(sourceRunAI()).toBeEnabled();
+    // 5.12c (3): the Source keeps its MUI button (no visible change there).
+    expect(sourceRunAI()).toHaveClass("MuiButton-root");
   });
 
   it("COMPLETED: the Next steps band's Run AI is available", () => {

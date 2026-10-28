@@ -23,11 +23,13 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within, act } from "@testing-library/react";
-import AphoriqTheme from "../_utils/aphoriqTheme";
+import AphoriqTheme, { testTheme } from "../_utils/aphoriqTheme";
 
 let mockActivity;
 const mockRun = vi.fn();
 let mockPipelineState = "idle";
+let mockSignals = [];
+let mockRunsByPipeline = {};
 
 vi.mock("next/font/google", () => ({
   Public_Sans: () => ({ className: "mock", style: { fontFamily: "mock" } }),
@@ -55,7 +57,7 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
 }));
 vi.mock("api/aiPipelines/lastRun", () => ({
   useGetLastExtractionRun: () => ({
-    lastRun: { id: "run-1" }, latestRun: null, runsByPipeline: {}, mutateLastRun: vi.fn(),
+    lastRun: { id: "run-1" }, latestRun: null, runsByPipeline: mockRunsByPipeline, mutateLastRun: vi.fn(),
   }),
 }));
 vi.mock("api/signals/signalCounts", () => ({
@@ -63,7 +65,7 @@ vi.mock("api/signals/signalCounts", () => ({
 }));
 vi.mock("api/signals/aggregatedSignals", async (importOriginal) => ({
   ...(await importOriginal()),
-  default: () => ({ signals: [] }),
+  default: () => ({ signals: mockSignals }),
 }));
 vi.mock("hooks/usePipelineRunner", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -102,7 +104,17 @@ import ActivityWorkspacePage from "views/activities/workspace";
 const render = (ui) => rtlRender(<AphoriqTheme>{ui}</AphoriqTheme>);
 
 const TRANSCRIPT = "We agreed on a security review with the CISO next month. ".repeat(3);
-const EXTRACT_LABEL = /Run AI on transcript to extract next steps/;
+// 5.12c (3): a pill, labelled « Run AI on transcript » (normal case).
+const EXTRACT_LABEL = "Run AI on transcript";
+const nextStep = (over = {}) => ({
+  id: "ns-p", _signalType: "next-steps", signal_type: "next-steps", status: "PENDING",
+  suggested_title: "Send the DPA", suggested_activity_type: "EMAIL",
+  suggested_due_date: "2026-11-03", created_at: "2026-10-20T10:00:00Z",
+  source_context: { contacts: [] }, linked_activity: null, attached_activity: null, ...over,
+});
+const NEXT_STEPS_RAN = {
+  NEXT_STEPS: { last_run_at: "2026-11-03T14:32:00Z", status: "SUCCESS", pipeline_type: "NEXT_STEPS" },
+};
 
 const base = {
   id: "act-1", title: "Atelier", activity_type: "MEETING", status: "PLANNED", outcome: null,
@@ -122,17 +134,23 @@ afterEach(() => {
   cleanup();
   mockRun.mockReset();
   mockPipelineState = "idle";
+  mockSignals = [];
+  mockRunsByPipeline = {};
 });
 
 describe("Next steps band — the layout (5.12 B)", () => {
-  it("DC activity: the sections → the extraction → « + Add next step »", () => {
+  // 5.12c (3): the AI action sits UNDER the list's empty state, in the
+  // sections' zone, above « + Add next step ».
+  it("DC activity: the sections (empty state, then the AI action) → « + Add next step »", () => {
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     const sections = within(band()).getByTestId("suggested-next-steps-block");
-    const extraction = within(band()).getByTestId("next-steps-extraction");
+    const empty = within(sections).getByText("No next-step suggestions for this activity");
+    const extraction = within(sections).getByTestId("next-steps-extraction");
     const add = within(band()).getByTestId("add-next-step");
-    expect(follows(sections, extraction)).toBe(true);
+    expect(follows(empty, extraction)).toBe(true);
     expect(follows(extraction, add)).toBe(true);
+    expect(sections.contains(add)).toBe(false);
   });
 
   it("the « Next planned step » sub-block is gone: no title, no card, no empty state", () => {
@@ -160,27 +178,75 @@ describe("Next steps band — the layout (5.12 B)", () => {
   });
 });
 
-describe("Next steps band — the extraction (5.12 B)", () => {
-  it("the shared Run AI action, with its own label", () => {
+describe("Next steps band — the AI action (5.12 B, 5.12c (3))", () => {
+  const pill = () => within(band()).getByRole("button", { name: EXTRACT_LABEL });
+
+  // Homogeneity (PO): no MUI button action in the band — pills, as
+  // « + Add next step ».
+  it("a ClickablePill « Run AI on transcript » — the « + Add next step » pill, no MUI button", () => {
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    expect(pill()).toHaveAttribute("data-testid", "status-pill");
+    expect(pill()).toHaveTextContent(/^Run AI on transcript$/);
+    expect(pill().className).toBe(within(band()).getByRole("button", { name: "+ Add next step" }).className);
+    expect(band().querySelector(".MuiButton-root")).toBeNull();
+  });
+
+  it("no next step and NEXT STEPS never ran → the pill", () => {
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    expect(pill()).toBeInTheDocument();
+    expect(within(band()).queryByText(/AI already ran/)).toBeNull();
+  });
+
+  it("no next step and NEXT STEPS already ran → « AI already ran · <short date> », no action", () => {
+    mockRunsByPipeline = NEXT_STEPS_RAN;
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     const extraction = within(band()).getByTestId("next-steps-extraction");
-    expect(within(extraction).getByRole("button", { name: EXTRACT_LABEL })).toBeEnabled();
+    expect(extraction.textContent).toBe("AI already ran · 3 Nov 2026");
+    expect(within(extraction).queryByRole("button")).toBeNull();
+    expect(within(extraction).getByText(/AI already ran/)).toHaveStyle({ color: testTheme.palette.text.secondary });
   });
+
+  it("only the QUALIFICATION ran (not NEXT STEPS) → still the pill", () => {
+    mockRunsByPipeline = { TRANSCRIPT_SIGNALS: { last_run_at: "2026-11-03T14:32:00Z", status: "SUCCESS" }, NEXT_STEPS: null };
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    expect(pill()).toBeInTheDocument();
+  });
+
+  it.each([["PENDING"], ["VALIDATED"], ["REJECTED"]])(
+    "at least one next step (%s) → no AI action",
+    (status) => {
+      mockSignals = [nextStep({ status })];
+      mockActivity = dcActivity();
+      render(<ActivityWorkspacePage />);
+      expect(within(band()).queryByTestId("next-steps-extraction")).toBeNull();
+      expect(within(band()).queryByRole("button", { name: EXTRACT_LABEL })).toBeNull();
+    },
+  );
 
   it("the wizard opens with ONLY « nextSteps » pre-checked", () => {
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
-    fireEvent.click(screen.getByRole("button", { name: EXTRACT_LABEL }));
+    fireEvent.click(pill());
     const box = (text) => screen.getByText(text).closest("label").querySelector('input[type="checkbox"]');
     expect(box(/Qualification signals/)).not.toBeChecked();
     expect(box(/Next-step suggestions/)).toBeChecked();
   });
 
+  it("keyboard: Enter on the pill opens the wizard", () => {
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    fireEvent.keyDown(pill(), { key: "Enter" });
+    expect(screen.getByText(/Next-step suggestions/)).toBeInTheDocument();
+  });
+
   it("confirming runs the page's pipelineRunner for the next steps only", async () => {
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
-    fireEvent.click(screen.getByRole("button", { name: EXTRACT_LABEL }));
+    fireEvent.click(pill());
     await act(async () => { fireEvent.click(screen.getByText("Continue")); });
     await act(async () => { fireEvent.click(screen.getByText("Run analysis")); });
     expect(mockRun).toHaveBeenCalledWith("act-1", TRANSCRIPT.trim(), {
@@ -188,29 +254,33 @@ describe("Next steps band — the extraction (5.12 B)", () => {
     });
   });
 
-  it("same display conditions as in Source: disabled without transcript", () => {
+  it("same conditions as in Source: disabled without transcript (no wizard on click)", () => {
     mockActivity = dcActivity({ transcript: "" });
     render(<ActivityWorkspacePage />);
-    expect(screen.getByRole("button", { name: EXTRACT_LABEL })).toBeDisabled();
+    expect(pill()).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(pill());
+    expect(screen.queryByText(/Next-step suggestions/)).toBeNull();
   });
 
-  it("same display conditions as in Source: « Analyzing… » while the pipeline runs", () => {
+  it("same conditions as in Source: « Analyzing… » while the pipeline runs", () => {
     mockPipelineState = "running";
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
     const extraction = within(band()).getByTestId("next-steps-extraction");
-    expect(within(extraction).getByRole("button", { name: /Analyzing/ })).toBeDisabled();
+    const analyzing = within(extraction).getByRole("button", { name: "Analyzing…" });
+    expect(analyzing).toHaveAttribute("data-testid", "status-pill");
+    expect(analyzing).toHaveAttribute("aria-disabled", "true");
   });
 
   // 5.12c (5) — the AI action's lock: CANCELLED only (RunAILockPage).
   it("same lock as in Source: available on COMPLETED, locked on CANCELLED", () => {
     mockActivity = dcActivity({ status: "COMPLETED" });
     render(<ActivityWorkspacePage />);
-    expect(screen.getByRole("button", { name: EXTRACT_LABEL })).toBeEnabled();
+    expect(pill()).not.toHaveAttribute("aria-disabled", "true");
     cleanup();
     mockActivity = dcActivity({ status: "CANCELLED" });
     render(<ActivityWorkspacePage />);
-    expect(screen.getByRole("button", { name: EXTRACT_LABEL })).toBeDisabled();
+    expect(pill()).toHaveAttribute("aria-disabled", "true");
   });
 });
 

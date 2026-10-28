@@ -7,7 +7,9 @@
 // clickable pill reads the same: the scope pills, "+ Add next step" and the
 // activity type pills.
 // `pressed` (optional) makes it a toggle (aria-pressed); absent → a plain
-// action. Other props (data-testid, sx…) pass through to StatusPill.
+// action. `disabled` (5.12c) — an unavailable action: aria-disabled, out of
+// the tab order, no click / key, the theme's disabled opacity. Other props
+// (data-testid, sx…) pass through to StatusPill.
 
 "use client";
 
@@ -17,15 +19,17 @@ import PropTypes from "prop-types";
 import StatusPill from "components/chips/StatusPill";
 import { SCOPE_PILL_COLORS } from "utils/objectiveScope";
 
-export default function ClickablePill({ label, onClick, active = false, pressed, sx, ...rest }) {
+export default function ClickablePill({ label, onClick, active = false, pressed, disabled = false, sx, ...rest }) {
   const c = active ? SCOPE_PILL_COLORS.active : SCOPE_PILL_COLORS.inactive;
   return (
     <StatusPill
       role="button"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
       aria-pressed={pressed}
-      onClick={onClick}
+      aria-disabled={disabled || undefined}
+      onClick={disabled ? undefined : onClick}
       onKeyDown={(e) => {
+        if (disabled) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onClick?.(e);
@@ -34,7 +38,11 @@ export default function ClickablePill({ label, onClick, active = false, pressed,
       label={label}
       colorText={c.colorText}
       colorBg={c.colorBg}
-      sx={{ cursor: "pointer", ...sx }}
+      sx={{
+        cursor: disabled ? "default" : "pointer",
+        ...(disabled && { opacity: (theme) => theme.palette.action.disabledOpacity }),
+        ...sx,
+      }}
       {...rest}
     />
   );
@@ -47,5 +55,7 @@ ClickablePill.propTypes = {
   active: PropTypes.bool,
   /** Toggle state (aria-pressed); absent → a plain action. */
   pressed: PropTypes.bool,
+  /** An unavailable action (aria-disabled, no click / key). */
+  disabled: PropTypes.bool,
   sx: PropTypes.object,
 };

@@ -158,7 +158,10 @@ vi.mock("components/signals/SignalEditDrawer", () => ({
 
 // The extraction (the shared Run AI action, 5.12 B) is out of scope here —
 // covered by NextStepsBandLayoutPage.
-vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({ default: () => null }));
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({
+  default: () => null,
+  RUN_AI_TRIGGER_VARIANTS: { BUTTON: "button", PILL: "pill" },
+}));
 
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";

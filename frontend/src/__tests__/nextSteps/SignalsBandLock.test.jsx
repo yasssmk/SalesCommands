@@ -180,7 +180,10 @@ vi.mock("components/signals/SignalEditDrawer", () => ({
 
 // The extraction (the shared Run AI action, 5.12 B) is out of scope here —
 // covered by NextStepsBandLayoutPage.
-vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({ default: () => null }));
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({
+  default: () => null,
+  RUN_AI_TRIGGER_VARIANTS: { BUTTON: "button", PILL: "pill" },
+}));
 
 import ActivityWorkspacePage from "views/activities/workspace";
 import { isActivitySignalsLocked, ACTIVITY_SIGNALS_LOCKED_STATUSES } from "utils/activitySignalsLock";
