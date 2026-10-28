@@ -81,7 +81,7 @@ const SIGNAL_LIST_PREFIXES = [
   "/module-signals/impact/",
   "/module-signals/tech-stack/",
   "/module-signals/blocker/",
-  "/module-signals/next-step/",
+  "/module-signals/next-steps/",
 ];
 
 // ==============================|| POLLING CONFIG ||============================== //
