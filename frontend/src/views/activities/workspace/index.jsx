@@ -323,9 +323,9 @@ export default function ActivityWorkspacePage() {
               icon={SIGNAL_ICON}
               defaultExpanded={analyzed}
             >
+              {/* The band owns its lock (COMPLETED stays workable, 5.11). */}
               <ActivitySignalsTab
                 activity={activity}
-                isLocked={isLocked}
                 mutateCounts={mutateCounts}
               />
             </CollapsibleStrip>

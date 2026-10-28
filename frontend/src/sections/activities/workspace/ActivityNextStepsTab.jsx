@@ -29,26 +29,17 @@ import NextStepActivityLine, {
   getResolvedActivity,
 } from "sections/activities/nextSteps/NextStepActivityLine";
 import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
-import {
-  ACTIVITY_STATUSES,
-  ACTIVITY_TYPES,
-  ACTIVITY_TYPE_LABELS,
-} from "api/accounts/activities";
+import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import ClickablePill from "components/chips/ClickablePill";
 import ActivityModal from "sections/accounts/activities/ActivityModal";
 import EditNextStepContent from "sections/activities/workspace/EditNextStepContent";
 import EditActivityContent from "sections/activities/workspace/EditActivityContent";
 import NextStepValidateFlow from "sections/activities/nextSteps/NextStepValidateFlow";
 import { NEXT_STEPS_BAND_QUERY, hasSuggestedNextSteps } from "utils/nextStepsBand";
+// The band's own lock — the rule shared with the Signals band (5.11): only a
+// CANCELLED activity locks, a COMPLETED one stays workable.
+import { isActivitySignalsLocked } from "utils/activitySignalsLock";
 
-// The band's own lock (PO decision): it IGNORES the read-only state of a
-// COMPLETED activity — the conversation is over and its next steps are handled
-// now — and stays read-only only for these statuses.
-export const NEXT_STEPS_LOCKED_STATUSES = [ACTIVITY_STATUSES.CANCELLED];
-
-export function isNextStepsBandLocked(activity) {
-  return NEXT_STEPS_LOCKED_STATUSES.includes(activity?.status);
-}
 
 // ==============================|| ACTIVITY NEXT STEPS TAB ||============================== //
 
@@ -68,7 +59,7 @@ export function isNextStepsBandLocked(activity) {
 export default function ActivityNextStepsTab({ activity, mutateCounts }) {
   const router = useRouter();
   // The single lock predicate of the band (parts 1-4, row actions, drawer).
-  const isLocked = isNextStepsBandLocked(activity);
+  const isLocked = isActivitySignalsLocked(activity);
   const activityId = activity?.id;
   const accountId = activity?.account;
 

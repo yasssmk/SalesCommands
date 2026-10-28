@@ -48,6 +48,7 @@ import EditObjectionContent from "sections/activities/workspace/EditObjectionCon
 import EditPeopleContent from "sections/activities/workspace/EditPeopleContent";
 import EditTechStackContent from "sections/activities/workspace/EditTechStackContent";
 import EditCompetitorContent from "sections/activities/workspace/EditCompetitorContent";
+import { isActivitySignalsLocked } from "utils/activitySignalsLock";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -87,9 +88,11 @@ function ActivitySignalDetail(props) {
 
 export default function ActivitySignalsTab({
   activity,
-  isLocked,
   mutateCounts,
 }) {
+  // The band owns its lock — the rule shared with the Next steps band (5.11):
+  // only a CANCELLED activity locks; a COMPLETED one stays workable.
+  const isLocked = isActivitySignalsLocked(activity);
   const activityId = activity?.id;
   const accountId = activity?.account;
 
@@ -424,8 +427,8 @@ export default function ActivitySignalsTab({
           signals={flatSignals}
           loading={loading}
           onSelect={handleSelect}
-          onValidate={handleValidate}
-          onReject={handleReject}
+          onValidate={isLocked ? undefined : handleValidate}
+          onReject={isLocked ? undefined : handleReject}
           emptyMessage="No signals for this activity"
         />
       )}
@@ -450,7 +453,7 @@ ActivitySignalsTab.propTypes = {
   activity: PropTypes.shape({
     id: PropTypes.string,
     account: PropTypes.string,
+    status: PropTypes.string,
   }),
-  isLocked: PropTypes.bool,
   mutateCounts: PropTypes.func,
 };
