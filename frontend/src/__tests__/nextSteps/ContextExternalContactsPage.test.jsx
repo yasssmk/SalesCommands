@@ -260,81 +260,137 @@ describe("Context — an owner without a name: the email once (5.9b)", () => {
 
 // ==============================|| 5.12 — PREVIOUS / NEXT IN CONTEXT ||============================== //
 //
-// PO (5.12): the "Next planned step" card moves from the Next steps band to
-// the Context section. Context gets ONE block gathering the previous and the
-// next: the existing provenance lines (« From next step › … », unchanged),
-// then « Next planned step » — the SAME ActivityMiniCard (layout "row"), a
-// click → the activity. One of the two missing: only the other line; both
-// missing: no block. No new query: activity.next_planned_step (the server).
+// PO (5.12 A-bis): NO card in Context. The Origin group goes in TWO columns,
+// on the exact model of the People group (same column labels, same grid, same
+// stacking when narrow):
+//   left « Previous »: the provenance lines, unchanged;
+//   right « Next planned »: ONE line on the ProvenanceRow shell, the
+//   provenance typography — type icon · title · step · short date (+ the
+//   existing "Overdue" label), the title → /activities/<id>. No card, no pill.
+// A campaign activity whose DC was born: the line carries the DC
+// (« In decision cycle <name> › … »); nothing open in it: the DC name alone.
+// One column → it alone; none → no group. No new query
+// (activity.next_planned_step, the server).
 
-describe("Context — the previous / next block (5.12)", () => {
+describe("Context — the previous / next group, two columns (5.12 A-bis)", () => {
   const ORIGIN = { id: "act-10", title: "Atelier business case", date: "2026-10-20" };
   const PLANNED = {
     id: "act-20", title: "Security workshop", activity_type: "MEETING", status: "PLANNED",
-    scheduled_date: "2026-11-12", decision_step_name: null, is_overdue: false,
+    scheduled_date: "2026-11-12", decision_step_name: "Technical Fit", is_overdue: false,
   };
   const ctx = () => screen.getByTestId("ctx-card");
-  const block = () => within(ctx()).queryByTestId("ctx-prev-next");
-  const planned = { next_planned_step: { source: "SEQUENCE", activity: PLANNED, decision_cycle: null } };
-
-  afterEach(() => mockPush.mockReset());
-
-  it("only the next: the « Next planned step » card is in Context", () => {
-    mockActivity = activityWith(undefined, { next_step_origins: [], ...planned });
-    render(<ActivityWorkspacePage />);
-    const line = within(block()).getByTestId("next-planned-step-line");
-    expect(within(line).getByText("Next planned step")).toBeInTheDocument();
-    const card = within(line).getByTestId("activity-mini-card");
-    expect(within(card).getByText("Security workshop")).toBeInTheDocument();
-    expect(within(block()).queryAllByTestId("next-step-origin-line")).toHaveLength(0);
+  const group = () => within(ctx()).queryByTestId("ctx-prev-next");
+  const nextLine = () => within(group()).getByTestId("next-planned-line");
+  const planned = (activity = PLANNED, over = {}) => ({
+    next_planned_step: { source: "CAMPAIGN", decision_cycle: null, activity, ...over },
   });
 
-  it("the card is the shared ActivityMiniCard in its « row » layout", () => {
-    mockActivity = activityWith(undefined, planned);
+  it("only the next: the « Next planned » column alone, ONE line", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: [], ...planned() });
     render(<ActivityWorkspacePage />);
-    const card = within(block()).getByTestId("activity-mini-card");
-    // Row layout: the title on ONE line (noWrap) — the drawer layout wraps it.
-    expect(within(card).getByText("Security workshop")).toHaveClass("MuiTypography-noWrap");
+    expect(within(group()).getByText("Next planned")).toBeInTheDocument();
+    expect(within(group()).queryByText("Previous")).toBeNull();
+    expect(nextLine().textContent).toBe("Security workshop · Technical Fit · 12 Nov 2026");
   });
 
-  it("a click on the card → the planned activity", () => {
-    mockActivity = activityWith(undefined, planned);
+  it("no card, no status pill in Context", () => {
+    mockActivity = activityWith(undefined, planned());
     render(<ActivityWorkspacePage />);
-    fireEvent.click(within(block()).getByTestId("activity-mini-card"));
-    expect(mockPush).toHaveBeenCalledWith("/activities/act-20");
+    expect(within(ctx()).queryByTestId("activity-mini-card")).toBeNull();
+    expect(within(ctx()).queryByTestId("status-pill")).toBeNull();
   });
 
-  it("only the previous: the provenance line, no next planned step", () => {
+  it("the ProvenanceRow shell: the TYPE icon, the muted provenance typography", () => {
+    mockActivity = activityWith(undefined, planned());
+    render(<ActivityWorkspacePage />);
+    expect(nextLine().querySelector(".anticon-team")).not.toBeNull();
+    expect(nextLine().querySelector(".anticon-branches")).toBeNull();
+    const body = nextLine().querySelector("p");
+    expect(body).toHaveStyle({ color: testTheme.aphoriQ.text.muted });
+    expect(body).toHaveClass("MuiTypography-body2");
+  });
+
+  it("the title → the planned activity (the provenance AccentLink)", () => {
+    mockActivity = activityWith(undefined, planned());
+    render(<ActivityWorkspacePage />);
+    expect(within(nextLine()).getByRole("link", { name: "Security workshop" }))
+      .toHaveAttribute("href", "/activities/act-20");
+  });
+
+  it("an overdue activity: the existing « Overdue » label in the line", () => {
+    mockActivity = activityWith(undefined, planned({ ...PLANNED, is_overdue: true }));
+    render(<ActivityWorkspacePage />);
+    expect(nextLine().textContent).toBe("Security workshop · Technical Fit · 12 Nov 2026 · Overdue");
+  });
+
+  it("no step, no date: the title alone", () => {
+    mockActivity = activityWith(undefined, planned({ ...PLANNED, decision_step_name: null, scheduled_date: null }));
+    render(<ActivityWorkspacePage />);
+    expect(nextLine().textContent).toBe("Security workshop");
+  });
+
+  it("only the previous: the « Previous » column alone, the provenance lines unchanged", () => {
     mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN] });
     render(<ActivityWorkspacePage />);
-    expect(within(block()).getAllByTestId("next-step-origin-line")).toHaveLength(1);
-    expect(within(block()).queryByTestId("next-planned-step-line")).toBeNull();
-    expect(within(ctx()).queryByText("Next planned step")).toBeNull();
+    expect(within(group()).getByText("Previous")).toBeInTheDocument();
+    expect(within(group()).queryByText("Next planned")).toBeNull();
+    expect(within(group()).getByTestId("next-step-origin-line").textContent)
+      .toBe("From next step › Atelier business case · 20 Oct 2026");
   });
 
-  it("both: ONE block, the previous then the next", () => {
-    mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN], ...planned });
+  it("both: the People grid, « Previous » left then « Next planned » right", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN], ...planned() });
     render(<ActivityWorkspacePage />);
-    expect(within(ctx()).getAllByTestId("ctx-prev-next")).toHaveLength(1);
-    const previous = within(block()).getByTestId("next-step-origin-line");
-    const next = within(block()).getByTestId("next-planned-step-line");
-    expect(previous.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const grid = within(group()).getByTestId("ctx-grid");
+    const [left, right] = Array.from(grid.children);
+    expect(grid.children).toHaveLength(2);
+    expect(within(left).getByText("Previous")).toBeInTheDocument();
+    expect(within(left).getByTestId("next-step-origin-line")).toBeInTheDocument();
+    expect(within(right).getByText("Next planned")).toBeInTheDocument();
+    expect(within(right).getByTestId("next-planned-line")).toBeInTheDocument();
   });
 
-  it("none: no block at all", () => {
+  it("the column labels are the People ones (same ColumnHeader)", () => {
+    mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN], ...planned() });
+    render(<ActivityWorkspacePage />);
+    const people = screen.getByText("Internal team");
+    for (const label of ["Previous", "Next planned"]) {
+      const el = within(group()).getByText(label);
+      expect(el.tagName).toBe(people.tagName);
+      expect(el.className).toBe(people.className);
+      expect(el.parentElement.className).toBe(people.parentElement.className);
+    }
+  });
+
+  it("a DC born from the campaign activity: « In decision cycle <DC> › … »", () => {
+    mockActivity = activityWith(undefined, planned({ ...PLANNED, title: "Send pricing" }, {
+      source: "BORN_DECISION_CYCLE", decision_cycle: { id: "dc-7", name: "Deal Logistix" },
+    }));
+    render(<ActivityWorkspacePage />);
+    expect(nextLine().textContent)
+      .toBe("In decision cycle Deal Logistix › Send pricing · Technical Fit · 12 Nov 2026");
+    expect(within(nextLine()).getByRole("link", { name: "Deal Logistix" }))
+      .toHaveAttribute("href", "/accounts/acc-1/dc/dc-7?tab=timeline");
+  });
+
+  it("a born DC with nothing open: the DC name alone", () => {
+    mockActivity = activityWith(undefined, planned(null, {
+      source: "BORN_DECISION_CYCLE", decision_cycle: { id: "dc-7", name: "Deal Logistix" },
+    }));
+    render(<ActivityWorkspacePage />);
+    expect(nextLine().textContent).toBe("In decision cycle Deal Logistix");
+  });
+
+  it("none: no group at all (only the People hairline)", () => {
     mockActivity = activityWith(undefined, { next_step_origins: [], next_planned_step: null });
     render(<ActivityWorkspacePage />);
-    expect(block()).toBeNull();
-    expect(within(ctx()).queryByTestId("activity-mini-card")).toBeNull();
-    // Only the People hairline: no rule for an absent block.
+    expect(group()).toBeNull();
     expect(within(ctx()).getAllByTestId("ctx-sep")).toHaveLength(1);
   });
 
-  it("a next_planned_step without activity: no next line (as « none »)", () => {
-    mockActivity = activityWith(undefined, {
-      next_planned_step: { source: "BORN_DECISION_CYCLE", activity: null, decision_cycle: { id: "dc-9", name: "Deal" } },
-    });
+  it("a next planned step without activity nor DC: as « none »", () => {
+    mockActivity = activityWith(undefined, planned(null));
     render(<ActivityWorkspacePage />);
-    expect(block()).toBeNull();
+    expect(group()).toBeNull();
   });
 });

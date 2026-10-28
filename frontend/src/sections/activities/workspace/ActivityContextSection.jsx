@@ -10,27 +10,27 @@
 //           carry no handler yet — the drawer is wired in a later sprint. No
 //           email/phone on the rows.
 //   ── hairline ──  (only when there is a previous or a next)
-//   Previous / next (5.12): ONE block —
-//     the previous: a provenance line (where the activity was born), a branch
+//   Origin (5.12): Previous | Next planned — the People grid and headers —
+//     Previous: a provenance line (where the activity was born), a branch
 //           icon + TWO separate accent links (context, then activity) to live
 //           routes; then (5.9) one line per CONVERSATION the activity comes
 //           from through next steps (activity.next_step_origins: the one
 //           whose next step created it + those whose next steps were linked
 //           to it), « From next step › <conversation> · <date> »;
-//     the next: « Next planned step », the shared ActivityMiniCard (layout
-//           "row") of activity.next_planned_step (chosen by the server), a
-//           click → the activity.
-//   One of the two missing: only the other; both missing: no block. The
-//   current campaign/DC rattachement is NOT shown here (it lives in the header).
-// Read-only: the only navigation is the accent links and the next planned
-// step card, to live routes. No editing, no ComingSoon. Weights/colours/sizes
-// come from the theme.
+//     Next planned: ONE line on the same shell — the type icon, « <title> ·
+//           <step> · <date> » (+ "Overdue") of activity.next_planned_step
+//           (chosen by the server); from a DC born from this campaign
+//           activity, « In decision cycle <DC> › … » (the DC alone when
+//           nothing is open in it). No card, no status pill.
+//   One column missing: the other alone; both missing: no group. The current
+//   campaign/DC rattachement is NOT shown here (it lives in the header).
+// Read-only: the only navigation is the accent links to live routes. No
+// editing, no ComingSoon. Weights/colours/sizes come from the theme.
 
 "use client";
 
 import PropTypes from "prop-types";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
@@ -46,7 +46,9 @@ import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 import Surface from "components/display/Surface";
 import LabeledValue from "components/display/LabeledValue";
 import PersonRow from "components/display/PersonRow";
-import ActivityMiniCard, { ACTIVITY_MINI_CARD_LAYOUTS } from "components/cards/activities/ActivityMiniCard";
+import { formatShortDate } from "components/signals/SignalLine";
+import { getActivityTypeIcon } from "utils/activityTypes";
+import { ACTIVITY_OVERDUE_LABEL } from "api/accounts/activities";
 
 // Drawer — clicking a person opens its read-only fiche in the coque
 // (external contact → Contact fiche; internal team member → User fiche).
@@ -168,14 +170,14 @@ AccentLink.propTypes = { href: PropTypes.string.isRequired, bold: PropTypes.bool
 
 // ==============================|| ORIGIN — PROVENANCE ||============================== //
 
-// The shell of a provenance line: the branch icon + a muted body.
-function ProvenanceRow({ children, ...rest }) {
+// The shell of a provenance line: an icon (the branch by default) + a muted body.
+function ProvenanceRow({ icon: Icon = BranchesOutlined, children, ...rest }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   return (
     <Stack direction="row" spacing={1} alignItems="flex-start" {...rest}>
       <Box sx={{ mt: 0.25, flexShrink: 0 }}>
-        <BranchesOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
+        <Icon style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
       </Box>
       <Typography variant="body2" sx={{ color: aq.text.muted, minWidth: 0 }}>
         {children}
@@ -184,7 +186,7 @@ function ProvenanceRow({ children, ...rest }) {
   );
 }
 
-ProvenanceRow.propTypes = { children: PropTypes.node };
+ProvenanceRow.propTypes = { icon: PropTypes.elementType, children: PropTypes.node };
 
 function ProvenanceLine({ activity }) {
   const aq = useTheme().aphoriQ;
@@ -251,23 +253,48 @@ NextStepOriginLine.propTypes = {
 
 // ==============================|| NEXT — THE NEXT PLANNED STEP ||============================== //
 
-// The next planned step (5.12): its label, then the shared card — a click →
-// the activity (as the band did).
-function NextPlannedStepLine({ plannedActivity }) {
-  const router = useRouter();
+// The next planned step (5.12 A-bis): ONE line on the provenance shell — the
+// type icon, « <title> · <step> · <date> » (+ "Overdue"); from a DC born from
+// this campaign activity, « In decision cycle <DC> › … », the DC alone when
+// nothing is open in it.
+function NextPlannedLine({ nextPlannedStep, accountId }) {
+  const aq = useTheme().aphoriQ;
+  const planned = nextPlannedStep.activity;
+  const bornCycle = nextPlannedStep.source === "BORN_DECISION_CYCLE" ? nextPlannedStep.decision_cycle : null;
+  const sep = <Box component="span" sx={{ color: aq.text.muted }}>{" › "}</Box>;
+  const meta = planned
+    ? [
+        planned.decision_step_name,
+        formatShortDate(planned.scheduled_date || planned.due_date),
+        planned.is_overdue ? ACTIVITY_OVERDUE_LABEL : null,
+      ].filter(Boolean)
+    : [];
   return (
-    <Box data-testid="next-planned-step-line">
-      <ColumnHeader label="Next planned step" />
-      <ActivityMiniCard
-        activity={plannedActivity}
-        layout={ACTIVITY_MINI_CARD_LAYOUTS.ROW}
-        onNavigate={(activityId) => activityId && router.push(`/activities/${activityId}`)}
-      />
-    </Box>
+    <ProvenanceRow
+      data-testid="next-planned-line"
+      icon={planned ? getActivityTypeIcon(planned.activity_type) : undefined}
+    >
+      {bornCycle && (
+        <>
+          {"In decision cycle "}
+          <AccentLink bold href={`/accounts/${accountId}/dc/${bornCycle.id}?tab=timeline`}>{bornCycle.name}</AccentLink>
+          {planned && sep}
+        </>
+      )}
+      {planned && <AccentLink href={`/activities/${planned.id}`}>{planned.title}</AccentLink>}
+      {meta.length > 0 && ` · ${meta.join(" · ")}`}
+    </ProvenanceRow>
   );
 }
 
-NextPlannedStepLine.propTypes = { plannedActivity: PropTypes.object.isRequired };
+NextPlannedLine.propTypes = {
+  nextPlannedStep: PropTypes.shape({
+    source: PropTypes.string,
+    decision_cycle: PropTypes.shape({ id: PropTypes.string, name: PropTypes.string }),
+    activity: PropTypes.object,
+  }).isRequired,
+  accountId: PropTypes.string,
+};
 
 // ==============================|| ACTIVITY CONTEXT SECTION ||============================== //
 
@@ -290,7 +317,12 @@ export default function ActivityContextSection({ activity }) {
     (origin) => !provenanceActivityId || origin.id !== provenanceActivityId,
   );
   const hasProvenance = Boolean(activity.source_activity_detail) || nextStepOrigins.length > 0;
-  const plannedActivity = activity.next_planned_step?.activity || null;
+  // The next planned step: an activity, or a born DC with nothing open (5.12).
+  const nextPlannedStep = activity.next_planned_step;
+  const hasNextPlanned = Boolean(
+    nextPlannedStep?.activity ||
+      (nextPlannedStep?.source === "BORN_DECISION_CYCLE" && nextPlannedStep.decision_cycle),
+  );
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
 
@@ -393,21 +425,34 @@ export default function ActivityContextSection({ activity }) {
           </Box>
         </TwoColRow>
 
-        {/* Group 3 — Previous / next (each conditional, 5.12) */}
-        {(hasProvenance || plannedActivity) && (
+        {/* Group 3 — Origin: Previous | Next planned (each conditional, 5.12) */}
+        {(hasProvenance || hasNextPlanned) && (
           <>
             <GroupRule />
-            <Stack spacing={1.5} data-testid="ctx-prev-next">
-              {hasProvenance && (
-                <Stack spacing={0.75}>
-                  {activity.source_activity_detail && <ProvenanceLine activity={activity} />}
-                  {nextStepOrigins.map((origin) => (
-                    <NextStepOriginLine key={origin.id} origin={origin} />
-                  ))}
-                </Stack>
-              )}
-              {plannedActivity && <NextPlannedStepLine plannedActivity={plannedActivity} />}
-            </Stack>
+            <Box data-testid="ctx-prev-next">
+              <TwoColRow>
+                {hasProvenance && (
+                  <Box>
+                    <ColumnHeader label="Previous" />
+                    <Stack spacing={0.75}>
+                      {activity.source_activity_detail && <ProvenanceLine activity={activity} />}
+                      {nextStepOrigins.map((origin) => (
+                        <NextStepOriginLine key={origin.id} origin={origin} />
+                      ))}
+                    </Stack>
+                  </Box>
+                )}
+                {hasNextPlanned && (
+                  <Box>
+                    <ColumnHeader label="Next planned" />
+                    <NextPlannedLine
+                      nextPlannedStep={nextPlannedStep}
+                      accountId={activity.account_detail?.id || activity.account}
+                    />
+                  </Box>
+                )}
+              </TwoColRow>
+            </Box>
           </>
         )}
       </Stack>
