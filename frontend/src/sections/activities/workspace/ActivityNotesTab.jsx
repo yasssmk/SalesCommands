@@ -10,25 +10,18 @@ import { format } from 'date-fns';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 
 // project imports
 import EditableTextBlock from 'components/EditableTextBlock';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
-import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
+import RunAIAnalysisButton, { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
 
 // assets
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
-import ExperimentOutlined from '@ant-design/icons/ExperimentOutlined';
 import WarningOutlined from '@ant-design/icons/WarningOutlined';
-
-// ==============================|| CONSTANTS ||============================== //
-
-const MIN_TRANSCRIPT_LENGTH = 50;
 
 // ==============================|| ACTIVITY NOTES TAB ||============================== //
 
@@ -47,85 +40,17 @@ export default function ActivityNotesTab({
   const transcript = activity?.transcript ?? '';
   const outcomeNotes = activity?.outcome_notes ?? '';
 
-  const { run, state: pipelineState, result: pipelineResult, error: pipelineError, pollProgress, reset: resetPipeline } = pipelineRunner;
+  const { state: pipelineState, result: pipelineResult, error: pipelineError, reset: resetPipeline } = pipelineRunner;
 
-  // --- Wizard open state ---
+  // --- Wizard open state (controlled: "Try again" opens it too) ---
   const [wizardOpen, setWizardOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  // --- Derive effective display state from pipelineState + lastRun ---
-  const effectiveState = deriveEffectiveState(pipelineState, lastRun);
-
-  // --- Run AI Analysis ---
-  const trimmedTranscript = transcript.trim();
-  const canRunAI =
-    !isLocked &&
-    trimmedTranscript.length >= MIN_TRANSCRIPT_LENGTH &&
-    pipelineState !== PIPELINE_STATE.RUNNING;
-
+  // "Try again" opens the wizard under the same predicate as the button.
   const handleOpenWizard = () => {
-    if (canRunAI) {
+    if (canRunAIAnalysis({ isLocked, transcript, pipelineState })) {
       setWizardOpen(true);
     }
-  };
-
-  const handleCancelWizard = () => {
-    setWizardOpen(false);
-  };
-
-  const handleConfirmWizard = (curatedTranscript, objectives) => {
-    setWizardOpen(false);
-    run(activityId, curatedTranscript, {
-      run_qualification: objectives?.qualification ?? true,
-      run_next_steps: objectives?.nextSteps ?? true,
-    });
-  };
-
-  // --- Render helpers ---
-  const renderRunButton = () => {
-    const tooltipTitle =
-      isLocked
-        ? 'Activity is locked'
-        : trimmedTranscript.length === 0
-          ? 'Paste a transcript first'
-          : trimmedTranscript.length < MIN_TRANSCRIPT_LENGTH
-            ? `Transcript too short (min ${MIN_TRANSCRIPT_LENGTH} characters)`
-            : '';
-
-    if (effectiveState === 'running') {
-      const isPolling = Boolean(pollProgress && pollProgress.max > 0);
-      return (
-        <Stack spacing={0.5} alignItems="flex-end">
-          <Button
-            variant="contained"
-            disabled
-            startIcon={<CircularProgress size={16} color="inherit" />}
-          >
-            Analyzing…
-          </Button>
-          {isPolling && (
-            <Typography variant="caption" color="text.secondary">
-              Polling for result ({pollProgress.attempt}/{pollProgress.max})…
-            </Typography>
-          )}
-        </Stack>
-      );
-    }
-
-    return (
-      <Tooltip title={canRunAI ? '' : tooltipTitle}>
-        <span>
-          <Button
-            variant="contained"
-            onClick={handleOpenWizard}
-            disabled={!canRunAI}
-            startIcon={<ExperimentOutlined />}
-          >
-            Run AI Analysis
-          </Button>
-        </span>
-      </Tooltip>
-    );
   };
 
   const renderExtractionResult = () => {
@@ -253,44 +178,23 @@ export default function ActivityNotesTab({
         {/* Extraction result */}
         {renderExtractionResult()}
 
-        {/* Run AI Analysis button */}
+        {/* Run AI Analysis button (+ its 2-step wizard) */}
         <Box display="flex" justifyContent="flex-end">
-          {renderRunButton()}
+          <RunAIAnalysisButton
+            activityId={activityId}
+            transcript={transcript}
+            outcomeNotes={outcomeNotes}
+            isLocked={isLocked}
+            pipelineRunner={pipelineRunner}
+            lastRun={lastRun}
+            runsByPipeline={runsByPipeline}
+            open={wizardOpen}
+            onOpenChange={setWizardOpen}
+          />
         </Box>
       </Stack>
-
-      {/* Run AI Wizard (2-step) */}
-      <RunAIWizard
-        open={wizardOpen}
-        activityId={activityId}
-        transcript={transcript}
-        outcomeNotes={outcomeNotes}
-        lastRun={lastRun}
-        runsByPipeline={runsByPipeline}
-        onCancel={handleCancelWizard}
-        onConfirm={handleConfirmWizard}
-      />
     </Box>
   );
-}
-
-// ==============================|| HELPERS ||============================== //
-
-/**
- * Derive the effective display state for the Run AI button.
- * pipelineState (transient) takes priority over lastRun (persisted).
- */
-function deriveEffectiveState(pipelineState, lastRun) {
-  if (pipelineState === PIPELINE_STATE.RUNNING) return 'running';
-  if (pipelineState === PIPELINE_STATE.ERROR) return 'error';
-  if (pipelineState === PIPELINE_STATE.SUCCESS) return 'success';
-  if (pipelineState === PIPELINE_STATE.PARTIAL) return 'partial';
-
-  // pipelineState is idle — fall back to lastRun
-  if (!lastRun) return 'idle';
-  if (lastRun.status === 'SUCCESS') return 'success';
-  if (lastRun.status === 'PARTIAL') return 'partial';
-  return 'idle';
 }
 
 // ==============================|| PROP TYPES ||============================== //
