@@ -221,6 +221,15 @@ describe("Next planned step card — one line, the type icon (5.9b)", () => {
     expect(within(card).getByTestId("activity-mini-card-meta").textContent).toBe("Planned");
   });
 
+  // 5.10b (4) — PO: the « from AI » chip is REMOVED (the provenance lives in
+  // Context, « From next step »).
+  it("an activity born from a next step: no « from AI » chip", () => {
+    const card = renderCard({ next_step_signal: "ns-1" });
+    expect(within(card).queryByText(/from AI/i)).toBeNull();
+    expect(card.querySelector(".MuiChip-root")).toBeNull();
+    expect(card.querySelector(".anticon-robot")).toBeNull();
+  });
+
   it("the type icon carries the type colour token", () => {
     const card = renderCard();
     const icon = within(card).getByTestId("activity-mini-card-type-icon");

@@ -8,14 +8,12 @@ import PropTypes from "prop-types";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
-import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
 // Icons
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
-import RobotOutlined from "@ant-design/icons/RobotOutlined";
 
 // Project imports
 import StatusPill from "components/chips/StatusPill";
@@ -58,7 +56,6 @@ export default function ActivityMiniCard({
     activityItem.decision_step_name,
     formatShortDate(activityItem.scheduled_date || activityItem.due_date),
   ].filter(Boolean);
-  const fromAI = Boolean(activityItem.next_step_signal);
   const statusLabel = activityItem.is_overdue
     ? ACTIVITY_OVERDUE_LABEL
     : ACTIVITY_STATUS_LABELS[activityItem.status] || activityItem.status;
@@ -122,7 +119,8 @@ export default function ActivityMiniCard({
           </Typography>
         </Stack>
 
-        {/* Right: step · date · status pill (+ from AI, unlink) */}
+        {/* Right: step · date · status pill (+ unlink). No « from AI » chip
+            (5.10b, PO): the provenance lives in Context (« From next step »). */}
         <Stack
           data-testid="activity-mini-card-meta"
           direction="row"
@@ -143,16 +141,6 @@ export default function ActivityMiniCard({
             // drawer: always on the right, even without step / date.
             sx={inDrawer ? { ml: "auto" } : undefined}
           />
-          {fromAI && (
-            <Chip
-              icon={<RobotOutlined style={{ fontSize: 10 }} />}
-              label="from AI"
-              size="small"
-              color="warning"
-              variant="outlined"
-              sx={{ height: 20, fontSize: "0.7rem" }}
-            />
-          )}
           {showUnlink && (
             <IconButton
               size="small"
@@ -182,7 +170,6 @@ ActivityMiniCard.propTypes = {
     scheduled_date: PropTypes.string,
     due_date: PropTypes.string,
     decision_step_name: PropTypes.string,
-    next_step_signal: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
   }).isRequired,
   onNavigate: PropTypes.func.isRequired,
   onUnlink: PropTypes.func,
