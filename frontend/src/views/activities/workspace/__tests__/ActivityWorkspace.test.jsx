@@ -225,7 +225,8 @@ function setAnalyzed(isAnalyzed) {
 function bandTitlesInOrder() {
   return screen
     .getAllByRole("button")
-    .map((b) => b.textContent.trim())
+    // The strip title (5.12e: the Next steps header also holds its pill).
+    .map((b) => (b.querySelector("p") ?? b).textContent.trim())
     .filter((t) => ["Preparation", "Source", "Signals", "Next steps"].includes(t));
 }
 

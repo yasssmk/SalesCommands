@@ -163,7 +163,9 @@ vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({
   RUN_AI_TRIGGER_VARIANTS: { BUTTON: "button", PILL: "pill" },
 }));
 
-import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
+// 5.12e (4): « + Add next step » is in the BAND header — the tab is rendered
+// inside its band (ActivityNextStepsBand, open), the body unchanged.
+import ActivityNextStepsBand from "sections/activities/workspace/ActivityNextStepsBand";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
 import { rejectSignal, validateSignal } from "api/signals/signals";
 import WorkspaceCoque from "../_utils/workspaceCoque";
@@ -192,9 +194,10 @@ const mockActivity = {
 const renderTab = (props = {}) =>
   render(
     <WorkspaceCoque>
-      <ActivityNextStepsTab
+      <ActivityNextStepsBand
         activity={mockActivity}
         mutateCounts={mockMutateCounts}
+        defaultExpanded
         {...props}
       />
     </WorkspaceCoque>,

@@ -64,8 +64,10 @@ const NEXT_STEPS_ONLY_OBJECTIVES = { qualification: false, nextSteps: true };
 //      (RunAIAnalysisButton, the Source's label, the page's pipelineRunner),
 //      next steps only pre-checked, while the NEXT STEPS extraction never
 //      ran; « AI already ran · <date> » after — DC-only;
-//   4. "+ Add next step" (5.8e): a pill → a row of the 7 ActivityType pills →
-//      the creation with that type — DC-only.
+//   « + Add next step » (5.8e) sits on the right of the BAND's title
+//   (ActivityNextStepsBand, 5.12e): it opens the row of the 7 ActivityType
+//   pills, at the TOP of this body (typesOpen) → the creation with that type
+//   — DC-only.
 // The next planned step is shown in Context (5.12 A-bis), not here. The page
 // renders the band only when it has something to show (hasNextStepsBand).
 // Every activity creation of the band opens in the coque (EditActivityContent,
@@ -77,6 +79,8 @@ export default function ActivityNextStepsTab({
   pipelineRunner,
   lastRun,
   runsByPipeline,
+  typesOpen = false,
+  onTypesOpenChange,
 }) {
   const router = useRouter();
   // The single lock predicate of the band (parts 1-4, row actions, drawer).
@@ -99,8 +103,6 @@ export default function ActivityNextStepsTab({
   // Activity modal state (convert from signal OR manual add OR campaign conversion)
   // "Start Decision Cycle" (campaign → new cycle) — the one ActivityModal left.
   const [startCycleOpen, setStartCycleOpen] = useState(false);
-  // "+ Add next step" — the pill toggles the row of type pills (5.8e).
-  const [typesOpen, setTypesOpen] = useState(false);
   const isDcActivity = hasSuggestedNextSteps(activity);
   // The AI action (5.12c): only without any next step (the band's own list —
   // no new query), and once that list is known (loaded, no error).
@@ -317,6 +319,29 @@ export default function ActivityNextStepsTab({
   return (
     <Box>
       <Stack spacing={1.5} data-testid="next-steps-band">
+        {/* « + Add next step »'s row of the 7 ActivityType pills, at the TOP
+            of the band (its pill is in the band header, 5.12e). DC-only. */}
+        {isDcActivity && !isLocked && typesOpen && (
+          <Stack
+            direction="row"
+            spacing={0.75}
+            flexWrap="wrap"
+            useFlexGap
+            data-testid="add-next-step-types"
+          >
+            {Object.values(ACTIVITY_TYPES).map((type) => (
+              <ClickablePill
+                key={type}
+                label={ACTIVITY_TYPE_LABELS[type] || type}
+                onClick={() => {
+                  onTypesOpenChange?.(false);
+                  openCreate({ activityType: type });
+                }}
+              />
+            ))}
+          </Stack>
+        )}
+
         {/* 1. The campaign → Decision Cycle conversion (when it applies):
             "Start Decision Cycle" opens the one ActivityModal left in the band
             (debt: not migrated). */}
@@ -367,38 +392,6 @@ export default function ActivityNextStepsTab({
           </Box>
         )}
 
-        {/* 4. "+ Add next step" (5.8e): the pill, then its row of the 7
-            ActivityType pills. DC-only (5.12 B, PO). */}
-        {isDcActivity && !isLocked && (
-          <Box data-testid="add-next-step">
-            <ClickablePill
-              label="+ Add next step"
-              active
-              onClick={() => setTypesOpen((open) => !open)}
-            />
-            {typesOpen && (
-              <Stack
-                direction="row"
-                spacing={0.75}
-                flexWrap="wrap"
-                useFlexGap
-                sx={{ mt: 1.5 }}
-                data-testid="add-next-step-types"
-              >
-                {Object.values(ACTIVITY_TYPES).map((type) => (
-                  <ClickablePill
-                    key={type}
-                    label={ACTIVITY_TYPE_LABELS[type] || type}
-                    onClick={() => {
-                      setTypesOpen(false);
-                      openCreate({ activityType: type });
-                    }}
-                  />
-                ))}
-              </Stack>
-            )}
-          </Box>
-        )}
       </Stack>
     </Box>
   );
@@ -418,6 +411,10 @@ ActivityNextStepsTab.propTypes = {
     outcome_notes: PropTypes.string,
   }),
   mutateCounts: PropTypes.func,
+  /** « + Add next step »'s type row is shown (the band header's pill, 5.12e). */
+  typesOpen: PropTypes.bool,
+  /** Fired with the next type-row state (closed on a type pick). */
+  onTypesOpenChange: PropTypes.func,
   /** The page's pipeline runner (usePipelineRunner) — the extraction. */
   pipelineRunner: PropTypes.object,
   lastRun: PropTypes.object,

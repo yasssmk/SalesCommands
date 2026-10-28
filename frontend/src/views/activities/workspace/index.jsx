@@ -17,7 +17,6 @@ import Typography from "@mui/material/Typography";
 import ExperimentOutlined from "@ant-design/icons/ExperimentOutlined";
 import FileTextOutlined from "@ant-design/icons/FileTextOutlined";
 import { SIGNAL_ICON } from "utils/signalTypes";
-import RightCircleOutlined from "@ant-design/icons/RightCircleOutlined";
 
 // Project imports
 import WorkspaceHeader from "components/WorkspaceHeader";
@@ -46,7 +45,7 @@ import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
 import ActivitySignalsTab, {
   ACTIVITY_FLAT_TYPES,
 } from "sections/activities/workspace/ActivitySignalsTab";
-import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
+import ActivityNextStepsBand from "sections/activities/workspace/ActivityNextStepsBand";
 import SignalsHaloBox from "components/signals/SignalsHaloBox";
 import {
   NEXT_STEPS_BAND_QUERY,
@@ -349,22 +348,14 @@ export default function ActivityWorkspacePage() {
               totalSignals={bandNextSteps.length}
               data-testid="next-steps-halo"
             >
-              <CollapsibleStrip
-                title="Next steps"
-                icon={RightCircleOutlined}
+              <ActivityNextStepsBand
+                activity={activity}
                 defaultExpanded={analyzed}
-              >
-                {/* The band owns its lock (COMPLETED stays workable); its
-                    extraction is the Source band's (same runner, same lock:
-                    CANCELLED only, 5.12c). */}
-                <ActivityNextStepsTab
-                  activity={activity}
-                  mutateCounts={mutateCounts}
-                  pipelineRunner={pipelineRunner}
-                  lastRun={lastRun}
-                  runsByPipeline={runsByPipeline}
-                />
-              </CollapsibleStrip>
+                mutateCounts={mutateCounts}
+                pipelineRunner={pipelineRunner}
+                lastRun={lastRun}
+                runsByPipeline={runsByPipeline}
+              />
             </SignalsHaloBox>
           )}
         </Stack>

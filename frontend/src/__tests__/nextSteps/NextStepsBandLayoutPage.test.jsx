@@ -172,12 +172,63 @@ describe("Next steps band — the layout (5.12 B)", () => {
     expect(within(band()).queryByText(/No sequence linked/)).toBeNull();
   });
 
-  it("« + Add next step » at the bottom: the pill, then its row of types", () => {
+  // 5.12e (4) — « + Add next step » on the right of the BAND's title (the
+  // CollapsibleStrip `meta` slot, as in 5.8e); never at the bottom any more.
+  const header = () => screen.getByText("Next steps").closest("[aria-expanded]");
+  const addPill = () => within(header()).getByRole("button", { name: "+ Add next step" });
+
+  it("« + Add next step » sits in the band header, right of its title", () => {
     mockActivity = dcActivity();
     render(<ActivityWorkspacePage />);
-    const add = within(band()).getByTestId("add-next-step");
-    fireEvent.click(within(add).getByText("+ Add next step"));
-    expect(within(add).getByTestId("add-next-step-types")).toBeInTheDocument();
+    expect(addPill()).toHaveAttribute("data-testid", "status-pill");
+    expect(follows(screen.getByText("Next steps"), addPill())).toBe(true);
+    expect(within(band()).queryByRole("button", { name: "+ Add next step" })).toBeNull();
+    expect(within(band()).queryByTestId("add-next-step")).toBeNull();
+  });
+
+  it("a click: the band does not fold; the type row appears at the TOP of the band body", () => {
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    expect(header()).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(addPill());
+    expect(header()).toHaveAttribute("aria-expanded", "true");
+    const types = within(band()).getByTestId("add-next-step-types");
+    expect(band().firstElementChild).toBe(types);
+    fireEvent.keyDown(addPill(), { key: "Enter" });
+    expect(header()).toHaveAttribute("aria-expanded", "true");
+    expect(within(band()).queryByTestId("add-next-step-types")).toBeNull();
+  });
+
+  it("a FOLDED band: the pill unfolds it and shows the type row", () => {
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    fireEvent.click(screen.getByText("Next steps"));
+    expect(header()).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(addPill());
+    expect(header()).toHaveAttribute("aria-expanded", "true");
+    expect(within(band()).getByTestId("add-next-step-types")).toBeInTheDocument();
+  });
+
+  it("a type pill → the creation with that type; the type row closes", () => {
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    fireEvent.click(addPill());
+    fireEvent.click(within(within(band()).getByTestId("add-next-step-types")).getByRole("button", { name: "Meeting" }));
+    expect(within(band()).queryByTestId("add-next-step-types")).toBeNull();
+  });
+
+  it("DC-only, hidden on CANCELLED: no pill on a campaign activity nor a CANCELLED one", () => {
+    mockActivity = campaignActivity();
+    render(<ActivityWorkspacePage />);
+    expect(within(header()).queryByRole("button", { name: "+ Add next step" })).toBeNull();
+    cleanup();
+    mockActivity = dcActivity({ status: "CANCELLED" });
+    render(<ActivityWorkspacePage />);
+    expect(within(header()).queryByRole("button", { name: "+ Add next step" })).toBeNull();
+    cleanup();
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    expect(addPill()).toBeInTheDocument();
   });
 });
 
@@ -191,7 +242,7 @@ describe("Next steps band — the AI action (5.12 B, 5.12c (3))", () => {
     render(<ActivityWorkspacePage />);
     expect(pill()).toHaveAttribute("data-testid", "status-pill");
     expect(pill()).toHaveTextContent(/^Run AI Analysis$/);
-    expect(pill().className).toBe(within(band()).getByRole("button", { name: "+ Add next step" }).className);
+    expect(pill().className).toBe(screen.getByRole("button", { name: "+ Add next step" }).className);
     expect(band().querySelector(".MuiButton-root")).toBeNull();
   });
 

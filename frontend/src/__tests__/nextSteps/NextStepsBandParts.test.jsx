@@ -1409,14 +1409,12 @@ describe("Next steps band — the creation form waits for its defaults (5.8e)", 
 describe("Next steps band — '+ Add next step' (5.8e)", () => {
   const TYPES = ["Phone Call", "Email", "Meeting", "Demo", "Task", "LinkedIn", "Other"];
 
-  // 5.12 B (PO): at the bottom of the band, out of any sub-block header.
-  it("a pill at the bottom of the band, after the suggested next steps", () => {
+  // 5.12e (4) (PO): on the right of the BAND's title (its header).
+  it("a pill in the band header, right of the 'Next steps' title", () => {
     renderPage();
     const pill = screen.getByRole("button", { name: "+ Add next step" });
     expect(pill).toHaveAttribute("data-testid", "status-pill");
-    expect(pill.closest("[aria-expanded]")).toBeNull();
-    const sections = screen.getByTestId("suggested-next-steps-block");
-    expect(sections.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(pill.closest("[aria-expanded]")).toBe(screen.getByText("Next steps").closest("[aria-expanded]"));
   });
 
   it("no quick-create chips any more", () => {
