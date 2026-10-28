@@ -258,7 +258,7 @@ describe("Next steps band — part 2, to validate (5.3)", () => {
     renderPage();
     expect(screen.getByText("To validate")).toBeInTheDocument();
     expect(rowOf("Send the DPA")).toBeInTheDocument();
-    // AISuggestionCard / NextStepsFilterBar are gone from the band.
+    // The former AI suggestion cards and filter bar are gone from the band.
     expect(screen.queryByText("Convert to Activity")).not.toBeInTheDocument();
     expect(screen.queryByText("AI Suggestions")).not.toBeInTheDocument();
   });

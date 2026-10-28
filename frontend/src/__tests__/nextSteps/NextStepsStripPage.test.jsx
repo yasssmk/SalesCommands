@@ -72,7 +72,6 @@ vi.mock("sections/accounts/activities/ActivityModal", () => ({
   default: ({ open }) => (open ? <div data-testid="activity-modal" /> : null),
 }));
 vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
-vi.mock("sections/activities/nextSteps/NextStepSuggestionDrawer", () => ({ default: () => null }));
 
 import ActivityWorkspacePage from "views/activities/workspace";
 
