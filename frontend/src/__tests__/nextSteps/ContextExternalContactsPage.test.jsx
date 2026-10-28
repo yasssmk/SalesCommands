@@ -260,11 +260,12 @@ describe("Context — an owner without a name: the email once (5.9b)", () => {
 
 // ==============================|| 5.12 — PREVIOUS / NEXT IN CONTEXT ||============================== //
 //
-// PO (5.12 A-bis): NO card in Context. The Origin group goes in TWO columns,
+// PO (5.12 A-bis): NO card in Context. The Origin group goes in TWO columns
+// (5.12c: labelled « Previous activity » / « Next planned activity »),
 // on the exact model of the People group (same column labels, same grid, same
 // stacking when narrow):
-//   left « Previous »: the provenance lines, unchanged;
-//   right « Next planned »: ONE line on the ProvenanceRow shell, the
+//   left « Previous activity »: the provenance lines, unchanged;
+//   right « Next planned activity »: ONE line on the ProvenanceRow shell, the
 //   provenance typography — type icon · title · step · short date (+ the
 //   existing "Overdue" label), the title → /activities/<id>. No card, no pill.
 // A campaign activity whose DC was born: the line carries the DC
@@ -285,11 +286,11 @@ describe("Context — the previous / next group, two columns (5.12 A-bis)", () =
     next_planned_step: { source: "CAMPAIGN", decision_cycle: null, activity, ...over },
   });
 
-  it("only the next: the « Next planned » column alone, ONE line", () => {
+  it("only the next: the « Next planned activity » column alone, ONE line", () => {
     mockActivity = activityWith(undefined, { next_step_origins: [], ...planned() });
     render(<ActivityWorkspacePage />);
-    expect(within(group()).getByText("Next planned")).toBeInTheDocument();
-    expect(within(group()).queryByText("Previous")).toBeNull();
+    expect(within(group()).getByText("Next planned activity")).toBeInTheDocument();
+    expect(within(group()).queryByText("Previous activity")).toBeNull();
     expect(nextLine().textContent).toBe("Security workshop · Technical Fit · 12 Nov 2026");
   });
 
@@ -323,30 +324,40 @@ describe("Context — the previous / next group, two columns (5.12 A-bis)", () =
     expect(nextLine().textContent).toBe("Security workshop · Technical Fit · 12 Nov 2026 · Overdue");
   });
 
+  // 5.12c (1) — the « Overdue » of the line in red: the existing
+  // ACTIVITY_OVERDUE_CHIP_COLORS.text (the overdue status pill's colour).
+  it("the « Overdue » label in red (ACTIVITY_OVERDUE_CHIP_COLORS.text)", () => {
+    mockActivity = activityWith(undefined, planned({ ...PLANNED, is_overdue: true }));
+    render(<ActivityWorkspacePage />);
+    const overdue = within(nextLine()).getByText("Overdue");
+    expect(overdue).toHaveStyle({ color: testTheme.palette.error.main });
+    expect(within(nextLine()).getByText(/Technical Fit/)).not.toHaveStyle({ color: testTheme.palette.error.main });
+  });
+
   it("no step, no date: the title alone", () => {
     mockActivity = activityWith(undefined, planned({ ...PLANNED, decision_step_name: null, scheduled_date: null }));
     render(<ActivityWorkspacePage />);
     expect(nextLine().textContent).toBe("Security workshop");
   });
 
-  it("only the previous: the « Previous » column alone, the provenance lines unchanged", () => {
+  it("only the previous: the « Previous activity » column alone, the provenance lines unchanged", () => {
     mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN] });
     render(<ActivityWorkspacePage />);
-    expect(within(group()).getByText("Previous")).toBeInTheDocument();
-    expect(within(group()).queryByText("Next planned")).toBeNull();
+    expect(within(group()).getByText("Previous activity")).toBeInTheDocument();
+    expect(within(group()).queryByText("Next planned activity")).toBeNull();
     expect(within(group()).getByTestId("next-step-origin-line").textContent)
       .toBe("From next step › Atelier business case · 20 Oct 2026");
   });
 
-  it("both: the People grid, « Previous » left then « Next planned » right", () => {
+  it("both: the People grid, « Previous activity » left then « Next planned activity » right", () => {
     mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN], ...planned() });
     render(<ActivityWorkspacePage />);
     const grid = within(group()).getByTestId("ctx-grid");
     const [left, right] = Array.from(grid.children);
     expect(grid.children).toHaveLength(2);
-    expect(within(left).getByText("Previous")).toBeInTheDocument();
+    expect(within(left).getByText("Previous activity")).toBeInTheDocument();
     expect(within(left).getByTestId("next-step-origin-line")).toBeInTheDocument();
-    expect(within(right).getByText("Next planned")).toBeInTheDocument();
+    expect(within(right).getByText("Next planned activity")).toBeInTheDocument();
     expect(within(right).getByTestId("next-planned-line")).toBeInTheDocument();
   });
 
@@ -354,7 +365,7 @@ describe("Context — the previous / next group, two columns (5.12 A-bis)", () =
     mockActivity = activityWith(undefined, { next_step_origins: [ORIGIN], ...planned() });
     render(<ActivityWorkspacePage />);
     const people = screen.getByText("Internal team");
-    for (const label of ["Previous", "Next planned"]) {
+    for (const label of ["Previous activity", "Next planned activity"]) {
       const el = within(group()).getByText(label);
       expect(el.tagName).toBe(people.tagName);
       expect(el.className).toBe(people.className);

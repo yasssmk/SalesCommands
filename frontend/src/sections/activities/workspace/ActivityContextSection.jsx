@@ -10,15 +10,17 @@
 //           carry no handler yet — the drawer is wired in a later sprint. No
 //           email/phone on the rows.
 //   ── hairline ──  (only when there is a previous or a next)
-//   Origin (5.12): Previous | Next planned — the People grid and headers —
-//     Previous: a provenance line (where the activity was born), a branch
+//   Origin (5.12): Previous activity | Next planned activity — the People
+//   grid and headers —
+//     Previous activity: a provenance line (where the activity was born), a branch
 //           icon + TWO separate accent links (context, then activity) to live
 //           routes; then (5.9) one line per CONVERSATION the activity comes
 //           from through next steps (activity.next_step_origins: the one
 //           whose next step created it + those whose next steps were linked
 //           to it), « From next step › <conversation> · <date> »;
-//     Next planned: ONE line on the same shell — the type icon, « <title> ·
-//           <step> · <date> » (+ "Overdue") of activity.next_planned_step
+//     Next planned activity: ONE line on the same shell — the type icon,
+//           « <title> · <step> · <date> » (+ "Overdue", in the overdue
+//           colour ACTIVITY_OVERDUE_CHIP_COLORS.text) of activity.next_planned_step
 //           (chosen by the server); from a DC born from this campaign
 //           activity, « In decision cycle <DC> › … » (the DC alone when
 //           nothing is open in it). No card, no status pill.
@@ -48,7 +50,7 @@ import LabeledValue from "components/display/LabeledValue";
 import PersonRow from "components/display/PersonRow";
 import { formatShortDate } from "components/signals/SignalLine";
 import { getActivityTypeIcon } from "utils/activityTypes";
-import { ACTIVITY_OVERDUE_LABEL } from "api/accounts/activities";
+import { ACTIVITY_OVERDUE_LABEL, ACTIVITY_OVERDUE_CHIP_COLORS } from "api/accounts/activities";
 
 // Drawer — clicking a person opens its read-only fiche in the coque
 // (external contact → Contact fiche; internal team member → User fiche).
@@ -254,7 +256,8 @@ NextStepOriginLine.propTypes = {
 // ==============================|| NEXT — THE NEXT PLANNED STEP ||============================== //
 
 // The next planned step (5.12 A-bis): ONE line on the provenance shell — the
-// type icon, « <title> · <step> · <date> » (+ "Overdue"); from a DC born from
+// type icon, « <title> · <step> · <date> » (+ "Overdue" in the overdue colour,
+// 5.12c); from a DC born from
 // this campaign activity, « In decision cycle <DC> › … », the DC alone when
 // nothing is open in it.
 function NextPlannedLine({ nextPlannedStep, accountId }) {
@@ -263,11 +266,7 @@ function NextPlannedLine({ nextPlannedStep, accountId }) {
   const bornCycle = nextPlannedStep.source === "BORN_DECISION_CYCLE" ? nextPlannedStep.decision_cycle : null;
   const sep = <Box component="span" sx={{ color: aq.text.muted }}>{" › "}</Box>;
   const meta = planned
-    ? [
-        planned.decision_step_name,
-        formatShortDate(planned.scheduled_date || planned.due_date),
-        planned.is_overdue ? ACTIVITY_OVERDUE_LABEL : null,
-      ].filter(Boolean)
+    ? [planned.decision_step_name, formatShortDate(planned.scheduled_date || planned.due_date)].filter(Boolean)
     : [];
   return (
     <ProvenanceRow
@@ -283,6 +282,12 @@ function NextPlannedLine({ nextPlannedStep, accountId }) {
       )}
       {planned && <AccentLink href={`/activities/${planned.id}`}>{planned.title}</AccentLink>}
       {meta.length > 0 && ` · ${meta.join(" · ")}`}
+      {planned?.is_overdue && (
+        <>
+          {" · "}
+          <Box component="span" sx={{ color: ACTIVITY_OVERDUE_CHIP_COLORS.text }}>{ACTIVITY_OVERDUE_LABEL}</Box>
+        </>
+      )}
     </ProvenanceRow>
   );
 }
@@ -425,7 +430,7 @@ export default function ActivityContextSection({ activity }) {
           </Box>
         </TwoColRow>
 
-        {/* Group 3 — Origin: Previous | Next planned (each conditional, 5.12) */}
+        {/* Group 3 — Origin: Previous activity | Next planned activity (each conditional, 5.12) */}
         {(hasProvenance || hasNextPlanned) && (
           <>
             <GroupRule />
@@ -433,7 +438,7 @@ export default function ActivityContextSection({ activity }) {
               <TwoColRow>
                 {hasProvenance && (
                   <Box>
-                    <ColumnHeader label="Previous" />
+                    <ColumnHeader label="Previous activity" />
                     <Stack spacing={0.75}>
                       {activity.source_activity_detail && <ProvenanceLine activity={activity} />}
                       {nextStepOrigins.map((origin) => (
@@ -444,7 +449,7 @@ export default function ActivityContextSection({ activity }) {
                 )}
                 {hasNextPlanned && (
                   <Box>
-                    <ColumnHeader label="Next planned" />
+                    <ColumnHeader label="Next planned activity" />
                     <NextPlannedLine
                       nextPlannedStep={nextPlannedStep}
                       accountId={activity.account_detail?.id || activity.account}
