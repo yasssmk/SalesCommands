@@ -76,7 +76,10 @@ vi.mock("api/signals/signalCounts", () => ({
 // the Signals band halo (the other types).
 const mockMutateList = vi.fn();
 let mockOtherSignals = [];
-vi.mock("api/signals/aggregatedSignals", () => ({
+// The real module's other exports (AGGREGATED_URL — read at load time by
+// api/aiPipelines/activityExtraction, through the real usePipelineRunner).
+vi.mock("api/signals/aggregatedSignals", async (importOriginal) => ({
+  ...(await importOriginal()),
   default: (args) => ({
     signals: (args?.signalTypes || []).includes("next-steps") ? mockNextSteps : mockOtherSignals,
     loading: false, error: null, mutate: mockMutateList,
@@ -118,7 +121,10 @@ vi.mock("utils/displayError", () => ({
 }));
 let mockDcPeople = [];
 let mockPatchResponse = null;
-vi.mock("api/signals/signals", () => ({
+vi.mock("api/signals/signals", async (importOriginal) => ({
+  // The real module's other exports (SIGNAL_LIST_ENDPOINTS, read at load time
+  // by api/aiPipelines/activityExtraction).
+  ...(await importOriginal()),
   useGetSignalChoices: () => ({ choices: {}, choicesLoading: false }),
   validateSignal: vi.fn(async () => ({ success: true })),
   rejectSignal: vi.fn(async () => ({ success: true })),
