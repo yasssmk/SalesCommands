@@ -75,7 +75,11 @@ const endpoints = {
 
 // ==============================|| SIGNAL LIST PREFIXES ||============================== //
 
+// Revalidated after a successful extraction. The Signals and Next steps bands
+// read the AGGREGATED endpoint (useAggregatedSignals, /module-signals/all/ —
+// Sprint Next steps 5.10); the per-type lists read their own prefixes.
 const SIGNAL_LIST_PREFIXES = [
+  "/module-signals/all/",
   "/module-signals/pain/",
   "/module-signals/objective/",
   "/module-signals/impact/",

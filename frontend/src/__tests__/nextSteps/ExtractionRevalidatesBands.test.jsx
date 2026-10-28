@@ -5,6 +5,9 @@
 // activityExtraction.js) revalidates SWR keys by prefix (SIGNAL_LIST_PREFIXES,
 // real api/_swr). Real path: the REAL data hooks are mounted in the global SWR
 // cache, the extraction runs, the hooks must fetch again.
+//   * the Next steps band (and the Signals band) read the aggregated endpoint
+//     /module-signals/all/ (useAggregatedSignals, NEXT_STEPS_BAND_QUERY) —
+//     never revalidated before 5.10;
 //   * a per-type next steps list reads /module-signals/next-steps/ — the list
 //     carried the SINGULAR "/module-signals/next-step/", which matches nothing.
 
@@ -21,7 +24,9 @@ vi.mock("hooks/useAuth", () => ({
 
 import { api } from "utils/axiosClient";
 import { runActivityExtraction } from "api/aiPipelines/activityExtraction";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
 import { useGetSignalsByActivity } from "api/signals/signals";
+import { NEXT_STEPS_BAND_QUERY } from "utils/nextStepsBand";
 
 const TRANSCRIPT = "A".repeat(100);
 const SUCCESS = { success: true, data: { data: { status: "SUCCESS" } } };
@@ -34,6 +39,11 @@ const fetcher = (key) => {
   return Promise.resolve({ data: { results: [], count: 0 } });
 };
 const fetchesOf = (prefix) => calls.filter((u) => u.startsWith(prefix)).length;
+
+function Band({ activityId }) {
+  useAggregatedSignals({ activityId, ...NEXT_STEPS_BAND_QUERY });
+  return null;
+}
 
 function NextStepsList({ activityId }) {
   useGetSignalsByActivity(activityId, "next-steps");
@@ -48,6 +58,17 @@ beforeEach(() => {
 });
 
 describe("a successful extraction revalidates the bands' data (5.10)", () => {
+  it("the Next steps band (aggregated /module-signals/all/) fetches again", async () => {
+    const activityId = "11111111-1111-4111-8111-111111111111";
+    mount(<Band activityId={activityId} />);
+    await waitFor(() => expect(fetchesOf("/module-signals/all/")).toBe(1));
+
+    const result = await runActivityExtraction(activityId, TRANSCRIPT);
+    expect(result.success).toBe(true);
+
+    await waitFor(() => expect(fetchesOf("/module-signals/all/")).toBe(2));
+  });
+
   it("a per-type next steps list (/module-signals/next-steps/) fetches again", async () => {
     const activityId = "22222222-2222-4222-8222-222222222222";
     mount(<NextStepsList activityId={activityId} />);
