@@ -873,6 +873,61 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
       "Why: no people in common · other step · other type · 5 days apart")).toBeInTheDocument();
   });
 
+  // 5.10b (2) — the card in the drawer: the "drawer" layout of the SAME
+  // ActivityMiniCard (forced by the Link step) — row 1 the type icon + the
+  // FULL title (wraps, 2 lines max then ellipsis), row 2 step · date | the
+  // status pill. The screen is wide: the screen-width breakpoint must not
+  // put it back on one line (the title was cut to ~8 characters).
+  const LONG_TITLE = "New tech stack evaluation with the security and procurement teams";
+  const cssOf = () => Array.from(document.querySelectorAll("style")).map((x) => x.textContent || "").join("");
+  const rulesOf = (el) => {
+    const css = cssOf();
+    return (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"))
+      .map((c) => (css.match(new RegExp(`\\.${c}\\{[^}]*\\}`, "g")) || []).join("")).join("");
+  };
+  const mediaRulesOf = (el) => {
+    const css = cssOf();
+    return (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"))
+      .map((c) => (css.match(new RegExp(`@media[^{]*\\{\\.${c}\\{[^}]*\\}`, "g")) || []).join("")).join("");
+  };
+
+  it("the Link step card: the FULL title on row 1, the meta on row 2", async () => {
+    const list = await openStep2([{ ...CANDIDATES[0], title: LONG_TITLE }, CANDIDATES[1]]);
+    const card = within(within(list).getAllByTestId(/^link-candidate-/)[0]).getByTestId("activity-mini-card");
+    const title = within(card).getByText(LONG_TITLE);
+    // The full title: wraps on 2 lines max, then ellipsis — never one cut line.
+    const titleRules = rulesOf(title);
+    expect(titleRules).toMatch(/-webkit-line-clamp:2/);
+    expect(titleRules).not.toMatch(/white-space:nowrap/);
+    // Two distinct rows, whatever the screen width.
+    const row = within(card).getByTestId("activity-mini-card-row");
+    expect(rulesOf(row)).toMatch(/flex-direction:column/);
+    expect(mediaRulesOf(row)).not.toMatch(/flex-direction:row/);
+    const main = within(card).getByTestId("activity-mini-card-main");
+    const meta = within(card).getByTestId("activity-mini-card-meta");
+    expect(main).toContainElement(title);
+    expect(main.querySelector(".anticon")).not.toBeNull();
+    expect(meta).not.toContainElement(title);
+    expect(main.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("the Link step card, row 2: step · date on the left, the status pill on the right", async () => {
+    const list = await openStep2();
+    const card = within(within(list).getAllByTestId(/^link-candidate-/)[0]).getByTestId("activity-mini-card");
+    const meta = within(card).getByTestId("activity-mini-card-meta");
+    expect(rulesOf(meta)).toMatch(/justify-content:space-between/);
+    expect(meta.firstElementChild).toHaveTextContent(/^Technical Fit · /);
+    expect(meta.lastElementChild).toHaveAttribute("data-testid", "status-pill");
+  });
+
+  it("the Link step card, row 2 without step nor date: the pill stays on the right", async () => {
+    const list = await openStep2([{ ...CANDIDATES[0], decision_step: null, scheduled_date: null,
+                                    due_date: null }, CANDIDATES[1]]);
+    const card = within(within(list).getAllByTestId(/^link-candidate-/)[0]).getByTestId("activity-mini-card");
+    const pill = within(within(card).getByTestId("activity-mini-card-meta")).getByTestId("status-pill");
+    expect(rulesOf(pill)).toMatch(/margin-left:auto/);
+  });
+
   it("step 3: one section per difference", async () => {
     const diff = await openStep3();
     for (const key of ["activity_type", "date", "decision_step", "call_to_action", "description", "contacts"]) {

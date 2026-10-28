@@ -43,7 +43,9 @@ import Typography from "@mui/material/Typography";
 import { attachNextStepToActivity, useNextStepLinkCandidates } from "api/signals/signals";
 import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import { displayErrorSnackbar } from "utils/displayError";
-import ActivityMiniCard from "components/cards/activities/ActivityMiniCard";
+import ActivityMiniCard, {
+  ACTIVITY_MINI_CARD_LAYOUTS,
+} from "components/cards/activities/ActivityMiniCard";
 import StatusPill from "components/chips/StatusPill";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import { formatShortDate } from "components/signals/SignalLine";
@@ -332,6 +334,7 @@ function CandidatesStep({ candidates, selectedId, onSelect }) {
             <ActivityMiniCard
               activity={{ ...c, decision_step_name: c.decision_step?.name }}
               onNavigate={() => onSelect(c.id)}
+              layout={ACTIVITY_MINI_CARD_LAYOUTS.DRAWER}
             />
             <Typography variant="caption" color="text.secondary">
               {`Why: ${linkCandidateWhy(c)}`}
