@@ -8,12 +8,8 @@ import PropTypes from "prop-types";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
-import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-
-// Icons
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
 
 // Project imports
 import StatusPill from "components/chips/StatusPill";
@@ -42,8 +38,6 @@ import {
 export default function ActivityMiniCard({
   activity: activityItem,
   onNavigate,
-  onUnlink,
-  showUnlink = false,
 }) {
   const theme = useTheme();
 
@@ -111,7 +105,7 @@ export default function ActivityMiniCard({
           </Typography>
         </Stack>
 
-        {/* Row 2: step · date | status pill (+ unlink). No « from AI » chip
+        {/* Row 2: step · date | status pill. No « from AI » chip
             (5.10b, PO): the provenance lives in Context (« From next step »). */}
         <Stack
           data-testid="activity-mini-card-meta"
@@ -133,17 +127,6 @@ export default function ActivityMiniCard({
             // Always on the right, even without step / date.
             sx={{ ml: "auto" }}
           />
-          {showUnlink && (
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUnlink?.();
-              }}
-            >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-          )}
         </Stack>
       </Stack>
     </Card>
@@ -164,6 +147,4 @@ ActivityMiniCard.propTypes = {
     decision_step_name: PropTypes.string,
   }).isRequired,
   onNavigate: PropTypes.func.isRequired,
-  onUnlink: PropTypes.func,
-  showUnlink: PropTypes.bool,
 };
