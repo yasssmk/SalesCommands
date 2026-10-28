@@ -451,7 +451,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     completed_by_name = serializers.SerializerMethodField(read_only=True)
     campaign_detail = serializers.SerializerMethodField(read_only=True)
     source_activity_detail = serializers.SerializerMethodField(read_only=True)
-    next_step_signal_detail = serializers.SerializerMethodField(read_only=True)
     next_step_origins = serializers.SerializerMethodField(read_only=True)
     no_answer_count = serializers.SerializerMethodField(read_only=True)
     
@@ -505,7 +504,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
             # AI suggestion provenance
             'next_step_signal',
-            'next_step_signal_detail',
             'next_step_origins',
 
             # Campaign retry tracking
@@ -631,38 +629,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
         return None
 
-    def get_next_step_signal_detail(self, obj):
-        """
-        Provenance of an activity CREATED from a next step (Sprint Next steps
-        2.5 — "From next step" line of the Context section): the next step's
-        title and the conversation it came from. None without an origin next
-        step (never created from one, or the next step was deleted —
-        SET_NULL).
-
-        Reads the FKs directly (at most two queries), never an annotation or
-        a prefetch: the detail endpoint's get_object()
-        (permissions/mixins.py) refetches the row without the retrieve
-        select_related.
-        """
-        if not obj.next_step_signal_id:
-            return None
-        signal = obj.next_step_signal
-        if signal is None:
-            return None
-        source = signal.source_activity
-        return {
-            'id':    str(signal.id),
-            'title': signal.suggested_title,
-            'source_activity': (
-                {
-                    'id':    str(source.id),
-                    'title': source.title,
-                    'date':  _activity_reference_date(source),
-                }
-                if source is not None else None
-            ),
-        }
-    
     def get_next_step_origins(self, obj):
         """
         The CONVERSATIONS this activity comes from through next steps (Sprint
@@ -674,8 +640,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
         is left out.
 
         Direct reads (one query), never a prefetch: the detail endpoint's
-        get_object() refetches the row without the retrieve select_related
-        (see get_next_step_signal_detail).
+        get_object() (permissions/mixins.py) refetches the row without the
+        retrieve select_related / prefetch.
         """
         from django.db.models import Q
         from app_modules.signals.constants import SignalStatus

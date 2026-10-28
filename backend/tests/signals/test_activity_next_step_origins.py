@@ -16,7 +16,6 @@ GET /module-activities/{id}/ -> data.next_step_origins:
 
 Read through the real detail endpoint (lesson 4): its get_object() refetches
 the row WITHOUT the retrieve select_related / prefetch -- direct reads.
-next_step_signal_detail (2.5) is unchanged.
 """
 
 import datetime
@@ -159,14 +158,6 @@ def test_linked_only(authed_api_a, account, conversations, user_a):
 
 def test_empty_without_any_next_step(authed_api_a, conversations):
     assert _detail(authed_api_a, conversations['atelier'].id)['next_step_origins'] == []
-
-
-def test_next_step_signal_detail_is_unchanged(
-    authed_api_a, account, contact, conversations, user_a,
-):
-    creator = _next_step(account, conversations['atelier'], user_a, 'Revue sécurité avec le DSI')
-    activity = _created_from(authed_api_a, account, contact, creator)
-    assert _detail(authed_api_a, activity.id)['next_step_signal_detail']['id'] == str(creator.id)
 
 
 def test_another_tenants_next_step_is_never_read(
