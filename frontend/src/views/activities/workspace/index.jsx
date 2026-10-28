@@ -351,14 +351,14 @@ export default function ActivityWorkspacePage() {
                 defaultExpanded={analyzed}
               >
                 {/* The band owns its lock (COMPLETED stays workable); its
-                    extraction is the Source band's (same runner, same lock). */}
+                    extraction is the Source band's (same runner, same lock:
+                    CANCELLED only, 5.12c). */}
                 <ActivityNextStepsTab
                   activity={activity}
                   mutateCounts={mutateCounts}
                   pipelineRunner={pipelineRunner}
                   lastRun={lastRun}
                   runsByPipeline={runsByPipeline}
-                  isSourceLocked={isLocked}
                 />
               </CollapsibleStrip>
             </SignalsHaloBox>

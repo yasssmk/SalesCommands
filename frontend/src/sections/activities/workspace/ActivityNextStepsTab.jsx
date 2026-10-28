@@ -71,7 +71,6 @@ export default function ActivityNextStepsTab({
   pipelineRunner,
   lastRun,
   runsByPipeline,
-  isSourceLocked,
 }) {
   const router = useRouter();
   // The single lock predicate of the band (parts 1-4, row actions, drawer).
@@ -338,10 +337,7 @@ export default function ActivityNextStepsTab({
         {isDcActivity && pipelineRunner && (
           <Box data-testid="next-steps-extraction" display="flex" justifyContent="flex-end">
             <RunAIAnalysisButton
-              activityId={activityId}
-              transcript={activity?.transcript ?? ""}
-              outcomeNotes={activity?.outcome_notes ?? ""}
-              isLocked={isSourceLocked}
+              activity={activity}
               pipelineRunner={pipelineRunner}
               lastRun={lastRun}
               runsByPipeline={runsByPipeline}
@@ -406,6 +402,4 @@ ActivityNextStepsTab.propTypes = {
   pipelineRunner: PropTypes.object,
   lastRun: PropTypes.object,
   runsByPipeline: PropTypes.object,
-  /** The Source band's lock, for the extraction (same display conditions). */
-  isSourceLocked: PropTypes.bool,
 };

@@ -36,7 +36,6 @@ export default function ActivityNotesTab({
   latestRun,
   runsByPipeline,
 }) {
-  const activityId = activity?.id ?? null;
   const transcript = activity?.transcript ?? '';
   const outcomeNotes = activity?.outcome_notes ?? '';
 
@@ -48,7 +47,7 @@ export default function ActivityNotesTab({
 
   // "Try again" opens the wizard under the same predicate as the button.
   const handleOpenWizard = () => {
-    if (canRunAIAnalysis({ isLocked, transcript, pipelineState })) {
+    if (canRunAIAnalysis(activity, pipelineState)) {
       setWizardOpen(true);
     }
   };
@@ -180,11 +179,10 @@ export default function ActivityNotesTab({
 
         {/* Run AI Analysis button (+ its 2-step wizard) */}
         <Box display="flex" justifyContent="flex-end">
+          {/* The AI action has its own lock (CANCELLED only, 5.12c); the
+              notes and transcript keep the page lock (isLocked). */}
           <RunAIAnalysisButton
-            activityId={activityId}
-            transcript={transcript}
-            outcomeNotes={outcomeNotes}
-            isLocked={isLocked}
+            activity={activity}
             pipelineRunner={pipelineRunner}
             lastRun={lastRun}
             runsByPipeline={runsByPipeline}

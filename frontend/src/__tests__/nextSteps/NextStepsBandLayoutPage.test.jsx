@@ -202,8 +202,13 @@ describe("Next steps band — the extraction (5.12 B)", () => {
     expect(within(extraction).getByRole("button", { name: /Analyzing/ })).toBeDisabled();
   });
 
-  it("same display conditions as in Source: locked when the Source is (COMPLETED)", () => {
+  // 5.12c (5) — the AI action's lock: CANCELLED only (RunAILockPage).
+  it("same lock as in Source: available on COMPLETED, locked on CANCELLED", () => {
     mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    expect(screen.getByRole("button", { name: EXTRACT_LABEL })).toBeEnabled();
+    cleanup();
+    mockActivity = dcActivity({ status: "CANCELLED" });
     render(<ActivityWorkspacePage />);
     expect(screen.getByRole("button", { name: EXTRACT_LABEL })).toBeDisabled();
   });

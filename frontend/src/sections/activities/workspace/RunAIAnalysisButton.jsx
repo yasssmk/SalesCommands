@@ -10,6 +10,12 @@
 // opens) let another entry point reuse it — the Next steps band: « Run AI on
 // transcript to extract next steps », next steps only (5.12 B).
 //
+// The lock (5.12c, PO): the AI action is locked ONLY on a CANCELLED activity —
+// isActivitySignalsLocked (utils/activitySignalsLock), the lock of the signal
+// bands, read HERE from the activity so every entry point (the Source band,
+// the Next steps band) applies the same one. The backend accepts a run on a
+// COMPLETED activity.
+//
 // The wizard open state is uncontrolled by default; a caller that opens it
 // from elsewhere too (the Source band's "Try again") controls it with
 // `open` / `onOpenChange` — the CollapsibleStrip pattern — and gates its own
@@ -29,6 +35,7 @@ import Typography from '@mui/material/Typography';
 
 // project imports
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
+import { isActivitySignalsLocked } from 'utils/activitySignalsLock';
 import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
 
 // assets
@@ -38,12 +45,12 @@ import ExperimentOutlined from '@ant-design/icons/ExperimentOutlined';
 
 export const MIN_TRANSCRIPT_LENGTH = 50;
 
-// The Run AI action is available: not locked, a long enough transcript, no
-// run in progress.
-export function canRunAIAnalysis({ isLocked, transcript, pipelineState }) {
+// The Run AI action is available: the activity not locked (CANCELLED only,
+// isActivitySignalsLocked), a long enough transcript, no run in progress.
+export function canRunAIAnalysis(activity, pipelineState) {
   return (
-    !isLocked &&
-    (transcript ?? '').trim().length >= MIN_TRANSCRIPT_LENGTH &&
+    !isActivitySignalsLocked(activity) &&
+    (activity?.transcript ?? '').trim().length >= MIN_TRANSCRIPT_LENGTH &&
     pipelineState !== PIPELINE_STATE.RUNNING
   );
 }
@@ -51,10 +58,7 @@ export function canRunAIAnalysis({ isLocked, transcript, pipelineState }) {
 // ==============================|| RUN AI ANALYSIS BUTTON ||============================== //
 
 export default function RunAIAnalysisButton({
-  activityId,
-  transcript = '',
-  outcomeNotes = '',
-  isLocked,
+  activity,
   pipelineRunner,
   lastRun,
   runsByPipeline,
@@ -64,6 +68,10 @@ export default function RunAIAnalysisButton({
   defaultObjectives,
 }) {
   const { run, state: pipelineState, pollProgress } = pipelineRunner;
+  const activityId = activity?.id ?? null;
+  const transcript = activity?.transcript ?? '';
+  const outcomeNotes = activity?.outcome_notes ?? '';
+  const isLocked = isActivitySignalsLocked(activity);
 
   // --- Wizard open state (controlled when `open` is passed) ---
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -79,7 +87,7 @@ export default function RunAIAnalysisButton({
 
   // --- Run AI Analysis ---
   const trimmedTranscript = transcript.trim();
-  const canRunAI = canRunAIAnalysis({ isLocked, transcript, pipelineState });
+  const canRunAI = canRunAIAnalysis(activity, pipelineState);
 
   const handleOpenWizard = () => {
     if (canRunAI) {
@@ -190,10 +198,13 @@ function deriveEffectiveState(pipelineState, lastRun) {
 // ==============================|| PROP TYPES ||============================== //
 
 RunAIAnalysisButton.propTypes = {
-  activityId: PropTypes.string,
-  transcript: PropTypes.string,
-  outcomeNotes: PropTypes.string,
-  isLocked: PropTypes.bool,
+  /** The activity: its id, transcript, notes and status (the lock). */
+  activity: PropTypes.shape({
+    id: PropTypes.string,
+    transcript: PropTypes.string,
+    outcome_notes: PropTypes.string,
+    status: PropTypes.string,
+  }),
   pipelineRunner: PropTypes.shape({
     run: PropTypes.func.isRequired,
     state: PropTypes.string.isRequired,

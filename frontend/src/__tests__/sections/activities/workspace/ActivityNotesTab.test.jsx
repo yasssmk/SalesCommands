@@ -149,11 +149,22 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
   });
 
-  it('disables Run AI Analysis when isLocked', () => {
-    renderTab({ isLocked: true });
+  // 5.12c (5) — PO: the AI action is locked ONLY on a CANCELLED activity
+  // (isActivitySignalsLocked); the page lock (isLocked: COMPLETED or
+  // CANCELLED) keeps locking the notes and the transcript only.
+  it('disables Run AI Analysis on a CANCELLED activity', () => {
+    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'CANCELLED' } });
 
     const btn = screen.getByText('Run AI Analysis').closest('button');
     expect(btn).toBeDisabled();
+  });
+
+  it('keeps Run AI Analysis available on a COMPLETED activity (page-locked)', () => {
+    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
+
+    const btn = screen.getByText('Run AI Analysis').closest('button');
+    expect(btn).not.toBeDisabled();
+    expect(screen.getByTestId('etb-input-transcript')).toBeDisabled();
   });
 
   it('opens wizard when Run AI Analysis is clicked', async () => {
