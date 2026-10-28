@@ -182,6 +182,10 @@ vi.mock("components/signals/SignalEditDrawer", () => ({
   default: ({ open }) => (open ? <div data-testid="legacy-signal-edit-drawer" /> : null),
 }));
 
+// The extraction (the shared Run AI action, 5.12 B) is out of scope here —
+// covered by NextStepsBandLayoutPage.
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({ default: () => null }));
+
 import ActivityWorkspacePage from "views/activities/workspace";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import {
@@ -346,12 +350,13 @@ describe("Next steps band — part 4 and the DC-only guard (5.3)", () => {
     expect(screen.getByTestId("activity-create")).toBeInTheDocument();
   });
 
-  it("outside a DC: parts 2-3 hidden, parts 1 and 4 stay", () => {
-    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
+  // 5.12 B (PO): part 4 is DC-only too; the conversion block is what stays.
+  it("outside a DC (a converting campaign activity): parts 2-4 hidden, the conversion stays", () => {
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
     expect(screen.queryByText("To validate")).not.toBeInTheDocument();
     expect(screen.queryByText("Send the DPA")).not.toBeInTheDocument();
-    expect(screen.getByText("Next planned step")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Add next step" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Start Decision Cycle/ })).toBeInTheDocument();
   });
 });
 
@@ -1355,15 +1360,6 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(screen.queryByTestId("activity-create")).not.toBeInTheDocument();
   });
 
-  it("a campaign activity (no DC): the DC is chosen by the user", async () => {
-    mockCited = [];
-    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
-    addNextStep("Meeting");
-    const create = await screen.findByTestId(CREATE);
-    expect(within(create).getByTestId("inline-read-decision_cycle")).toHaveTextContent("No decision cycle");
-    fireEvent.click(within(create).getByTestId("inline-read-decision_cycle"));
-    expect(screen.getByRole("option", { name: "Deal Acme" })).toBeInTheDocument();
-  });
 });
 
 
@@ -1410,13 +1406,14 @@ describe("Next steps band — the creation form waits for its defaults (5.8e)", 
 describe("Next steps band — '+ Add next step' (5.8e)", () => {
   const TYPES = ["Phone Call", "Email", "Meeting", "Demo", "Task", "LinkedIn", "Other"];
 
-  it("a pill to the right of the 'Next planned step' header", () => {
+  // 5.12 B (PO): at the bottom of the band, out of any sub-block header.
+  it("a pill at the bottom of the band, after the suggested next steps", () => {
     renderPage();
     const pill = screen.getByRole("button", { name: "+ Add next step" });
     expect(pill).toHaveAttribute("data-testid", "status-pill");
-    // 5.8f — the header is the sub-block's CollapsibleStrip header.
-    const header = screen.getByText("Next planned step").closest("[aria-expanded]");
-    expect(within(header).getByRole("button", { name: "+ Add next step" })).toBe(pill);
+    expect(pill.closest("[aria-expanded]")).toBeNull();
+    const sections = screen.getByTestId("suggested-next-steps-block");
+    expect(sections.compareDocumentPosition(pill) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("no quick-create chips any more", () => {
@@ -1478,9 +1475,9 @@ describe("Next steps band — '+ Add next step' (5.8e)", () => {
     expect(screen.queryByTestId("add-next-step-types")).toBeNull();
   });
 
-  it("a campaign activity: available; a CANCELLED activity: hidden", () => {
-    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
-    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
+  it("5.12 B: a campaign activity: absent; a CANCELLED activity: hidden", () => {
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
+    expect(screen.queryByRole("button", { name: "+ Add next step" })).toBeNull();
     cleanup();
     renderPage(dcActivity({ status: "CANCELLED" }));
     expect(screen.queryByRole("button", { name: "+ Add next step" })).toBeNull();

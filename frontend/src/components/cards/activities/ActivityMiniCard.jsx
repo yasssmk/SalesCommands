@@ -32,8 +32,8 @@ import {
 // (getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR — no type chip) + the title;
 // right step · date · the status pill (the shared StatusPill, the activity
 // status tables, "Overdue" when late). Under the md breakpoint, back to two
-// lines (title, then the meta). Consumers: UpcomingActivitiesSection (the next
-// planned step), NextStepValidateFlow (the link candidates).
+// lines (title, then the meta). Consumer: NextStepValidateFlow (the link
+// candidates) — the next planned step is a Context line since 5.12.
 //
 // `layout` (5.10b) — the breakpoint reads the SCREEN width, so in a drawer
 // (narrow column, wide screen) the "row" layout stays on one line and cuts the

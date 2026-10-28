@@ -48,7 +48,11 @@ import ActivitySignalsTab, {
 } from "sections/activities/workspace/ActivitySignalsTab";
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
 import SignalsHaloBox from "components/signals/SignalsHaloBox";
-import { NEXT_STEPS_BAND_QUERY, hasSuggestedNextSteps } from "utils/nextStepsBand";
+import {
+  NEXT_STEPS_BAND_QUERY,
+  hasSuggestedNextSteps,
+  hasNextStepsBand,
+} from "utils/nextStepsBand";
 
 // The Signals band halo reads the COMPLETE validable set (all 3 statuses).
 const HALO_STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
@@ -332,24 +336,33 @@ export default function ActivityWorkspacePage() {
           </SignalsHaloBox>
 
           {/* Next steps — open when analysed. The same validation-state halo
-              as the Signals band (SignalsHaloBox), on its own next steps. */}
-          <SignalsHaloBox
-            pendingCount={nextStepsPendingCount}
-            totalSignals={bandNextSteps.length}
-            data-testid="next-steps-halo"
-          >
-            <CollapsibleStrip
-              title="Next steps"
-              icon={RightCircleOutlined}
-              defaultExpanded={analyzed}
+              as the Signals band (SignalsHaloBox), on its own next steps.
+              Rendered only when it has something to show (5.12 B: a DC
+              activity, or the campaign conversion) — the Preparation model. */}
+          {hasNextStepsBand(activity) && (
+            <SignalsHaloBox
+              pendingCount={nextStepsPendingCount}
+              totalSignals={bandNextSteps.length}
+              data-testid="next-steps-halo"
             >
-              {/* The band owns its lock (COMPLETED stays workable). */}
-              <ActivityNextStepsTab
-                activity={activity}
-                mutateCounts={mutateCounts}
-              />
-            </CollapsibleStrip>
-          </SignalsHaloBox>
+              <CollapsibleStrip
+                title="Next steps"
+                icon={RightCircleOutlined}
+                defaultExpanded={analyzed}
+              >
+                {/* The band owns its lock (COMPLETED stays workable); its
+                    extraction is the Source band's (same runner, same lock). */}
+                <ActivityNextStepsTab
+                  activity={activity}
+                  mutateCounts={mutateCounts}
+                  pipelineRunner={pipelineRunner}
+                  lastRun={lastRun}
+                  runsByPipeline={runsByPipeline}
+                  isSourceLocked={isLocked}
+                />
+              </CollapsibleStrip>
+            </SignalsHaloBox>
+          )}
         </Stack>
 
       {/* Modals (Delete) */}

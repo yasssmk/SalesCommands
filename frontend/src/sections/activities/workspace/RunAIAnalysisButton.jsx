@@ -6,6 +6,10 @@
 // short; "Analyzing…" + the polling progress while the pipeline runs) and the
 // 2-step RunAIWizard, whose confirmation runs the page's pipelineRunner.
 //
+// `label` and `defaultObjectives` (the objectives checked when the wizard
+// opens) let another entry point reuse it — the Next steps band: « Run AI on
+// transcript to extract next steps », next steps only (5.12 B).
+//
 // The wizard open state is uncontrolled by default; a caller that opens it
 // from elsewhere too (the Source band's "Try again") controls it with
 // `open` / `onOpenChange` — the CollapsibleStrip pattern — and gates its own
@@ -56,6 +60,8 @@ export default function RunAIAnalysisButton({
   runsByPipeline,
   open: controlledOpen,
   onOpenChange,
+  label = 'Run AI Analysis',
+  defaultObjectives,
 }) {
   const { run, state: pipelineState, pollProgress } = pipelineRunner;
 
@@ -133,7 +139,7 @@ export default function RunAIAnalysisButton({
             disabled={!canRunAI}
             startIcon={<ExperimentOutlined />}
           >
-            Run AI Analysis
+            {label}
           </Button>
         </span>
       </Tooltip>
@@ -156,6 +162,7 @@ export default function RunAIAnalysisButton({
         runsByPipeline={runsByPipeline}
         onCancel={handleCancelWizard}
         onConfirm={handleConfirmWizard}
+        defaultObjectives={defaultObjectives}
       />
     </>
   );
@@ -201,4 +208,11 @@ RunAIAnalysisButton.propTypes = {
   open: PropTypes.bool,
   /** Fired with the next open state (controlled or not). */
   onOpenChange: PropTypes.func,
+  /** The button label (default: "Run AI Analysis"). */
+  label: PropTypes.string,
+  /** The objectives checked when the wizard opens (RunAIWizard). */
+  defaultObjectives: PropTypes.shape({
+    qualification: PropTypes.bool,
+    nextSteps: PropTypes.bool,
+  }),
 };

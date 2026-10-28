@@ -154,11 +154,11 @@ vi.mock("components/signals/SignalEditDrawer", () => ({
     open ? <div data-testid="signal-edit-dialog" /> : null,
 }));
 
-vi.mock("sections/activities/nextSteps/UpcomingActivitiesSection", () => ({
-  default: () => <div data-testid="upcoming-activities-section" />,
-}));
-
 // ==============================|| IMPORTS (after mocks) ||============================== //
+
+// The extraction (the shared Run AI action, 5.12 B) is out of scope here —
+// covered by NextStepsBandLayoutPage.
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({ default: () => null }));
 
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
 import useAggregatedSignals from "api/signals/aggregatedSignals";
@@ -233,10 +233,11 @@ describe("ActivityNextStepsTab", () => {
     expect(screen.queryByText(/AI suggestion to handle/)).not.toBeInTheDocument();
   });
 
-  it("renders the next planned step section", () => {
+  // 5.12 B — the next planned step left the band (it is in Context).
+  it("renders no 'Next planned step' sub-block any more", () => {
     renderTab();
-    expect(screen.getByText("Next planned step")).toBeInTheDocument();
-    expect(screen.getByTestId("upcoming-activities-section")).toBeInTheDocument();
+    expect(screen.queryByText("Next planned step")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("next-planned-step-block")).not.toBeInTheDocument();
   });
 
   it("opens the detail in the workspace coque when clicking a next step", () => {
@@ -301,7 +302,8 @@ describe("ActivityNextStepsTab", () => {
 //
 // PO decision (1-bis): the next steps extracted by the AI (parts 2-3) are a
 // DC-only feature. In a campaign context (no decision_cycle) they are NOT
-// proposed. Part 1 (next planned step) and "+ Add next step" (5.8e) stay. The tab itself stays visible (asserted in ActivityTabs.test.jsx).
+// proposed. 5.12 B (PO): "+ Add next step" is DC-only too (hasSuggestedNextSteps);
+// the page hides the band when it has nothing to show (NextStepsBandLayoutPage).
 
 const mockActivityNoDc = {
   ...mockActivity,
@@ -323,10 +325,10 @@ describe("ActivityNextStepsTab — DC-only parts 2-3", () => {
     expect(screen.queryByText("Follow up on pricing")).not.toBeInTheDocument();
   });
 
-  it("still renders part 1 and '+ Add next step' without a decision cycle", () => {
+  it("5.12 B: no '+ Add next step' without a decision cycle", () => {
     renderTab({ activity: mockActivityNoDc });
-    expect(screen.getByText("Next planned step")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Add next step" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("add-next-step")).not.toBeInTheDocument();
   });
 
   it("renders parts 2-3 AND '+ Add next step' with a decision cycle", () => {

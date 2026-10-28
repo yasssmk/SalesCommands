@@ -2,10 +2,11 @@
 //
 // Sprint Next steps 5.8f — READABILITY of the "Next steps" band, on the Activity
 // workspace PAGE as really rendered (views/activities/workspace/index.jsx):
-//   * two sub-blocks, clearly separated: "Next planned step" (+ the "+ Add next
-//     step" pill on its right) then "Suggested next steps" — each with the
-//     section header of the Signals band (CollapsibleStrip, the header of its
-//     To validate / Validated / Rejected sections);
+//   * the "Suggested next steps" sub-block with the section header of the
+//     Signals band (CollapsibleStrip, the header of its To validate /
+//     Validated / Rejected sections). 5.12 B: the "Next planned step"
+//     sub-block is gone (the next planned step is in Context), "+ Add next
+//     step" sits at the bottom of the band (NextStepsBandLayoutPage);
 //   * gone: the Divider, the dashed boxes in raw MUI colours (→ the shared
 //     EmptyState, aphoriQ theme), "Create a follow-up to continue.", "… from
 //     the Overview tab …", the redundant "Next step" type-group header;
@@ -187,6 +188,10 @@ vi.mock("components/signals/SignalEditDrawer", () => ({
   default: ({ open }) => (open ? <div data-testid="legacy-signal-edit-drawer" /> : null),
 }));
 
+// The extraction (the shared Run AI action, 5.12 B) is out of scope here —
+// covered by NextStepsBandLayoutPage.
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({ default: () => null }));
+
 import ActivityWorkspacePage from "views/activities/workspace";
 
 const render = (ui) => rtlRender(<WorkspaceCoque>{ui}</WorkspaceCoque>);
@@ -231,73 +236,30 @@ const stripHeaderOf = (title) => screen.getByText(title).closest('[aria-expanded
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
-// ==============================|| TWO SUB-BLOCKS ||============================== //
+// ==============================|| THE SUB-BLOCK ||============================== //
 
-describe("5.8f — two sub-blocks, the Signals band's section header", () => {
-  it("'Next planned step' then 'Suggested next steps', each a CollapsibleStrip header", () => {
+describe("5.8f / 5.12 B — the 'Suggested next steps' sub-block, the Signals band's section header", () => {
+  it("'Suggested next steps' is a CollapsibleStrip header, as the Signals band's sections", () => {
     renderPage();
-    const planned = stripHeaderOf("Next planned step");
     const suggested = stripHeaderOf("Suggested next steps");
     // The header of the Signals band's sections (To validate…): the same strip.
     const toValidate = stripHeaderOf("To validate");
-    [planned, suggested].forEach((h) => {
-      expect(h).toHaveAttribute("role", "button");
-      expect(h.className).toBe(toValidate.className);
-    });
-    // In this order, the list inside the second one.
-    expect(planned.compareDocumentPosition(suggested) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(suggested).toHaveAttribute("role", "button");
+    expect(suggested.className).toBe(toValidate.className);
     const suggestedBlock = screen.getByTestId("suggested-next-steps-block");
     expect(within(suggestedBlock).getByText("To validate")).toBeInTheDocument();
-    expect(within(screen.getByTestId("next-planned-step-block")).queryByText("To validate")).toBeNull();
   });
 
-  it("the '+ Add next step' pill sits on the right of the 'Next planned step' header", () => {
+  it("5.12 B: no 'Next planned step' sub-block any more", () => {
     renderPage();
-    const pill = within(stripHeaderOf("Next planned step")).getByRole("button", { name: "+ Add next step" });
-    expect(pill).toHaveAttribute("data-testid", "status-pill");
+    expect(screen.queryByText("Next planned step")).toBeNull();
+    expect(screen.queryByTestId("next-planned-step-block")).toBeNull();
   });
 
-  it("a click on the pill opens the type row, never folds the sub-block", () => {
-    renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
-    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByTestId("add-next-step-types")).toBeInTheDocument();
-    fireEvent.keyDown(screen.getByRole("button", { name: "+ Add next step" }), { key: "Enter" });
-    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
-  });
-
-  // 5.8g (d) — on a FOLDED sub-block, "+ Add next step" unfolds it (the type
-  // row is in its body); on an open one it only toggles the type row.
-  it("on a folded 'Next planned step', the pill unfolds it and shows the type row", () => {
-    renderPage();
-    fireEvent.click(screen.getByText("Next planned step"));
-    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
-    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByTestId("add-next-step-types")).toBeVisible();
-  });
-
-  it("folded after the type row was opened: the pill unfolds it, the row stays open", () => {
-    renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
-    fireEvent.click(screen.getByText("Next planned step"));
-    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
-    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByTestId("add-next-step-types")).toBeInTheDocument();
-  });
-
-  it("the header still folds / unfolds the sub-block", () => {
-    renderPage();
-    fireEvent.click(screen.getByText("Next planned step"));
-    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(screen.getByText("Next planned step"));
-    expect(stripHeaderOf("Next planned step")).toHaveAttribute("aria-expanded", "true");
-  });
-
-  it("outside a DC: 'Next planned step' only (DC-only guard)", () => {
-    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
-    expect(screen.getByText("Next planned step")).toBeInTheDocument();
+  it("outside a DC (a converting campaign activity): no 'Suggested next steps' (DC-only guard)", () => {
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
     expect(screen.queryByText("Suggested next steps")).toBeNull();
+    expect(screen.getByText("Start Decision Cycle")).toBeInTheDocument();
   });
 });
 
@@ -309,24 +271,20 @@ describe("5.8f — removed: Divider, dashed boxes, stale texts, the 'Next step' 
     expect(band().querySelector("hr, .MuiDivider-root")).toBeNull();
   });
 
-  it("no dashed box: the empty next planned step is the shared EmptyState", () => {
+  it("no dashed box, no 'Create a follow-up to continue.'", () => {
     renderPage();
-    const empty = within(band()).getByText("No next step planned yet.");
-    expect(empty.closest('[data-testid="empty-state"]')).not.toBeNull();
     band().querySelectorAll("*").forEach((el) => {
       expect(getComputedStyle(el).borderStyle).not.toContain("dashed");
     });
     expect(screen.queryByText(/Create a follow-up to continue/)).toBeNull();
   });
 
-  it("an activity in no sequence: the EmptyState, no 'Overview tab' text", () => {
+  // 5.12 B — an activity in no sequence: the band is hidden (no EmptyState).
+  it("an activity in no sequence: no band, no 'Overview tab' text", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: null }));
-    const empty = within(band()).getByText("No sequence linked.");
-    expect(empty.closest('[data-testid="empty-state"]')).not.toBeNull();
+    expect(screen.queryByTestId("next-steps-halo")).toBeNull();
+    expect(screen.queryByText("No sequence linked.")).toBeNull();
     expect(screen.queryByText(/Overview tab/)).toBeNull();
-    band().querySelectorAll("*").forEach((el) => {
-      expect(getComputedStyle(el).borderStyle).not.toContain("dashed");
-    });
   });
 
   // 5.8g (d) — no suggestion → the shared EmptyState, zero hex colour.
@@ -418,7 +376,7 @@ describe("5.8f — the band halo: the same SignalsHaloBox as the Signals band", 
   });
 
   it("outside a DC: no halo (the suggestions are not proposed)", () => {
-    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" } }));
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
     expect(band()).toHaveAttribute("data-halo-color", "none");
   });
 

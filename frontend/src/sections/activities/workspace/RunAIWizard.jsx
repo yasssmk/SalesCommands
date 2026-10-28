@@ -313,6 +313,10 @@ StepCuration.propTypes = {
 
 // ==============================|| RUN AI WIZARD ||============================== //
 
+// The objectives checked when the wizard opens: both, unless the entry point
+// says otherwise (the Next steps band: next steps only, 5.12 B).
+export const DEFAULT_OBJECTIVES = { qualification: true, nextSteps: true };
+
 export default function RunAIWizard({
   open,
   activityId,
@@ -322,10 +326,11 @@ export default function RunAIWizard({
   runsByPipeline,
   onCancel,
   onConfirm,
+  defaultObjectives = DEFAULT_OBJECTIVES,
 }) {
   const [step, setStep] = useState(1);
-  const [qualificationChecked, setQualificationChecked] = useState(true);
-  const [nextStepsChecked, setNextStepsChecked] = useState(true);
+  const [qualificationChecked, setQualificationChecked] = useState(defaultObjectives.qualification);
+  const [nextStepsChecked, setNextStepsChecked] = useState(defaultObjectives.nextSteps);
   const [curatedText, setCuratedText] = useState('');
   const [includeNotes, setIncludeNotes] = useState(false);
 
@@ -334,12 +339,12 @@ export default function RunAIWizard({
   useEffect(() => {
     if (open) {
       setStep(1);
-      setQualificationChecked(true);
-      setNextStepsChecked(true);
+      setQualificationChecked(defaultObjectives.qualification);
+      setNextStepsChecked(defaultObjectives.nextSteps);
       setCuratedText(transcript || '');
       setIncludeNotes(false);
     }
-  }, [open, transcript]);
+  }, [open, transcript, defaultObjectives.qualification, defaultObjectives.nextSteps]);
 
   const buildFinalContent = useCallback(
     (text, withNotes) => {
@@ -455,4 +460,9 @@ RunAIWizard.propTypes = {
   }),
   onCancel: PropTypes.func.isRequired,
   onConfirm: PropTypes.func.isRequired,
+  /** The objectives checked when the wizard opens (default: both). */
+  defaultObjectives: PropTypes.shape({
+    qualification: PropTypes.bool,
+    nextSteps: PropTypes.bool,
+  }),
 };

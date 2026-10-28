@@ -1,15 +1,13 @@
 // frontend/src/__tests__/nextSteps/NextStepsStripPage.test.jsx
 //
 // Sprint Next steps 5.2 — the Activity workspace PAGE as really rendered
-// (views/activities/workspace/index.jsx): the band is "Next steps"; its part 1
-// is the ONE next planned step (activity.next_planned_step, backend 5.1) shown
-// with the existing ActivityMiniCard (click → the activity, status pill — ON_HOLD
-// visible), "In decision cycle <name>" when the step comes from a DC born from
-// the activity, an explicit empty state when there is none; no client re-sort
-// (sequence_context.next_activities is not listed any more); "Start Decision
-// Cycle" hidden once a DC was born. The band, ActivityNextStepsTab,
-// UpcomingActivitiesSection and ActivityMiniCard are REAL; data hooks and the
-// other bands are mocked.
+// (views/activities/workspace/index.jsx): the band is "Next steps"; "Start
+// Decision Cycle" hidden once a DC was born. 5.12 B: the next planned step
+// (activity.next_planned_step) left the band for Context (5.12 A-bis) — the
+// band shows no title, card or empty state for it any more. The shared
+// ActivityMiniCard's row layout (5.9b) is tested on the card itself. The
+// band and ActivityNextStepsTab are REAL; data hooks and the other bands are
+// mocked.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testing-library/react";
@@ -69,7 +67,12 @@ vi.mock("sections/accounts/activities/ActivityModal", () => ({
 }));
 vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
 
+// The extraction (the shared Run AI action, 5.12 B) is out of scope here —
+// covered by NextStepsBandLayoutPage.
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({ default: () => null }));
+
 import ActivityWorkspacePage from "views/activities/workspace";
+import ActivityMiniCard from "components/cards/activities/ActivityMiniCard";
 
 const render = (ui) => rtlRender(<AphoriqTheme>{ui}</AphoriqTheme>);
 
@@ -101,47 +104,27 @@ describe("Next steps band — part 1, the next planned step (5.2)", () => {
     expect(screen.queryByText("Next step")).not.toBeInTheDocument();
   });
 
-  it("shows ONLY the next planned step — no client re-sort / list — and opens it on click", () => {
+  // 5.12 B (PO) — the next planned step left the band for Context (A-bis):
+  // no title, no card, no empty state, no « In decision cycle » here.
+  it("5.12 B: the band shows no next planned step any more (it is in Context)", () => {
     mockActivity = dcActivity({ source: "DECISION_CYCLE", decision_cycle: { id: "dc-1", name: "Deal Acme" },
                                 activity: planned() });
     render(<ActivityWorkspacePage />);
-    expect(screen.getByText("Next planned step")).toBeInTheDocument();
-    expect(screen.getByText("Security review")).toBeInTheDocument();
-    expect(screen.queryByText("Undated task")).not.toBeInTheDocument();
-    expect(screen.queryByText("Other open activity")).not.toBeInTheDocument();
-    expect(screen.queryByText(/In decision cycle/)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("Security review"));
-    expect(mockPush).toHaveBeenCalledWith("/activities/act-9");
+    expect(screen.queryByText("Next planned step")).not.toBeInTheDocument();
+    expect(screen.queryByText("Security review")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("activity-mini-card")).not.toBeInTheDocument();
+    expect(screen.queryByText("No next step planned yet.")).not.toBeInTheDocument();
   });
 
-  it("an ON_HOLD next step shows its status pill", () => {
-    mockActivity = dcActivity({ source: "CAMPAIGN", decision_cycle: null,
-                                activity: planned({ status: "ON_HOLD" }) });
-    render(<ActivityWorkspacePage />);
-    expect(screen.getByText("On hold")).toBeInTheDocument();
-  });
-
-  it("a step from a DC born from the activity says 'In decision cycle <name>' and hides Start Decision Cycle", () => {
+  it("a campaign activity whose DC was born: no Start Decision Cycle (no band at all, 5.12 B)", () => {
     mockActivity = dcActivity(
       { source: "BORN_DECISION_CYCLE", decision_cycle: { id: "dc-7", name: "Deal Logistix" },
         activity: planned({ title: "Send pricing" }) },
       { decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL", status: "PLANNED" },
     );
     render(<ActivityWorkspacePage />);
-    expect(screen.getByText("In decision cycle Deal Logistix")).toBeInTheDocument();
-    expect(screen.getByText("Send pricing")).toBeInTheDocument();
     expect(screen.queryByText("Start Decision Cycle")).not.toBeInTheDocument();
-  });
-
-  it("a born DC with nothing open: the DC is named, an explicit empty state, no Start Decision Cycle", () => {
-    mockActivity = dcActivity(
-      { source: "BORN_DECISION_CYCLE", decision_cycle: { id: "dc-7", name: "Deal Logistix" }, activity: null },
-      { decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL", status: "PLANNED" },
-    );
-    render(<ActivityWorkspacePage />);
-    expect(screen.getByText("In decision cycle Deal Logistix")).toBeInTheDocument();
-    expect(screen.getByText("No activity planned in this decision cycle yet.")).toBeInTheDocument();
-    expect(screen.queryByText("Start Decision Cycle")).not.toBeInTheDocument();
+    expect(screen.queryByText(/In decision cycle/)).not.toBeInTheDocument();
   });
 
   it("a successful campaign call with no DC born keeps Start Decision Cycle", () => {
@@ -151,30 +134,23 @@ describe("Next steps band — part 1, the next planned step (5.2)", () => {
     render(<ActivityWorkspacePage />);
     expect(screen.getByText("Start Decision Cycle")).toBeInTheDocument();
   });
-
-  it("nothing planned: an explicit empty state", () => {
-    mockActivity = dcActivity(null);
-    render(<ActivityWorkspacePage />);
-    expect(screen.getByText("No next step planned yet.")).toBeInTheDocument();
-    expect(screen.queryByText("Security review")).not.toBeInTheDocument();
-  });
 });
 
-// ==============================|| 5.9b (3) — THE NEXT PLANNED STEP CARD ||============================== //
+// ==============================|| 5.9b (3) — THE SHARED CARD, ROW LAYOUT ||============================== //
 //
 // PO: the shared ActivityMiniCard (components/cards/activities) — the type
 // ICON (getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR) replaces the type chip;
 // everything on ONE line: left icon + title, right step · date · status pill
 // (the shared StatusPill); under the md breakpoint, back to two lines.
+// 5.12 B: the band no longer shows it — the card (its default "row" layout)
+// is rendered directly.
 
 const styleText = () => Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
 const classesOf = (el) => (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
 
 describe("Next planned step card — one line, the type icon (5.9b)", () => {
   const renderCard = (over = {}) => {
-    mockActivity = dcActivity({ source: "DECISION_CYCLE", decision_cycle: { id: "dc-1", name: "Deal Acme" },
-                                activity: planned({ activity_type: "CALL", ...over }) });
-    render(<ActivityWorkspacePage />);
+    render(<ActivityMiniCard activity={planned({ activity_type: "CALL", ...over })} onNavigate={mockPush} />);
     return screen.getByTestId("activity-mini-card");
   };
 
@@ -223,6 +199,16 @@ describe("Next planned step card — one line, the type icon (5.9b)", () => {
     expect(within(card).queryByText(/from AI/i)).toBeNull();
     expect(card.querySelector(".MuiChip-root")).toBeNull();
     expect(card.querySelector(".anticon-robot")).toBeNull();
+  });
+
+  it("a click → onNavigate with the activity id", () => {
+    fireEvent.click(renderCard());
+    expect(mockPush).toHaveBeenCalledWith("act-9");
+  });
+
+  it("an ON_HOLD activity shows its status pill", () => {
+    const card = renderCard({ status: "ON_HOLD" });
+    expect(within(card).getByTestId("status-pill")).toHaveTextContent("On hold");
   });
 
   it("the type icon carries the type colour token", () => {
