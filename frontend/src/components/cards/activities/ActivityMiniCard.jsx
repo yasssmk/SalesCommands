@@ -28,26 +28,22 @@ import {
 
 // ==============================|| ACTIVITY MINI CARD ||============================== //
 //
-// Sprint Next steps 5.9b (PO) — ONE line: left the type ICON
-// (getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR — no type chip) + the title;
-// right step · date · the status pill (the shared StatusPill, the activity
-// status tables, "Overdue" when late). Under the md breakpoint, back to two
-// lines (title, then the meta). Consumer: NextStepValidateFlow (the link
-// candidates) — the next planned step is a Context line since 5.12.
+// Sprint Next steps 5.9b (PO) — the type ICON (getActivityTypeIcon,
+// ACTIVITY_TYPE_ICON_COLOR — no type chip) + the title; step · date · the
+// status pill (the shared StatusPill, the activity status tables, "Overdue"
+// when late). Consumer: NextStepValidateFlow (the link candidates, in the
+// drawer) — the next planned step is a Context line since 5.12.
 //
-// `layout` (5.10b) — the breakpoint reads the SCREEN width, so in a drawer
-// (narrow column, wide screen) the "row" layout stays on one line and cuts the
-// title. The "drawer" layout of the SAME card: row 1 the type icon + the FULL
-// title (2 lines max, then ellipsis), row 2 step · date | the status pill —
-// whatever the screen width. An explicit prop (no container query in the app).
-export const ACTIVITY_MINI_CARD_LAYOUTS = { ROW: "row", DRAWER: "drawer" };
+// The "drawer" layout (5.10b), the only one since 5.12c (the one-line "row"
+// layout had no consumer left): row 1 the type icon + the FULL title (2 lines
+// max, then ellipsis), row 2 step · date | the status pill — whatever the
+// screen width.
 
 export default function ActivityMiniCard({
   activity: activityItem,
   onNavigate,
   onUnlink,
   showUnlink = false,
-  layout = ACTIVITY_MINI_CARD_LAYOUTS.ROW,
 }) {
   const theme = useTheme();
 
@@ -62,7 +58,6 @@ export default function ActivityMiniCard({
   const statusColors = activityItem.is_overdue
     ? ACTIVITY_OVERDUE_CHIP_COLORS
     : ACTIVITY_STATUS_CHIP_COLORS[activityItem.status] || ACTIVITY_STATUS_CHIP_COLORS.PLANNED;
-  const inDrawer = layout === ACTIVITY_MINI_CARD_LAYOUTS.DRAWER;
 
   return (
     <Card
@@ -81,16 +76,16 @@ export default function ActivityMiniCard({
     >
       <Stack
         data-testid="activity-mini-card-row"
-        direction={inDrawer ? "column" : { xs: "column", md: "row" }}
-        alignItems={inDrawer ? "stretch" : { xs: "stretch", md: "center" }}
+        direction="column"
+        alignItems="stretch"
         spacing={1}
       >
-        {/* Left: type icon + title */}
+        {/* Row 1: type icon + the full title */}
         <Stack
           data-testid="activity-mini-card-main"
           direction="row"
           spacing={1}
-          alignItems={inDrawer ? "flex-start" : "center"}
+          alignItems="flex-start"
           sx={{ flex: 1, minWidth: 0 }}
         >
           <Box
@@ -102,31 +97,28 @@ export default function ActivityMiniCard({
           <Typography
             variant="body2"
             fontWeight={500}
-            noWrap={!inDrawer}
             sx={{
               flex: 1,
               minWidth: 0,
-              ...(inDrawer && {
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-                overflowWrap: "anywhere",
-              }),
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              overflowWrap: "anywhere",
             }}
           >
             {activityItem.title}
           </Typography>
         </Stack>
 
-        {/* Right: step · date · status pill (+ unlink). No « from AI » chip
+        {/* Row 2: step · date | status pill (+ unlink). No « from AI » chip
             (5.10b, PO): the provenance lives in Context (« From next step »). */}
         <Stack
           data-testid="activity-mini-card-meta"
           direction="row"
           spacing={1}
           alignItems="center"
-          justifyContent={inDrawer ? "space-between" : "flex-start"}
+          justifyContent="space-between"
           sx={{ flexShrink: 0 }}
         >
           {meta.length > 0 && (
@@ -138,8 +130,8 @@ export default function ActivityMiniCard({
             label={statusLabel}
             colorText={statusColors.text}
             colorBg={statusColors.background}
-            // drawer: always on the right, even without step / date.
-            sx={inDrawer ? { ml: "auto" } : undefined}
+            // Always on the right, even without step / date.
+            sx={{ ml: "auto" }}
           />
           {showUnlink && (
             <IconButton
@@ -174,6 +166,4 @@ ActivityMiniCard.propTypes = {
   onNavigate: PropTypes.func.isRequired,
   onUnlink: PropTypes.func,
   showUnlink: PropTypes.bool,
-  /** "row" (default: one line from md) or "drawer" (two rows, the full title). */
-  layout: PropTypes.oneOf(Object.values(ACTIVITY_MINI_CARD_LAYOUTS)),
 };

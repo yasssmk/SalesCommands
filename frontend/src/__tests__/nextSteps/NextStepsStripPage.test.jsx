@@ -136,19 +136,19 @@ describe("Next steps band — part 1, the next planned step (5.2)", () => {
   });
 });
 
-// ==============================|| 5.9b (3) — THE SHARED CARD, ROW LAYOUT ||============================== //
+// ==============================|| 5.9b (3) — THE SHARED CARD ||============================== //
 //
 // PO: the shared ActivityMiniCard (components/cards/activities) — the type
 // ICON (getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR) replaces the type chip;
-// everything on ONE line: left icon + title, right step · date · status pill
-// (the shared StatusPill); under the md breakpoint, back to two lines.
-// 5.12 B: the band no longer shows it — the card (its default "row" layout)
-// is rendered directly.
+// the icon + title, then step · date · status pill (the shared StatusPill).
+// 5.12 B: the band no longer shows it — the card is rendered directly.
+// 5.12c (6): the one-line "row" layout is removed (no consumer left) — the
+// card is the "drawer" layout only (its rows: NextStepsBandParts, Link step).
 
 const styleText = () => Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
 const classesOf = (el) => (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
 
-describe("Next planned step card — one line, the type icon (5.9b)", () => {
+describe("The shared activity card — the type icon (5.9b), drawer layout only (5.12c)", () => {
   const renderCard = (over = {}) => {
     render(<ActivityMiniCard activity={planned({ activity_type: "CALL", ...over })} onNavigate={mockPush} />);
     return screen.getByTestId("activity-mini-card");
@@ -171,14 +171,17 @@ describe("Next planned step card — one line, the type icon (5.9b)", () => {
     expect(within(right).getByTestId("status-pill")).toHaveTextContent("Planned");
   });
 
-  it("ONE line from md, two lines below (the responsive row)", () => {
+  // 5.12c (6) — no "row" layout any more: two rows whatever the screen width
+  // (no md breakpoint turning it into one line), the full title (no noWrap).
+  it("no one-line layout: always two rows, the full title", () => {
     const card = renderCard();
     const row = within(card).getByTestId("activity-mini-card-row");
     const css = styleText();
-    const [cls] = classesOf(row).filter((c) =>
-      new RegExp(`@media \\(min-width:900px\\)\\{\\.${c}\\{[^}]*flex-direction:row`).test(css));
-    expect(cls).toBeTruthy();
-    expect(css).toMatch(new RegExp(`\\.${cls}\\{[^}]*flex-direction:column`));
+    classesOf(row).forEach((c) => {
+      expect(css).not.toMatch(new RegExp(`@media \\(min-width:900px\\)\\{\\.${c}\\{[^}]*flex-direction:row`));
+    });
+    expect(row).toHaveStyle({ flexDirection: "column" });
+    expect(within(card).getByText("Security review")).not.toHaveClass("MuiTypography-noWrap");
   });
 
   it("an overdue activity: the 'Overdue' pill", () => {
