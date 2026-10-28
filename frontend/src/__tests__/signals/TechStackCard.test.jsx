@@ -8,8 +8,7 @@
 // is_integration_target. The catalogue is gone, so a card still reading
 // it would render "Unknown tool" with no flags on every signal.
 //
-// Real render, no mocking of the component under test — mirrors
-// SignalDetailCard.test.jsx (:1-40).
+// Real render, no mocking of the component under test.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";

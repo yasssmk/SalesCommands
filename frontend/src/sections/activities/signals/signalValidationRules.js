@@ -2,7 +2,7 @@
 
 /**
  * Required-field definitions per signal type and helpers to detect
- * incomplete signals. Used by SignalDetailCard, SignalQuickDrawer,
+ * incomplete signals. Used by SignalDetailContent, SignalQuickDrawer,
  * and SignalEditDialog to surface "missing fields" alerts and
  * disable the Validate action until the signal is complete.
  */
