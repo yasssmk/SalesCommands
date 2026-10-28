@@ -19,7 +19,6 @@ import {
   displayErrorSnackbar,
 } from "utils/displayError";
 
-import CollapsibleStrip from "components/display/CollapsibleStrip";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
@@ -308,30 +307,29 @@ export default function ActivityNextStepsTab({
           </Box>
         )}
 
-        {/* 2. The suggested next steps: to validate / validated / rejected.
-            DC-only: extracted next-step suggestions are not proposed in a
-            campaign context (activity without a decision_cycle). Mirrors the
-            backend guard. One type only → no type-group header. */}
+        {/* 2. The suggested next steps: to validate / validated / rejected,
+            directly under the band — as the Signals band's list (5.12c: no
+            sub-level title). DC-only: extracted next-step suggestions are not
+            proposed in a campaign context (activity without a decision_cycle).
+            Mirrors the backend guard. One type only → no type-group header. */}
         {isDcActivity && (
           <Box data-testid="suggested-next-steps-block">
-            <CollapsibleStrip title="Suggested next steps" defaultExpanded>
-              {error && !nextStepSignals.length ? (
-                <Box display="flex" justifyContent="center" py={4}>
-                  <Typography color="error">Failed to load next steps</Typography>
-                </Box>
-              ) : (
-                <SignalsValidationList
-                  signals={nextStepSignals}
-                  loading={loading}
-                  onSelect={openDetail}
-                  onValidate={isLocked ? undefined : openFlow}
-                  onReject={isLocked ? undefined : handleReject}
-                  renderExtra={renderExtra}
-                  showTypeHeaders={false}
-                  emptyMessage="No next-step suggestions for this activity"
-                />
-              )}
-            </CollapsibleStrip>
+            {error && !nextStepSignals.length ? (
+              <Box display="flex" justifyContent="center" py={4}>
+                <Typography color="error">Failed to load next steps</Typography>
+              </Box>
+            ) : (
+              <SignalsValidationList
+                signals={nextStepSignals}
+                loading={loading}
+                onSelect={openDetail}
+                onValidate={isLocked ? undefined : openFlow}
+                onReject={isLocked ? undefined : handleReject}
+                renderExtra={renderExtra}
+                showTypeHeaders={false}
+                emptyMessage="No next-step suggestions for this activity"
+              />
+            )}
           </Box>
         )}
 

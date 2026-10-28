@@ -2,11 +2,12 @@
 //
 // Sprint Next steps 5.8f — READABILITY of the "Next steps" band, on the Activity
 // workspace PAGE as really rendered (views/activities/workspace/index.jsx):
-//   * the "Suggested next steps" sub-block with the section header of the
-//     Signals band (CollapsibleStrip, the header of its To validate /
-//     Validated / Rejected sections). 5.12 B: the "Next planned step"
-//     sub-block is gone (the next planned step is in Context), "+ Add next
-//     step" sits at the bottom of the band (NextStepsBandLayoutPage);
+//   * the next steps' status sections (To validate / Validated / Rejected)
+//     directly under the band, as in the Signals band (5.12c (4): no
+//     "Suggested next steps" sub-level — the Signals band has none). 5.12 B:
+//     the "Next planned step" sub-block is gone (the next planned step is in
+//     Context), "+ Add next step" sits at the bottom of the band
+//     (NextStepsBandLayoutPage);
 //   * gone: the Divider, the dashed boxes in raw MUI colours (→ the shared
 //     EmptyState, aphoriQ theme), "Create a follow-up to continue.", "… from
 //     the Overview tab …", the redundant "Next step" type-group header;
@@ -238,16 +239,14 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 // ==============================|| THE SUB-BLOCK ||============================== //
 
-describe("5.8f / 5.12 B — the 'Suggested next steps' sub-block, the Signals band's section header", () => {
-  it("'Suggested next steps' is a CollapsibleStrip header, as the Signals band's sections", () => {
-    renderPage();
-    const suggested = stripHeaderOf("Suggested next steps");
-    // The header of the Signals band's sections (To validate…): the same strip.
-    const toValidate = stripHeaderOf("To validate");
-    expect(suggested).toHaveAttribute("role", "button");
-    expect(suggested.className).toBe(toValidate.className);
-    const suggestedBlock = screen.getByTestId("suggested-next-steps-block");
-    expect(within(suggestedBlock).getByText("To validate")).toBeInTheDocument();
+describe("5.12c (4) — the status sections directly under the band, as in the Signals band", () => {
+  it("no 'Suggested next steps' title: the only strip headers are the status sections", () => {
+    renderPage(dcActivity(), [nextStep(), nextStep({ id: "ns-v", status: "VALIDATED" })]);
+    expect(screen.queryByText("Suggested next steps")).toBeNull();
+    const block = screen.getByTestId("suggested-next-steps-block");
+    const headers = Array.from(block.querySelectorAll("[aria-expanded]")).map((h) => h.textContent);
+    expect(headers.length).toBeGreaterThan(0);
+    headers.forEach((h) => expect(h).toMatch(/^(To validate|Validated|Rejected)/));
   });
 
   it("5.12 B: no 'Next planned step' sub-block any more", () => {
@@ -256,9 +255,9 @@ describe("5.8f / 5.12 B — the 'Suggested next steps' sub-block, the Signals ba
     expect(screen.queryByTestId("next-planned-step-block")).toBeNull();
   });
 
-  it("outside a DC (a converting campaign activity): no 'Suggested next steps' (DC-only guard)", () => {
+  it("outside a DC (a converting campaign activity): no next steps sections (DC-only guard)", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
-    expect(screen.queryByText("Suggested next steps")).toBeNull();
+    expect(screen.queryByTestId("suggested-next-steps-block")).toBeNull();
     expect(screen.getByText("Start Decision Cycle")).toBeInTheDocument();
   });
 });
