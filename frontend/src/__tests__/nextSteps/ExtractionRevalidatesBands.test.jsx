@@ -45,6 +45,11 @@ function Band({ activityId }) {
   return null;
 }
 
+function SignalsList({ activityId, signalType }) {
+  useGetSignalsByActivity(activityId, signalType);
+  return null;
+}
+
 function NextStepsList({ activityId }) {
   useGetSignalsByActivity(activityId, "next-steps");
   return null;
@@ -78,4 +83,22 @@ describe("a successful extraction revalidates the bands' data (5.10)", () => {
 
     await waitFor(() => expect(fetchesOf("/module-signals/next-steps/")).toBe(2));
   });
+
+  // 5.10b (1) — the list is derived from the endpoint map: the blockers list
+  // (route blockers/, the list carried the singular "blocker/") and the types
+  // that were missing (people, constraints, competitors) are revalidated too.
+  it.each(["blockers", "people", "constraints", "competitors"])(
+    "a per-type %s list fetches again",
+    async (signalType) => {
+      const activityId = `33333333-3333-4333-8333-${String(signalType.length).padStart(12, "0")}`;
+      const prefix = `/module-signals/${signalType}/`;
+      mount(<SignalsList activityId={activityId} signalType={signalType} />);
+      await waitFor(() => expect(fetchesOf(prefix)).toBe(1));
+
+      await runActivityExtraction(activityId, TRANSCRIPT);
+
+      await waitFor(() => expect(fetchesOf(prefix)).toBe(2));
+    },
+  );
 });
+

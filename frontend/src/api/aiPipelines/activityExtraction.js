@@ -33,6 +33,8 @@ import { api } from "utils/axiosClient";
 import { revalidateMultiple } from "api/_swr";
 import { pollOperationStatus } from "utils/pollOperationStatus";
 import { isValidUUID } from "utils/validators";
+import { SIGNAL_LIST_ENDPOINTS } from "api/signals/signals";
+import { AGGREGATED_URL } from "api/signals/aggregatedSignals";
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -75,18 +77,11 @@ const endpoints = {
 
 // ==============================|| SIGNAL LIST PREFIXES ||============================== //
 
-// Revalidated after a successful extraction. The Signals and Next steps bands
-// read the AGGREGATED endpoint (useAggregatedSignals, /module-signals/all/ —
-// Sprint Next steps 5.10); the per-type lists read their own prefixes.
-const SIGNAL_LIST_PREFIXES = [
-  "/module-signals/all/",
-  "/module-signals/pain/",
-  "/module-signals/objective/",
-  "/module-signals/impact/",
-  "/module-signals/tech-stack/",
-  "/module-signals/blocker/",
-  "/module-signals/next-steps/",
-];
+// Revalidated after a successful extraction — DERIVED, never hand-written
+// (5.10b): the aggregated endpoint the Signals and Next steps bands read
+// (useAggregatedSignals, 5.10) + the list route of every signal type, from
+// the signals endpoint map (api/signals/signals.js).
+export const SIGNAL_LIST_PREFIXES = [AGGREGATED_URL, ...SIGNAL_LIST_ENDPOINTS];
 
 // ==============================|| POLLING CONFIG ||============================== //
 

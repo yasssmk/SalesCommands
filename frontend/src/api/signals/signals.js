@@ -152,6 +152,10 @@ function getBaseEndpoint(signalType) {
  * @param {string} id - Signal UUID
  * @returns {string} Detail URL
  */
+// The list route of every signal type, from the map above — the ONE source of
+// the per-type list prefixes (e.g. the post-extraction revalidation, 5.10b).
+export const SIGNAL_LIST_ENDPOINTS = SIGNAL_TYPES.map(getBaseEndpoint);
+
 function getDetailEndpoint(signalType, id) {
   switch (signalType) {
     case "pain":
