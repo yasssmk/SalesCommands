@@ -26,10 +26,10 @@
  *     border: `${theme.aphoriQ.border.width.hairline}px solid ${theme.aphoriQ.border.color}`,
  *   }} />
  *
- * Values are calibrated on what the Activity pages fabricate by hand today
- * (e.g. ActivityOverviewTab.jsx:1158-1161 `bgcolor:'grey.50'` + `border:'1px
- * solid'` + `borderColor:'grey.200'` + `borderRadius:1` = 4px) plus the MD
- * targets (surface-2, 0.5px border, 12px radius).
+ * Values were calibrated on what the Activity pages fabricated by hand
+ * (`bgcolor:'grey.50'` + `border:'1px solid'` + `borderColor:'grey.200'` +
+ * `borderRadius:1` = 4px) plus the MD targets (surface-2, 0.5px border, 12px
+ * radius).
  */
 export default function AphoriQ(theme) {
   const { palette } = theme;

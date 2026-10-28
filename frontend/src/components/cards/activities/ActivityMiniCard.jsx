@@ -39,7 +39,7 @@ import {
 // (narrow column, wide screen) the "row" layout stays on one line and cuts the
 // title. The "drawer" layout of the SAME card: row 1 the type icon + the FULL
 // title (2 lines max, then ellipsis), row 2 step · date | the status pill —
-// whatever the screen width. Explicit, like the legacy card's displayVariant.
+// whatever the screen width. An explicit prop (no container query in the app).
 export const ACTIVITY_MINI_CARD_LAYOUTS = { ROW: "row", DRAWER: "drawer" };
 
 export default function ActivityMiniCard({
