@@ -1,8 +1,7 @@
 // frontend/src/__tests__/signals/ActivitySignalsTab.flat.test.jsx
 //
 // SIG-2 — the Activity "Signals" tab is FLAT-FORCED: the Grouped/Flat toggle is
-// gone (the grouped synthesis stays only in ActivityQualificationTab / DC /
-// Account). The tab renders the SignalsValidationList — one flat list split into
+// gone (the grouped synthesis stays only in DC / Account). The tab renders the SignalsValidationList — one flat list split into
 // 3 status sections (To validate / Validated / Rejected), each grouped by type —
 // fed by the aggregated endpoint (all matching signals, pageSize 100, no pager).
 //

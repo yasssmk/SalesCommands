@@ -85,12 +85,6 @@ vi.mock("api/signals/aggregatedSignals", async (importOriginal) => ({
     loading: false, error: null, mutate: mockMutateList,
   }),
 }));
-// The former data source of the band (before 5.3) — same next steps, so a
-// failure here is about behaviour, not about a missing fetch.
-vi.mock("hooks/useActivityAllSignals", () => ({
-  default: () => ({ nextStepSignals: mockNextSteps, allSignals: mockNextSteps, loading: false,
-                    error: null, mutateAll: vi.fn() }),
-}));
 vi.mock("hooks/usePipelineRunner", async (importOriginal) => ({
   ...(await importOriginal()),
   default: () => ({ state: {} }),

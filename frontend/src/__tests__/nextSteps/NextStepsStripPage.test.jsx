@@ -60,10 +60,6 @@ vi.mock("components/signals/SignalsHaloBox", () => ({ default: ({ children }) =>
 vi.mock("utils/displayError", () => ({
   displaySuccessSnackbar: vi.fn(), displayErrorSnackbar: vi.fn(),
 }));
-// The rest of the Next steps band (parts 2-4 come in 5.3).
-vi.mock("hooks/useActivityAllSignals", () => ({
-  default: () => ({ nextStepSignals: [], allSignals: [], loading: false, error: null, mutateAll: vi.fn() }),
-}));
 vi.mock("api/signals/signals", () => ({
   useGetSignalChoices: () => ({ choices: {}, choicesLoading: false }),
   rejectSignal: vi.fn(),
