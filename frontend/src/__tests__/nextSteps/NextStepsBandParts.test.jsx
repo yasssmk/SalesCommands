@@ -149,7 +149,9 @@ function mockUseCited() {
 let mockAttachResult = { success: true, data: {} };
 let mockCandidates = [];
 let mockServerNextStep = null;
-vi.mock("api/accounts/decisionCycles", () => ({
+// The real module's constants (the inline cycle form's steps, 5.13).
+vi.mock("api/accounts/decisionCycles", async (importOriginal) => ({
+  ...(await importOriginal()),
   useGetDecisionCyclesByAccount: vi.fn(() => ({
     cycles: [{ id: "dc-1", name: "Deal Acme", is_active: true },
              { id: "dc-2", name: "Deal Other", is_active: true }],
@@ -1355,12 +1357,15 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(getSignal).not.toHaveBeenCalled();
   });
 
-  it("'Start Decision Cycle' keeps the ActivityModal (debt, not migrated)", () => {
+  // 5.13 (PO): no modal any more — the creation in the coque, conversion
+  // mode (a NEW cycle only; end to end: StartDecisionCyclePage).
+  it("'Start Decision Cycle' opens the creation in the coque, conversion mode; no ActivityModal", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" },
       outcome: "SUCCESSFUL" }));
-    fireEvent.click(screen.getByRole("button", { name: /Start Decision Cycle/ }));
-    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
-    expect(screen.queryByTestId("activity-create")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Start Decision Cycle" }));
+    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
+    const create = screen.getByTestId("activity-create");
+    expect(within(create).getByTestId("conversion-cycle")).toBeInTheDocument();
   });
 
 });

@@ -344,8 +344,11 @@ describe("Next steps band — campaign activity, free activity (5.12 B)", () => 
     render(<ActivityWorkspacePage />);
     const conversion = within(band()).getByTestId("campaign-conversion");
     expect(within(conversion).getByText("Successful outcome — ready to convert")).toBeInTheDocument();
-    fireEvent.click(within(conversion).getByRole("button", { name: /Start Decision Cycle/ }));
-    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
+    // 5.13: a pill (it opens the creation drawer — StartDecisionCyclePage);
+    // no ActivityModal any more.
+    expect(within(conversion).getByRole("button", { name: "Start Decision Cycle" }))
+      .toHaveAttribute("data-testid", "status-pill");
+    expect(screen.queryByTestId("activity-modal")).toBeNull();
     expect(band().firstElementChild.contains(conversion)).toBe(true);
   });
 

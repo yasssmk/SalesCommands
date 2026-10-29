@@ -3,7 +3,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 // MUI
@@ -34,7 +34,6 @@ import RunAIAnalysisButton, {
 import { formatShortDate } from "components/signals/SignalLine";
 import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import ClickablePill from "components/chips/ClickablePill";
-import ActivityModal from "sections/accounts/activities/ActivityModal";
 import EditNextStepContent from "sections/activities/workspace/EditNextStepContent";
 import EditActivityContent from "sections/activities/workspace/EditActivityContent";
 import NextStepValidateFlow from "sections/activities/nextSteps/NextStepValidateFlow";
@@ -71,8 +70,8 @@ const NEXT_STEPS_ONLY_OBJECTIVES = { qualification: false, nextSteps: true };
 // The next planned step is shown in Context (5.12 A-bis), not here. The page
 // renders the band only when it has something to show (hasNextStepsBand).
 // Every activity creation of the band opens in the coque (EditActivityContent,
-// create mode — Sprint Next steps 5.8d); ActivityModal stays only for "Start
-// Decision Cycle" (a campaign activity converted into a new cycle).
+// create mode — Sprint Next steps 5.8d), "Start Decision Cycle" included
+// (5.13: its conversion mode — a NEW cycle only). No modal any more.
 export default function ActivityNextStepsTab({
   activity,
   mutateCounts,
@@ -100,9 +99,6 @@ export default function ActivityNextStepsTab({
   // as the detail of every other signal type (ActivitySignalsTab).
   const { openDrawer, closeDrawer } = useWorkspaceDrawer();
 
-  // Activity modal state (convert from signal OR manual add OR campaign conversion)
-  // "Start Decision Cycle" (campaign → new cycle) — the one ActivityModal left.
-  const [startCycleOpen, setStartCycleOpen] = useState(false);
   const isDcActivity = hasSuggestedNextSteps(activity);
   // The AI action (5.12c): only without any next step (the band's own list —
   // no new query), and once that list is known (loaded, no error).
@@ -308,10 +304,29 @@ export default function ActivityNextStepsTab({
     [handleOpenActivity],
   );
 
-  const handleStartCycleSuccess = useCallback(() => {
-    mutateAll();
-    mutateCounts?.();
-  }, [mutateAll, mutateCounts]);
+  // "Start Decision Cycle" (5.13): the creation drawer in conversion mode — a
+  // MEETING from this campaign activity (source_activity_id), a NEW cycle
+  // created inline, the activity's contacts pre-filled. On success the
+  // standard revalidation re-reads this activity: the born DC hides the CTA
+  // and shows in Context.
+  const openStartCycle = useCallback(() => {
+    openDrawer(
+      <EditActivityContent
+        mode="create"
+        conversion
+        accountId={accountId}
+        activityType="MEETING"
+        sourceActivityId={activityId}
+        initialContacts={activity?.contacts_detail || []}
+        onCreated={() => {
+          mutateAll();
+          mutateCounts?.();
+          closeDrawer();
+        }}
+      />,
+      { title: "Start Decision Cycle" },
+    );
+  }, [openDrawer, accountId, activityId, activity?.contacts_detail, mutateAll, mutateCounts, closeDrawer]);
 
 
   // ==============================|| RENDER ||============================== //
@@ -343,26 +358,10 @@ export default function ActivityNextStepsTab({
         )}
 
         {/* 1. The campaign → Decision Cycle conversion (when it applies):
-            "Start Decision Cycle" opens the one ActivityModal left in the band
-            (debt: not migrated). */}
+            "Start Decision Cycle" opens the creation drawer in conversion
+            mode (5.13). */}
         {showsCampaignConversion(activity) && (
-          <Box>
-            <CampaignConversionCta onStartCycle={() => setStartCycleOpen(true)} />
-            {accountId && (
-              <ActivityModal
-                open={startCycleOpen}
-                onClose={() => setStartCycleOpen(false)}
-                activity={null}
-                accountId={accountId}
-                decisionStepId={activity?.decision_step || null}
-                decisionCycleId={null}
-                defaultActivityType="MEETING"
-                previousActivityId={activity?.id}
-                sourceActivityId={activity?.id}
-                onSuccess={handleStartCycleSuccess}
-              />
-            )}
-          </Box>
+          <CampaignConversionCta onStartCycle={openStartCycle} />
         )}
 
         {/* 2. The suggested next steps: to validate / validated / rejected,
