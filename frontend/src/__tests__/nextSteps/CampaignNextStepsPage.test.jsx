@@ -118,8 +118,17 @@ const NEXT_STEP = {
 };
 
 let serverActivity;
+// The Link candidates the server returns (5.14c), and every URL read.
+let mockCandidates = [];
+let fetchedUrls = [];
 const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
+  fetchedUrls.push(url);
+  if (url.startsWith(`/module-signals/next-steps/${NS_ID}/link-candidates`)) {
+    return Promise.resolve({
+      data: { candidates: mockCandidates, proposed_activity_id: mockCandidates[0]?.id ?? null },
+    });
+  }
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
   if (url.startsWith(`/decision_cycles/by-account/${ACC_ID}`)) {
     return Promise.resolve({ data: { results: [{ id: DC_ID, name: "Deal Acme" }], count: 1 } });
@@ -163,6 +172,8 @@ const validateAndCreate = async () => {
 beforeEach(() => {
   serverActivity = campaignActivity;
   mockNextSteps = [NEXT_STEP];
+  mockCandidates = [];
+  fetchedUrls = [];
   api.post.mockResolvedValue({ success: true, data: { data: { activity: { id: "act-new" } } } });
   api.get.mockResolvedValue({ success: true, data: { data: NEXT_STEP } });
 });
@@ -267,5 +278,50 @@ describe("A SUCCESSFUL campaign activity — a DC born from it (5.14b)", () => {
     expect(body.decision_step_id).toBe(STEP_ID);
     expect(body.next_step_signal_id).toBe(NS_ID);
     expect(body.contact_ids).toEqual(["c-1"]);
+  });
+});
+
+// 5.14c (PO): before a DC is born, « Link » is greyed with its reason — no
+// misleading empty list (no candidate request either). Once the DC is born:
+// unchanged.
+describe("Link to an existing activity (5.14c)", () => {
+  const openFlow = async () => {
+    fireEvent.click(await screen.findByLabelText("Validate signal"));
+    return within(coque()).getByTestId("next-step-validate-flow");
+  };
+  const linkRadio = (flow) => within(flow).getByLabelText("Link to an existing activity");
+
+  it("no DC born: Link greyed, « No decision cycle yet », no candidate list asked", async () => {
+    renderPage();
+    const flow = await openFlow();
+    expect(linkRadio(flow)).toBeDisabled();
+    expect(within(flow).getByText("No decision cycle yet")).toBeInTheDocument();
+    expect(within(flow).queryByText("No open activity in this cycle")).toBeNull();
+    expect(fetchedUrls.some((u) => u.includes("/link-candidates/"))).toBe(false);
+  });
+
+  it("DC born, no open activity: the reason stays « No open activity in this cycle »", async () => {
+    serverActivity = { ...campaignActivity, next_planned_step: BORN };
+    renderPage();
+    const flow = await openFlow();
+    expect(await within(flow).findByText("No open activity in this cycle")).toBeInTheDocument();
+    expect(linkRadio(flow)).toBeDisabled();
+    expect(within(flow).queryByText("No decision cycle yet")).toBeNull();
+  });
+
+  it("DC born, an open activity: Link available, the candidate listed", async () => {
+    serverActivity = { ...campaignActivity, next_planned_step: BORN };
+    mockCandidates = [{
+      id: "act-born", title: "Discovery meeting", activity_type: "MEETING", status: "PLANNED",
+      scheduled_date: "2026-11-12", decision_step: { id: STEP_ID, name: "Technical Fit" },
+      contacts_detail: [], differences: {},
+    }];
+    renderPage();
+    const flow = await openFlow();
+    await waitFor(() => expect(linkRadio(flow)).toBeEnabled());
+    fireEvent.click(linkRadio(flow));
+    fireEvent.click(within(coque()).getByRole("button", { name: "Next" }));
+    const list = await within(coque()).findByTestId("link-candidates");
+    expect(within(list).getByText("Discovery meeting")).toBeInTheDocument();
   });
 });

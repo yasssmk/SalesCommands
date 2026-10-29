@@ -8,7 +8,10 @@
 //
 // Step 1 — "How do you resolve this next step?": Create the activity (the
 //   caller opens the pre-filled ActivityModal) OR Link to an existing activity
-//   (disabled, with a message, when GET link-candidates returns none).
+//   (disabled, with a message, when GET link-candidates returns none). 5.14c:
+//   without a decision cycle (a campaign activity, no DC born yet — hasCycle
+//   false) Link is disabled with « No decision cycle yet » and no candidate
+//   is asked (no misleading empty list).
 // Step 2 (Link) — the candidates IN THE SERVER ORDER, the first one marked
 //   "Proposed" and pre-selected; each one = the existing ActivityMiniCard + a
 //   readable "Why" (shared people / step / type / date gap). Single choice.
@@ -158,7 +161,7 @@ export function buildLinkUpdates(candidate, decisions) {
 
 // ==============================|| NEXT STEP VALIDATE FLOW ||============================== //
 
-export default function NextStepValidateFlow({ nextStep, onCreate, onBack, onLinked }) {
+export default function NextStepValidateFlow({ nextStep, hasCycle = true, onCreate, onBack, onLinked }) {
   const [step, setStep] = useState(STEP.RESOLUTION);
   const [choice, setChoice] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -166,7 +169,7 @@ export default function NextStepValidateFlow({ nextStep, onCreate, onBack, onLin
   const [submitting, setSubmitting] = useState(false);
 
   const { candidates, proposedActivityId, candidatesLoading } = useNextStepLinkCandidates(
-    nextStep.id,
+    hasCycle ? nextStep.id : null,
   );
   const canLink = !candidatesLoading && candidates.length > 0;
 
@@ -237,7 +240,13 @@ export default function NextStepValidateFlow({ nextStep, onCreate, onBack, onLin
         saveDisabled={bar.saveDisabled}
       >
         {step === STEP.RESOLUTION && (
-          <ResolutionStep choice={choice} onChoice={setChoice} canLink={canLink} loading={candidatesLoading} />
+          <ResolutionStep
+            choice={choice}
+            onChoice={setChoice}
+            canLink={canLink}
+            loading={candidatesLoading}
+            hasCycle={hasCycle}
+          />
         )}
         {step === STEP.CANDIDATES && (
           <CandidatesStep
@@ -257,6 +266,8 @@ export default function NextStepValidateFlow({ nextStep, onCreate, onBack, onLin
 NextStepValidateFlow.propTypes = {
   /** The next step being validated (id + its proposal). */
   nextStep: PropTypes.shape({ id: PropTypes.string.isRequired }).isRequired,
+  /** A decision cycle to link in (5.14c) — false: Link disabled, no candidate asked. */
+  hasCycle: PropTypes.bool,
   /** (nextStep) => void — Create the activity: the caller opens ActivityModal. */
   onCreate: PropTypes.func.isRequired,
   /** Back from step 1 — the caller returns to the detail. */
@@ -267,7 +278,7 @@ NextStepValidateFlow.propTypes = {
 
 // ==============================|| STEP 1 — RESOLUTION ||============================== //
 
-function ResolutionStep({ choice, onChoice, canLink, loading }) {
+function ResolutionStep({ choice, onChoice, canLink, loading, hasCycle }) {
   return (
     <>
       <Typography variant="subtitle1" sx={{ fontWeight: "medium", mb: 1 }}>
@@ -288,7 +299,7 @@ function ResolutionStep({ choice, onChoice, canLink, loading }) {
       </RadioGroup>
       {!loading && !canLink && (
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", pl: 4 }}>
-          No open activity in this cycle
+          {hasCycle ? "No open activity in this cycle" : "No decision cycle yet"}
         </Typography>
       )}
     </>
@@ -299,6 +310,7 @@ ResolutionStep.propTypes = {
   onChoice: PropTypes.func.isRequired,
   canLink: PropTypes.bool,
   loading: PropTypes.bool,
+  hasCycle: PropTypes.bool,
 };
 
 // ==============================|| STEP 2 — CANDIDATES ||============================== //

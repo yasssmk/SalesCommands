@@ -232,6 +232,7 @@ export default function ActivityNextStepsTab({
       openDrawer(
         <NextStepValidateFlow
           nextStep={signal}
+          hasCycle={Boolean(cycleId)}
           onCreate={(ns) => openCreate({ nextStep: ns, onCancel: () => openFlow(ns) })}
           onBack={() => openDetail(signal)}
           onLinked={showFromServer}
@@ -239,7 +240,7 @@ export default function ActivityNextStepsTab({
         { title: "Validate next step" },
       );
     },
-    [openDrawer, openCreate, openDetail, showFromServer],
+    [openDrawer, cycleId, openCreate, openDetail, showFromServer],
   );
 
 
