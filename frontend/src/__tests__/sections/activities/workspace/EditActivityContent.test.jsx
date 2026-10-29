@@ -147,16 +147,18 @@ describe("EditActivityContent — SE-b structure", () => {
     expect(screen.queryByText("Edit activity")).not.toBeInTheDocument();
   });
 
-  it("has NO literal group titles and NO textual 'Edit'", () => {
+  it("has NO former group titles and NO textual 'Edit' (5.18: numbered sections — DrawerSectionsPage)", () => {
     renderEdit();
     expect(screen.queryByText(/Title & type/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Objective & description/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
   });
 
-  it("separates the groups with internal hairline filets", () => {
-    renderEdit();
-    expect(screen.getAllByTestId("group-filet").length).toBeGreaterThanOrEqual(3);
+  // 5.18 (PO): the Edit signal design — MUI Dividers between the sections.
+  it("separates the sections with Dividers (the Edit signal design), no hairline filet", () => {
+    const { container } = renderEdit();
+    expect(container.querySelectorAll("hr.MuiDivider-root")).toHaveLength(3);
+    expect(screen.queryByTestId("group-filet")).toBeNull();
   });
 
   it("renders the editable People section (owner / invited / contacts), no placeholder", () => {

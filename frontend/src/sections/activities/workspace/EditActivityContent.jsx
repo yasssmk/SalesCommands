@@ -7,10 +7,13 @@
 // title). A single GLOBAL Save PATCHes the modified CONTENT fields via
 // updateActivity; Cancel closes the coque.
 //
-// Groups: (1) Title + Type · (2) Date & time (scheduled|due exclusive toggle,
-// mechanics cloned from UnifiedDateSection) · (3) Objective + Description ·
-// (4) People — editable owner (single required slot) / invited / contacts
-// (min 1), all draft-only until the global Save.
+// Sections (5.18 — EXACTLY the Edit signal design: the shared numbered
+// SectionHeader, one Stack per section, MUI Dividers between them):
+// (1) Activity — Title + Type (+ outcome / decision cycle) · (2) When — Date &
+// time (scheduled|due exclusive toggle, mechanics cloned from
+// UnifiedDateSection) · (3) Purpose — Objective + Description · (4) People —
+// editable owner (single required slot) / invited / contacts (min 1), all
+// draft-only until the global Save.
 //
 // Formik + Yup (title required, at-least-one-date, owner required, contacts
 // min 1); no hardcoded hex/px.
@@ -49,6 +52,7 @@ import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
+import Divider from "@mui/material/Divider";
 import FormHelperText from "@mui/material/FormHelperText";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
@@ -85,6 +89,7 @@ import { activityDefaultsFromNextStep } from "utils/activityTypes";
 import { InlineContactForm, InlineCycleForm } from "sections/accounts/activities/components";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import PersonRow from "components/display/PersonRow";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
@@ -169,23 +174,6 @@ function readDate(v) {
 }
 function readTime(t) {
   return t ? dayjs(t).format("h:mm A") : null;
-}
-
-// ==============================|| INTERNAL FILET ||============================== //
-
-// The same hairline separator as the workspace header, used BETWEEN groups.
-function Filet() {
-  const aq = useTheme().aphoriQ;
-  return (
-    <Box
-      data-testid="group-filet"
-      sx={{
-        borderTopStyle: "solid",
-        borderTopWidth: aq.border.width.hairline,
-        borderTopColor: aq.border.color,
-      }}
-    />
-  );
 }
 
 // A discreet muted marker that a field is set by the campaign (no loud lock).
@@ -866,141 +854,153 @@ function ActivityForm({
           : !formik.isValid || !formik.dirty || formik.isSubmitting
       }
     >
-      <Stack spacing={1.5} data-testid={isCreate ? "activity-create" : undefined}>
-        {/* (1) Title + Type */}
-        <InlineEditableValue
-          name="title"
-          label="Title"
-          value={values.title}
-          onChange={(v) => setFieldValue("title", v)}
-          placeholder="Untitled"
-          error={Boolean(errors.title)}
-          helperText={errors.title}
-        />
-        <InlineEditableValue
-          name="type"
-          label="Type"
-          type="select"
-          options={TYPE_OPTIONS}
-          value={values.activity_type}
-          onChange={(v) => {
-            setFieldValue("activity_type", v);
-            // 5.17b — an outcome the new type does not offer is cleared.
-            if (editsOutcome && values.outcome && !getOutcomesForType(v).includes(values.outcome)) {
-              setFieldValue("outcome", null);
-            }
-          }}
-        />
-        {editsOutcome && (
-          <Box>
-            <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
-              Outcome
-            </Typography>
-            <OutcomeSelector
-              activityType={values.activity_type}
-              value={values.outcome}
-              onChange={(o) => setFieldValue("outcome", o)}
-              exclude={outcomeExclude}
-            />
-          </Box>
-        )}
-
-        {/* Conversion (5.13): a NEW decision cycle only — the inline cycle form
-            (name + starting step, in pills), then the cycle as a removable
-            row (the inline contact's pattern). */}
-        {isCreate && conversion && (
-          <Box data-testid="conversion-cycle">
-            <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-              Decision cycle
-            </Typography>
-            {values.inline_cycle ? (
-              <PersonEditRow
-                name={values.inline_cycle.name}
-                suffix={`new cycle · ${PIPELINE_STEP_LABELS[values.inline_cycle.step_stage]}`}
-                onRemove={() => setFieldValue("inline_cycle", null)}
-                removeTestId="remove-inline-cycle"
+      <Stack spacing={2.5} data-testid={isCreate ? "activity-create" : undefined}>
+        {/* ---- SECTION 1 — Activity: Title + Type (+ outcome / cycle) ---- */}
+        <Stack spacing={1.5}>
+          <SectionHeader index={1} title="Activity" subtitle="What the activity is." />
+          <InlineEditableValue
+            name="title"
+            label="Title"
+            value={values.title}
+            onChange={(v) => setFieldValue("title", v)}
+            placeholder="Untitled"
+            error={Boolean(errors.title)}
+            helperText={errors.title}
+          />
+          <InlineEditableValue
+            name="type"
+            label="Type"
+            type="select"
+            options={TYPE_OPTIONS}
+            value={values.activity_type}
+            onChange={(v) => {
+              setFieldValue("activity_type", v);
+              // 5.17b — an outcome the new type does not offer is cleared.
+              if (editsOutcome && values.outcome && !getOutcomesForType(v).includes(values.outcome)) {
+                setFieldValue("outcome", null);
+              }
+            }}
+          />
+          {editsOutcome && (
+            <Box>
+              <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
+                Outcome
+              </Typography>
+              <OutcomeSelector
+                activityType={values.activity_type}
+                value={values.outcome}
+                onChange={(o) => setFieldValue("outcome", o)}
+                exclude={outcomeExclude}
               />
-            ) : (
-              <InlineCycleForm
-                onSave={({ name, step_stage }) => setFieldValue("inline_cycle", { name, step_stage })}
-              />
-            )}
-          </Box>
-        )}
+            </Box>
+          )}
 
-        {/* Creation: the decision cycle (pre-filled, modifiable) and its step. */}
-        {isCreate && !conversion && (
-          <>
-            <InlineEditableValue
-              name="decision_cycle"
-              label="Decision cycle"
-              type="select"
-              options={[{ value: "", label: "No decision cycle" }, ...cycleOptions]}
-              value={values.decision_cycle_id}
-              onChange={(v) => {
-                setFieldValue("decision_cycle_id", v);
-                setFieldValue("decision_step_id", "");
-              }}
-              placeholder="No decision cycle"
-            />
-            {values.decision_cycle_id && (
+          {/* Conversion (5.13): a NEW decision cycle only — the inline cycle form
+              (name + starting step, in pills), then the cycle as a removable
+              row (the inline contact's pattern). */}
+          {isCreate && conversion && (
+            <Box data-testid="conversion-cycle">
+              <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+                Decision cycle
+              </Typography>
+              {values.inline_cycle ? (
+                <PersonEditRow
+                  name={values.inline_cycle.name}
+                  suffix={`new cycle · ${PIPELINE_STEP_LABELS[values.inline_cycle.step_stage]}`}
+                  onRemove={() => setFieldValue("inline_cycle", null)}
+                  removeTestId="remove-inline-cycle"
+                />
+              ) : (
+                <InlineCycleForm
+                  onSave={({ name, step_stage }) => setFieldValue("inline_cycle", { name, step_stage })}
+                />
+              )}
+            </Box>
+          )}
+
+          {/* Creation: the decision cycle (pre-filled, modifiable) and its step. */}
+          {isCreate && !conversion && (
+            <>
               <InlineEditableValue
-                name="decision_step"
-                label="DC step"
+                name="decision_cycle"
+                label="Decision cycle"
                 type="select"
-                options={stepOptions}
-                value={values.decision_step_id}
-                onChange={(v) => setFieldValue("decision_step_id", v)}
-                placeholder="No step"
-                error={Boolean(errors.decision_step_id)}
-                helperText={errors.decision_step_id}
+                options={[{ value: "", label: "No decision cycle" }, ...cycleOptions]}
+                value={values.decision_cycle_id}
+                onChange={(v) => {
+                  setFieldValue("decision_cycle_id", v);
+                  setFieldValue("decision_step_id", "");
+                }}
+                placeholder="No decision cycle"
               />
-            )}
-          </>
-        )}
+              {values.decision_cycle_id && (
+                <InlineEditableValue
+                  name="decision_step"
+                  label="DC step"
+                  type="select"
+                  options={stepOptions}
+                  value={values.decision_step_id}
+                  onChange={(v) => setFieldValue("decision_step_id", v)}
+                  placeholder="No step"
+                  error={Boolean(errors.decision_step_id)}
+                  helperText={errors.decision_step_id}
+                />
+              )}
+            </>
+          )}
+        </Stack>
 
-        <Filet />
+        <Divider />
 
-        {/* (2) Date & time */}
-        <DateGroup values={values} setFieldValue={setFieldValue} locked={isCampaign} />
-        {Boolean(errors.scheduled_date) && (
-          <Typography variant="caption" color="error">
-            {errors.scheduled_date}
-          </Typography>
-        )}
+        {/* ---- SECTION 2 — When: Date & time ---- */}
+        <Stack spacing={1.5}>
+          <SectionHeader index={2} title="When" subtitle="The date it is scheduled or due." />
+          <DateGroup values={values} setFieldValue={setFieldValue} locked={isCampaign} />
+          {Boolean(errors.scheduled_date) && (
+            <Typography variant="caption" color="error">
+              {errors.scheduled_date}
+            </Typography>
+          )}
+        </Stack>
 
-        <Filet />
+        <Divider />
 
-        {/* (3) Objective + Description */}
-        <InlineEditableValue
-          name="objective"
-          label="Objective"
-          value={values.call_to_action}
-          onChange={(v) => setFieldValue("call_to_action", v)}
-          placeholder="No objective set"
-        />
-        <InlineEditableValue
-          name="description"
-          label="Description"
-          type="textarea"
-          value={values.description}
-          onChange={(v) => setFieldValue("description", v)}
-          placeholder="No description added"
-        />
+        {/* ---- SECTION 3 — Purpose: Objective + Description ---- */}
+        <Stack spacing={1.5}>
+          <SectionHeader index={3} title="Purpose" subtitle="What the activity is for." />
+          <InlineEditableValue
+            name="objective"
+            label="Objective"
+            value={values.call_to_action}
+            onChange={(v) => setFieldValue("call_to_action", v)}
+            placeholder="No objective set"
+          />
+          <InlineEditableValue
+            name="description"
+            label="Description"
+            type="textarea"
+            value={values.description}
+            onChange={(v) => setFieldValue("description", v)}
+            placeholder="No description added"
+          />
+        </Stack>
 
-        <Filet />
+        <Divider />
 
-        {/* (4) People — editable owner / invited / contacts (draft + global save) */}
-        <PeopleSection
-          values={values}
-          setFieldValue={setFieldValue}
-          errors={errors}
-          accountId={accountId}
-          locked={isCampaign}
-          ownerReadOnly={isCreate}
-          allowInlineContact={isCreate}
-          mentionedNames={isCreate ? defaults.mentionedNames : []}
-        />
+        {/* ---- SECTION 4 — People: editable owner / invited / contacts (draft + global save) ---- */}
+        <Stack spacing={1.5}>
+          <SectionHeader index={4} title="People" subtitle="Who owns it, who is invited, who it is with." />
+          <PeopleSection
+            values={values}
+            setFieldValue={setFieldValue}
+            errors={errors}
+            accountId={accountId}
+            locked={isCampaign}
+            ownerReadOnly={isCreate}
+            allowInlineContact={isCreate}
+            mentionedNames={isCreate ? defaults.mentionedNames : []}
+          />
+        </Stack>
       </Stack>
     </DrawerContentLayout>
   );
