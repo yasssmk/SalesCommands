@@ -130,12 +130,13 @@ describe("Next steps band — part 1, the next planned step (5.2)", () => {
     expect(screen.queryByText(/In decision cycle/)).not.toBeInTheDocument();
   });
 
-  it("a successful campaign call with no DC born keeps Start Decision Cycle", () => {
+  it("a successful campaign call with no DC born: the band's one pill, « + Add next step » (5.16)", () => {
     mockActivity = dcActivity(null, {
       decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL", status: "PLANNED",
     });
     render(<ActivityWorkspacePage />);
-    expect(screen.getByText("Start Decision Cycle")).toBeInTheDocument();
+    expect(screen.queryByText("Start Decision Cycle")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
   });
 });
 

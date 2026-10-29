@@ -1,15 +1,17 @@
 // frontend/src/__tests__/nextSteps/StartDecisionCyclePage.test.jsx
 //
-// Sprint Next steps 5.13.3 — "Start Decision Cycle", on the Activity workspace
-// PAGE as really rendered, end to end:
-//   * the CTA is a ClickablePill (no MUI button in the band, 5.12c);
-//   * it opens the creation DRAWER in conversion mode (a MEETING, a NEW cycle
-//     only, the campaign activity's contact pre-filled) — no ActivityModal is
-//     mounted any more;
+// Sprint Next steps 5.13.3 / 5.16 — the campaign → Decision Cycle conversion,
+// on the Activity workspace PAGE as really rendered, end to end:
+//   * 5.16 (PO): ONE pill — « + Add next step » (a ClickablePill in the band
+//     header); the former « Start Decision Cycle » CTA is gone;
+//   * a type picked in its row opens the creation DRAWER in conversion mode
+//     (titled « Start Decision Cycle »: that type, a NEW cycle only, the
+//     campaign activity's contact pre-filled) — no ActivityModal mounted;
 //   * on save: create-with-entities (inline_cycle + inline_step_stage +
 //     source_activity_id) → the standard revalidation (/module-activities/)
-//     re-reads the campaign activity → the CTA disappears and Context shows the
-//     born Decision Cycle (« In decision cycle <name> › … », 5.12 A-bis).
+//     re-reads the campaign activity → Context shows the born Decision Cycle
+//     (« In decision cycle <name> › … », 5.12 A-bis); the pill stays (it now
+//     creates in that cycle).
 // REAL: the page, the Context section, the band, the coque, the drawer,
 // InlineCycleForm, useGetActivity and createActivityWithEntities with their
 // SWR revalidation. Mocked: the HTTP client (utils/axiosClient) and the other
@@ -123,7 +125,12 @@ const renderPage = () =>
     </SWRConfig>,
   );
 
-const startPill = () => screen.getByRole("button", { name: "Start Decision Cycle" });
+const addPill = () => screen.queryByRole("button", { name: "+ Add next step" });
+// « + Add next step » → the type `label` in its row.
+const pickType = async (label) => {
+  fireEvent.click(await screen.findByRole("button", { name: "+ Add next step" }));
+  fireEvent.click(within(screen.getByTestId("add-next-step-types")).getByRole("button", { name: label }));
+};
 const coque = () => screen.getByTestId("coque-panel");
 
 beforeEach(() => {
@@ -140,17 +147,18 @@ afterEach(async () => {
   await swrMutate(() => true, undefined, { revalidate: false });
 });
 
-describe("Start Decision Cycle — the pill, the drawer, the born DC (5.13.3)", () => {
-  it("the CTA is a ClickablePill; no ActivityModal is mounted", async () => {
+describe("The conversion — one pill, the drawer, the born DC (5.13.3 / 5.16)", () => {
+  it("« + Add next step » is the one pill (a ClickablePill); no « Start Decision Cycle », no ActivityModal", async () => {
     renderPage();
-    expect(await screen.findByRole("button", { name: "Start Decision Cycle" })).toHaveAttribute("data-testid", "status-pill");
-    expect(screen.getByTestId("campaign-conversion").querySelector(".MuiButton-root")).toBeNull();
+    expect(await screen.findByRole("button", { name: "+ Add next step" })).toHaveAttribute("data-testid", "status-pill");
+    expect(screen.queryByRole("button", { name: "Start Decision Cycle" })).toBeNull();
+    expect(screen.queryByTestId("campaign-conversion")).toBeNull();
     expect(screen.queryByTestId("activity-modal-mounted")).toBeNull();
   });
 
-  it("the pill opens the creation drawer in conversion mode: a MEETING, a new cycle, the contact pre-filled", async () => {
+  it("a type picked opens the creation drawer in conversion mode: that type, a new cycle, the contact pre-filled", async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
+    await pickType("Meeting");
     const drawer = within(coque()).getByTestId("activity-create");
     expect(within(coque()).getByTestId("coque-title")).toHaveTextContent("Start Decision Cycle");
     expect(within(drawer).getByTestId("inline-read-type")).toHaveTextContent("Meeting");
@@ -160,9 +168,9 @@ describe("Start Decision Cycle — the pill, the drawer, the born DC (5.13.3)", 
     expect(screen.queryByTestId("activity-modal-mounted")).toBeNull();
   });
 
-  it("on save: create-with-entities from the campaign activity, then the CTA disappears and Context shows the born DC", async () => {
+  it("on save: create-with-entities from the campaign activity, then Context shows the born DC", async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
+    await pickType("Meeting");
     const drawer = within(coque()).getByTestId("activity-create");
     fireEvent.click(within(drawer).getByTestId("inline-read-title"));
     fireEvent.change(within(drawer).getByTestId("inline-input-title"), { target: { value: "Discovery meeting" } });
@@ -186,10 +194,11 @@ describe("Start Decision Cycle — the pill, the drawer, the born DC (5.13.3)", 
     expect(body.inline_cycle).toEqual({ name: "Deal Acme" });
     expect(body.inline_step_stage).toBe("TECHNICAL_FIT");
 
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Start Decision Cycle" })).toBeNull());
     const line = await screen.findByTestId("next-planned-line");
     expect(line.textContent).toBe("In decision cycle Deal Acme › Discovery meeting · Technical Fit · 12 Nov 2026");
     // The coque closes (its Collapse exit transition, then unmounted).
     await waitFor(() => expect(screen.queryByTestId("coque-panel")).toBeNull());
+    // The pill stays — it now creates in the born cycle.
+    expect(addPill()).not.toBeNull();
   });
 });

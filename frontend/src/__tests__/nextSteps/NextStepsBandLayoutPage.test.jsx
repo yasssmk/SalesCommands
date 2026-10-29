@@ -2,9 +2,9 @@
 //
 // Sprint Next steps 5.12 B (PO) — the Next steps band, on the Activity
 // workspace PAGE as really rendered (views/activities/workspace/index.jsx):
-//   * order: the conversion block (when it applies) → the next steps sections
-//     (SignalsValidationList: To validate / Validated / Rejected) → the
-//     extraction → « + Add next step » (+ its type row);
+//   * order: the next steps sections (SignalsValidationList: To validate /
+//     Validated / Rejected) → the extraction → « + Add next step » (+ its type
+//     row) — 5.16: the conversion block is gone;
 //   * the "Next planned step" sub-block is gone (title, card, empty states) —
 //     it lives in Context (5.12 A-bis);
 //   * the extraction: the SHARED Run AI Analysis action (RunAIAnalysisButton,
@@ -12,12 +12,11 @@
 //     extract next steps », the page's pipelineRunner, ONLY « nextSteps »
 //     pre-checked; same display conditions as in Source, AND DC-only
 //     (hasSuggestedNextSteps);
-//   * « + Add next step »: DC-only (hasSuggestedNextSteps) — absent on a
-//     campaign activity;
-//   * the conversion block (Successful outcome + Start Decision Cycle +
-//     ActivityModal): same conditions, unchanged, moved to the top;
-//   * an activity without DC and without the conversion block: the band is
-//     HIDDEN, the Preparation model (index.jsx: rendered only when it applies).
+//   * « + Add next step » (5.16): wherever the activity has next steps
+//     (hasSuggestedNextSteps — a DC, or a SUCCESSFUL campaign activity, where
+//     it converts), hidden on CANCELLED;
+//   * an activity without next steps: the band is HIDDEN, the Preparation
+//     model (index.jsx: rendered only when it applies).
 // The page, the band, RunAIAnalysisButton and RunAIWizard are REAL; the data
 // hooks, the pipeline runner and the other bands are mocked.
 
@@ -217,10 +216,14 @@ describe("Next steps band — the layout (5.12 B)", () => {
     expect(within(band()).queryByTestId("add-next-step-types")).toBeNull();
   });
 
-  it("DC-only, hidden on CANCELLED: no pill on a campaign activity nor a CANCELLED one", () => {
+  it("5.16: shown wherever there are next steps (a SUCCESSFUL campaign activity too), hidden on CANCELLED", () => {
     mockActivity = campaignActivity();
     render(<ActivityWorkspacePage />);
-    expect(within(header()).queryByRole("button", { name: "+ Add next step" })).toBeNull();
+    expect(addPill()).toBeInTheDocument();
+    cleanup();
+    mockActivity = campaignActivity({ outcome: "NO_ANSWER" });
+    render(<ActivityWorkspacePage />);
+    expect(screen.queryByRole("button", { name: "+ Add next step" })).toBeNull();
     cleanup();
     mockActivity = dcActivity({ status: "CANCELLED" });
     render(<ActivityWorkspacePage />);
@@ -339,35 +342,24 @@ describe("Next steps band — the AI action (5.12 B, 5.12c (3))", () => {
 });
 
 describe("Next steps band — campaign activity, free activity (5.12 B)", () => {
-  it("a campaign activity SUCCESSFUL: the conversion block, at the top of the band", () => {
+  // 5.16 (PO): ONE pill — the conversion block (Successful outcome + Start
+  // Decision Cycle) is gone; « + Add next step » converts.
+  it("a SUCCESSFUL campaign activity, no DC born: no conversion block; the sections, the extraction, « + Add next step »", () => {
     mockActivity = campaignActivity();
     render(<ActivityWorkspacePage />);
-    const conversion = within(band()).getByTestId("campaign-conversion");
-    expect(within(conversion).getByText("Successful outcome — ready to convert")).toBeInTheDocument();
-    // 5.13: a pill (it opens the creation drawer — StartDecisionCyclePage);
-    // no ActivityModal any more.
-    expect(within(conversion).getByRole("button", { name: "Start Decision Cycle" }))
-      .toHaveAttribute("data-testid", "status-pill");
-    expect(screen.queryByTestId("activity-modal")).toBeNull();
-    expect(band().firstElementChild.contains(conversion)).toBe(true);
-  });
-
-  // 5.14b (PO): a SUCCESSFUL campaign activity has next steps — the sections
-  // and the extraction, with the conversion; no « + Add next step » while no
-  // DC is born (no cycle to create in).
-  it("a SUCCESSFUL campaign activity, no DC born: the sections and the extraction, no « + Add next step »", () => {
-    mockActivity = campaignActivity();
-    render(<ActivityWorkspacePage />);
-    expect(within(band()).queryByText("+ Add next step")).toBeNull();
-    expect(within(band()).queryByTestId("add-next-step")).toBeNull();
+    expect(within(band()).queryByTestId("campaign-conversion")).toBeNull();
+    expect(screen.queryByText("Start Decision Cycle")).toBeNull();
+    expect(screen.queryByText("Successful outcome — ready to convert")).toBeNull();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
     expect(within(band()).getByTestId("next-steps-extraction")).toBeInTheDocument();
     expect(within(band()).getByTestId("suggested-next-steps-block")).toBeInTheDocument();
   });
 
-  it("MEETING_SCHEDULED converts too (same conditions)", () => {
+  it("MEETING_SCHEDULED: the band and its pill too (same conditions)", () => {
     mockActivity = campaignActivity({ outcome: "MEETING_SCHEDULED" });
     render(<ActivityWorkspacePage />);
-    expect(within(band()).getByTestId("campaign-conversion")).toBeInTheDocument();
+    expect(within(band()).getByTestId("suggested-next-steps-block")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
   });
 
   it("a campaign activity whose DC was born: no conversion, the next steps and « + Add next step » (5.14b)", () => {

@@ -355,14 +355,14 @@ describe("Next steps band — part 4 and the DC-only guard (5.3)", () => {
     expect(screen.getByTestId("activity-create")).toBeInTheDocument();
   });
 
-  // 5.14b (PO): a SUCCESSFUL campaign activity has its next steps, with the
-  // conversion; part 4 needs a cycle to create in — none before a DC is born.
-  it("a SUCCESSFUL campaign activity, no DC born: the next steps and the conversion, no part 4", () => {
+  // 5.14b (PO): a SUCCESSFUL campaign activity has its next steps; 5.16: ONE
+  // pill, part 4 (« + Add next step », it converts) — no « Start Decision Cycle ».
+  it("a SUCCESSFUL campaign activity, no DC born: the next steps and part 4, no conversion block", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
     expect(screen.getByText("To validate")).toBeInTheDocument();
     expect(screen.getByText("Send the DPA")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "+ Add next step" })).toBeNull();
-    expect(screen.getByRole("button", { name: /Start Decision Cycle/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Start Decision Cycle/ })).toBeNull();
   });
 });
 
@@ -1359,11 +1359,13 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
   });
 
   // 5.13 (PO): no modal any more — the creation in the coque, conversion
-  // mode (a NEW cycle only; end to end: StartDecisionCyclePage).
-  it("'Start Decision Cycle' opens the creation in the coque, conversion mode; no ActivityModal", () => {
+  // mode (a NEW cycle only; end to end: StartDecisionCyclePage). 5.16: from
+  // « + Add next step »'s type row.
+  it("'+ Add next step' → a type, no DC born: the creation in the coque, conversion mode; no ActivityModal", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" },
       outcome: "SUCCESSFUL" }));
-    fireEvent.click(screen.getByRole("button", { name: "Start Decision Cycle" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add next step" }));
+    fireEvent.click(within(screen.getByTestId("add-next-step-types")).getByRole("button", { name: "Meeting" }));
     expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
     const create = screen.getByTestId("activity-create");
     expect(within(create).getByTestId("conversion-cycle")).toBeInTheDocument();
@@ -1482,8 +1484,8 @@ describe("Next steps band — '+ Add next step' (5.8e)", () => {
     expect(screen.queryByTestId("add-next-step-types")).toBeNull();
   });
 
-  it("5.12 B: a campaign activity: absent; a CANCELLED activity: hidden", () => {
-    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
+  it("5.16: a campaign activity still in sequence: absent; a CANCELLED activity: hidden", () => {
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "NO_ANSWER" }));
     expect(screen.queryByRole("button", { name: "+ Add next step" })).toBeNull();
     cleanup();
     renderPage(dcActivity({ status: "CANCELLED" }));
