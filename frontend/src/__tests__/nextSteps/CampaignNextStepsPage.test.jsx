@@ -6,13 +6,12 @@
 //   * the band shows the suggested next steps (the front mirror of the backend
 //     predicate next_steps_enabled: a DC, or a campaign activity whose outcome
 //     is successful) — and, without any, the AI action in the empty state;
-//   * 5.16 (PO): ONE pill — « + Add next step », shown by hasSuggestedNextSteps
-//     (the conversion block and its « Start Decision Cycle » are gone);
-//   * no DC born yet: a type picked in its row, or the row ✓ → Create, opens
-//     the creation drawer in CONVERSION mode (5.13, titled « Start Decision
-//     Cycle »), a NEW cycle inline, the campaign activity's contacts;
-//   * a DC born from the activity: both create in that cycle (no conversion);
-//   * a campaign activity still in sequence (no successful outcome): no pill.
+//   * no DC born yet: « Start Decision Cycle » stays (PO 5), « + Add next
+//     step » is hidden (PO 6); the row ✓ → Create opens the creation drawer in
+//     CONVERSION mode (5.13), pre-filled from the next step, a NEW cycle inline;
+//   * a DC born from the activity: the CTA is gone, « + Add next step » shows
+//     and creates in that cycle; ✓ → Create creates in that cycle (no
+//     conversion).
 // REAL: the page, the band, the list, the validation flow, the coque, the
 // creation drawer. Mocked: the HTTP client (utils/axiosClient), the band's
 // next-step list (aggregated signals) and the other bands / data hooks.
@@ -184,50 +183,12 @@ afterEach(() => {
 });
 
 describe("A SUCCESSFUL campaign activity — no DC born yet (5.14b)", () => {
-  it("the band shows the suggested next steps and ONE pill, « + Add next step »; no conversion block", async () => {
+  it("the band shows the suggested next steps; the CTA stays; no « + Add next step »", async () => {
     renderPage();
     const block = await screen.findByTestId("suggested-next-steps-block");
     expect(within(block).getByText("Security review")).toBeInTheDocument();
-    expect(addPill()).not.toBeNull();
-    expect(screen.queryByTestId("campaign-conversion")).toBeNull();
-    expect(within(screen.getByTestId("next-steps-band")).queryByText("Start Decision Cycle")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Start Decision Cycle" })).toBeNull();
-  });
-
-  it("a type picked in the row: the drawer in conversion mode, with that type", async () => {
-    renderPage();
-    await screen.findByTestId("suggested-next-steps-block");
-    fireEvent.click(addPill());
-    fireEvent.click(within(screen.getByTestId("add-next-step-types")).getByRole("button", { name: "Demo" }));
-    const drawer = await within(coque()).findByTestId("activity-create");
-    expect(within(coque()).getByTestId("coque-title")).toHaveTextContent("Start Decision Cycle");
-    expect(within(drawer).getByTestId("inline-read-type")).toHaveTextContent("Demo");
-    expect(within(drawer).getByTestId("conversion-cycle")).toBeInTheDocument();
-    expect(within(drawer).queryByTestId("inline-read-decision_cycle")).toBeNull();
-    expect(within(drawer).getByText("Thomas Lefèvre")).toBeInTheDocument();
-
-    fireEvent.click(within(drawer).getByTestId("inline-read-title"));
-    fireEvent.change(within(drawer).getByTestId("inline-input-title"), { target: { value: "Product demo" } });
-    fireEvent.click(within(drawer).getByTestId("inline-read-date"));
-    fireEvent.change(screen.getByLabelText("Scheduled date"), { target: { value: "2026-11-12" } });
-    fireEvent.click(screen.getByTestId("date-confirm"));
-    const cycle = within(drawer).getByTestId("conversion-cycle");
-    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
-    fireEvent.click(within(cycle).getByRole("button", { name: "Technical Fit" }));
-    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
-    await within(cycle).findByText("Deal Acme");
-    const save = within(coque()).getByRole("button", { name: "Save" });
-    await waitFor(() => expect(save).toBeEnabled());
-    fireEvent.click(save);
-
-    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
-    const [url, body] = api.post.mock.calls[0];
-    expect(url).toMatch(/create-with-entities/);
-    expect(body.activity.activity_type).toBe("DEMO");
-    expect(body.activity.source_activity_id).toBe(ACT_ID);
-    expect(body.activity.contact_ids).toEqual(["c-1"]);
-    expect(body.activity).not.toHaveProperty("next_step_signal_id");
-    expect(body.inline_cycle).toEqual({ name: "Deal Acme" });
+    expect(screen.getByTestId("campaign-conversion")).toBeInTheDocument();
+    expect(addPill()).toBeNull();
   });
 
   it("without any next step: the AI action in the empty state", async () => {
@@ -237,26 +198,11 @@ describe("A SUCCESSFUL campaign activity — no DC born yet (5.14b)", () => {
     expect(within(extraction).getByRole("button", { name: /Run AI Analysis/ })).toBeInTheDocument();
   });
 
-  it("a campaign activity still in sequence (no successful outcome): no next steps, no pill", async () => {
+  it("a campaign activity without a successful outcome: no suggested next steps", async () => {
     serverActivity = { ...campaignActivity, outcome: "NO_ANSWER" };
     renderPage();
     await screen.findByTestId("ctx-card");
     expect(screen.queryByTestId("suggested-next-steps-block")).toBeNull();
-    expect(addPill()).toBeNull();
-  });
-
-  it("a PLANNED campaign step (the sequence running): no pill", async () => {
-    serverActivity = { ...campaignActivity, status: "PLANNED", outcome: null };
-    renderPage();
-    await screen.findByTestId("ctx-card");
-    expect(addPill()).toBeNull();
-  });
-
-  it("a CANCELLED SUCCESSFUL campaign activity: no pill", async () => {
-    serverActivity = { ...campaignActivity, status: "CANCELLED" };
-    renderPage();
-    await screen.findByTestId("suggested-next-steps-block");
-    expect(addPill()).toBeNull();
   });
 
   it("✓ → Create: the drawer in conversion mode, pre-filled from the next step, a new cycle inline", async () => {
@@ -292,7 +238,7 @@ describe("A SUCCESSFUL campaign activity — a DC born from it (5.14b)", () => {
     serverActivity = { ...campaignActivity, next_planned_step: BORN };
   });
 
-  it("no conversion block; « + Add next step » shows", async () => {
+  it("the CTA is gone; « + Add next step » shows", async () => {
     renderPage();
     await screen.findByTestId("suggested-next-steps-block");
     expect(screen.queryByTestId("campaign-conversion")).toBeNull();

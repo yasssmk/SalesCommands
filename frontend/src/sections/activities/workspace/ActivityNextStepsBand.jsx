@@ -7,11 +7,9 @@
 // in `meta`, its click / key stopped there so it never folds the strip; on a
 // folded strip it unfolds it, the strip being controlled). The row of
 // ActivityType pills it opens is shown at the TOP of the band body.
-// 5.16 (PO) — the band's ONE creation pill: shown wherever the activity has
-// next steps (hasSuggestedNextSteps — a DC, or a SUCCESSFUL campaign
-// activity), hidden on a CANCELLED activity (the band's lock,
-// isActivitySignalsLocked). Its creation converts while no DC is born
-// (ActivityNextStepsTab's openCreate).
+// Only with a decision cycle to create in — the activity's own, or (5.14b) the
+// one born from a campaign activity (nextStepsCycleId) — hidden on a CANCELLED
+// activity (the band's lock, isActivitySignalsLocked).
 
 "use client";
 
@@ -28,7 +26,7 @@ import RightCircleOutlined from "@ant-design/icons/RightCircleOutlined";
 import CollapsibleStrip from "components/display/CollapsibleStrip";
 import ClickablePill from "components/chips/ClickablePill";
 import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
-import { hasSuggestedNextSteps } from "utils/nextStepsBand";
+import { nextStepsCycleId } from "utils/nextStepsBand";
 import { isActivitySignalsLocked } from "utils/activitySignalsLock";
 
 // ==============================|| ACTIVITY NEXT STEPS BAND ||============================== //
@@ -37,7 +35,7 @@ export default function ActivityNextStepsBand({ activity, defaultExpanded = fals
   const [expanded, setExpanded] = useState(defaultExpanded);
   // "+ Add next step" — the row of type pills is shown (in the body).
   const [typesOpen, setTypesOpen] = useState(false);
-  const showsAddNextStep = hasSuggestedNextSteps(activity) && !isActivitySignalsLocked(activity);
+  const showsAddNextStep = Boolean(nextStepsCycleId(activity)) && !isActivitySignalsLocked(activity);
 
   // On a folded band the pill unfolds it and shows the type row (which lives
   // in its body); on an open one it toggles the type row.

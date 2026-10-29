@@ -258,10 +258,10 @@ describe("5.12c (4) — the status sections directly under the band, as in the S
     expect(screen.queryByTestId("next-planned-step-block")).toBeNull();
   });
 
-  it("a SUCCESSFUL campaign activity (5.14b): the next steps sections; no conversion block (5.16)", () => {
+  it("a SUCCESSFUL campaign activity (5.14b): the next steps sections, with the conversion", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
     expect(screen.getByTestId("suggested-next-steps-block")).toBeInTheDocument();
-    expect(screen.queryByText("Start Decision Cycle")).toBeNull();
+    expect(screen.getByText("Start Decision Cycle")).toBeInTheDocument();
   });
 
   it("a campaign activity without a successful outcome: no next steps sections", () => {

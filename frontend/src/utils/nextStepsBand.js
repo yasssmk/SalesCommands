@@ -6,6 +6,8 @@
 // both reads are the same SWR key (deduped) and can never disagree. And (5.12 B)
 // the band's PREDICATES: what it shows, and whether it is rendered at all.
 
+import { isActivitySignalsLocked } from "utils/activitySignalsLock";
+
 // The next steps of the activity, all 3 statuses (To validate / Validated /
 // Rejected), in one page — the same aggregated query shape as the Signals band.
 export const NEXT_STEPS_BAND_QUERY = {
@@ -17,8 +19,8 @@ export const NEXT_STEPS_BAND_QUERY = {
 };
 
 // The successful outcomes of a campaign activity — the mirror of the backend
-// SUCCESSFUL_OUTCOMES (campaigns/constants.py): they open its next steps
-// (5.14b) — and, while no DC is born, their creation converts (5.16).
+// SUCCESSFUL_OUTCOMES (campaigns/constants.py): they open the conversion and,
+// 5.14b, the next steps.
 export const CAMPAIGN_CONVERSION_OUTCOMES = ["SUCCESSFUL", "MEETING_SCHEDULED"];
 
 // The suggested next steps (extracted by the AI) — the mirror of the backend
@@ -43,15 +45,28 @@ export function bornDecisionCycle(activity) {
 }
 
 // The decision cycle the band's creations go into (5.14b): the activity's own,
-// else the one born from it — null while none (a campaign activity: every
-// creation of the band then converts, a NEW cycle inline — 5.16).
+// else the one born from it — null while none (a campaign activity: its next
+// steps then convert, a NEW cycle inline).
 export function nextStepsCycleId(activity) {
   return activity?.decision_cycle || bornDecisionCycle(activity)?.id || null;
 }
 
+// The campaign → Decision Cycle conversion block (« Successful outcome — ready
+// to convert » + Start Decision Cycle) applies — the conditions it always had
+// (5.12 B, moved unchanged): a campaign activity (no decision_cycle), no DC
+// born from it yet, a converting outcome, the band not locked.
+export function showsCampaignConversion(activity) {
+  const isCampaignActivity = Boolean(activity?.campaign_detail) && !activity?.decision_cycle;
+  return (
+    isCampaignActivity &&
+    !bornDecisionCycle(activity) &&
+    CAMPAIGN_CONVERSION_OUTCOMES.includes(activity?.outcome) &&
+    !isActivitySignalsLocked(activity)
+  );
+}
+
 // The band is rendered only when it has something to show (5.12 B, the
-// Preparation model): its next steps — since the conversion block is gone
-// (5.16: « + Add next step » converts), exactly hasSuggestedNextSteps.
+// Preparation model): the next steps, or the conversion block.
 export function hasNextStepsBand(activity) {
-  return hasSuggestedNextSteps(activity);
+  return hasSuggestedNextSteps(activity) || showsCampaignConversion(activity);
 }

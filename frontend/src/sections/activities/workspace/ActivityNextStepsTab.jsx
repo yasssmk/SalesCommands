@@ -27,6 +27,7 @@ import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import NextStepActivityLine, {
   getResolvedActivity,
 } from "sections/activities/nextSteps/NextStepActivityLine";
+import CampaignConversionCta from "sections/activities/nextSteps/CampaignConversionCta";
 import RunAIAnalysisButton, {
   RUN_AI_TRIGGER_VARIANTS,
 } from "sections/activities/workspace/RunAIAnalysisButton";
@@ -40,6 +41,7 @@ import {
   NEXT_STEPS_BAND_QUERY,
   hasSuggestedNextSteps,
   nextStepsCycleId,
+  showsCampaignConversion,
 } from "utils/nextStepsBand";
 // The band's own lock — the rule shared with the Signals band (5.11): only a
 // CANCELLED activity locks, a COMPLETED one stays workable.
@@ -52,12 +54,14 @@ const NEXT_STEPS_ONLY_OBJECTIVES = { qualification: false, nextSteps: true };
 // ==============================|| ACTIVITY NEXT STEPS TAB ||============================== //
 
 // The "Next steps" band (Sprint Next steps 5.x), top to bottom (5.12 B):
-//   1. (5.16: the campaign conversion block is gone — « + Add next step »
-//      converts);
+//   1. the campaign → Decision Cycle conversion block, when it applies
+//      (showsCampaignConversion — a campaign activity, no DC born yet: never
+//      with « + Add next step »);
 //   2. the suggested next steps — to validate, validated (resolved, with their
 //      activity on the row's 3rd line), rejected: the generic
 //      SignalsValidationList — a DC activity, or a SUCCESSFUL campaign
-//      activity (hasSuggestedNextSteps, 5.14b);
+//      activity (hasSuggestedNextSteps, 5.14b); the latter shows with the
+//      conversion block until a DC is born from it;
 //   3. in the list's empty state (EmptyState `action`, 5.12e), the AI action:
 //      only without any next step — the shared Run AI action as a pill
 //      (RunAIAnalysisButton, the Source's label, the page's pipelineRunner),
@@ -66,17 +70,16 @@ const NEXT_STEPS_ONLY_OBJECTIVES = { qualification: false, nextSteps: true };
 //   « + Add next step » (5.8e) sits on the right of the BAND's title
 //   (ActivityNextStepsBand, 5.12e): it opens the row of the 7 ActivityType
 //   pills, at the TOP of this body (typesOpen) → the creation with that type
-//   — the band's ONE creation pill (5.16), wherever it has next steps.
+//   — only with a cycle to create in (nextStepsCycleId).
 // The cycle of the band's creations (5.14b): the activity's own, else the one
 // born from the campaign activity; with none (a campaign activity, no DC born
-// yet), the creation converts — the creation drawer in conversion mode (5.13,
-// « Start Decision Cycle »), a NEW cycle inline. ONE decision point, openCreate,
-// for the pill's type row AND the row ✓'s Create.
+// yet), the row ✓'s Create converts — the creation drawer in conversion mode
+// (5.13), pre-filled from the next step, a NEW cycle inline.
 // The next planned step is shown in Context (5.12 A-bis), not here. The page
 // renders the band only when it has something to show (hasNextStepsBand).
 // Every activity creation of the band opens in the coque (EditActivityContent,
-// create mode — Sprint Next steps 5.8d), the conversion included (5.13: a NEW
-// cycle only). No modal any more.
+// create mode — Sprint Next steps 5.8d), "Start Decision Cycle" included
+// (5.13: its conversion mode — a NEW cycle only). No modal any more.
 export default function ActivityNextStepsTab({
   activity,
   mutateCounts,
@@ -189,10 +192,8 @@ export default function ActivityNextStepsTab({
   // resolved — is read back (5.6), Cancel returns to where the creation
   // started. Without a cycle (5.14b: a campaign activity, no DC born yet) it
   // converts: the conversion mode of 5.13, from this activity, a NEW cycle
-  // inline — the ONE decision point of the pill's type row and the row ✓
-  // (5.16). Otherwise (a manual next step): the standard behaviour — the list
-  // refreshes and the coque closes; the standard revalidation re-reads this
-  // activity (a born DC then shows in Context).
+  // inline. Otherwise (a manual next step): the standard behaviour — the list
+  // refreshes and the coque closes.
   const openCreate = useCallback(
     ({ nextStep = null, activityType, onCancel } = {}) => {
       const converts = !cycleId;
@@ -320,15 +321,40 @@ export default function ActivityNextStepsTab({
     [handleOpenActivity],
   );
 
+  // "Start Decision Cycle" (5.13): the creation drawer in conversion mode — a
+  // MEETING from this campaign activity (source_activity_id), a NEW cycle
+  // created inline, the activity's contacts pre-filled. On success the
+  // standard revalidation re-reads this activity: the born DC hides the CTA
+  // and shows in Context.
+  const openStartCycle = useCallback(() => {
+    openDrawer(
+      <EditActivityContent
+        mode="create"
+        conversion
+        accountId={accountId}
+        activityType="MEETING"
+        sourceActivityId={activityId}
+        initialContacts={activity?.contacts_detail || []}
+        onCreated={() => {
+          mutateAll();
+          mutateCounts?.();
+          closeDrawer();
+        }}
+      />,
+      { title: "Start Decision Cycle" },
+    );
+  }, [openDrawer, accountId, activityId, activity?.contacts_detail, mutateAll, mutateCounts, closeDrawer]);
+
+
   // ==============================|| RENDER ||============================== //
 
   return (
     <Box>
       <Stack spacing={1.5} data-testid="next-steps-band">
         {/* « + Add next step »'s row of the 7 ActivityType pills, at the TOP
-            of the band (its pill is in the band header, 5.12e) → openCreate:
-            in the band's cycle, else a conversion (5.16). */}
-        {hasNextSteps && !isLocked && typesOpen && (
+            of the band (its pill is in the band header, 5.12e). Only with a
+            cycle to create in. */}
+        {cycleId && !isLocked && typesOpen && (
           <Stack
             direction="row"
             spacing={0.75}
@@ -347,6 +373,13 @@ export default function ActivityNextStepsTab({
               />
             ))}
           </Stack>
+        )}
+
+        {/* 1. The campaign → Decision Cycle conversion (when it applies):
+            "Start Decision Cycle" opens the creation drawer in conversion
+            mode (5.13). */}
+        {showsCampaignConversion(activity) && (
+          <CampaignConversionCta onStartCycle={openStartCycle} />
         )}
 
         {/* 2. The suggested next steps: to validate / validated / rejected,
