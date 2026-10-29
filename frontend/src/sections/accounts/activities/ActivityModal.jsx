@@ -50,7 +50,6 @@ import MainCard from "components/MainCard";
 import {
   InlineContactForm,
   InlineCycleForm,
-  PIPELINE_STEPS,
 } from "./components";
 import {
   createActivity,
@@ -70,6 +69,7 @@ import { useGetContacts } from "api/businessData/contacts";
 import {
   useGetDecisionCyclesByAccount,
   useGetDecisionStepsByCycle,
+  PIPELINE_STEP_LABELS,
 } from "api/accounts/decisionCycles";
 import {
   displayErrorSnackbar,
@@ -865,9 +865,8 @@ export default function ActivityModal({
                             </Typography>
                             <Typography variant="caption" color="success.main">
                               Starting at:{" "}
-                              {PIPELINE_STEPS.find(
-                                (s) => s.value === inlineStepStage,
-                              )?.label || "Qualification"}
+                              {PIPELINE_STEP_LABELS[inlineStepStage] ||
+                                PIPELINE_STEP_LABELS.QUALIFICATION}
                             </Typography>
                           </Stack>
                           <Button

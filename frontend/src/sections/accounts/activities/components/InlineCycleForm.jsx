@@ -3,9 +3,6 @@ import PropTypes from 'prop-types';
 // material-ui
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Grid from '@mui/material/Grid';
-import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
@@ -17,15 +14,18 @@ import * as Yup from 'yup';
 // icons
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
 
-// ==============================|| PIPELINE STEPS (FIXED) ||============================== //
+// project imports
+import ClickablePill from 'components/chips/ClickablePill';
+import { PIPELINE_STEPS_ORDER, PIPELINE_STEP_LABELS } from 'api/accounts/decisionCycles';
 
-export const PIPELINE_STEPS = [
-  { value: 'QUALIFICATION', label: 'Qualification' },
-  { value: 'TECHNICAL_FIT', label: 'Technical Fit' },
-  { value: 'SOLUTION_VALIDATION', label: 'Solution Validation' },
-  { value: 'BUSINESS_CASE', label: 'Business Case' },
-  { value: 'CLOSING', label: 'Closing' },
-];
+// ==============================|| PIPELINE STEPS ||============================== //
+//
+// Sprint Next steps 5.13 — the starting step, among the steps the backend
+// creates for a new cycle (PIPELINE_STEPS_CONFIG, decision_cycles/constants.py:
+// QUALIFICATION → CLOSING), read from the ONE front constant
+// (api/accounts/decisionCycles) — no local list any more. Chosen in pills: the
+// scope pills' single-choice pattern (ScopeDepartmentsField — ClickablePill,
+// active + pressed).
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -43,7 +43,7 @@ export default function InlineCycleForm({ onSave, onCancel }) {
   const formik = useFormik({
     initialValues: {
       name: '',
-      step_stage: 'QUALIFICATION'
+      step_stage: PIPELINE_STEPS_ORDER[0]
     },
     validationSchema,
     onSubmit: (values) => {
@@ -55,7 +55,7 @@ export default function InlineCycleForm({ onSave, onCancel }) {
     }
   });
 
-  const { values, errors, touched, handleChange, handleBlur, handleSubmit } = formik;
+  const { values, errors, touched, handleChange, handleBlur, handleSubmit, setFieldValue } = formik;
 
   return (
     <Box sx={{ pt: 1, pb: 2 }}>
@@ -63,43 +63,40 @@ export default function InlineCycleForm({ onSave, onCancel }) {
         <Typography variant="body2" color="text.secondary">
           Quick create a new decision cycle
         </Typography>
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6}>
-            <TextField
-              fullWidth
-              id="name"
-              name="name"
-              value={values.name}
-              onChange={handleChange}
-              onBlur={handleBlur}
-              placeholder="Cycle name *"
-              error={Boolean(touched.name && errors.name)}
-              helperText={touched.name && errors.name}
-              autoFocus
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <Select
-              fullWidth
-              id="step_stage"
-              name="step_stage"
-              value={values.step_stage}
-              onChange={handleChange}
-              onBlur={handleBlur}
-              displayEmpty
-            >
-              {PIPELINE_STEPS.map((step) => (
-                <MenuItem key={step.value} value={step.value}>
-                  {step.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </Grid>
-        </Grid>
+        <TextField
+          fullWidth
+          id="name"
+          name="name"
+          value={values.name}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          placeholder="Cycle name *"
+          error={Boolean(touched.name && errors.name)}
+          helperText={touched.name && errors.name}
+          autoFocus
+        />
+        {/* The starting step — one pill per step, a single choice. */}
+        <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap data-testid="stage-pills">
+          {PIPELINE_STEPS_ORDER.map((stage) => {
+            const isActive = values.step_stage === stage;
+            return (
+              <ClickablePill
+                key={stage}
+                data-testid={`stage-pill-${stage}`}
+                active={isActive}
+                pressed={isActive}
+                onClick={() => setFieldValue('step_stage', stage)}
+                label={PIPELINE_STEP_LABELS[stage]}
+              />
+            );
+          })}
+        </Stack>
         <Stack direction="row" spacing={1} justifyContent="flex-end">
-          <Button type="button" size="small" onClick={onCancel} startIcon={<CloseOutlined />}>
-            Cancel
-          </Button>
+          {onCancel && (
+            <Button type="button" size="small" onClick={onCancel} startIcon={<CloseOutlined />}>
+              Cancel
+            </Button>
+          )}
           <Button type="button" size="small" variant="contained" onClick={handleSubmit}>
             Create Cycle
           </Button>
@@ -111,5 +108,6 @@ export default function InlineCycleForm({ onSave, onCancel }) {
 
 InlineCycleForm.propTypes = {
   onSave: PropTypes.func.isRequired,
-  onCancel: PropTypes.func.isRequired
+  /** Optional: no Cancel when the cycle is mandatory (the conversion). */
+  onCancel: PropTypes.func
 };

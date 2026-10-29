@@ -65,12 +65,13 @@ import {
 import {
   useGetDecisionCyclesByAccount,
   useGetDecisionStepsByCycle,
+  PIPELINE_STEP_LABELS,
 } from "api/accounts/decisionCycles";
 import { useNextStepCitedContacts } from "api/signals/signals";
 import { useAuth } from "hooks/useAuth";
 import { personName, personNameAndEmail } from "utils/personLabel";
 import { activityDefaultsFromNextStep } from "utils/activityTypes";
-import { InlineContactForm } from "sections/accounts/activities/components";
+import { InlineContactForm, InlineCycleForm } from "sections/accounts/activities/components";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
@@ -128,6 +129,13 @@ const createValidationSchema = Yup.object(
   },
   DATE_PAIR,
 );
+
+// Conversion (5.13, "Start Decision Cycle"): the cycle is ALWAYS a NEW one —
+// created inline, the only way the backend stamps its source_campaign (the
+// DECISION_CYCLES objective) — and Save waits for it.
+const conversionValidationSchema = createValidationSchema.shape({
+  inline_cycle: Yup.object().nullable().required("A new decision cycle is required"),
+});
 
 // ==============================|| HELPERS ||============================== //
 
@@ -609,10 +617,13 @@ function ActivityForm({
   nextStep,
   activityType,
   sourceActivityId,
+  conversion = false,
+  initialContacts = [],
   citedContacts = [],
   onCreated,
   onCancel,
 }) {
+  const aq = useTheme().aphoriQ;
   const { closeDrawer } = useWorkspaceDrawer();
   const { user } = useAuth();
   const isCreate = mode === "create";
@@ -626,9 +637,19 @@ function ActivityForm({
 
   // Creation: the defaults, computed ONCE — the gate mounted this form with the
   // names cited and their account contacts (TD-279 rule, server) already read.
-  const [defaults] = useState(() =>
-    isCreate ? activityDefaultsFromNextStep(nextStep, { activityType, citedContacts }) : null,
-  );
+  // initialContacts (5.13): the contacts of the activity this one comes from
+  // (a converted campaign activity's), added to the pre-fill.
+  const [defaults] = useState(() => {
+    if (!isCreate) return null;
+    const fromNextStep = activityDefaultsFromNextStep(nextStep, { activityType, citedContacts });
+    return {
+      ...fromNextStep,
+      contacts: [
+        ...fromNextStep.contacts,
+        ...initialContacts.filter((c) => !fromNextStep.contacts.some((x) => x.id === c.id)),
+      ],
+    };
+  });
 
   // Memoized so the reference is STABLE across renders — with a fresh inline
   // object each render, enableReinitialize's compare (fresh dayjs objects) is
@@ -649,6 +670,8 @@ function ActivityForm({
             invited: [],
             contacts: defaults.contacts,
             inline_contact: null,
+            // Conversion: the NEW cycle created inline ({ name, step_stage }).
+            inline_cycle: null,
             decision_cycle_id: decisionCycleId || "",
             // The next step's proposed step (a step of its own cycle — the
             // server checks it), else the cycle's current one (effect below).
@@ -696,6 +719,17 @@ function ActivityForm({
     // The activity this one is created FROM (5.13: a campaign activity
     // converted into a Decision Cycle) — both creation paths carry it.
     if (sourceActivityId) payload.source_activity_id = sourceActivityId;
+    // Conversion: always create-with-entities — the new cycle (its name) and
+    // its starting step; the backend creates the cycle, stamps its
+    // source_campaign and attaches the activity to that step.
+    if (conversion) {
+      return createActivityWithEntities({
+        activity: payload,
+        inline_contact: values.inline_contact || null,
+        inline_cycle: { name: values.inline_cycle.name },
+        inline_step_stage: values.inline_cycle.step_stage,
+      });
+    }
     return values.inline_contact
       ? createActivityWithEntities({
           activity: payload,
@@ -709,7 +743,11 @@ function ActivityForm({
   const formik = useFormik({
     // Edit: follows the activity; creation: never re-initialised after mount.
     enableReinitialize: !isCreate,
-    validationSchema: isCreate ? createValidationSchema : validationSchema,
+    validationSchema: isCreate
+      ? conversion
+        ? conversionValidationSchema
+        : createValidationSchema
+      : validationSchema,
     initialValues,
     onSubmit: async (values, { setSubmitting }) => {
       if (isCreate) {
@@ -822,8 +860,31 @@ function ActivityForm({
           onChange={(v) => setFieldValue("activity_type", v)}
         />
 
+        {/* Conversion (5.13): a NEW decision cycle only — the inline cycle form
+            (name + starting step, in pills), then the cycle as a removable
+            row (the inline contact's pattern). */}
+        {isCreate && conversion && (
+          <Box data-testid="conversion-cycle">
+            <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+              Decision cycle
+            </Typography>
+            {values.inline_cycle ? (
+              <PersonEditRow
+                name={values.inline_cycle.name}
+                suffix={`new cycle · ${PIPELINE_STEP_LABELS[values.inline_cycle.step_stage]}`}
+                onRemove={() => setFieldValue("inline_cycle", null)}
+                removeTestId="remove-inline-cycle"
+              />
+            ) : (
+              <InlineCycleForm
+                onSave={({ name, step_stage }) => setFieldValue("inline_cycle", { name, step_stage })}
+              />
+            )}
+          </Box>
+        )}
+
         {/* Creation: the decision cycle (pre-filled, modifiable) and its step. */}
-        {isCreate && (
+        {isCreate && !conversion && (
           <>
             <InlineEditableValue
               name="decision_cycle"
@@ -931,6 +992,10 @@ EditActivityContent.propTypes = {
   activityType: PropTypes.string,
   /** Create: the activity this one is created from (source_activity_id). */
   sourceActivityId: PropTypes.string,
+  /** Create: "Start Decision Cycle" — a NEW cycle only, created inline (5.13). */
+  conversion: PropTypes.bool,
+  /** Create: contacts added to the pre-fill (the source activity's). */
+  initialContacts: PropTypes.arrayOf(PropTypes.object),
   /** Create: fired with the created activity (the caller decides what follows). */
   onCreated: PropTypes.func,
   /** Optional Cancel handler (default: the coque closes). */

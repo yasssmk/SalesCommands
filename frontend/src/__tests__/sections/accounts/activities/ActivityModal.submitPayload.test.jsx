@@ -43,7 +43,10 @@ vi.mock("api/businessData/contacts", () => ({
 // The steps of the selected cycle — set per test (Sprint Next steps 2.2b).
 const cycleSteps = vi.hoisted(() => ({ list: [] }));
 
-vi.mock("api/accounts/decisionCycles", () => ({
+// The real module's constants (PIPELINE_STEPS_ORDER / PIPELINE_STEP_LABELS —
+// the inline cycle form's steps, 5.13).
+vi.mock("api/accounts/decisionCycles", async (importOriginal) => ({
+  ...(await importOriginal()),
   useGetDecisionCyclesByAccount: () => ({ cycles: [], cyclesLoading: false }),
   useGetDecisionStepsByCycle: (cycleId) => ({
     steps: cycleId ? cycleSteps.list : [],
@@ -68,6 +71,7 @@ vi.mock("sections/accounts/activities/components", async (importOriginal) => ({
 }));
 
 import ActivityModal from "sections/accounts/activities/ActivityModal";
+import AphoriqTheme from "../../../_utils/aphoriqTheme";
 import { createActivity, createActivityWithEntities } from "api/accounts/activities";
 
 const NEXT_STEP = {
@@ -96,8 +100,8 @@ const EXPECTED_ACTIVITY_PAYLOAD = {
   next_step_signal_id: "ns1",
 };
 
-function renderModal() {
-  render(
+function renderModal({ themed = false } = {}) {
+  const modal = (
     <ActivityModal
       open
       onClose={() => {}}
@@ -105,8 +109,10 @@ function renderModal() {
       activity={null}
       previousActivityId="prev1"
       nextStepSignal={NEXT_STEP}
-    />,
+    />
   );
+  // The shared pills (StatusPill) read the aphoriQ theme, as in the app.
+  render(themed ? <AphoriqTheme>{modal}</AphoriqTheme> : modal);
 }
 
 // The MUI Modal marks its content aria-hidden in jsdom: query with hidden.
@@ -301,5 +307,23 @@ describe("ActivityModal — conversion pre-fill from the next step", () => {
 
     await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
     expect(createActivity.mock.calls[0][0].description).toBe(longTopics);
+  });
+});
+
+// 5.13 — ONE inline cycle form for the ActivityModal and the creation drawer:
+// the starting step in pills (the 5 steps the backend creates, the shared
+// constant), and the modal's « Starting at » reads the shared labels.
+describe("ActivityModal — the inline cycle form is the shared one (5.13)", () => {
+  it("the starting step in pills, then « Starting at: <label> » once created", async () => {
+    renderModal({ themed: true });
+    clickButton(/Create new cycle/);
+    const pills = screen.getAllByTestId(/^stage-pill-/);
+    expect(pills.map((p) => p.textContent)).toEqual([
+      "Qualification", "Technical Fit", "Solution Validation", "Business Case", "Closing",
+    ]);
+    fireEvent.change(screen.getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
+    fireEvent.click(screen.getByTestId("stage-pill-BUSINESS_CASE"));
+    clickButton(/Create Cycle/);
+    expect(await screen.findByText(/Starting at:/)).toHaveTextContent("Starting at: Business Case");
   });
 });
