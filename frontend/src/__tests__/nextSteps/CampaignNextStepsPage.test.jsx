@@ -325,3 +325,28 @@ describe("Link to an existing activity (5.14c)", () => {
     expect(within(list).getByText("Discovery meeting")).toBeInTheDocument();
   });
 });
+
+// PO (5.16 cancelled): « Start Decision Cycle » and « + Add next step » are
+// NEVER visible together — the conversion until a DC is born, then the pill.
+describe("Start Decision Cycle / + Add next step — never both", () => {
+  const startDc = () => screen.queryByRole("button", { name: "Start Decision Cycle" });
+
+  it.each([
+    ["a SUCCESSFUL campaign activity, no DC born", () => campaignActivity, true],
+    ["a SUCCESSFUL campaign activity, a DC born", () => ({ ...campaignActivity, next_planned_step: BORN }), false],
+    // A SUCCESSFUL outcome: the conversion's outcome rule does not hide it here.
+    ["a DC activity", () => ({ ...campaignActivity, campaign_detail: null, outcome: "SUCCESSFUL",
+      decision_cycle: DC_ID, decision_cycle_detail: { id: DC_ID, name: "Deal Acme" } }), false],
+  ])("%s", async (_label, makeActivity, converts) => {
+    serverActivity = makeActivity();
+    renderPage();
+    await screen.findByTestId("suggested-next-steps-block");
+    if (converts) {
+      expect(startDc()).not.toBeNull();
+      expect(addPill()).toBeNull();
+    } else {
+      expect(addPill()).not.toBeNull();
+      expect(startDc()).toBeNull();
+    }
+  });
+});
