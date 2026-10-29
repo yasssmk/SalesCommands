@@ -18,32 +18,55 @@ export const NEXT_STEPS_BAND_QUERY = {
   pageSize: 100,
 };
 
-// The suggested next steps (extracted by the AI) are a DC-only feature: in a
-// campaign context (no decision_cycle) they are neither proposed nor counted.
-// Mirrors the backend guard.
+// The successful outcomes of a campaign activity — the mirror of the backend
+// SUCCESSFUL_OUTCOMES (campaigns/constants.py): they open the conversion and,
+// 5.14b, the next steps.
+export const CAMPAIGN_CONVERSION_OUTCOMES = ["SUCCESSFUL", "MEETING_SCHEDULED"];
+
+// The suggested next steps (extracted by the AI) — the mirror of the backend
+// predicate next_steps_enabled (5.14b): an activity in a decision cycle, or a
+// campaign activity whose outcome is successful (PO: the goal of a campaign
+// is to create decision cycles). Anywhere else they are neither proposed nor
+// counted.
 export function hasSuggestedNextSteps(activity) {
-  return Boolean(activity?.decision_cycle);
+  if (activity?.decision_cycle) return true;
+  return (
+    Boolean(activity?.campaign_detail) &&
+    CAMPAIGN_CONVERSION_OUTCOMES.includes(activity?.outcome)
+  );
+}
+
+// The decision cycle born from a campaign activity ({ id, name }), read from
+// the server's next planned step (BORN_DECISION_CYCLE — the backend
+// born_decision_cycle), else null.
+export function bornDecisionCycle(activity) {
+  const next = activity?.next_planned_step;
+  return next?.source === "BORN_DECISION_CYCLE" ? next.decision_cycle || null : null;
+}
+
+// The decision cycle the band's creations go into (5.14b): the activity's own,
+// else the one born from it — null while none (a campaign activity: its next
+// steps then convert, a NEW cycle inline).
+export function nextStepsCycleId(activity) {
+  return activity?.decision_cycle || bornDecisionCycle(activity)?.id || null;
 }
 
 // The campaign → Decision Cycle conversion block (« Successful outcome — ready
 // to convert » + Start Decision Cycle) applies — the conditions it always had
 // (5.12 B, moved unchanged): a campaign activity (no decision_cycle), no DC
 // born from it yet, a converting outcome, the band not locked.
-export const CAMPAIGN_CONVERSION_OUTCOMES = ["SUCCESSFUL", "MEETING_SCHEDULED"];
-
 export function showsCampaignConversion(activity) {
   const isCampaignActivity = Boolean(activity?.campaign_detail) && !activity?.decision_cycle;
-  const bornCycle = activity?.next_planned_step?.source === "BORN_DECISION_CYCLE";
   return (
     isCampaignActivity &&
-    !bornCycle &&
+    !bornDecisionCycle(activity) &&
     CAMPAIGN_CONVERSION_OUTCOMES.includes(activity?.outcome) &&
     !isActivitySignalsLocked(activity)
   );
 }
 
 // The band is rendered only when it has something to show (5.12 B, the
-// Preparation model): the DC parts, or the conversion block.
+// Preparation model): the next steps, or the conversion block.
 export function hasNextStepsBand(activity) {
   return hasSuggestedNextSteps(activity) || showsCampaignConversion(activity);
 }

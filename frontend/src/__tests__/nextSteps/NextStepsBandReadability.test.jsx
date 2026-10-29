@@ -258,10 +258,15 @@ describe("5.12c (4) — the status sections directly under the band, as in the S
     expect(screen.queryByTestId("next-planned-step-block")).toBeNull();
   });
 
-  it("outside a DC (a converting campaign activity): no next steps sections (DC-only guard)", () => {
+  it("a SUCCESSFUL campaign activity (5.14b): the next steps sections, with the conversion", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
-    expect(screen.queryByTestId("suggested-next-steps-block")).toBeNull();
+    expect(screen.getByTestId("suggested-next-steps-block")).toBeInTheDocument();
     expect(screen.getByText("Start Decision Cycle")).toBeInTheDocument();
+  });
+
+  it("a campaign activity without a successful outcome: no next steps sections", () => {
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "NO_ANSWER" }));
+    expect(screen.queryByTestId("suggested-next-steps-block")).toBeNull();
   });
 });
 
@@ -377,9 +382,9 @@ describe("5.8f — the band halo: the same SignalsHaloBox as the Signals band", 
     expect(band()).toHaveAttribute("data-halo-color", "none");
   });
 
-  it("outside a DC: no halo (the suggestions are not proposed)", () => {
+  it("a SUCCESSFUL campaign activity (5.14b): its next steps to validate → the warning halo", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
-    expect(band()).toHaveAttribute("data-halo-color", "none");
+    expect(band()).toHaveAttribute("data-halo-color", "warning");
   });
 
   it("the Signals band halo is unchanged (its own types only)", () => {

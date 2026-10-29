@@ -34,6 +34,35 @@ from core.logging import get_logger
 logger = get_logger(__name__)
 
 
+def born_decision_cycle(activity):
+    """
+    Sprint Next steps 5.14b -- the decision cycle born from a campaign
+    activity: the cycle of the FIRST non-cancelled activity created from it
+    (source_activity) inside a cycle, same tenant. None for an activity
+    outside a campaign, or before any cycle was born.
+
+    The ONE definition, computed at read time (PO: never stored on the
+    signal) -- read by get_next_planned_step (BORN_DECISION_CYCLE), the
+    next-step cycle default (next_step_materialization) and the Link
+    candidates (next_step_link_service).
+    """
+    from ..models import Activity
+    from ..constants import ActivityStatus
+
+    if not activity.campaign_id:
+        return None
+    born = (
+        Activity.objects
+        .filter(source_activity=activity, client_id=activity.client_id,
+                decision_cycle__isnull=False)
+        .exclude(status=ActivityStatus.CANCELLED)
+        .select_related('decision_cycle')
+        .order_by('created_at')
+        .first()
+    )
+    return born.decision_cycle if born is not None else None
+
+
 class SequenceScope(str, Enum):
     """
     Scope for activity sequence calculation.
@@ -185,9 +214,6 @@ class ActivitySequenceService:
              'activity': the _format_activity_for_response shape (None only
              for a born DC with nothing open)} | None
         """
-        from ..models import Activity
-        from ..constants import ActivityStatus
-
         if activity.decision_cycle_id:
             return cls._next_in_cycle(
                 'DECISION_CYCLE', activity.decision_cycle, activity.client_id,
@@ -195,23 +221,14 @@ class ActivitySequenceService:
             )
         if not activity.campaign_id:
             return None
-        born = (
-            Activity.objects
-            .filter(source_activity=activity, client_id=activity.client_id,
-                    decision_cycle__isnull=False)
-            .exclude(status=ActivityStatus.CANCELLED)
-            .select_related('decision_cycle')
-            .order_by('created_at')
-            .first()
-        )
+        born = born_decision_cycle(activity)
         if born is not None:
             # The born DC is named even with nothing open (5.2, Q6: the UI
             # hides "Start Decision Cycle" once a DC was born).
-            return cls._next_in_cycle('BORN_DECISION_CYCLE', born.decision_cycle,
+            return cls._next_in_cycle('BORN_DECISION_CYCLE', born,
                                       activity.client_id) or {
                 'source': 'BORN_DECISION_CYCLE',
-                'decision_cycle': {'id': str(born.decision_cycle.id),
-                                   'name': born.decision_cycle.name},
+                'decision_cycle': {'id': str(born.id), 'name': born.name},
                 'activity': None,
             }
         context = cls.get_sequence_context(activity, SequenceScope.CAMPAIGN)

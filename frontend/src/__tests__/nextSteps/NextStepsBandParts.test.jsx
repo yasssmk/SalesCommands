@@ -355,11 +355,12 @@ describe("Next steps band — part 4 and the DC-only guard (5.3)", () => {
     expect(screen.getByTestId("activity-create")).toBeInTheDocument();
   });
 
-  // 5.12 B (PO): part 4 is DC-only too; the conversion block is what stays.
-  it("outside a DC (a converting campaign activity): parts 2-4 hidden, the conversion stays", () => {
+  // 5.14b (PO): a SUCCESSFUL campaign activity has its next steps, with the
+  // conversion; part 4 needs a cycle to create in — none before a DC is born.
+  it("a SUCCESSFUL campaign activity, no DC born: the next steps and the conversion, no part 4", () => {
     renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }));
-    expect(screen.queryByText("To validate")).not.toBeInTheDocument();
-    expect(screen.queryByText("Send the DPA")).not.toBeInTheDocument();
+    expect(screen.getByText("To validate")).toBeInTheDocument();
+    expect(screen.getByText("Send the DPA")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "+ Add next step" })).toBeNull();
     expect(screen.getByRole("button", { name: /Start Decision Cycle/ })).toBeInTheDocument();
   });

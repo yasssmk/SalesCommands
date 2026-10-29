@@ -40,6 +40,7 @@ import NextStepValidateFlow from "sections/activities/nextSteps/NextStepValidate
 import {
   NEXT_STEPS_BAND_QUERY,
   hasSuggestedNextSteps,
+  nextStepsCycleId,
   showsCampaignConversion,
 } from "utils/nextStepsBand";
 // The band's own lock — the rule shared with the Signals band (5.11): only a
@@ -54,19 +55,26 @@ const NEXT_STEPS_ONLY_OBJECTIVES = { qualification: false, nextSteps: true };
 
 // The "Next steps" band (Sprint Next steps 5.x), top to bottom (5.12 B):
 //   1. the campaign → Decision Cycle conversion block, when it applies
-//      (showsCampaignConversion — a campaign activity, so never with 2-4);
+//      (showsCampaignConversion — a campaign activity, no DC born yet: never
+//      with « + Add next step »);
 //   2. the suggested next steps — to validate, validated (resolved, with their
 //      activity on the row's 3rd line), rejected: the generic
-//      SignalsValidationList, DC-only (hasSuggestedNextSteps);
+//      SignalsValidationList — a DC activity, or a SUCCESSFUL campaign
+//      activity (hasSuggestedNextSteps, 5.14b); the latter shows with the
+//      conversion block until a DC is born from it;
 //   3. in the list's empty state (EmptyState `action`, 5.12e), the AI action:
 //      only without any next step — the shared Run AI action as a pill
 //      (RunAIAnalysisButton, the Source's label, the page's pipelineRunner),
 //      next steps only pre-checked, while the NEXT STEPS extraction never
-//      ran; « AI already ran · <date> » after — DC-only;
+//      ran; « AI already ran · <date> » after;
 //   « + Add next step » (5.8e) sits on the right of the BAND's title
 //   (ActivityNextStepsBand, 5.12e): it opens the row of the 7 ActivityType
 //   pills, at the TOP of this body (typesOpen) → the creation with that type
-//   — DC-only.
+//   — only with a cycle to create in (nextStepsCycleId).
+// The cycle of the band's creations (5.14b): the activity's own, else the one
+// born from the campaign activity; with none (a campaign activity, no DC born
+// yet), the row ✓'s Create converts — the creation drawer in conversion mode
+// (5.13), pre-filled from the next step, a NEW cycle inline.
 // The next planned step is shown in Context (5.12 A-bis), not here. The page
 // renders the band only when it has something to show (hasNextStepsBand).
 // Every activity creation of the band opens in the coque (EditActivityContent,
@@ -99,7 +107,8 @@ export default function ActivityNextStepsTab({
   // as the detail of every other signal type (ActivitySignalsTab).
   const { openDrawer, closeDrawer } = useWorkspaceDrawer();
 
-  const isDcActivity = hasSuggestedNextSteps(activity);
+  const hasNextSteps = hasSuggestedNextSteps(activity);
+  const cycleId = nextStepsCycleId(activity);
   // The AI action (5.12c): only without any next step (the band's own list —
   // no new query), and once that list is known (loaded, no error).
   const nextStepsRun = runsByPipeline?.NEXT_STEPS || null;
@@ -178,17 +187,24 @@ export default function ActivityNextStepsTab({
     [mutateAll, mutateCounts, openDetail, closeDrawer],
   );
 
-  // An activity creation in the coque (5.8d). From a next step: pre-filled
-  // from it; on success the next step — now resolved — is read back (5.6),
-  // Cancel returns to where the creation started. Otherwise (a manual next
-  // step): the standard behaviour — the list refreshes and the coque closes.
+  // An activity creation in the coque (5.8d), in the band's cycle (cycleId).
+  // From a next step: pre-filled from it; on success the next step — now
+  // resolved — is read back (5.6), Cancel returns to where the creation
+  // started. Without a cycle (5.14b: a campaign activity, no DC born yet) it
+  // converts: the conversion mode of 5.13, from this activity, a NEW cycle
+  // inline. Otherwise (a manual next step): the standard behaviour — the list
+  // refreshes and the coque closes.
   const openCreate = useCallback(
     ({ nextStep = null, activityType, onCancel } = {}) => {
+      const converts = !cycleId;
       openDrawer(
         <EditActivityContent
           mode="create"
           accountId={accountId}
-          decisionCycleId={activity?.decision_cycle || null}
+          decisionCycleId={cycleId}
+          conversion={converts}
+          sourceActivityId={converts ? activityId : undefined}
+          initialContacts={converts ? activity?.contacts_detail || [] : []}
           nextStep={nextStep}
           activityType={activityType}
           onCreated={() => {
@@ -202,10 +218,10 @@ export default function ActivityNextStepsTab({
           }}
           onCancel={onCancel}
         />,
-        { title: "New activity" },
+        { title: converts ? "Start Decision Cycle" : "New activity" },
       );
     },
-    [openDrawer, accountId, activity?.decision_cycle, showFromServer, mutateAll, mutateCounts, closeDrawer],
+    [openDrawer, accountId, cycleId, activityId, activity?.contacts_detail, showFromServer, mutateAll, mutateCounts, closeDrawer],
   );
 
   // The validation flow (5.6), in the coque: step 1 = Create or Link. Opened by
@@ -234,7 +250,7 @@ export default function ActivityNextStepsTab({
       openDrawer(
         <EditNextStepContent
           nextStep={signal}
-          decisionCycleId={activity?.decision_cycle}
+          decisionCycleId={cycleId}
           onSaved={(updated) => {
             mutateAll();
             mutateCounts?.();
@@ -245,7 +261,7 @@ export default function ActivityNextStepsTab({
         { title: "Edit next step" },
       );
     },
-    [openDrawer, activity?.decision_cycle, mutateAll, mutateCounts, openDetail],
+    [openDrawer, cycleId, mutateAll, mutateCounts, openDetail],
   );
 
   const handleReject = useCallback(
@@ -335,8 +351,9 @@ export default function ActivityNextStepsTab({
     <Box>
       <Stack spacing={1.5} data-testid="next-steps-band">
         {/* « + Add next step »'s row of the 7 ActivityType pills, at the TOP
-            of the band (its pill is in the band header, 5.12e). DC-only. */}
-        {isDcActivity && !isLocked && typesOpen && (
+            of the band (its pill is in the band header, 5.12e). Only with a
+            cycle to create in. */}
+        {cycleId && !isLocked && typesOpen && (
           <Stack
             direction="row"
             spacing={0.75}
@@ -366,10 +383,10 @@ export default function ActivityNextStepsTab({
 
         {/* 2. The suggested next steps: to validate / validated / rejected,
             directly under the band — as the Signals band's list (5.12c: no
-            sub-level title). DC-only: extracted next-step suggestions are not
-            proposed in a campaign context (activity without a decision_cycle).
-            Mirrors the backend guard. One type only → no type-group header. */}
-        {isDcActivity && (
+            sub-level title). A DC activity or a SUCCESSFUL campaign activity
+            (hasSuggestedNextSteps — mirrors the backend predicate). One type
+            only → no type-group header. */}
+        {hasNextSteps && (
           <Box data-testid="suggested-next-steps-block">
             {error && !nextStepSignals.length ? (
               <Box display="flex" justifyContent="center" py={4}>

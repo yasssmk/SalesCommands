@@ -17,7 +17,8 @@ Contract (identical on both paths):
          call_to_action ← objective + success criterion; date ←
          suggested_due_date, as scheduled_date for the types of
          SCHEDULED_DATE_ACTIVITY_TYPES, else as due_date (D6);
-       * next_step_cycle_default — the next step's own decision cycle (same
+       * next_step_cycle_default — the next step's cycle (next_step_cycle:
+         its own, else the cycle born from its campaign conversation; same
          account) when the payload sends none;
        * next_step_step_default — the proposed step when it belongs to the
          activity's cycle, else that cycle's CURRENT step (computed here,
@@ -115,10 +116,39 @@ def next_step_text_and_date_defaults(signal, fields):
     return defaults
 
 
+def next_steps_enabled(activity):
+    """
+    Sprint Next steps 5.14b -- whether `activity` can have next steps: it is
+    in a decision cycle, or it is a campaign activity whose outcome is
+    successful (SUCCESSFUL_OUTCOMES -- PO: the goal of a campaign is to
+    create decision cycles). The ONE predicate: the extraction guard
+    (activity_extraction_view) reads it; the front mirrors it
+    (utils/nextStepsBand hasSuggestedNextSteps).
+    """
+    from app_modules.campaigns.constants import SUCCESSFUL_OUTCOMES
+
+    if activity.decision_cycle_id is not None:
+        return True
+    return activity.campaign_id is not None and activity.outcome in SUCCESSFUL_OUTCOMES
+
+
+def next_step_cycle(signal):
+    """The decision cycle of a next step: its own, else (a next step of a
+    campaign activity, 5.14b) the cycle born from its conversation
+    (born_decision_cycle, read at call time) -- None while none is born."""
+    from .activity_sequence_service import born_decision_cycle
+
+    if signal.decision_cycle is not None:
+        return signal.decision_cycle
+    if signal.source_activity is None:
+        return None
+    return born_decision_cycle(signal.source_activity)
+
+
 def next_step_cycle_default(signal, account):
-    """The next step's decision cycle when it belongs to `account`, else
-    None."""
-    cycle = signal.decision_cycle
+    """The next step's decision cycle (next_step_cycle) when it belongs to
+    `account`, else None."""
+    cycle = next_step_cycle(signal)
     if cycle is not None and cycle.account_id == account.id:
         return cycle
     return None

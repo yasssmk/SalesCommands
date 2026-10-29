@@ -26,8 +26,9 @@ next step's decision cycle, same tenant, the next step's own conversation
                   an activity without a date comes last.
 
 Ties end on created_at then id — a stable order. The first candidate is the
-"link" proposal. A next step without a decision cycle has no candidate
-(next steps are DC-only).
+"link" proposal. The decision cycle is next_step_cycle: the next step's own,
+else -- a next step of a SUCCESSFUL campaign activity (5.14b) -- the cycle
+born from its conversation; without one, no candidate.
 
 Differences (one dict per candidate; a section without difference is absent)
 -----------
@@ -111,16 +112,19 @@ _SORT_KEY = {
 
 def _candidate_activities(signal):
     """The activities `signal` can be linked to (unranked): the open ones of
-    its decision cycle, same tenant, its own conversation excepted."""
+    its decision cycle (next_step_cycle: its own, else the one born from its
+    campaign conversation), same tenant, its own conversation excepted."""
     from app_modules.activities.models import Activity
+    from app_modules.activities.services.next_step_materialization import next_step_cycle
 
-    if signal.decision_cycle_id is None:
+    cycle = next_step_cycle(signal)
+    if cycle is None:
         return Activity.objects.none()
     return (
         Activity.objects
         .filter(
             client_id=signal.client_id,
-            decision_cycle_id=signal.decision_cycle_id,
+            decision_cycle_id=cycle.id,
             status__in=NON_TERMINAL_STATUSES,
         )
         .exclude(id=signal.source_activity_id)

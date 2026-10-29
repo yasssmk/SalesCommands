@@ -352,13 +352,16 @@ describe("Next steps band — campaign activity, free activity (5.12 B)", () => 
     expect(band().firstElementChild.contains(conversion)).toBe(true);
   });
 
-  it("a campaign activity: no « + Add next step », no extraction, no sections", () => {
+  // 5.14b (PO): a SUCCESSFUL campaign activity has next steps — the sections
+  // and the extraction, with the conversion; no « + Add next step » while no
+  // DC is born (no cycle to create in).
+  it("a SUCCESSFUL campaign activity, no DC born: the sections and the extraction, no « + Add next step »", () => {
     mockActivity = campaignActivity();
     render(<ActivityWorkspacePage />);
     expect(within(band()).queryByText("+ Add next step")).toBeNull();
     expect(within(band()).queryByTestId("add-next-step")).toBeNull();
-    expect(within(band()).queryByTestId("next-steps-extraction")).toBeNull();
-    expect(within(band()).queryByTestId("suggested-next-steps-block")).toBeNull();
+    expect(within(band()).getByTestId("next-steps-extraction")).toBeInTheDocument();
+    expect(within(band()).getByTestId("suggested-next-steps-block")).toBeInTheDocument();
   });
 
   it("MEETING_SCHEDULED converts too (same conditions)", () => {
@@ -367,20 +370,23 @@ describe("Next steps band — campaign activity, free activity (5.12 B)", () => 
     expect(within(band()).getByTestId("campaign-conversion")).toBeInTheDocument();
   });
 
-  it("a campaign activity whose DC was born: no conversion → no band", () => {
+  it("a campaign activity whose DC was born: no conversion, the next steps and « + Add next step » (5.14b)", () => {
     mockActivity = campaignActivity({
       next_planned_step: { source: "BORN_DECISION_CYCLE", decision_cycle: { id: "dc-7", name: "Deal" }, activity: null },
     });
     render(<ActivityWorkspacePage />);
-    expect(screen.queryByText("Next steps")).toBeNull();
-    expect(screen.queryByTestId("next-steps-halo")).toBeNull();
+    expect(within(band()).queryByTestId("campaign-conversion")).toBeNull();
+    expect(within(band()).getByTestId("suggested-next-steps-block")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
   });
 
-  it("a CANCELLED campaign activity: no conversion (the band lock, as before) → no band", () => {
+  it("a CANCELLED campaign activity: no conversion (the band lock, as before), its next steps locked", () => {
     mockActivity = campaignActivity({ status: "CANCELLED" });
     render(<ActivityWorkspacePage />);
     expect(screen.queryByText("Start Decision Cycle")).toBeNull();
-    expect(screen.queryByText("Next steps")).toBeNull();
+    expect(within(band()).getByTestId("suggested-next-steps-block")).toBeInTheDocument();
+    // The AI action locked, as on a CANCELLED DC activity.
+    expect(within(band()).getByRole("button", { name: EXTRACT_LABEL })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("a campaign activity without a converting outcome: no band", () => {
