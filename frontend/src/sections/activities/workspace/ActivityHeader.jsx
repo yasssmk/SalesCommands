@@ -4,7 +4,8 @@
  *
  * Returns layout props + modals JSX (title is read-only — no onTitleSave):
  *   { avatar, title, titleAdornment, headerActions, chips, infoItems, modals }
- * titleAdornment is the status pill (Row 1, next to the title); chips is empty.
+ * titleAdornment is the status pill (Row 1, next to the title) — followed, on a
+ * COMPLETED activity with an outcome, by its OutcomeChip (5.15); chips is empty.
  *
  * Usage in index.jsx:
  *   const headerProps = useActivityHeaderProps({ activity });
@@ -45,6 +46,7 @@ import {
 
 // Primitives
 import StatusPill from "components/chips/StatusPill";
+import OutcomeChip from "components/outcomes/OutcomeChip";
 // Shared clickable-text affordance (neutral bold at rest, primary + underline on
 // hover) — same as the Context people names (PersonRow).
 import interactiveTextSx from "components/display/interactiveTextSx";
@@ -454,13 +456,18 @@ export default function useActivityHeaderProps({
   // table in the activities constants. Contour now visible (3-part chip).
   const chipStyle =
     ACTIVITY_STATUS_CHIP_COLORS[activity.status] || ACTIVITY_STATUS_CHIP_COLORS.PLANNED;
+  // 5.15 — on a COMPLETED activity, its outcome (the shared OutcomeChip)
+  // right after the status pill; both sit in the shell's title row (its gap).
   const titleAdornment = (
-    <StatusPill
-      data-status-color={statusChipColor}
-      label={statusChipLabel}
-      colorText={chipStyle.text}
-      colorBg={chipStyle.background}
-    />
+    <>
+      <StatusPill
+        data-status-color={statusChipColor}
+        label={statusChipLabel}
+        colorText={chipStyle.text}
+        colorBg={chipStyle.background}
+      />
+      {isCompleted && <OutcomeChip outcome={activity.outcome} />}
+    </>
   );
 
   // ==============================|| ROW 1: Actions (⋯ menu) ||============================== //
