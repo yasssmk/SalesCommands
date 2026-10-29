@@ -608,6 +608,7 @@ function ActivityForm({
   decisionCycleId,
   nextStep,
   activityType,
+  sourceActivityId,
   citedContacts = [],
   onCreated,
   onCancel,
@@ -692,6 +693,9 @@ function ActivityForm({
       decision_step_id: values.decision_step_id || null,
     };
     if (nextStep?.id) payload.next_step_signal_id = nextStep.id;
+    // The activity this one is created FROM (5.13: a campaign activity
+    // converted into a Decision Cycle) — both creation paths carry it.
+    if (sourceActivityId) payload.source_activity_id = sourceActivityId;
     return values.inline_contact
       ? createActivityWithEntities({
           activity: payload,
@@ -925,6 +929,8 @@ EditActivityContent.propTypes = {
   nextStep: PropTypes.object,
   /** Create: the type imposed by the entry point. */
   activityType: PropTypes.string,
+  /** Create: the activity this one is created from (source_activity_id). */
+  sourceActivityId: PropTypes.string,
   /** Create: fired with the created activity (the caller decides what follows). */
   onCreated: PropTypes.func,
   /** Optional Cancel handler (default: the coque closes). */
