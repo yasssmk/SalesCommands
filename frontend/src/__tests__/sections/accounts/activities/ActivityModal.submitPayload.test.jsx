@@ -6,6 +6,8 @@
 // Real render + real submit of ActivityModal on BOTH create paths (standard
 // POST /module-activities/ and create-with-entities); the rest of the payload
 // is pinned unchanged. Mock style: ActivityModal.objectivePrefill.test.jsx.
+// 5.13.4: the dead `previousActivityId` prop is removed too (grep: no
+// consumer); the payload still carries no previous_activity_id.
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
@@ -107,7 +109,6 @@ function renderModal({ themed = false } = {}) {
       onClose={() => {}}
       accountId="acc1"
       activity={null}
-      previousActivityId="prev1"
       nextStepSignal={NEXT_STEP}
     />
   );

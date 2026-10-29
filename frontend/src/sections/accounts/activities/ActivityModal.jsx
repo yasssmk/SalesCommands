@@ -130,7 +130,6 @@ export default function ActivityModal({
   decisionStepId = null,
   decisionCycleId = null,
   defaultActivityType = null,
-  previousActivityId = null,
   sourceActivityId = null,
   nextStepSignal = null,
   onSuccess,
@@ -1027,7 +1026,6 @@ ActivityModal.propTypes = {
   decisionStepId: PropTypes.string,
   decisionCycleId: PropTypes.string,
   defaultActivityType: PropTypes.string,
-  previousActivityId: PropTypes.string,
   sourceActivityId: PropTypes.string,
   nextStepSignal: PropTypes.shape({
     id: PropTypes.string,
