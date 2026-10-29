@@ -19,8 +19,11 @@
 // group (1): a single choice in pills, the shared OutcomeSelector (labels and
 // colours from OUTCOME_META, filtered by the type — no local list), sent only
 // when changed. The callback outcome is not offered (a campaign mechanic that
-// needs its date — the outcome drawer), unless it is the current one. On a
-// campaign activity the backend's final-outcome rule applies (5.14a).
+// needs its date — the outcome drawer), nor, on a campaign activity, the other
+// outcomes that drive its sequence (5.17b: EDIT_EXCLUDED_CAMPAIGN_OUTCOMES) —
+// unless one is the current outcome. A type change the current outcome does
+// not fit clears it (5.17b). On a campaign activity the backend's final-outcome
+// rule applies (5.14a).
 //
 // Sprint Next steps 5.8d — CREATION mode (mode="create"): the SAME form, a
 // second submit (createActivity, or createActivityWithEntities with a contact
@@ -87,7 +90,11 @@ import PersonRow from "components/display/PersonRow";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import OutcomeSelector from "components/outcomes/OutcomeSelector";
-import { CALLBACK_OUTCOME } from "utils/outcomes";
+import {
+  CALLBACK_OUTCOME,
+  EDIT_EXCLUDED_CAMPAIGN_OUTCOMES,
+  getOutcomesForType,
+} from "utils/outcomes";
 
 // ==============================|| VALIDATION ||============================== //
 
@@ -647,6 +654,8 @@ function ActivityForm({
   // 5.17 — the outcome is editable on a COMPLETED activity only (the backend
   // refuses it otherwise).
   const editsOutcome = !isCreate && activity?.status === ACTIVITY_STATUSES.COMPLETED;
+  const outcomeExclude = (isCampaign ? EDIT_EXCLUDED_CAMPAIGN_OUTCOMES : [CALLBACK_OUTCOME])
+    .filter((o) => o !== activity?.outcome);
 
   // Creation: the defaults, computed ONCE — the gate mounted this form with the
   // names cited and their account contacts (TD-279 rule, server) already read.
@@ -874,7 +883,13 @@ function ActivityForm({
           type="select"
           options={TYPE_OPTIONS}
           value={values.activity_type}
-          onChange={(v) => setFieldValue("activity_type", v)}
+          onChange={(v) => {
+            setFieldValue("activity_type", v);
+            // 5.17b — an outcome the new type does not offer is cleared.
+            if (editsOutcome && values.outcome && !getOutcomesForType(v).includes(values.outcome)) {
+              setFieldValue("outcome", null);
+            }
+          }}
         />
         {editsOutcome && (
           <Box>
@@ -885,7 +900,7 @@ function ActivityForm({
               activityType={values.activity_type}
               value={values.outcome}
               onChange={(o) => setFieldValue("outcome", o)}
-              exclude={activity?.outcome === CALLBACK_OUTCOME ? [] : [CALLBACK_OUTCOME]}
+              exclude={outcomeExclude}
             />
           </Box>
         )}

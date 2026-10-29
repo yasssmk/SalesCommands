@@ -90,3 +90,18 @@ def test_the_outcome_is_refused_on_a_planned_activity(authed_api_a, chain):
     s1 = chain(1, date=_days(0))
     r = _drawer_patch(authed_api_a, s1, 'SUCCESSFUL')
     assert r.status_code == 400, r.content
+
+
+def test_the_outcome_cleared_by_a_type_change_is_accepted(authed_api_a, emailed):
+    """5.17b: a type change that drops the current outcome sends outcome null."""
+    emailed.refresh_from_db()
+    r = authed_api_a.patch(f'/module-activities/{emailed.id}/', {
+        'title': emailed.title, 'activity_type': 'MEETING',
+        'call_to_action': emailed.call_to_action, 'description': emailed.description,
+        'outcome': None,
+    }, format='json')
+    assert r.status_code == 200, r.content
+    emailed.refresh_from_db()
+    assert emailed.outcome is None
+    assert emailed.activity_type == 'MEETING'
+    assert _open_steps(emailed) == 2

@@ -50,6 +50,11 @@ export const OUTCOME_VALUES = OUTCOME_ORDER;
 // outcome drawer's completion flow), never set by a plain edit.
 export const CALLBACK_OUTCOME = "CALLBACK_REQUESTED";
 
+// 5.17b (PO) — the outcomes that drive a campaign's sequence (the callback,
+// the no-answer retry): on a campaign activity they go through the completion,
+// so the Edit drawer does not offer them (unless one is the current outcome).
+export const EDIT_EXCLUDED_CAMPAIGN_OUTCOMES = [CALLBACK_OUTCOME, "NO_ANSWER"];
+
 // ==============================|| TYPE → OUTCOMES (PO-validated table) ||============================== //
 
 const ALL_REAL_TYPES = ["CALL", "MEETING", "EMAIL", "LINKEDIN", "TASK", "DEMO"];

@@ -71,7 +71,7 @@ vi.mock("utils/displayError", () => ({ displaySuccessSnackbar: vi.fn(), displayE
 
 import { api } from "utils/axiosClient";
 import ActivityWorkspacePage from "views/activities/workspace";
-import { getOutcomesForType } from "utils/outcomes";
+import { getOutcomesForType, CALLBACK_OUTCOME, EDIT_EXCLUDED_CAMPAIGN_OUTCOMES } from "utils/outcomes";
 
 const OWNER = { id: "u-1", first_name: "Ann", last_name: "Owner", email: "ann@acme.test" };
 const THOMAS = { id: "c-1", first_name: "Thomas", last_name: "Lefèvre", full_name: "Thomas Lefèvre" };
@@ -194,5 +194,76 @@ describe("The outcome in the Edit activity drawer (5.17)", () => {
     renderPage(activity({ status: "CANCELLED", outcome: null }));
     const drawer = await openEdit();
     expect(within(drawer).queryByTestId("outcome-selector")).toBeNull();
+  });
+});
+
+// 5.17b (PO): on a CAMPAIGN activity, the outcomes that drive the sequence
+// (EDIT_EXCLUDED_CAMPAIGN_OUTCOMES: CALLBACK_REQUESTED, NO_ANSWER) go through
+// the completion — not offered by Edit, unless one is the current outcome. A
+// type change that the current outcome does not fit clears it (nothing
+// invisible kept nor sent).
+describe("The outcome in Edit — campaign set and type change (5.17b)", () => {
+  const campaign = { campaign_detail: { id: "camp-1", name: "Q4 push" } };
+  const selector = (drawer) => within(drawer).getByTestId("outcome-selector");
+  const shownIds = (drawer) => within(selector(drawer)).getAllByRole("button").map((b) => b.getAttribute("data-testid"));
+  const pickType = async (drawer, label) => {
+    fireEvent.click(within(drawer).getByTestId("inline-read-type"));
+    fireEvent.click(await screen.findByRole("option", { name: label }));
+  };
+  const save = async (drawer) => {
+    const btn = within(drawer).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(btn).toBeEnabled());
+    fireEvent.click(btn);
+    await waitFor(() => expect(api.patch).toHaveBeenCalledTimes(1));
+    return api.patch.mock.calls[0][1];
+  };
+
+  it("the set is ONE constant: CALLBACK_REQUESTED + NO_ANSWER", () => {
+    expect([...EDIT_EXCLUDED_CAMPAIGN_OUTCOMES].sort()).toEqual([CALLBACK_OUTCOME, "NO_ANSWER"].sort());
+  });
+
+  it("a campaign activity: neither NO_ANSWER nor CALLBACK_REQUESTED offered", async () => {
+    renderPage(activity(campaign));
+    const drawer = await openEdit();
+    expect(shownIds(drawer)).toEqual(
+      getOutcomesForType("CALL")
+        .filter((o) => o !== "NO_ANSWER" && o !== CALLBACK_OUTCOME)
+        .map((o) => `outcome-pill-${o}`),
+    );
+  });
+
+  it("a campaign activity whose current outcome is NO_ANSWER: it stays shown, selected", async () => {
+    renderPage(activity({ ...campaign, outcome: "NO_ANSWER" }));
+    const drawer = await openEdit();
+    expect(within(selector(drawer)).getByTestId("outcome-pill-NO_ANSWER")).toHaveAttribute("aria-pressed", "true");
+    expect(within(selector(drawer)).queryByTestId(`outcome-pill-${CALLBACK_OUTCOME}`)).toBeNull();
+  });
+
+  it("outside a campaign: NO_ANSWER stays offered", async () => {
+    renderPage(activity());
+    const drawer = await openEdit();
+    expect(within(selector(drawer)).getByTestId("outcome-pill-NO_ANSWER")).toBeInTheDocument();
+  });
+
+  it("a type change the outcome does not fit: the outcome is cleared, and sent cleared", async () => {
+    // INVALID_PHONE_NUMBER exists for a CALL, not for a MEETING.
+    renderPage(activity({ outcome: "INVALID_PHONE_NUMBER" }));
+    const drawer = await openEdit();
+    await pickType(drawer, "Meeting");
+    expect(within(selector(drawer)).queryAllByRole("button", { pressed: true })).toHaveLength(0);
+    expect(within(selector(drawer)).queryByTestId("outcome-pill-INVALID_PHONE_NUMBER")).toBeNull();
+    const body = await save(drawer);
+    expect(body.activity_type).toBe("MEETING");
+    expect(body).toHaveProperty("outcome", null);
+  });
+
+  it("a type change the outcome fits: the outcome is kept (not sent)", async () => {
+    renderPage(activity({ outcome: "SUCCESSFUL" }));
+    const drawer = await openEdit();
+    await pickType(drawer, "Meeting");
+    expect(within(selector(drawer)).getByTestId("outcome-pill-SUCCESSFUL")).toHaveAttribute("aria-pressed", "true");
+    const body = await save(drawer);
+    expect(body.activity_type).toBe("MEETING");
+    expect(body).not.toHaveProperty("outcome");
   });
 });
