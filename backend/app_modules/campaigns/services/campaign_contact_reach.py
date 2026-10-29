@@ -4,7 +4,7 @@ CONTACTS_REACHED — how many people the campaign actually got through to.
 
 THE RULE (PO, final): a campaign contact is REACHED when the campaign carries at
 least one COMPLETED activity on them whose outcome says a conversation happened.
-The outcome set is ``campaign_execution_service.REACHED_OUTCOMES``, declared
+The outcome set is ``campaigns.constants.REACHED_OUTCOMES``, declared
 beside the two the campaign state machine already uses rather than re-listed
 here.
 
@@ -59,7 +59,7 @@ from django.db.models import Count
 from app_modules.activities.constants import ActivityStatus
 from app_modules.activities.models import Activity
 
-from .campaign_execution_service import REACHED_OUTCOMES
+from ..constants import REACHED_OUTCOMES
 
 
 __all__ = [

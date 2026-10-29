@@ -11,6 +11,8 @@ Reference: app_modules/activities/constants.py (same pattern).
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
+from app_modules.activities.constants import ActivityOutcome
+
 
 # ==========================================================================
 # CAMPAIGN TYPE
@@ -222,3 +224,41 @@ ACTIVE_CAMPAIGN_CAPS_BY_TYPE: dict = {
 # flagged inactive at read-time (Campaign.is_inactive). No stored field.
 # Set to 0 to flag any campaign idle for at least a full day (used for testing).
 N_INACTIVE_DAYS = 30
+
+
+# ==========================================================================
+# OUTCOME GROUPINGS (the campaign state machine + the reach metric)
+# ==========================================================================
+
+# Outcomes that permanently stop a contact's sequence
+TERMINAL_OUTCOMES: frozenset = frozenset({
+    ActivityOutcome.NOT_INTERESTED,
+    ActivityOutcome.WRONG_CONTACT,
+    ActivityOutcome.UNSUBSCRIBE_OPTOUT,
+    ActivityOutcome.WRONG_EMAIL,
+    ActivityOutcome.INVALID_PHONE_NUMBER,
+})
+
+SUCCESSFUL_OUTCOMES: frozenset = frozenset({
+    ActivityOutcome.SUCCESSFUL,
+    ActivityOutcome.MEETING_SCHEDULED,
+})
+
+# Outcomes that mean a CONVERSATION HAPPENED — we got through to the person,
+# whatever they then said. Read-side only: unlike the two sets above, this one
+# drives no state machine, it defines the CONTACTS_REACHED metric
+# (services/campaign_contact_reach.py, where the rule and its edges are
+# documented). It lives here so the three outcome groupings the product reasons
+# with stay in ONE place and can be compared at a glance.
+#
+# Reached is NOT the same question as successful: NOT_INTERESTED and
+# UNSUBSCRIBE_OPTOUT are refusals AND contacts — someone picked up and said no.
+# CALLBACK_REQUESTED is not (a gatekeeper or a voicemail promising a call back is
+# not the person), and OTHER carries no information to decide on.
+REACHED_OUTCOMES: frozenset = frozenset({
+    ActivityOutcome.SUCCESSFUL,
+    ActivityOutcome.MEETING_SCHEDULED,
+    ActivityOutcome.NOT_INTERESTED,
+    ActivityOutcome.FOLLOW_UP_NEEDED,
+    ActivityOutcome.UNSUBSCRIBE_OPTOUT,
+})

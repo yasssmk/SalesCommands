@@ -232,10 +232,9 @@ def end_sequence_on_final_outcome(sender, instance, **kwargs):
         return
 
     from app_modules.activities.constants import ActivityStatus
+    from app_modules.campaigns.constants import SUCCESSFUL_OUTCOMES, TERMINAL_OUTCOMES
     from app_modules.campaigns.services.campaign_execution_service import (
         CampaignExecutionService,
-        SUCCESSFUL_OUTCOMES,
-        TERMINAL_OUTCOMES,
     )
 
     if instance.status != ActivityStatus.COMPLETED:

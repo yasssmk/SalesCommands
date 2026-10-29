@@ -21,11 +21,8 @@ from django.db import transaction
 
 from app_modules.activities.constants import ActivityStatus
 from app_modules.activities.models import Activity
-from app_modules.campaigns.services.campaign_execution_service import (
-    CampaignExecutionService,
-    SUCCESSFUL_OUTCOMES,
-    TERMINAL_OUTCOMES,
-)
+from app_modules.campaigns.constants import SUCCESSFUL_OUTCOMES, TERMINAL_OUTCOMES
+from app_modules.campaigns.services.campaign_execution_service import CampaignExecutionService
 from core.exceptions import StandardizedValidationError
 
 OPEN_STEP_STATUSES = (ActivityStatus.PLANNED, ActivityStatus.ON_HOLD)
