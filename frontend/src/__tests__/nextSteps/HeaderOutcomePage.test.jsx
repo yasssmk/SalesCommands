@@ -1,9 +1,11 @@
 // frontend/src/__tests__/nextSteps/HeaderOutcomePage.test.jsx
 //
-// Sprint Next steps 5.15 — the outcome of a COMPLETED activity is visible in
-// the header: the existing OutcomeChip (components/outcomes/OutcomeChip — its
-// unified label), next to the status pill (the header's title adornment). Only
-// on a COMPLETED activity with an outcome.
+// Sprint Next steps 5.15 / 5.15b — the outcome of a COMPLETED activity is
+// visible in the header: ONE pill (5.15b, PO — « Completed » + the outcome was
+// a duplicate). A COMPLETED activity with an outcome: the existing OutcomeChip
+// (components/outcomes/OutcomeChip — its unified label) REPLACES the
+// « Completed » status pill; without an outcome: « Completed ». Every other
+// status: its status pill, unchanged.
 // REAL: the page, the header hook (useActivityHeaderProps), the header shell
 // (WorkspaceHeader), StatusPill, OutcomeChip. Mocked: the HTTP client
 // (utils/axiosClient) and the other bands / data hooks.
@@ -108,26 +110,27 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("The outcome in the header (5.15)", () => {
-  it("a COMPLETED activity with an outcome: the OutcomeChip next to the status pill", async () => {
+describe("The outcome in the header — one pill (5.15 / 5.15b)", () => {
+  it("a COMPLETED activity with an outcome: the OutcomeChip REPLACES « Completed »", async () => {
     renderPage(activity());
     const row = await titleRow();
-    const [status, outcome] = pills(row);
-    expect(status).toHaveTextContent("Completed");
-    expect(outcome).toHaveTextContent(OUTCOME_META.MEETING_SCHEDULED.label);
-    // Side by side: the outcome right after the status pill.
-    expect(status.nextElementSibling).toBe(outcome);
+    expect(pills(row)).toHaveLength(1);
+    expect(pills(row)[0]).toHaveTextContent(OUTCOME_META.MEETING_SCHEDULED.label);
+    expect(within(row).queryByText("Completed")).toBeNull();
   });
 
   it("the unified label of each outcome (OUTCOME_META)", async () => {
     renderPage(activity({ outcome: "NO_ANSWER" }));
     const row = await titleRow();
-    expect(pills(row)[1]).toHaveTextContent(OUTCOME_META.NO_ANSWER.label);
+    expect(pills(row)).toHaveLength(1);
+    expect(pills(row)[0]).toHaveTextContent(OUTCOME_META.NO_ANSWER.label);
   });
 
-  it("a COMPLETED activity without an outcome: the status pill only", async () => {
+  it("a COMPLETED activity without an outcome: « Completed »", async () => {
     renderPage(activity({ outcome: null }));
-    expect(pills(await titleRow())).toHaveLength(1);
+    const row = await titleRow();
+    expect(pills(row)).toHaveLength(1);
+    expect(pills(row)[0]).toHaveTextContent("Completed");
   });
 
   it("a PLANNED activity (a stray outcome): the status pill only", async () => {
@@ -139,6 +142,8 @@ describe("The outcome in the header (5.15)", () => {
 
   it("a CANCELLED activity (a stray outcome): the status pill only", async () => {
     renderPage(activity({ status: "CANCELLED", outcome: "SUCCESSFUL" }));
-    expect(pills(await titleRow())).toHaveLength(1);
+    const row = await titleRow();
+    expect(pills(row)).toHaveLength(1);
+    expect(pills(row)[0]).toHaveTextContent("Cancelled");
   });
 });
