@@ -15,6 +15,13 @@
 // Formik + Yup (title required, at-least-one-date, owner required, contacts
 // min 1); no hardcoded hex/px.
 //
+// Sprint Next steps 5.17 — on a COMPLETED activity, its outcome is editable in
+// group (1): a single choice in pills, the shared OutcomeSelector (labels and
+// colours from OUTCOME_META, filtered by the type — no local list), sent only
+// when changed. The callback outcome is not offered (a campaign mechanic that
+// needs its date — the outcome drawer), unless it is the current one. On a
+// campaign activity the backend's final-outcome rule applies (5.14a).
+//
 // Sprint Next steps 5.8d — CREATION mode (mode="create"): the SAME form, a
 // second submit (createActivity, or createActivityWithEntities with a contact
 // created on the fly — InlineContactForm). Pre-filled by
@@ -59,6 +66,7 @@ import {
   createActivity,
   createActivityWithEntities,
   updateActivity,
+  ACTIVITY_STATUSES,
   ACTIVITY_TYPES,
   ACTIVITY_TYPE_LABELS,
 } from "api/accounts/activities";
@@ -78,6 +86,8 @@ import InlineEditableValue from "components/drawer/InlineEditableValue";
 import PersonRow from "components/display/PersonRow";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
+import OutcomeSelector from "components/outcomes/OutcomeSelector";
+import { CALLBACK_OUTCOME } from "utils/outcomes";
 
 // ==============================|| VALIDATION ||============================== //
 
@@ -634,6 +644,9 @@ function ActivityForm({
   // campaign: those fields are locked (read-only) and never sent in the PATCH.
   // A NEW activity is never a campaign activity.
   const isCampaign = !isCreate && Boolean(activity?.campaign_detail);
+  // 5.17 — the outcome is editable on a COMPLETED activity only (the backend
+  // refuses it otherwise).
+  const editsOutcome = !isCreate && activity?.status === ACTIVITY_STATUSES.COMPLETED;
 
   // Creation: the defaults, computed ONCE — the gate mounted this form with the
   // names cited and their account contacts (TD-279 rule, server) already read.
@@ -691,6 +704,7 @@ function ActivityForm({
             owner: activity?.owner_detail || null,
             invited: activity?.invited_users_detail || [],
             contacts: activity?.contacts_detail || [],
+            outcome: activity?.outcome || null,
           },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activity?.id, defaults],
@@ -787,6 +801,9 @@ function ActivityForm({
         payload.invited_user_ids = (values.invited || []).map((u) => u.id);
         payload.contact_ids = (values.contacts || []).map((c) => c.id);
       }
+      if (editsOutcome && values.outcome !== (activity.outcome || null)) {
+        payload.outcome = values.outcome;
+      }
       try {
         const result = await updateActivity(activity.id, payload);
         if (result?.success) {
@@ -859,6 +876,19 @@ function ActivityForm({
           value={values.activity_type}
           onChange={(v) => setFieldValue("activity_type", v)}
         />
+        {editsOutcome && (
+          <Box>
+            <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
+              Outcome
+            </Typography>
+            <OutcomeSelector
+              activityType={values.activity_type}
+              value={values.outcome}
+              onChange={(o) => setFieldValue("outcome", o)}
+              exclude={activity?.outcome === CALLBACK_OUTCOME ? [] : [CALLBACK_OUTCOME]}
+            />
+          </Box>
+        )}
 
         {/* Conversion (5.13): a NEW decision cycle only — the inline cycle form
             (name + starting step, in pills), then the cycle as a removable

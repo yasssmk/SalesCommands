@@ -46,6 +46,10 @@ export const OUTCOME_ORDER = [
 
 export const OUTCOME_VALUES = OUTCOME_ORDER;
 
+// The callback outcome — a campaign mechanic that needs a callback date (the
+// outcome drawer's completion flow), never set by a plain edit.
+export const CALLBACK_OUTCOME = "CALLBACK_REQUESTED";
+
 // ==============================|| TYPE → OUTCOMES (PO-validated table) ||============================== //
 
 const ALL_REAL_TYPES = ["CALL", "MEETING", "EMAIL", "LINKEDIN", "TASK", "DEMO"];

@@ -39,8 +39,8 @@ import { revalidateCampaignPlaylist } from "api/campaigns/campaigns";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import OutcomeSelector from "components/outcomes/OutcomeSelector";
+import { CALLBACK_OUTCOME as CALLBACK } from "utils/outcomes";
 
-const CALLBACK = "CALLBACK_REQUESTED";
 
 export default function OutcomeDrawerContent({ activity, onSaved }) {
   const aq = useTheme().aphoriQ;
