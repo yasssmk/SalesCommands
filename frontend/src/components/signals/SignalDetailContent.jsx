@@ -50,6 +50,7 @@ import {
   getPeopleHeadline,
   getTechUsage,
   getUsageScopeLabel,
+  NEXT_STEP_UNKNOWN,
   USAGE_SCOPE,
 } from "sections/activities/signals/utils/signalDisplay";
 
@@ -60,6 +61,10 @@ import ObjectiveDetailBlock from "components/signals/detail/ObjectiveDetailBlock
 import TechDetailBlock from "components/signals/detail/TechDetailBlock";
 import PainDetailBlock from "components/signals/detail/PainDetailBlock";
 import SignalSummaryBox from "components/signals/detail/SignalSummaryBox";
+import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
+import NextStepActivityLine, {
+  getResolvedActivity,
+} from "sections/activities/nextSteps/NextStepActivityLine";
 
 function formatDate(dateStr) {
   if (!dateStr) return null;
@@ -1976,6 +1981,245 @@ TechStackDetailView.propTypes = {
   currentActivityId: PropTypes.string,
 };
 
+// ==============================|| NEXT STEP DETAIL VIEW (Sprint Next steps 5.4) ||============================== //
+//
+// The next step (NextStepSignal, front key "next-steps") detail on the standard
+// drawer chassis, cloned from CompetitorDetailView (same header mechanism,
+// numbered SectionHeaders + DrawerContentLayout read-action bar), routed here on
+// the ACTIVITY coque ONLY. PO section order (5.0, B):
+//   §1 Proposal — the title heads the shared summary box; type, date (+ the
+//      date as said), DC step, who carries it;
+//   §2 Purpose — objective, success criterion, topics;
+//   §3 Source — quote + the server quote check (3.6: PEOPLE_EVIDENCE_PILL, the
+//      same values), participants, origin link;
+//   §4 Activity — ONLY when resolved: the activity created from it or linked.
+// No People section (5.8g, PO): the names a next step cites (and its internal
+// names) are not shown — the data stays, used only by the creation pre-fill.
+// An empty field reads "Unknown" in full (TechStack rule). advice_rationale is
+// never displayed (dormant capacity). A RESOLVED next step is read-only
+// (rule 2.1): no Edit / Reject / Validate / Reopen.
+
+function nextStepDateLabel(signal) {
+  const date = formatDate(signal.suggested_due_date);
+  const said = signal.suggested_date_text ? `“${signal.suggested_date_text}”` : null;
+  return [date, said].filter(Boolean).join(" · ") || null;
+}
+
+function NextStepDetailView({
+  signal,
+  onValidate,
+  onReject,
+  onEdit,
+  onReopen,
+  onOpenActivity,
+  onClose,
+  headerInCoque,
+  isLocked,
+  currentActivityId,
+}) {
+  const theme = useTheme();
+
+  const isPending = signal.status === "PENDING";
+  const missingFields = isPending ? getMissingFields(signal, "next-steps") : [];
+  const validateDisabled = missingFields.length > 0;
+  const resolvedActivity = getResolvedActivity(signal);
+
+  const contacts = signal.source_context?.contacts ?? [];
+  const originActivityId = signal.source_context?.activity?.id ?? null;
+  // View-origin link only when the origin activity is NOT the one we're viewing.
+  const showOriginLink = Boolean(
+    originActivityId && onOpenActivity && originActivityId !== currentActivityId,
+  );
+  const evidenceStatus = signal.metadata?.evidence_check?.status;
+
+  const unknown = (
+    <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
+      {NEXT_STEP_UNKNOWN}
+    </Box>
+  );
+  const textOrUnknown = (value, testId) =>
+    value ? (
+      <Typography variant="body2" color="text.primary" data-testid={testId} sx={{ whiteSpace: "pre-line" }}>
+        {value}
+      </Typography>
+    ) : (
+      <Typography variant="body2">{unknown}</Typography>
+    );
+  const label = (text) => (
+    <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+      {text}
+    </Typography>
+  );
+
+  return (
+    <Box data-testid="next-step-detail-body">
+      {/* In-content header — suppressed when the coque owns the header
+          (headerInCoque; the Activity coque does). Mirror of CompetitorDetailView. */}
+      {!headerInCoque && (
+        <Box
+          data-testid="next-step-detail-header"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 1,
+            mb: 2,
+          }}
+        >
+          <Typography variant="h3" fontWeight="bold" data-testid="next-step-detail-title">
+            {getSignalTypeLabel("next-steps")}
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <StatusPill status={signal.status} statusMap={SIGNAL_STATUS_PILL} />
+            {onClose && (
+              <IconButton size="small" onClick={onClose} aria-label="Close drawer">
+                <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
+              </IconButton>
+            )}
+          </Stack>
+        </Box>
+      )}
+
+      <DrawerContentLayout
+        readActions={{
+          onEdit: () => onEdit?.(signal, "next-steps"),
+          onReject: () => onReject?.(signal, "next-steps"),
+          onValidate: () => onValidate?.(signal, "next-steps"),
+          onReopen: () => onReopen?.(signal, "next-steps"),
+          status: signal.status,
+          // Rule 2.1: a resolved next step is read-only.
+          isLocked: isLocked || Boolean(resolvedActivity),
+          validateDisabled,
+        }}
+      >
+        <SignalIncompleteAlert missingFields={missingFields} />
+
+        {signal.validated_by && (
+          <ReadField
+            label="Validated by"
+            value={`${signal.validated_by.first_name || ""} ${signal.validated_by.last_name || ""}`.trim()}
+          />
+        )}
+        {signal.validated_at && (
+          <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
+        )}
+
+        {/* Section 1 — Proposal: the title heads the shared summary box. */}
+        <SectionHeader index={1} title="Proposal" sx={{ mb: 1 }} />
+        <SignalSummaryBox
+          summary={signal.suggested_title}
+          boxTestId="next-step-summary-box"
+          summaryTestId="next-step-summary-text"
+        />
+        <Box data-testid="next-step-proposal" sx={{ mt: 1.25 }}>
+          <ReadRow
+            label="Type"
+            value={
+              ACTIVITY_TYPE_LABELS[signal.suggested_activity_type] ||
+              signal.suggested_activity_type_display ||
+              unknown
+            }
+          />
+          <ReadRow label="Date" value={nextStepDateLabel(signal) || unknown} />
+          <ReadRow label="DC step" value={signal.suggested_decision_step_detail?.name || unknown} />
+          <ReadRow label="Carried by" value={signal.carried_by_prospect ? "Prospect" : "Seller"} />
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* No People section (5.8g, PO): the names a next step cites are not
+            shown — the data stays in base, used only by the activity creation
+            pre-fill (cited-contacts). */}
+
+        {/* Section 2 — Purpose. */}
+        <SectionHeader index={2} title="Purpose" sx={{ mb: 1 }} />
+        <Box data-testid="next-step-purpose">
+          {label("Objective")}
+          <Box sx={{ mb: 1.25 }}>{textOrUnknown(signal.suggested_objective)}</Box>
+          {label("Success criterion")}
+          <Box sx={{ mb: 1.25 }}>{textOrUnknown(signal.suggested_success_criterion)}</Box>
+          {label("Topics")}
+          {textOrUnknown(signal.suggested_topics)}
+        </Box>
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Source: the quote + the server quote check + who said
+            it, with an optional link to the origin activity (People treatment). */}
+        <SectionHeader index={3} title="Source" sx={{ mb: 1 }} />
+        <Box data-testid="next-step-source">
+          {signal.source_quote ? (
+            <SourceQuoteBlock quote={signal.source_quote} />
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+              No source quote
+            </Typography>
+          )}
+          {/* 3.6: the server check of the quote — the People values and pill. */}
+          {PEOPLE_EVIDENCE_PILL[evidenceStatus] && (
+            <Box sx={{ mt: 1 }}>
+              <StatusPill
+                status={evidenceStatus}
+                statusMap={PEOPLE_EVIDENCE_PILL}
+                data-testid="next-step-evidence-badge"
+              />
+            </Box>
+          )}
+          {contacts.length > 0 && (
+            <Box sx={{ mt: 1.25 }}>
+              {label(contacts.length > 1 ? "Contacts" : "Contact")}
+              <Stack spacing={0.25}>
+                {contacts.map((c) => (
+                  <ContactInline key={c.id} contact={c} variant="body2" />
+                ))}
+              </Stack>
+            </Box>
+          )}
+          {showOriginLink && (
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<LinkOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+              onClick={() => onOpenActivity(originActivityId)}
+              sx={{ mt: 0.5, px: 0 }}
+            >
+              View origin activity
+            </Button>
+          )}
+        </Box>
+
+        {/* Section 5 — Activity: only when resolved (created or linked). */}
+        {resolvedActivity && (
+          <>
+            <Divider sx={{ my: 2 }} />
+            <SectionHeader index={4} title="Activity" sx={{ mb: 1 }} />
+            <Box data-testid="next-step-activity">
+              <NextStepActivityLine
+                activity={resolvedActivity}
+                onOpen={(id) => onOpenActivity?.(id)}
+              />
+            </Box>
+          </>
+        )}
+      </DrawerContentLayout>
+    </Box>
+  );
+}
+NextStepDetailView.propTypes = {
+  signal: PropTypes.object.isRequired,
+  onValidate: PropTypes.func,
+  onReject: PropTypes.func,
+  onEdit: PropTypes.func,
+  onReopen: PropTypes.func,
+  onOpenActivity: PropTypes.func,
+  /** When provided, renders the close (×) inside the detail header. */
+  onClose: PropTypes.func,
+  /** When true, the coque owns the header — the in-content header is suppressed. */
+  headerInCoque: PropTypes.bool,
+  isLocked: PropTypes.bool,
+  currentActivityId: PropTypes.string,
+};
+
 // ==============================|| SIGNAL DETAIL CONTENT ||============================== //
 
 /**
@@ -2153,6 +2397,26 @@ export default function SignalDetailContent({
   if (signalType === "competitors" && currentActivityId && !leadingAction && !trailingAction) {
     return (
       <CompetitorDetailView
+        signal={signal}
+        onValidate={onValidate}
+        onReject={onReject}
+        onEdit={onEdit}
+        onReopen={onReopen}
+        onOpenActivity={onOpenActivity}
+        onClose={onClose}
+        headerInCoque={headerInCoque}
+        isLocked={isLocked}
+        currentActivityId={currentActivityId}
+      />
+    );
+  }
+
+  // Sprint Next steps 5.4 — the next step uses the standard chassis on the
+  // ACTIVITY surface only, exact mirror of the Competitor gate. The DC Signals
+  // tab and the cluster drawer keep the generic flush branch (NextStepDetails).
+  if (signalType === "next-steps" && currentActivityId && !leadingAction && !trailingAction) {
+    return (
+      <NextStepDetailView
         signal={signal}
         onValidate={onValidate}
         onReject={onReject}

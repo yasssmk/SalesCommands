@@ -44,6 +44,37 @@ deferred to the rep during validation (the Next Steps Tab UI in
 Sprint F6 exposes a multi-contact selector). Tracked as TD-7 in
 TECH_DEBT.md.
 
+Quote check (Sprint Next steps 3.6)
+----------------------------------
+With the transcript, each stored next step's source_quote (speaker label
+removed) is checked by people_evidence.check_quote_evidence -- the TD-279
+"quote found in the transcript" step, nothing of the role. Not found -> the
+next step is KEPT, metadata.evidence_check = {status: "quote_not_found",
+detail: {parts, parts_found}} (PeopleEvidenceStatus values: the front's
+PEOPLE_EVIDENCE_PILL map applies), counted (quote_not_found); a quote found
+leaves no mark. Never a deletion.
+
+Prompt v2 fields (Sprint Next steps 3.4)
+---------------------------------------
+  * suggested_date_text (truncated to the column), carried_by_prospect
+    (true only when the answer says true), suggested_topics,
+    suggested_success_criterion, suggested_internal_names (strings only,
+    stripped, non-empty, once each) are persisted as given;
+  * suggested_decision_step: a step ref (NEXT_STEPS_STEP_REF_FORMAT, "S4")
+    -> the DecisionStep of that order in the next step's cycle (the source
+    activity's, same tenant); an unknown / malformed ref, or no cycle ->
+    null, counted (step_ref_unknown);
+  * suggested_people_names: each prospect name -> a PeopleSignal by
+    participant_refs.resolve_people_signal_by_name (the TD-279 word rule, on
+    identities) among the NON-rejected People of the cycle and of the source
+    activity, same tenant and account -> suggested_people; a name not linked
+    (none / ambiguous) stays in suggested_people_names, as written;
+  * dedup WITHIN this answer only: NEXT_STEP_DEDUP_KEY (constants.py), the
+    first kept, the others dropped (counted).
+A v1 answer (no such keys) keeps the column defaults. The counters of the
+LAST persist_extracted call are left in `last_persist_counts`, read by the
+pipeline for its sub_calls entry.
+
 Drop counting
 -------------
 Every signal that does not result in a persisted row increments the
@@ -82,7 +113,14 @@ from app_modules.signals.constants import SignalSource, SignalStatus
 from app_modules.signals.services.signal_manager import SignalManager
 from core.exceptions import StandardizedValidationError
 
+import re
+
+from ..constants import NEXT_STEP_DEDUP_KEY, NEXT_STEPS_STEP_REF_FORMAT
+from ..constants import PeopleEvidenceStatus
+from .participant_refs import resolve_people_signal_by_name
+from .people_evidence import check_quote_evidence
 from .safety_filter import passes_safety_filter, safe_float
+from .transcript_text import TranscriptText, normalize_text
 
 
 logger = logging.getLogger(__name__)
@@ -93,6 +131,24 @@ logger = logging.getLogger(__name__)
 # path is cheap and avoids a re-iteration of ActivityType.values for
 # every raw entry.
 _ACTIVITY_TYPE_VALUES = set(ActivityType.values)
+
+# "S{order}" -> ^S(\d+)$ : the step reference of the next_steps context.
+_STEP_REF_RE = re.compile(
+    '^' + re.escape(NEXT_STEPS_STEP_REF_FORMAT).replace(re.escape('{order}'), r'(\d+)') + '$'
+)
+
+
+def _clean_names(values):
+    """Strings only, stripped, non-empty, once each, in order."""
+    names = []
+    for value in values if isinstance(values, list) else []:
+        if isinstance(value, str) and value.strip() and value.strip() not in names:
+            names.append(value.strip())
+    return names
+
+
+def _clean_text(value):
+    return value.strip() if isinstance(value, str) else ''
 
 
 class NextStepExtractor:
@@ -107,7 +163,8 @@ class NextStepExtractor:
             user=user,
             client_id=client_id,
             confidence_min=0.5,
-            drop_inferred=True,
+            drop_inferred=False,
+            transcript=transcript,
         )
 
     The signature deliberately omits a `stage` parameter
@@ -129,6 +186,7 @@ class NextStepExtractor:
         confidence_min,
         drop_inferred,
         source_run=None,
+        transcript=None,
     ):
         """
         Apply safety filter + persist surviving next-step signals.
@@ -142,6 +200,11 @@ class NextStepExtractor:
                                        dropped (safety filter).
             drop_inferred:   bool -- if True, drop signals where
                                        is_inferred is True.
+            transcript:      str | None -- the analysed transcript; when
+                                       given, a speaker label of THIS
+                                       transcript copied at the head of
+                                       source_quote is removed (TD-282 (2),
+                                       same rule as TranscriptSignalExtractor).
 
         Returns:
             tuple (persisted, dropped_count)
@@ -162,6 +225,13 @@ class NextStepExtractor:
 
         persisted = []
         dropped_count = 0
+        transcript_text = TranscriptText(transcript) if transcript is not None else None
+        self.last_persist_counts = counts = {
+            'step_ref_unknown': 0, 'deduplicated': 0,
+            'people_linked': 0, 'people_unlinked': 0, 'quote_not_found': 0,
+        }
+        seen_keys = set()
+        people_candidates = None   # read once, on the first prospect name
 
         for raw in raw_signals:
             if not isinstance(raw, dict):
@@ -173,12 +243,58 @@ class NextStepExtractor:
                 dropped_count += 1
                 continue
 
+            # TD-282 (2): "Thomas Lefèvre: Envoyez-les..." -> "Envoyez-les..."
+            # when the prefix is a speaker label of THIS transcript (never
+            # another ":").
+            if transcript_text is not None and 'source_quote' in raw:
+                raw = {**raw, 'source_quote': transcript_text.strip_speaker_label(
+                    raw['source_quote'])}
+
             # --- Build the create() data dict ---
             data = self._build_next_step_data(raw, activity)
             if data is None:
                 # Malformed signal (logged inside the builder).
                 dropped_count += 1
                 continue
+
+            # --- Dedup within THIS answer (never across activities) ---
+            key = self._dedup_key(data)
+            if key in seen_keys:
+                counts['deduplicated'] += 1
+                dropped_count += 1
+                continue
+            seen_keys.add(key)
+
+            # --- v2: step ref -> DecisionStep; prospect names -> People ---
+            ref = raw.get('suggested_decision_step')
+            step = self._resolve_step_ref(ref, activity)
+            if step is None and isinstance(ref, str) and ref.strip():
+                counts['step_ref_unknown'] += 1
+            data['suggested_decision_step'] = step
+
+            names = _clean_names(raw.get('suggested_people_names'))
+            if names and people_candidates is None:
+                people_candidates = self._people_candidates(activity)
+            linked, kept = [], []
+            for name in names:
+                people = resolve_people_signal_by_name(name, people_candidates or [])
+                if people is None:
+                    kept.append(name)
+                elif people not in linked:
+                    linked.append(people)
+            counts['people_linked'] += len(names) - len(kept)
+            counts['people_unlinked'] += len(kept)
+            data['suggested_people_names'] = kept
+            if linked:
+                data['suggested_people'] = linked
+
+            # --- 3.6: the quote checked against the transcript (TD-279 step
+            # a)); not found -> KEPT and marked, never dropped ---
+            if transcript_text is not None:
+                status, detail = check_quote_evidence(data['source_quote'], transcript_text)
+                if status != PeopleEvidenceStatus.OK:
+                    counts['quote_not_found'] += 1
+                    data['metadata'] = {'evidence_check': {'status': status.value, 'detail': detail}}
 
             if source_run is not None:
                 data['source_run'] = source_run
@@ -215,6 +331,53 @@ class NextStepExtractor:
                 dropped_count += 1
 
         return persisted, dropped_count
+
+    # Counters of the LAST persist_extracted call (module docstring).
+    last_persist_counts = None
+
+    # =========================================================================
+    # v2 FIELDS -- step ref, People candidates, dedup key
+    # =========================================================================
+
+    @staticmethod
+    def _resolve_step_ref(ref, activity):
+        """The DecisionStep a step ref designates in the activity's cycle
+        (same tenant); None for no / unknown / malformed ref or no cycle."""
+        from app_modules.decision_cycles.models import DecisionStep
+
+        match = _STEP_REF_RE.match(ref.strip()) if isinstance(ref, str) else None
+        if match is None or activity.decision_cycle_id is None:
+            return None
+        return DecisionStep.objects.filter(
+            cycle_id=activity.decision_cycle_id,
+            client_id=activity.client_id,
+            order=int(match.group(1)),
+        ).first()
+
+    @staticmethod
+    def _people_candidates(activity):
+        """The NON-rejected People of the activity's cycle and of the
+        activity itself, same tenant and account."""
+        from django.db.models import Q
+        from app_modules.signals.models import PeopleSignal
+
+        scope = Q(source_activity=activity)
+        if activity.decision_cycle_id is not None:
+            scope |= Q(decision_cycle_id=activity.decision_cycle_id)
+        return list(
+            PeopleSignal.objects
+            .filter(scope, client_id=activity.client_id, account_id=activity.account_id)
+            .exclude(status=SignalStatus.REJECTED)
+            .select_related('target_contact')
+        )
+
+    @staticmethod
+    def _dedup_key(data):
+        return tuple(
+            normalize_text(data.get(field)) if isinstance(data.get(field), str)
+            else data.get(field)
+            for field in NEXT_STEP_DEDUP_KEY
+        )
 
     # =========================================================================
     # DATA-DICT BUILDER
@@ -279,6 +442,10 @@ class NextStepExtractor:
         # mapping in activities/serializers.py.
         suggested_objective = str(raw.get('suggested_objective') or '').strip()
 
+        # --- Prompt v2 scalar fields (Sprint Next steps 3.4) ---
+        from app_modules.signals.models import NextStepSignal
+        date_text_max = NextStepSignal._meta.get_field('suggested_date_text').max_length
+
         return {
             'signal_type':              'next_step',
             'account':                  activity.account,
@@ -289,6 +456,11 @@ class NextStepExtractor:
             'suggested_activity_type':  suggested_activity_type,
             'suggested_due_date':       suggested_due_date,
             'suggested_objective':      suggested_objective,
+            'suggested_date_text':      _clean_text(raw.get('suggested_date_text'))[:date_text_max],
+            'carried_by_prospect':      raw.get('carried_by_prospect') is True,
+            'suggested_topics':         _clean_text(raw.get('suggested_topics')),
+            'suggested_success_criterion': _clean_text(raw.get('suggested_success_criterion')),
+            'suggested_internal_names': _clean_names(raw.get('suggested_internal_names')),
             'source_quote':             source_quote,
             'confidence':               safe_float(raw.get('confidence')),
             'is_inferred':              bool(raw.get('is_inferred')),

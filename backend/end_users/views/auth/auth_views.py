@@ -7,7 +7,7 @@ from django.conf import settings
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages
 from core.apps_shared_methods import BaseAPIView
-from core.auth_service import AuthService
+from core.auth_service import AuthService, auth_user_payload
 from core.jwt_helpers import CustomJWTAuthentication
 from core.throttling import LoginRateThrottle, PasswordChangeThrottle, BurstRateThrottle
 
@@ -139,15 +139,7 @@ class UserLoginView(BaseAPIView):
         response.data = {
             "origin": "end_users",
             "message": "Login successful",
-            "user": {
-                "id": str(user.id),
-                "name": user.get_full_name(),
-                "email": user.email,
-                "role": getattr(user, 'role_name', None),
-                "role_tier": user.role.get_tier() if user.role else None,
-                "client_id": str(client_id_val) if client_id_val else None,
-                "client_name": getattr(getattr(user, "client_account", None), "name", None),
-            }
+            "user": auth_user_payload(user),
         }
 
         return response
@@ -181,16 +173,7 @@ class UserCurrentView(BaseAPIView):
             
             return Response({
                 "success": True,
-                "user": {
-                    "id": str(user.id),
-                    "name": user.get_full_name(),
-                    "email": user.email,
-                    "role": user.role_name if hasattr(user, 'role_name') else None,
-                    "role_tier": user.role.get_tier() if user.role else None,
-                    "avatar": None,
-                    "client_id": str(user.client_account_id) if user.client_account_id else None,
-                    "client_name": user.client_account.name if getattr(user, "client_account", None) else None,
-                }
+                "user": auth_user_payload(user),
             }, status=status.HTTP_200_OK)
             
         except Exception as e:

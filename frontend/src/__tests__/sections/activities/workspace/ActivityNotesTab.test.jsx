@@ -142,18 +142,37 @@ describe('ActivityNotesTab', () => {
     expect(btn).toBeDisabled();
   });
 
-  it('disables text blocks when isLocked', () => {
-    renderTab({ isLocked: true });
+  // 5.12d (1) — the transcript has its own lock (CANCELLED only); the notes
+  // keep the page lock (isLocked).
+  it('disables the notes when isLocked; the transcript only on CANCELLED', () => {
+    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
+    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
+    expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
+    cleanup();
+    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'CANCELLED' } });
 
     expect(screen.getByTestId('etb-input-transcript')).toBeDisabled();
     expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
   });
 
-  it('disables Run AI Analysis when isLocked', () => {
-    renderTab({ isLocked: true });
+  // 5.12c (5) — PO: the AI action is locked ONLY on a CANCELLED activity
+  // (isActivitySignalsLocked); the page lock (isLocked: COMPLETED or
+  // CANCELLED) keeps locking the notes only (the transcript: 5.12d).
+  it('disables Run AI Analysis on a CANCELLED activity', () => {
+    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'CANCELLED' } });
 
     const btn = screen.getByText('Run AI Analysis').closest('button');
     expect(btn).toBeDisabled();
+  });
+
+  it('keeps Run AI Analysis available on a COMPLETED activity (page-locked)', () => {
+    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
+
+    const btn = screen.getByText('Run AI Analysis').closest('button');
+    expect(btn).not.toBeDisabled();
+    // The notes keep the page lock; the transcript is editable (5.12d).
+    expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
+    expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
   });
 
   it('opens wizard when Run AI Analysis is clicked', async () => {

@@ -24,6 +24,15 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 
 from ..models import Activity
 from ..constants import ActivityStatus
+from .activity_invitations import notify_invited_users, resolve_invited_users
+from .next_step_materialization import (
+    mark_next_step_materialised,
+    next_step_activity_fields,
+    next_step_cycle_default,
+    next_step_step_default,
+    next_step_text_and_date_defaults,
+    resolve_pending_next_step,
+)
 
 logger = get_logger(__name__)
 
@@ -96,12 +105,39 @@ class ActivityCreationService:
 
             # Activity owner resolution: explicit override, else the current user.
             resolved_owner = cycle_owner_override or self.user
+
+            # The invited teammates — the standard create path's validation
+            # (users of the tenant only), BEFORE any inline entity is created.
+            invited_user_ids = list(activity_data.get('invited_user_ids') or [])
+            invited_users = (
+                resolve_invited_users(invited_user_ids, self.client_id)
+                if invited_user_ids else []
+            )
+
+            # Next step being converted (optional): resolved BEFORE any inline
+            # entity is created, same contract as POST /module-activities/
+            # (services/next_step_materialization.py).
+            next_step_signal = resolve_pending_next_step(
+                activity_data.get('next_step_signal_id'), self.client_id,
+            )
+            if next_step_signal:
+                # Its values fill the empty fields (never override the payload).
+                activity_data = {
+                    **activity_data,
+                    **next_step_text_and_date_defaults(next_step_signal, activity_data),
+                }
             
             # Track IDs to link
             contact_ids = list(activity_data.get('contact_ids', []))
             cycle_id = activity_data.get('decision_cycle_id')
             step_id = activity_data.get('decision_step_id')
             source_activity_id = activity_data.get('source_activity_id')
+
+            # Next step: its own cycle when none is sent (nor created inline).
+            if next_step_signal and not cycle_id and not inline_cycle:
+                cycle_default = next_step_cycle_default(next_step_signal, account)
+                if cycle_default is not None:
+                    cycle_id = str(cycle_default.id)
 
             # The campaign this activity comes from, resolved BEFORE step 2 so a
             # cycle created below can be stamped with its origin at birth.
@@ -171,6 +207,17 @@ class ActivityCreationService:
                         ActivityErrorMessages.CYCLE_CREATION_FAILED
                     )
 
+            # Next step: the proposed step, else the cycle's current one.
+            if next_step_signal and cycle_id and not step_id:
+                cycle = DecisionCycle.objects.filter(
+                    id=cycle_id, client_id=self.client_id, account=account,
+                ).first()
+                step_default = (
+                    next_step_step_default(next_step_signal, cycle) if cycle else None
+                )
+                if step_default is not None:
+                    step_id = str(step_default.id)
+
             # ==================================================================
             # STEP 3: Validate step belongs to cycle (if both provided)
             # ==================================================================
@@ -203,7 +250,16 @@ class ActivityCreationService:
                 step_id=step_id,
                 owner=resolved_owner,
                 source_activity_id=source_activity_id,
+                next_step_signal=next_step_signal,
             )
+            if next_step_signal:
+                mark_next_step_materialised(next_step_signal, self.user)
+
+            # The invited teammates, as the standard create path: set, then
+            # notified on commit (the inviter skipped).
+            if invited_users:
+                activity.invited_users.set(invited_users)
+                notify_invited_users(activity, invited_users, actor=self.user)
 
             # NO BACKFILL HERE. This used to write source_campaign on whatever
             # cycle the activity pointed at, "covering both inline cycle creation
@@ -410,6 +466,7 @@ class ActivityCreationService:
         step_id: str,
         owner=None,
         source_activity_id: str = None,
+        next_step_signal=None,
     ) -> Activity:
         """Create the activity with all relations."""
         try:
@@ -434,6 +491,10 @@ class ActivityCreationService:
                     CoreErrorMessages.INVALID_FIELD.format(field='Activity Type')
                 )
             
+            next_step_fields = (
+                next_step_activity_fields(next_step_signal) if next_step_signal else {}
+            )
+
             activity = Activity(
                 client_id=self.client_id,
                 account_id=activity_data.get('account_id'),
@@ -451,6 +512,7 @@ class ActivityCreationService:
                 decision_cycle_id=cycle_id,
                 decision_step_id=step_id,
                 source_activity_id=source_activity_id,
+                **next_step_fields,
                 created_by=self.user,
                 updated_by=self.user,
             )

@@ -35,6 +35,7 @@ import { ThunderboltOutlined } from "@ant-design/icons";
 
 // Project imports
 import CollapsibleStrip from "components/display/CollapsibleStrip";
+import EmptyState from "components/display/EmptyState";
 import InfoNotice from "components/display/InfoNotice";
 import SignalLine from "components/signals/SignalLine";
 // Only the type LABEL is used here; the SIG-1 per-type colours (getSignalTypeColor /
@@ -109,8 +110,11 @@ export default function SignalsValidationList({
   onSelect,
   onValidate,
   onReject,
+  renderExtra,
+  showTypeHeaders = true,
   loading = false,
   emptyMessage = "No signals found for this activity",
+  emptyAction,
 }) {
   // Loading with nothing to show yet → spinner.
   if (loading && !signals.length) {
@@ -121,23 +125,10 @@ export default function SignalsValidationList({
     );
   }
 
-  // Business-empty is information, not an error (neutral tone).
+  // Business-empty is information, not an error (neutral tone): the shared
+  // EmptyState (aphoriQ theme, 5.8g — no hardcoded colour or size).
   if (!signals.length) {
-    return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="200px"
-      >
-        <Stack spacing={1} alignItems="center" textAlign="center">
-          <ThunderboltOutlined style={{ fontSize: 36, color: "#8c8c8c" }} />
-          <Typography variant="body2" color="text.secondary">
-            {emptyMessage}
-          </Typography>
-        </Stack>
-      </Box>
-    );
+    return <EmptyState icon={ThunderboltOutlined} description={emptyMessage} action={emptyAction} />;
   }
 
   // Bucket by status once.
@@ -181,14 +172,17 @@ export default function SignalsValidationList({
                     <Box key={type}>
                       {/* Type group = a plain muted header (uniform tone, NOT a
                           per-type colour) + its rows. No nested collapse — the
-                          only fold is at the status-section level above. */}
-                      <Typography
-                        variant="subtitle2"
-                        color="text.secondary"
-                        sx={{ fontWeight: 500, mb: 0.75 }}
-                      >
-                        {getSignalTypeLabel(type) ?? type}
-                      </Typography>
+                          only fold is at the status-section level above. A
+                          single-type list (the Next steps band) drops it. */}
+                      {showTypeHeaders && (
+                        <Typography
+                          variant="subtitle2"
+                          color="text.secondary"
+                          sx={{ fontWeight: 500, mb: 0.75 }}
+                        >
+                          {getSignalTypeLabel(type) ?? type}
+                        </Typography>
+                      )}
                       {typeSignals.map((signal) => (
                         <SignalLine
                           key={signal.id}
@@ -203,6 +197,7 @@ export default function SignalsValidationList({
                           showStatusChip={false}
                           showContactOverflow={false}
                           showPeopleIdentity
+                          extra={renderExtra?.(signal, type) ?? null}
                         />
                       ))}
                     </Box>
@@ -232,6 +227,12 @@ SignalsValidationList.propTypes = {
   onValidate: PropTypes.func,
   /** Inline reject on a pending row — (signal, signalType) => Promise. */
   onReject: PropTypes.func,
+  /** Optional (signal, signalType) => node — SignalLine's 3rd line (`extra`). */
+  renderExtra: PropTypes.func,
+  /** The type-group headers (default true); false for a single-type list. */
+  showTypeHeaders: PropTypes.bool,
   loading: PropTypes.bool,
   emptyMessage: PropTypes.string,
+  /** Optional node under the empty state's text — the EmptyState `action`. */
+  emptyAction: PropTypes.node,
 };

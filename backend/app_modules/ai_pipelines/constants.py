@@ -79,6 +79,13 @@ class AIPipelineType(models.TextChoices):
                             created_signals_count is always 0; the
                             deliverable is the snapshot, not signals.
 
+      NEXT_STEPS_ADVICE   — produced by the next steps advice pass (Sprint
+                            Next steps): a 2nd LLM read, after the
+                            extraction, that proposes the next steps the
+                            follow-up is missing. Its NextStepSignal rows
+                            carry source_run = this run, which is how the
+                            "Conseillé" mark is read (no column).
+
     Adding new values:
       Each new pipeline (game plan generation, semantic retrieval,
       ...) adds one value here AND a corresponding orchestrator
@@ -90,6 +97,7 @@ class AIPipelineType(models.TextChoices):
     NEXT_STEPS         = 'NEXT_STEPS',         _('Next steps extraction')
     DEAL_HEALTH        = 'DEAL_HEALTH',        _('Deal health diagnostic')
     PREP_CALL          = 'PREP_CALL',          _('Prep call brief')
+    NEXT_STEPS_ADVICE  = 'NEXT_STEPS_ADVICE',  _('Next steps advice')
 
 
 # =============================================================================
@@ -186,12 +194,51 @@ PIPELINE_CONFIDENCE_MIN = {
 # TRANSCRIPT_SIGNALS: False since TD-279 C1 (PO decision) -- a deduction from
 # what the transcript says is a legitimate observation the rep validates, for
 # EVERY stage (People already kept it since S1); a weak deduction is still
-# dropped by PIPELINE_CONFIDENCE_MIN. NEXT_STEPS is a separate pipeline and
-# keeps its own policy.
+# dropped by PIPELINE_CONFIDENCE_MIN. NEXT_STEPS: False since TD-282 (1) --
+# same policy, an inferred next step is kept and the rep validates it.
 PIPELINE_DROP_INFERRED = {
     AIPipelineType.TRANSCRIPT_SIGNALS: False,
-    AIPipelineType.NEXT_STEPS:         True,
+    AIPipelineType.NEXT_STEPS:         False,
 }
+
+
+# =============================================================================
+# TRANSCRIPT HEADER DATE (D7 / TD-281)
+# =============================================================================
+
+# A meeting export opens with a header line that carries the meeting's REAL
+# date -- "Atelier business case SalesCommands – Logistix - 2026/10/20 14:00
+# CEST - Transcript" (evals/td279/transcript_atelier.txt:1). That date is the
+# reference of every relative date said in the transcript; the activity's date
+# in the app is only the fallback (services/transcript_text.header_date).
+# ONLY this proven format is read, on the FIRST non-empty line; groups =
+# year, month, day.
+TRANSCRIPT_HEADER_DATE_PATTERN = (
+    r' - (\d{4})/(\d{2})/(\d{2}) \d{1,2}:\d{2}\b[^\n]* - Transcript\s*$'
+)
+
+
+# =============================================================================
+# NEXT STEPS CONTEXT -- DECISION CYCLE (Sprint Next steps 3.2, context v6)
+# =============================================================================
+
+# Reference of a decision-cycle step in the next_steps context ("S4" = the
+# step of order 4): unique within a cycle, stable, short. The server maps a
+# reference the model returns back to the step through the same format.
+NEXT_STEPS_STEP_REF_FORMAT = 'S{order}'
+
+
+# =============================================================================
+# NEXT STEPS PERSISTENCE -- DEDUP WITHIN ONE ANSWER (Sprint Next steps 3.4)
+# =============================================================================
+
+# Two next steps of the SAME LLM answer (one transcript) with the same values
+# on these fields -- text compared normalised (transcript_text.normalize_text:
+# case, whitespace, quotes) -- are one action: the first is kept, the others
+# are dropped (counted). Never applied across activities. Conservative on
+# purpose: a paraphrased title is NOT merged (one distinct action = one next
+# step, prompt v2 rule 1); the eval measures what remains.
+NEXT_STEP_DEDUP_KEY = ('suggested_title', 'suggested_activity_type', 'suggested_due_date')
 
 
 # =============================================================================

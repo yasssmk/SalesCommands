@@ -24,9 +24,12 @@ import unicodedata
 
 
 __all__ = [
+    'account_contacts',
     'name_appears_in_text',
     'ordered_participants',
+    'resolve_contact_by_name',
     'resolve_participant_by_name',
+    'resolve_people_signal_by_name',
     'resolve_speaker_label',
 ]
 
@@ -42,6 +45,24 @@ def ordered_participants(activity):
     return list(
         activity.contacts
         .filter(client_id=activity.client_id, account_id=activity.account_id)
+        .select_related('standard_department')
+        .order_by('last_name', 'first_name', 'id')
+    )
+
+
+def account_contacts(client_id, account_id):
+    """
+    Sprint Next steps 5.8d: the contacts of an ACCOUNT, filtered on its
+    tenant AND account, in the same deterministic order as
+    ordered_participants (last_name, first_name, id).
+
+    Returns:
+        list[Contact] -- possibly empty.
+    """
+    from app_modules.contacts.models import Contact
+    return list(
+        Contact.objects
+        .filter(client_id=client_id, account_id=account_id)
         .select_related('standard_department')
         .order_by('last_name', 'first_name', 'id')
     )
@@ -133,10 +154,61 @@ def resolve_participant_by_name(stated_name, activity):
     Returns:
         Contact | None
     """
+    return resolve_contact_by_name(stated_name, ordered_participants(activity))
+
+
+def resolve_contact_by_name(stated_name, contacts):
+    """
+    The contact a name as written designates among `contacts` (the caller
+    scopes them: the activity's participants, Sprint Next steps 5.8d the
+    contacts of the account) -- THE TD-279 word rule (_best_unique_match),
+    never a guess: missing name, no match or a tie -> None.
+
+    Returns:
+        Contact | None
+    """
     return _best_unique_match(stated_name, [
-        (_contact_name_parts(contact), contact)
-        for contact in ordered_participants(activity)
+        (_contact_name_parts(contact), contact) for contact in contacts
     ])
+
+
+def resolve_people_signal_by_name(stated_name, people_signals):
+    """
+    Sprint Next steps 3.4: the PeopleSignal a prospect name as written (a
+    next step's suggested_people_names) designates, among `people_signals`
+    (the caller scopes them) -- the SAME word rule (_best_unique_match),
+    applied to IDENTITIES:
+
+      * identity = the signal's contact when it has one, else its full name
+        normalised (lowercase, no accents); an unnamed signal without contact
+        is no identity;
+      * several identities tie on the best score -> None (ambiguous: the
+        name is kept as written); a first name alone therefore links only
+        when one identity bears it;
+      * the identity found -> its MOST RECENT signal (created_at, then id).
+
+    Returns:
+        PeopleSignal | None
+    """
+    identities = {}
+    for signal in people_signals:
+        if signal.target_contact_id:
+            key = ('contact', signal.target_contact_id)
+            parts = _contact_name_parts(signal.target_contact)
+        else:
+            name = _normalize_person_name(signal.full_name or '')
+            if not name:
+                continue
+            key = ('name', name)
+            parts = _written_name_parts(signal.full_name)
+        identities.setdefault(key, (parts, []))[1].append(signal)
+
+    key = _best_unique_match(stated_name, [
+        (parts, key) for key, (parts, _signals) in identities.items()
+    ])
+    if key is None:
+        return None
+    return max(identities[key][1], key=lambda s: (s.created_at, str(s.pk)))
 
 
 def resolve_speaker_label(stated_name, labels):

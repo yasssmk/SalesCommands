@@ -144,4 +144,4 @@ class TestVersions:
             PEOPLE_PROMPT_VERSION,
         )
         assert PEOPLE_PROMPT_VERSION == 'v9'   # v9: job_title (TD-279 D)
-        assert CONTEXT_VERSION == 'v9'
+        assert CONTEXT_VERSION == 'v10'

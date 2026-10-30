@@ -9,13 +9,25 @@
 //           avatar). External contact names look clickable (pointer + hover) but
 //           carry no handler yet — the drawer is wired in a later sprint. No
 //           email/phone on the rows.
-//   ── hairline ──  (only when there is provenance)
-//   Origin: a single provenance line (where the activity was born), a branch
+//   ── hairline ──  (only when there is a previous or a next)
+//   Origin (5.12): Previous activity | Next planned activity — the People
+//   grid and headers —
+//     Previous activity: a provenance line (where the activity was born), a branch
 //           icon + TWO separate accent links (context, then activity) to live
-//           routes. The current campaign/DC rattachement is NOT shown here
-//           (it lives in the header).
-// Read-only: the only navigation is the accent links to live routes. No editing,
-// no ComingSoon, no Previous/Next. Weights/colours/sizes come from the theme.
+//           routes; then (5.9) one line per CONVERSATION the activity comes
+//           from through next steps (activity.next_step_origins: the one
+//           whose next step created it + those whose next steps were linked
+//           to it), « From next step › <conversation> · <date> »;
+//     Next planned activity: ONE line on the same shell — the type icon,
+//           « <title> · <step> · <date> » (+ "Overdue", in the overdue
+//           colour ACTIVITY_OVERDUE_CHIP_COLORS.text) of activity.next_planned_step
+//           (chosen by the server); from a DC born from this campaign
+//           activity, « In decision cycle <DC> › … » (the DC alone when
+//           nothing is open in it). No card, no status pill.
+//   One column missing: the other alone; both missing: no group. The current
+//   campaign/DC rattachement is NOT shown here (it lives in the header).
+// Read-only: the only navigation is the accent links to live routes. No
+// editing, no ComingSoon. Weights/colours/sizes come from the theme.
 
 "use client";
 
@@ -36,12 +48,16 @@ import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 import Surface from "components/display/Surface";
 import LabeledValue from "components/display/LabeledValue";
 import PersonRow from "components/display/PersonRow";
+import { formatShortDate } from "components/signals/SignalLine";
+import { getActivityTypeIcon } from "utils/activityTypes";
+import { ACTIVITY_OVERDUE_LABEL, ACTIVITY_OVERDUE_CHIP_COLORS } from "api/accounts/activities";
 
 // Drawer — clicking a person opens its read-only fiche in the coque
 // (external contact → Contact fiche; internal team member → User fiche).
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
 import UserDrawerContent from "sections/activities/workspace/UserDrawerContent";
+import { personName, personNameAndEmail } from "utils/personLabel";
 
 // ==============================|| FORMAT HELPERS ||============================== //
 
@@ -83,10 +99,6 @@ function getSchedule(activity) {
   return { label: "Scheduled", value: null };
 }
 
-function personName(p) {
-  if (!p) return null;
-  return p.full_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || p.email || null;
-}
 
 // ==============================|| SHARED SMALL PIECES ||============================== //
 
@@ -158,11 +170,28 @@ function AccentLink({ href, bold = false, children }) {
 
 AccentLink.propTypes = { href: PropTypes.string.isRequired, bold: PropTypes.bool, children: PropTypes.node };
 
-// ==============================|| ORIGIN — PROVENANCE (single line) ||============================== //
+// ==============================|| ORIGIN — PROVENANCE ||============================== //
 
-function ProvenanceLine({ activity }) {
+// The shell of a provenance line: an icon (the branch by default) + a muted body.
+function ProvenanceRow({ icon: Icon = BranchesOutlined, children, ...rest }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
+  return (
+    <Stack direction="row" spacing={1} alignItems="flex-start" {...rest}>
+      <Box sx={{ mt: 0.25, flexShrink: 0 }}>
+        <Icon style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
+      </Box>
+      <Typography variant="body2" sx={{ color: aq.text.muted, minWidth: 0 }}>
+        {children}
+      </Typography>
+    </Stack>
+  );
+}
+
+ProvenanceRow.propTypes = { icon: PropTypes.elementType, children: PropTypes.node };
+
+function ProvenanceLine({ activity }) {
+  const aq = useTheme().aphoriQ;
   const src = activity.source_activity_detail;
   const type = src.source_context?.type;
   const ctxName = src.source_context?.name;
@@ -199,19 +228,78 @@ function ProvenanceLine({ activity }) {
     body = <>{"From "}{titleNode || ctxName}</>;
   }
 
-  return (
-    <Stack direction="row" spacing={1} alignItems="flex-start">
-      <Box sx={{ mt: 0.25, flexShrink: 0 }}>
-        <BranchesOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.accent, display: "flex" }} />
-      </Box>
-      <Typography variant="body2" sx={{ color: aq.text.muted, minWidth: 0 }}>
-        {body}
-      </Typography>
-    </Stack>
-  );
+  return <ProvenanceRow>{body}</ProvenanceRow>;
 }
 
 ProvenanceLine.propTypes = { activity: PropTypes.object };
+
+// A conversation the activity comes from through a next step (5.9): its
+// title (→ the conversation) and its date.
+function NextStepOriginLine({ origin }) {
+  const aq = useTheme().aphoriQ;
+  const sep = <Box component="span" sx={{ color: aq.text.muted }}>{" › "}</Box>;
+  const date = formatDate(origin.date);
+  return (
+    <ProvenanceRow data-testid="next-step-origin-line">
+      {"From next step"}
+      {sep}
+      <AccentLink href={`/activities/${origin.id}`}>{origin.title}</AccentLink>
+      {date && ` · ${date}`}
+    </ProvenanceRow>
+  );
+}
+
+NextStepOriginLine.propTypes = {
+  origin: PropTypes.shape({ id: PropTypes.string, title: PropTypes.string, date: PropTypes.string }),
+};
+
+// ==============================|| NEXT — THE NEXT PLANNED STEP ||============================== //
+
+// The next planned step (5.12 A-bis): ONE line on the provenance shell — the
+// type icon, « <title> · <step> · <date> » (+ "Overdue" in the overdue colour,
+// 5.12c); from a DC born from
+// this campaign activity, « In decision cycle <DC> › … », the DC alone when
+// nothing is open in it.
+function NextPlannedLine({ nextPlannedStep, accountId }) {
+  const aq = useTheme().aphoriQ;
+  const planned = nextPlannedStep.activity;
+  const bornCycle = nextPlannedStep.source === "BORN_DECISION_CYCLE" ? nextPlannedStep.decision_cycle : null;
+  const sep = <Box component="span" sx={{ color: aq.text.muted }}>{" › "}</Box>;
+  const meta = planned
+    ? [planned.decision_step_name, formatShortDate(planned.scheduled_date || planned.due_date)].filter(Boolean)
+    : [];
+  return (
+    <ProvenanceRow
+      data-testid="next-planned-line"
+      icon={planned ? getActivityTypeIcon(planned.activity_type) : undefined}
+    >
+      {bornCycle && (
+        <>
+          {"In decision cycle "}
+          <AccentLink bold href={`/accounts/${accountId}/dc/${bornCycle.id}?tab=timeline`}>{bornCycle.name}</AccentLink>
+          {planned && sep}
+        </>
+      )}
+      {planned && <AccentLink href={`/activities/${planned.id}`}>{planned.title}</AccentLink>}
+      {meta.length > 0 && ` · ${meta.join(" · ")}`}
+      {planned?.is_overdue && (
+        <>
+          {" · "}
+          <Box component="span" sx={{ color: ACTIVITY_OVERDUE_CHIP_COLORS.text }}>{ACTIVITY_OVERDUE_LABEL}</Box>
+        </>
+      )}
+    </ProvenanceRow>
+  );
+}
+
+NextPlannedLine.propTypes = {
+  nextPlannedStep: PropTypes.shape({
+    source: PropTypes.string,
+    decision_cycle: PropTypes.shape({ id: PropTypes.string, name: PropTypes.string }),
+    activity: PropTypes.object,
+  }).isRequired,
+  accountId: PropTypes.string,
+};
 
 // ==============================|| ACTIVITY CONTEXT SECTION ||============================== //
 
@@ -224,9 +312,22 @@ export default function ActivityContextSection({ activity }) {
 
   const schedule = getSchedule(activity);
   const owner = activity.owner_detail;
+  const ownerLabel = personNameAndEmail(owner);
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
-  const hasProvenance = Boolean(activity.source_activity_detail);
+  // A conversation already shown by the provenance line (its source
+  // activity) is not repeated as « From next step » (5.9b).
+  const provenanceActivityId = activity.source_activity_detail?.id || null;
+  const nextStepOrigins = (activity.next_step_origins || []).filter(
+    (origin) => !provenanceActivityId || origin.id !== provenanceActivityId,
+  );
+  const hasProvenance = Boolean(activity.source_activity_detail) || nextStepOrigins.length > 0;
+  // The next planned step: an activity, or a born DC with nothing open (5.12).
+  const nextPlannedStep = activity.next_planned_step;
+  const hasNextPlanned = Boolean(
+    nextPlannedStep?.activity ||
+      (nextPlannedStep?.source === "BORN_DECISION_CYCLE" && nextPlannedStep.decision_cycle),
+  );
 
   const emptyItalic = { color: aq.text.subtle, fontStyle: "italic" };
 
@@ -276,8 +377,12 @@ export default function ActivityContextSection({ activity }) {
                 onClick={() =>
                   openDrawer(<UserDrawerContent userId={owner.id} />, { title: "Team member" })
                 }
-                name={personName(owner)}
-                suffix="owner"
+                name={ownerLabel.name}
+                // « First Last · Owner · email » (the shared label, 5.9b): this
+                // column has no "Activity owner" title, so the marker stays
+                // here (5.9, PO) — only the creation drawer, whose caption
+                // says it, drops "owner".
+                suffix={["Owner", ownerLabel.email].filter(Boolean).join(" · ")}
               />
             )}
             {invited.map((u) => (
@@ -325,11 +430,34 @@ export default function ActivityContextSection({ activity }) {
           </Box>
         </TwoColRow>
 
-        {/* Group 3 — Origin (provenance only, conditional) */}
-        {hasProvenance && (
+        {/* Group 3 — Origin: Previous activity | Next planned activity (each conditional, 5.12) */}
+        {(hasProvenance || hasNextPlanned) && (
           <>
             <GroupRule />
-            <ProvenanceLine activity={activity} />
+            <Box data-testid="ctx-prev-next">
+              <TwoColRow>
+                {hasProvenance && (
+                  <Box>
+                    <ColumnHeader label="Previous activity" />
+                    <Stack spacing={0.75}>
+                      {activity.source_activity_detail && <ProvenanceLine activity={activity} />}
+                      {nextStepOrigins.map((origin) => (
+                        <NextStepOriginLine key={origin.id} origin={origin} />
+                      ))}
+                    </Stack>
+                  </Box>
+                )}
+                {hasNextPlanned && (
+                  <Box>
+                    <ColumnHeader label="Next planned activity" />
+                    <NextPlannedLine
+                      nextPlannedStep={nextPlannedStep}
+                      accountId={activity.account_detail?.id || activity.account}
+                    />
+                  </Box>
+                )}
+              </TwoColRow>
+            </Box>
           </>
         )}
       </Stack>

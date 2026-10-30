@@ -36,15 +36,26 @@ export default function CollapsibleStrip({
   icon: Icon,
   titleColor,
   defaultExpanded = false,
+  expanded: controlledExpanded,
+  onExpandedChange,
   disableUnmount = false,
   meta,
   children,
 }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  // Uncontrolled by default (defaultExpanded); controlled when the caller
+  // passes `expanded` (+ onExpandedChange) — e.g. an action in `meta` that
+  // must unfold the strip.
+  const [uncontrolledExpanded, setUncontrolledExpanded] = useState(defaultExpanded);
+  const isControlled = controlledExpanded !== undefined;
+  const expanded = isControlled ? controlledExpanded : uncontrolledExpanded;
 
-  const toggle = () => setExpanded((v) => !v);
+  const toggle = () => {
+    const next = !expanded;
+    if (!isControlled) setUncontrolledExpanded(next);
+    onExpandedChange?.(next);
+  };
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -126,8 +137,12 @@ CollapsibleStrip.propTypes = {
   icon: PropTypes.elementType,
   /** Optional title colour (palette path or resolved colour). Default: muted. */
   titleColor: PropTypes.string,
-  /** Whether the strip starts expanded. */
+  /** Whether the strip starts expanded (uncontrolled). */
   defaultExpanded: PropTypes.bool,
+  /** Controlled open state (optional) — with onExpandedChange. */
+  expanded: PropTypes.bool,
+  /** (next: bool) => void — fired by the header toggle. */
+  onExpandedChange: PropTypes.func,
   /** Keep the body mounted while collapsed (default: unmount to drop cost). */
   disableUnmount: PropTypes.bool,
   /** Optional right-aligned meta (e.g. a count). */

@@ -147,16 +147,18 @@ describe("EditActivityContent — SE-b structure", () => {
     expect(screen.queryByText("Edit activity")).not.toBeInTheDocument();
   });
 
-  it("has NO literal group titles and NO textual 'Edit'", () => {
+  it("has NO former group titles and NO textual 'Edit' (5.18: numbered sections — DrawerSectionsPage)", () => {
     renderEdit();
     expect(screen.queryByText(/Title & type/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Objective & description/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^edit$/i })).not.toBeInTheDocument();
   });
 
-  it("separates the groups with internal hairline filets", () => {
-    renderEdit();
-    expect(screen.getAllByTestId("group-filet").length).toBeGreaterThanOrEqual(3);
+  // 5.18 (PO): the Edit signal design — MUI Dividers between the sections.
+  it("separates the sections with Dividers (the Edit signal design), no hairline filet", () => {
+    const { container } = renderEdit();
+    expect(container.querySelectorAll("hr.MuiDivider-root")).toHaveLength(3);
+    expect(screen.queryByTestId("group-filet")).toBeNull();
   });
 
   it("renders the editable People section (owner / invited / contacts), no placeholder", () => {
@@ -209,6 +211,44 @@ describe("EditActivityContent — click edit + global save", () => {
     fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "" } });
     const save = screen.getByRole("button", { name: /save/i });
     await waitFor(() => expect(save).toBeDisabled());
+  });
+});
+
+// Sprint Next steps 2.2a (R3): the Objective (call_to_action) is never
+// refused for its length — the backend column is unbounded (TextField).
+describe("EditActivityContent — objective longer than 500 characters", () => {
+  it("saves an activity whose objective exceeds 500 characters, whole", async () => {
+    const longObjective = "Valider l'hébergement des données en Europe avec le DSI. ".repeat(20).trim();
+    expect(longObjective.length).toBeGreaterThan(500);
+    renderEdit({ ...ACTIVITY, call_to_action: longObjective });
+    fireEvent.click(screen.getByTestId("inline-read-title"));
+    fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "New title" } });
+
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalledTimes(1));
+    expect(updateActivity.mock.calls[0][1].call_to_action).toBe(longObjective);
+  });
+});
+
+// Sprint Next steps 2.2b (Q2): the Description is never refused for its
+// length either — the column is unbounded (TextField).
+describe("EditActivityContent — description longer than 2000 characters", () => {
+  it("saves an activity whose description exceeds 2000 characters, whole", async () => {
+    const longDescription = "Points à couvrir : hébergement UE, DPA, SOC 2, réversibilité. ".repeat(40).trim();
+    expect(longDescription.length).toBeGreaterThan(2000);
+    renderEdit({ ...ACTIVITY, description: longDescription });
+    fireEvent.click(screen.getByTestId("inline-read-title"));
+    fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "New title" } });
+
+    const save = screen.getByRole("button", { name: /save/i });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalledTimes(1));
+    expect(updateActivity.mock.calls[0][1].description).toBe(longDescription);
   });
 });
 
@@ -299,6 +339,15 @@ describe("EditActivityContent — People (draft + global save, no per-row PATCH)
     // owner required → Save disabled even though the form is otherwise valid+dirty
     const save = screen.getByRole("button", { name: /save/i });
     await waitFor(() => expect(save).toBeDisabled());
+  });
+
+  // 5.8g (b) — the same owner rule in edit mode: « First Last · email », no
+  // "owner" word (the caption "Activity owner" says it).
+  it("the owner reads 'First Last · email', never '· owner'", () => {
+    renderEdit({ ...ACTIVITY, owner_detail: { ...ACTIVITY.owner_detail, email: "ann@acme.test" } });
+    const owner = screen.getByTestId("activity-owner");
+    expect(owner).toHaveTextContent("Ann Owner · ann@acme.test");
+    expect(owner.textContent).not.toMatch(/· owner/);
   });
 
   it("+ Add owner reveals AsyncUserSelect and its 2nd-arg value fills the slot", () => {

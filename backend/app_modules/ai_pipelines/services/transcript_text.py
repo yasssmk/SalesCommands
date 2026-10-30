@@ -21,13 +21,24 @@ A line "Name: text" (or "Name : text") whose label is 1 to
 _MAX_LABEL_WORDS words starting with a letter -- the format of the meeting
 exports ("Claire Dubois: Bonjour..."). A timestamp ("00:12:30"), a title
 with a date ("... 2026/10/14 10:02 CEST ...") or a sentence never matches.
+
+Header date (D7 / TD-281)
+-------------------------
+header_date(transcript): the meeting's date read on the export header (first
+non-empty line, format TRANSCRIPT_HEADER_DATE_PATTERN in constants.py), as
+ISO YYYY-MM-DD; None when there is no such header or the date is not a real
+calendar date.
 """
 
+import datetime
 import re
+
+from ..constants import TRANSCRIPT_HEADER_DATE_PATTERN
 
 
 __all__ = [
     'TranscriptText',
+    'header_date',
     'normalize_text',
 ]
 
@@ -48,6 +59,7 @@ _EDGE_PUNCTUATION = " .,;:!?'-"
 _LABEL_PREFIX = r"^\s*([^\W\d_][\w'’.\- ]*?)\s?:\s+"
 _SPEAKER_LINE_RE = re.compile(_LABEL_PREFIX + r"(.*\S)\s*$")
 _QUOTE_LABEL_RE = re.compile(_LABEL_PREFIX)
+_HEADER_DATE_RE = re.compile(TRANSCRIPT_HEADER_DATE_PATTERN)
 
 
 def normalize_text(text):
@@ -56,6 +68,22 @@ def normalize_text(text):
     text = text.translate(_APOSTROPHES).translate(_DROPPED_QUOTES)
     text = _ELLIPSIS_RE.sub(' ', text)
     return ' '.join(text.split()).strip(_EDGE_PUNCTUATION)
+
+
+def header_date(transcript):
+    """The meeting's date on the export header, ISO YYYY-MM-DD, else None
+    (module docstring)."""
+    first_line = next(
+        (line for line in str(transcript or '').splitlines() if line.strip()),
+        '',
+    )
+    match = _HEADER_DATE_RE.search(first_line)
+    if match is None:
+        return None
+    try:
+        return datetime.date(*(int(part) for part in match.groups())).isoformat()
+    except ValueError:
+        return None
 
 
 def _label(match):
@@ -109,6 +137,21 @@ class TranscriptText:
         if match is None or _label(match) not in self.labels:
             return quote
         return quote[match.end():]
+
+    def quote_parts(self, quote):
+        """
+        The parts of a quote split on the speaker labels of THIS transcript
+        ("... le former. Isabelle Roux: Et si ..." -> two parts), each
+        stripped, empty ones dropped; [] for a non-string. A quote without
+        such a label is one part.
+        """
+        if not isinstance(quote, str):
+            return []
+        if not self.labels:
+            return [quote.strip()] if quote.strip() else []
+        pattern = '|'.join(re.escape(label) for label in sorted(self.labels, key=len, reverse=True))
+        parts = re.split(rf'(?:^|(?<=\s))(?:{pattern})\s?:\s+', quote)
+        return [part.strip() for part in parts if part.strip()]
 
     @property
     def has_speaker_labels(self):

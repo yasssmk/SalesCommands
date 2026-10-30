@@ -74,3 +74,24 @@ class NoNextStepReason(models.TextChoices):
     NOT_QUALIFIED = 'NOT_QUALIFIED', _('Not Qualified')
     OTHER = 'OTHER', _('Other')
 
+
+
+# =============================================================================
+# NEXT STEP → ACTIVITY CONVERSION (Sprint Next steps 2.2b)
+# =============================================================================
+# Mirrored in frontend/src/utils/activityTypes.js (ActivityModal pre-fill) —
+# keep both in sync.
+
+# D6: the next step's date is WHEN the activity happens for these types
+# (scheduled_date); for every other type it is a deadline (due_date).
+SCHEDULED_DATE_ACTIVITY_TYPES = frozenset({
+    ActivityType.MEETING,
+    ActivityType.CALL,
+    ActivityType.DEMO,
+})
+
+# call_to_action = objective + success criterion (D5):
+#   "<objective>" + SEPARATOR + LABEL + "<criterion>"
+# (the label alone heads the criterion when there is no objective).
+NEXT_STEP_OBJECTIVE_PARTS_SEPARATOR = '\n\n'
+NEXT_STEP_SUCCESS_CRITERION_LABEL = 'Success criterion: '

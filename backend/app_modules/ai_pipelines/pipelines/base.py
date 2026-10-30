@@ -198,7 +198,7 @@ class BasePipeline(ABC):
 
     def _log_sub_call(self, run, *, stage, sub_call_meta=None,
                       parsed=None, error=None, dropped_count=0,
-                      evidence_check=None):
+                      evidence_check=None, persist_counts=None):
         """
         Append one sub-call entry to run.sub_calls and aggregate counters.
 
@@ -213,6 +213,10 @@ class BasePipeline(ABC):
                                   and passed in here for audit).
             evidence_check: dict | None -- People proofs per check status
                                   (TD-279 V); recorded only when given.
+            persist_counts: dict | None -- next steps persistence counters
+                                  (Sprint Next steps 3.4: unknown step refs,
+                                  duplicates, people linked / kept as
+                                  names); recorded only when given.
         """
         emitted = 0
         if isinstance(parsed, dict) and isinstance(parsed.get('signals'), list):
@@ -236,6 +240,8 @@ class BasePipeline(ABC):
             entry['reasoning_tokens'] = meta['reasoning_tokens']
         if evidence_check is not None:
             entry['evidence_check'] = dict(evidence_check)
+        if persist_counts is not None:
+            entry['persist_counts'] = dict(persist_counts)
 
         # JSONField list mutation: re-bind to force change detection.
         current = list(run.sub_calls or [])

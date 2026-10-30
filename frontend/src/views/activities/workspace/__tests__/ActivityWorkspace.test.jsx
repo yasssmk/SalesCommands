@@ -23,7 +23,10 @@ vi.mock("themes/emotionCache", () => ({
   NextAppDirEmotionCacheProvider: ({ children }) => children,
 }));
 
-vi.mock("api/accounts/activities", () => ({
+// The real module's other exports (ACTIVITY_STATUSES, read at load time by
+// utils/activitySignalsLock — the page's Next steps band predicate, 5.12 B).
+vi.mock("api/accounts/activities", async (importOriginal) => ({
+  ...(await importOriginal()),
   useGetActivity: vi.fn(),
   updateActivity: vi.fn(),
   ACTIVITY_TYPE_LABELS: { CALL: "Phone Call" },
@@ -100,13 +103,9 @@ vi.mock("hooks/usePipelineRunner", () => ({
 
 // Interim section components — marker divs so we can assert which band body is
 // mounted (a CollapsibleStrip unmounts its body while collapsed).
-// S2a: the Context block now renders ActivityContextSection (read-only), not
-// the legacy ActivityOverviewTab. Mock both so we can assert the swap.
+// S2a: the Context block renders ActivityContextSection (read-only).
 vi.mock("sections/activities/workspace/ActivityContextSection", () => ({
   default: () => <div data-testid="body-context">Context Content</div>,
-}));
-vi.mock("sections/activities/workspace/ActivityOverviewTab", () => ({
-  default: () => <div data-testid="legacy-overview">Legacy Overview</div>,
 }));
 vi.mock("sections/activities/workspace/ActivityPreparationTab", () => ({
   default: () => <div data-testid="body-preparation">Preparation Content</div>,
@@ -202,9 +201,13 @@ function setupActivity(overrides = {}) {
   });
 }
 
-function setActivityType(activity_type) {
-  setupActivity({ activity: { ...mockActivity, activity_type } });
+function setActivityType(activity_type, over = {}) {
+  setupActivity({ activity: { ...mockActivity, activity_type, ...over } });
 }
+
+// 5.12 B — the Next steps band is rendered only when it has something to show:
+// a DC activity (or a campaign conversion). The band tests use a DC activity.
+const IN_DC = { decision_cycle: "dc-1" };
 
 function setAnalyzed(isAnalyzed) {
   vi.mocked(useGetLastExtractionRun).mockReturnValue({
@@ -222,8 +225,9 @@ function setAnalyzed(isAnalyzed) {
 function bandTitlesInOrder() {
   return screen
     .getAllByRole("button")
-    .map((b) => b.textContent.trim())
-    .filter((t) => ["Preparation", "Source", "Signals", "Next step"].includes(t));
+    // The strip title (5.12e: the Next steps header also holds its pill).
+    .map((b) => (b.querySelector("p") ?? b).textContent.trim())
+    .filter((t) => ["Preparation", "Source", "Signals", "Next steps"].includes(t));
 }
 
 // ==============================|| TESTS ||============================== //
@@ -250,33 +254,38 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
     expect(screen.queryAllByRole("tablist")).toHaveLength(0);
   });
 
-  it("always renders the fixed Context block (new section, not the legacy tab)", () => {
+  it("always renders the fixed Context block", () => {
     setupRouter();
     setupActivity();
     renderPage();
     expect(screen.getByTestId("body-context")).toBeInTheDocument();
-    // the legacy ActivityOverviewTab is no longer rendered by the page
-    expect(screen.queryByTestId("legacy-overview")).not.toBeInTheDocument();
   });
 
   it("renders the four bands in fixed order for an eligible type (CALL)", () => {
     setupRouter();
-    setActivityType("CALL");
+    setActivityType("CALL", IN_DC);
     renderPage();
     expect(bandTitlesInOrder()).toEqual([
       "Preparation",
       "Source",
       "Signals",
-      "Next step",
+      "Next steps",
     ]);
   });
 
   it("omits the Preparation band when type is not CALL/MEETING/DEMO (EMAIL)", () => {
     setupRouter();
-    setActivityType("EMAIL");
+    setActivityType("EMAIL", IN_DC);
     renderPage();
-    expect(bandTitlesInOrder()).toEqual(["Source", "Signals", "Next step"]);
+    expect(bandTitlesInOrder()).toEqual(["Source", "Signals", "Next steps"]);
     expect(screen.queryByText("Preparation")).not.toBeInTheDocument();
+  });
+
+  it("5.12 B: a free activity (no DC, no conversion) — no Next steps band", () => {
+    setupRouter();
+    setActivityType("CALL");
+    renderPage();
+    expect(bandTitlesInOrder()).toEqual(["Preparation", "Source", "Signals"]);
   });
 
   it("keeps the Preparation band for MEETING and DEMO", () => {
@@ -293,7 +302,7 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
 
   it("NOT analysed (no lastRun): Preparation open; Source/Signals/Next step closed", () => {
     setupRouter();
-    setActivityType("CALL");
+    setActivityType("CALL", IN_DC);
     setAnalyzed(false);
     renderPage();
 
@@ -305,7 +314,7 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
 
   it("analysed (lastRun present): Signals + Next step open; Preparation/Source closed", () => {
     setupRouter();
-    setActivityType("CALL");
+    setActivityType("CALL", IN_DC);
     setAnalyzed(true);
     renderPage();
 

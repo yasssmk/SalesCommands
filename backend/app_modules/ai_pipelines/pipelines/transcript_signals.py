@@ -356,7 +356,9 @@ class QualificationSignalsPipeline(BasePipeline):
             with transaction.atomic():
                 for stage_name, request_builder in _STAGES:
                     try:
-                        context_layer = build_context_layer(activity, target_stage=stage_name)
+                        context_layer = build_context_layer(
+                            activity, target_stage=stage_name, transcript=transcript,
+                        )
                         request_layer = request_builder(transcript)
 
                         parsed, sub_call_meta = self._call_llm(

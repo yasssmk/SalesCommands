@@ -18,6 +18,30 @@ except ImportError:
 
 logger = get_logger(__name__)
 
+def auth_user_payload(user):
+    """
+    The AUTH user payload — ONE shape for the three auth responses (POST
+    login, GET current user, token refresh), read by the front's useAuth().
+    Carries first_name / last_name (Sprint Next steps 5.9b: a person label
+    « First Last · email » needs them — `name` alone is a display string,
+    TD-234).
+    """
+    client_account_id = getattr(user, 'client_account_id', None)
+    client_account = getattr(user, 'client_account', None)
+    return {
+        "id": str(user.id),
+        "name": user.get_full_name(),
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
+        "email": user.email,
+        "role": getattr(user, 'role_name', None),
+        "role_tier": user.role.get_tier() if user.role else None,
+        "avatar": None,
+        "client_id": str(client_account_id) if client_account_id else None,
+        "client_name": client_account.name if client_account else None,
+    }
+
+
 class AuthService:
     def __init__(self, user_model, origin, refresh_lifetime, serializer_class):
         self.user_model = user_model
@@ -340,16 +364,7 @@ class AuthService:
 
                 raise AuthenticationFailed("User account is deactivated")
 
-            user_data = {
-                "id": str(user.id),
-                "name": user.get_full_name(),
-                "email": user.email,
-                "role": user.role_name if hasattr(user, 'role_name') else None,
-                "role_tier": user.role.get_tier() if user.role else None,
-                "avatar": None,
-                "client_id": str(user.client_account_id) if hasattr(user, 'client_account_id') and user.client_account_id else None,
-                "client_name": user.client_account.name if getattr(user, "client_account", None) else None,
-            }
+            user_data = auth_user_payload(user)
 
             logger.info("token_refresh_success", extra={
                 **log_context,

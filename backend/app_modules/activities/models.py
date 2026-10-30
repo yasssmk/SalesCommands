@@ -53,8 +53,11 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         help_text=_('Detailed description of the activity')
     )
     
-    call_to_action = models.CharField(
-        max_length=500,
+    # TextField (Sprint Next steps 2.2a, R3): the Objective is never truncated
+    # nor refused for its length — every source that fills it is unbounded
+    # (NextStepSignal.suggested_objective + success criterion,
+    # Campaign.activity_objective, CampaignContact.objective).
+    call_to_action = models.TextField(
         blank=True,
         null=True,
         verbose_name=_('Call to Action'),

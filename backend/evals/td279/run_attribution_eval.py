@@ -66,12 +66,10 @@ Usage (from backend/, with the usual .env holding OPENAI_API_KEY):
 """
 
 import argparse
-import csv
 import datetime
 import json
 import os
 import sys
-import time
 import types
 from pathlib import Path
 
@@ -109,12 +107,7 @@ from app_modules.ai_pipelines.prompts.transcript_signals.system import (  # noqa
 )
 from app_modules.ai_pipelines import config as ai_config  # noqa: E402
 from app_modules.ai_pipelines.providers import get_provider  # noqa: E402
-from app_modules.ai_pipelines.prompts.base import PromptParseError  # noqa: E402
-from app_modules.ai_pipelines.providers.base import (  # noqa: E402
-    LLMCallResult,
-    LLMProviderError,
-    LLMTimeoutError,
-)
+from app_modules.ai_pipelines.providers.base import LLMCallResult  # noqa: E402
 from app_modules.ai_pipelines.services import participant_refs  # noqa: E402
 from app_modules.ai_pipelines.services.people_evidence import check_people_evidence  # noqa: E402
 from app_modules.ai_pipelines.services.transcript_text import TranscriptText  # noqa: E402
@@ -125,6 +118,21 @@ from app_modules.ai_pipelines.services.transcript_signal_extractor import (  # n
 )
 from app_modules.core_modules.models import StandardDepartment  # noqa: E402
 
+# Shared eval plumbing (evals/common/eval_kit.py) — one implementation, also
+# used by evals/next_steps.
+from evals.common.eval_kit import (  # noqa: E402
+    RecordingProvider,
+    add_common_arguments,
+    count as _count,
+    declared_models,
+    load_records,
+    prepare_out_dir,
+    row as _row,
+    run_calls,
+    timing_line as _timing_line,
+    write_summary,
+)
+
 
 # =============================================================================
 # TEST CASE (TD-279 smoke, activity 5b53de3d)
@@ -132,7 +140,7 @@ from app_modules.core_modules.models import StandardDepartment  # noqa: E402
 
 # --model choices: ONLY the models declared in the repo config (never invented)
 # -> PROVIDER_CONFIG key.
-MODELS = {cfg['model']: key for key, cfg in ai_config.PROVIDER_CONFIG.items()}
+MODELS = declared_models()
 
 FINANCE = StandardDepartment.DepartmentChoices.FINANCE.value
 
@@ -204,8 +212,9 @@ def _activity(tenant_name, conversation_date):
     )
 
 
-def _context(activity, stage):
-    context = ctx.build_context_layer(activity, target_stage=stage)
+def _context(activity, stage, transcript=None):
+    # Context v10 (D7): the Conversation date comes from the transcript header.
+    context = ctx.build_context_layer(activity, target_stage=stage, transcript=transcript)
     # Context v8: the registered contacts are never sent to the LLM.
     assert 'Criminelle' not in context
     return context
@@ -214,31 +223,6 @@ def _context(activity, stage):
 # =============================================================================
 # PROVIDERS
 # =============================================================================
-
-class RecordingProvider:
-    """Wraps the real provider; keeps every prompt sent and raw answer."""
-
-    def __init__(self, inner):
-        self.inner = inner
-        self.calls = []
-
-    def call(self, **kwargs):
-        result = self.inner.call(**kwargs)
-        self.calls.append({
-            'system': kwargs.get('system'),
-            'user': kwargs.get('user'),
-            'model': kwargs.get('model'),
-            'temperature': kwargs.get('temperature'),
-            'max_tokens': kwargs.get('max_tokens'),
-            'reasoning_effort': kwargs.get('reasoning_effort'),
-            'response_schema': (kwargs.get('response_schema') or {}).get('name'),
-            'raw_response': result.content,
-            'model_used': result.model_used,
-            'input_tokens': result.input_tokens,
-            'output_tokens': result.output_tokens,
-        })
-        return result
-
 
 class DryRunProvider:
     """--dry-run: no API call, a fixed answer per stage, to check the plumbing."""
@@ -525,21 +509,6 @@ def _provider_key(stage, forced_key):
     return forced_key or ai_config.STAGE_PROVIDER.get(stage)
 
 
-def _error_type(exc):
-    """The kind of a failed call, for the recap (messages of providers/)."""
-    if isinstance(exc, LLMTimeoutError):
-        return 'timeout'
-    if isinstance(exc, PromptParseError):
-        return 'parsing'
-    if isinstance(exc, LLMProviderError):
-        if 'truncated' in str(exc):
-            return 'troncature'
-        if 'refused' in str(exc):
-            return 'refus'
-        return 'provider'
-    return type(exc).__name__
-
-
 def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
     stage, transcript_key = VARIANTS[name]
     provider_key = _provider_key(stage, forced_key)
@@ -547,45 +516,27 @@ def run_variant(name, n, out_dir, dry_run, tenant_name, forced_key=None):
     model = ai_config.PROVIDER_CONFIG[provider_key or ai_config.ACTIVE_PROVIDER]['model']
     transcript = TRANSCRIPTS[transcript_key].read_text(encoding='utf-8')
     activity = _activity(tenant_name, CONVERSATION_DATES[transcript_key])
-    context = _context(activity, stage)
+    context = _context(activity, stage, transcript)
     request = REQUEST_BUILDERS[stage](transcript)
-    variant_dir = out_dir / name
-    variant_dir.mkdir(parents=True, exist_ok=True)
+    base_record = {'stage': stage, 'transcript': transcript_key,
+                   'provider_key': provider_key, 'model': model,
+                   'prompt_versions': dict(QualificationSignalsPipeline.PROMPT_VERSIONS)}
 
-    rows = []
-    for index in range(1, n + 1):
-        recorder = RecordingProvider(provider)
+    def make_call(recorder):
         pipeline = QualificationSignalsPipeline(provider=recorder)
-        record = {'variant': name, 'call': index, 'stage': stage,
-                  'transcript': transcript_key, 'provider_key': provider_key, 'model': model,
-                  'prompt_versions': dict(QualificationSignalsPipeline.PROMPT_VERSIONS)}
-        started = time.monotonic()
-        try:
-            parsed, meta = pipeline._call_llm(
-                system_prompt=SYSTEM_PROMPT, context=context, request=request,
-                provider_key=provider_key,
-                # Same strict schema as production (TD-279 M).
-                response_schema=STAGE_RESPONSE_SCHEMAS.get(stage),
-            )
-            record['meta'] = meta
-            record['error'] = None
-            record['error_type'] = None
-        except Exception as exc:  # parse failure twice, provider error
-            meta = {}
-            parsed = None
-            record['error'] = f'{type(exc).__name__}: {exc}'
-            record['error_type'] = _error_type(exc)
-        record['wall_ms'] = int((time.monotonic() - started) * 1000)
-        record['attempts'] = recorder.calls
-        record['parsed'] = parsed
-        metrics = _score(record, transcript, activity)
-        record['metrics'] = metrics
-        (variant_dir / f'call_{index:02d}.json').write_text(
-            json.dumps(record, ensure_ascii=False, indent=2), encoding='utf-8',
+        parsed, meta = pipeline._call_llm(
+            system_prompt=SYSTEM_PROMPT, context=context, request=request,
+            provider_key=provider_key,
+            # Same strict schema as production (TD-279 M).
+            response_schema=STAGE_RESPONSE_SCHEMAS.get(stage),
         )
-        rows.append(_row(record, metrics))
-        print(f'{name} #{index}: {metrics}', flush=True)
-    return rows
+        return parsed, meta, {}
+
+    return run_calls(
+        name=name, n=n, variant_dir=out_dir / name, base_record=base_record,
+        make_recorder=lambda: RecordingProvider(provider), make_call=make_call,
+        score=lambda record: _score(record, transcript, activity),
+    )
 
 
 def _score(record, transcript, activity):
@@ -604,14 +555,6 @@ def _score(record, transcript, activity):
     return metrics
 
 
-def _row(record, metrics):
-    """The summary row of a call (older records: missing keys -> empty)."""
-    return {'variant': record['variant'], 'call': record['call'],
-            'error': record.get('error') or '', 'error_type': record.get('error_type') or '',
-            'duration_ms': (record.get('meta') or {}).get('duration_ms'),
-            'wall_ms': record.get('wall_ms'), **metrics}
-
-
 def rescore(out_dir, tenant_name):
     """
     --rescore: recompute the metrics and the summary of a run folder from the
@@ -620,25 +563,16 @@ def rescore(out_dir, tenant_name):
     (kept). Transcripts: the current files of this folder.
     """
     rows, models_used, versions = [], {}, {}
-    for name in VARIANTS:
-        for path in sorted((out_dir / name).glob('call_*.json')):
-            record = json.loads(path.read_text(encoding='utf-8'))
-            key = record['transcript']
-            transcript = TRANSCRIPTS[key].read_text(encoding='utf-8')
-            activity = _activity(tenant_name, CONVERSATION_DATES[key])
-            rows.append(_row(record, _score(record, transcript, activity)))
-            models_used[name] = record.get('model')
-            versions = versions or record.get('prompt_versions') or {}
+    for record in load_records(out_dir, VARIANTS):
+        key = record['transcript']
+        transcript = TRANSCRIPTS[key].read_text(encoding='utf-8')
+        activity = _activity(tenant_name, CONVERSATION_DATES[key])
+        rows.append(_row(record, _score(record, transcript, activity)))
+        models_used[record['variant']] = record.get('model')
+        versions = versions or record.get('prompt_versions') or {}
     if not rows:
         sys.exit(f'No call_NN.json under {out_dir} -- nothing to rescore.')
     _write_summary(out_dir, rows, models_used, versions, suffix='_rescored')
-
-
-def _count(values):
-    counts = {}
-    for value in values:
-        counts[value] = counts.get(value, 0) + 1
-    return counts
 
 
 # Columns of a row that are not metrics of the variant's stage (shown in
@@ -658,16 +592,6 @@ def _evidence_line(name, vrows):
     calls = sum(1 for r in vrows if r['evidence_rejected'])
     return (f'| {name} | {sum(r["evidence_rejected"] for r in vrows)} | {calls}/{len(vrows)} | '
             f'{by_cause or "-"} | {by_person or "-"} |')
-
-
-def _timing_line(name, vrows):
-    durations = [r['duration_ms'] for r in vrows if r['duration_ms'] is not None]
-    mean = round(sum(durations) / len(durations)) if durations else '-'
-    longest = max(durations) if durations else '-'
-    errors = _count(r['error_type'] for r in vrows if r['error_type'])
-    walls = [r['wall_ms'] for r in vrows if r['wall_ms'] is not None]
-    return (f'| {name} | {len(vrows)} | {mean} | {longest} | '
-            f'{max(walls) if walls else "-"} | {errors or "-"} |')
 
 
 def _recap(rows):
@@ -771,22 +695,12 @@ def _recap(rows):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    parser.add_argument('--n', type=int, default=10, help='calls per variant')
-    parser.add_argument('--only', nargs='*', choices=list(VARIANTS), help='subset of variants')
-    parser.add_argument('--out', default=None, help='output folder')
-    parser.add_argument('--tenant-name', default='SalesCommands')
-    parser.add_argument('--dry-run', action='store_true', help='no API call')
-    parser.add_argument(
-        '--rescore', metavar='OUT_DIR', default=None,
-        help='recompute the summary of an existing run folder from its recorded '
-             'raw answers (no API call); writes summary_rescored.csv / .md',
-    )
-    parser.add_argument(
-        '--model', choices=sorted(MODELS),
-        help='force a model DECLARED in ai_pipelines/config.py PROVIDER_CONFIG '
-             '(e.g. the People challenger) for every variant run; default: the '
-             'production model per stage (config.STAGE_PROVIDER, else the '
-             'active provider)',
+    add_common_arguments(
+        parser, VARIANTS, MODELS,
+        model_help='force a model DECLARED in ai_pipelines/config.py PROVIDER_CONFIG '
+                   '(e.g. the People challenger) for every variant run; default: the '
+                   'production model per stage (config.STAGE_PROVIDER, else the '
+                   'active provider)',
     )
     args = parser.parse_args()
 
@@ -794,12 +708,8 @@ def main():
         rescore(Path(args.rescore), args.tenant_name)
         return
 
-    stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-    out_dir = Path(args.out) if args.out else HERE / 'out' / stamp
     # Never overwrite a previous run (the earlier reference outputs are kept).
-    if out_dir.exists() and any(out_dir.iterdir()):
-        sys.exit(f'Output folder {out_dir} is not empty -- choose another --out.')
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = prepare_out_dir(args.out, HERE)
 
     forced_key = MODELS[args.model] if args.model else None
     names = args.only or list(VARIANTS)
@@ -816,20 +726,8 @@ def main():
 
 
 def _write_summary(out_dir, rows, models_used, versions, suffix=''):
-    fields = sorted({key for row in rows for key in row}, key=lambda k: (k not in ('variant', 'call'), k))
-    with open(out_dir / f'summary{suffix}.csv', 'w', newline='', encoding='utf-8') as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(rows)
-    recap = _recap(rows)
-    (out_dir / f'summary{suffix}.md').write_text(
-        '# TD-279 — récap\n\n'
-        f'Modèle par variante : {json.dumps(models_used)}\n\n'
-        f'Versions : {json.dumps(versions)}\n\n'
-        + '\n'.join(recap) + '\n', encoding='utf-8',
-    )
-    print('\n'.join(recap))
-    print(f'\nOutput: {out_dir}')
+    write_summary(out_dir, rows, title='TD-279 — récap', models_used=models_used,
+                  versions=versions, recap=_recap(rows), suffix=suffix)
 
 
 if __name__ == '__main__':

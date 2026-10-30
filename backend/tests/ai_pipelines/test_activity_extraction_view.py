@@ -834,3 +834,306 @@ class TestNextStepDcOnlyGuard:
         ).count() >= 1
         assert data['next_steps_run'] is not None
         assert len(data['next_step_signals']) >= 1
+
+
+# =============================================================================
+# TD-282 (1) — an inferred next step is KEPT (aligned on TD-279 C1)
+# =============================================================================
+
+def _next_step_reply(confidence, is_inferred):
+    return (
+        '{"signals": [{'
+        '"suggested_title": "Send the DPA and the SOC 2 report", '
+        '"suggested_activity_type": "EMAIL", '
+        '"suggested_due_date": null, '
+        '"source_quote": "Envoyez-les avant vendredi", '
+        f'"confidence": {confidence}, '
+        f'"is_inferred": {"true" if is_inferred else "false"}'
+        '}]}'
+    )
+
+
+@pytest.mark.django_db
+class TestNextStepInferredKept:
+    """
+    TD-282 (1): NEXT_STEPS no longer drops a self-declared inferred next
+    step — same policy as TRANSCRIPT_SIGNALS since TD-279 C1. A weak one is
+    still dropped by the confidence threshold.
+    """
+
+    def _run(self, authed_api_a, activity):
+        with _apply_patches(_bypass_redis):
+            return authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': TRANSCRIPT,
+                    'run_qualification': False,
+                    'run_next_steps': True,
+                },
+                format='json',
+            )
+
+    def test_inferred_next_step_is_persisted(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        from app_modules.signals.models import NextStepSignal
+
+        fake_provider.replies = {'next_steps': _next_step_reply(0.8, True)}
+
+        resp = self._run(authed_api_a, activity)
+
+        assert resp.status_code == 200
+        rows = NextStepSignal.objects.filter(source_activity=activity)
+        assert rows.count() == 1
+        assert rows.get().is_inferred is True
+
+    def test_low_confidence_inferred_next_step_still_dropped(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        from app_modules.signals.models import NextStepSignal
+
+        fake_provider.replies = {'next_steps': _next_step_reply(0.4, True)}
+
+        resp = self._run(authed_api_a, activity)
+
+        assert resp.status_code == 200
+        assert NextStepSignal.objects.filter(
+            source_activity=activity,
+        ).count() == 0
+
+
+# =============================================================================
+# TD-282 (2) — a speaker label copied at the head of source_quote is removed
+# =============================================================================
+
+LABELLED_TRANSCRIPT = (
+    "Sophie Garnier: Je peux vous envoyer le DPA et le rapport SOC 2.\n"
+    "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.\n"
+    "Sophie Garnier: Entendu, ce sera fait.\n"
+)
+
+
+def _next_step_reply_with_quote(quote):
+    return (
+        '{"signals": [{'
+        '"suggested_title": "Send the DPA and the SOC 2 report", '
+        '"suggested_activity_type": "EMAIL", '
+        '"suggested_due_date": null, '
+        f'"source_quote": "{quote}", '
+        '"confidence": 0.9, '
+        '"is_inferred": false'
+        '}]}'
+    )
+
+
+@pytest.mark.django_db
+class TestNextStepSpeakerLabelStripped:
+    """
+    TD-282 (2): NextSteps has its own extractor and did not benefit from the
+    TD-279 strip of a speaker label copied at the head of source_quote. Only
+    a REAL label of this transcript is removed, never any other ":".
+    """
+
+    def _run(self, authed_api_a, activity):
+        with _apply_patches(_bypass_redis):
+            return authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': LABELLED_TRANSCRIPT,
+                    'run_qualification': False,
+                    'run_next_steps': True,
+                },
+                format='json',
+            )
+
+    def test_speaker_label_removed_from_quote(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        from app_modules.signals.models import NextStepSignal
+
+        fake_provider.replies = {'next_steps': _next_step_reply_with_quote(
+            "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.")}
+
+        resp = self._run(authed_api_a, activity)
+
+        assert resp.status_code == 200
+        signal = NextStepSignal.objects.get(source_activity=activity)
+        assert signal.source_quote == "Envoyez-les avant vendredi, s'il vous plaît."
+
+    def test_quote_without_real_label_kept_intact(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        from app_modules.signals.models import NextStepSignal
+
+        quote = 'Objectif : recevoir le DPA avant vendredi'
+        fake_provider.replies = {'next_steps': _next_step_reply_with_quote(quote)}
+
+        resp = self._run(authed_api_a, activity)
+
+        assert resp.status_code == 200
+        signal = NextStepSignal.objects.get(source_activity=activity)
+        assert signal.source_quote == quote
+
+
+# =============================================================================
+# Bug (a) — 409 cache path when only ONE pipeline is requested / allowed
+# =============================================================================
+
+@pytest.mark.django_db
+class TestAlreadyExtractedSinglePipeline:
+    """
+    The "both cached" branch ran when every REQUESTED pipeline was cached,
+    but it read `.id` on both runs. With one pipeline skipped (campaign
+    activity -> next steps skipped by the DC-only guard, or the rep only
+    asked for one pipeline) the other run is None. A re-run must answer
+    409 ALREADY_EXTRACTED with the skipped pipeline's run null.
+    """
+
+    def _post(self, authed_api_a, activity, *, qualif, nextsteps):
+        with _apply_patches(_bypass_redis):
+            return authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': TRANSCRIPT,
+                    'run_qualification': qualif,
+                    'run_next_steps': nextsteps,
+                },
+                format='json',
+            )
+
+    def test_campaign_activity_rerun_returns_409(
+        self, authed_api_a, activity_without_cycle, patch_active_provider,
+        fake_provider,
+    ):
+        activity = activity_without_cycle
+        fake_provider.replies = {
+            **CANNED_REPLIES_HAPPY,
+            'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY,
+        }
+
+        first = self._post(authed_api_a, activity, qualif=True, nextsteps=True)
+        assert first.status_code == 200
+
+        second = self._post(authed_api_a, activity, qualif=True, nextsteps=True)
+
+        assert second.status_code == 409
+        body = second.json()
+        assert body['code'] == 'ALREADY_EXTRACTED'
+        assert body['data']['qualification_run']['from_cache'] is True
+        assert body['data']['next_steps_run'] is None
+        assert body['data']['next_step_signals'] == []
+
+    def test_next_steps_only_rerun_returns_409(
+        self, authed_api_a, activity, patch_active_provider, fake_provider,
+    ):
+        fake_provider.replies = {'next_steps': CANNED_REPLY_NEXT_STEPS_HAPPY}
+
+        first = self._post(authed_api_a, activity, qualif=False, nextsteps=True)
+        assert first.status_code == 200
+
+        second = self._post(authed_api_a, activity, qualif=False, nextsteps=True)
+
+        assert second.status_code == 409
+        body = second.json()
+        assert body['code'] == 'ALREADY_EXTRACTED'
+        assert body['data']['next_steps_run']['from_cache'] is True
+        assert body['data']['qualification_run'] is None
+
+
+# =============================================================================
+# D7 / TD-281 — the reference date is the transcript header's date when there
+# is one, else the activity's date (shared session block, every stage)
+# =============================================================================
+
+HEADED_TRANSCRIPT = (
+    "Atelier business case SalesCommands – Logistix - 2026/10/20 14:00 CEST"
+    " - Transcript\n"
+    "Attendees\n"
+    "Isabelle Roux, Thomas Lefèvre, Sophie Garnier\n"
+    "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.\n"
+    "Sophie Garnier: Entendu, ce sera fait.\n"
+)
+
+HEADLESS_TRANSCRIPT = (
+    "Thomas Lefèvre: Envoyez-les avant vendredi, s'il vous plaît.\n"
+    "Sophie Garnier: Entendu, ce sera fait avant la fin de la semaine.\n"
+)
+
+
+@pytest.fixture
+def activity_scheduled_later(db, account, user_a):
+    """A DC activity planned on 2026-10-30 (never completed): its own date
+    differs from the date of the meeting the transcript records."""
+    import datetime
+
+    from app_modules.activities.models import Activity
+    from app_modules.activities.constants import ActivityType, ActivityStatus
+    from app_modules.decision_cycles.models import DecisionCycle
+
+    cycle = DecisionCycle(
+        account=account, owner=user_a, name='Header date cycle', is_active=True,
+    )
+    cycle.save(user=user_a, client_id=account.client_id)
+    a = Activity(
+        title='Business case workshop',
+        activity_type=ActivityType.MEETING,
+        status=ActivityStatus.PLANNED,
+        scheduled_date=datetime.date(2026, 10, 30),
+        account=account,
+        owner=user_a,
+        decision_cycle=cycle,
+    )
+    a.save(user=user_a, client_id=account.client_id)
+    return a
+
+
+@pytest.mark.django_db
+class TestConversationDateFromTranscriptHeader:
+
+    def _run(self, authed_api_a, activity, transcript):
+        with _apply_patches(_bypass_redis):
+            return authed_api_a.post(
+                URL,
+                {
+                    'activity_id': str(activity.id),
+                    'transcript': transcript,
+                    'run_qualification': True,
+                    'run_next_steps': True,
+                },
+                format='json',
+            )
+
+    @staticmethod
+    def _date_lines(fake_provider):
+        return {
+            line for call in fake_provider.calls
+            for line in call['user'].splitlines()
+            if line.startswith('- Conversation date:')
+        }
+
+    def test_header_date_is_the_reference_on_every_stage(
+        self, authed_api_a, activity_scheduled_later, patch_active_provider,
+        fake_provider,
+    ):
+        resp = self._run(authed_api_a, activity_scheduled_later, HEADED_TRANSCRIPT)
+
+        assert resp.status_code == 200
+        stages = {call['stage'] for call in fake_provider.calls}
+        assert 'next_steps' in stages and len(stages) > 1
+        lines = self._date_lines(fake_provider)
+        assert len(lines) == 1
+        assert lines.pop().startswith('- Conversation date: 2026-10-20 ')
+
+    def test_without_header_the_activity_date_is_kept(
+        self, authed_api_a, activity_scheduled_later, patch_active_provider,
+        fake_provider,
+    ):
+        resp = self._run(authed_api_a, activity_scheduled_later, HEADLESS_TRANSCRIPT)
+
+        assert resp.status_code == 200
+        lines = self._date_lines(fake_provider)
+        assert len(lines) == 1
+        assert lines.pop().startswith('- Conversation date: 2026-10-30 ')

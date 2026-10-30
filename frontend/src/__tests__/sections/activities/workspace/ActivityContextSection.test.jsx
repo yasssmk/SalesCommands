@@ -117,16 +117,17 @@ describe("ActivityContextSection — mockup copy", () => {
     expect(screen.queryByText(/Click to/i)).not.toBeInTheDocument();
   });
 
-  it("people rows have NO avatar, inline suffixes, no email/phone; names are interactive", () => {
+  it("people rows have NO avatar, inline suffixes, no contact email/phone; names are interactive", () => {
     const { container } = renderCtx(baseActivity);
     // no avatars anywhere
     expect(container.querySelector(".MuiAvatar-root")).toBeNull();
     expect(screen.getByText("Admin Tenant A")).toBeInTheDocument();
-    expect(screen.getByText(/· owner/)).toBeInTheDocument();
+    // 5.8h + 5.9 — the owner reads « First Last · Owner · email ».
+    expect(screen.getByText("Admin Tenant A").closest("p").textContent)
+      .toBe("Admin Tenant A · Owner · admin@test.com");
     expect(screen.getByText("Chevalier Iki")).toBeInTheDocument();
     expect(screen.getByText(/· HR/)).toBeInTheDocument();
     // no coordinates on people rows
-    expect(screen.queryByText(/admin@test.com/)).not.toBeInTheDocument();
     expect(screen.queryByText(/iki@rr.com/)).not.toBeInTheDocument();
     expect(screen.queryByText(/\+33/)).not.toBeInTheDocument();
     // both a contact (→ Contact fiche) and an internal member (→ User fiche)

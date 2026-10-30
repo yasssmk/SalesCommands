@@ -14,17 +14,34 @@ from app_modules.contacts.models import Contact
 from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from end_users.models import User
 from django.db import transaction
-
-from app_modules.notifications.models import NotificationCategory
-from app_modules.notifications.services import NotificationService
+from django.utils import timezone
 
 from .models import Activity
 from .constants import ActivityStatus, NoNextStepReason
 from .services import ActivitySequenceService, SequenceScope
+# The invited users: ONE validation + ONE notification, shared with
+# create-with-entities (ActivityCreationService).
+from .services.activity_invitations import notify_invited_users, resolve_invited_users
+from .services.next_step_materialization import (
+    mark_next_step_materialised,
+    next_step_activity_fields,
+    next_step_cycle_default,
+    next_step_step_default,
+    next_step_text_and_date_defaults,
+    resolve_pending_next_step,
+)
 
 # ============================================================================
 # HELPER SERIALIZERS
 # ============================================================================
+
+def _activity_reference_date(activity):
+    """ISO date an activity took place: completed_at, else scheduled_date,
+    else due_date (None without any)."""
+    if activity.completed_at:
+        return timezone.localtime(activity.completed_at).date().isoformat()
+    date = activity.scheduled_date or activity.due_date
+    return date.isoformat() if date else None
 
 class ActivityAccountSerializer(serializers.ModelSerializer):
     """Minimal account serializer for activity responses."""
@@ -419,6 +436,8 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Sequence context (NEW - dynamic calculation based on scope)
     # Replaces manual previous/next with calculated sequence
     sequence_context = serializers.SerializerMethodField(read_only=True)
+    # Sprint Next steps 5.1: the ONE next step already planned (PO matrix).
+    next_planned_step = serializers.SerializerMethodField(read_only=True)
 
     # Next Step Agreement (computed fields for UX logic)
     no_next_step_reason_display = serializers.SerializerMethodField(read_only=True)
@@ -432,6 +451,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     completed_by_name = serializers.SerializerMethodField(read_only=True)
     campaign_detail = serializers.SerializerMethodField(read_only=True)
     source_activity_detail = serializers.SerializerMethodField(read_only=True)
+    next_step_origins = serializers.SerializerMethodField(read_only=True)
     no_answer_count = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
@@ -477,12 +497,14 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             
             # Sequence context (NEW - dynamic playlist calculation)
             'sequence_context',
+            'next_planned_step',
             
             # Future fields (stubs)
             'transcript', 'preparation_notes',
 
             # AI suggestion provenance
             'next_step_signal',
+            'next_step_origins',
 
             # Campaign retry tracking
             'no_answer_count',
@@ -606,7 +628,47 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             }
 
         return None
-    
+
+    def get_next_step_origins(self, obj):
+        """
+        The CONVERSATIONS this activity comes from through next steps (Sprint
+        Next steps 5.9, provenance widened): the source activity of the next
+        step that CREATED it (Activity.next_step_signal) and of the next
+        steps LINKED to it afterwards (attached_next_step_signals) —
+        [{id, title, date}], one entry per conversation, sorted by
+        conversation date (oldest first, undated last). A REJECTED next step
+        is left out.
+
+        Direct reads (one query), never a prefetch: the detail endpoint's
+        get_object() (permissions/mixins.py) refetches the row without the
+        retrieve select_related / prefetch.
+        """
+        from django.db.models import Q
+        from app_modules.signals.constants import SignalStatus
+        from app_modules.signals.models import NextStepSignal
+
+        scope = Q(attached_activity_id=obj.id)
+        if obj.next_step_signal_id:
+            scope |= Q(id=obj.next_step_signal_id)
+        next_steps = (
+            NextStepSignal.objects
+            .filter(scope, client_id=obj.client_id, source_activity__isnull=False)
+            .exclude(status=SignalStatus.REJECTED)
+            .select_related('source_activity')
+        )
+        conversations = {}
+        for ns in next_steps:
+            source = ns.source_activity
+            conversations.setdefault(source.id, {
+                'id':    str(source.id),
+                'title': source.title,
+                'date':  _activity_reference_date(source),
+            })
+        return sorted(
+            conversations.values(),
+            key=lambda c: (c['date'] is None, c['date'] or '', c['title'] or ''),
+        )
+
     def get_next_activity_info(self, obj):
         if obj.decision_cycle_id:
             context = ActivitySequenceService.get_sequence_context(
@@ -661,6 +723,15 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
         return None
     
+    def get_next_planned_step(self, obj):
+        """
+        The ONE next step already planned for this activity
+        (ActivitySequenceService.get_next_planned_step: DC first, a campaign
+        activity that gave birth to a DC follows that DC, else the campaign
+        chain), or None -- the "Next steps" section's first part.
+        """
+        return ActivitySequenceService.get_next_planned_step(obj)
+
     def get_sequence_context(self, obj):
         """
         Get the dynamic sequence context for this activity.
@@ -802,51 +873,6 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
 
 # ============================================================================
-# INVITATION NOTIFICATION HELPER
-# ============================================================================
-
-def notify_invited_users(activity, users, actor):
-    """
-    Emit an activity-invitation notification to each newly invited user.
-
-    Runs on transaction commit so invitations are only sent once the
-    activity (and its M2M) are persisted. The self-notify guard in
-    NotificationService.emit() skips the inviter (actor).
-
-    Args:
-        activity: The saved Activity instance.
-        users:    Iterable of newly invited User instances.
-        actor:    The user performing the invitation.
-    """
-    recipient_ids = [u.id for u in users]
-    if not recipient_ids:
-        return
-
-    # Primitives captured outside the commit closure for the rich title
-    # and the routing payload the frontend deep-links with.
-    client_id = activity.client_id
-    activity_id = activity.id
-    actor_name = actor.get_full_name() or actor.email
-    account_name = activity.account.company_name
-    title = f"{actor_name} invited you to {activity.title} · {account_name}"
-
-    def _emit():
-        for recipient_id in recipient_ids:
-            NotificationService.emit(
-                client_id=client_id,
-                recipient=recipient_id,
-                actor=actor,
-                category=NotificationCategory.ACTIVITY_INVITATION,
-                title=title,
-                related_object_type='activity',
-                related_object_id=activity_id,
-                payload={'activity_id': str(activity_id)},
-            )
-
-    transaction.on_commit(_emit)
-
-
-# ============================================================================
 # CREATE SERIALIZER
 # ============================================================================
 
@@ -942,6 +968,19 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 raise StandardizedValidationError(
                     AccountErrorMessages.ACCOUNT_NOT_FOUND
                 )
+
+            # =================================================================
+            # Next step being converted (optional — AI suggestion provenance).
+            # Resolved FIRST: its values fill the empty fields BEFORE the
+            # checks below (date required, step required with a cycle) —
+            # services/next_step_materialization.py.
+            # =================================================================
+            next_step_signal = resolve_pending_next_step(
+                attrs.pop('next_step_signal_id', None), client_id,
+            )
+            if next_step_signal:
+                attrs['_next_step_signal'] = next_step_signal
+                attrs.update(next_step_text_and_date_defaults(next_step_signal, attrs))
             
             # =================================================================
             # REQUIRED: At least one contact
@@ -979,15 +1018,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # =================================================================
             invited_user_ids = attrs.pop('invited_user_ids', [])
             if invited_user_ids:
-                invited_users = User.objects.filter(
-                    id__in=invited_user_ids,
-                    client_account_id=client_id
-                )
-                if invited_users.count() != len(invited_user_ids):
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_FIELD.format(field='Some invited users not found')
-                    )
-                attrs['_invited_users'] = list(invited_users)
+                attrs['_invited_users'] = resolve_invited_users(invited_user_ids, client_id)
             
             # =================================================================
             # Validate decision_cycle (optional)
@@ -1005,6 +1036,10 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     raise StandardizedValidationError(
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
+            elif next_step_signal:
+                cycle_default = next_step_cycle_default(next_step_signal, account)
+                if cycle_default is not None:
+                    attrs['decision_cycle'] = cycle_default
             
             # =================================================================
             # Validate decision_step (optional, requires cycle)
@@ -1027,6 +1062,18 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
             
+            # Next step: the proposed step, else the cycle's current one.
+            if (
+                next_step_signal
+                and attrs.get('decision_cycle')
+                and not attrs.get('decision_step')
+            ):
+                step_default = next_step_step_default(
+                    next_step_signal, attrs['decision_cycle'],
+                )
+                if step_default is not None:
+                    attrs['decision_step'] = step_default
+
             # RULE: If cycle is provided, step is REQUIRED (pipeline steps are fixed)
             if attrs.get('decision_cycle') and not attrs.get('decision_step'):
                 raise StandardizedValidationError(
@@ -1049,30 +1096,6 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
 
-            # =================================================================
-            # Validate next_step_signal (optional — AI suggestion provenance)
-            # =================================================================
-            next_step_signal_id = attrs.pop('next_step_signal_id', None)
-            if next_step_signal_id:
-                from app_modules.signals.models import NextStepSignal
-                from app_modules.signals.constants import SignalStatus
-                try:
-                    next_step_signal = NextStepSignal.objects.get(
-                        id=next_step_signal_id,
-                        client_id=client_id,
-                    )
-                except NextStepSignal.DoesNotExist:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.OBJECT_NOT_FOUND
-                    )
-                if next_step_signal.status != SignalStatus.PENDING:
-                    raise StandardizedValidationError(
-                        CoreErrorMessages.INVALID_FIELD.format(
-                            field='next_step_signal must be in PENDING status'
-                        )
-                    )
-                attrs['_next_step_signal'] = next_step_signal
-
             return attrs
             
         except StandardizedValidationError:
@@ -1094,15 +1117,10 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         # Set owner to current user
         validated_data['owner'] = user
 
-        # Link the signal FK before creating the instance
+        # Link the signal FK before creating the instance (its values were
+        # already applied to the empty fields in validate()).
         if next_step_signal:
-            validated_data['next_step_signal'] = next_step_signal
-            # S13: carry the signal's suggested_objective onto the activity's
-            # call_to_action (the unified "Activity Objective"). The objective
-            # is generated by the next-steps extraction prompt. An explicit
-            # call_to_action in the payload wins over the signal default.
-            if not validated_data.get('call_to_action') and next_step_signal.suggested_objective:
-                validated_data['call_to_action'] = next_step_signal.suggested_objective
+            validated_data.update(next_step_activity_fields(next_step_signal))
 
         # Create instance
         instance = Activity(**validated_data)
@@ -1120,8 +1138,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
 
         # Auto-validate the NextStepSignal within the same transaction
         if next_step_signal:
-            from app_modules.signals.services.signal_manager import SignalManager
-            SignalManager.validate(next_step_signal, user=user)
+            mark_next_step_materialised(next_step_signal, user)
 
         return instance
 

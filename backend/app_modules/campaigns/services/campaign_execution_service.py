@@ -37,42 +37,10 @@ from ..models import (
     CampaignContactStatus,
     FINAL_CONTACT_STATES,
 )
+from ..constants import SUCCESSFUL_OUTCOMES, TERMINAL_OUTCOMES
 from ..config.settings import CONFIG
 
 logger = get_logger(__name__)
-
-# Outcomes that permanently stop a contact's sequence
-TERMINAL_OUTCOMES: frozenset = frozenset({
-    ActivityOutcome.NOT_INTERESTED,
-    ActivityOutcome.WRONG_CONTACT,
-    ActivityOutcome.UNSUBSCRIBE_OPTOUT,
-    ActivityOutcome.WRONG_EMAIL,
-    ActivityOutcome.INVALID_PHONE_NUMBER,
-})
-
-SUCCESSFUL_OUTCOMES: frozenset = frozenset({
-    ActivityOutcome.SUCCESSFUL,
-    ActivityOutcome.MEETING_SCHEDULED,
-})
-
-# Outcomes that mean a CONVERSATION HAPPENED — we got through to the person,
-# whatever they then said. Read-side only: unlike the two sets above, this one
-# drives no state machine, it defines the CONTACTS_REACHED metric
-# (services/campaign_contact_reach.py, where the rule and its edges are
-# documented). It lives here so the three outcome groupings the product reasons
-# with stay in ONE place and can be compared at a glance.
-#
-# Reached is NOT the same question as successful: NOT_INTERESTED and
-# UNSUBSCRIBE_OPTOUT are refusals AND contacts — someone picked up and said no.
-# CALLBACK_REQUESTED is not (a gatekeeper or a voicemail promising a call back is
-# not the person), and OTHER carries no information to decide on.
-REACHED_OUTCOMES: frozenset = frozenset({
-    ActivityOutcome.SUCCESSFUL,
-    ActivityOutcome.MEETING_SCHEDULED,
-    ActivityOutcome.NOT_INTERESTED,
-    ActivityOutcome.FOLLOW_UP_NEEDED,
-    ActivityOutcome.UNSUBSCRIBE_OPTOUT,
-})
 
 # Fallback title prefix for campaign activities whose campaign runs without an
 # automated sequence (sequence_type is empty, so no sequence declares a prefix).
@@ -695,8 +663,9 @@ class CampaignExecutionService:
         Handle activity outcome and update CampaignContact state.
 
         Scoping rules:
-            - CALLBACK / NO_ANSWER / TERMINAL → contact scope only
-            - SUCCESSFUL → contact COMPLETED, then check if account is done
+            - CALLBACK / NO_ANSWER → contact scope only
+            - TERMINAL / SUCCESSFUL → applied by the Activity post_save
+              (apply_final_outcome, 5.14a) — not here
         """
         outcome = result_data.get('outcome', '')
         callback_date = result_data.get('callback_date')
@@ -759,53 +728,15 @@ class CampaignExecutionService:
 
 
         # ------------------------------------------------------------------
-        # TERMINAL OUTCOMES — stop contact, cancel its chain
+        # TERMINAL / SUCCESSFUL OUTCOMES — the prospect's sequence ends.
+        # Applied by the Activity post_save (apply_final_outcome — Sprint
+        # Next steps 5.14a, the ONE place every path goes through) when
+        # activity.complete() above saved the outcome: nothing left here
+        # (never run twice).
         # ------------------------------------------------------------------
-
-        if outcome in TERMINAL_OUTCOMES:
-            campaign_contact.mark_stopped(
-                user=self.user,
-                notes=f"Terminal outcome: {outcome}",
-            )
-            self._cancel_chain_for_contact(campaign_contact)
-
-            # Propagate opt-out to the Contact record so future campaign
-            # enrollment (_extract_contacts) correctly excludes this contact.
-            if outcome == ActivityOutcome.UNSUBSCRIBE_OPTOUT:
-                contact = activity.contacts.first()
-                if contact:
-                    contact.mark_opted_out(user=self.user)
-                    audit_log(
-                        event='contact_opted_out',
-                        action='update',
-                        actor_id=str(self.user.id),
-                        client_id=self.client_id,
-                        target_type='contact',
-                        target_id=str(contact.id),
-                        outcome='success',
-                        extra={
-                            'source': 'campaign_outcome',
-                            'activity_id': str(activity.id),
-                            'campaign_id': str(activity.campaign_id),
-                        }
-                    )
-
-            self._check_account_completion(campaign_account)
+        if outcome in TERMINAL_OUTCOMES or outcome in SUCCESSFUL_OUTCOMES:
             return None
 
-        # ------------------------------------------------------------------
-        # SUCCESSFUL OUTCOMES — complete contact + possibly account
-        # ------------------------------------------------------------------
-        if outcome in SUCCESSFUL_OUTCOMES:
-            campaign_contact.mark_completed(
-                user=self.user,
-                notes=f"Successful: {outcome}",
-            )
-            # Cancel remaining contacts on the same account
-            self._cancel_chain_for_contact(campaign_contact)
-            self._check_account_completion(campaign_account)
-            return None
-        
         # ------------------------------------------------------------------
         # NO_ANSWER — sequence continues to next step.
         # If no PLANNED activities remain, the sequence has run its full course:
@@ -841,6 +772,89 @@ class CampaignExecutionService:
             )
 
         return None
+
+    def apply_final_outcome(self, activity):
+        """
+        End the prospect's sequence when `activity` carries a FINAL outcome
+        (Sprint Next steps 5.14a) — the ONE implementation, called by the
+        Activity post_save (campaigns/signals/signals.py) on EVERY path that
+        writes it: /complete/ (a PLANNED step via process_result, or an
+        ALREADY COMPLETED one — the campaign "Log Response"), the PATCH, the
+        playlist log-response, record-no-answer.
+
+          * TERMINAL_OUTCOMES   → the contact STOPPED, its chain deleted, an
+            opt-out propagated to the Contact;
+          * SUCCESSFUL_OUTCOMES → the contact COMPLETED, its chain deleted;
+          then the account's completion is checked.
+
+        Idempotent: the contact re-asserting its terminal state is a no-op
+        (CampaignContact._transition_to), the chain deletion and the account
+        check are re-runnable. An outcome CHANGED after a final one (the
+        contact already in the OTHER final state — PO): accepted on the
+        activity, no transition of the contact, logged.
+
+        Returns:
+            bool: True when the final outcome was applied.
+        """
+        outcome = activity.outcome
+        if activity.status != ActivityStatus.COMPLETED or not activity.campaign_contact_id:
+            return False
+        is_terminal = outcome in TERMINAL_OUTCOMES
+        if not is_terminal and outcome not in SUCCESSFUL_OUTCOMES:
+            return False
+
+        # The activity's OWN related instance — the one process_result holds
+        # too (campaign_contact = activity.campaign_contact): its callback
+        # resume reads the status this method sets, never a stale copy.
+        campaign_contact = activity.campaign_contact
+        target = (
+            CampaignContactStatus.STOPPED if is_terminal else CampaignContactStatus.COMPLETED
+        )
+        if campaign_contact.status in FINAL_CONTACT_STATES and campaign_contact.status != target:
+            logger.warning('campaign_final_outcome_changed_no_transition', extra={
+                'activity_id': str(activity.id),
+                'campaign_contact_id': str(campaign_contact.id),
+                'contact_status': campaign_contact.status,
+                'outcome': outcome,
+            })
+            return False
+
+        if is_terminal:
+            campaign_contact.mark_stopped(
+                user=self.user,
+                notes=f"Terminal outcome: {outcome}",
+            )
+            self._cancel_chain_for_contact(campaign_contact)
+
+            # Propagate opt-out to the Contact record so future campaign
+            # enrollment (_extract_contacts) correctly excludes this contact.
+            if outcome == ActivityOutcome.UNSUBSCRIBE_OPTOUT:
+                contact = activity.contacts.first()
+                if contact:
+                    contact.mark_opted_out(user=self.user)
+                    audit_log(
+                        event='contact_opted_out',
+                        action='update',
+                        actor_id=str(self.user.id) if self.user else None,
+                        client_id=self.client_id,
+                        target_type='contact',
+                        target_id=str(contact.id),
+                        outcome='success',
+                        extra={
+                            'source': 'campaign_outcome',
+                            'activity_id': str(activity.id),
+                            'campaign_id': str(activity.campaign_id),
+                        }
+                    )
+        else:
+            campaign_contact.mark_completed(
+                user=self.user,
+                notes=f"Successful: {outcome}",
+            )
+            self._cancel_chain_for_contact(campaign_contact)
+
+        self._check_account_completion(campaign_contact.campaign_account)
+        return True
 
     def _cancel_chain_for_contact(self, campaign_contact):
         """

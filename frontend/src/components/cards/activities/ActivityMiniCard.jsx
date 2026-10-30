@@ -6,45 +6,57 @@ import PropTypes from "prop-types";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
+import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
-import Chip from "@mui/material/Chip";
-import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-// Icons
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
-import RobotOutlined from "@ant-design/icons/RobotOutlined";
-
 // Project imports
+import StatusPill from "components/chips/StatusPill";
+import { formatShortDate } from "components/signals/SignalLine";
+import { getActivityTypeIcon, ACTIVITY_TYPE_ICON_COLOR } from "utils/activityTypes";
 import {
-  ACTIVITY_TYPE_LABELS,
   ACTIVITY_STATUS_LABELS,
-  ACTIVITY_STATUS_COLORS,
+  ACTIVITY_STATUS_CHIP_COLORS,
+  ACTIVITY_OVERDUE_LABEL,
+  ACTIVITY_OVERDUE_CHIP_COLORS,
 } from "api/accounts/activities";
 
 // ==============================|| ACTIVITY MINI CARD ||============================== //
-
-function formatDate(dateStr) {
-  if (!dateStr) return null;
-  return new Date(dateStr).toLocaleDateString();
-}
+//
+// Sprint Next steps 5.9b (PO) — the type ICON (getActivityTypeIcon,
+// ACTIVITY_TYPE_ICON_COLOR — no type chip) + the title; step · date · the
+// status pill (the shared StatusPill, the activity status tables, "Overdue"
+// when late). Consumer: NextStepValidateFlow (the link candidates, in the
+// drawer) — the next planned step is a Context line since 5.12.
+//
+// The "drawer" layout (5.10b), the only one since 5.12c (the one-line "row"
+// layout had no consumer left): row 1 the type icon + the FULL title (2 lines
+// max, then ellipsis), row 2 step · date | the status pill — whatever the
+// screen width.
 
 export default function ActivityMiniCard({
   activity: activityItem,
   onNavigate,
-  onUnlink,
-  showUnlink = false,
 }) {
   const theme = useTheme();
 
-  const displayDate = activityItem.scheduled_date || activityItem.due_date;
-  const stepName = activityItem.decision_step_name;
-  const fromAI = Boolean(activityItem.next_step_signal);
+  const TypeIcon = getActivityTypeIcon(activityItem.activity_type);
+  const meta = [
+    activityItem.decision_step_name,
+    formatShortDate(activityItem.scheduled_date || activityItem.due_date),
+  ].filter(Boolean);
+  const statusLabel = activityItem.is_overdue
+    ? ACTIVITY_OVERDUE_LABEL
+    : ACTIVITY_STATUS_LABELS[activityItem.status] || activityItem.status;
+  const statusColors = activityItem.is_overdue
+    ? ACTIVITY_OVERDUE_CHIP_COLORS
+    : ACTIVITY_STATUS_CHIP_COLORS[activityItem.status] || ACTIVITY_STATUS_CHIP_COLORS.PLANNED;
 
   return (
     <Card
       variant="outlined"
+      data-testid="activity-mini-card"
       sx={{
         p: 1.5,
         cursor: "pointer",
@@ -56,86 +68,65 @@ export default function ActivityMiniCard({
       }}
       onClick={() => onNavigate(activityItem.id)}
     >
-      <Stack spacing={1}>
-        {/* Row 1: Type + Title */}
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <Chip
-            label={
-              ACTIVITY_TYPE_LABELS[activityItem.activity_type] ||
-              activityItem.activity_type
-            }
-            size="small"
-            variant="outlined"
-            sx={{ minWidth: 80 }}
-          />
-          <Typography variant="body2" fontWeight={500} noWrap sx={{ flex: 1 }}>
+      <Stack
+        data-testid="activity-mini-card-row"
+        direction="column"
+        alignItems="stretch"
+        spacing={1}
+      >
+        {/* Row 1: type icon + the full title */}
+        <Stack
+          data-testid="activity-mini-card-main"
+          direction="row"
+          spacing={1}
+          alignItems="flex-start"
+          sx={{ flex: 1, minWidth: 0 }}
+        >
+          <Box
+            data-testid="activity-mini-card-type-icon"
+            sx={{ display: "flex", flexShrink: 0, color: ACTIVITY_TYPE_ICON_COLOR }}
+          >
+            <TypeIcon style={{ fontSize: theme.iconSizes.sm }} />
+          </Box>
+          <Typography
+            variant="body2"
+            fontWeight={500}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              overflowWrap: "anywhere",
+            }}
+          >
             {activityItem.title}
           </Typography>
-          {showUnlink && (
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                onUnlink?.();
-              }}
-              sx={{ ml: "auto" }}
-            >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-          )}
         </Stack>
 
-        {/* Row 2: Meta info (step, date, status, from-AI) */}
+        {/* Row 2: step · date | status pill. No « from AI » chip
+            (5.10b, PO): the provenance lives in Context (« From next step »). */}
         <Stack
+          data-testid="activity-mini-card-meta"
           direction="row"
           spacing={1}
           alignItems="center"
-          flexWrap="wrap"
-          useFlexGap
+          justifyContent="space-between"
+          sx={{ flexShrink: 0 }}
         >
-          {stepName && (
-            <Chip
-              label={stepName}
-              size="small"
-              variant="filled"
-              sx={{
-                height: 20,
-                fontSize: "0.7rem",
-                bgcolor: theme.palette.grey[100],
-                color: theme.palette.text.secondary,
-              }}
-            />
-          )}
-          {displayDate && (
-            <Typography variant="caption" color="text.secondary">
-              {formatDate(displayDate)}
+          {meta.length > 0 && (
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {meta.join(" · ")}
             </Typography>
           )}
-          <Chip
-            label={
-              activityItem.is_overdue
-                ? "Overdue"
-                : ACTIVITY_STATUS_LABELS[activityItem.status] ||
-                  activityItem.status
-            }
-            size="small"
-            color={
-              activityItem.is_overdue
-                ? "error"
-                : ACTIVITY_STATUS_COLORS[activityItem.status] || "default"
-            }
-            sx={{ height: 20, fontSize: "0.7rem" }}
+          <StatusPill
+            label={statusLabel}
+            colorText={statusColors.text}
+            colorBg={statusColors.background}
+            // Always on the right, even without step / date.
+            sx={{ ml: "auto" }}
           />
-          {fromAI && (
-            <Chip
-              icon={<RobotOutlined style={{ fontSize: 10 }} />}
-              label="from AI"
-              size="small"
-              color="warning"
-              variant="outlined"
-              sx={{ height: 20, fontSize: "0.7rem" }}
-            />
-          )}
         </Stack>
       </Stack>
     </Card>
@@ -154,9 +145,6 @@ ActivityMiniCard.propTypes = {
     scheduled_date: PropTypes.string,
     due_date: PropTypes.string,
     decision_step_name: PropTypes.string,
-    next_step_signal: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
   }).isRequired,
   onNavigate: PropTypes.func.isRequired,
-  onUnlink: PropTypes.func,
-  showUnlink: PropTypes.bool,
 };

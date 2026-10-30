@@ -9,7 +9,7 @@ import { useAuth } from "hooks/useAuth";
 import { tenantKey } from "api/_swr";
 import { isValidUUID } from "utils/validators";
 
-const AGGREGATED_URL = "/module-signals/all/";
+export const AGGREGATED_URL = "/module-signals/all/";
 
 /**
  * Build the query string for GET /module-signals/all/.

@@ -42,7 +42,7 @@ Notes:
 
 from rest_framework import serializers
 
-from core.error_messages import SignalErrorMessages
+from core.error_messages import ActivityErrorMessages, SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 
 from ..models import NextStepSignal
@@ -101,18 +101,97 @@ class _NextStepDisplayMixin:
         ``prefetch_related('created_activities')`` on the queryset.
         """
         activity = obj.created_activities.first() if hasattr(obj, '_prefetched_objects_cache') and 'created_activities' in obj._prefetched_objects_cache else obj.created_activities.first()
-        if not activity:
+        return _compact_activity(activity)
+
+    def get_attached_activity(self, obj):
+        """
+        The EXISTING activity this next step was linked to ("Lier") — same
+        compact shape as linked_activity (the activity CREATED from it).
+        None when not linked.
+        """
+        return _compact_activity(obj.attached_activity)
+
+    def get_suggested_decision_step_detail(self, obj):
+        """The DC step proposed for this next step — {id, name, order}, or
+        None when not deduced."""
+        step = obj.suggested_decision_step
+        if step is None:
             return None
-        return {
-            'id':                    str(activity.id),
-            'title':                 activity.title,
-            'activity_type':         activity.activity_type,
-            'activity_type_display': activity.get_activity_type_display(),
-            'status':                activity.status,
-            'status_display':        activity.get_status_display(),
-            'scheduled_date':        activity.scheduled_date.isoformat() if activity.scheduled_date else None,
-            'due_date':              activity.due_date.isoformat() if activity.due_date else None,
-        }
+        return {'id': str(step.id), 'name': step.name, 'order': step.order}
+
+    def get_suggested_people(self, obj):
+        """
+        Compact list of the People (PeopleSignal) this next step involves,
+        with their contact when there is one (it becomes an activity contact
+        at conversion). Relies on the ViewSet prefetch of
+        ``suggested_people__target_contact``.
+        """
+        return [
+            {
+                'id':             str(p.id),
+                'full_name':      p.full_name,
+                'role':           p.role,
+                # 5.8h: a REJECTED People is never used (the pre-fill reads it).
+                'status':         p.status,
+                'target_contact': (
+                    {
+                        'id':         str(p.target_contact.id),
+                        'first_name': p.target_contact.first_name,
+                        'last_name':  p.target_contact.last_name,
+                    }
+                    if p.target_contact_id else None
+                ),
+            }
+            for p in obj.suggested_people.all()
+        ]
+
+
+def _compact_activity(activity):
+    """Compact Activity shape shared by linked_activity / attached_activity."""
+    if not activity:
+        return None
+    return {
+        'id':                    str(activity.id),
+        'title':                 activity.title,
+        'activity_type':         activity.activity_type,
+        'activity_type_display': activity.get_activity_type_display(),
+        'status':                activity.status,
+        'status_display':        activity.get_status_display(),
+        'scheduled_date':        activity.scheduled_date.isoformat() if activity.scheduled_date else None,
+        'due_date':              activity.due_date.isoformat() if activity.due_date else None,
+    }
+
+
+# Sprint Next steps (1.1 / 1.3) — the structured fields of the activity
+# proposal, read by List AND Detail (one list keeps the two in sync).
+_STRUCTURED_READ_FIELDS = [
+    'suggested_date_text',
+    'suggested_decision_step',
+    'suggested_decision_step_detail',
+    'suggested_topics',
+    'suggested_success_criterion',
+    'carried_by_prospect',
+    'suggested_people',
+    'suggested_people_names',
+    'suggested_internal_names',
+    'attached_activity',
+    'advice_rationale',
+]
+
+# The same fields, editable by PATCH (attached_activity excepted: the link to
+# an existing activity goes through the link service, which validates it and
+# keeps it exclusive with the created activity).
+_STRUCTURED_WRITE_FIELDS = [
+    'suggested_date_text',
+    'suggested_decision_step',
+    'suggested_topics',
+    'suggested_success_criterion',
+    'carried_by_prospect',
+    'suggested_people',
+    'suggested_people_names',
+    'suggested_internal_names',
+    'advice_rationale',
+]
 
 
 # =============================================================================
@@ -166,6 +245,9 @@ class NextStepSignalListSerializer(_NextStepDisplayMixin, BaseSignalListSerializ
     suggested_contacts             = serializers.SerializerMethodField()
     suggested_activity_type_display = serializers.SerializerMethodField()
     linked_activity                = serializers.SerializerMethodField()
+    attached_activity              = serializers.SerializerMethodField()
+    suggested_decision_step_detail = serializers.SerializerMethodField()
+    suggested_people               = serializers.SerializerMethodField()
 
     def get_suggested_activity_type_display(self, obj):
         return obj.get_suggested_activity_type_display()
@@ -183,7 +265,7 @@ class NextStepSignalListSerializer(_NextStepDisplayMixin, BaseSignalListSerializ
             'suggested_objective',
             'suggested_contacts',
             'linked_activity',
-        ]
+        ] + _STRUCTURED_READ_FIELDS
         read_only_fields = fields
 
 
@@ -209,6 +291,9 @@ class NextStepSignalDetailSerializer(_NextStepDisplayMixin, BaseSignalDetailSeri
     suggested_contacts             = serializers.SerializerMethodField()
     suggested_activity_type_display = serializers.SerializerMethodField()
     linked_activity                = serializers.SerializerMethodField()
+    attached_activity              = serializers.SerializerMethodField()
+    suggested_decision_step_detail = serializers.SerializerMethodField()
+    suggested_people               = serializers.SerializerMethodField()
 
     def get_suggested_activity_type_display(self, obj):
         return obj.get_suggested_activity_type_display()
@@ -226,7 +311,7 @@ class NextStepSignalDetailSerializer(_NextStepDisplayMixin, BaseSignalDetailSeri
             'suggested_objective',
             'suggested_contacts',
             'linked_activity',
-        ]
+        ] + _STRUCTURED_READ_FIELDS
         read_only_fields = fields
 
 
@@ -319,6 +404,14 @@ class NextStepSignalUpdateSerializer(BaseSignalUpdateSerializer):
       - suggested_activity_type — type may be corrected (e.g. CALL → MEETING)
       - suggested_due_date      — deadline may be set or updated
       - suggested_contacts      — attendee list may be amended
+      - suggested_objective     — the activity objective (→ call_to_action)
+      - the structured proposal (_STRUCTURED_WRITE_FIELDS): date text, DC
+        step (must be a step of the next step's own cycle), topics, success
+        criterion, carried_by_prospect, People (same tenant AND account —
+        base _validate_fk_scope), unresolved / internal names (lists of
+        strings), advice rationale.
+
+    Not writable here: attached_activity (link service, bloc 2).
 
     signal_category / signal_category_display are stripped from
     inherited fields (model shadow-overrides signal_category to None).
@@ -343,11 +436,42 @@ class NextStepSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'suggested_activity_type',
             'suggested_due_date',
             'suggested_contacts',
-        ]
+            'suggested_objective',
+        ] + _STRUCTURED_WRITE_FIELDS
         extra_kwargs = {
             **_base_extra_kwargs,
             'suggested_title':         {'required': False},
             'suggested_activity_type': {'required': False},
             'suggested_due_date':      {'required': False, 'allow_null': True},
             'suggested_contacts':      {'required': False},
+            'suggested_objective':     {'required': False, 'allow_null': True},
+            'suggested_decision_step': {'required': False, 'allow_null': True},
+            'suggested_people':        {'required': False},
         }
+
+    # JSON columns: typed as lists of non-empty names (a bare string or any
+    # other JSON shape is a 400, never stored).
+    suggested_people_names   = serializers.ListField(
+        child=serializers.CharField(max_length=255), required=False,
+    )
+    suggested_internal_names = serializers.ListField(
+        child=serializers.CharField(max_length=255), required=False,
+    )
+
+    def validate(self, attrs):
+        """
+        Base guard first (tenant + account of every FK / M2M, People
+        included), then: the proposed DC step must belong to the next step's
+        own decision cycle — DecisionStep carries no account_id, so the base
+        guard cannot see a step of another deal.
+        """
+        attrs = super().validate(attrs)
+        step = attrs.get('suggested_decision_step')
+        if step is not None and (
+            self.instance is None
+            or step.cycle_id != self.instance.decision_cycle_id
+        ):
+            raise StandardizedValidationError(
+                ActivityErrorMessages.STEP_MUST_BELONG_TO_CYCLE
+            )
+        return attrs

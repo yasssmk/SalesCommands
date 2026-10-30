@@ -4,11 +4,12 @@
 // (Formik + DrawerContentLayout global Save/Cancel + InlineEditableValue,
 // click to edit). Opened by the ✎ of the read-only Contact fiche.
 //
-// Sectioned like the edit-activity drawer:
-//   • Identity — first_name*, last_name*, then job_title + department (select).
-//   • Contact — coordinates email / phone / linkedin, each always shown with a
+// Sectioned EXACTLY like the Edit signal drawers (5.18 — the shared numbered
+// SectionHeader, one Stack per section, MUI Dividers between them):
+//   1. Identity — first_name*, last_name*, then job_title + department (select).
+//   2. Contact — coordinates email / phone / linkedin, each always shown with a
 //     "No …" placeholder when empty.
-//   • Role in the decision — ONLY when the fiche was opened inside a Decision
+//   3. Role in the decision — ONLY when the fiche was opened inside a Decision
 //     Cycle (activity.decision_cycle). Role + Influence, pre-filled from the
 //     contact's qualified entry in DC people. Editing it writes a MANUAL
 //     PeopleSignal via createSignal("people", …) — the exact flow the DC
@@ -31,8 +32,8 @@ import * as Yup from "yup";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
+import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -41,6 +42,7 @@ import { useGetDCPeople } from "api/accounts/decisionCycles";
 import { createSignal, useGetSignalChoices } from "api/signals/signals";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 
 // Roles and influences: the signal choices endpoint (people_roles /
@@ -54,31 +56,6 @@ const validationSchema = Yup.object({
   last_name: Yup.string().trim().required("Last name is required"),
   email: Yup.string().trim().email("Must be a valid email").nullable(),
 });
-
-// ==============================|| SMALL PIECES ||============================== //
-
-function Rule() {
-  const aq = useTheme().aphoriQ;
-  return (
-    <Box
-      sx={{
-        borderTopStyle: "solid",
-        borderTopWidth: aq.border.width.hairline,
-        borderTopColor: aq.border.color,
-      }}
-    />
-  );
-}
-
-function SectionCaption({ children }) {
-  const aq = useTheme().aphoriQ;
-  return (
-    <Typography variant="caption" sx={{ color: aq.text.muted, fontWeight: "bold", display: "block" }}>
-      {children}
-    </Typography>
-  );
-}
-SectionCaption.propTypes = { children: PropTypes.node };
 
 // ==============================|| EDIT CONTACT CONTENT ||============================== //
 
@@ -203,9 +180,10 @@ export default function EditContactContent({ contactId, activity, onSaved }) {
       onCancel={() => closeDrawer()}
       saveDisabled={!formik.isValid || !formik.dirty || formik.isSubmitting}
     >
-      <Stack spacing={2}>
-        {/* Identity */}
+      <Stack spacing={2.5}>
+        {/* ---- SECTION 1 — Identity ---- */}
         <Stack spacing={1.5}>
+          <SectionHeader index={1} title="Identity" subtitle="Who the contact is." />
           <InlineEditableValue
             name="first_name"
             label="First name"
@@ -242,11 +220,11 @@ export default function EditContactContent({ contactId, activity, onSaved }) {
           />
         </Stack>
 
-        <Rule />
+        <Divider />
 
-        {/* Contact — coordinates */}
+        {/* ---- SECTION 2 — Contact: coordinates ---- */}
         <Stack spacing={1.5}>
-          <SectionCaption>Contact</SectionCaption>
+          <SectionHeader index={2} title="Contact" subtitle="How to reach them." />
           <InlineEditableValue
             name="email"
             label="Email"
@@ -272,12 +250,16 @@ export default function EditContactContent({ contactId, activity, onSaved }) {
           />
         </Stack>
 
-        {/* Role in the decision — only inside a DC */}
+        {/* ---- SECTION 3 — Role in the decision: only inside a DC ---- */}
         {inDC && (
           <>
-            <Rule />
+            <Divider />
             <Stack spacing={1.5} data-testid="edit-contact-role-section">
-              <SectionCaption>Role in the decision</SectionCaption>
+              <SectionHeader
+                index={3}
+                title="Role in the decision"
+                subtitle="Their role in this decision cycle."
+              />
               <InlineEditableValue
                 name="role"
                 label="Role"

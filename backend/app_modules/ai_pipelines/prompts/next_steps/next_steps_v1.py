@@ -50,6 +50,14 @@ fields:
 
 Empty result is represented by {"signals": []}.
 
+Since Sprint Next steps 3.1 the provider enforces this shape (Structured
+Outputs, strict): NEXT_STEPS_RESPONSE_SCHEMA -- the SAME 7 fields, every one
+required, no other field; suggested_due_date typed [string, null]; the
+activity type enum built from the SAME ActivityType values as the taxonomy
+the prompt lists. The request text is unchanged (still v1): a value the
+prompt says to "OMIT the signal" for can no longer be invented outside the
+enum, the extractor's defense in depth stays.
+
 source_quote semantic contract for NextStepSignal
 -------------------------------------------------
 For NextStepSignal, `source_quote` MUST carry the JUSTIFICATION /
@@ -149,10 +157,53 @@ retrieved later for quality measurement and debugging.
 from app_modules.activities.constants import ActivityType
 
 
-__all__ = ['NEXT_STEPS_PROMPT_VERSION', 'build_next_steps_request']
+__all__ = [
+    'NEXT_STEPS_PROMPT_VERSION',
+    'NEXT_STEPS_RESPONSE_SCHEMA',
+    'build_next_steps_request',
+]
 
 
 NEXT_STEPS_PROMPT_VERSION = 'v1'
+
+
+# Strict Structured Outputs schema of the answer (Sprint Next steps 3.1): the
+# exact shape of the OUTPUT SCHEMA of the v1 request below -- every field
+# required, no other field, the nullable typed [..., "null"]. The activity
+# type enum is ActivityType, the same values as _activity_type_json_array().
+NEXT_STEPS_RESPONSE_SCHEMA = {
+    'name': 'next_steps_signals',
+    'schema': {
+        'type': 'object',
+        'additionalProperties': False,
+        'required': ['signals'],
+        'properties': {
+            'signals': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'additionalProperties': False,
+                    'required': [
+                        'suggested_title', 'suggested_activity_type',
+                        'suggested_due_date', 'suggested_objective',
+                        'source_quote', 'confidence', 'is_inferred',
+                    ],
+                    'properties': {
+                        'suggested_title':         {'type': 'string'},
+                        'suggested_activity_type': {
+                            'type': 'string', 'enum': list(ActivityType.values),
+                        },
+                        'suggested_due_date':      {'type': ['string', 'null']},
+                        'suggested_objective':     {'type': 'string'},
+                        'source_quote':            {'type': 'string'},
+                        'confidence':              {'type': 'number'},
+                        'is_inferred':             {'type': 'boolean'},
+                    },
+                },
+            },
+        },
+    },
+}
 
 
 def _activity_type_json_array():

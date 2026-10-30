@@ -6,6 +6,8 @@ import {
   screen,
   fireEvent,
   cleanup,
+  waitFor,
+  within,
 } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //
@@ -19,6 +21,7 @@ vi.mock("@mui/x-date-pickers/LocalizationProvider", () => ({
 vi.mock("@mui/x-date-pickers/AdapterDayjs", () => ({
   AdapterDayjs: class {},
 }));
+vi.mock("@mui/x-date-pickers/TimePicker", () => ({ TimePicker: () => <input /> }));
 
 const mockMutateAll = vi.fn();
 const mockMutateCounts = vi.fn();
@@ -26,7 +29,10 @@ const mockRouterPush = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockRouterPush }),
+  usePathname: () => "/activities/activity-123",
 }));
+// The workspace coque in push mode (large screen).
+vi.mock("@mui/material/useMediaQuery", () => ({ default: vi.fn(() => false) }));
 
 const mockNextStepSignals = [
   {
@@ -75,16 +81,20 @@ const mockNextStepSignals = [
   },
 ];
 
-vi.mock("hooks/useActivityAllSignals", () => ({
+// 5.8d — the creation in the coque reads the user (owner) and the cycles.
+vi.mock("hooks/useAuth", () => ({
+  useAuth: () => ({ user: { id: "u-1", first_name: "Yasmine", last_name: "Kawi" }, tenantId: "t-1" }),
+}));
+vi.mock("api/accounts/decisionCycles", () => ({
+  useGetDecisionCyclesByAccount: () => ({ cycles: [], cyclesLoading: false }),
+  useGetDecisionStepsByCycle: () => ({ steps: [], stepsLoading: false }),
+}));
+vi.mock("api/signals/aggregatedSignals", () => ({
   default: vi.fn(() => ({
-    qualificationSignals: [],
-    techStackSignals: [],
-    blockerSignals: [],
-    nextStepSignals: mockNextStepSignals,
-    allSignals: mockNextStepSignals,
+    signals: mockNextStepSignals,
     loading: false,
     error: null,
-    mutateAll: mockMutateAll,
+    mutate: mockMutateAll,
   })),
 }));
 
@@ -96,29 +106,15 @@ vi.mock("api/signals/signals", () => ({
   validateSignal: vi.fn(() => Promise.resolve({ success: true })),
   rejectSignal: vi.fn(() => Promise.resolve({ success: true })),
   reopenSignal: vi.fn(() => Promise.resolve({ success: true })),
+  useNextStepLinkCandidates: vi.fn(() => ({ candidates: [], candidatesLoading: false })),
+  getSignal: vi.fn(() => Promise.resolve({ success: true, data: {} })),
+  useNextStepCitedContacts: vi.fn(() => ({ citedContacts: [], citedLoading: false })),
   updateSignal: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
-vi.mock("api/accounts/activities", () => ({
+vi.mock("api/accounts/activities", async (importOriginal) => ({
+  ...(await importOriginal()),
   createActivity: vi.fn(() => Promise.resolve({ success: true, data: {} })),
-  ACTIVITY_TYPES: {
-    CALL: "CALL",
-    EMAIL: "EMAIL",
-    MEETING: "MEETING",
-    TASK: "TASK",
-    LINKEDIN: "LINKEDIN",
-    OTHER: "OTHER",
-  },
-  ACTIVITY_TYPE_LABELS: {
-    CALL: "Phone Call",
-    EMAIL: "Email",
-    MEETING: "Meeting",
-    TASK: "Task",
-    LINKEDIN: "LinkedIn Message",
-    OTHER: "Other",
-  },
-  ACTIVITY_STATUS_LABELS: { PLANNED: "Planned" },
-  ACTIVITY_STATUS_COLORS: { PLANNED: "default" },
   useGetActivityChoices: vi.fn(() => ({ choicesLoading: false })),
 }));
 
@@ -158,37 +154,28 @@ vi.mock("components/signals/SignalEditDrawer", () => ({
     open ? <div data-testid="signal-edit-dialog" /> : null,
 }));
 
-vi.mock("sections/activities/nextSteps/UpcomingActivitiesSection", () => ({
-  default: ({ activity, onCreateActivity, isLocked }) => (
-    <div data-testid="upcoming-activities-section">
-      {!isLocked && (
-        <button onClick={() => onCreateActivity("MEETING")}>Quick Meeting</button>
-      )}
-    </div>
-  ),
-}));
-
-vi.mock("sections/activities/nextSteps/NextStepSuggestionDrawer", () => ({
-  default: ({ open, signal, onClose }) =>
-    open && signal ? (
-      <div data-testid="suggestion-drawer">
-        <span>{signal.suggested_title}</span>
-        <button onClick={onClose} aria-label="Close drawer">Close</button>
-      </div>
-    ) : null,
-}));
-
 // ==============================|| IMPORTS (after mocks) ||============================== //
 
-import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
-import { rejectSignal } from "api/signals/signals";
+// The extraction (the shared Run AI action, 5.12 B) is out of scope here —
+// covered by NextStepsBandLayoutPage.
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({
+  default: () => null,
+  RUN_AI_TRIGGER_VARIANTS: { BUTTON: "button", PILL: "pill" },
+}));
+
+// 5.12e (4): « + Add next step » is in the BAND header — the tab is rendered
+// inside its band (ActivityNextStepsBand, open), the body unchanged.
+import ActivityNextStepsBand from "sections/activities/workspace/ActivityNextStepsBand";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
+import { rejectSignal, validateSignal } from "api/signals/signals";
+import WorkspaceCoque from "../_utils/workspaceCoque";
 
 // ==============================|| TEST ACTIVITY ||============================== //
 
 const mockActivity = {
   id: "activity-123",
   account: "account-456",
-  status: "COMPLETED",
+  status: "PLANNED",
   decision_step: "step-1",
   decision_cycle: "dc-1",
   sequence_context: {
@@ -197,6 +184,24 @@ const mockActivity = {
 };
 
 // ==============================|| TESTS ||============================== //
+//
+// Sprint Next steps 5.3 — the band in 4 parts: (1) the next planned step,
+// (2-3) the generic SignalsValidationList filtered on next-steps (the row ✓
+// opens the drawer, never validates; ✗ rejects; a resolved next step carries
+// its activity on the row's 3rd line), (4) "Set a next step manually" —
+// replaced in 5.8e by "+ Add next step" (header of part 1). The former AI suggestion cards, filter bar and summary line are gone.
+
+const renderTab = (props = {}) =>
+  render(
+    <WorkspaceCoque>
+      <ActivityNextStepsBand
+        activity={mockActivity}
+        mutateCounts={mockMutateCounts}
+        defaultExpanded
+        {...props}
+      />
+    </WorkspaceCoque>,
+  );
 
 describe("ActivityNextStepsTab", () => {
   beforeEach(() => {
@@ -207,210 +212,111 @@ describe("ActivityNextStepsTab", () => {
     cleanup();
   });
 
-  it("renders AI Suggestions section with sorted signals (PENDING first)", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
+  it("reads the next steps from the aggregated endpoint, all 3 statuses", () => {
+    renderTab();
+    expect(useAggregatedSignals).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityId: "activity-123",
+        signalTypes: ["next-steps"],
+        statuses: ["PENDING", "VALIDATED", "REJECTED"],
+      }),
     );
+  });
 
-    expect(screen.getByText("AI Suggestions")).toBeInTheDocument();
+  it("lists the pending next steps in the generic validation list", () => {
+    renderTab();
+    expect(screen.getByText("To validate")).toBeInTheDocument();
     expect(screen.getByText("Follow up on pricing")).toBeInTheDocument();
-    expect(screen.getByText("Send proposal")).toBeInTheDocument();
+    expect(screen.getByText("Validated")).toBeInTheDocument();
+    expect(screen.getByText("Rejected")).toBeInTheDocument();
   });
 
-  it("renders the suggested objective on the suggestion card", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(
-      screen.getByText(
-        "Lock the pricing narrative with the CFO before Q4 close",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("renders Upcoming Activities section", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByTestId("upcoming-activities-section")).toBeInTheDocument();
-  });
-
-  it("hides REJECTED signals by default", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.queryByText("Schedule demo")).not.toBeInTheDocument();
-  });
-
-  it("shows REJECTED signals when Include rejected is checked", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    const checkbox = screen.getByRole("checkbox");
-    fireEvent.click(checkbox);
-
-    expect(screen.getByText("Schedule demo")).toBeInTheDocument();
-  });
-
-  it("shows Convert to Activity button for PENDING signals", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText("Convert to Activity")).toBeInTheDocument();
-  });
-
-  it("opens convert modal when clicking Convert to Activity", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Convert to Activity"));
-
-    expect(screen.getByTestId("activity-modal")).toBeInTheDocument();
-  });
-
-  it("opens drawer when clicking on a suggestion card", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Follow up on pricing"));
-
-    expect(screen.getByTestId("suggestion-drawer")).toBeInTheDocument();
-  });
-
-  it("shows Converted to link for VALIDATED signals with linked activity", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText(/Converted to:/)).toBeInTheDocument();
-    expect(screen.getByText("Send proposal email")).toBeInTheDocument();
-  });
-
-  it("calls rejectSignal and mutates when rejecting a suggestion", async () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Reject"));
-
-    expect(rejectSignal).toHaveBeenCalledWith("next-steps", "ns1");
-  });
-
-  it("shows summary line with correct counts", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(
-      screen.getByText(/1 AI suggestion to handle/),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/1 activity created/)).toBeInTheDocument();
-  });
-
-  it("shows Add manually button", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText("Add manually")).toBeInTheDocument();
-  });
-
-  it("hides action buttons when isLocked", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={true}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
+  it("no AI suggestion card, filter bar or summary line any more", () => {
+    renderTab();
+    expect(screen.queryByText("AI Suggestions")).not.toBeInTheDocument();
     expect(screen.queryByText("Convert to Activity")).not.toBeInTheDocument();
-    expect(screen.queryByText("Reject")).not.toBeInTheDocument();
-    expect(screen.queryByText("Add manually")).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByText(/AI suggestion to handle/)).not.toBeInTheDocument();
   });
 
-  it("shows Upcoming Activities heading", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
+  // 5.12 B — the next planned step left the band (it is in Context).
+  it("renders no 'Next planned step' sub-block any more", () => {
+    renderTab();
+    expect(screen.queryByText("Next planned step")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("next-planned-step-block")).not.toBeInTheDocument();
+  });
 
-    expect(screen.getByText("Upcoming Activities")).toBeInTheDocument();
+  it("opens the detail in the workspace coque when clicking a next step", () => {
+    renderTab();
+    fireEvent.click(screen.getByText("Follow up on pricing"));
+    expect(screen.getByTestId("next-step-detail-body")).toBeInTheDocument();
+  });
+
+  it("the row ✓ opens the validation flow and validates nothing", () => {
+    renderTab();
+    fireEvent.click(screen.getByLabelText("Validate signal"));
+    expect(screen.getByTestId("next-step-validate-flow")).toBeInTheDocument();
+    expect(validateSignal).not.toHaveBeenCalled();
+  });
+
+  it("the row ✗ calls rejectSignal and mutates", async () => {
+    renderTab();
+    fireEvent.click(screen.getByLabelText("Reject signal"));
+    expect(rejectSignal).toHaveBeenCalledWith("next-steps", "ns1");
+    await waitFor(() => expect(mockMutateAll).toHaveBeenCalled());
+    expect(mockMutateCounts).toHaveBeenCalled();
+  });
+
+  it("a resolved next step shows its activity on the 3rd line", () => {
+    renderTab();
+    fireEvent.click(screen.getByText("Validated"));
+    expect(screen.getByText("Send proposal email")).toBeInTheDocument();
+    expect(screen.getAllByTestId("signal-line-extra")).toHaveLength(1);
+  });
+
+  // 5.8e — "+ Add next step" replaces "Set a next step manually" and the chips.
+  const ADD = { name: "+ Add next step" };
+
+  it("shows the '+ Add next step' pill, and no 'Set a next step manually'", () => {
+    renderTab();
+    expect(screen.getByRole("button", ADD)).toBeInTheDocument();
+    expect(screen.queryByText("Set a next step manually")).not.toBeInTheDocument();
+  });
+
+  it("a CANCELLED activity locks the band: no '+ Add next step', no row action", () => {
+    renderTab({ activity: { ...mockActivity, status: "CANCELLED" } });
+    expect(screen.queryByRole("button", ADD)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Validate signal")).not.toBeInTheDocument();
+  });
+
+  it("a COMPLETED activity does NOT lock the band (PO decision)", () => {
+    renderTab({ activity: { ...mockActivity, status: "COMPLETED" } });
+    expect(screen.getByRole("button", ADD)).toBeInTheDocument();
+    expect(screen.getByLabelText("Validate signal")).toBeInTheDocument();
+  });
+
+  it("opens the activity creation in the coque from a type pill of '+ Add next step'", () => {
+    renderTab();
+    fireEvent.click(screen.getByRole("button", ADD));
+    fireEvent.click(within(screen.getByTestId("add-next-step-types")).getByRole("button", { name: "Meeting" }));
+    expect(screen.getByTestId("activity-create")).toBeInTheDocument();
+    expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
   });
 });
 
-// ==============================|| DC-ONLY AI SUGGESTIONS GUARD ||============================== //
+// ==============================|| DC-ONLY GUARD ||============================== //
 //
-// PO decision (1-bis): the AI SUGGESTIONS block (AISuggestionCard list of
-// NextStepSignal) is a DC-only feature. In a campaign context (no
-// decision_cycle) it must NOT be proposed. Everything else — "Add
-// manually", Upcoming Activities — stays. The tab itself stays visible
-// (that is asserted in ActivityTabs.test.jsx).
+// PO decision (1-bis): the next steps extracted by the AI (parts 2-3) are a
+// DC-only feature. In a campaign context (no decision_cycle) they are NOT
+// proposed. 5.12 B (PO): "+ Add next step" is DC-only too (hasSuggestedNextSteps);
+// the page hides the band when it has nothing to show (NextStepsBandLayoutPage).
 
 const mockActivityNoDc = {
   ...mockActivity,
   decision_cycle: null,
 };
 
-describe("ActivityNextStepsTab — DC-only AI suggestions", () => {
+describe("ActivityNextStepsTab — DC-only parts 2-3", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -419,42 +325,21 @@ describe("ActivityNextStepsTab — DC-only AI suggestions", () => {
     cleanup();
   });
 
-  it("does NOT render the AI Suggestions block without a decision cycle", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivityNoDc}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.queryByText("AI Suggestions")).not.toBeInTheDocument();
+  it("does NOT render the next steps to validate without a decision cycle", () => {
+    renderTab({ activity: mockActivityNoDc });
+    expect(screen.queryByText("To validate")).not.toBeInTheDocument();
     expect(screen.queryByText("Follow up on pricing")).not.toBeInTheDocument();
   });
 
-  it("still renders 'Add manually' without a decision cycle (manual path stays)", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivityNoDc}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText("Add manually")).toBeInTheDocument();
+  it("5.12 B: no '+ Add next step' without a decision cycle", () => {
+    renderTab({ activity: mockActivityNoDc });
+    expect(screen.queryByRole("button", { name: "+ Add next step" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("add-next-step")).not.toBeInTheDocument();
   });
 
-  it("renders the AI Suggestions block AND 'Add manually' with a decision cycle", () => {
-    render(
-      <ActivityNextStepsTab
-        activity={mockActivity}
-        isLocked={false}
-        mutateCounts={mockMutateCounts}
-      />,
-    );
-
-    expect(screen.getByText("AI Suggestions")).toBeInTheDocument();
+  it("renders parts 2-3 AND '+ Add next step' with a decision cycle", () => {
+    renderTab();
     expect(screen.getByText("Follow up on pricing")).toBeInTheDocument();
-    expect(screen.getByText("Add manually")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Add next step" })).toBeInTheDocument();
   });
 });

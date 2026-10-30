@@ -17,8 +17,8 @@ const ALL_TYPES = [
 /**
  * Fetch all 8 signal types for a decision cycle in parallel via SWR.
  *
- * Mirrors useActivityAllSignals but scoped by decision_cycle filter
- * (direct FK on BaseSignal.decision_cycle_id) instead of source_activity.
+ * Scoped by the decision_cycle filter (direct FK on
+ * BaseSignal.decision_cycle_id).
  *
  * @param {string|null} accountId - Account UUID (required for the query)
  * @param {string|null} cycleId - Decision Cycle UUID

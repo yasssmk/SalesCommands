@@ -3,145 +3,267 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useMemo, useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 // MUI
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
-import CircularProgress from "@mui/material/CircularProgress";
-import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
-// Icons
-import {
-  PlusOutlined,
-  InboxOutlined,
-  RocketOutlined,
-} from "@ant-design/icons";
-
 // Project imports
-import useActivityAllSignals from "hooks/useActivityAllSignals";
-import { useGetSignalChoices } from "api/signals/signals";
-import { rejectSignal } from "api/signals/signals";
+import useAggregatedSignals from "api/signals/aggregatedSignals";
+import { getSignal, rejectSignal, reopenSignal } from "api/signals/signals";
 import {
   displaySuccessSnackbar,
   displayErrorSnackbar,
 } from "utils/displayError";
 
-import AISuggestionCard from "components/cards/nextSteps/AISuggestionCard";
-import NextStepsFilterBar from "sections/activities/nextSteps/NextStepsFilterBar";
-import NextStepSuggestionDrawer from "sections/activities/nextSteps/NextStepSuggestionDrawer";
-import UpcomingActivitiesSection from "sections/activities/nextSteps/UpcomingActivitiesSection";
-import ActivityModal from "sections/accounts/activities/ActivityModal";
-import SignalEditDrawer from "components/signals/SignalEditDrawer";
+import SignalsValidationList from "components/signals/SignalsValidationList";
+import SignalDetailPanel from "components/signals/SignalDetailPanel";
+import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
+import { getSignalTypeLabel } from "utils/signalTypes";
+import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
+import NextStepActivityLine, {
+  getResolvedActivity,
+} from "sections/activities/nextSteps/NextStepActivityLine";
+import CampaignConversionCta from "sections/activities/nextSteps/CampaignConversionCta";
+import RunAIAnalysisButton, {
+  RUN_AI_TRIGGER_VARIANTS,
+} from "sections/activities/workspace/RunAIAnalysisButton";
+import { formatShortDate } from "components/signals/SignalLine";
+import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
+import ClickablePill from "components/chips/ClickablePill";
+import EditNextStepContent from "sections/activities/workspace/EditNextStepContent";
+import EditActivityContent from "sections/activities/workspace/EditActivityContent";
+import NextStepValidateFlow from "sections/activities/nextSteps/NextStepValidateFlow";
+import {
+  NEXT_STEPS_BAND_QUERY,
+  hasSuggestedNextSteps,
+  nextStepsCycleId,
+  showsCampaignConversion,
+} from "utils/nextStepsBand";
+// The band's own lock — the rule shared with the Signals band (5.11): only a
+// CANCELLED activity locks, a COMPLETED one stays workable.
+import { isActivitySignalsLocked } from "utils/activitySignalsLock";
 
-// ==============================|| SORT HELPERS ||============================== //
 
-const STATUS_ORDER = { PENDING: 0, VALIDATED: 1, REJECTED: 2 };
-
-function sortSignals(signals) {
-  return [...signals].sort((a, b) => {
-    const orderA = STATUS_ORDER[a.status] ?? 3;
-    const orderB = STATUS_ORDER[b.status] ?? 3;
-    if (orderA !== orderB) return orderA - orderB;
-    const dateA = a.suggested_due_date || "";
-    const dateB = b.suggested_due_date || "";
-    return dateA.localeCompare(dateB);
-  });
-}
+// The extraction of the band checks the next steps only (5.12 B, PO).
+const NEXT_STEPS_ONLY_OBJECTIVES = { qualification: false, nextSteps: true };
 
 // ==============================|| ACTIVITY NEXT STEPS TAB ||============================== //
 
+// The "Next steps" band (Sprint Next steps 5.x), top to bottom (5.12 B):
+//   1. the campaign → Decision Cycle conversion block, when it applies
+//      (showsCampaignConversion — a campaign activity, no DC born yet: never
+//      with « + Add next step »);
+//   2. the suggested next steps — to validate, validated (resolved, with their
+//      activity on the row's 3rd line), rejected: the generic
+//      SignalsValidationList — a DC activity, or a SUCCESSFUL campaign
+//      activity (hasSuggestedNextSteps, 5.14b); the latter shows with the
+//      conversion block until a DC is born from it;
+//   3. in the list's empty state (EmptyState `action`, 5.12e), the AI action:
+//      only without any next step — the shared Run AI action as a pill
+//      (RunAIAnalysisButton, the Source's label, the page's pipelineRunner),
+//      next steps only pre-checked, while the NEXT STEPS extraction never
+//      ran; « AI already ran · <date> » after;
+//   « + Add next step » (5.8e) sits on the right of the BAND's title
+//   (ActivityNextStepsBand, 5.12e): it opens the row of the 7 ActivityType
+//   pills, at the TOP of this body (typesOpen) → the creation with that type
+//   — only with a cycle to create in (nextStepsCycleId).
+// The cycle of the band's creations (5.14b): the activity's own, else the one
+// born from the campaign activity; with none (a campaign activity, no DC born
+// yet), the row ✓'s Create converts — the creation drawer in conversion mode
+// (5.13), pre-filled from the next step, a NEW cycle inline.
+// The next planned step is shown in Context (5.12 A-bis), not here. The page
+// renders the band only when it has something to show (hasNextStepsBand).
+// Every activity creation of the band opens in the coque (EditActivityContent,
+// create mode — Sprint Next steps 5.8d), "Start Decision Cycle" included
+// (5.13: its conversion mode — a NEW cycle only). No modal any more.
 export default function ActivityNextStepsTab({
   activity,
-  isLocked,
   mutateCounts,
+  pipelineRunner,
+  lastRun,
+  runsByPipeline,
+  typesOpen = false,
+  onTypesOpenChange,
 }) {
   const router = useRouter();
+  // The single lock predicate of the band (parts 1-4, row actions, drawer).
+  const isLocked = isActivitySignalsLocked(activity);
   const activityId = activity?.id;
   const accountId = activity?.account;
 
   // Data
-  const { nextStepSignals, loading, error, mutateAll } =
-    useActivityAllSignals(activityId);
-  const { choices, choicesLoading } = useGetSignalChoices();
+  const {
+    signals: nextStepSignals,
+    loading,
+    error,
+    mutate: mutateAll,
+  } = useAggregatedSignals({ activityId, ...NEXT_STEPS_BAND_QUERY });
 
-  // Filter state
-  const [activeFilter, setActiveFilter] = useState("all-active");
-  const [includeRejected, setIncludeRejected] = useState(false);
+  // The single workspace drawer coque: the next step detail is injected there,
+  // as the detail of every other signal type (ActivitySignalsTab).
+  const { openDrawer, closeDrawer } = useWorkspaceDrawer();
 
-  // Drawer state
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerSignal, setDrawerSignal] = useState(null);
-
-  // Activity modal state (convert from signal OR manual add OR campaign conversion)
-  const [activityModalOpen, setActivityModalOpen] = useState(false);
-  const [convertSignal, setConvertSignal] = useState(null);
-  const [manualActivityType, setManualActivityType] = useState(null);
-  const [convertFromCampaign, setConvertFromCampaign] = useState(false);
-
-  // Edit dialog state
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editSignal, setEditSignal] = useState(null);
-
-  // ==============================|| FILTERED + SORTED SIGNALS ||============================== //
-
-  const filteredSignals = useMemo(() => {
-    if (!nextStepSignals) return [];
-
-    const filtered = nextStepSignals.filter((s) => {
-      if (s.status === "REJECTED") return includeRejected;
-
-      if (activeFilter === "all-active") {
-        return s.status === "PENDING" || s.status === "VALIDATED";
-      }
-      return s.status === activeFilter;
-    });
-
-    return sortSignals(filtered);
-  }, [nextStepSignals, activeFilter, includeRejected]);
-
-  const pendingCount = useMemo(
-    () => (nextStepSignals || []).filter((s) => s.status === "PENDING").length,
-    [nextStepSignals],
-  );
-
-  const convertedCount = useMemo(
-    () =>
-      (nextStepSignals || []).filter(
-        (s) => s.status === "VALIDATED" && s.linked_activity,
-      ).length,
-    [nextStepSignals],
-  );
+  const hasNextSteps = hasSuggestedNextSteps(activity);
+  const cycleId = nextStepsCycleId(activity);
+  // The AI action (5.12c): only without any next step (the band's own list —
+  // no new query), and once that list is known (loaded, no error).
+  const nextStepsRun = runsByPipeline?.NEXT_STEPS || null;
+  const showsAIAction =
+    Boolean(pipelineRunner) && !loading && !error && nextStepSignals.length === 0;
+  // 3. The AI action, IN the list's empty state (the shared EmptyState's
+  // `action`: centred, under its text — 5.12e): the NEXT STEPS extraction
+  // never ran → the Source band's Run AI action as a pill (same label,
+  // predicate, wizard, runner, "Analyzing…"), next steps only; it already
+  // ran → « AI already ran · <date> », no action.
+  const aiAction = showsAIAction ? (
+    <Box data-testid="next-steps-extraction">
+      {nextStepsRun ? (
+        <Typography variant="caption" color="text.secondary">
+          {`AI already ran · ${formatShortDate(nextStepsRun.last_run_at)}`}
+        </Typography>
+      ) : (
+        <RunAIAnalysisButton
+          activity={activity}
+          pipelineRunner={pipelineRunner}
+          lastRun={lastRun}
+          runsByPipeline={runsByPipeline}
+          defaultObjectives={NEXT_STEPS_ONLY_OBJECTIVES}
+          variant={RUN_AI_TRIGGER_VARIANTS.PILL}
+        />
+      )}
+    </Box>
+  ) : null;
 
   // ==============================|| HANDLERS ||============================== //
 
-  const handleSelect = useCallback((signal) => {
-    setDrawerSignal(signal);
-    setDrawerOpen(true);
-  }, []);
+  // Open (or re-open after a status change) the detail in the coque. The
+  // lifecycle handlers are read from a ref (they in turn re-open the detail) —
+  // the ActivitySignalsTab pattern.
+  const detailHandlersRef = useRef(null);
+  const openDetail = useCallback(
+    (signal) => {
+      const h = detailHandlersRef.current;
+      openDrawer(
+        <SignalDetailPanel
+          signal={signal}
+          signalType="next-steps"
+          onValidate={h.onValidate}
+          onReject={h.onReject}
+          onEdit={h.onEdit}
+          onReopen={h.onReopen}
+          isLocked={isLocked}
+          currentActivityId={activityId}
+          headerInCoque
+        />,
+        {
+          title: getSignalTypeLabel("next-steps"),
+          status: signal.status,
+          statusMap: SIGNAL_STATUS_PILL,
+        },
+      );
+    },
+    [openDrawer, isLocked, activityId],
+  );
 
-  const handleCloseDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    setDrawerSignal(null);
-  }, []);
+  // Read a next step back from the server once resolved (by its created OR
+  // linked activity — now VALIDATED), refresh the list (3rd line) and re-open
+  // its detail.
+  const showFromServer = useCallback(
+    async (signal) => {
+      mutateAll();
+      mutateCounts?.();
+      const result = await getSignal("next-steps", signal.id);
+      if (result.success) {
+        openDetail({ ...result.data, _signalType: "next-steps" });
+      } else {
+        displayErrorSnackbar(result);
+        closeDrawer();
+      }
+    },
+    [mutateAll, mutateCounts, openDetail, closeDrawer],
+  );
 
-  const handleConvert = useCallback((signal) => {
-    setConvertSignal(signal);
-    setActivityModalOpen(true);
-  }, []);
+  // An activity creation in the coque (5.8d), in the band's cycle (cycleId).
+  // From a next step: pre-filled from it; on success the next step — now
+  // resolved — is read back (5.6), Cancel returns to where the creation
+  // started. Without a cycle (5.14b: a campaign activity, no DC born yet) it
+  // converts: the conversion mode of 5.13, from this activity, a NEW cycle
+  // inline. Otherwise (a manual next step): the standard behaviour — the list
+  // refreshes and the coque closes.
+  const openCreate = useCallback(
+    ({ nextStep = null, activityType, onCancel } = {}) => {
+      const converts = !cycleId;
+      openDrawer(
+        <EditActivityContent
+          mode="create"
+          accountId={accountId}
+          decisionCycleId={cycleId}
+          conversion={converts}
+          sourceActivityId={converts ? activityId : undefined}
+          initialContacts={converts ? activity?.contacts_detail || [] : []}
+          nextStep={nextStep}
+          activityType={activityType}
+          onCreated={() => {
+            if (nextStep) {
+              showFromServer(nextStep);
+            } else {
+              mutateAll();
+              mutateCounts?.();
+              closeDrawer();
+            }
+          }}
+          onCancel={onCancel}
+        />,
+        { title: converts ? "Start Decision Cycle" : "New activity" },
+      );
+    },
+    [openDrawer, accountId, cycleId, activityId, activity?.contacts_detail, showFromServer, mutateAll, mutateCounts, closeDrawer],
+  );
 
-  const handleAddManually = useCallback(() => {
-    setConvertSignal(null);
-    setActivityModalOpen(true);
-  }, []);
+  // The validation flow (5.6), in the coque: step 1 = Create or Link. Opened by
+  // the row ✓ and the detail's Validate; Back returns to the detail. Create
+  // opens the creation in the coque — its Cancel returns to step 1.
+  const openFlow = useCallback(
+    (signal) => {
+      openDrawer(
+        <NextStepValidateFlow
+          nextStep={signal}
+          hasCycle={Boolean(cycleId)}
+          onCreate={(ns) => openCreate({ nextStep: ns, onCancel: () => openFlow(ns) })}
+          onBack={() => openDetail(signal)}
+          onLinked={showFromServer}
+        />,
+        { title: "Validate next step" },
+      );
+    },
+    [openDrawer, cycleId, openCreate, openDetail, showFromServer],
+  );
 
-  const handleEdit = useCallback((signal) => {
-    setEditSignal(signal);
-    setEditDialogOpen(true);
-  }, []);
+
+  // Edit in the coque (EditNextStepContent), then back to the detail —
+  // the chassis edit of every other signal type.
+  const handleEdit = useCallback(
+    (signal) => {
+      openDrawer(
+        <EditNextStepContent
+          nextStep={signal}
+          decisionCycleId={cycleId}
+          onSaved={(updated) => {
+            mutateAll();
+            mutateCounts?.();
+            openDetail(updated ?? signal);
+          }}
+          onCancel={() => openDetail(signal)}
+        />,
+        { title: "Edit next step" },
+      );
+    },
+    [openDrawer, cycleId, mutateAll, mutateCounts, openDetail],
+  );
 
   const handleReject = useCallback(
     async (signal) => {
@@ -150,275 +272,144 @@ export default function ActivityNextStepsTab({
         displaySuccessSnackbar("Suggestion rejected");
         mutateAll();
         mutateCounts?.();
-        handleCloseDrawer();
+        openDetail({ ...signal, status: "REJECTED" });
       } else {
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts, handleCloseDrawer],
+    [mutateAll, mutateCounts, openDetail],
   );
 
-  const handleViewActivity = useCallback(
-    (linkedActivity) => {
-      if (linkedActivity?.id) {
-        router.push(`/activities/${linkedActivity.id}/workspace?tab=overview`);
+  const handleReopen = useCallback(
+    async (signal) => {
+      const result = await reopenSignal("next-steps", signal.id);
+      if (result.success) {
+        displaySuccessSnackbar("Signal reopened — now pending");
+        mutateAll();
+        mutateCounts?.();
+        openDetail({ ...signal, status: "PENDING" });
+      } else {
+        displayErrorSnackbar(result);
       }
     },
+    [mutateAll, mutateCounts, openDetail],
+  );
+
+  // Nothing here calls validateSignal: a next step is validated only with its
+  // activity (rule 2.1) — the server validates it when the activity is created
+  // from it. The detail's Validate opens the validation flow.
+  detailHandlersRef.current = {
+    onValidate: openFlow,
+    onReject: handleReject,
+    onEdit: handleEdit,
+    onReopen: handleReopen,
+  };
+
+  const handleOpenActivity = useCallback(
+    (id) => router.push(`/activities/${id}`),
     [router],
   );
 
-  const handleConvertSuccess = useCallback(() => {
-    mutateAll();
-    mutateCounts?.();
-  }, [mutateAll, mutateCounts]);
-
-  const handleEditSuccess = useCallback(() => {
-    mutateAll();
-    mutateCounts?.();
-  }, [mutateAll, mutateCounts]);
-
-  const handleCreateActivity = useCallback(
-    (activityType, options = {}) => {
-      setConvertSignal(null);
-      setManualActivityType(activityType || null);
-      setConvertFromCampaign(Boolean(options.convertFromCampaign));
-      setActivityModalOpen(true);
+  // SignalLine's 3rd line — only on a RESOLVED next step (its activity).
+  const renderExtra = useCallback(
+    (signal) => {
+      const resolved = getResolvedActivity(signal);
+      return resolved ? (
+        <NextStepActivityLine activity={resolved} onOpen={handleOpenActivity} />
+      ) : null;
     },
-    [],
+    [handleOpenActivity],
   );
 
-  // ==============================|| LOADING / ERROR ||============================== //
-
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" py={6}>
-        <CircularProgress size={28} />
-      </Box>
+  // "Start Decision Cycle" (5.13): the creation drawer in conversion mode — a
+  // MEETING from this campaign activity (source_activity_id), a NEW cycle
+  // created inline, the activity's contacts pre-filled. On success the
+  // standard revalidation re-reads this activity: the born DC hides the CTA
+  // and shows in Context.
+  const openStartCycle = useCallback(() => {
+    openDrawer(
+      <EditActivityContent
+        mode="create"
+        conversion
+        accountId={accountId}
+        activityType="MEETING"
+        sourceActivityId={activityId}
+        initialContacts={activity?.contacts_detail || []}
+        onCreated={() => {
+          mutateAll();
+          mutateCounts?.();
+          closeDrawer();
+        }}
+      />,
+      { title: "Start Decision Cycle" },
     );
-  }
+  }, [openDrawer, accountId, activityId, activity?.contacts_detail, mutateAll, mutateCounts, closeDrawer]);
 
-  if (error) {
-    return (
-      <Box display="flex" justifyContent="center" py={6}>
-        <Typography color="error">Failed to load next steps</Typography>
-      </Box>
-    );
-  }
 
-  const hasAnySignals = nextStepSignals && nextStepSignals.length > 0;
-
-  // ==============================|| EMPTY STATE ||============================== //
-
-  if (!hasAnySignals) {
-    return (
-      <Box py={6}>
-        <Stack spacing={2} alignItems="center" textAlign="center">
-          <InboxOutlined style={{ fontSize: 48, color: "#8c8c8c" }} />
-          <Typography variant="h6" color="text.secondary">
-            No next-step suggestions yet
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            maxWidth={400}
-          >
-            Run an AI analysis from the Notes tab to extract next-step
-            suggestions, or add an activity manually.
-          </Typography>
-          {!isLocked && (
-            <Button
-              variant="outlined"
-              startIcon={<PlusOutlined style={{ fontSize: 14 }} />}
-              onClick={handleAddManually}
-            >
-              Add manually
-            </Button>
-          )}
-        </Stack>
-
-        {/* Upcoming Activities section (always shown when in sequence) */}
-        {activity?.sequence_context && (
-          <Box mt={4}>
-            <Typography variant="h6" sx={{ mb: 1.5 }}>
-              <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
-              Upcoming Activities
-            </Typography>
-            <UpcomingActivitiesSection
-              activity={activity}
-              onCreateActivity={handleCreateActivity}
-              isLocked={isLocked}
-            />
-          </Box>
-        )}
-
-        {/* Add activity modal */}
-        {accountId && (
-          <ActivityModal
-            open={activityModalOpen}
-            onClose={() => {
-              setActivityModalOpen(false);
-              setConvertSignal(null);
-              setManualActivityType(null);
-              setConvertFromCampaign(false);
-            }}
-            activity={null}
-            accountId={accountId}
-            decisionStepId={activity?.decision_step || null}
-            decisionCycleId={convertFromCampaign ? null : (activity?.decision_cycle || null)}
-            defaultActivityType={convertSignal?.suggested_activity_type || manualActivityType || "MEETING"}
-            previousActivityId={activity?.id}
-            sourceActivityId={convertFromCampaign ? activity?.id : null}
-            nextStepSignal={convertSignal}
-            onSuccess={handleConvertSuccess}
-          />
-        )}
-      </Box>
-    );
-  }
-
-  // ==============================|| MAIN RENDER ||============================== //
+  // ==============================|| RENDER ||============================== //
 
   return (
     <Box>
-      {/* Header row — title + add button */}
-      <Stack
-        direction="row"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={2}
-      >
-        <Typography variant="h6">Next Steps</Typography>
-        {!isLocked && (
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<PlusOutlined style={{ fontSize: 14 }} />}
-            onClick={handleAddManually}
+      <Stack spacing={1.5} data-testid="next-steps-band">
+        {/* « + Add next step »'s row of the 7 ActivityType pills, at the TOP
+            of the band (its pill is in the band header, 5.12e). Only with a
+            cycle to create in. */}
+        {cycleId && !isLocked && typesOpen && (
+          <Stack
+            direction="row"
+            spacing={0.75}
+            flexWrap="wrap"
+            useFlexGap
+            data-testid="add-next-step-types"
           >
-            Add manually
-          </Button>
+            {Object.values(ACTIVITY_TYPES).map((type) => (
+              <ClickablePill
+                key={type}
+                label={ACTIVITY_TYPE_LABELS[type] || type}
+                onClick={() => {
+                  onTypesOpenChange?.(false);
+                  openCreate({ activityType: type });
+                }}
+              />
+            ))}
+          </Stack>
         )}
+
+        {/* 1. The campaign → Decision Cycle conversion (when it applies):
+            "Start Decision Cycle" opens the creation drawer in conversion
+            mode (5.13). */}
+        {showsCampaignConversion(activity) && (
+          <CampaignConversionCta onStartCycle={openStartCycle} />
+        )}
+
+        {/* 2. The suggested next steps: to validate / validated / rejected,
+            directly under the band — as the Signals band's list (5.12c: no
+            sub-level title). A DC activity or a SUCCESSFUL campaign activity
+            (hasSuggestedNextSteps — mirrors the backend predicate). One type
+            only → no type-group header. */}
+        {hasNextSteps && (
+          <Box data-testid="suggested-next-steps-block">
+            {error && !nextStepSignals.length ? (
+              <Box display="flex" justifyContent="center" py={4}>
+                <Typography color="error">Failed to load next steps</Typography>
+              </Box>
+            ) : (
+              <SignalsValidationList
+                signals={nextStepSignals}
+                loading={loading}
+                onSelect={openDetail}
+                onValidate={isLocked ? undefined : openFlow}
+                onReject={isLocked ? undefined : handleReject}
+                renderExtra={renderExtra}
+                showTypeHeaders={false}
+                emptyMessage="No next-step suggestions for this activity"
+                emptyAction={aiAction}
+              />
+            )}
+          </Box>
+        )}
+
       </Stack>
-
-      {/* Summary line */}
-      <Typography variant="body2" color="text.secondary" mb={1.5}>
-        {pendingCount > 0 &&
-          `${pendingCount} AI suggestion${pendingCount > 1 ? "s" : ""} to handle`}
-        {pendingCount > 0 && convertedCount > 0 && " · "}
-        {convertedCount > 0 &&
-          `${convertedCount} activit${convertedCount > 1 ? "ies" : "y"} created`}
-      </Typography>
-
-      {/* Filter bar */}
-      <NextStepsFilterBar
-        activeFilter={activeFilter}
-        onChange={setActiveFilter}
-        includeRejected={includeRejected}
-        onToggleRejected={setIncludeRejected}
-        signals={nextStepSignals}
-      />
-
-      {/* AI Suggestions — DC-only: extracted next-step suggestions are not
-          proposed in a campaign context (activity without a decision_cycle).
-          Mirrors the backend guard. The manual path and Upcoming Activities
-          below stay available regardless. */}
-      {Boolean(activity?.decision_cycle) && (
-        <Box mt={2}>
-          {filteredSignals.length > 0 ? (
-            <Box mb={3}>
-              <Typography
-                variant="subtitle2"
-                color="text.secondary"
-                mb={1}
-                fontWeight={600}
-              >
-                AI Suggestions
-              </Typography>
-              <Stack spacing={1.5}>
-                {filteredSignals.map((signal) => (
-                  <AISuggestionCard
-                    key={signal.id}
-                    signal={signal}
-                    onConvert={handleConvert}
-                    onEdit={handleEdit}
-                    onReject={handleReject}
-                    onViewActivity={handleViewActivity}
-                    onSelect={handleSelect}
-                    isLocked={isLocked}
-                  />
-                ))}
-              </Stack>
-            </Box>
-          ) : (
-            <Box py={4} textAlign="center">
-              <Typography variant="body2" color="text.secondary">
-                No suggestions match the current filter.
-              </Typography>
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {/* Upcoming Activities section */}
-      <Divider sx={{ my: 2 }} />
-      <Typography variant="h6" sx={{ mb: 1.5 }}>
-        <RocketOutlined style={{ fontSize: 18, marginRight: 8 }} />
-        Upcoming Activities
-      </Typography>
-      <UpcomingActivitiesSection
-        activity={activity}
-        onCreateActivity={handleCreateActivity}
-        isLocked={isLocked}
-      />
-
-      {/* Suggestion Drawer */}
-      <NextStepSuggestionDrawer
-        open={drawerOpen}
-        signal={drawerSignal}
-        onClose={handleCloseDrawer}
-        onConvert={handleConvert}
-        onReject={handleReject}
-        onEdit={handleEdit}
-        onViewActivity={handleViewActivity}
-        isLocked={isLocked}
-      />
-
-      {/* Activity modal (convert from signal or manual add) */}
-      {accountId && (
-        <ActivityModal
-          open={activityModalOpen}
-          onClose={() => {
-            setActivityModalOpen(false);
-            setConvertSignal(null);
-            setManualActivityType(null);
-            setConvertFromCampaign(false);
-          }}
-          activity={null}
-          accountId={accountId}
-          decisionStepId={activity?.decision_step || null}
-          decisionCycleId={convertFromCampaign ? null : (activity?.decision_cycle || null)}
-          defaultActivityType={convertSignal?.suggested_activity_type || manualActivityType || "MEETING"}
-          previousActivityId={activity?.id}
-          sourceActivityId={convertFromCampaign ? activity?.id : null}
-          nextStepSignal={convertSignal}
-          onSuccess={handleConvertSuccess}
-        />
-      )}
-
-      {/* Signal edit dialog */}
-      <SignalEditDrawer context="activity"
-        open={editDialogOpen}
-        onClose={() => {
-          setEditDialogOpen(false);
-          setEditSignal(null);
-        }}
-        onSuccess={handleEditSuccess}
-        signal={editSignal}
-        signalType="next-steps"
-        accountId={accountId || ""}
-        choices={choices}
-        choicesLoading={choicesLoading}
-      />
     </Box>
   );
 }
@@ -432,9 +423,17 @@ ActivityNextStepsTab.propTypes = {
     status: PropTypes.string,
     decision_step: PropTypes.string,
     decision_cycle: PropTypes.string,
-    sequence_context: PropTypes.object,
     campaign_detail: PropTypes.object,
+    transcript: PropTypes.string,
+    outcome_notes: PropTypes.string,
   }),
-  isLocked: PropTypes.bool,
   mutateCounts: PropTypes.func,
+  /** « + Add next step »'s type row is shown (the band header's pill, 5.12e). */
+  typesOpen: PropTypes.bool,
+  /** Fired with the next type-row state (closed on a type pick). */
+  onTypesOpenChange: PropTypes.func,
+  /** The page's pipeline runner (usePipelineRunner) — the extraction. */
+  pipelineRunner: PropTypes.object,
+  lastRun: PropTypes.object,
+  runsByPipeline: PropTypes.object,
 };

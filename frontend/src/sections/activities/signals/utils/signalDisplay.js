@@ -26,6 +26,37 @@ export const USAGE_SCOPE = {
   UNKNOWN: "UNKNOWN",
 };
 
+// Sprint Next steps (PO rule 5.8c): a next step CITES names. The name it cites
+// for one of its People: the People's full_name, else its contact's name.
+export function getCitedPersonName(people) {
+  const contact = people?.target_contact;
+  return (
+    people?.full_name ||
+    `${contact?.first_name ?? ""} ${contact?.last_name ?? ""}`.trim()
+  );
+}
+
+// A REJECTED People is never used (5.8h) — the server's cited-contacts rule.
+export const PEOPLE_UNUSABLE_STATUSES = ["REJECTED"];
+
+// The People a next step cites that may be used (not REJECTED).
+export function getNextStepUsablePeople(signal) {
+  return (signal?.suggested_people ?? []).filter(
+    (p) => !PEOPLE_UNUSABLE_STATUSES.includes(p?.status),
+  );
+}
+
+// The names a next step cites: its usable People's (full_name, else their
+// contact's name) then the names not linked — one list, no distinction
+// (5.8c). Used by the activity pre-fill (activityDefaultsFromNextStep).
+export function getNextStepCitedNames(signal) {
+  const peopleNames = getNextStepUsablePeople(signal).map(getCitedPersonName);
+  return [...peopleNames, ...(signal?.suggested_people_names ?? [])].filter(Boolean);
+}
+
+// An empty next step field reads this, in full (TechStack rule).
+export const NEXT_STEP_UNKNOWN = "Unknown";
+
 // A TechStack signal's usage, with the PO rule "the departments PRIME over the
 // scale": when at least one usage department is designated, the department
 // names are the usage and the scale is not shown. Shared by TechDetailBlock
@@ -79,8 +110,7 @@ export function getNextStepSummary(signal) {
 }
 
 // Renders a NextStepSignal's `suggested_contacts` for the next-step
-// display surfaces (AISuggestionCard, NextStepSuggestionDrawer,
-// SignalDetailCard/Content). Note: this is a DORMANT capability — the
+// display surfaces (SignalDetailContent). Note: this is a DORMANT capability — the
 // field is wired and displayable but the LLM extraction never populates
 // it (TD-7), so in practice this returns "" today. That empty result is
 // expected, not a bug; the empty-safe guard below is intentional.
@@ -90,20 +120,6 @@ export function formatSuggestedContacts(contacts) {
     .map((c) => `${c.first_name || ""} ${c.last_name || ""}`.trim())
     .filter(Boolean)
     .join(" · ");
-}
-
-export function getPeopleSummary(signal) {
-  const role = signal.role_display || signal.role || "";
-  const contact = signal.target_contact;
-  const dept = signal.target_department;
-  const name = contact
-    ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim()
-    : null;
-  const deptName = dept?.name ?? null;
-  if (name && deptName) return `${role} — ${name} (${deptName})`;
-  if (name) return `${role} — ${name}`;
-  if (deptName) return `${role} — ${deptName}`;
-  return role || "—";
 }
 
 // A People signal's person name: the linked contact (first + last) first,
@@ -120,16 +136,10 @@ export function getPeopleName(signal) {
 }
 
 // People detail headline on the Activity chassis: "Name — Role (Department)".
-// Distinct from getPeopleSummary above ("Role — Name (Dept)", contact-only
-// name, no full_name) which SignalDetailCard keeps unchanged.
 export function getPeopleHeadline(signal) {
   const name = getPeopleName(signal);
   const role = signal?.role_display || signal?.role || "";
   const deptName = signal?.target_department?.name ?? null;
   const head = role ? `${name} — ${role}` : name;
   return deptName ? `${head} (${deptName})` : head;
-}
-
-export function getConstraintSummary(signal) {
-  return signal.summary || "—";
 }

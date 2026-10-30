@@ -4,11 +4,14 @@ Campaign module signals.
 
 - Auto-creates the TARGETED singleton campaign when a new User is created.
 - Auto-completes CampaignAccount when all its contacts reach a final state.
+- Ends the prospect's sequence when a campaign Activity gets a FINAL outcome
+  (Sprint Next steps 5.14a), on every write path.
 """
 
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
+from core.cache_utils import are_signals_disabled
 from core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -191,3 +194,61 @@ def _check_campaign_completion_safe(campaign_id):
                 'error': str(exc),
             },
         )
+
+
+# =============================================================================
+# ACTIVITY — a FINAL outcome ends the prospect's sequence (5.14a)
+# =============================================================================
+#
+# The ONE place every write path goes through (Activity.save): /complete/ on a
+# PLANNED step (process_result) or on an ALREADY COMPLETED one (the campaign
+# "Log Response"), the PATCH (ActivityUpdateSerializer), the playlist
+# log-response, record-no-answer. pre_save stashes the previous status /
+# outcome (the decision_cycles readiness_recompute pattern); post_save applies
+# CampaignExecutionService.apply_final_outcome only when the activity BECOMES
+# final — completed with a SUCCESSFUL / terminal outcome, or its outcome
+# changed — so a re-save never re-runs it. Respects are_signals_disabled().
+
+@receiver(pre_save, sender='module_activities.Activity')
+def capture_old_outcome_on_activity(sender, instance, **kwargs):
+    """Stash the previous status / outcome so post_save sees the transition."""
+    if are_signals_disabled():
+        return
+    previous = None
+    if instance.pk:
+        previous = (
+            sender.objects.filter(pk=instance.pk)
+            .values('status', 'outcome')
+            .first()
+        )
+    instance._old_status = previous['status'] if previous else None
+    instance._old_outcome = previous['outcome'] if previous else None
+
+
+@receiver(post_save, sender='module_activities.Activity')
+def end_sequence_on_final_outcome(sender, instance, **kwargs):
+    """A campaign activity that becomes final ends its prospect's sequence."""
+    if are_signals_disabled() or not instance.campaign_contact_id:
+        return
+
+    from app_modules.activities.constants import ActivityStatus
+    from app_modules.campaigns.constants import SUCCESSFUL_OUTCOMES, TERMINAL_OUTCOMES
+    from app_modules.campaigns.services.campaign_execution_service import (
+        CampaignExecutionService,
+    )
+
+    if instance.status != ActivityStatus.COMPLETED:
+        return
+    if instance.outcome not in SUCCESSFUL_OUTCOMES and instance.outcome not in TERMINAL_OUTCOMES:
+        return
+    became_final = (
+        getattr(instance, '_old_status', None) != ActivityStatus.COMPLETED
+        or getattr(instance, '_old_outcome', None) != instance.outcome
+    )
+    if not became_final:
+        return
+
+    CampaignExecutionService(
+        user=instance.updated_by,
+        client_id=instance.client_id,
+    ).apply_final_outcome(instance)

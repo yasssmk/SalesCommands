@@ -9,6 +9,10 @@ response schema (`STAGE_RESPONSE_SCHEMAS`), then scores the raw answers with
 the production helpers (name link, People evidence check, department
 resolver, quote-label removal).
 
+Shared eval plumbing (RecordingProvider, the N-calls loop, the common options,
+`summary.csv` / `.md`) lives in `evals/common/eval_kit.py`, also used by
+`evals/next_steps`.
+
 ## Cases
 
 | Transcript | Variants | What is measured |

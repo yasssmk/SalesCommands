@@ -107,7 +107,7 @@ def _mk_objective(account, activity, user, dc=None):
 def _mk_nextstep(account, activity, user, dc=None):
     n = NextStepSignal(
         account=account, source_activity=activity, decision_cycle=dc,
-        source=SignalSource.MANUAL,
+        source=SignalSource.LLM_EXTRACTED,
         suggested_title='Follow up', suggested_activity_type='CALL',
     )
     n.save(user=user, client_id=account.client_id)

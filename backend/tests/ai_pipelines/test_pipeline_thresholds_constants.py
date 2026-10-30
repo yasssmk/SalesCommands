@@ -7,7 +7,8 @@ module's constants.py), and the pipelines read them from there.
   * PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED — one entry per
     pipeline type (mirror of PIPELINE_TEMPERATURES), current values pinned.
   * TRANSCRIPT_SIGNALS no longer drops is_inferred (TD-279 C1, every stage,
-    so the People exemption set is gone); NEXT_STEPS keeps its own policy.
+    so the People exemption set is gone); NEXT_STEPS no longer drops it
+    either (TD-282 (1), same policy).
   * The pipeline class attributes ARE these constants (same objects), so the
     `self.X` reads and any subclass override keep working unchanged.
 """
@@ -34,7 +35,7 @@ class TestThresholdConstantsValues:
     def test_drop_inferred_per_pipeline(self):
         assert PIPELINE_DROP_INFERRED == {
             AIPipelineType.TRANSCRIPT_SIGNALS: False,
-            AIPipelineType.NEXT_STEPS: True,
+            AIPipelineType.NEXT_STEPS: False,
         }
 
 

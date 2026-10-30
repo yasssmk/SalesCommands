@@ -120,8 +120,8 @@ class TestPromptAndContextDescribeThreeCases:
 
     def test_context_version_is_v4_or_later(self):
         # v4 introduced the three cases (T0); v5 (T4b) and v6 (people P2)
-        # keep them, and v7 / v8 / v9 (TD-279) too.
-        assert CONTEXT_VERSION == 'v9'
+        # keep them, and v7 / v8 / v9 (TD-279) and v10 (D7) too.
+        assert CONTEXT_VERSION == 'v10'
 
     def test_context_taxonomy_lists_exactly_the_three_cases(self, activity):
         context = build_context_layer(activity, 'techstack')

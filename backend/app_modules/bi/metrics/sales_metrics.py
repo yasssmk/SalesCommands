@@ -49,6 +49,7 @@ from __future__ import annotations
 from django.db.models import OuterRef, Subquery, Sum
 
 from app_modules.activities.constants import ActivityStatus
+from app_modules.campaigns.constants import SUCCESSFUL_OUTCOMES
 from app_modules.decision_cycles.constants import CycleOutcome
 from app_modules.decision_cycles.services.close_date_sql import (
     CLOSE_DATE_ALIAS,
@@ -175,12 +176,6 @@ def meetings(base_queryset, *, user=None, period=None, source_campaign=None):
 
     ``base_queryset`` is a (tenant+scope bounded) Activity queryset.
     """
-    # Deferred import: campaigns imports bi.metrics, so this cannot be top-level
-    # (same reason as the CampaignAccount import in new_logos below).
-    from app_modules.campaigns.services.campaign_execution_service import (
-        SUCCESSFUL_OUTCOMES,
-    )
-
     qs = base_queryset.filter(
         status=ActivityStatus.COMPLETED,
         outcome__in=SUCCESSFUL_OUTCOMES,

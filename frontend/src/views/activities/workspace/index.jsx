@@ -17,7 +17,6 @@ import Typography from "@mui/material/Typography";
 import ExperimentOutlined from "@ant-design/icons/ExperimentOutlined";
 import FileTextOutlined from "@ant-design/icons/FileTextOutlined";
 import { SIGNAL_ICON } from "utils/signalTypes";
-import RightCircleOutlined from "@ant-design/icons/RightCircleOutlined";
 
 // Project imports
 import WorkspaceHeader from "components/WorkspaceHeader";
@@ -46,8 +45,14 @@ import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
 import ActivitySignalsTab, {
   ACTIVITY_FLAT_TYPES,
 } from "sections/activities/workspace/ActivitySignalsTab";
-import ActivityNextStepsTab from "sections/activities/workspace/ActivityNextStepsTab";
+import ActivityNextStepsBand from "sections/activities/workspace/ActivityNextStepsBand";
 import SignalsHaloBox from "components/signals/SignalsHaloBox";
+import {
+  NEXT_STEPS_BAND_QUERY,
+  hasSuggestedNextSteps,
+  hasNextStepsBand,
+} from "utils/nextStepsBand";
+import { isActivitySignalsLocked, TRANSCRIPT_FIELD } from "utils/activitySignalsLock";
 
 // The Signals band halo reads the COMPLETE validable set (all 3 statuses).
 const HALO_STATUSES = ["PENDING", "VALIDATED", "REJECTED"];
@@ -93,6 +98,24 @@ export default function ActivityWorkspacePage() {
   );
   const bandTotalSignals = bandSignals.length;
 
+  // Next steps band HALO + their share of the header counter (5.8f): fetched
+  // HERE too (the band body unmounts while collapsed), with the band's own
+  // query (utils/nextStepsBand — the same SWR key as its list). DC-only: outside
+  // a decision cycle the suggestions are neither proposed nor counted.
+  const { signals: nextStepSignals } = useAggregatedSignals({
+    activityId,
+    ...NEXT_STEPS_BAND_QUERY,
+  });
+  const hasSuggestions = hasSuggestedNextSteps(activity);
+  const bandNextSteps = useMemo(
+    () => (hasSuggestions ? nextStepSignals : []),
+    [hasSuggestions, nextStepSignals],
+  );
+  const nextStepsPendingCount = useMemo(
+    () => bandNextSteps.filter((s) => s.status === "PENDING").length,
+    [bandNextSteps],
+  );
+
   // Pipeline runner — owned here so pipelineState is accessible to header (F4)
   const pipelineRunner = usePipelineRunner({
     onSuccess: () => {
@@ -105,9 +128,12 @@ export default function ActivityWorkspacePage() {
   const isLocked =
     activity?.status === "COMPLETED" || activity?.status === "CANCELLED";
 
-  // Handle inline field save — blocked when activity is locked
+  // Handle inline field save — blocked when activity is locked. The
+  // transcript follows the signal bands' lock instead (CANCELLED only, 5.12d).
   const handleSaveField = async (fieldKey, newValue) => {
-    if (isLocked) return false;
+    const fieldLocked =
+      fieldKey === TRANSCRIPT_FIELD ? isActivitySignalsLocked(activity) : isLocked;
+    if (fieldLocked) return false;
 
     try {
       const result = await updateActivity(activityId, { [fieldKey]: newValue });
@@ -137,8 +163,9 @@ export default function ActivityWorkspacePage() {
     counts,
     // The "N to validate" badge reads the COMPLETE pending count (8 validable
     // types, same aggregate as the Signals list + halo) so header = list; the
-    // /counts/ badge source only covered 6 types.
-    pendingCount: bandPendingCount,
+    // /counts/ badge source only covered 6 types. Plus the PENDING next steps
+    // (5.8f) — what remains to validate on the whole page.
+    pendingCount: bandPendingCount + nextStepsPendingCount,
     // The neutral "N signals" fallback (shown when 0 pending) reads the same
     // 8-type aggregate total — never counts (which totals only 6 types).
     totalCount: bandTotalSignals,
@@ -303,26 +330,34 @@ export default function ActivityWorkspacePage() {
               icon={SIGNAL_ICON}
               defaultExpanded={analyzed}
             >
+              {/* The band owns its lock (COMPLETED stays workable, 5.11). */}
               <ActivitySignalsTab
                 activity={activity}
-                isLocked={isLocked}
                 mutateCounts={mutateCounts}
               />
             </CollapsibleStrip>
           </SignalsHaloBox>
 
-          {/* Next step — open when analysed */}
-          <CollapsibleStrip
-            title="Next step"
-            icon={RightCircleOutlined}
-            defaultExpanded={analyzed}
-          >
-            <ActivityNextStepsTab
-              activity={activity}
-              isLocked={isLocked}
-              mutateCounts={mutateCounts}
-            />
-          </CollapsibleStrip>
+          {/* Next steps — open when analysed. The same validation-state halo
+              as the Signals band (SignalsHaloBox), on its own next steps.
+              Rendered only when it has something to show (5.12 B: a DC
+              activity, or the campaign conversion) — the Preparation model. */}
+          {hasNextStepsBand(activity) && (
+            <SignalsHaloBox
+              pendingCount={nextStepsPendingCount}
+              totalSignals={bandNextSteps.length}
+              data-testid="next-steps-halo"
+            >
+              <ActivityNextStepsBand
+                activity={activity}
+                defaultExpanded={analyzed}
+                mutateCounts={mutateCounts}
+                pipelineRunner={pipelineRunner}
+                lastRun={lastRun}
+                runsByPipeline={runsByPipeline}
+              />
+            </SignalsHaloBox>
+          )}
         </Stack>
 
       {/* Modals (Delete) */}

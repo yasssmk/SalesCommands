@@ -658,3 +658,36 @@ SIGNALS_CACHE_TAG = 'signals'
 #                                              — affects include_archived
 #                                              filtering in list views)
 SIGNAL_CLUSTERS_CACHE_TAG = 'signal_clusters'
+
+# =============================================================================
+# NEXT STEP — "LINK TO AN EXISTING ACTIVITY" CANDIDATES (Sprint Next steps 2.3)
+# =============================================================================
+# Order of the criteria that rank the open activities of the next step's
+# decision cycle (signals/services/next_step_link_service.py). The first
+# candidate is the "link" proposal.
+#   shared_people — contacts of the next step's People (and its suggested
+#                   contacts) also on the activity — more first
+#   same_step     — the activity is on the proposed DC step
+#   same_type     — the activity has the proposed type
+#   closest_date  — smallest gap between the activity's date and the next
+#                   step's date (an activity without a date comes last)
+NEXT_STEP_LINK_RANKING = (
+    'shared_people',
+    'same_step',
+    'same_type',
+    'closest_date',
+)
+
+# The activity fields the rep may change when LINKING a next step to an
+# existing activity (attach-activity `updates`) — exactly the sections of the
+# differences screen. `add_contact_ids` ADDS contacts (never removes).
+NEXT_STEP_LINK_UPDATE_FIELDS = frozenset({
+    'activity_type',
+    'scheduled_date',
+    'scheduled_time',
+    'due_date',
+    'decision_step_id',
+    'call_to_action',
+    'description',
+    'add_contact_ids',
+})

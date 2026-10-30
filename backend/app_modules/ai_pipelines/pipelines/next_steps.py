@@ -39,15 +39,35 @@ and must be resolved by the unified-endpoint design in Sprint B5.
 This pipeline is internal-only at B4 -- no endpoint is exposed -- so
 the dedup ambiguity does not manifest in practice yet.
 
+Model and response schema (Sprint Next steps 3.1)
+--------------------------------------------------
+The pipeline has its OWN PROVIDER_CONFIG entry, config.NEXT_STEPS_PROVIDER
+(default `openai_next_steps`: gpt-5.6-terra, reasoning medium -- hence no
+temperature sent), used for the call AND the run row (model_name). The
+answer is constrained by NEXT_STEPS_RESPONSE_SCHEMA (Structured Outputs,
+strict), the exact shape of the request it goes with (v3 = v2 + a DATES
+rule, the v2 schema of 14 fields; v1, 7 fields, kept as the measured
+baseline).
+
+check_next_steps_provider() is this pipeline's load-time guard: the entry
+must exist in PROVIDER_CONFIG and, since a schema is sent, its provider must
+support one (Claude refuses it at call time) -- ImportError at Django
+startup, never on a rep's extraction. (The qualification stages have their
+own guard, transcript_signals.check_stage_schemas.)
+
+An injected provider (tests, eval script) serves the call with this entry's
+config, as for the qualification stages.
+
 Safety filter
 -------------
 Values in constants.py (PIPELINE_CONFIDENCE_MIN / PIPELINE_DROP_INFERRED
 [NEXT_STEPS]):
     CONFIDENCE_MIN = 0.5   -- drop LLM signals with self-declared
                               confidence below this threshold.
-    DROP_INFERRED  = True  -- drop signals where the LLM self-declared
-                              is_inferred=true (evidence-anchored
-                              suggestions only).
+    DROP_INFERRED  = False -- an inferred next step is kept (TD-282 (1),
+                              aligned on TRANSCRIPT_SIGNALS since
+                              TD-279 C1); a weak one is still dropped
+                              by CONFIDENCE_MIN.
 
 The filter itself is applied by NextStepExtractor.persist_extracted,
 which delegates to services/safety_filter.py (the policy module
@@ -117,10 +137,15 @@ from ..prompts.next_steps.context import (
     build_context_layer,
     CONTEXT_VERSION,
 )
-from ..prompts.next_steps.next_steps_v1 import (
+# Prompt v3 (v2 + the PERIOD date rule); next_steps_v1.py and
+# next_steps_v2.py are kept unchanged, both measured.
+from ..prompts.next_steps.next_steps_v3 import (
     build_next_steps_request,
     NEXT_STEPS_PROMPT_VERSION,
+    NEXT_STEPS_RESPONSE_SCHEMA,
 )
+from .. import config as ai_config
+from ..providers import get_provider, provider_supports_response_schema
 from ..providers.base import (
     LLMAuthError,
     LLMProviderError,
@@ -135,6 +160,32 @@ from django.db import transaction
 # Stage identifier used in AIPipelineRun.sub_calls entries. Single
 # stage, but the sub_calls JSON column still expects a string label.
 _STAGE_NAME = 'next_steps'
+
+
+def check_next_steps_provider(provider_key, response_schema, provider_config):
+    """
+    Sprint Next steps 3.1 -- this pipeline's load-time guard (schema <->
+    provider): `provider_key` must be a PROVIDER_CONFIG key and, when a
+    response schema is sent, its provider must support one. Raises
+    ImportError so a misconfiguration fails at Django startup.
+    """
+    if provider_key not in provider_config:
+        raise ImportError(
+            f'AI Pipelines configuration error: AI_PIPELINES_NEXT_STEPS_PROVIDER '
+            f'{provider_key!r} is not in PROVIDER_CONFIG. Available keys: '
+            f'{sorted(provider_config)}.'
+        )
+    if response_schema is not None and not provider_supports_response_schema(provider_key):
+        raise ImportError(
+            f'AI Pipelines configuration error: the next_steps pipeline sends a '
+            f'response schema but is mapped to {provider_key!r}, whose provider '
+            f'does not support a response schema.'
+        )
+
+
+check_next_steps_provider(
+    ai_config.NEXT_STEPS_PROVIDER, NEXT_STEPS_RESPONSE_SCHEMA, ai_config.PROVIDER_CONFIG,
+)
 
 
 class NextStepsPipeline(BasePipeline):
@@ -157,6 +208,13 @@ class NextStepsPipeline(BasePipeline):
     # anchored suggestions only).
     CONFIDENCE_MIN = PIPELINE_CONFIDENCE_MIN[AIPipelineType.NEXT_STEPS]
     DROP_INFERRED = PIPELINE_DROP_INFERRED[AIPipelineType.NEXT_STEPS]
+
+    def __init__(self, provider=None):
+        super().__init__(provider=provider)
+        # The pipeline's own entry (3.1) -- call AND run row (module docstring).
+        self._provider_config = ai_config.PROVIDER_CONFIG[ai_config.NEXT_STEPS_PROVIDER]
+        if not self._provider_injected:
+            self.provider = get_provider(ai_config.NEXT_STEPS_PROVIDER)
 
     # =========================================================================
     # MAIN ENTRY
@@ -193,13 +251,14 @@ class NextStepsPipeline(BasePipeline):
         try:
             with transaction.atomic():
                 try:
-                    context_layer = build_context_layer(activity)
+                    context_layer = build_context_layer(activity, transcript)
                     request_layer = build_next_steps_request(transcript)
 
                     parsed, sub_call_meta = self._call_llm(
                         system_prompt=SYSTEM_PROMPT,
                         context=context_layer,
                         request=request_layer,
+                        response_schema=NEXT_STEPS_RESPONSE_SCHEMA,
                     )
 
                     # Defensive: if the LLM returned a JSON shape that lacks
@@ -211,7 +270,8 @@ class NextStepsPipeline(BasePipeline):
                     else:
                         raw_signals = []
 
-                    persisted, dropped_count = NextStepExtractor().persist_extracted(
+                    extractor = NextStepExtractor()
+                    persisted, dropped_count = extractor.persist_extracted(
                         raw_signals=raw_signals,
                         activity=activity,
                         user=user,
@@ -219,6 +279,7 @@ class NextStepsPipeline(BasePipeline):
                         confidence_min=self.CONFIDENCE_MIN,
                         drop_inferred=self.DROP_INFERRED,
                         source_run=run,
+                        transcript=transcript,
                     )
 
                     self._log_sub_call(
@@ -228,6 +289,7 @@ class NextStepsPipeline(BasePipeline):
                         parsed=parsed,
                         error=None,
                         dropped_count=dropped_count,
+                        persist_counts=extractor.last_persist_counts,
                     )
 
                 # --- Specific subclasses first, then generic LLMProviderError ---

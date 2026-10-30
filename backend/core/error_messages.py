@@ -442,6 +442,43 @@ class SignalErrorMessages:
     )
 
     # -----------------------------------------------------------------
+    # NextStepSignal — a next step is resolved by an activity (Sprint Next
+    # steps, bloc 2.1). Four distinct causes, four messages: each tells the
+    # rep a different thing to do.
+    # -----------------------------------------------------------------
+    # Validated only with an activity created from it or linked to it.
+    NEXT_STEP_REQUIRES_ACTIVITY = _(
+        "A next step is validated by creating its activity or by linking it "
+        "to an existing activity."
+    )
+    # Created from it AND linked to another one: never both.
+    NEXT_STEP_CREATED_AND_LINKED = _(
+        "A next step is either created as an activity or linked to an "
+        "existing one, never both."
+    )
+    # Resolved (it has its activity): the activity is the reference.
+    NEXT_STEP_RESOLVED = _(
+        "This next step is resolved by its activity: it can no longer be "
+        "reopened or edited."
+    )
+    # A next step typed by hand is an activity ("Set a next step manually").
+    NEXT_STEP_MANUAL_NOT_ALLOWED = _(
+        "A next step cannot be created manually: create the activity instead."
+    )
+    # Link to an existing activity (2.4): the target must be a link candidate
+    # (an open activity of the next step's decision cycle, not its own
+    # conversation) ...
+    NEXT_STEP_LINK_TARGET_INVALID = _(
+        "A next step can only be linked to an open activity of its decision "
+        "cycle."
+    )
+    # ... and only the fields of the differences screen can be updated.
+    NEXT_STEP_LINK_UPDATE_NOT_ALLOWED = _(
+        "Linking a next step can only update the activity type, dates, step, "
+        "objective, description and contacts."
+    )
+
+    # -----------------------------------------------------------------
     # Legacy — kept for backward compatibility (ObjectiveSignal may
     # still enforce the relaxed rule in a future sprint).
     # -----------------------------------------------------------------

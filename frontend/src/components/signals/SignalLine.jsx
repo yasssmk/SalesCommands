@@ -36,7 +36,10 @@ import {
   getTechSummary,
   formatTargetDepartments,
   getPeopleName,
+  NEXT_STEP_UNKNOWN,
 } from "sections/activities/signals/utils/signalDisplay";
+import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
+import { getActivityTypeIcon } from "utils/activityTypes";
 
 const ICON_SIZES = IconSizes();
 
@@ -64,7 +67,7 @@ const SCOPE_TYPES = new Set([
   "constraints",
 ]);
 
-function formatShortDate(dateStr) {
+export function formatShortDate(dateStr) {
   if (!dateStr) return null;
   try {
     return new Date(dateStr).toLocaleDateString("en-GB", {
@@ -75,6 +78,24 @@ function formatShortDate(dateStr) {
   } catch {
     return dateStr;
   }
+}
+
+// Line 2 of a NEXT STEP (Sprint Next steps 5.8f, PO exception): what the
+// proposed activity is — type · action date — instead of the generic creation
+// date · origin contact. The names cited are not shown (5.8g, PO). The date is the due date (formatted
+// as every date of the line), else the date as said, else "Unknown".
+function getNextStepLineMeta(signal) {
+  const type = signal.suggested_activity_type;
+  const dateAsSaid = signal.suggested_date_text
+    ? `“${signal.suggested_date_text}”`
+    : null;
+  return {
+    TypeIcon: getActivityTypeIcon(type),
+    typeLabel:
+      ACTIVITY_TYPE_LABELS[type] || signal.suggested_activity_type_display || null,
+    dateLabel:
+      formatShortDate(signal.suggested_due_date) || dateAsSaid || NEXT_STEP_UNKNOWN,
+  };
 }
 
 // The content field varies by signal type — there is no single serializer
@@ -159,7 +180,12 @@ function formatOriginContact(contact) {
  *
  * Layout:
  *   Line 1 — [type chip, when showTypeChip] + full message (wraps, no clamp).
- *   Line 2 — meta: date · contact · scope · light status chip.
+ *   Line 2 — meta: date · contact · scope · light status chip. A next step
+ *            reads type · action date instead (5.8f/5.8g), on the same meta
+ *            row.
+ *   Line 3 — `extra` (optional, generic): any node a caller adds under the
+ *            meta line (e.g. the activity of a resolved next step). Absent
+ *            unless the caller passes it.
  *
  * `showTypeChip` lets a caller hide the type chip when the surrounding section
  * already names the type (grouped views); flat views keep it (only type cue).
@@ -176,6 +202,7 @@ export default function SignalLine({
   showStatusChip = true,
   showContactOverflow = true,
   showPeopleIdentity = false,
+  extra = null,
 }) {
   const isRejected = signal.status === "REJECTED";
 
@@ -184,8 +211,11 @@ export default function SignalLine({
   const dateLabel = formatShortDate(signal.created_at);
   const statusConfig = STATUS_LIGHT[signal.status] ?? null;
 
+  const isNextStep = signalType === "next-steps";
+  const nextStepMeta = isNextStep ? getNextStepLineMeta(signal) : null;
+
   const contacts = signal.source_context?.contacts ?? [];
-  const originContact = formatOriginContact(contacts[0]);
+  const originContact = isNextStep ? null : formatOriginContact(contacts[0]);
   const extraContacts = contacts.length > 1 ? contacts.length - 1 : 0;
 
   // Inline validate / reject — only on a PENDING row, and only when a caller
@@ -281,16 +311,50 @@ export default function SignalLine({
         )}
       </Stack>
 
-      {/* Line 2 (meta): date · contact · scope · light status */}
+      {/* Line 2 (meta): date · contact · scope · light status — for a next
+          step: type · action date (5.8f/5.8g), same row template. */}
       <Stack
         direction="row"
         alignItems="center"
         gap={1.5}
         flexWrap="wrap"
         sx={{ width: "100%" }}
+        data-testid={isNextStep ? "next-step-line-meta" : undefined}
       >
+        {/* Next step — the type of the proposed activity */}
+        {nextStepMeta?.typeLabel && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            sx={{ flexShrink: 0 }}
+            data-testid="next-step-line-type"
+          >
+            <nextStepMeta.TypeIcon style={{ fontSize: 12, color: "#8c8c8c" }} />
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {nextStepMeta.typeLabel}
+            </Typography>
+          </Stack>
+        )}
+
+        {/* Next step — the action date */}
+        {nextStepMeta && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            sx={{ flexShrink: 0 }}
+            data-testid="next-step-line-date"
+          >
+            <CalendarOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {nextStepMeta.dateLabel}
+            </Typography>
+          </Stack>
+        )}
+
         {/* Date */}
-        {dateLabel && (
+        {!isNextStep && dateLabel && (
           <Stack
             direction="row"
             spacing={0.5}
@@ -367,6 +431,9 @@ export default function SignalLine({
           />
         )}
       </Stack>
+
+      {/* Line 3 (optional): the caller's extra content. */}
+      {extra && <Box data-testid="signal-line-extra">{extra}</Box>}
       </Box>
 
       {/* Inline actions (validation worklist) — ✓ validate / ✗ reject, to the
@@ -471,4 +538,6 @@ SignalLine.propTypes = {
       (default false — DC/Account keep the full_name message; true in the
       Activity validation list). */
   showPeopleIdentity: PropTypes.bool,
+  /** Optional 3rd line under the meta line (generic; absent by default). */
+  extra: PropTypes.node,
 };

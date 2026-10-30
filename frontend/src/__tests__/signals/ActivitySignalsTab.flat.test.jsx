@@ -1,8 +1,7 @@
 // frontend/src/__tests__/signals/ActivitySignalsTab.flat.test.jsx
 //
 // SIG-2 — the Activity "Signals" tab is FLAT-FORCED: the Grouped/Flat toggle is
-// gone (the grouped synthesis stays only in ActivityQualificationTab / DC /
-// Account). The tab renders the SignalsValidationList — one flat list split into
+// gone (the grouped synthesis stays only in DC / Account). The tab renders the SignalsValidationList — one flat list split into
 // 3 status sections (To validate / Validated / Rejected), each grouped by type —
 // fed by the aggregated endpoint (all matching signals, pageSize 100, no pager).
 //
@@ -802,5 +801,19 @@ describe("ActivitySignalsTab — AI review notice in 'To validate' (T5b)", () =>
     useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [], count: 0 }));
     render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
     expect(screen.queryByText(AI_NOTICE)).not.toBeInTheDocument();
+  });
+});
+
+// 5.8g (d) — the empty validation list is the shared EmptyState (aphoriQ
+// theme): no hardcoded hex colour.
+describe("ActivitySignalsTab — the empty state (5.8g)", () => {
+  it("no signal at all → the shared EmptyState, zero hex colour", () => {
+    useAggregatedSignals.mockImplementation(() => flatReturn({ signals: [], count: 0 }));
+    const { container } = render(<ActivitySignalsTab activity={MOCK_ACTIVITY} />);
+    const message = screen.getByText("No signals for this activity");
+    expect(message.closest('[data-testid="empty-state"]')).not.toBeNull();
+    container.querySelectorAll("[style]").forEach((el) => {
+      expect(el.getAttribute("style")).not.toMatch(/#[0-9a-f]{3,6}\b|rgb\(140, 140, 140\)/i);
+    });
   });
 });

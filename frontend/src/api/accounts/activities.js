@@ -93,6 +93,10 @@ export const ACTIVITY_STATUS_CHIP_COLORS = {
   CANCELLED: { text: "error.main", background: "background.paper" },
 };
 
+// An overdue activity reads "Overdue" (the status pill of ActivityMiniCard).
+export const ACTIVITY_OVERDUE_LABEL = "Overdue";
+export const ACTIVITY_OVERDUE_CHIP_COLORS = { text: "error.main", background: "background.paper" };
+
 /**
  * Activity outcomes (matching backend ActivityOutcome choices)
  */

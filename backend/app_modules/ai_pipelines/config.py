@@ -112,6 +112,22 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
         'timeout_s':         90,
         'max_tokens':        8192,
     },
+    # Sprint Next steps 3.1 -- the NextStepsPipeline's own entry
+    # (NEXT_STEPS_PROVIDER below): gpt-5.6-terra + Structured Outputs, prompt
+    # v1 unchanged, measured by evals/next_steps against the gpt-4o-mini
+    # baseline. Same limits as the People entry, for the same reasons
+    # (reasoning tokens count in max_tokens). timeout_s 90 is NOT yet inside
+    # the R2 budget: the view runs this pipeline AFTER the qualification one
+    # in the same request (~150 s budgeted), within the ~180 s polling window
+    # -- kept until the eval measures the real durations (mean / max
+    # duration_ms).
+    'openai_next_steps': {
+        'provider':          'openai',
+        'model':             'gpt-5.6-terra',
+        'reasoning_effort':  'medium',
+        'timeout_s':         90,
+        'max_tokens':        8192,
+    },
 })
 
 
@@ -128,6 +144,21 @@ PROVIDER_CONFIG = getattr(settings, 'AI_PIPELINES_PROVIDER_CONFIG', {
 STAGE_PROVIDER = getattr(settings, 'AI_PIPELINES_STAGE_PROVIDER', {
     'people': 'openai_people',
 })
+
+
+# =============================================================================
+# MODEL OF THE NEXT STEPS PIPELINE (Sprint Next steps 3.1)
+# =============================================================================
+
+# PROVIDER_CONFIG key of the single-stage NextStepsPipeline (its run row,
+# its call). Checked at load, with its response schema, by the pipeline
+# itself (pipelines/next_steps.py check_next_steps_provider).
+#
+# Override in Django settings:
+#     AI_PIPELINES_NEXT_STEPS_PROVIDER = 'openai'   # back to gpt-4o-mini
+NEXT_STEPS_PROVIDER = getattr(
+    settings, 'AI_PIPELINES_NEXT_STEPS_PROVIDER', 'openai_next_steps',
+)
 
 
 # =============================================================================

@@ -41,7 +41,7 @@ moves.
 
 "SUCCESSFUL" IS NOT REDEFINED
 -----------------------------
-It is ``campaign_execution_service.SUCCESSFUL_OUTCOMES`` — the set the campaign
+It is ``campaigns.constants.SUCCESSFUL_OUTCOMES`` — the set the campaign
 progression already uses to complete a contact — paired with
 ``status=COMPLETED``: ``Activity.outcome`` is documented as meaningful "only when
 completed", so the pairing keeps a PLANNED row with a stray outcome from
@@ -86,7 +86,7 @@ from app_modules.decision_cycles.services.deal_value_sql import (
     annotate_deal_value,
 )
 
-from .campaign_execution_service import SUCCESSFUL_OUTCOMES
+from ..constants import SUCCESSFUL_OUTCOMES
 
 
 # Annotation alias for the touched-by test. Underscored so it can never clash

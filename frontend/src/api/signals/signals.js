@@ -86,6 +86,9 @@ const endpoints = {
   nextStepsValidate: (id) => `/module-signals/next-steps/${id}/validate/`,
   nextStepsReject: (id) => `/module-signals/next-steps/${id}/reject/`,
   nextStepsReopen: (id) => `/module-signals/next-steps/${id}/reopen/`,
+  nextStepsLinkCandidates: (id) => `/module-signals/next-steps/${id}/link-candidates/`,
+  nextStepsAttachActivity: (id) => `/module-signals/next-steps/${id}/attach-activity/`,
+  nextStepsCitedContacts: (id) => `/module-signals/next-steps/${id}/cited-contacts/`,
 
   // People
   people: "/module-signals/people/",
@@ -149,6 +152,10 @@ function getBaseEndpoint(signalType) {
  * @param {string} id - Signal UUID
  * @returns {string} Detail URL
  */
+// The list route of every signal type, from the map above — the ONE source of
+// the per-type list prefixes (e.g. the post-extraction revalidation, 5.10b).
+export const SIGNAL_LIST_ENDPOINTS = SIGNAL_TYPES.map(getBaseEndpoint);
+
 function getDetailEndpoint(signalType, id) {
   switch (signalType) {
     case "pain":
@@ -439,6 +446,64 @@ export function useGetSignalsByAccount(accountId, signalType, options = {}) {
 }
 
 /**
+ * NEXT STEP LINK CANDIDATES (Sprint Next steps 5.6)
+ *
+ * GET /module-signals/next-steps/{id}/link-candidates/ — the open activities
+ * of the next step's cycle it can be linked to, ranked, each with its
+ * differences; the first one is the proposal.
+ *
+ * @param {string} signalId - NextStepSignal UUID
+ * @returns {Object} { candidates, proposedActivityId, candidatesLoading,
+ *                     candidatesError }
+ */
+export function useNextStepLinkCandidates(signalId) {
+  const { tenantId } = useAuth();
+  const url =
+    signalId && isValidUUID(signalId) ? endpoints.nextStepsLinkCandidates(signalId) : null;
+
+  const { data, isLoading, error } = useSWR(tenantKey(url, tenantId), {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+  });
+
+  return useMemo(() => {
+    const payload = data?.data ?? data ?? {};
+    return {
+      candidates: payload.candidates ?? [],
+      proposedActivityId: payload.proposed_activity_id ?? null,
+      candidatesLoading: isLoading,
+      candidatesError: error,
+    };
+  }, [data, isLoading, error]);
+}
+
+/**
+ * NEXT STEP CITED CONTACTS (Sprint Next steps 5.8d)
+ *
+ * GET /module-signals/next-steps/{id}/cited-contacts/ — the names the next
+ * step cites, each with the account contact it designates without
+ * ambiguity (server-side, the TD-279 name rule), or null.
+ *
+ * @param {string|null} signalId - NextStepSignal UUID (null → disabled)
+ * @returns {Object} { citedContacts: [{name, contact}], citedLoading }
+ */
+export function useNextStepCitedContacts(signalId) {
+  const { tenantId } = useAuth();
+  const url =
+    signalId && isValidUUID(signalId) ? endpoints.nextStepsCitedContacts(signalId) : null;
+
+  const { data, isLoading } = useSWR(tenantKey(url, tenantId), {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+  });
+
+  return useMemo(() => {
+    const payload = data?.data ?? data ?? {};
+    return { citedContacts: payload.cited ?? [], citedLoading: Boolean(url) && isLoading };
+  }, [data, isLoading, url]);
+}
+
+/**
  * GET SIGNALS BY ACTIVITY
  *
  * Fetches signals of a given type linked to a specific source activity.
@@ -573,6 +638,73 @@ export async function updateSignal(signalType, signalId, payload) {
 
   if (result.success) {
     revalidateSignalLists();
+    const data = result.data?.data ?? result.data;
+    return { success: true, data };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status ?? 0,
+    response: result.response ?? null,
+  };
+}
+
+/**
+ * ATTACH A NEXT STEP TO AN EXISTING ACTIVITY (Sprint Next steps 5.7)
+ *
+ * POST /module-signals/next-steps/{id}/attach-activity/ {activity_id, updates}
+ * — links the next step to a link candidate, applying the `updates` the rep
+ * chose (NEXT_STEP_LINK_UPDATE_FIELDS); the server validates the next step
+ * last, in the same transaction.
+ *
+ * @param {string} signalId   - NextStepSignal UUID
+ * @param {string} activityId - The candidate activity UUID
+ * @param {Object} updates    - The chosen changes ({} = none)
+ * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
+ */
+export async function attachNextStepToActivity(signalId, activityId, updates) {
+  if (!signalId || !isValidUUID(signalId)) {
+    return { success: false, error: "Invalid signal ID format", status: 400 };
+  }
+
+  const result = await api.post(endpoints.nextStepsAttachActivity(signalId), {
+    activity_id: activityId,
+    updates,
+  });
+
+  if (result.success) {
+    revalidateSignalLists();
+    const data = result.data?.data ?? result.data;
+    return { success: true, data };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status ?? 0,
+    response: result.response ?? null,
+  };
+}
+
+/**
+ * GET SIGNAL
+ *
+ * GET /module-signals/{signalType}/{id}/ — one signal, read back from the
+ * server (the detail payload).
+ *
+ * @param {'pain'|'objective'|'impact'|'tech-stack'|'blockers'|'next-steps'|'people'|'constraints'} signalType
+ * @param {string} signalId - Signal UUID
+ * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
+ */
+export async function getSignal(signalType, signalId) {
+  if (!signalId || !isValidUUID(signalId)) {
+    return { success: false, error: "Invalid signal ID format", status: 400 };
+  }
+
+  const result = await api.get(getDetailEndpoint(signalType, signalId));
+
+  if (result.success) {
     const data = result.data?.data ?? result.data;
     return { success: true, data };
   }

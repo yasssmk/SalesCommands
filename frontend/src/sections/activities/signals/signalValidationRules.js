@@ -2,7 +2,7 @@
 
 /**
  * Required-field definitions per signal type and helpers to detect
- * incomplete signals. Used by SignalDetailCard, SignalQuickDrawer,
+ * incomplete signals. Used by SignalDetailContent, SignalQuickDrawer,
  * and SignalEditDialog to surface "missing fields" alerts and
  * disable the Validate action until the signal is complete.
  */
@@ -12,6 +12,9 @@
 // summary minimum the Objection edit already applies.
 export const COMPETITOR_NAME_MAX_LENGTH = 255;
 export const SIGNAL_SUMMARY_MIN_LENGTH = 10;
+// Sprint Next steps 5.5 — NextStepSignal.suggested_title max_length
+// (next_step_signal.py).
+export const NEXT_STEP_TITLE_MAX_LENGTH = 255;
 
 const REQUIRED_FIELDS = {
   pain: [

@@ -50,7 +50,6 @@ import MainCard from "components/MainCard";
 import {
   InlineContactForm,
   InlineCycleForm,
-  PIPELINE_STEPS,
 } from "./components";
 import {
   createActivity,
@@ -70,11 +69,18 @@ import { useGetContacts } from "api/businessData/contacts";
 import {
   useGetDecisionCyclesByAccount,
   useGetDecisionStepsByCycle,
+  PIPELINE_STEP_LABELS,
 } from "api/accounts/decisionCycles";
 import {
   displayErrorSnackbar,
   displaySuccessSnackbar,
 } from "utils/displayError";
+import {
+  activityDefaultsFromNextStep,
+} from "utils/activityTypes";
+
+// A YYYY-MM-DD pre-fill value → the pickers' dayjs (null stays null).
+const toDay = (value) => (value ? dayjs(value) : null);
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -85,12 +91,10 @@ const validationSchema = Yup.object(
       .max(255, "Title must be at most 255 characters"),
     activity_type: Yup.string().required("Activity type is required"),
     status: Yup.string().required("Status is required"),
-    description: Yup.string()
-      .max(2000, "Description must be at most 2000 characters")
-      .nullable(),
-    call_to_action: Yup.string()
-      .max(500, "Activity objective must be at most 500 characters")
-      .nullable(),
+    // No length cap: the Description column is unbounded (Sprint Next steps 2.2b).
+    description: Yup.string().nullable(),
+    // No length cap: the Objective column is unbounded (Sprint Next steps 2.2a, R3).
+    call_to_action: Yup.string().nullable(),
     scheduled_date: Yup.date()
       .nullable()
       .typeError("Please select a valid date")
@@ -126,7 +130,6 @@ export default function ActivityModal({
   decisionStepId = null,
   decisionCycleId = null,
   defaultActivityType = null,
-  previousActivityId = null,
   sourceActivityId = null,
   nextStepSignal = null,
   onSuccess,
@@ -180,42 +183,48 @@ export default function ActivityModal({
     }));
   }, [cycles]);
 
-  // Pre-fill from nextStepSignal when converting an AI suggestion
-  const signalContactIds = useMemo(() => {
-    if (!nextStepSignal?.suggested_contacts) return [];
-    return nextStepSignal.suggested_contacts.map((c) => c.id);
-  }, [nextStepSignal]);
+  // Pre-fill from nextStepSignal when converting an AI suggestion — the
+  // SHARED source of the 2.2b pre-fill (activityDefaultsFromNextStep, Sprint
+  // Next steps 5.8d): title, type, date by D6, objective + success criterion,
+  // description (topics, the cited names for the non-contact types, the
+  // internal names), contacts (the next step's + its People's — the server
+  // never adds a contact on its own).
+  const initialActivityType =
+    activity?.activity_type ||
+    nextStepSignal?.suggested_activity_type ||
+    defaultActivityType ||
+    "MEETING";
+  const nextStepDefaults = useMemo(
+    () => activityDefaultsFromNextStep(nextStepSignal, { activityType: initialActivityType }),
+    [nextStepSignal, initialActivityType],
+  );
 
   // Build initial values
   const initialValues = useMemo(
     () => ({
-      title: activity?.title || nextStepSignal?.suggested_title || "",
-      activity_type:
-        activity?.activity_type ||
-        nextStepSignal?.suggested_activity_type ||
-        defaultActivityType ||
-        "MEETING",
+      title: activity?.title || nextStepDefaults.title || "",
+      activity_type: initialActivityType,
       status: activity?.status || "PLANNED",
-      description: activity?.description || "",
-      call_to_action:
-        activity?.call_to_action || nextStepSignal?.suggested_objective || "",
+      description: activity?.description || nextStepDefaults.description || "",
+      call_to_action: activity?.call_to_action || nextStepDefaults.call_to_action || "",
       scheduled_date: activity?.scheduled_date
         ? dayjs(activity.scheduled_date)
-        : nextStepSignal?.suggested_due_date
-          ? dayjs(nextStepSignal.suggested_due_date)
-          : null,
+        : toDay(nextStepDefaults.scheduled_date),
       scheduled_time: activity?.scheduled_time
         ? dayjs(`2000-01-01T${activity.scheduled_time}`)
         : null,
-      due_date: activity?.due_date ? dayjs(activity.due_date) : null,
+      due_date: activity?.due_date
+        ? dayjs(activity.due_date)
+        : !activity
+          ? toDay(nextStepDefaults.due_date)
+          : null,
       contact_ids:
-        activity?.contacts?.map((c) => c.id) ||
-        (signalContactIds.length > 0 ? signalContactIds : []),
+        activity?.contacts?.map((c) => c.id) || nextStepDefaults.contacts.map((c) => c.id),
       has_inline_contact: false,
       decision_cycle_id: activity?.decision_cycle || decisionCycleId || "",
       decision_step_id: activity?.decision_step || decisionStepId || "",
     }),
-    [activity, nextStepSignal, signalContactIds, defaultActivityType, decisionCycleId, decisionStepId],
+    [activity, nextStepDefaults, initialActivityType, decisionCycleId, decisionStepId],
   );
 
   // Formik setup
@@ -279,9 +288,6 @@ export default function ActivityModal({
 
             activityPayload.decision_step_id = values.decision_step_id || null;
 
-            if (previousActivityId) {
-              activityPayload.previous_activity_id = previousActivityId;
-            }
             if (sourceActivityId) {
               activityPayload.source_activity_id = sourceActivityId;
             }
@@ -302,9 +308,6 @@ export default function ActivityModal({
               values.decision_cycle_id || null;
             activityPayload.decision_step_id = values.decision_step_id || null;
 
-            if (previousActivityId) {
-              activityPayload.previous_activity_id = previousActivityId;
-            }
             if (sourceActivityId) {
               activityPayload.source_activity_id = sourceActivityId;
             }
@@ -396,6 +399,19 @@ export default function ActivityModal({
       setInlineStepStage("QUALIFICATION");
     }
   }, [open, initialValues, resetForm]);
+
+  // Declared AFTER the open/reset effect above so it runs after it and the
+  // reset does not wipe the pre-selected step.
+  // Converting a next step: once the cycle's steps are known, pre-select its
+  // proposed step when it is a step of this cycle, else the cycle's CURRENT
+  // step (mirror of the backend default, next_step_materialization.py).
+  useEffect(() => {
+    if (!nextStepSignal || activity || values.decision_step_id || !steps?.length) return;
+    const proposed = steps.find((s) => s.id === nextStepSignal.suggested_decision_step);
+    const current = steps.find((s) => s.is_current);
+    const chosen = proposed || current;
+    if (chosen) setFieldValue("decision_step_id", chosen.id);
+  }, [nextStepSignal, activity, values.decision_step_id, steps, setFieldValue]);
 
   const handleClose = () => {
     resetForm();
@@ -848,9 +864,8 @@ export default function ActivityModal({
                             </Typography>
                             <Typography variant="caption" color="success.main">
                               Starting at:{" "}
-                              {PIPELINE_STEPS.find(
-                                (s) => s.value === inlineStepStage,
-                              )?.label || "Qualification"}
+                              {PIPELINE_STEP_LABELS[inlineStepStage] ||
+                                PIPELINE_STEP_LABELS.QUALIFICATION}
                             </Typography>
                           </Stack>
                           <Button
@@ -1011,7 +1026,6 @@ ActivityModal.propTypes = {
   decisionStepId: PropTypes.string,
   decisionCycleId: PropTypes.string,
   defaultActivityType: PropTypes.string,
-  previousActivityId: PropTypes.string,
   sourceActivityId: PropTypes.string,
   nextStepSignal: PropTypes.shape({
     id: PropTypes.string,
