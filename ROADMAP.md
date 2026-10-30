@@ -1448,6 +1448,7 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Prochain jalon** : **Next step** (audit de structure d'abord) — voir la suite de la surface Activity ci-dessous. *(Était : TD-272 — déplacé en fin d'UX, décision PO.)*
 
 #### Suite de la surface Activity (ordre PO, clôture TD-279 — séquence révisée)
+_(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Next steps) » plus bas ; conservée pour l'historique.)_
 1. **Next step** — cadrage ouvert par un **AUDIT DE STRUCTURE**. **Idée PO à étudier** : lier People et Next step (« une personne est souvent une étape du processus, et une étape est un next step ») — **pas toutes** : un utilisateur pilote n'est pas une étape. Concepts à cartographier : `NextStepSignal`, `suggested_contacts` (**TD-7**), étapes de décision du DC, `PeopleSignal` ; décider aussi si **Blocker et Next step réutilisent un inventaire des personnes**. Aligner NextSteps sur TD-279 (**TD-282**).
 2. **SMOKE GLOBAL** (décision PO) couvrant **TD-279 + Next step** — transcription modifiée : **cache d'extraction (TD-289)**.
 3. **UN SEUL SPRINT** : **Transcript & notes** + **Preparation / EMAIL GENERATION** (PO : « on doit pouvoir extraire un email ») + **Prep call**. À l'audit de ce sprint, **vérifier si le prep call dépend des clusters** (passe cluster TD-199 désormais au chantier DC/Account, étape 5).
@@ -1456,6 +1457,57 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 6. **Chantier DC / Account** — dont les clusters : **TD-199**, **TD-277**, **TD-278**, **TD-280**, **TD-243**.
 7. **À LA FIN, une fois toute l'UX terminée** : **homogénéisation de l'UI et de la validation + gestion des erreurs** — **TD-272** (snackbars rouge → orange pour une règle métier) **ET** les **messages Formik**, **ensemble**.
 8. **Fine-tuning IA**.
+
+### Sprint Next steps (surface Activity) ✅ LIVRÉ (chantier UX Activity — EN COURS) — next steps structurés, bande « Next steps », création / lien dans la coque, campagne → Decision Cycle, outcome visible et éditable (branche `feat/ux-activity-next-steps`, `a026914a`→`642e5a62`, **✅ MERGÉ, PR #167**, merge `bcc9e217`)
+- **Objectif** : faire du next step un objet **structuré et actionnable** sur la surface Activity — extrait par l'IA (étape DC, date dite, personnes citées, critère de succès, sujets), **validé uniquement avec son activité** (créée depuis lui ou liée à une activité existante), affiché dans une bande « Next steps » ; et faire d'une campagne réussie la **naissance d'un Decision Cycle**.
+- **Décisions PO verrouillées** :
+  - **Un next step n'est validé qu'avec son activité** (rule 2.1) : Create (activité pré-remplie depuis lui) ou Link (activité existante, avec ses différences) ; jamais « validé » seul.
+  - **Le next step CITE des noms** ; il ne crée ni ne décrit aucune personne. Les noms deviennent les **contacts** de l'activité pour MEETING / CALL / EMAIL, la **description** sinon ; le **serveur n'ajoute aucun contact** à la conversion. Le lien People ↔ Contact relève du sprint « Cycle de vie des contacts » (inventaire `docs/PEOPLE_CONTACT_INVENTORY.md`, **TD-307**).
+  - **Verrou** : seule une activité **CANCELLED** verrouille les bandes Signals et Next steps, l'action IA et la transcription ; une activité COMPLETED reste travaillable (verrou front seulement — **TD-297**).
+  - **Campagne** : **le but d'une campagne est de créer des DC** ; un outcome **final** (SUCCESSFUL / terminal) **arrête la séquence du prospect sur tous les chemins** ; un outcome changé après un outcome final est accepté sur l'activité, sans transition du prospect, journalisé. Une activité de campagne **SUCCESSFUL / MEETING_SCHEDULED** a des next steps ; sans DC, l'IA ne propose **pas d'étape**.
+  - **« Start Decision Cycle » tant qu'aucun DC n'est né, « + Add next step » ensuite — jamais les deux** (test par la vraie page). **5.16 « une seule pill » ANNULÉE** (revert `7ea48e0c`).
+  - **Header Activity : une seule pill** — l'`OutcomeChip` remplace « Completed » quand il y a un outcome.
+  - **Outcome éditable** dans Edit activity sur une activité COMPLETED ; sur une activité de **campagne**, CALLBACK_REQUESTED et NO_ANSWER passent par la **complétion** (non proposés à l'édition).
+  - **Design des Edit signal pour TOUS les drawers** (sections numérotées) — fait pour Edit activity et Edit contact ; le reste en **TD-239**.
+- **Livré** (chaque sous-étape : ROUGE par le vrai chemin — page ou endpoint réel — d'abord, puis VERT, non-vacuité par mutation ciblée vérifiée par `cmp`, régression ; STOP + validation PO) :
+  - **Bloc 0 — correctifs** : next steps déduits gardés + label de locuteur retiré (**TD-282**, `a026914a`, `1891b546`) ; chemin 409 du cache (**TD-262**, `acb4d212`) ; `create-with-entities` matérialise le next step (`20f4d8ce`) ; date de référence = en-tête de la transcription (**TD-281**, D7 `6e4494db`) ; `ActivityModal` n'envoie plus `previous_activity_id` (`1b9fccae`).
+  - **Blocs 1-2 — modèle et API du next step** : champs structurés (migration **0047**) ; type `NEXT_STEPS_ADVICE` (migration **0006**, dormant) ; invariant « validé seulement avec son activité » (`44ea2cad`) ; objectif d'activité jamais tronqué (`call_to_action` en texte, migration **0023**) ; conversion qui remplit l'activité depuis le next step (`66670796`) ; **Link** : candidats classés (`GET …/link-candidates/`) + différences + rattachement (`15b4e644`, `97d6b36f`) ; provenance de l'activité (**TD-228**).
+  - **Bloc 3 — IA** : éval `evals/` next_steps (base commune `evals/common/eval_kit.py`) ; next_steps sur **gpt-5.6-terra + Structured Outputs** ; **contexte v6** (le DC et l'étape de la conversation) ; **prompt v2 → v3** (une PÉRIODE se résout à son dernier jour ouvré ; texte libre en anglais) ; extracteur qui persiste les champs v2 ; **contrôle serveur de la `source_quote`**.
+  - **Bloc 5 — UI, sous-étapes 5.0 → 5.18** :
+    - **5.1 / 5.2** : `next_planned_step` (LE prochain pas déjà prévu : DC, DC né d'une campagne, ou séquence de campagne) ; bande « Next steps ».
+    - **5.3 → 5.7** : liste de validation générique (To validate / Validated / Rejected) ; détail et édition du next step dans la coque ; flux de validation **Create** puis **Link** (étapes 2 et 3).
+    - **5.8a → 5.8h** : noms cités (un seul champ), « Add as person » retiré ; pré-remplissage partagé `activityDefaultsFromNextStep` ; **création d'activité dans la coque** (`EditActivityContent` mode création) ; « + Add next step » + pills de type ; lisibilité de la bande (halo, compteur du header) ; corrections : invités appliqués par `create-with-entities`, People REJECTED jamais utilisé, pré-remplissage symétrique, conversion documentée (migration **0048**, `help_text`).
+    - **5.9 / 5.9b** : provenance des next steps dans Context ; **payload d'auth unique + libellé unique** (**TD-234**) ; carte « Next planned step ».
+    - **5.10 / 5.10b** : revalidation après extraction (`/module-signals/all/`, liste dérivée de la carte d'endpoints — **TD-252**) ; carte en layout drawer ; « Why » du Link.
+    - **5.11** : la bande Signals suit le verrou CANCELLED (prédicat partagé `isActivitySignalsLocked`).
+    - **5.12 A → e** : Context **Previous activity / Next planned activity** (Overdue en rouge) ; refonte de la bande (conversion en tête, sections directement sous la bande, action IA partagée `RunAIAnalysisButton` en pill dans l'état vide, « + Add next step » à droite du titre) ; verrou de l'IA et de la transcription sur CANCELLED seulement.
+    - **5.13** : « Start Decision Cycle » ouvre le **drawer de création en mode conversion** (nouveau DC inline, contacts de l'activité de campagne, `source_activity_id`) ; `InlineCycleForm` en pills ; **une seule liste d'étapes** (celle du backend) ; plus aucun modal dans la bande.
+    - **5.14a** : un outcome final arrête la séquence campagne **sur tous les chemins** (`post_save` `end_sequence_on_final_outcome` → `CampaignExecutionService.apply_final_outcome`) + commande de correction `stop_orphan_campaign_sequences` (**TD-295**).
+    - **5.14b** : next steps sur une activité de campagne SUCCESSFUL — **prédicat partagé** `next_steps_enabled` (+ miroir front `hasSuggestedNextSteps`), **`born_decision_cycle`** calculé à la lecture (jamais stocké), création et Link dans le DC né ; `SUCCESSFUL_OUTCOMES` / `TERMINAL_OUTCOMES` / `REACHED_OUTCOMES` dans `campaigns/constants.py`.
+    - **5.14c** : Link grisé « No decision cycle yet » avant qu'un DC soit né.
+    - **5.15 / 5.15b** : l'outcome dans le header — **une seule pill**.
+    - **5.16** : « une seule pill » Start DC / + Add next step — **ANNULÉE** (revert) ; test « jamais les deux » (`d8d9a091`).
+    - **5.17 / 5.17b** : outcome éditable dans Edit activity (`OutcomeSelector` partagé, sur COMPLETED seulement) ; sur campagne, CALLBACK_REQUESTED et NO_ANSWER exclus (`EDIT_EXCLUDED_CAMPAIGN_OUTCOMES`) ; un changement de type efface un outcome incompatible ; le `post_save` 5.14a s'applique (prouvé par le vrai endpoint).
+    - **5.18** : Edit activity (édition + création) et Edit contact sur le design des Edit signal (`SectionHeader` numéroté + `Divider`).
+  - **Bloc 6 — nettoyage** (C1 → C6, preuve grep + vitest par suppression) : ancienne UI next step (`AISuggestionCard`, `NextStepSuggestionDrawer`, `NextStepsFilterBar`, `LinkExistingActivityModal`), `SignalDetailCard`, vue groupée Activity, `ActivityOverviewTab` + carte legacy, champ `next_step_signal_detail`, `getPeopleSummary` / `getConstraintSummary`.
+- **Migrations** : `module_activities/0023` (`call_to_action` → texte ; retour en arrière **refusé** s'il tronquerait un objectif > 500 caractères) ; `module_ai_pipelines/0006` (choix `NEXT_STEPS_ADVICE`, sans SQL) ; `module_signals/0047` (10 champs du next step, réversible **avec perte** de ces champs) ; `module_signals/0048` (`help_text`, sans SQL).
+- **Validation (régression finale)** : **pytest** `tests/activities` + `tests/campaigns` + `tests/signals` + `tests/ai_pipelines` + `tests/decision_cycles` = **2192 passés, 4 échecs PRÉ-EXISTANTS** (`test_callback_date_reschedule` ×3 — **TD-293** ; `test_create_requires_rigidity` — **TD-247**), **0 erreur** ; `tests/bi` : 7 échecs Redis, identiques sur `main` (**TD-103**) ; **vitest 205 fichiers / 1780 tests verts** ; **`npm run build` OK** (avertissements préexistants, dont **TD-132**) ; `makemigrations --check` propre.
+- **Opérationnel** : lancer `stop_orphan_campaign_sequences` en production (`--dry-run` puis réel) — **TD-295** (SELECT d'audit dans la ligne).
+- **Dette** : **RESOLVED** (archivés) **TD-181**, **TD-215**, **TD-228**, **TD-234**, **TD-236**, **TD-252**, **TD-262**, **TD-281**, **TD-282** ; **PARTIAL** **TD-156**, **TD-206**, **TD-226**, **TD-235** ; **MAJ** **TD-7** (reste OPEN), **TD-77**, **TD-103**, **TD-132** (⚠️ PRIORITAIRE), **TD-224**, **TD-239**, **TD-243** ; **NOUVEAUX TD-290 → TD-307** ; inventaire People ↔ Contact versionné (`docs/PEOPLE_CONTACT_INVENTORY.md`, **TD-307**). **TD-247** inchangé (OPEN).
+- **Prochain jalon** : **smoke global TD-279 + Next steps** sur un **nouveau** transcript, puis le sprint **« Cycle de vie des contacts »** — voir la suite ci-dessous.
+
+#### Suite de la surface Activity (ordre PO, clôture Next steps)
+1. ✅ **Next step** — LIVRÉ (fiche ci-dessus).
+2. **SMOKE GLOBAL TD-279 + Next steps** sur un **NOUVEAU transcript** (une transcription déjà traitée n'est pas réanalysée : cache d'extraction, **TD-289**).
+3. **Sprint « Cycle de vie des contacts »** — **juste après, AVANT Prep call** (fiche dans « Nouveaux sprints »).
+4. **UN SEUL SPRINT** : **Transcript & notes** + **Preparation / EMAIL GENERATION** + **Prep call** (inchangé) — avec les **précisions PO Prep call** (fiche « Sprint Prep call — précisions PO » dans « Nouveaux sprints »).
+5. Décision **« création manuelle des signaux »** (fiche « Question STRATÉGIQUE »).
+6. **Prérequis de clôture d'Activity** : nettoyage **TD-206**, **smoke A→Z**.
+7. **Chantier DC / Account** — dont les clusters : **TD-199**, **TD-277**, **TD-278**, **TD-280**, **TD-243**.
+8. **À LA FIN, une fois toute l'UX terminée** : **homogénéisation de l'UI et de la validation + gestion des erreurs** — **TD-272** + messages Formik, **et** le design des Edit signal pour **tous** les drawers (**TD-239**).
+9. **Fine-tuning IA**.
+- **Sprint Surface Campaign** (fiche dans « Nouveaux sprints ») : position dans l'ordre **non tranchée** par le PO.
+- **Post-prod** : mode **« conseillé »** des next steps (fiche dans « Nouveaux sprints »).
 
 ---
 
@@ -1553,6 +1605,8 @@ _Mis en pause après l'audit pour traiter le Fix isolation tenant (ci-dessus), p
 - **Homogénéisation** (#8) — audit CODE des patterns.
 - **Snapshot / Deal History** (#9).
 - **UI Admin Produit / gestion des tenants** (#10).
+- **Mode « conseillé » des next steps** (NOUVEAU 2026-10) — fiche « Post-prod —
+  Mode « conseillé » des next steps ».
 
 ### Détail des blocs regroupés
 
@@ -1986,6 +2040,31 @@ possibles) :
 - **Dette** : **MAJ TD-255(4)**.
 - **Prochain jalon** : **sprint TechStack** (détail + edit sur le châssis,
   surface Activity), puis **Competitor**.
+
+#### Sprint « Cycle de vie des contacts » (NOUVEAU 2026-10 — décision PO, clôture Next steps)
+- **Position** : **juste après le sprint Next steps** (et son smoke global), **AVANT Prep call**.
+- **Chaîne à couvrir** : **signal → DC** (origine campagne ?) **→ Account → Activity → Signal**.
+- **Le People signal devient un « contact signal »**.
+- **Le Contact a 2 niveaux** : au niveau du **compte**, et au niveau du **DC avec un rôle**.
+- **Question ouverte** : **lier un signal à un contact existant**.
+- **Matière d'entrée** : l'inventaire People ↔ Contact (60 opérations, 37 incohérences, `fichier:ligne`) — [`docs/PEOPLE_CONTACT_INVENTORY.md`](docs/PEOPLE_CONTACT_INVENTORY.md) ; dette **TD-307** (« Modèle Personnes »), reliée à **TD-211** (réconciliation), **TD-213** (influence), **TD-231** (rôle DC empilé), **TD-277** / **TD-278** / **TD-280** (People du DC), **TD-287** (rattachement à 3 états), **TD-7** / **TD-298** (personnes du next step).
+
+#### Sprint Prep call — précisions PO (2026-10, clôture Next steps)
+- **Position** : sprint « Transcript & notes + Preparation / Email generation + Prep call » (étape 4 de la suite de la surface Activity), après « Cycle de vie des contacts ».
+- **Objectif, critère de succès et sujets plus orientés VENTE** : l'**approche du meeting**, le **résultat à obtenir pour avancer le deal**, les **métriques importantes pour le prospect si elles sont connues**.
+- **Dans le sprint, pas en fine-tuning** (décision PO).
+- **Lien** : **TD-219** (Objective « how is success measured », nécessaire au prep call / email).
+
+#### Sprint Surface Campaign (NOUVEAU 2026-10 — décision PO, clôture Next steps)
+- **Règle produit** : **le but d'une campagne est de créer des DC** ; la **séquence** sert quand les gens **ne répondent pas** ; **pas de next step si et seulement si la séquence est encore active**.
+- **Livré au sprint Next steps (socle)** : un outcome final arrête la séquence sur tous les chemins (5.14a) ; une activité de campagne SUCCESSFUL / MEETING_SCHEDULED a des next steps et fait naître un DC (5.13, 5.14b).
+- **Dettes rattachées** : **TD-290** (prospect ON_HOLD qui reçoit SUCCESSFUL → 400), **TD-291** (Targeted : Log Response SUCCESSFUL sur un email COMPLETED → le prospect sort, pas de next step depuis l'écran campagne), **TD-292** (objectif de campagne limité à 500 caractères côté front), **TD-293** (3 échecs `test_callback_date_reschedule`, COND-1), **TD-294** (lien vers une campagne hors scope → 403), **TD-295** (commande `stop_orphan_campaign_sequences` à lancer en production) ; voir aussi **TD-223** (Log Result → drawer outcome) et **TD-101** (re-demande de callback).
+- **Position** : **non tranchée** par le PO.
+
+#### Post-prod — Mode « conseillé » des next steps (NOUVEAU 2026-10 — décision PO)
+- **Position** : **POST-LAUNCH**.
+- **Objet** : un mode où l'IA **conseille** des next steps (pas seulement ceux dits dans la conversation), avec leur **justification**.
+- **Socle déjà posé, DORMANT** : type de pipeline **`NEXT_STEPS_ADVICE`** (`ai_pipelines/constants.py:100`, migration `module_ai_pipelines/0006`) — aucun pipeline ne le produit ; champ **`NextStepSignal.advice_rationale`** (migration `module_signals/0047`) — exposé par le serializer, **jamais affiché** (`EditNextStepContent.jsx:15`).
 
 #### Sprint test (NOUVEAU 2026-08-21 — PRÉ-LAUNCH, DERNIER avant déploiement)
 - **Position** : après la phase fonctionnelle, **avant le déploiement** (voir
@@ -2562,6 +2641,10 @@ campagnes. **Le chip est la référence.**
 ### S14 — Deal Health · S15 — Campaign UX
 À cadrer.
 
+> **↪ Recadrage (clôture Next steps, 2026-10)** — le volet campagne est cadré
+> dans la fiche « Sprint Surface Campaign » (« Nouveaux sprints ») : règle
+> produit + dettes TD-290 → TD-295. Contenu existant « À cadrer » conservé.
+
 ### Sprint Filtres — Filtres & recherche transverses (AVANT le sprint UI)
 - **Ordre** : INVERSÉ avec le sprint UI — les Filtres passent AVANT l'UI.
   Raison PO : tout doit être fonctionnel avant d'attaquer l'UI.
@@ -2811,6 +2894,8 @@ TD critiques non traités :
   `@dnd-kit/sortable`/`utilities` étaient une cible inexacte (importés nulle
   part). Neuf constats frontend résiduels tracés en TD-132 → TD-140.
 - **TD-99 / 101 / 102 / 103** (sprint S6 — TD-97 déjà RESOLVED).
+- **TD-132** (`useGetOrganization` inexistant, `ResourceGuardLayout.jsx:11`) —
+  ⚠️ **PRIORITAIRE** (décision PO, clôture Next steps) : branche `fix/` dédiée.
 
 ---
 
