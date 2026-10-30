@@ -1494,19 +1494,20 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Nex
 - **Validation (régression finale)** : **pytest** `tests/activities` + `tests/campaigns` + `tests/signals` + `tests/ai_pipelines` + `tests/decision_cycles` = **2192 passés, 4 échecs PRÉ-EXISTANTS** (`test_callback_date_reschedule` ×3 — **TD-293** ; `test_create_requires_rigidity` — **TD-247**), **0 erreur** ; `tests/bi` : 7 échecs Redis, identiques sur `main` (**TD-103**) ; **vitest 205 fichiers / 1780 tests verts** ; **`npm run build` OK** (avertissements préexistants, dont **TD-132**) ; `makemigrations --check` propre.
 - **Opérationnel** : lancer `stop_orphan_campaign_sequences` en production (`--dry-run` puis réel) — **TD-295** (SELECT d'audit dans la ligne).
 - **Dette** : **RESOLVED** (archivés) **TD-181**, **TD-215**, **TD-228**, **TD-234**, **TD-236**, **TD-252**, **TD-262**, **TD-281**, **TD-282** ; **PARTIAL** **TD-156**, **TD-206**, **TD-226**, **TD-235** ; **MAJ** **TD-7** (reste OPEN), **TD-77**, **TD-103**, **TD-132** (⚠️ PRIORITAIRE), **TD-224**, **TD-239**, **TD-243** ; **NOUVEAUX TD-290 → TD-307** ; inventaire People ↔ Contact versionné (`docs/PEOPLE_CONTACT_INVENTORY.md`, **TD-307**). **TD-247** inchangé (OPEN).
-- **Prochain jalon** : **smoke global TD-279 + Next steps** sur un **nouveau** transcript, puis le sprint **« Cycle de vie des contacts »** — voir la suite ci-dessous.
+- **Smoke global TD-279 + Next steps** sur un **nouveau** transcript : ✅ **FAIT par le PO le 2026-10-30** (analyse lancée sur une activité jamais analysée : OK).
+- **Prochain jalon** : le sprint **« Cycle de vie des contacts »** — voir la suite ci-dessous.
 
 #### Suite de la surface Activity (ordre PO, clôture Next steps)
 1. ✅ **Next step** — LIVRÉ (fiche ci-dessus).
-2. **SMOKE GLOBAL TD-279 + Next steps** sur un **NOUVEAU transcript** (une transcription déjà traitée n'est pas réanalysée : cache d'extraction, **TD-289**).
+2. ✅ **SMOKE GLOBAL TD-279 + Next steps** sur un **NOUVEAU transcript** — **FAIT par le PO le 2026-10-30** (analyse lancée sur une activité jamais analysée : OK) (une transcription déjà traitée n'est pas réanalysée : cache d'extraction, **TD-289**).
 3. **Sprint « Cycle de vie des contacts »** — **juste après, AVANT Prep call** (fiche dans « Nouveaux sprints »).
 4. **UN SEUL SPRINT** : **Transcript & notes** + **Preparation / EMAIL GENERATION** + **Prep call** (inchangé) — avec les **précisions PO Prep call** (fiche « Sprint Prep call — précisions PO » dans « Nouveaux sprints »).
 5. Décision **« création manuelle des signaux »** (fiche « Question STRATÉGIQUE »).
 6. **Prérequis de clôture d'Activity** : nettoyage **TD-206**, **smoke A→Z**.
-7. **Chantier DC / Account** — dont les clusters : **TD-199**, **TD-277**, **TD-278**, **TD-280**, **TD-243**.
-8. **À LA FIN, une fois toute l'UX terminée** : **homogénéisation de l'UI et de la validation + gestion des erreurs** — **TD-272** + messages Formik, **et** le design des Edit signal pour **tous** les drawers (**TD-239**).
-9. **Fine-tuning IA**.
-- **Sprint Surface Campaign** (fiche dans « Nouveaux sprints ») : position dans l'ordre **non tranchée** par le PO.
+7. **Sprint Surface Campaign** — **APRÈS la fin de la surface Activity** (étape 6), **AVANT le chantier DC / Account** (décision PO 2026-10-30) ; objectif : **valider la surface Activity côté campagne** (fiche dans « Nouveaux sprints »).
+8. **Chantier DC / Account** — dont les clusters : **TD-199**, **TD-277**, **TD-278**, **TD-280**, **TD-243**.
+9. **À LA FIN, une fois toute l'UX terminée** : **homogénéisation de l'UI et de la validation + gestion des erreurs** — **TD-272** + messages Formik, **et** le design des Edit signal pour **tous** les drawers (**TD-239**).
+10. **Fine-tuning IA**.
 - **Post-prod** : mode **« conseillé »** des next steps (fiche dans « Nouveaux sprints »).
 
 ---
@@ -2059,7 +2060,8 @@ possibles) :
 - **Règle produit** : **le but d'une campagne est de créer des DC** ; la **séquence** sert quand les gens **ne répondent pas** ; **pas de next step si et seulement si la séquence est encore active**.
 - **Livré au sprint Next steps (socle)** : un outcome final arrête la séquence sur tous les chemins (5.14a) ; une activité de campagne SUCCESSFUL / MEETING_SCHEDULED a des next steps et fait naître un DC (5.13, 5.14b).
 - **Dettes rattachées** : **TD-290** (prospect ON_HOLD qui reçoit SUCCESSFUL → 400), **TD-291** (Targeted : Log Response SUCCESSFUL sur un email COMPLETED → le prospect sort, pas de next step depuis l'écran campagne), **TD-292** (objectif de campagne limité à 500 caractères côté front), **TD-293** (3 échecs `test_callback_date_reschedule`, COND-1), **TD-294** (lien vers une campagne hors scope → 403), **TD-295** (commande `stop_orphan_campaign_sequences` à lancer en production) ; voir aussi **TD-223** (Log Result → drawer outcome) et **TD-101** (re-demande de callback).
-- **Position** : **non tranchée** par le PO.
+- **Position** (décision PO 2026-10-30) : **APRÈS la fin de la surface Activity** (après l'étape « Prérequis de clôture d'Activity », smoke A→Z), **AVANT le chantier DC / Account** — étape 7 de la « Suite de la surface Activity (ordre PO, clôture Next steps) ».
+- **Objectif PO** : **valider la surface Activity côté campagne**.
 
 #### Post-prod — Mode « conseillé » des next steps (NOUVEAU 2026-10 — décision PO)
 - **Position** : **POST-LAUNCH**.
