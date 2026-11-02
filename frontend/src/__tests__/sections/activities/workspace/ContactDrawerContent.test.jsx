@@ -264,6 +264,25 @@ describe("ContactDrawerContent — decision role (always present, placeholder if
     expect(role).toHaveTextContent("High");
   });
 
+  // Sprint « Cycle de vie des contacts », étape 1: GET /decision_cycles/{id}/people/
+  // returns a contact's validated roles MOST RECENT first; the fiche shows the
+  // FIRST one (the latest role), never another one of the stack.
+  it("shows the FIRST qualified entry of the contact (server order = most recent first)", () => {
+    mockContact();
+    mockDCPeople({
+      qualified: [
+        qualifiedEntry({ signal_id: "s2", role: "DECISION_MAKER", role_display: "Decision Maker",
+          influence: "LOW", influence_display: "Low", created_at: "2026-11-02T10:00:00Z" }),
+        qualifiedEntry({ signal_id: "s1", created_at: "2026-11-01T10:00:00Z" }),
+      ],
+      unqualified: [],
+    });
+    renderFiche();
+    const role = screen.getByTestId("contact-role");
+    expect(role).toHaveTextContent("Decision Maker");
+    expect(role).not.toHaveTextContent("Champion");
+  });
+
   it("shows 'No role defined' when the contact has no DC-people entry", () => {
     mockContact();
     mockDCPeople({ qualified: [], unqualified: [] });

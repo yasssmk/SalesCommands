@@ -82,6 +82,12 @@ class PeopleConsolidationService:
         DC-scoped count exposed on unqualified entries — so the Contact fiche
         can read it from the qualified entry (the one that has the role). A
         dept-only signal (no target_contact) has no contact to count → 0.
+
+        Order: MOST RECENT first (``-created_at``, then ``-id`` for a stable
+        tie-break). The Contact fiche and Edit contact take the FIRST
+        qualified entry of a contact as its role in the decision, so this
+        order IS the role shown: the latest validated role, never the
+        alphabetically first (sprint « Cycle de vie des contacts », étape 1).
         """
         from app_modules.signals.models import PeopleSignal
 
@@ -89,7 +95,7 @@ class PeopleConsolidationService:
             PeopleSignal.objects
             .filter(decision_cycle=dc, status=SignalStatus.VALIDATED)
             .select_related('target_contact', 'target_department', 'source_activity')
-            .order_by('role', '-created_at')
+            .order_by('-created_at', '-id')
         )
 
         result = []
