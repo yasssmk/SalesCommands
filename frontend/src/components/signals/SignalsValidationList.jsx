@@ -111,6 +111,7 @@ export default function SignalsValidationList({
   onValidate,
   onReject,
   renderExtra,
+  getValidateDisabledReason,
   showTypeHeaders = true,
   loading = false,
   emptyMessage = "No signals found for this activity",
@@ -191,6 +192,7 @@ export default function SignalsValidationList({
                           onSelect={onSelect}
                           onValidate={onValidate}
                           onReject={onReject}
+                          validateDisabledReason={getValidateDisabledReason?.(signal, type) ?? null}
                           showTypeChip={false}
                           showScopeChip={false}
                           showNatureChip={false}
@@ -229,6 +231,8 @@ SignalsValidationList.propTypes = {
   onReject: PropTypes.func,
   /** Optional (signal, signalType) => node — SignalLine's 3rd line (`extra`). */
   renderExtra: PropTypes.func,
+  /** Optional (signal, signalType) => string|null — a reason disabling the row ✓. */
+  getValidateDisabledReason: PropTypes.func,
   /** The type-group headers (default true); false for a single-type list. */
   showTypeHeaders: PropTypes.bool,
   loading: PropTypes.bool,

@@ -203,6 +203,7 @@ export default function SignalLine({
   showContactOverflow = true,
   showPeopleIdentity = false,
   extra = null,
+  validateDisabledReason = null,
 }) {
   const isRejected = signal.status === "REJECTED";
 
@@ -448,13 +449,15 @@ export default function SignalLine({
           sx={{ flexShrink: 0 }}
           onClick={(e) => e.stopPropagation()}
         >
-          <Tooltip title="Validate">
+          {/* Étape 5: a reason blocks the ✓ (People without a decision
+              cycle) — disabled, the reason in the tooltip. */}
+          <Tooltip title={validateDisabledReason || "Validate"}>
             <span>
               <IconButton
                 size="small"
                 color="success"
                 aria-label="Validate signal"
-                disabled={Boolean(busy)}
+                disabled={Boolean(busy) || Boolean(validateDisabledReason)}
                 onClick={(e) => runAction("validate", onValidate, e)}
               >
                 {busy === "validate" ? (
@@ -524,6 +527,8 @@ SignalLine.propTypes = {
   onValidate: PropTypes.func,
   /** Inline reject — (signal, type) => Promise. Shown on PENDING rows only. */
   onReject: PropTypes.func,
+  /** When set, the inline ✓ is disabled and this reason is its tooltip. */
+  validateDisabledReason: PropTypes.string,
   /** Hide the type chip when the surrounding section already names the type. */
   showTypeChip: PropTypes.bool,
   /** Show the signal scope as an outlined chip (default true); false → no scope at all. */

@@ -96,6 +96,9 @@ const endpoints = {
   peopleValidate: (id) => `/module-signals/people/${id}/validate/`,
   peopleReject: (id) => `/module-signals/people/${id}/reject/`,
   peopleReopen: (id) => `/module-signals/people/${id}/reopen/`,
+  // Sprint « Cycle de vie des contacts », étape 5 — signal -> DC stakeholder.
+  peopleResolve: (id) => `/module-signals/people/${id}/resolve/`,
+  peopleResolutionCandidates: (id) => `/module-signals/people/${id}/resolution-candidates/`,
 
   // Constraint
   constraints: "/module-signals/constraints/",
@@ -478,6 +481,38 @@ export function useNextStepLinkCandidates(signalId) {
 }
 
 /**
+ * PEOPLE RESOLUTION CANDIDATES (sprint « Cycle de vie des contacts », étape 5)
+ *
+ * GET /module-signals/people/{id}/resolution-candidates/ — the stakeholders of
+ * the signal's decision cycle + the account contacts not yet stakeholders; an
+ * EXACT match (same contact or same normalised name) carries `proposed`.
+ *
+ * @param {string|null} signalId - PeopleSignal UUID (null → disabled)
+ * @returns {Object} { hasCycle, stakeholders, contacts, candidatesLoading, candidatesError }
+ */
+export function usePeopleResolutionCandidates(signalId) {
+  const { tenantId } = useAuth();
+  const url =
+    signalId && isValidUUID(signalId) ? endpoints.peopleResolutionCandidates(signalId) : null;
+
+  const { data, isLoading, error } = useSWR(tenantKey(url, tenantId), {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+  });
+
+  return useMemo(() => {
+    const payload = data?.data ?? data ?? {};
+    return {
+      hasCycle: payload.has_cycle ?? false,
+      stakeholders: payload.stakeholders ?? [],
+      contacts: payload.contacts ?? [],
+      candidatesLoading: isLoading,
+      candidatesError: error,
+    };
+  }, [data, isLoading, error]);
+}
+
+/**
  * NEXT STEP CITED CONTACTS (Sprint Next steps 5.8d)
  *
  * GET /module-signals/next-steps/{id}/cited-contacts/ — the names the next
@@ -672,6 +707,38 @@ export async function attachNextStepToActivity(signalId, activityId, updates) {
     activity_id: activityId,
     updates,
   });
+
+  if (result.success) {
+    revalidateSignalLists();
+    const data = result.data?.data ?? result.data;
+    return { success: true, data };
+  }
+
+  return {
+    success: false,
+    error: result.error,
+    status: result.status ?? 0,
+    response: result.response ?? null,
+  };
+}
+
+/**
+ * RESOLVE A PEOPLE SIGNAL (sprint « Cycle de vie des contacts », étape 5)
+ *
+ * POST /module-signals/people/{id}/resolve/ — validate the person WITH its
+ * stakeholder of the decision cycle, ONE of:
+ *   { stakeholder_id } | { contact_id } | { create: { full_name?, department_id? } }.
+ *
+ * @param {string} signalId - PeopleSignal UUID
+ * @param {Object} resolution - exactly one of the three shapes above
+ * @returns {Promise<{success: boolean, data?: Object, error?: string}>}
+ */
+export async function resolvePeopleSignal(signalId, resolution) {
+  if (!signalId || !isValidUUID(signalId)) {
+    return { success: false, error: "Invalid signal ID format", status: 400 };
+  }
+
+  const result = await api.post(endpoints.peopleResolve(signalId), resolution);
 
   if (result.success) {
     revalidateSignalLists();

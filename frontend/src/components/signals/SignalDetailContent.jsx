@@ -40,6 +40,7 @@ import SectionHeader from "components/display/SectionHeader";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
 import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
+import InfoNotice from "components/display/InfoNotice";
 import {
   getTechSummary,
   getContact,
@@ -1557,12 +1558,16 @@ function PeopleDetailView({
   headerInCoque,
   isLocked,
   currentActivityId,
+  validateBlockedReason,
 }) {
   const theme = useTheme();
 
   const isPending = signal.status === "PENDING";
   const missingFields = isPending ? getMissingFields(signal, "people") : [];
-  const validateDisabled = missingFields.length > 0;
+  // Étape 5: a People signal is validated WITH its DC stakeholder — without a
+  // decision cycle, Validate is disabled and the reason shown.
+  const blockedReason = isPending ? validateBlockedReason : null;
+  const validateDisabled = missingFields.length > 0 || Boolean(blockedReason);
 
   const contacts = signal.source_context?.contacts ?? [];
   const originActivityId = signal.source_context?.activity?.id ?? null;
@@ -1619,6 +1624,11 @@ function PeopleDetailView({
         }}
       >
         <SignalIncompleteAlert missingFields={missingFields} />
+        {blockedReason && (
+          <Box sx={{ mb: 2 }}>
+            <InfoNotice data-testid="people-validate-blocked">{blockedReason}</InfoNotice>
+          </Box>
+        )}
 
         {signal.validated_by && (
           <ReadField
@@ -1744,6 +1754,8 @@ function PeopleDetailView({
 }
 PeopleDetailView.propTypes = {
   signal: PropTypes.object.isRequired,
+  /** Étape 5: a reason disabling Validate (no decision cycle), shown as a notice. */
+  validateBlockedReason: PropTypes.string,
   onValidate: PropTypes.func,
   onReject: PropTypes.func,
   onEdit: PropTypes.func,
@@ -2241,6 +2253,7 @@ export default function SignalDetailContent({
   currentActivityId,
   leadingAction,
   trailingAction,
+  validateBlockedReason,
 }) {
   if (!signal) return null;
 
@@ -2364,6 +2377,7 @@ export default function SignalDetailContent({
         headerInCoque={headerInCoque}
         isLocked={isLocked}
         currentActivityId={currentActivityId}
+        validateBlockedReason={validateBlockedReason}
       />
     );
   }
@@ -2509,6 +2523,8 @@ export default function SignalDetailContent({
 
 SignalDetailContent.propTypes = {
   signal: PropTypes.object,
+  /** Étape 5: People only — a reason disabling Validate (no decision cycle). */
+  validateBlockedReason: PropTypes.string,
   signalType: PropTypes.string,
   /** The /signals/choices/ payload (labels) — read by the TechStack chassis
       detail. Optional; absent on DC/Account. */

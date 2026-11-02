@@ -48,7 +48,13 @@ import EditObjectionContent from "sections/activities/workspace/EditObjectionCon
 import EditPeopleContent from "sections/activities/workspace/EditPeopleContent";
 import EditTechStackContent from "sections/activities/workspace/EditTechStackContent";
 import EditCompetitorContent from "sections/activities/workspace/EditCompetitorContent";
+import PeopleValidateFlow from "sections/activities/workspace/PeopleValidateFlow";
 import { isActivitySignalsLocked } from "utils/activitySignalsLock";
+
+// Sprint « Cycle de vie des contacts », étape 5: a People signal is validated
+// WITH its stakeholder of the decision cycle — impossible without one.
+export const PEOPLE_NO_CYCLE_REASON =
+  "Validable once the activity is linked to a decision cycle";
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -95,6 +101,9 @@ export default function ActivitySignalsTab({
   const isLocked = isActivitySignalsLocked(activity);
   const activityId = activity?.id;
   const accountId = activity?.account;
+  // Étape 5: without a decision cycle a person cannot be validated (no
+  // stakeholder to resolve to) — the ✓ and the detail's Validate say why.
+  const peopleBlockedReason = activity?.decision_cycle ? null : PEOPLE_NO_CYCLE_REASON;
 
   // Choices for edit forms
   const { choices, choicesLoading } = useGetSignalChoices();
@@ -156,18 +165,38 @@ export default function ActivitySignalsTab({
           isLocked={isLocked}
           currentActivityId={activityId}
           headerInCoque={coqueOwnsHeader}
+          validateBlockedReason={signalType === "people" ? peopleBlockedReason : null}
         />,
         coqueOwnsHeader
           ? { title: getSignalTypeLabel(signalType), status: signal.status, statusMap: SIGNAL_STATUS_PILL }
           : undefined,
       );
     },
-    [openDrawer, isLocked, activityId],
+    [openDrawer, isLocked, activityId, peopleBlockedReason],
   );
 
   // Handlers
   const handleValidate = useCallback(
     async (signal, signalType) => {
+      // Étape 5: a person is validated WITH its stakeholder of the DC — the
+      // People flow (Link / contact shortcut / Create), never the generic
+      // validate (refused by the server for People).
+      if (signalType === "people") {
+        openDrawer(
+          <PeopleValidateFlow
+            signal={signal}
+            onBack={() => openSignalDetail(signal, "people")}
+            onResolved={(updated) => {
+              displaySuccessSnackbar("Person validated");
+              mutateAll();
+              mutateCounts?.();
+              openSignalDetail({ ...signal, ...updated, status: "VALIDATED" }, "people");
+            }}
+          />,
+          { title: "Validate person" },
+        );
+        return;
+      }
       const result = await validateSignal(signalType, signal.id);
       if (result.success) {
         displaySuccessSnackbar("Signal validated");
@@ -178,7 +207,7 @@ export default function ActivitySignalsTab({
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts, openSignalDetail],
+    [mutateAll, mutateCounts, openSignalDetail, openDrawer],
   );
 
   const handleReject = useCallback(
@@ -429,6 +458,9 @@ export default function ActivitySignalsTab({
           onSelect={handleSelect}
           onValidate={isLocked ? undefined : handleValidate}
           onReject={isLocked ? undefined : handleReject}
+          getValidateDisabledReason={(_signal, type) =>
+            type === "people" ? peopleBlockedReason : null
+          }
           emptyMessage="No signals for this activity"
         />
       )}
