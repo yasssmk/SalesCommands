@@ -874,6 +874,121 @@ class DecisionStepDepartment(ModuleBaseModel, ClientScopeManager.ModelMixin):
         return f"{self.step.name} - {self.department.get_name_display()}"
 
 
+class Stakeholder(ModuleBaseModel, ClientScopeManager.ModelMixin):
+    """
+    A person (or a department) taking part in a decision cycle -- sprint
+    « Cycle de vie des contacts », étape 3.
+
+    The PERSON at the DC level, the persisted identity the People signals
+    (observations, never merged -- règle doublons) are affiliated to
+    (PeopleSignal.stakeholder):
+      * contact      -- the account Contact it is converted to; NULL while
+                        "not linked" (a name only, or a department only);
+      * full_name    -- the name as observed (a first name is enough);
+        full_name_normalized derived in save(), SAME normalisation as
+        PeopleSignal (lowercase, trimmed, whitespace collapsed);
+      * department   -- optional (a department-only stakeholder);
+      * current_signal -- the PeopleSignal carrying its CURRENT role (the
+        role is never copied: read on current_signal). The other affiliated
+        signals are its history.
+
+    At least a contact, a name or a department (clean()). One stakeholder
+    per (decision_cycle, contact) when the contact is set (partial unique
+    constraint); no uniqueness on the name.
+
+    Activities reference the NON-converted stakeholders only
+    (Activity.stakeholders); a converted one is an Activity.contacts entry.
+    """
+
+    decision_cycle = models.ForeignKey(
+        DecisionCycle,
+        on_delete=models.CASCADE,
+        related_name='stakeholders',
+        verbose_name=_('Decision Cycle'),
+    )
+
+    contact = models.ForeignKey(
+        'module_contacts.Contact',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stakeholders',
+        verbose_name=_('Contact'),
+        help_text=_('The account contact this stakeholder is converted to; '
+                    'NULL while not linked.'),
+    )
+
+    full_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_('Full Name'),
+        help_text=_('Name as observed (a first name is enough).'),
+    )
+
+    full_name_normalized = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_('Full Name (normalised)'),
+        help_text=_('Derived from full_name in save() -- same normalisation '
+                    'as PeopleSignal. Read-only by contract.'),
+    )
+
+    department = models.ForeignKey(
+        'core_modules.StandardDepartment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='stakeholders',
+        verbose_name=_('Department'),
+    )
+
+    current_signal = models.ForeignKey(
+        'module_signals.PeopleSignal',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='current_for_stakeholders',
+        verbose_name=_('Current Signal'),
+        help_text=_('The PeopleSignal carrying the current role (the role is '
+                    'read there, never copied).'),
+    )
+
+    class Meta:
+        db_table = 'decision_cycle_stakeholders'
+        verbose_name = _('Stakeholder')
+        verbose_name_plural = _('Stakeholders')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['decision_cycle', 'contact'],
+                condition=models.Q(contact__isnull=False),
+                name='uniq_stakeholder_cycle_contact',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['client_id'], name='stakeholder_client_idx'),
+            models.Index(fields=['decision_cycle'], name='stakeholder_cycle_idx'),
+            models.Index(fields=['full_name_normalized'], name='stakeholder_name_norm_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        from app_modules.signals.models import PeopleSignal
+        self.full_name_normalized = PeopleSignal._normalize_full_name(self.full_name)
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        super().clean()
+        from django.core.exceptions import ValidationError
+        if (not self.contact_id and not self.department_id
+                and not (self.full_name or '').strip()):
+            raise ValidationError(_(
+                'A stakeholder needs a contact, a name or a department.'
+            ))
+
+    def __str__(self):
+        label = str(self.contact) if self.contact_id else (self.full_name or '')
+        return f"Stakeholder | {label or self.department_id} | {self.decision_cycle_id}"
+
+
 class DealHealthSnapshot(ModuleBaseModel, ClientScopeManager.ModelMixin):
     """
     Point-in-time diagnostic snapshot produced by the deal-health
