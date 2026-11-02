@@ -33,9 +33,11 @@ def attach_signal(people_signal, stakeholder):
     """
     from app_modules.signals.models import PeopleSignal
 
-    if people_signal.client_id != stakeholder.client_id:
+    # Compared as strings: a freshly created instance may still carry the
+    # client_id / FK id as passed (str) while a DB-read one carries a UUID.
+    if str(people_signal.client_id) != str(stakeholder.client_id):
         raise ValidationError('The signal and the stakeholder belong to different tenants.')
-    if people_signal.decision_cycle_id != stakeholder.decision_cycle_id:
+    if str(people_signal.decision_cycle_id) != str(stakeholder.decision_cycle_id):
         raise ValidationError("The signal is not on the stakeholder's decision cycle.")
 
     PeopleSignal.objects.filter(pk=people_signal.pk).update(stakeholder=stakeholder)
@@ -131,6 +133,20 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
 
     attach_signal(people_signal, stakeholder)
     return SignalManager.validate(people_signal, user=user)
+
+
+@transaction.atomic
+def join_contact_stakeholder(people_signal, user):
+    """
+    Étape 5 (2): a People signal carrying a contact in a DC joins the
+    stakeholder (dc, contact) — get_or_create, then attach_signal. Called by
+    SignalManager.create for the MANUAL People signals (the user chose the
+    contact).
+    """
+    stakeholder = get_or_create_contact_stakeholder(
+        people_signal.decision_cycle, people_signal.target_contact, user,
+    )
+    return attach_signal(people_signal, stakeholder)
 
 
 def get_or_create_contact_stakeholder(cycle, contact, user):

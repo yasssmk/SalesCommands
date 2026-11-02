@@ -169,6 +169,19 @@ class SignalManager:
         for field_name, value in m2m_values.items():
             getattr(signal, field_name).set(value)
 
+        # Sprint « Cycle de vie des contacts », étape 5 (2): a MANUAL People
+        # signal typed WITH a contact in a DC (EditContactContent's role, the
+        # DC People tab) joins the stakeholder (dc, contact) — the user
+        # already chose the contact. The first role becomes its
+        # current_signal; a later one leaves it (« rôle à confirmer »).
+        if (isinstance(signal, PeopleSignal)
+                and signal.source == SignalSource.MANUAL
+                and signal.target_contact_id and signal.decision_cycle_id):
+            from app_modules.decision_cycles.services.stakeholder_service import (
+                join_contact_stakeholder,
+            )
+            join_contact_stakeholder(signal, user)
+
         return signal
 
     # -------------------------------------------------------------------------
