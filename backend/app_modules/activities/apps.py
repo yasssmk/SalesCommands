@@ -23,3 +23,7 @@ class ActivitiesConfig(AppConfig):
             print(f"[ACTIVITIES] Warning: Could not load cache signals: {e}")
         except Exception as e:
             print(f"[ACTIVITIES] Error loading signals: {e}")
+        # Sprint « Cycle de vie des contacts », étape 2: an activity linked to
+        # a decision cycle gives it to its signals. Imported WITHOUT a
+        # try/except: a broken receiver must fail loudly, not silently skip.
+        from app_modules.activities.signals import signal_cycle_attachment  # noqa: F401
