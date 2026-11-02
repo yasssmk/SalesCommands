@@ -93,11 +93,12 @@ class SignalFilter(django_filters.FilterSet):
         needed here.
 
     Silently-absent fields on TechStackSignal:
-      - decision_cycle, campaign are shadow-overridden to None on the
-        concrete TechStackSignal model (they are not deal-scoped — see
-        the model docstring for the rationale). The `decision_cycle`
-        and `campaign` filters declared here are silently no-op on
-        TechStack querysets.
+      - campaign is shadow-overridden to None on the concrete
+        TechStackSignal model: the `campaign` filter declared here is
+        silently no-op on TechStack querysets. decision_cycle IS a real
+        column on TechStack (the `decision_cycle` filter applies); it does
+        not carry the tool's scope — that is TechStackSignal.scope
+        (ACCOUNT / DEAL, étape 2b).
 
     Note:
       When SignalClusterService groups Pain signals by canonical_key,
