@@ -8,8 +8,9 @@ services/signal_cycle_attachment.py); this command fixes the existing data
 with the SAME rules, for every activity linked to a cycle (oldest first):
 its own signals, plus -- when it was created from a campaign activity -- the
 signals of the whole campaign_account sequence, whose decision_cycle is NULL.
-NextStepSignal excluded; a signal already on another cycle is never moved
-(counted as "kept").
+The excluded signal types are the service's EXCLUDED_SIGNAL_TYPES (today
+next_step and, temporarily, tech_stack); a signal already on another cycle
+is never moved (counted as "kept").
 
 Oldest activity first: when two cycles were born from the same
 campaign_account, the FIRST one takes the sequence (born_decision_cycle

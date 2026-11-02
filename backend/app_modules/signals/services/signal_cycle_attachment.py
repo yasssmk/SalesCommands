@@ -21,8 +21,9 @@ Rules (PO decisions):
     of that campaign activity's campaign_account (same campaign, same
     account): every prospect, every run;
   * every status (PENDING / VALIDATED / REJECTED);
-  * every signal type with a decision_cycle column EXCEPT NextStepSignal
-    (its born cycle is computed at read time, 5.14b, never stored);
+  * every signal type with a decision_cycle column EXCEPT the ones in
+    EXCLUDED_SIGNAL_TYPES (THE one exclusion list -- the hook and the
+    catch-up command read it through _attachable_models);
   * decision_cycle only (no signal model has a decision_step column --
     SignalManager._ACTIVITY_PROPAGATED_FIELDS lists it, a no-op);
   * only a NULL decision_cycle is written. A signal already on ANOTHER cycle
@@ -41,12 +42,25 @@ from core.logging import get_logger
 logger = get_logger(__name__)
 
 
-def _attachable_models():
-    """(signal_type, model) for every signal joining a cycle -- NextStep
-    excluded (5.14b)."""
+# THE exclusion list (signal_type -> reason). Read by _attachable_models only.
+EXCLUDED_SIGNAL_TYPES = {
+    # Its born cycle is computed at read time (5.14b), never stored.
+    'next_step': 'born cycle computed at read time (5.14b)',
+    # TEMPORARY (étape 2a): its scope is encoded by decision_cycle NULL
+    # (NULL = tool in place at the account, set = evaluated on the deal --
+    # tech_stack_signal.py docstring); attaching it would turn every
+    # incumbent into an evaluated tool. Re-included once an explicit scope
+    # field exists (étape 2b).
+    'tech_stack': 'scope encoded by decision_cycle NULL until an explicit scope field (2b)',
+}
+
+
+def _all_cycle_models():
+    """(signal_type, model) for every signal model with a decision_cycle
+    column."""
     from app_modules.signals.models import (
         BlockerSignal, CompetitorSignal, ConstraintSignal, ImpactSignal,
-        ObjectiveSignal, PainSignal, PeopleSignal, TechStackSignal,
+        NextStepSignal, ObjectiveSignal, PainSignal, PeopleSignal, TechStackSignal,
     )
     return (
         ('pain', PainSignal),
@@ -54,9 +68,19 @@ def _attachable_models():
         ('impact', ImpactSignal),
         ('tech_stack', TechStackSignal),
         ('blocker', BlockerSignal),
+        ('next_step', NextStepSignal),
         ('people', PeopleSignal),
         ('constraint', ConstraintSignal),
         ('competitor', CompetitorSignal),
+    )
+
+
+def _attachable_models():
+    """(signal_type, model) for every signal joining a cycle -- every cycle
+    model minus EXCLUDED_SIGNAL_TYPES."""
+    return tuple(
+        (signal_type, model) for signal_type, model in _all_cycle_models()
+        if signal_type not in EXCLUDED_SIGNAL_TYPES
     )
 
 

@@ -125,6 +125,16 @@ def _pain(activity, user, decision_cycle=None):
     return p
 
 
+def _tech_stack(activity, user, decision_cycle=None):
+    from app_modules.signals.models import TechStackSignal
+    t = TechStackSignal(account=activity.account, source_activity=activity,
+                        decision_cycle=decision_cycle, source=SignalSource.LLM_EXTRACTED,
+                        tech_name='Salesforce', source_quote='we use Salesforce',
+                        confidence=0.8)
+    t.save(user=user, client_id=activity.client_id)
+    return t
+
+
 def _next_step(activity, user):
     from app_modules.signals.models import NextStepSignal
     ns = NextStepSignal(account=activity.account, source_activity=activity,
@@ -276,6 +286,39 @@ def test_an_activity_leaving_its_cycle_keeps_its_signals_cycle(
     _patch_cycle(authed_api_a, activity, None)
 
     assert _cycle_of(people) == cycle.id
+
+
+# =============================================================================
+# 2a -- TechStackSignal TEMPORARILY excluded: its scope is encoded today by
+# decision_cycle NULL (= tool in place at the account, tech_stack_signal.py
+# docstring), incompatible with the PO rule "everything goes up through the
+# DC" until an explicit scope field exists (étape 2b).
+# =============================================================================
+
+def test_a_tech_stack_of_an_activity_linked_to_a_cycle_stays_null(
+    authed_api_a, account, user_a,
+):
+    activity = _plain_activity(account, user_a)
+    tech = _tech_stack(activity, user_a)
+    pain = _pain(activity, user_a)
+    cycle = _cycle(account, user_a)
+
+    _patch_cycle(authed_api_a, activity, cycle)
+
+    assert _cycle_of(pain) == cycle.id      # the others still join
+    assert _cycle_of(tech) is None          # TechStack: never attached
+
+
+def test_start_decision_cycle_leaves_the_sequence_tech_stack_null(
+    authed_api_a, account, user_a,
+):
+    ca = _campaign_account(account, user_a)
+    won = _prospect_activity(ca, user_a, 'Jordan', outcome='SUCCESSFUL')
+    tech = _tech_stack(_prospect_activity(ca, user_a, 'Kim'), user_a)
+
+    _start_decision_cycle(authed_api_a, won)
+
+    assert _cycle_of(tech) is None
 
 
 def test_idempotent_a_second_run_attaches_nothing(account, user_a):

@@ -23,7 +23,7 @@ from django.core.management import call_command
 from core.cache_utils import disable_signals
 from tests.signals.test_signal_cycle_attachment import (
     TODAY, _campaign_account, _cycle, _cycle_of, _next_step, _pain, _people,
-    _plain_activity, _prospect_activity,
+    _plain_activity, _prospect_activity, _tech_stack,
 )
 
 
@@ -66,6 +66,9 @@ def history(account, user_a):
             'won_next_step': _next_step(won, user_a),
             'analysed_people': _people(analysed, user_a, 'Marie Curie'),
             'elsewhere': _people(analysed, user_a, 'On X', decision_cycle=later),
+            # 2a: TechStack temporarily excluded (scope = DC NULL today).
+            'sequence_tech': _tech_stack(other, user_a),
+            'analysed_tech': _tech_stack(analysed, user_a),
         }
         x = _cycle(account, user_a, name='X')
         from app_modules.activities.models import Activity
@@ -91,6 +94,8 @@ def test_apply_attaches_then_a_second_run_finds_nothing(history):
     assert _cycle_of(history['other_pain']) == history['born'].id
     assert _cycle_of(history['analysed_people']) == history['x'].id
     assert _cycle_of(history['won_next_step']) is None          # 5.14b
+    assert _cycle_of(history['sequence_tech']) is None          # 2a
+    assert _cycle_of(history['analysed_tech']) is None          # 2a
     assert _cycle_of(history['elsewhere']) == history['later'].id  # never moved
 
     # Re-runnable: nothing left to attach (the signal on another cycle is
