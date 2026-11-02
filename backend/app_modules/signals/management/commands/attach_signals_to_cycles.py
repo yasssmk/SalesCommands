@@ -9,7 +9,7 @@ with the SAME rules, for every activity linked to a cycle (oldest first):
 its own signals, plus -- when it was created from a campaign activity -- the
 signals of the whole campaign_account sequence, whose decision_cycle is NULL.
 The excluded signal types are the service's EXCLUDED_SIGNAL_TYPES (today
-next_step and, temporarily, tech_stack); a signal already on another cycle
+next_step only); a signal already on another cycle
 is never moved (counted as "kept").
 
 Oldest activity first: when two cycles were born from the same

@@ -66,7 +66,7 @@ def history(account, user_a):
             'won_next_step': _next_step(won, user_a),
             'analysed_people': _people(analysed, user_a, 'Marie Curie'),
             'elsewhere': _people(analysed, user_a, 'On X', decision_cycle=later),
-            # 2a: TechStack temporarily excluded (scope = DC NULL today).
+            # 2b (3): TechStack re-included (scope = explicit field).
             'sequence_tech': _tech_stack(other, user_a),
             'analysed_tech': _tech_stack(analysed, user_a),
         }
@@ -81,8 +81,11 @@ def history(account, user_a):
 def test_dry_run_lists_and_writes_nothing(history):
     out = _run('--dry-run')
     assert 'DRY RUN' in out
-    assert "3 signal(s) would be attached — per type: {'people': 2, 'pain': 1}" in out \
-        or "3 signal(s) would be attached — per type: {'pain': 1, 'people': 2}" in out
+    # Deduplicated per signal: people 2, pain 1, tech_stack 2 (2b (3)).
+    assert '5 signal(s) would be attached' in out
+    totals = out.split('per type: ')[-1]
+    for part in ("'people': 2", "'pain': 1", "'tech_stack': 2"):
+        assert part in totals
     assert 'kept on another cycle' in out
     for key in ('won_people', 'other_pain', 'analysed_people'):
         assert _cycle_of(history[key]) is None
@@ -94,8 +97,8 @@ def test_apply_attaches_then_a_second_run_finds_nothing(history):
     assert _cycle_of(history['other_pain']) == history['born'].id
     assert _cycle_of(history['analysed_people']) == history['x'].id
     assert _cycle_of(history['won_next_step']) is None          # 5.14b
-    assert _cycle_of(history['sequence_tech']) is None          # 2a
-    assert _cycle_of(history['analysed_tech']) is None          # 2a
+    assert _cycle_of(history['sequence_tech']) == history['born'].id   # 2b (3)
+    assert _cycle_of(history['analysed_tech']) == history['x'].id      # 2b (3)
     assert _cycle_of(history['elsewhere']) == history['later'].id  # never moved
 
     # Re-runnable: nothing left to attach (the signal on another cycle is

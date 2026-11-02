@@ -46,12 +46,8 @@ logger = get_logger(__name__)
 EXCLUDED_SIGNAL_TYPES = {
     # Its born cycle is computed at read time (5.14b), never stored.
     'next_step': 'born cycle computed at read time (5.14b)',
-    # TEMPORARY (étape 2a): its scope is encoded by decision_cycle NULL
-    # (NULL = tool in place at the account, set = evaluated on the deal --
-    # tech_stack_signal.py docstring); attaching it would turn every
-    # incumbent into an evaluated tool. Re-included once an explicit scope
-    # field exists (étape 2b).
-    'tech_stack': 'scope encoded by decision_cycle NULL until an explicit scope field (2b)',
+    # (tech_stack, excluded temporarily in 2a, is re-included since 2b (3):
+    # its scope is the explicit TechStackSignal.scope field, never the DC.)
 }
 
 

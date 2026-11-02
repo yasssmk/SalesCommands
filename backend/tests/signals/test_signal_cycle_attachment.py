@@ -289,13 +289,13 @@ def test_an_activity_leaving_its_cycle_keeps_its_signals_cycle(
 
 
 # =============================================================================
-# 2a -- TechStackSignal TEMPORARILY excluded: its scope is encoded today by
-# decision_cycle NULL (= tool in place at the account, tech_stack_signal.py
-# docstring), incompatible with the PO rule "everything goes up through the
-# DC" until an explicit scope field exists (étape 2b).
+# 2b (3) -- TechStackSignal RE-INCLUDED: its scope is the explicit `scope`
+# field (ACCOUNT / DEAL, étape 2b (1)); the decision cycle no longer carries
+# it, so a TechStack goes up through the DC like every signal -- its scope is
+# untouched by the attachment. (2a had excluded it temporarily.)
 # =============================================================================
 
-def test_a_tech_stack_of_an_activity_linked_to_a_cycle_stays_null(
+def test_a_tech_stack_of_an_activity_linked_to_a_cycle_takes_the_cycle(
     authed_api_a, account, user_a,
 ):
     activity = _plain_activity(account, user_a)
@@ -305,20 +305,26 @@ def test_a_tech_stack_of_an_activity_linked_to_a_cycle_stays_null(
 
     _patch_cycle(authed_api_a, activity, cycle)
 
-    assert _cycle_of(pain) == cycle.id      # the others still join
-    assert _cycle_of(tech) is None          # TechStack: never attached
+    assert _cycle_of(pain) == cycle.id
+    assert _cycle_of(tech) == cycle.id
+    tech.refresh_from_db()
+    assert tech.scope == 'ACCOUNT'          # the attachment never touches the scope
 
 
-def test_start_decision_cycle_leaves_the_sequence_tech_stack_null(
+def test_start_decision_cycle_brings_the_sequence_tech_stack(
     authed_api_a, account, user_a,
 ):
     ca = _campaign_account(account, user_a)
     won = _prospect_activity(ca, user_a, 'Jordan', outcome='SUCCESSFUL')
     tech = _tech_stack(_prospect_activity(ca, user_a, 'Kim'), user_a)
+    from app_modules.signals.models import TechStackSignal
+    TechStackSignal.objects.filter(pk=tech.pk).update(scope='DEAL')
 
-    _start_decision_cycle(authed_api_a, won)
+    born = _start_decision_cycle(authed_api_a, won)
 
-    assert _cycle_of(tech) is None
+    assert _cycle_of(tech) == born.id
+    tech.refresh_from_db()
+    assert tech.scope == 'DEAL'             # kept as chosen
 
 
 def test_idempotent_a_second_run_attaches_nothing(account, user_a):
