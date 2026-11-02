@@ -149,6 +149,10 @@ class PeopleSignalListSerializer(_PeopleDisplayMixin, BaseSignalListSerializer):
             'influence', 'influence_display',
             'target_contact',
             'target_department',
+            # Sprint « Cycle de vie des contacts », étape 5: the DC
+            # stakeholder the observation is affiliated to (read-only — set
+            # by POST /people/{id}/resolve/).
+            'stakeholder',
             'notes',
         ]
         read_only_fields = fields
@@ -185,6 +189,10 @@ class PeopleSignalDetailSerializer(_PeopleDisplayMixin, BaseSignalDetailSerializ
             'influence', 'influence_display',
             'target_contact',
             'target_department',
+            # Sprint « Cycle de vie des contacts », étape 5: the DC
+            # stakeholder the observation is affiliated to (read-only — set
+            # by POST /people/{id}/resolve/).
+            'stakeholder',
             'notes',
         ]
         read_only_fields = fields

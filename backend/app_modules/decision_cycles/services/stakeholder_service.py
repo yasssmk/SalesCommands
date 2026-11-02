@@ -45,3 +45,178 @@ def attach_signal(people_signal, stakeholder):
         stakeholder.current_signal = people_signal
         stakeholder.save(update_fields=['current_signal', 'updated_at'])
     return stakeholder
+
+
+# =============================================================================
+# RESOLVE A PEOPLE SIGNAL (étape 5): signal -> stakeholder of the DC
+# =============================================================================
+
+def _contact_full_name(contact):
+    return f'{contact.first_name or ""} {contact.last_name or ""}'.strip()
+
+
+def _signal_cycle_or_refuse(people_signal):
+    """The DC of the signal (= of its activity, kept in sync by the
+    activity -> cycle attachment); none -> the business refusal."""
+    from core.error_messages import SignalErrorMessages
+    from core.exceptions import StandardizedValidationError
+    if not people_signal.decision_cycle_id:
+        raise StandardizedValidationError(SignalErrorMessages.PEOPLE_REQUIRES_DECISION_CYCLE)
+    return people_signal.decision_cycle
+
+
+@transaction.atomic
+def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_id=None,
+                          create=None):
+    """
+    Validate `people_signal` WITH its stakeholder in the signal's decision
+    cycle -- exactly ONE of:
+      * stakeholder_id: an existing stakeholder of that DC;
+      * contact_id:     an account contact -> its stakeholder in that DC
+                        (get_or_create, linked to the contact);
+      * create:         {full_name?, department_id?} -> a new "not linked"
+                        stakeholder (a name or a department required).
+    Affiliation (attach_signal) then validation (SignalManager.validate), in
+    ONE transaction: a refusal rolls everything back. Never creates a
+    Contact; no role step (the first role becomes current_signal).
+
+    Raises:
+        StandardizedValidationError (400) on every business refusal.
+    """
+    from core.error_messages import SignalErrorMessages
+    from core.exceptions import StandardizedValidationError
+    from app_modules.contacts.models import Contact
+    from app_modules.core_modules.models import StandardDepartment
+    from app_modules.signals.constants import SignalStatus
+    from app_modules.signals.services.signal_manager import SignalManager
+    from ..models import Stakeholder
+
+    chosen = [c for c in (stakeholder_id, contact_id, create) if c not in (None, '')]
+    if len(chosen) != 1:
+        raise StandardizedValidationError(SignalErrorMessages.PEOPLE_RESOLVE_ONE_CHOICE)
+    if people_signal.status != SignalStatus.PENDING:
+        raise StandardizedValidationError(SignalErrorMessages.NOT_PENDING_VALIDATED)
+    cycle = _signal_cycle_or_refuse(people_signal)
+    client_id = people_signal.client_id
+
+    if stakeholder_id:
+        stakeholder = Stakeholder.objects.filter(
+            pk=stakeholder_id, client_id=client_id, decision_cycle_id=cycle.id,
+        ).first()
+        if stakeholder is None:
+            raise StandardizedValidationError(
+                SignalErrorMessages.PEOPLE_RESOLVE_STAKEHOLDER_INVALID
+            )
+    elif contact_id:
+        contact = Contact.objects.filter(
+            pk=contact_id, client_id=client_id, account_id=people_signal.account_id,
+        ).first()
+        if contact is None:
+            raise StandardizedValidationError(
+                SignalErrorMessages.PEOPLE_RESOLVE_CONTACT_INVALID
+            )
+        stakeholder = get_or_create_contact_stakeholder(cycle, contact, user)
+    else:
+        if not isinstance(create, dict):
+            raise StandardizedValidationError(SignalErrorMessages.PEOPLE_RESOLVE_ONE_CHOICE)
+        full_name = str(create.get('full_name') or '').strip()
+        department = None
+        if create.get('department_id'):
+            department = StandardDepartment.objects.filter(pk=create['department_id']).first()
+        if not full_name and department is None:
+            raise StandardizedValidationError(SignalErrorMessages.PEOPLE_RESOLVE_CREATE_EMPTY)
+        stakeholder = Stakeholder(decision_cycle=cycle, full_name=full_name[:255],
+                                  department=department)
+        stakeholder.save(user=user, client_id=client_id)
+
+    attach_signal(people_signal, stakeholder)
+    return SignalManager.validate(people_signal, user=user)
+
+
+def get_or_create_contact_stakeholder(cycle, contact, user):
+    """The stakeholder of `contact` in `cycle` (unique per (cycle, contact)),
+    created linked when absent."""
+    from ..models import Stakeholder
+    stakeholder = Stakeholder.objects.filter(decision_cycle=cycle, contact=contact).first()
+    if stakeholder is None:
+        stakeholder = Stakeholder(decision_cycle=cycle, contact=contact,
+                                  full_name=_contact_full_name(contact)[:255],
+                                  department=contact.standard_department)
+        stakeholder.save(user=user, client_id=cycle.client_id)
+    return stakeholder
+
+
+def resolution_candidates(people_signal):
+    """
+    What the rep can resolve `people_signal` to:
+      * stakeholders -- every stakeholder of the signal's DC;
+      * contacts     -- the account contacts NOT yet stakeholders of it.
+    An EXACT match is marked proposed (never applied): the same contact as
+    the signal's target_contact, or the same normalised name. Proposed
+    first, then by name. No DC -> has_cycle False, nothing proposed.
+    """
+    from app_modules.ai_pipelines.services.participant_refs import account_contacts
+    from app_modules.signals.models import PeopleSignal
+    from ..models import Stakeholder
+
+    if not people_signal.decision_cycle_id:
+        return {'has_cycle': False, 'stakeholders': [], 'contacts': []}
+
+    name = people_signal.full_name_normalized
+    contact_id = people_signal.target_contact_id
+    normalize = PeopleSignal._normalize_full_name
+
+    stakeholders = list(
+        Stakeholder.objects
+        .filter(decision_cycle_id=people_signal.decision_cycle_id,
+                client_id=people_signal.client_id)
+        .select_related('contact', 'department', 'current_signal')
+    )
+    taken_contacts = {s.contact_id for s in stakeholders if s.contact_id}
+
+    def _stakeholder_row(s):
+        contact_name = _contact_full_name(s.contact) if s.contact else ''
+        proposed = bool(
+            (contact_id and s.contact_id == contact_id)
+            or (name and (s.full_name_normalized == name
+                          or (contact_name and normalize(contact_name) == name)))
+        )
+        current = s.current_signal
+        return {
+            'id': str(s.id),
+            'full_name': s.full_name,
+            'contact': ({'id': str(s.contact.id), 'first_name': s.contact.first_name,
+                         'last_name': s.contact.last_name} if s.contact else None),
+            'department': ({'id': s.department.id, 'name': s.department.get_name_display()}
+                           if s.department else None),
+            'current_role': current.role if current else None,
+            'current_role_display': current.get_role_display() if current else None,
+            'proposed': proposed,
+        }
+
+    def _contact_row(c):
+        return {
+            'id': str(c.id),
+            'first_name': c.first_name,
+            'last_name': c.last_name,
+            'job_title': c.job_title,
+            'department': ({'id': c.standard_department.id,
+                            'name': c.standard_department.get_name_display()}
+                           if c.standard_department else None),
+            'proposed': bool((contact_id and c.id == contact_id)
+                             or (name and normalize(_contact_full_name(c)) == name)),
+        }
+
+    stakeholder_rows = sorted(
+        (_stakeholder_row(s) for s in stakeholders),
+        key=lambda r: (not r['proposed'],
+                       ((r['contact'] or {}).get('last_name') or r['full_name'] or '').lower()),
+    )
+    contact_rows = sorted(
+        (_contact_row(c) for c in account_contacts(people_signal.client_id,
+                                                   people_signal.account_id)
+         if c.id not in taken_contacts),
+        key=lambda r: (not r['proposed'], (r['last_name'] or '').lower(),
+                       (r['first_name'] or '').lower()),
+    )
+    return {'has_cycle': True, 'stakeholders': stakeholder_rows, 'contacts': contact_rows}

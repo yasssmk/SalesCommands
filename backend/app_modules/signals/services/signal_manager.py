@@ -356,6 +356,15 @@ class SignalManager:
         if isinstance(signal, NextStepSignal):
             cls._check_next_step_has_one_activity(signal)
 
+        # Sprint « Cycle de vie des contacts », étape 5: a People signal is
+        # validated WITH its DC stakeholder (POST /people/{id}/resolve/,
+        # stakeholder_service.resolve_people_signal, which affiliates then
+        # validates in one transaction) — never alone.
+        if isinstance(signal, PeopleSignal) and not signal.stakeholder_id:
+            raise StandardizedValidationError(
+                SignalErrorMessages.PEOPLE_REQUIRES_STAKEHOLDER
+            )
+
         signal.status       = SignalStatus.VALIDATED
         signal.validated_by = user
         signal.validated_at = timezone.now()

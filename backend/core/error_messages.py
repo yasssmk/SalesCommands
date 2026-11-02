@@ -479,6 +479,34 @@ class SignalErrorMessages:
     )
 
     # -----------------------------------------------------------------
+    # PeopleSignal — validated by choosing its stakeholder in the decision
+    # cycle (sprint « Cycle de vie des contacts », étape 5).
+    # -----------------------------------------------------------------
+    PEOPLE_REQUIRES_STAKEHOLDER = _(
+        "A person is validated by choosing who they are in the decision "
+        "cycle: an existing stakeholder, an account contact or a new "
+        "stakeholder."
+    )
+    PEOPLE_REQUIRES_DECISION_CYCLE = _(
+        "This person can be validated once the activity is linked to a "
+        "decision cycle."
+    )
+    PEOPLE_RESOLVE_ONE_CHOICE = _(
+        "Choose exactly one: an existing stakeholder, an account contact or "
+        "a new stakeholder."
+    )
+    PEOPLE_RESOLVE_STAKEHOLDER_INVALID = _(
+        "This stakeholder does not belong to the decision cycle of this "
+        "activity."
+    )
+    PEOPLE_RESOLVE_CONTACT_INVALID = _(
+        "This contact does not belong to the account of this activity."
+    )
+    PEOPLE_RESOLVE_CREATE_EMPTY = _(
+        "A new stakeholder needs a name or a department."
+    )
+
+    # -----------------------------------------------------------------
     # Legacy — kept for backward compatibility (ObjectiveSignal may
     # still enforce the relaxed rule in a future sprint).
     # -----------------------------------------------------------------

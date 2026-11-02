@@ -203,9 +203,24 @@ class TestPeopleSignalLifecycle:
         }, format='json')
         return resp.json()['data']['id']
 
-    def test_validate(self, authed_api_a, account, activity, contact):
+    def _in_cycle(self, pk, decision_cycle):
+        """Sprint « Cycle de vie des contacts », étape 5: a People signal is
+        validated WITH its stakeholder of the DC — put the signal in one."""
+        PeopleSignal.objects.filter(pk=pk).update(decision_cycle=decision_cycle)
+
+    def _resolve(self, authed_api, pk):
+        return authed_api.post(
+            _action_url(pk, 'resolve'), {'create': {'full_name': 'Ann Buyer'}}, format='json',
+        )
+
+    def test_validate(self, authed_api_a, account, activity, contact, decision_cycle):
+        """Étape 5: the generic validate is REFUSED for People; resolve
+        validates WITH a stakeholder."""
         pk = self._create_pending(authed_api_a, account, activity, contact)
-        resp = authed_api_a.post(_action_url(pk, 'validate'))
+        self._in_cycle(pk, decision_cycle)
+        refused = authed_api_a.post(_action_url(pk, 'validate'))
+        assert refused.status_code == status.HTTP_400_BAD_REQUEST
+        resp = self._resolve(authed_api_a, pk)
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()['data']['status'] == SignalStatus.VALIDATED
 
@@ -219,19 +234,21 @@ class TestPeopleSignalLifecycle:
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()['data']['status'] == SignalStatus.REJECTED
 
-    def test_reopen_validated(self, authed_api_a, account, activity, contact):
+    def test_reopen_validated(self, authed_api_a, account, activity, contact, decision_cycle):
         pk = self._create_pending(authed_api_a, account, activity, contact)
-        authed_api_a.post(_action_url(pk, 'validate'))
+        self._in_cycle(pk, decision_cycle)
+        assert self._resolve(authed_api_a, pk).status_code == status.HTTP_200_OK
 
         resp = authed_api_a.post(_action_url(pk, 'reopen'))
         assert resp.status_code == status.HTTP_200_OK
         assert resp.json()['data']['status'] == SignalStatus.PENDING
 
-    def test_validate_non_pending_fails(self, authed_api_a, account, activity, contact):
+    def test_validate_non_pending_fails(self, authed_api_a, account, activity, contact, decision_cycle):
         pk = self._create_pending(authed_api_a, account, activity, contact)
-        authed_api_a.post(_action_url(pk, 'validate'))
+        self._in_cycle(pk, decision_cycle)
+        assert self._resolve(authed_api_a, pk).status_code == status.HTTP_200_OK
 
-        resp = authed_api_a.post(_action_url(pk, 'validate'))
+        resp = self._resolve(authed_api_a, pk)
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
 
