@@ -25,7 +25,11 @@
 //   caller reads the next step back; a server refusal → the standard error,
 //   the flow stays on its step with every choice kept. Back never loses a
 //   choice (the state lives here, per candidate).
-// Chassis: WizardStepper + DrawerContentLayout (Back / Next / Confirm).
+// Chassis: the generic ResolutionFlow (components/flows/ResolutionFlow —
+// WizardStepper + DrawerContentLayout, Back / Next / Confirm), its
+// ResolutionChoiceStep (step 1) and CandidateList (step 2), extracted from
+// this file (sprint « Cycle de vie des contacts », étape 5 (3)) and shared
+// with the People validation (PeopleValidateFlow). Step 3 stays here.
 
 "use client";
 
@@ -47,11 +51,11 @@ import { attachNextStepToActivity, useNextStepLinkCandidates } from "api/signals
 import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import { displayErrorSnackbar } from "utils/displayError";
 import ActivityMiniCard from "components/cards/activities/ActivityMiniCard";
-import StatusPill from "components/chips/StatusPill";
-import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import ResolutionFlow, {
+  CandidateList,
+  ResolutionChoiceStep,
+} from "components/flows/ResolutionFlow";
 import { formatShortDate } from "components/signals/SignalLine";
-import WizardStepper from "sections/activities/signals/wizard/WizardStepper";
-import { SCOPE_PILL_COLORS } from "utils/objectiveScope";
 
 export const NEXT_STEP_RESOLUTION = { CREATE: "CREATE", LINK: "LINK" };
 
@@ -230,36 +234,32 @@ export default function NextStepValidateFlow({ nextStep, hasCycle = true, onCrea
   }
 
   return (
-    <Stack spacing={2} data-testid="next-step-validate-flow">
-      <WizardStepper steps={FLOW_STEPS} activeStep={step} onStepClick={() => {}} />
-      <DrawerContentLayout
-        onSave={bar.onSave}
-        onCancel={bar.onCancel}
-        saveLabel={bar.saveLabel}
-        cancelLabel="Back"
-        saveDisabled={bar.saveDisabled}
-      >
-        {step === STEP.RESOLUTION && (
-          <ResolutionStep
-            choice={choice}
-            onChoice={setChoice}
-            canLink={canLink}
-            loading={candidatesLoading}
-            hasCycle={hasCycle}
-          />
-        )}
-        {step === STEP.CANDIDATES && (
-          <CandidatesStep
-            candidates={candidates}
-            selectedId={currentId}
-            onSelect={setSelectedId}
-          />
-        )}
-        {step === STEP.DIFFERENCES && selected && (
-          <DifferencesStep candidate={selected} decisions={decisions} onChange={setDecisions} />
-        )}
-      </DrawerContentLayout>
-    </Stack>
+    <ResolutionFlow
+      steps={FLOW_STEPS}
+      activeStep={step}
+      bar={bar}
+      testId="next-step-validate-flow"
+    >
+      {step === STEP.RESOLUTION && (
+        <ResolutionStep
+          choice={choice}
+          onChoice={setChoice}
+          canLink={canLink}
+          loading={candidatesLoading}
+          hasCycle={hasCycle}
+        />
+      )}
+      {step === STEP.CANDIDATES && (
+        <CandidatesStep
+          candidates={candidates}
+          selectedId={currentId}
+          onSelect={setSelectedId}
+        />
+      )}
+      {step === STEP.DIFFERENCES && selected && (
+        <DifferencesStep candidate={selected} decisions={decisions} onChange={setDecisions} />
+      )}
+    </ResolutionFlow>
   );
 }
 
@@ -280,29 +280,22 @@ NextStepValidateFlow.propTypes = {
 
 function ResolutionStep({ choice, onChoice, canLink, loading, hasCycle }) {
   return (
-    <>
-      <Typography variant="subtitle1" sx={{ fontWeight: "medium", mb: 1 }}>
-        How do you resolve this next step?
-      </Typography>
-      <RadioGroup value={choice ?? ""} onChange={(e) => onChoice(e.target.value)}>
-        <FormControlLabel
-          value={NEXT_STEP_RESOLUTION.CREATE}
-          control={<Radio />}
-          label="Create the activity"
-        />
-        <FormControlLabel
-          value={NEXT_STEP_RESOLUTION.LINK}
-          control={<Radio />}
-          label="Link to an existing activity"
-          disabled={!canLink}
-        />
-      </RadioGroup>
-      {!loading && !canLink && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", pl: 4 }}>
-          {hasCycle ? "No open activity in this cycle" : "No decision cycle yet"}
-        </Typography>
-      )}
-    </>
+    <ResolutionChoiceStep
+      title="How do you resolve this next step?"
+      options={[
+        { value: NEXT_STEP_RESOLUTION.CREATE, label: "Create the activity" },
+        { value: NEXT_STEP_RESOLUTION.LINK, label: "Link to an existing activity", disabled: !canLink },
+      ]}
+      choice={choice}
+      onChoice={onChoice}
+      note={
+        !loading && !canLink
+          ? hasCycle
+            ? "No open activity in this cycle"
+            : "No decision cycle yet"
+          : null
+      }
+    />
   );
 }
 ResolutionStep.propTypes = {
@@ -317,47 +310,31 @@ ResolutionStep.propTypes = {
 
 function CandidatesStep({ candidates, selectedId, onSelect }) {
   return (
-    <Stack spacing={1.5} data-testid="link-candidates">
-      <Typography variant="subtitle1" sx={{ fontWeight: "medium" }}>
-        Which activity does this next step become?
-      </Typography>
-      {candidates.map((c, index) => (
-        <Stack
-          key={c.id}
-          direction="row"
-          spacing={1}
-          alignItems="flex-start"
-          data-testid={`link-candidate-${c.id}`}
-        >
-          <Radio
-            checked={c.id === selectedId}
-            onChange={() => onSelect(c.id)}
-            inputProps={{ "aria-label": `Select ${c.title}` }}
-            sx={{ mt: 0.5 }}
+    <CandidateList
+      title="Which activity does this next step become?"
+      candidates={candidates}
+      selectedId={selectedId}
+      onSelect={onSelect}
+      // The server orders the candidates: the first one is its proposal.
+      isProposed={(_c, index) => index === 0}
+      getAriaLabel={(c) => `Select ${c.title}`}
+      testId="link-candidates"
+      candidateTestIdPrefix="link-candidate-"
+      renderCandidate={(c, select) => (
+        <>
+          {/* The existing card; a click selects the candidate. */}
+          <ActivityMiniCard
+            activity={{ ...c, decision_step_name: c.decision_step?.name }}
+            onNavigate={select}
           />
-          <Stack spacing={0.5} sx={{ flex: 1, minWidth: 0 }}>
-            {index === 0 && (
-              <StatusPill
-                label="Proposed"
-                colorText={SCOPE_PILL_COLORS.active.colorText}
-                colorBg={SCOPE_PILL_COLORS.active.colorBg}
-                sx={{ alignSelf: "flex-start" }}
-              />
-            )}
-            {/* The existing card; a click selects the candidate. */}
-            <ActivityMiniCard
-              activity={{ ...c, decision_step_name: c.decision_step?.name }}
-              onNavigate={() => onSelect(c.id)}
-            />
-            {linkCandidateWhy(c) && (
-              <Typography variant="caption" color="text.secondary">
-                {`Why: ${linkCandidateWhy(c)}`}
-              </Typography>
-            )}
-          </Stack>
-        </Stack>
-      ))}
-    </Stack>
+          {linkCandidateWhy(c) && (
+            <Typography variant="caption" color="text.secondary">
+              {`Why: ${linkCandidateWhy(c)}`}
+            </Typography>
+          )}
+        </>
+      )}
+    />
   );
 }
 CandidatesStep.propTypes = {
