@@ -96,9 +96,10 @@ class SignalFilter(django_filters.FilterSet):
       - campaign is shadow-overridden to None on the concrete
         TechStackSignal model: the `campaign` filter declared here is
         silently no-op on TechStack querysets. decision_cycle IS a real
-        column on TechStack (the `decision_cycle` filter applies); it does
-        not carry the tool's scope — that is TechStackSignal.scope
-        (ACCOUNT / DEAL, étape 2b).
+        column on TechStack (the `decision_cycle` filter applies): it is
+        routing to the DC only, with no "in place / evaluated" meaning —
+        a TechStack describes the account; a tool evaluated on a deal is
+        a CompetitorSignal.
 
     Note:
       When SignalClusterService groups Pain signals by canonical_key,

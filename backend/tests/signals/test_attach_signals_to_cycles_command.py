@@ -66,7 +66,7 @@ def history(account, user_a):
             'won_next_step': _next_step(won, user_a),
             'analysed_people': _people(analysed, user_a, 'Marie Curie'),
             'elsewhere': _people(analysed, user_a, 'On X', decision_cycle=later),
-            # 2b (3): TechStack re-included (scope = explicit field).
+            # 2b (3): TechStack re-included (routing to the DC only).
             'sequence_tech': _tech_stack(other, user_a),
             'analysed_tech': _tech_stack(analysed, user_a),
         }

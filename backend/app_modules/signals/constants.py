@@ -471,25 +471,6 @@ class UsageScope(models.TextChoices):
     COMPANY    = 'COMPANY',    _('Company')
     UNKNOWN    = 'UNKNOWN',    _('Unknown')
 
-
-class TechScope(models.TextChoices):
-    """
-    SCOPE of a TechStack observation (sprint « Cycle de vie des contacts »,
-    étape 2b) -- PO rule: every piece of information comes from an activity
-    and always goes up through the DC; its scope is either
-
-    ACCOUNT -- the account's tooling, a tool in place: valid for the whole
-               account, every DC included ("Account-wide");
-    DEAL    -- a tool evaluated on THIS deal only ("This deal").
-
-    The decision cycle does NOT carry the scope (it used to: decision_cycle
-    NULL = in place). Default ACCOUNT -- for the existing rows (migration
-    0049) AND for the AI extraction, which does not tell the scope yet (TD:
-    scope distinction by the AI). Editable by the user.
-    """
-    ACCOUNT = 'ACCOUNT', _('Account-wide')
-    DEAL    = 'DEAL',    _('This deal')
-
 # =============================================================================
 # SIGNAL CLUSTER AGGREGATION — enums and thresholds 
 # =============================================================================

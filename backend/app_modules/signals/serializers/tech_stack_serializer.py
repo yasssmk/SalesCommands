@@ -12,17 +12,15 @@ Stack:
 
 Notes:
   - The model shadow-overrides `campaign` and `signal_category` to None
-    on the concrete TechStackSignal (decision_cycle is a real column —
-    every signal goes up through the DC of its activity) — see
-    app_modules/signals/models/tech_stack_signal.py docstring. Only
+    on the concrete TechStackSignal; decision_cycle is a real column —
+    ROUTING to the DC only (everything goes up through the DC), with no
+    "in place / evaluated" meaning: a TechStack describes the account, a
+    tool evaluated on a deal is a CompetitorSignal (see
+    app_modules/signals/models/tech_stack_signal.py). Only
     `signal_category` (and its `signal_category_display` companion) is
     declared at the top level of the base serializers, so it is the only
     one that requires filtering. decision_cycle and campaign live inside
     the `source_context` block produced by SignalSourceSerializer.
-
-  - Scope (étape 2b): `scope` (TechScope ACCOUNT / DEAL, default ACCOUNT)
-    is writable on Create and Update and read with `scope_display`
-    ("Account-wide" / "This deal"). The decision cycle does not carry it.
 
   - source_contact and source_department were previously shadow-overridden
     too. Both were retired from BaseSignal entirely during the
@@ -86,10 +84,6 @@ class _TechStackDisplayMixin:
 
     def get_usage_scope_display(self, obj):
         return obj.get_usage_scope_display() if obj.usage_scope else None
-
-    def get_scope_display(self, obj):
-        """ "Account-wide" / "This deal" (TechScope labels, étape 2b)."""
-        return obj.get_scope_display() if obj.scope else None
 
     def get_usage_departments(self, obj):
         """
@@ -229,7 +223,6 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
     """
 
     # Scope (scale) + the multi-department usage list (who USES the tool).
-    scope_display       = serializers.SerializerMethodField()
     usage_scope_display = serializers.SerializerMethodField()
     usage_departments   = serializers.SerializerMethodField()
 
@@ -246,7 +239,6 @@ class TechStackSignalListSerializer(_TechStackDisplayMixin, BaseSignalListSerial
             # Qualification (independent booleans)
             'is_to_replace',
             # Usage scale
-            'scope', 'scope_display',
             'usage_scope', 'usage_scope_display',
             # Multi-department usage (who USES the tool)
             'usage_departments',
@@ -294,7 +286,6 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
       fallback now lives in SignalSourceSerializer.
     """
 
-    scope_display       = serializers.SerializerMethodField()
     usage_scope_display = serializers.SerializerMethodField()
     # Multi-department usage (who USES the tool) — compact list payload.
     usage_departments   = serializers.SerializerMethodField()
@@ -311,7 +302,6 @@ class TechStackSignalDetailSerializer(_TechStackDisplayMixin, BaseSignalDetailSe
             # Qualification (independent booleans)
             'is_to_replace',
             # Usage scale
-            'scope', 'scope_display',
             'usage_scope', 'usage_scope_display',
             # Multi-department usage (who USES the tool)
             'usage_departments',
@@ -395,8 +385,6 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
             'tech_name',
             # Qualification (independent booleans)
             'is_to_replace',
-            # Scope (ACCOUNT / DEAL, étape 2b)
-            'scope',
             # Usage scale + who (multi-department)
             'usage_scope',
             'usage_departments',
@@ -414,7 +402,6 @@ class TechStackSignalCreateSerializer(BaseSignalCreateSerializer):
             **_base_extra_kwargs,
             'tech_name':          {'required': True, 'allow_blank': False},
             'is_to_replace':      {'required': False},
-            'scope':              {'required': False},
             'usage_scope':        {'required': False, 'allow_null': True},
             'usage_start_year':   {'required': False, 'allow_null': True},
             'renewal_date':       {'required': False, 'allow_null': True},
@@ -549,8 +536,6 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
             'tech_name',
             # Qualification (independent booleans)
             'is_to_replace',
-            # Scope (ACCOUNT / DEAL, étape 2b)
-            'scope',
             # Usage scale + who (multi-department)
             'usage_scope',
             'usage_departments',
@@ -568,7 +553,6 @@ class TechStackSignalUpdateSerializer(BaseSignalUpdateSerializer):
             **_base_extra_kwargs,
             'tech_name':          {'required': False, 'allow_blank': False},
             'is_to_replace':      {'required': False},
-            'scope':              {'required': False},
             'usage_scope':        {'required': False, 'allow_null': True},
             'usage_start_year':   {'required': False, 'allow_null': True},
             'renewal_date':       {'required': False, 'allow_null': True},

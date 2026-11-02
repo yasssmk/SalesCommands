@@ -111,7 +111,6 @@ from app_modules.signals.constants import (
     ScopeLevel,
     SignalSource,
     SignalStatus,
-    TechScope,
     UsageScope,
 )
 from app_modules.signals.models import (
@@ -1164,12 +1163,6 @@ class TranscriptSignalExtractor:
             # TechStack T4): the column stays in the DB, always False on
             # extraction (out of the UI; its replacement is TD-199).
             'is_to_replace':   False,
-
-            # Scope (étape 2b): the prompt does not tell the scope yet (TD:
-            # scope distinction by the AI) -> ACCOUNT, the documented
-            # default, explicit here. The decision cycle (propagated by
-            # SignalManager) never carries the scope.
-            'scope':           TechScope.ACCOUNT,
         }
 
         # --- lifecycle + notes (prompt v3): ONLY when said, never guessed ---

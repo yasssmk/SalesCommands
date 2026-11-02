@@ -289,10 +289,11 @@ def test_an_activity_leaving_its_cycle_keeps_its_signals_cycle(
 
 
 # =============================================================================
-# 2b (3) -- TechStackSignal RE-INCLUDED: its scope is the explicit `scope`
-# field (ACCOUNT / DEAL, étape 2b (1)); the decision cycle no longer carries
-# it, so a TechStack goes up through the DC like every signal -- its scope is
-# untouched by the attachment. (2a had excluded it temporarily.)
+# 2b (3) / 2c -- TechStackSignal RE-INCLUDED: a TechStack always describes
+# the account; its decision_cycle is routing to the DC only (no "in place /
+# evaluated" meaning -- a tool evaluated on a deal is a CompetitorSignal), so
+# it goes up through the DC like every signal. (2a had excluded it
+# temporarily; the 2b scope field was removed in 2c, PO.)
 # =============================================================================
 
 def test_a_tech_stack_of_an_activity_linked_to_a_cycle_takes_the_cycle(
@@ -307,8 +308,6 @@ def test_a_tech_stack_of_an_activity_linked_to_a_cycle_takes_the_cycle(
 
     assert _cycle_of(pain) == cycle.id
     assert _cycle_of(tech) == cycle.id
-    tech.refresh_from_db()
-    assert tech.scope == 'ACCOUNT'          # the attachment never touches the scope
 
 
 def test_start_decision_cycle_brings_the_sequence_tech_stack(
@@ -317,14 +316,10 @@ def test_start_decision_cycle_brings_the_sequence_tech_stack(
     ca = _campaign_account(account, user_a)
     won = _prospect_activity(ca, user_a, 'Jordan', outcome='SUCCESSFUL')
     tech = _tech_stack(_prospect_activity(ca, user_a, 'Kim'), user_a)
-    from app_modules.signals.models import TechStackSignal
-    TechStackSignal.objects.filter(pk=tech.pk).update(scope='DEAL')
 
     born = _start_decision_cycle(authed_api_a, won)
 
     assert _cycle_of(tech) == born.id
-    tech.refresh_from_db()
-    assert tech.scope == 'DEAL'             # kept as chosen
 
 
 def test_idempotent_a_second_run_attaches_nothing(account, user_a):

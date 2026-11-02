@@ -31,14 +31,13 @@ TechStackSignal narrows the BaseSignal field set by shadow-overriding
 two inherited fields to `None`. Each override has a precise reason:
 
   * decision_cycle — RESTORED (no longer shadow-overridden).
-        Like every signal, a TechStack goes up through the DC of its
-        activity (copied at creation by SignalManager, then by the
+        ROUTING only: every piece of information goes up through the DC
+        of its activity (copied at creation by SignalManager, then by the
         activity → cycle attachment, services/signal_cycle_attachment.py).
-        decision_cycle does NOT carry the scope: it used to (NULL = tool in
-        place at the account, set = evaluated on the deal), which merely
-        reflected whether the activity was already in a DC when the tool
-        was extracted. The scope is the explicit `scope` field (TechScope
-        ACCOUNT / DEAL, sprint « Cycle de vie des contacts », étape 2b).
+        It carries NO "in place / evaluated" meaning: a TechStack always
+        describes the ACCOUNT (which tool, who uses it) — relevant for the
+        account and every DC. A tool evaluated on a deal is a
+        CompetitorSignal, not a TechStack.
 
   * campaign = None
         Same logic — a campaign targets accounts, not their internal
@@ -113,7 +112,7 @@ from core.client_scope import ClientScopeManager
 from core.error_messages import SignalErrorMessages
 
 from .base_model import BaseSignal
-from ..constants import TechScope, UsageScope
+from ..constants import UsageScope
 
 
 class TechStackSignal(BaseSignal):
@@ -161,8 +160,8 @@ class TechStackSignal(BaseSignal):
     # =========================================================================
     # See module docstring for the rationale of each override.
     # decision_cycle is no longer overridden — it is inherited from
-    # BaseSignal (every signal goes up through the DC). The account-level vs
-    # deal-level distinction is the explicit `scope` field below.
+    # BaseSignal as ROUTING to the DC (everything goes up through the DC);
+    # it carries no "in place / evaluated" meaning (see module docstring).
     campaign          = None
     signal_category   = None
 
@@ -227,24 +226,6 @@ class TechStackSignal(BaseSignal):
             'True when the account intends to replace this tool — an '
             'open door regardless of whether we compete with it or '
             'integrate with it.'
-        ),
-    )
-
-    # =========================================================================
-    # SCOPE (ACCOUNT / DEAL) -- étape 2b
-    # =========================================================================
-
-    scope = models.CharField(
-        max_length=10,
-        choices=TechScope.choices,
-        default=TechScope.ACCOUNT,
-        verbose_name=_('Scope'),
-        help_text=_(
-            'ACCOUNT: the account\'s tooling, a tool in place, valid for the '
-            'whole account, every DC included ("Account-wide"). DEAL: a tool '
-            'evaluated on this deal only ("This deal"). Default ACCOUNT -- '
-            'existing rows and the AI extraction (the prompt does not tell '
-            'the scope yet). The decision cycle does NOT carry the scope.'
         ),
     )
 

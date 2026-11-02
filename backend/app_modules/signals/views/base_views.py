@@ -44,7 +44,6 @@ from ..constants import (
     SignalWhat,
     SignalDimension,
     ScopeLevel,
-    TechScope,
     UsageScope,
     ImpactType,
     HumanImpactType,
@@ -523,7 +522,6 @@ class SignalChoicesView(APIView):
         "signal_dimensions": [...],   # shared across Pain, Objective and Impact
         "scope_levels":      [...],   # Pain, Objective and Impact scope axis
         "usage_scopes":      [...],   # TechStackSignal usage scope axis
-        "tech_scopes":       [...],   # TechStackSignal scope ACCOUNT / DEAL (2b)
         "impact_types":      [...],   # ImpactSignal impact_type axis (required)
         "human_impacts":     [...],   # ImpactSignal human_impact qualifier (optional)
         "constraint_natures": [...],  # ConstraintSignal nature axis (required)
@@ -557,7 +555,6 @@ class SignalChoicesView(APIView):
                 'signal_dimensions': _choices(SignalDimension),
                 'scope_levels':      _choices(ScopeLevel),
                 'usage_scopes':      _choices(UsageScope),
-                'tech_scopes':       _choices(TechScope),
                 'impact_types':      _choices(ImpactType),
                 'human_impacts':     _choices(HumanImpactType),
                 'constraint_natures': _choices(ConstraintNature),

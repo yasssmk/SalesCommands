@@ -9,10 +9,7 @@
 // "Edit tech stack" title. Save PATCHes via updateSignal("tech-stack", id,
 // payload); onSaved(updatedSignal) returns to the detail.
 //
-//   §1 Technology — tech_name (required, never blank) + the SCOPE (sprint
-//      « Cycle de vie des contacts », étape 2b): 2 exclusive pills
-//      Account-wide · This deal (labels from the choices tech_scopes), never
-//      deselectable (NOT NULL backend); a payload without scope reads ACCOUNT.
+//   §1 Technology — tech_name (required, never blank).
 //   §2 Usage — the shared exclusive-scope gesture (ScopeDepartmentsField) in its
 //      deselectable mode: 2 pills Department · Company (labels from the
 //      choices); NO pill pressed = UNKNOWN (not said) — a click on the active
@@ -58,12 +55,8 @@ import InlineEditableValue from "components/drawer/InlineEditableValue";
 import InlineDateField from "components/drawer/InlineDateField";
 import ConfirmCancelActions from "components/drawer/ConfirmCancelActions";
 import ScopeDepartmentsField, { toDepartmentObjects } from "components/drawer/ScopeDepartmentsField";
-import ClickablePill from "components/chips/ClickablePill";
 import {
-  TECH_SCOPE,
   USAGE_SCOPE,
-  getTechScope,
-  getTechScopeLabel,
   getUsageScopeLabel,
 } from "sections/activities/signals/utils/signalDisplay";
 
@@ -129,13 +122,6 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
   // "Unknown" = the backend label of the UNKNOWN usage scope (not said).
   const unknownLabel = getUsageScopeLabel(USAGE_SCOPE.UNKNOWN, choices) ?? undefined;
 
-  // Étape 2b — the SCOPE pills (Account-wide · This deal), in the backend
-  // order, labels from the choices (tech_scopes).
-  const techScopeOptions = useMemo(
-    () => (choices?.tech_scopes ?? []).map((o) => ({ key: o.value, label: o.label })),
-    [choices],
-  );
-
   // Department options — the contacts choices emit the id as an INTEGER while
   // the signal payload carries STRING ids: stringify so both sides match (TD-241).
   const departmentOptions = useMemo(
@@ -150,8 +136,6 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
   const initialValues = useMemo(
     () => ({
       tech_name: techstack?.tech_name || "",
-      // NOT NULL backend, default ACCOUNT — a payload without scope reads ACCOUNT.
-      scope: getTechScope(techstack),
       usage_scope: techstack?.usage_scope || USAGE_SCOPE.UNKNOWN,
       // Stored as {value,label} objects (ids extracted only at payload time).
       usage_departments: toDepartmentObjects(techstack?.usage_departments),
@@ -178,7 +162,6 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
       const isDepartment = values.usage_scope === USAGE_SCOPE.DEPARTMENT;
       const payload = {
         tech_name: values.tech_name.trim(),
-        scope: values.scope,
         usage_scope: values.usage_scope,
         usage_departments: isDepartment
           ? (values.usage_departments || []).map((d) => d.value)
@@ -208,8 +191,6 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
           onSaved({
             ...techstack,
             ...payload,
-            scope_display:
-              getTechScopeLabel(payload.scope, choices) ?? techstack?.scope_display,
             usage_scope_display:
               getUsageScopeLabel(payload.usage_scope, choices) ?? techstack?.usage_scope_display,
             usage_departments: payload.usage_departments.map((id) => ({ id, name: labelOf(id) })),
@@ -254,37 +235,6 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
             error={Boolean(errors.tech_name)}
             helperText={errors.tech_name}
           />
-          {/* Scope (étape 2b) — EXCLUSIVE pills, exactly one pressed, never
-              deselectable (scope is NOT NULL backend). Same pill primitive as
-              the usage scope pills (ClickablePill). */}
-          <Stack spacing={0.5}>
-            <Typography variant="caption" sx={{ color: aq.text.muted }}>
-              Scope
-            </Typography>
-            <Stack
-              direction="row"
-              spacing={1}
-              flexWrap="wrap"
-              useFlexGap
-              data-testid="techstack-tech-scope-pills"
-            >
-              {techScopeOptions.map(({ key, label }) => {
-                const isActive = values.scope === key;
-                return (
-                  <ClickablePill
-                    key={key}
-                    data-testid={`tech-scope-pill-${key}`}
-                    active={isActive}
-                    pressed={isActive}
-                    onClick={() => {
-                      if (!isActive) setFieldValue("scope", key);
-                    }}
-                    label={label}
-                  />
-                );
-              })}
-            </Stack>
-          </Stack>
         </Stack>
 
         <Divider />
@@ -460,8 +410,6 @@ EditTechStackContent.propTypes = {
   techstack: PropTypes.shape({
     id: PropTypes.string.isRequired,
     tech_name: PropTypes.string,
-    scope: PropTypes.string,
-    scope_display: PropTypes.string,
     usage_scope: PropTypes.string,
     usage_scope_display: PropTypes.string,
     usage_departments: PropTypes.array,
