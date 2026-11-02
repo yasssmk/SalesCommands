@@ -393,6 +393,9 @@ describe("EditTechStackContent (T2b)", () => {
     const [, , patch] = updateSignal.mock.calls[0];
     expect(patch).toEqual({
       tech_name: "HubSpot",
+      // Étape 2b: the scope travels with every save (ACCOUNT when the
+      // payload carried none — the backend default).
+      scope: "ACCOUNT",
       usage_scope: "DEPARTMENT",
       usage_departments: ["5"],
       usage_start_year: 2021,

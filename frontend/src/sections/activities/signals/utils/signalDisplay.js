@@ -82,6 +82,26 @@ export function getUsageScopeLabel(value, choices) {
   return choices?.usage_scopes?.find((o) => o.value === value)?.label ?? null;
 }
 
+// Sprint « Cycle de vie des contacts », étape 2b — the SCOPE of a tech stack
+// (TechStackSignal.scope, backend TechScope): ACCOUNT « Account-wide » (a tool
+// in place, valid for the account, every DC included) / DEAL « This deal ».
+// NOT NULL backend, default ACCOUNT — a payload without scope reads ACCOUNT.
+export const TECH_SCOPE = {
+  ACCOUNT: "ACCOUNT",
+  DEAL: "DEAL",
+};
+
+// The scope of a tech stack signal (ACCOUNT when absent — the backend default).
+export function getTechScope(signal) {
+  return signal?.scope || TECH_SCOPE.ACCOUNT;
+}
+
+// The label of a tech scope value, read from the /signals/choices/
+// tech_scopes list. Returns null when the choices are not loaded.
+export function getTechScopeLabel(value, choices) {
+  return choices?.tech_scopes?.find((o) => o.value === value)?.label ?? null;
+}
+
 export function getContact(signal) {
   return signal.contact || signal.source_context?.contacts?.[0] || null;
 }

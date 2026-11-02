@@ -48,6 +48,8 @@ import {
   formatSuggestedContacts,
   formatTargetDepartments,
   getPeopleHeadline,
+  getTechScope,
+  getTechScopeLabel,
   getTechUsage,
   getUsageScopeLabel,
   NEXT_STEP_UNKNOWN,
@@ -1805,6 +1807,14 @@ function TechStackDetailView({
   // "Unknown" = the backend label of the UNKNOWN usage scope (not said).
   const unknownLabel = getUsageScopeLabel(USAGE_SCOPE.UNKNOWN, choices);
 
+  // Étape 2b — the scope (Account-wide / This deal): label from the choices,
+  // else the payload's scope_display; a payload without scope reads ACCOUNT.
+  const techScope = getTechScope(signal);
+  const techScopeLabel =
+    getTechScopeLabel(techScope, choices) ??
+    (signal.scope ? signal.scope_display : null) ??
+    "Account-wide";
+
   const { departmentNames, usageScope, usageScopeDisplay } = getTechUsage(signal);
   const scopeValue = usageScope ?? USAGE_SCOPE.UNKNOWN;
   const scopeLabel = getUsageScopeLabel(scopeValue, choices) ?? usageScopeDisplay;
@@ -1864,13 +1874,17 @@ function TechStackDetailView({
           <ReadField label="Validated at" value={formatDateTime(signal.validated_at)} />
         )}
 
-        {/* Section 1 — Technology: the tool name only (shared summary box). */}
+        {/* Section 1 — Technology: the tool name (shared summary box) + its
+            scope (étape 2b: Account-wide / This deal). */}
         <SectionHeader index={1} title="Technology" sx={{ mb: 1 }} />
         <SignalSummaryBox
           summary={getTechSummary(signal).name}
           boxTestId="techstack-summary-box"
           summaryTestId="techstack-summary-text"
         />
+        <Box data-testid="techstack-scope" sx={{ mt: 1 }}>
+          <ReadRow label="Scope" value={techScopeLabel} />
+        </Box>
 
         <Divider sx={{ my: 2 }} />
 

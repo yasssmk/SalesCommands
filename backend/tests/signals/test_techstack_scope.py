@@ -51,6 +51,17 @@ def test_constant_values():
     assert list(TechScope.values) == ['ACCOUNT', 'DEAL']
 
 
+def test_the_choices_endpoint_serves_the_scope_labels(authed_api_a):
+    """Étape 2b (2): the Activity UI reads the « Account-wide » / « This
+    deal » labels from GET /signals/choices/ (tech_scopes)."""
+    r = authed_api_a.get(reverse('module_signals:choices'))
+    assert r.status_code == status.HTTP_200_OK
+    assert r.json()['data']['tech_scopes'] == [
+        {'value': 'ACCOUNT', 'label': 'Account-wide'},
+        {'value': 'DEAL',    'label': 'This deal'},
+    ]
+
+
 def test_a_tech_stack_defaults_to_account(account, activity, user_a):
     sig = _tech(account, activity, user_a)
     sig.refresh_from_db()
