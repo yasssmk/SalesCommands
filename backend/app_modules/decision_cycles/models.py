@@ -884,9 +884,13 @@ class Stakeholder(ModuleBaseModel, ClientScopeManager.ModelMixin):
     (PeopleSignal.stakeholder):
       * contact      -- the account Contact it is converted to; NULL while
                         "not linked" (a name only, or a department only);
-      * full_name    -- the name as observed (a first name is enough);
-        full_name_normalized derived in save(), SAME normalisation as
-        PeopleSignal (lowercase, trimmed, whitespace collapsed);
+      * full_name    -- the name as observed (a first name is enough), for a
+        NON-converted stakeholder only: a stakeholder linked to a contact is
+        named by its CONTACT, read at read time (display_name — ONE rule,
+        étape 5b; the contact shortcut writes no full_name, as the
+        migration's contact groups). full_name_normalized derived in save(),
+        SAME normalisation as PeopleSignal (lowercase, trimmed, whitespace
+        collapsed);
       * department   -- optional (a department-only stakeholder);
       * current_signal -- the PeopleSignal carrying its CURRENT role (the
         role is never copied: read on current_signal). The other affiliated
@@ -969,6 +973,17 @@ class Stakeholder(ModuleBaseModel, ClientScopeManager.ModelMixin):
             models.Index(fields=['decision_cycle'], name='stakeholder_cycle_idx'),
             models.Index(fields=['full_name_normalized'], name='stakeholder_name_norm_idx'),
         ]
+
+    @property
+    def display_name(self):
+        """THE naming rule (étape 5b): linked to a contact -> the CONTACT's
+        name (read time, never copied); otherwise full_name (a first name is
+        enough), else the department's name, else ''."""
+        if self.contact_id and self.contact:
+            return f'{self.contact.first_name or ""} {self.contact.last_name or ""}'.strip()
+        if self.full_name:
+            return self.full_name
+        return self.department.get_name_display() if self.department_id and self.department else ''
 
     def save(self, *args, **kwargs):
         from app_modules.signals.models import PeopleSignal

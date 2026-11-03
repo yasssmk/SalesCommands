@@ -4,11 +4,18 @@ Stakeholders of a decision cycle -- sprint « Cycle de vie des contacts »,
 étape 3 (backend preparation for the Activity flow).
 
 attach_signal(ps, stakeholder): affiliate a PeopleSignal (an observation) to
-a DC stakeholder (the person). The signal is never merged nor modified
-otherwise (règle doublons). The FIRST affiliated role becomes the
-stakeholder's current_signal; a later one leaves it unchanged (the
+a DC stakeholder (the person). The signal is never merged (règle doublons);
+the affiliation writes only `stakeholder` and, when the stakeholder is
+linked to a contact, `target_contact` (étape 5b: the user's choice prevails,
+even over a contact the AI had proposed — so the readers of
+PeopleSignal.target_contact see the link). The FIRST affiliated role becomes
+the stakeholder's current_signal; a later one leaves it unchanged (the
 "rôle à confirmer" choice and set_current / convert / readiness belong to
 the DC sprint -- TD).
+
+Naming rule (étape 5b, ONE rule — Stakeholder.display_name): a stakeholder
+linked to a contact is named by its CONTACT (read time); full_name only
+serves the non-converted stakeholders.
 """
 
 from django.core.exceptions import ValidationError
@@ -40,8 +47,14 @@ def attach_signal(people_signal, stakeholder):
     if str(people_signal.decision_cycle_id) != str(stakeholder.decision_cycle_id):
         raise ValidationError("The signal is not on the stakeholder's decision cycle.")
 
-    PeopleSignal.objects.filter(pk=people_signal.pk).update(stakeholder=stakeholder)
+    fields = {'stakeholder': stakeholder}
+    if stakeholder.contact_id:
+        # Étape 5b: the stakeholder's contact is the signal's contact.
+        fields['target_contact_id'] = stakeholder.contact_id
+    PeopleSignal.objects.filter(pk=people_signal.pk).update(**fields)
     people_signal.stakeholder = stakeholder
+    if stakeholder.contact_id:
+        people_signal.target_contact_id = stakeholder.contact_id
 
     if stakeholder.current_signal_id is None:
         stakeholder.current_signal = people_signal
@@ -155,8 +168,10 @@ def get_or_create_contact_stakeholder(cycle, contact, user):
     from ..models import Stakeholder
     stakeholder = Stakeholder.objects.filter(decision_cycle=cycle, contact=contact).first()
     if stakeholder is None:
+        # Étape 5b: no full_name — a linked stakeholder is named by its
+        # contact (Stakeholder.display_name), as the migration's contact
+        # groups.
         stakeholder = Stakeholder(decision_cycle=cycle, contact=contact,
-                                  full_name=_contact_full_name(contact)[:255],
                                   department=contact.standard_department)
         stakeholder.save(user=user, client_id=cycle.client_id)
     return stakeholder
@@ -191,15 +206,19 @@ def resolution_candidates(people_signal):
     taken_contacts = {s.contact_id for s in stakeholders if s.contact_id}
 
     def _stakeholder_row(s):
-        contact_name = _contact_full_name(s.contact) if s.contact else ''
+        # Étape 5b, ONE naming rule: a linked stakeholder is matched on its
+        # CONTACT's normalised name only (a stale full_name never proposes
+        # it); a non-converted one on its full_name.
+        own_name = (normalize(_contact_full_name(s.contact)) if s.contact
+                    else s.full_name_normalized)
         proposed = bool(
             (contact_id and s.contact_id == contact_id)
-            or (name and (s.full_name_normalized == name
-                          or (contact_name and normalize(contact_name) == name)))
+            or (name and own_name == name)
         )
         current = s.current_signal
         return {
             'id': str(s.id),
+            'display_name': s.display_name,
             'full_name': s.full_name,
             'contact': ({'id': str(s.contact.id), 'first_name': s.contact.first_name,
                          'last_name': s.contact.last_name} if s.contact else None),
