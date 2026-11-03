@@ -118,6 +118,8 @@ const nextStep = (over = {}) => ({
 });
 
 let serverActivity;
+// The names a next step cites, with what the server matched (étape 8).
+let mockCited = [];
 const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
@@ -129,7 +131,7 @@ const fetcher = (key) => {
     return Promise.resolve({ data: { candidates: [], proposed_activity_id: null } });
   }
   if (url.startsWith(`/module-signals/next-steps/${NS_ID}/cited-contacts`)) {
-    return Promise.resolve({ data: { cited: [] } });
+    return Promise.resolve({ data: { cited: mockCited } });
   }
   return Promise.resolve({ data: { results: [], count: 0 } });
 };
@@ -180,6 +182,7 @@ const changeType = async (create, label) => {
 
 beforeEach(() => {
   mockNextSteps = [];
+  mockCited = [];
   api.get.mockResolvedValue({ success: true, data: { data: nextStep() } });
   api.post.mockResolvedValue({ success: true, data: { data: { id: "act-new" } } });
 });
@@ -282,5 +285,51 @@ describe("✓ Create of a next step — date by type, suggested step else the or
     renderPage();
     const create = await validateAndCreate();
     expect(await stepShown(create)).toHaveTextContent("Business case");
+  });
+});
+
+// Étape 8 — the workflow's last link on the page: ✓ Create from a next step
+// citing a stakeholder linked to a contact (Paul X -> its contact) AND a
+// non-converted stakeholder (Marc): the list is pre-filled with both, with
+// no distinction shown, and Save sends contact_ids + stakeholder_ids.
+describe("✓ Create — a next step citing both kinds of people (étape 8)", () => {
+  const PAUL = { id: "c-paul", first_name: "Paul", last_name: "X", full_name: "Paul X",
+                 department_name: null, is_reachable: true };
+  const MARC = { id: "st-marc", display_name: "Marc", full_name: "Marc", department: null,
+                 is_linked: false, contact: null, decision_cycle: DC_ID };
+
+  it("both pre-filled, unmarked; the payload carries contact_ids AND stakeholder_ids", async () => {
+    mockNextSteps = [nextStep({
+      suggested_activity_type: "MEETING", suggested_due_date: "2026-12-10",
+      suggested_decision_step: STEP_P, suggested_people_names: ["Paul X", "Marc"],
+    })];
+    mockCited = [
+      { name: "Paul X", contact: PAUL, stakeholder: null },
+      { name: "Marc", contact: null, stakeholder: MARC },
+    ];
+    api.get.mockResolvedValue({ success: true, data: { data: mockNextSteps[0] } });
+    renderPage();
+    const create = await validateAndCreate();
+    const list = within(create).getByTestId("stakeholders-list");
+    expect(within(list).getByText("External team")).toBeInTheDocument();
+    expect(within(list).getByTestId("participant-c-paul").textContent).toBe("Paul X");
+    expect(within(list).getByTestId("participant-st-marc").textContent).toBe("Marc");
+    expect(list.textContent).not.toMatch(/Not yet a contact|Contact ·/);
+    expect(within(create).queryByTestId("mentioned-names")).toBeNull();
+    expect(await stepShown(create)).toHaveTextContent("Proposal");
+
+    fireEvent.click(within(coque()).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/module-activities/", expect.anything()));
+    const body = api.post.mock.calls.find(([url]) => url === "/module-activities/")[1];
+    expect(body).toMatchObject({
+      activity_type: "MEETING",
+      contact_ids: ["c-paul"],
+      stakeholder_ids: ["st-marc"],
+      decision_cycle_id: DC_ID,
+      decision_step_id: STEP_P,
+      scheduled_date: "2026-12-10",
+      next_step_signal_id: NS_ID,
+    });
   });
 });
