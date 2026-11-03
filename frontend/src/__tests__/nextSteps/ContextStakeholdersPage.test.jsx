@@ -91,6 +91,8 @@ const NOWAY = { id: "c-2", first_name: "Nina", last_name: "Noway", full_name: "N
                 job_title: null, department_name: null, is_reachable: false };
 const REACHABLE = { ...THOMAS, is_reachable: true };
 
+const styleText = () => Array.from(document.querySelectorAll("style")).map((s) => s.textContent || "").join("");
+const classesOf = (el) => (el.getAttribute("class") || "").split(/\s+/).filter((c) => c.startsWith("css-"));
 const column = () => screen.getByText("External team").parentElement.parentElement;
 const MENTION = "No email or phone";
 
@@ -166,6 +168,27 @@ describe("Context — the « no way to contact » alert (étape 7)", () => {
       expect(alert.innerHTML).toBe(contactAlert.innerHTML);   // the same component
     }
   });
+
+  // 8c-2 (PO): the alert on the SAME line as the person from md, under it on
+  // a narrow screen (the responsive Stack direction pattern; the generated
+  // media rule read as in NextStepsStripPage.test.jsx).
+  it.each([["c-2", "contact"], ["st-marc", "stakeholder"]])(
+    "%s (%s): the alert beside the person from md, under it below md",
+    (id) => {
+      mockActivity = activityWith(undefined, {
+        contacts_detail: [NOWAY], stakeholders_detail: [{ ...MARC, is_reachable: false }],
+      });
+      render(<ActivityWorkspacePage />);
+      const alert = within(column()).getByTestId(`ctx-no-contact-means-${id}`);
+      const line = alert.parentElement;
+      expect(line).toHaveAttribute("data-testid", "ctx-person-line");
+      expect(line).toHaveStyle({ display: "flex", flexDirection: "column" });     // narrow
+      const css = styleText();
+      expect(classesOf(line).some((c) =>
+        new RegExp(`@media \\(min-width:900px\\)\\{\\.${c}\\{[^}]*flex-direction:row`).test(css),
+      )).toBe(true);                                                              // from md
+    },
+  );
 
   it("a stakeholder in a TASK carries no alert", () => {
     mockActivity = activityWith(undefined, {

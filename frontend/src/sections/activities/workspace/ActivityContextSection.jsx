@@ -103,6 +103,30 @@ function getSchedule(activity) {
 
 // ==============================|| SHARED SMALL PIECES ||============================== //
 
+// 8c-2 — a person of the « External team » column and its « No email or
+// phone » alert: on the SAME line from md, the alert under it on a narrow
+// screen (the responsive Stack direction pattern — EditActivityContent.jsx
+// DateGroup, the inline signal forms — at this card's md breakpoint, as
+// TwoColRow below).
+function PersonLine({ alert, children }) {
+  return (
+    <Stack
+      data-testid="ctx-person-line"
+      direction={{ xs: "column", md: "row" }}
+      alignItems={{ xs: "flex-start", md: "center" }}
+      columnGap={1}
+    >
+      {children}
+      {alert}
+    </Stack>
+  );
+}
+
+PersonLine.propTypes = {
+  alert: PropTypes.node,
+  children: PropTypes.node,
+};
+
 function TwoColRow({ children }) {
   return (
     <Box
@@ -436,7 +460,7 @@ export default function ActivityContextSection({ activity }) {
             {contacts.length > 0 || stakeholders.length > 0 ? (
               <Stack spacing={0.5}>
                 {contacts.map((c) => (
-                  <Box key={c.id}>
+                  <PersonLine key={c.id} alert={reachabilityAlert(c)}>
                     <PersonRow
                       interactive
                       onClick={() =>
@@ -448,25 +472,25 @@ export default function ActivityContextSection({ activity }) {
                       name={personName(c)}
                       suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
                     />
-                    {reachabilityAlert(c)}
-                  </Box>
+                  </PersonLine>
                 ))}
                 {stakeholders.map((x) => {
                   // A department-only stakeholder: the department only.
                   const departmentOnly = !x.full_name && Boolean(x.department);
                   return (
                     <Box key={x.id} data-testid={`ctx-stakeholder-${x.id}`}>
-                      {departmentOnly ? (
-                        <Typography variant="body2" sx={{ fontWeight: "medium" }}>
-                          {x.department.name}
-                        </Typography>
-                      ) : (
-                        <PersonRow
-                          name={x.display_name || x.full_name}
-                          suffix={x.department?.name || undefined}
-                        />
-                      )}
-                      {reachabilityAlert(x)}
+                      <PersonLine alert={reachabilityAlert(x)}>
+                        {departmentOnly ? (
+                          <Typography variant="body2" sx={{ fontWeight: "medium" }}>
+                            {x.department.name}
+                          </Typography>
+                        ) : (
+                          <PersonRow
+                            name={x.display_name || x.full_name}
+                            suffix={x.department?.name || undefined}
+                          />
+                        )}
+                      </PersonLine>
                     </Box>
                   );
                 })}
