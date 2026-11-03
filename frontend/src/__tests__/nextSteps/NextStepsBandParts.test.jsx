@@ -1363,7 +1363,10 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     fireEvent.click(screen.getByRole("button", { name: "Start Decision Cycle" }));
     expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
     const create = screen.getByTestId("activity-create");
-    expect(within(create).getByTestId("conversion-cycle")).toBeInTheDocument();
+    // 8c-3: the account's open cycles first, then « New cycle » (the inline
+    // cycle form once chosen).
+    expect(within(create).getByTestId("inline-read-decision_cycle")).toBeInTheDocument();
+    expect(within(create).queryByTestId("conversion-cycle")).toBeNull();
   });
 
 });
