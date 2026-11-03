@@ -29,8 +29,8 @@
 // rule applies (5.14a).
 //
 // Sprint Next steps 5.8d — CREATION mode (mode="create"): the SAME form, a
-// second submit (createActivity, or createActivityWithEntities with a contact
-// created on the fly — InlineContactForm). Pre-filled by
+// second submit (createActivity; createActivityWithEntities for a conversion).
+// No person is created from this drawer (7c). Pre-filled by
 // activityDefaultsFromNextStep (the single 2.2b source; + the cited names'
 // account contacts, the others recalled as "Mentioned"). Extra fields: the
 // decision cycle (pre-filled from the context, modifiable) and its step (the
@@ -86,17 +86,21 @@ import {
   PIPELINE_STEP_LABELS,
 } from "api/accounts/decisionCycles";
 import { useNextStepCitedContacts } from "api/signals/signals";
+import { useGetContacts } from "api/businessData/contacts";
 import { useAuth } from "hooks/useAuth";
 import { personName, personNameAndEmail } from "utils/personLabel";
-import { activityDefaultsFromNextStep, PEOPLE_ACTIVITY_TYPES } from "utils/activityTypes";
-import { InlineContactForm, InlineCycleForm } from "sections/accounts/activities/components";
+import {
+  activityDefaultsFromNextStep,
+  PEOPLE_ACTIVITY_TYPES,
+  SCHEDULED_DATE_ACTIVITY_TYPES,
+} from "utils/activityTypes";
+import { InlineCycleForm } from "sections/accounts/activities/components";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import PersonRow from "components/display/PersonRow";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
-import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import OutcomeSelector from "components/outcomes/OutcomeSelector";
 import {
   CALLBACK_OUTCOME,
@@ -128,17 +132,17 @@ const DATE_PAIR = [["scheduled_date", "due_date"]];
 
 // Sprint « Cycle de vie des contacts », étape 7 — THE participant rule, on
 // PEOPLE_ACTIVITY_TYPES (mirror of the backend constant): MEETING / CALL /
-// EMAIL / DEMO need at least one participant (a contact, a stakeholder, the
-// contact created on the fly); the other types none. The server enforces the
+// EMAIL / DEMO need at least one participant (a contact or a stakeholder);
+// the other types none. The server enforces the
 // same rule (participant_rules).
 export const PARTICIPANT_REQUIRED = "At least one participant is required";
 const participantsRule = Yup.array().test(
   "participants",
   PARTICIPANT_REQUIRED,
   function hasParticipant(contacts) {
-    const { activity_type: type, stakeholders, inline_contact: inline } = this.parent;
+    const { activity_type: type, stakeholders } = this.parent;
     if (!PEOPLE_ACTIVITY_TYPES.has(type)) return true;
-    return (contacts?.length || 0) + (stakeholders?.length || 0) + (inline ? 1 : 0) > 0;
+    return (contacts?.length || 0) + (stakeholders?.length || 0) > 0;
   },
 );
 
@@ -153,7 +157,7 @@ const validationSchema = Yup.object(
 );
 
 // Creation: the owner is the creator (read-only, never sent); at least one
-// contact — selected, or created on the fly; a step once a cycle is chosen.
+// participant on PEOPLE_ACTIVITY_TYPES; a step once a cycle is chosen.
 const createValidationSchema = Yup.object(
   {
     ...FIELD_RULES,
@@ -207,22 +211,29 @@ function LockedHint() {
 // flips to an inline toggle (scheduled|due, exclusive) + the active picker(s).
 // Switching the toggle clears the OTHER date (and scheduled_time when leaving
 // scheduled) — mechanics cloned from UnifiedDateSection.
-function DateGroup({ values, setFieldValue, locked = false }) {
+// emptyMode (7c): the field used while no date is set — at creation it
+// follows the type (SCHEDULED_DATE_ACTIVITY_TYPES -> scheduled, else due).
+const dateModeOf = (values, emptyMode) =>
+  values.scheduled_date ? "scheduled" : values.due_date ? "due" : emptyMode;
+
+function DateGroup({ values, setFieldValue, locked = false, emptyMode = "scheduled" }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const [editing, setEditing] = useState(false);
-  const [mode, setMode] = useState(values.scheduled_date || !values.due_date ? "scheduled" : "due");
+  const [mode, setMode] = useState(() => dateModeOf(values, emptyMode));
   // Snapshot of the draft (date/time/mode) captured on entering edit — ✗ restores it.
   const startRef = useRef(null);
 
   const startEdit = () => {
     if (locked) return;
+    const current = dateModeOf(values, emptyMode);
     startRef.current = {
       scheduled_date: values.scheduled_date,
       scheduled_time: values.scheduled_time,
       due_date: values.due_date,
-      mode,
+      mode: current,
     };
+    setMode(current);
     setEditing(true);
   };
 
@@ -317,7 +328,7 @@ function DateGroup({ values, setFieldValue, locked = false }) {
     );
   }
 
-  const isScheduled = Boolean(values.scheduled_date) || !values.due_date;
+  const isScheduled = dateModeOf(values, emptyMode) === "scheduled";
   const dateVal = isScheduled ? readDate(values.scheduled_date) : readDate(values.due_date);
   const timeVal = isScheduled ? readTime(values.scheduled_time) : null;
   const display = dateVal ? (timeVal ? `${dateVal} · ${timeVal}` : dateVal) : null;
@@ -351,6 +362,8 @@ DateGroup.propTypes = {
   values: PropTypes.object.isRequired,
   setFieldValue: PropTypes.func.isRequired,
   locked: PropTypes.bool,
+  /** The field used while no date is set: "scheduled" | "due". */
+  emptyMode: PropTypes.oneOf(["scheduled", "due"]),
 };
 
 // ==============================|| PEOPLE PLACEHOLDER (SE-c) ||============================== //
@@ -397,7 +410,6 @@ function PeopleSection({
   accountId,
   locked = false,
   ownerReadOnly = false,
-  allowInlineContact = false,
   mentionedNames = [],
   cycleId = null,
 }) {
@@ -405,12 +417,16 @@ function PeopleSection({
   const aq = theme.aphoriQ;
   const [addOwner, setAddOwner] = useState(false);
   const [addInvited, setAddInvited] = useState(false);
-  const [addContact, setAddContact] = useState(false);
   const [addStakeholder, setAddStakeholder] = useState(false);
-  const [addInlineContact, setAddInlineContact] = useState(false);
-  // Étape 7: the non-converted stakeholders of the activity's DC — the ones it
-  // may take as participants (a converted one is a contact).
+  // Étape 7c (PO): ONE « Add stakeholder » list, no distinction shown — every
+  // stakeholder of the activity's DC (converted or not) + the account
+  // contacts not yet stakeholders of it; without a DC, the account contacts.
   const { stakeholders: cycleStakeholders } = useGetDCStakeholders(cycleId);
+  const contactsQuery = useMemo(
+    () => (accountId ? { page: 1, pageSize: 100, filters: { account_id: accountId } } : null),
+    [accountId],
+  );
+  const { contacts: accountContacts } = useGetContacts(contactsQuery);
 
   const caption = (t, withHint = false) => (
     <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
@@ -439,16 +455,35 @@ function PeopleSection({
   const invited = values.invited || [];
   const contacts = values.contacts || [];
   const stakeholders = values.stakeholders || [];
-  const stakeholderOptions = (cycleStakeholders || []).filter(
-    (x) => !stakeholders.some((y) => y.id === x.id),
-  );
-  // The marker of the single list: « Contact » / « Not yet a contact ».
-  const contactSuffix = (c) => ["Contact", c.department_name].filter(Boolean).join(" · ");
   const stakeholderName = (x) => x.display_name || x.full_name || x.department?.name || "";
+  // No « Contact » / « Not yet a contact » marker (7c): only the department.
+  const contactSuffix = (c) => c.department_name || undefined;
   const stakeholderSuffix = (x) =>
-    ["Not yet a contact", x.display_name !== x.department?.name ? x.department?.name : null]
-      .filter(Boolean)
-      .join(" · ");
+    (x.department?.name && x.department.name !== stakeholderName(x) ? x.department.name : undefined);
+  // The picker's options. The distinction stays INTERNAL: a contact or a
+  // converted stakeholder joins values.contacts (contact_ids), a non-converted
+  // stakeholder values.stakeholders (stakeholder_ids).
+  const pickedContactIds = new Set(contacts.map((c) => String(c.id)));
+  const pickedStakeholderIds = new Set(stakeholders.map((x) => String(x.id)));
+  const dcRows = cycleId ? cycleStakeholders || [] : [];
+  const convertedContactIds = new Set(dcRows.filter((x) => x.contact).map((x) => String(x.contact.id)));
+  const pickerOptions = [
+    ...dcRows
+      .filter((x) => (x.contact ? !pickedContactIds.has(String(x.contact.id)) : !pickedStakeholderIds.has(String(x.id))))
+      .map((x) => ({ key: `s-${x.id}`, label: stakeholderName(x), stakeholder: x })),
+    ...(accountContacts || [])
+      .filter((c) => !convertedContactIds.has(String(c.id)) && !pickedContactIds.has(String(c.id)))
+      .map((c) => ({ key: `c-${c.id}`, label: personName(c), contact: c })),
+  ].sort((a, b) => a.label.localeCompare(b.label));
+  const addPicked = (opt) => {
+    if (!opt) return;
+    const contact = opt.contact || opt.stakeholder?.contact;
+    if (contact) {
+      if (!pickedContactIds.has(String(contact.id))) setFieldValue("contacts", [...contacts, contact]);
+    } else if (!pickedStakeholderIds.has(String(opt.stakeholder.id))) {
+      setFieldValue("stakeholders", [...stakeholders, opt.stakeholder]);
+    }
+  };
   // The owner: « First Last · email » (the shared label, 5.9b).
   const ownerLabel = personNameAndEmail(values.owner);
   const ownerSuffix = ownerLabel.email || undefined;
@@ -571,15 +606,18 @@ function PeopleSection({
         {!locked && addStakeholder && (
           <Autocomplete
             data-testid="stakeholder-select"
-            options={stakeholderOptions}
-            getOptionLabel={(x) => stakeholderName(x)}
-            isOptionEqualToValue={(a, b) => a.id === b.id}
+            options={pickerOptions}
+            getOptionLabel={(o) => o.label}
+            isOptionEqualToValue={(a, b) => a.key === b.key}
+            renderOption={(props, o) => (
+              <li {...props} key={o.key}>
+                {o.label}
+              </li>
+            )}
             value={null}
             openOnFocus
             onChange={(_event, picked) => {
-              if (picked && !stakeholders.some((y) => y.id === picked.id)) {
-                setFieldValue("stakeholders", [...stakeholders, picked]);
-              }
+              addPicked(picked);
               setAddStakeholder(false);
             }}
             renderInput={(params) => (
@@ -588,49 +626,10 @@ function PeopleSection({
             noOptionsText="No stakeholder to add"
           />
         )}
-        {!locked && addContact && (
-          <AsyncContactSelect
-            data-testid="contact-select"
-            value={null}
-            excludeIds={contacts.map((c) => c.id)}
-            onChange={(_event, contact) => {
-              // dedup guard — never push a contact already selected (belt + braces)
-              if (contact && !contacts.some((x) => x.id === contact.id)) {
-                setFieldValue("contacts", [...contacts, contact]);
-              }
-              setAddContact(false);
-            }}
-            filters={{ account_id: accountId }}
-            label=""
-            placeholder="Search contacts…"
-          />
-        )}
-        {/* Creation: a contact created on the fly (create-with-entities). */}
-        {allowInlineContact && values.inline_contact && (
-          <PersonEditRow
-            name={personName(values.inline_contact)}
-            suffix="new contact"
-            onRemove={() => setFieldValue("inline_contact", null)}
-            removeTestId="remove-inline-contact"
-          />
-        )}
-        {allowInlineContact && !values.inline_contact && addInlineContact && (
-          <InlineContactForm
-            onSave={(contact) => {
-              setFieldValue("inline_contact", contact);
-              setAddInlineContact(false);
-            }}
-            onCancel={() => setAddInlineContact(false)}
-          />
-        )}
-        {/* The add actions — one row, the standard gap between actions (the
-            drawer's: theme spacing 1), never stuck together (5.8g). */}
+        {/* ONE add action (7c): no person is created from this drawer. */}
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" data-testid="contact-add-actions">
-          {!locked && !addContact && addButton(() => setAddContact(true), "add-contact", "Add contact")}
-          {!locked && cycleId && !addStakeholder &&
+          {!locked && !addStakeholder &&
             addButton(() => setAddStakeholder(true), "add-stakeholder", "Add stakeholder")}
-          {allowInlineContact && !values.inline_contact && !addInlineContact &&
-            addButton(() => setAddInlineContact(true), "add-inline-contact", "New contact")}
         </Stack>
         {/* Creation from a next step: the names cited no contact matched. */}
         {mentionedNames.length > 0 && (
@@ -652,8 +651,6 @@ PeopleSection.propTypes = {
   locked: PropTypes.bool,
   /** Creation: the owner (the creator) is shown, not editable. */
   ownerReadOnly: PropTypes.bool,
-  /** Creation: a contact can be created on the fly (InlineContactForm). */
-  allowInlineContact: PropTypes.bool,
   /** Creation from a next step: the cited names no contact matched. */
   mentionedNames: PropTypes.arrayOf(PropTypes.string),
   /** Étape 7: the activity's decision cycle — its non-converted stakeholders
@@ -705,6 +702,7 @@ function ActivityForm({
   nextStep,
   activityType,
   sourceActivityId,
+  originStepId = null,
   conversion = false,
   initialContacts = [],
   citedContacts = [],
@@ -764,16 +762,13 @@ function ActivityForm({
             contacts: defaults.contacts,
             // Étape 7: the non-converted stakeholders of the DC (cited ones).
             stakeholders: defaults.stakeholders || [],
-            inline_contact: null,
             // Conversion: the NEW cycle created inline ({ name, step_stage }).
             inline_cycle: null,
             decision_cycle_id: decisionCycleId || "",
-            // The next step's proposed step (a step of its own cycle — the
-            // server checks it), else the cycle's current one (effect below).
-            decision_step_id:
-              decisionCycleId && nextStep?.suggested_decision_step
-                ? String(nextStep.suggested_decision_step)
-                : "",
+            // Chosen once the cycle's steps are read (effect below): the
+            // next step's proposal if it is one of them, else the origin
+            // activity's step, else the current one (7c).
+            decision_step_id: "",
           }
         : {
             title: activity?.title || "",
@@ -823,19 +818,12 @@ function ActivityForm({
     if (conversion) {
       return createActivityWithEntities({
         activity: payload,
-        inline_contact: values.inline_contact || null,
+        inline_contact: null,
         inline_cycle: { name: values.inline_cycle.name },
         inline_step_stage: values.inline_cycle.step_stage,
       });
     }
-    return values.inline_contact
-      ? createActivityWithEntities({
-          activity: payload,
-          inline_contact: values.inline_contact,
-          inline_cycle: null,
-          inline_step_stage: null,
-        })
-      : createActivity(payload);
+    return createActivity(payload);
   };
 
   const formik = useFormik({
@@ -935,15 +923,17 @@ function ActivityForm({
         .map((st) => ({ value: String(st.id), label: st.name })),
     [steps],
   );
-  // The step: the next step's proposal when it is a step of the chosen cycle,
-  // else the cycle's CURRENT step (mirror of the backend default,
-  // next_step_materialization.py — as ActivityModal).
+  // The step (7c): the next step's proposal when it is a step of the chosen
+  // cycle, else the ORIGIN activity's step when it is one (« + Add next step »
+  // / ✓ Create from an activity), else the cycle's CURRENT step — mirror of
+  // the backend default next_step_materialization.next_step_step_default.
   useEffect(() => {
     if (!isCreate || values.decision_step_id || !steps?.length) return;
-    const proposed = steps.find((st) => String(st.id) === String(nextStep?.suggested_decision_step));
-    const chosen = proposed || steps.find((st) => st.is_current);
+    const find = (id) => (id ? steps.find((st) => String(st.id) === String(id)) : undefined);
+    const chosen =
+      find(nextStep?.suggested_decision_step) || find(originStepId) || steps.find((st) => st.is_current);
     if (chosen) setFieldValue("decision_step_id", String(chosen.id));
-  }, [isCreate, steps, values.decision_step_id, nextStep?.suggested_decision_step, setFieldValue]);
+  }, [isCreate, steps, values.decision_step_id, nextStep?.suggested_decision_step, originStepId, setFieldValue]);
 
   return (
     <DrawerContentLayout
@@ -976,6 +966,21 @@ function ActivityForm({
             value={values.activity_type}
             onChange={(v) => {
               setFieldValue("activity_type", v);
+              // 7c — at creation the date field follows the type: a
+              // scheduling type takes the date as its scheduled date, the
+              // others as their due date (still modifiable in « When »).
+              if (isCreate) {
+                if (SCHEDULED_DATE_ACTIVITY_TYPES.has(v)) {
+                  if (!values.scheduled_date && values.due_date) {
+                    setFieldValue("scheduled_date", values.due_date);
+                    setFieldValue("due_date", null);
+                  }
+                } else if (values.scheduled_date) {
+                  setFieldValue("due_date", values.scheduled_date);
+                  setFieldValue("scheduled_date", null);
+                  setFieldValue("scheduled_time", null);
+                }
+              }
               // 5.17b — an outcome the new type does not offer is cleared.
               if (editsOutcome && values.outcome && !getOutcomesForType(v).includes(values.outcome)) {
                 setFieldValue("outcome", null);
@@ -1056,7 +1061,14 @@ function ActivityForm({
         {/* ---- SECTION 2 — When: Date & time ---- */}
         <Stack spacing={1.5}>
           <SectionHeader index={2} title="When" subtitle="The date it is scheduled or due." />
-          <DateGroup values={values} setFieldValue={setFieldValue} locked={isCampaign} />
+          <DateGroup
+            values={values}
+            setFieldValue={setFieldValue}
+            locked={isCampaign}
+            emptyMode={
+              isCreate && !SCHEDULED_DATE_ACTIVITY_TYPES.has(values.activity_type) ? "due" : "scheduled"
+            }
+          />
           {Boolean(errors.scheduled_date) && (
             <Typography variant="caption" color="error">
               {errors.scheduled_date}
@@ -1098,7 +1110,6 @@ function ActivityForm({
             accountId={accountId}
             locked={isCampaign}
             ownerReadOnly={isCreate}
-            allowInlineContact={isCreate}
             mentionedNames={isCreate ? defaults.mentionedNames : []}
             cycleId={(isCreate ? values.decision_cycle_id : activity?.decision_cycle) || null}
           />
@@ -1139,6 +1150,8 @@ EditActivityContent.propTypes = {
   activityType: PropTypes.string,
   /** Create: the activity this one is created from (source_activity_id). */
   sourceActivityId: PropTypes.string,
+  /** 7c: the origin activity's step — the step default after the next step's proposal. */
+  originStepId: PropTypes.string,
   /** Create: "Start Decision Cycle" — a NEW cycle only, created inline (5.13). */
   conversion: PropTypes.bool,
   /** Create: contacts added to the pre-fill (the source activity's). */

@@ -1,11 +1,13 @@
 // frontend/src/__tests__/nextSteps/DrawerStakeholdersPage.test.jsx
 //
-// Sprint « Cycle de vie des contacts », étape 7 (3) — on the Activity
+// Sprint « Cycle de vie des contacts », étapes 7 (3) / 7c — on the Activity
 // workspace PAGE, the Edit activity drawer (create AND edit), section People:
-// ONE « Stakeholders » list = the account contacts + the NON-converted
-// stakeholders of the activity's DC, marked « Contact » / « Not yet a
-// contact »; the picker of stakeholders reads the REAL endpoint
-// GET /decision_cycles/{id}/stakeholders/ (through the real hook).
+// ONE « Stakeholders » list and ONE « Add stakeholder » picker (7c: no « Add
+// contact », no « New contact », no « Contact » / « Not yet a contact »
+// marker). The picker reads the REAL endpoints through the real hooks: every
+// stakeholder of the DC (GET /decision_cycles/{id}/stakeholders/, converted
+// or not) + the account contacts (GET /contacts/?account_id=…) not yet
+// stakeholders of it; without a DC, the account contacts.
 // REAL: the page, the header ⋯ menu, the Next steps band, the coque, the
 // drawers, the API hooks (SWR fetcher). Mocked: the HTTP client.
 // Harness of DrawerSectionsPage.test.jsx.
@@ -102,13 +104,22 @@ const MARC_ST = { id: "st-marc", display_name: "Marc", full_name: "Marc", depart
 const FIN_ST = { id: "st-fin", display_name: "Finance", full_name: "",
                  department: { id: 7, name: "Finance" }, is_linked: false,
                  decision_cycle: "44444444-4444-4444-8444-444444444444" };
+// A converted stakeholder: offered once, under its contact's name.
+const PAUL_C = { id: "c-paul", first_name: "Paul", last_name: "X", full_name: "Paul X" };
+const PAUL_ST = { id: "st-paul", display_name: "Paul X", full_name: "", department: null,
+                  is_linked: true, contact: PAUL_C,
+                  decision_cycle: "44444444-4444-4444-8444-444444444444" };
+const ZOE = { id: "c-zoe", first_name: "Zoe", last_name: "Martin", full_name: "Zoe Martin" };
 let serverActivity;
 const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
   if (url.startsWith(`/contacts/${C_ID}/`)) return Promise.resolve({ data: THOMAS });
   if (url.startsWith(`/decision_cycles/${DC_ID}/stakeholders/`)) {
-    return Promise.resolve({ data: [MARC_ST, FIN_ST] });
+    return Promise.resolve({ data: [MARC_ST, FIN_ST, PAUL_ST] });
+  }
+  if (url.startsWith("/contacts/") && url.includes(ACC_ID)) {
+    return Promise.resolve({ data: { results: [THOMAS, ZOE, PAUL_C], count: 3 } });
   }
   if (url.startsWith(`/decision_cycles/${DC_ID}/people/`)) {
     return Promise.resolve({ data: { qualified: [], unqualified: [] } });
@@ -172,38 +183,48 @@ afterEach(() => {
 });
 
 
-describe("Edit activity on the page — ONE « Stakeholders » list (étape 7)", () => {
-  it("create (« + Add next step » → Meeting): « Stakeholders », the DC's not-yet-contacts offered", async () => {
-    renderPage(dcActivity());
+const openPicker = (root) => {
+  fireEvent.click(within(root).getByTestId("add-stakeholder"));
+  const input = within(within(root).getByTestId("stakeholder-select")).getByRole("combobox");
+  fireEvent.focus(input);
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+};
+const optionNames = async () => (await screen.findAllByRole("option")).map((o) => o.textContent);
+
+describe("Edit activity on the page — ONE « Add stakeholder », no distinction (7c)", () => {
+  it("create (« + Add next step » → Meeting): the DC's stakeholders + the account contacts, unmarked", async () => {
+    renderPage(dcActivity({ contacts_detail: [] }));
     fireEvent.click(await screen.findByRole("button", { name: "+ Add next step" }));
     fireEvent.click(within(screen.getByTestId("add-next-step-types")).getByRole("button", { name: "Meeting" }));
     const create = await within(coque()).findByTestId("activity-create");
     const list = within(create).getByTestId("stakeholders-list");
     expect(within(list).getByText("Stakeholders")).toBeInTheDocument();
-    fireEvent.click(within(create).getByTestId("add-stakeholder"));
-    const input = within(within(create).getByTestId("stakeholder-select")).getByRole("combobox");
-    fireEvent.focus(input);
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    fireEvent.click(await screen.findByRole("option", { name: "Marc" }));
-    expect(within(list).getByTestId("participant-st-marc")).toHaveTextContent("Not yet a contact");
+    expect(within(create).queryByTestId("add-contact")).toBeNull();
+    expect(within(create).queryByTestId("add-inline-contact")).toBeNull();
+    openPicker(create);
+    await waitFor(async () =>
+      expect((await optionNames()).sort()).toEqual(["Finance", "Marc", "Paul X", "Thomas Lefèvre", "Zoe Martin"]));
+    fireEvent.click(screen.getByRole("option", { name: "Marc" }));
+    expect(within(list).getByTestId("participant-st-marc").textContent).toBe("Marc");
+    expect(list.textContent).not.toMatch(/Not yet a contact/);
     expect(screen.queryByRole("option", { name: "Marc" })).toBeNull();
   });
 
-  it("create outside a DC: no stakeholder to add", async () => {
+  it("outside a DC: « Add stakeholder » offers the account contacts", async () => {
     renderPage(activity());
-    const header = await screen.findByTestId("workspace-header");
-    expect(header).toBeInTheDocument();
-    // The edit drawer of an activity without DC offers contacts only.
     const drawer = await openEditActivity();
-    expect(within(drawer).queryByTestId("add-stakeholder")).toBeNull();
-    expect(within(drawer).getByTestId("participant-" + C_ID)).toHaveTextContent("Contact");
+    expect(within(drawer).queryByTestId("add-contact")).toBeNull();
+    expect(within(drawer).getByTestId("participant-" + C_ID).textContent).not.toMatch(/Contact/);
+    openPicker(drawer);
+    await waitFor(async () => expect((await optionNames()).sort()).toEqual(["Paul X", "Zoe Martin"]));
   });
 
-  it("edit: the contacts and the stakeholders, each marked", async () => {
+  it("edit: the contacts and the stakeholders, unmarked (a department shown as such)", async () => {
     renderPage(dcActivity({ stakeholders_detail: [MARC_ST, FIN_ST] }));
     const drawer = await openEditActivity();
-    expect(within(drawer).getByTestId("participant-" + C_ID)).toHaveTextContent("Contact");
-    expect(within(drawer).getByTestId("participant-st-marc")).toHaveTextContent("Not yet a contact");
+    expect(within(drawer).getByTestId("participant-" + C_ID).textContent).not.toMatch(/Contact/);
+    expect(within(drawer).getByTestId("participant-st-marc").textContent).not.toMatch(/Not yet a contact/);
     expect(within(drawer).getByTestId("participant-st-fin")).toHaveTextContent("Finance");
+    expect(within(drawer).queryByTestId("add-contact")).toBeNull();
   });
 });

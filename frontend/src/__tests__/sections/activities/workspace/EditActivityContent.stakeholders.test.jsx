@@ -1,18 +1,18 @@
 // frontend/src/__tests__/sections/activities/workspace/EditActivityContent.stakeholders.test.jsx
 //
-// Sprint « Cycle de vie des contacts », étape 7 (3) — the Edit activity drawer
-// (create AND edit), section People: ONE « Stakeholders » list = the account
-// contacts + the NON-converted stakeholders of the activity's DC (as they
-// are), each marked « Contact » / « Not yet a contact »; the internal team
-// stays in the section.
-//   - PEOPLE_ACTIVITY_TYPES (MEETING / CALL / EMAIL / DEMO, mirror of the
-//     backend): at least one participant (a contact, a stakeholder, the inline
-//     contact); the other types: no minimum.
-//   - The payload carries contact_ids AND stakeholder_ids.
-//   - A next step (DEMO included) pre-fills its cited names as participants:
-//     the matched contacts AND the matched non-converted stakeholders; the
-//     other names stay « Mentioned ».
-// The REAL EditActivityContent; the API hooks / calls and the pickers mocked.
+// Sprint « Cycle de vie des contacts », étapes 7 / 7c — the Edit activity drawer
+// (create AND edit), section People. PO (7c): at the ACTIVITY level the
+// stakeholder / contact distinction does not show — no marker, no creation
+// of a person from this drawer:
+//   - ONE « Add stakeholder » button (no « Add contact », no « New contact »);
+//   - its list (choice A): every stakeholder of the activity's DC (converted
+//     or not) + the account contacts not yet stakeholders of it; without a
+//     DC, the account contacts;
+//   - the payload keeps the distinction INTERNAL: a contact or a converted
+//     stakeholder -> contact_ids; a non-converted stakeholder -> stakeholder_ids;
+//   - PEOPLE_ACTIVITY_TYPES: at least one participant; the other types none;
+//   - a next step (DEMO included) pre-fills its cited names as participants.
+// The REAL EditActivityContent; the API hooks / calls mocked.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act, within, waitFor } from "@testing-library/react";
@@ -22,12 +22,19 @@ const DC = "44444444-4444-4444-8444-444444444444";
 const STEP = "55555555-5555-4555-8555-555555555555";
 const JANE = { id: "c-jane", first_name: "Jane", last_name: "Doe", full_name: "Jane Doe",
                department_name: "Sales", is_reachable: true };
+const ZOE = { id: "c-zoe", first_name: "Zoe", last_name: "Martin", full_name: "Zoe Martin",
+              department_name: null, is_reachable: true };
+const PAUL_C = { id: "c-paul", first_name: "Paul", last_name: "X", full_name: "Paul X",
+                 department_name: null, is_reachable: true };
 const MARC = { id: "st-marc", display_name: "Marc", full_name: "Marc", department: null,
-               is_linked: false, decision_cycle: DC };
+               is_linked: false, contact: null, decision_cycle: DC };
 const FINANCE = { id: "st-fin", display_name: "Finance", full_name: "", is_linked: false,
-                  department: { id: 7, name: "Finance" }, decision_cycle: DC };
+                  contact: null, department: { id: 7, name: "Finance" }, decision_cycle: DC };
+const PAUL = { id: "st-paul", display_name: "Paul X", full_name: "", department: null,
+               is_linked: true, contact: PAUL_C, decision_cycle: DC };
 
-let mockStakeholders = [MARC, FINANCE];
+let mockStakeholders = [MARC, FINANCE, PAUL];
+let mockContacts = [JANE, ZOE, PAUL_C];
 let mockCited = [];
 
 vi.mock("@mui/x-date-pickers/DatePicker", async () => {
@@ -63,24 +70,22 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
 vi.mock("api/accounts/decisionCycles", async (importOriginal) => ({
   ...(await importOriginal()),
   useGetDecisionCyclesByAccount: () => ({ cycles: [{ id: DC, name: "Deal Acme" }], cyclesLoading: false }),
-  useGetDecisionStepsByCycle: () => ({ steps: [{ id: STEP, name: "Qualification", order: 1, is_current: true }],
-                                       stepsLoading: false }),
+  useGetDecisionStepsByCycle: () => ({
+    steps: [{ id: STEP, name: "Qualification", order: 1, is_current: true }], stepsLoading: false,
+  }),
   useGetDCStakeholders: (cycleId) => ({
     stakeholders: cycleId ? mockStakeholders : [], stakeholdersLoading: false,
   }),
+}));
+vi.mock("api/businessData/contacts", async (importOriginal) => ({
+  ...(await importOriginal()),
+  useGetContacts: () => ({ contacts: mockContacts, contactsLoading: false }),
 }));
 vi.mock("api/signals/signals", async (importOriginal) => ({
   ...(await importOriginal()),
   useNextStepCitedContacts: () => ({ citedContacts: mockCited, citedLoading: false }),
 }));
 vi.mock("components/AsyncSelection/AsyncUserSelect", () => ({ default: () => null }));
-vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
-  default: ({ onChange }) => (
-    <button type="button" data-testid="pick-contact" onClick={(e) => onChange(e, JANE)}>
-      pick Jane
-    </button>
-  ),
-}));
 
 import EditActivityContent from "sections/activities/workspace/EditActivityContent";
 import { createActivity, updateActivity } from "api/accounts/activities";
@@ -94,13 +99,11 @@ const renderCreate = (props = {}) =>
   );
 
 const people = () => screen.getByTestId("people-section");
-const pickDate = () => {
-  // The required title, then the date (it reads as a value; a click opens the
-  // editor, ✓ keeps the draft).
+const fillRequired = () => {
   fireEvent.click(screen.getByTestId("inline-read-title"));
   fireEvent.change(screen.getByTestId("inline-input-title"), { target: { value: "Workshop" } });
   fireEvent.click(screen.getByTestId("inline-read-date"));
-  fireEvent.click(screen.getByTestId("pick-Scheduled date"));
+  fireEvent.click(screen.getAllByTestId(/^pick-(Scheduled|Due) date$/)[0]);
   fireEvent.click(screen.getByTestId("date-confirm"));
 };
 const save = async () => {
@@ -108,75 +111,99 @@ const save = async () => {
     fireEvent.click(screen.getByRole("button", { name: /save/i }));
   });
 };
-const addStakeholder = (label) => {
+const openPicker = () => {
   fireEvent.click(screen.getByTestId("add-stakeholder"));
   const input = within(screen.getByTestId("stakeholder-select")).getByRole("combobox");
   fireEvent.focus(input);
   fireEvent.keyDown(input, { key: "ArrowDown" });
+};
+const optionNames = () => screen.getAllByRole("option").map((o) => o.textContent);
+const pick = (label) => {
+  openPicker();
   fireEvent.click(screen.getByRole("option", { name: label }));
 };
 
 beforeEach(() => {
-  mockStakeholders = [MARC, FINANCE];
+  mockStakeholders = [MARC, FINANCE, PAUL];
+  mockContacts = [JANE, ZOE, PAUL_C];
   mockCited = [];
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
-describe("Edit activity — ONE « Stakeholders » list (étape 7)", () => {
-  it("the participants list is captioned « Stakeholders »", () => {
+describe("Edit activity — ONE « Add stakeholder », no distinction shown (7c)", () => {
+  it("only « Add stakeholder »: no « Add contact », no « New contact »", () => {
     renderCreate();
+    expect(within(people()).getByTestId("add-stakeholder")).toBeInTheDocument();
+    expect(within(people()).queryByTestId("add-contact")).toBeNull();
+    expect(within(people()).queryByTestId("add-inline-contact")).toBeNull();
     expect(within(people()).getByText("Stakeholders")).toBeInTheDocument();
-    expect(within(people()).queryByText("External contacts")).toBeNull();
   });
 
-  it("a MEETING without participant cannot be saved (the type has people)", async () => {
+  it("the list (A): the DC's stakeholders (converted or not) + the account contacts not yet stakeholders", () => {
     renderCreate();
-    pickDate();
+    openPicker();
+    expect(optionNames().sort()).toEqual(["Finance", "Jane Doe", "Marc", "Paul X", "Zoe Martin"]);
+  });
+
+  it("a converted stakeholder is offered from the DC even when its contact is not in the contacts read", () => {
+    mockContacts = [JANE];
+    renderCreate();
+    openPicker();
+    expect(optionNames().sort()).toEqual(["Finance", "Jane Doe", "Marc", "Paul X"]);
+  });
+
+  it("without a DC: the account contacts", () => {
+    renderCreate({ decisionCycleId: undefined });
+    openPicker();
+    expect(optionNames().sort()).toEqual(["Jane Doe", "Paul X", "Zoe Martin"]);
+  });
+
+  it("no « Contact » / « Not yet a contact » marker", () => {
+    renderCreate();
+    pick("Marc");
+    pick("Jane Doe");
+    expect(people().textContent).not.toMatch(/Not yet a contact/);
+    expect(within(people()).getByTestId("participant-c-jane").textContent).not.toMatch(/Contact/);
+  });
+
+  it("the payload keeps the distinction internal (contact / converted -> contact_ids; others -> stakeholder_ids)", async () => {
+    renderCreate();
+    fillRequired();
+    pick("Marc");          // non-converted stakeholder
+    pick("Paul X");        // converted stakeholder -> its contact
+    pick("Jane Doe");      // account contact
+    await save();
+    await waitFor(() => expect(createActivity).toHaveBeenCalled());
+    const body = createActivity.mock.calls[0][0];
+    expect(body.stakeholder_ids).toEqual(["st-marc"]);
+    expect(body.contact_ids.sort()).toEqual(["c-jane", "c-paul"]);
+  });
+
+  it("a picked participant leaves the list", () => {
+    renderCreate();
+    pick("Paul X");
+    openPicker();
+    expect(optionNames()).not.toContain("Paul X");
+  });
+
+  it("a MEETING without participant cannot be saved", async () => {
+    renderCreate();
+    fillRequired();
     await save();
     expect(createActivity).not.toHaveBeenCalled();
     expect(await within(people()).findByText("At least one participant is required")).toBeInTheDocument();
   });
 
-  it("a TASK without participant is saved (no minimum)", async () => {
-    renderCreate({ activityType: "TASK" });
-    pickDate();
+  it("a TASK without participant is saved", async () => {
+    renderCreate({ activityType: "TASK", decisionCycleId: undefined });
+    fillRequired();
     await save();
     await waitFor(() => expect(createActivity).toHaveBeenCalled());
     expect(createActivity.mock.calls[0][0]).toMatchObject({ contact_ids: [], stakeholder_ids: [] });
   });
-
-  it("a not-yet-contact stakeholder of the DC is a participant, marked so, sent as stakeholder_ids", async () => {
-    renderCreate();
-    pickDate();
-    addStakeholder("Marc");
-    const row = within(people()).getByTestId("participant-st-marc");
-    expect(row).toHaveTextContent("Marc");
-    expect(row).toHaveTextContent("Not yet a contact");
-    await save();
-    await waitFor(() => expect(createActivity).toHaveBeenCalled());
-    expect(createActivity.mock.calls[0][0]).toMatchObject({ contact_ids: [], stakeholder_ids: ["st-marc"] });
-  });
-
-  it("a department-only stakeholder shows its department", () => {
-    renderCreate();
-    addStakeholder("Finance");
-    expect(within(people()).getByTestId("participant-st-fin")).toHaveTextContent("Finance");
-  });
-
-  it("a contact is marked « Contact »", () => {
-    renderCreate();
-    fireEvent.click(screen.getByTestId("add-contact"));
-    fireEvent.click(screen.getByTestId("pick-contact"));
-    expect(within(people()).getByTestId("participant-c-jane")).toHaveTextContent("Contact");
-  });
-
-  it("without a DC, no stakeholder can be added", () => {
-    renderCreate({ decisionCycleId: undefined });
-    expect(screen.queryByTestId("add-stakeholder")).toBeNull();
-  });
 });
 
-describe("Next step → DEMO: the cited names pre-fill the participants (étape 7)", () => {
+describe("Next step → DEMO: the cited names pre-fill the participants", () => {
   it("matched contacts AND matched stakeholders join; the others stay Mentioned", async () => {
     mockCited = [
       { name: "Jane Doe", contact: JANE, stakeholder: null },
@@ -197,11 +224,10 @@ describe("Next step → DEMO: the cited names pre-fill the participants (étape 
     expect(createActivity.mock.calls[0][0]).toMatchObject({
       contact_ids: ["c-jane"], stakeholder_ids: ["st-marc"],
     });
-    expect(createActivity.mock.calls[0][0].description || "").not.toMatch(/Mentioned:/);
   });
 });
 
-describe("Edit mode — the same list (étape 7)", () => {
+describe("Edit mode — the same list", () => {
   const ACTIVITY = {
     id: "act-1", title: "Workshop", activity_type: "MEETING", status: "PLANNED",
     scheduled_date: "2026-12-01", account: "acc-1", decision_cycle: DC,
@@ -211,10 +237,10 @@ describe("Edit mode — the same list (étape 7)", () => {
   const renderEdit = (over = {}) =>
     render(<AphoriqTheme><EditActivityContent activity={{ ...ACTIVITY, ...over }} /></AphoriqTheme>);
 
-  it("shows the contacts and the stakeholders, and sends both lists", async () => {
+  it("shows both, unmarked, no « Add contact », and sends both lists", async () => {
     renderEdit();
-    expect(within(people()).getByTestId("participant-c-jane")).toHaveTextContent("Contact");
-    expect(within(people()).getByTestId("participant-st-marc")).toHaveTextContent("Not yet a contact");
+    expect(within(people()).queryByTestId("add-contact")).toBeNull();
+    expect(people().textContent).not.toMatch(/Not yet a contact/);
     fireEvent.click(within(people()).getByTestId("remove-contact-c-jane"));
     await save();
     await waitFor(() => expect(updateActivity).toHaveBeenCalled());

@@ -1293,15 +1293,16 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     }
   });
 
-  // 5.8g (b) — "+ Add contact" / "+ New contact": the standard gap between
-  // actions (the drawer's actions: theme spacing 1), never stuck together.
-  it("'+ Add contact' and '+ New contact' sit apart with the standard gap", async () => {
+  // 7c (PO) — no person is created from the drawer, no distinction shown: the
+  // People actions row holds ONE « Add stakeholder » (no « Add contact », no
+  // « New contact »), the row keeping the standard gap (5.8g (b)).
+  it("ONE « Add stakeholder » action: no « Add contact », no « New contact »", async () => {
     const create = await openCreateFromFlow();
-    const add = within(create).getByTestId("add-contact");
-    const inline = within(create).getByTestId("add-inline-contact");
     const row = within(create).getByTestId("contact-add-actions");
-    expect(row).toContainElement(add);
-    expect(row).toContainElement(inline);
+    expect(row).toContainElement(within(create).getByTestId("add-stakeholder"));
+    expect(within(create).queryByTestId("add-contact")).toBeNull();
+    expect(within(create).queryByTestId("add-inline-contact")).toBeNull();
+    expect(within(row).getAllByRole("button")).toHaveLength(1);
     expect(row).toHaveStyle({ display: "flex", gap: testTheme.spacing(1) });
   });
 
@@ -1330,17 +1331,12 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(createActivityWithEntities).not.toHaveBeenCalled();
   });
 
-  it("a contact created on the fly goes through create-with-entities", async () => {
+  it("no contact created on the fly (7c): the creation never goes through create-with-entities", async () => {
     const create = await openCreateFromFlow();
-    fireEvent.click(within(create).getByTestId("add-inline-contact"));
-    fireEvent.click(screen.getByRole("button", { name: "save inline contact" }));
+    expect(within(create).queryByTestId("add-inline-contact")).toBeNull();
     fireEvent.click(saveButton());
-    await waitFor(() => expect(createActivityWithEntities).toHaveBeenCalledTimes(1));
-    const body = createActivityWithEntities.mock.calls[0][0];
-    expect(body.inline_contact).toEqual({ first_name: "Isabelle", last_name: "Roux" });
-    expect(body.inline_cycle).toBeNull();
-    expect(body.activity.next_step_signal_id).toBe("ns-rich");
-    expect(createActivity).not.toHaveBeenCalled();
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivityWithEntities).not.toHaveBeenCalled();
   });
 
   it("Save is disabled only by an invalid form (title emptied)", async () => {

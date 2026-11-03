@@ -5,7 +5,7 @@
 //   header: (i) "Context" (bold)
 //   Details: Objective | Scheduled (bold values), then Description (bold)
 //   ── hairline ──
-//   People: Internal team | External contacts — bold name + inline suffix (no
+//   People: Internal team | Stakeholders (7c; ex « External contacts ») — bold name + inline suffix (no
 //           avatar). External contact names look clickable (pointer + hover) but
 //           carry no handler yet — the drawer is wired in a later sprint. No
 //           email/phone on the rows.
@@ -410,7 +410,9 @@ export default function ActivityContextSection({ activity }) {
           </Box>
 
           <Box>
-            <ColumnHeader label="External contacts" />
+            {/* 7c (PO): « Stakeholders » — the contacts and the non-converted
+                stakeholders, no distinction shown at the activity level. */}
+            <ColumnHeader label="Stakeholders" />
             {contacts.length > 0 || stakeholders.length > 0 ? (
               <Stack spacing={0.5}>
                 {contacts.map((c) => (
@@ -457,7 +459,7 @@ export default function ActivityContextSection({ activity }) {
                       ) : (
                         <PersonRow
                           name={x.display_name || x.full_name}
-                          suffix={["Not yet a contact", x.department?.name].filter(Boolean).join(" · ")}
+                          suffix={x.department?.name || undefined}
                         />
                       )}
                     </Box>

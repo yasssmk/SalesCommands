@@ -99,13 +99,12 @@ describe("13.1 — the creation drawer sends source_activity_id", () => {
     expect(createActivity.mock.calls[0][0].source_activity_id).toBe("act-camp");
   });
 
-  it("createActivityWithEntities (a contact created inline): the activity carries source_activity_id", async () => {
+  it("no contact created inline (7c): outside the conversion, createActivity only", async () => {
     renderDrawer({ sourceActivityId: "act-camp" });
-    fireEvent.click(within(screen.getByTestId("activity-create")).getByTestId("add-inline-contact"));
-    fireEvent.click(screen.getByRole("button", { name: "save inline contact" }));
+    expect(within(screen.getByTestId("activity-create")).queryByTestId("add-inline-contact")).toBeNull();
     fireEvent.click(saveButton());
-    await waitFor(() => expect(createActivityWithEntities).toHaveBeenCalledTimes(1));
-    expect(createActivityWithEntities.mock.calls[0][0].activity.source_activity_id).toBe("act-camp");
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivityWithEntities).not.toHaveBeenCalled();
   });
 
   it("without sourceActivityId: no source_activity_id key (the payload as before)", async () => {

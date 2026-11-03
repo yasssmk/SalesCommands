@@ -1,10 +1,10 @@
 // frontend/src/__tests__/nextSteps/ContextStakeholdersPage.test.jsx
 //
-// Sprint « Cycle de vie des contacts », étape 7 (4) — the Context section of
-// the Activity workspace PAGE, column « External contacts »: the SAME list as
-// the drawer = the activity's contacts + its non-converted DC stakeholders
-// (« Not yet a contact »); a department-only stakeholder shows the department
-// only. The « no way to contact » alert: PER contact participant without email
+// Sprint « Cycle de vie des contacts », étape 7 (4) / 7c — the Context section
+// of the Activity workspace PAGE, column « Stakeholders » (7c: the header; no
+// « Not yet a contact » marker — no distinction shown at the activity level):
+// the SAME list as the drawer = the activity's contacts + its non-converted DC
+// stakeholders; a department-only stakeholder shows the department only. The « no way to contact » alert: PER contact participant without email
 // nor phone (contacts_detail.is_reachable, computed by the server), ONLY for
 // PEOPLE_ACTIVITY_TYPES, in orange (information, not an error).
 // The page, the Context section and the coque are REAL; the other bands and
@@ -90,19 +90,27 @@ const NOWAY = { id: "c-2", first_name: "Nina", last_name: "Noway", full_name: "N
                 job_title: null, department_name: null, is_reachable: false };
 const REACHABLE = { ...THOMAS, is_reachable: true };
 
-const column = () => screen.getByText("External contacts").parentElement.parentElement;
+const column = () => screen.getByText("Stakeholders").parentElement.parentElement;
 const MENTION = "No email or phone";
 
 afterEach(() => cleanup());
 
-describe("Context — External contacts = contacts + not-yet-contact stakeholders (étape 7)", () => {
-  it("lists the contacts and the stakeholders, each stakeholder marked", () => {
+describe("Context — « Stakeholders » = contacts + non-converted stakeholders, unmarked (7c)", () => {
+  it("the column header reads « Stakeholders » (no « External contacts »)", () => {
+    mockActivity = activityWith(undefined, { contacts_detail: [REACHABLE], stakeholders_detail: [MARC] });
+    render(<ActivityWorkspacePage />);
+    expect(screen.getByText("Stakeholders")).toBeInTheDocument();
+    expect(screen.queryByText("External contacts")).toBeNull();
+  });
+
+  it("lists the contacts and the stakeholders, no « Not yet a contact » marker", () => {
     mockActivity = activityWith(undefined, { contacts_detail: [REACHABLE], stakeholders_detail: [MARC] });
     render(<ActivityWorkspacePage />);
     const col = column();
     expect(within(col).getByText("Thomas Lefèvre")).toBeInTheDocument();
     expect(within(col).getByTestId("ctx-stakeholder-st-marc")).toHaveTextContent("Marc");
-    expect(within(col).getByTestId("ctx-stakeholder-st-marc")).toHaveTextContent("Not yet a contact");
+    expect(within(col).getByTestId("ctx-stakeholder-st-marc").textContent).toBe("Marc");
+    expect(col.textContent).not.toMatch(/Not yet a contact/);
   });
 
   it("a department-only stakeholder shows the department only", () => {
