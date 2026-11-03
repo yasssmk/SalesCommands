@@ -25,7 +25,9 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from ..models import Activity
 from ..constants import ActivityStatus
 from .activity_invitations import notify_invited_users, resolve_invited_users
-from .participant_rules import check_participant_minimum, resolve_contacts
+from .participant_rules import (
+    check_participant_minimum, resolve_contacts, resolve_stakeholders,
+)
 from .next_step_materialization import (
     mark_next_step_materialised,
     next_step_activity_fields,
@@ -171,7 +173,7 @@ class ActivityCreationService:
             participants = resolve_contacts(
                 contact_ids, client_id=self.client_id, account=account,
             )
-            check_participant_minimum(activity_data.get('activity_type'), len(participants))
+            # (the stakeholders and the minimum: once the cycle is known, below)
 
             # ==================================================================
             # STEP 2: Create DecisionCycle (if inline_cycle provided)
@@ -254,6 +256,19 @@ class ActivityCreationService:
                 )
 
             # ==================================================================
+            # PARTICIPANTS (étape 7) — the non-converted stakeholders of the
+            # activity's cycle (an inline cycle is new: it has none), then THE
+            # minimum on contacts (inline one included) + stakeholders.
+            # ==================================================================
+            stakeholders = resolve_stakeholders(
+                activity_data.get('stakeholder_ids') or [],
+                client_id=self.client_id, decision_cycle_id=cycle_id,
+            )
+            check_participant_minimum(
+                activity_data.get('activity_type'), len(participants) + len(stakeholders),
+            )
+
+            # ==================================================================
             # STEP 4: Create Activity
             # ==================================================================
             activity = self._create_activity(
@@ -267,6 +282,8 @@ class ActivityCreationService:
             )
             if next_step_signal:
                 mark_next_step_materialised(next_step_signal, self.user)
+            if stakeholders:
+                activity.stakeholders.set(stakeholders)
 
             # The invited teammates, as the standard create path: set, then
             # notified on commit (the inviter skipped).
