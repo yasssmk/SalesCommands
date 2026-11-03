@@ -349,6 +349,39 @@ describe("People without a decision cycle — validated like any signal (8b-1)",
   });
 });
 
+describe("A pending People of a campaign-born DC's sequence — ✓ applies the rule (8c-0 c)", () => {
+  const renderByRule = (linksOnValidate) => {
+    renderPage();
+    mockOtherSignals = [PAIN, withCycle({ ...PERSON, links_on_validate: linksOnValidate }, "dc-1")];
+    cleanup();
+    return render(<ActivityWorkspacePage />);
+  };
+
+  it("the row ✓ validates directly (the server applies the passage's rule), no flow", async () => {
+    renderByRule(true);
+    fireEvent.click(within(personRow()).getByLabelText("Validate signal"));
+    await waitFor(() => expect(validateSignal).toHaveBeenCalledWith("people", "ps-1"));
+    expect(screen.queryByTestId("people-validate-flow")).toBeNull();
+    expect(resolvePeopleSignal).not.toHaveBeenCalled();
+  });
+
+  it("the detail's Validate too", async () => {
+    renderByRule(true);
+    fireEvent.click(personRow());
+    const coque = await screen.findByTestId("coque-panel");
+    fireEvent.click(within(coque).getByRole("button", { name: /Validate/ }));
+    await waitFor(() => expect(validateSignal).toHaveBeenCalledWith("people", "ps-1"));
+    expect(screen.queryByTestId("people-validate-flow")).toBeNull();
+  });
+
+  it("elsewhere (links_on_validate false): the resolve flow, unchanged", async () => {
+    renderByRule(false);
+    fireEvent.click(within(personRow()).getByLabelText("Validate signal"));
+    expect(await screen.findByTestId("people-validate-flow")).toBeInTheDocument();
+    expect(validateSignal).not.toHaveBeenCalled();
+  });
+});
+
 describe("« Link to the deal » — a validated People without stakeholder, once in a DC (8b-1)", () => {
   const renderValidated = ({ cycle = "dc-1", stakeholder = null } = {}) => {
     renderPage({ cycle });

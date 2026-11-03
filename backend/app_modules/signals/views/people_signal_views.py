@@ -71,7 +71,16 @@ class PeopleSignalViewSet(BaseSignalViewSet):
         (resolve): the generic validate would bypass that rule — refused.
         8b-1 (PO): WITHOUT a DC, the generic validate (true / false), as
         any signal."""
+        from app_modules.decision_cycles.services.stakeholder_service import (
+            link_people_signal_automatically, links_on_validate,
+        )
         instance = self.get_object()          # 404 / scope first
+        if instance.decision_cycle_id and links_on_validate(instance):
+            # 8c-0 (c): the passage's rule, then the generic validate — ONE
+            # transaction (a refusal rolls the affiliation back).
+            with transaction.atomic():
+                link_people_signal_automatically(instance, request.user)
+                return super().validate_signal(request, pk=pk)
         if instance.decision_cycle_id:
             raise StandardizedValidationError(SignalErrorMessages.PEOPLE_REQUIRES_STAKEHOLDER)
         return super().validate_signal(request, pk=pk)

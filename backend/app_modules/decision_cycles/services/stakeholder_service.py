@@ -244,6 +244,24 @@ def link_people_signal_automatically(people_signal, user):
     return attach_signal(people_signal, stakeholder)
 
 
+def links_on_validate(people_signal):
+    """
+    8c-0 (c) (PO): a PENDING People not yet affiliated, whose source activity
+    belongs to the sequence of a DC born from a campaign (its own DC), is
+    validated by the passage's rule (link_people_signal_automatically), no
+    flow. Anywhere else: resolve, unchanged.
+    """
+    from app_modules.signals.constants import SignalStatus
+    from app_modules.signals.services.signal_cycle_attachment import (
+        is_born_from_the_sequence_of,
+    )
+    if (people_signal.status != SignalStatus.PENDING or people_signal.stakeholder_id
+            or not people_signal.decision_cycle_id or not people_signal.source_activity_id):
+        return False
+    return is_born_from_the_sequence_of(people_signal.source_activity,
+                                        people_signal.decision_cycle_id)
+
+
 def resolution_candidates(people_signal):
     """
     What the rep can resolve `people_signal` to:

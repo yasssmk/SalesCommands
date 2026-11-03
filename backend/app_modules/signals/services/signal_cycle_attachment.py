@@ -112,6 +112,22 @@ def _source_campaign_account_id(activity):
     )
 
 
+def is_born_from_the_sequence_of(source_activity, cycle_id):
+    """
+    8c-0 (c) — the converse of source_activity_ids: `cycle_id` is a DC born
+    from the campaign sequence `source_activity` belongs to (an activity of
+    that cycle was created FROM an activity of the same campaign_account).
+    """
+    from app_modules.activities.models import Activity
+    campaign_account_id = getattr(source_activity, 'campaign_account_id', None)
+    if not (campaign_account_id and cycle_id):
+        return False
+    return Activity.objects.filter(
+        client_id=source_activity.client_id, decision_cycle_id=cycle_id,
+        source_activity__campaign_account_id=campaign_account_id,
+    ).exists()
+
+
 def source_activity_ids(activity):
     """
     The ids of the activities whose signals join `activity`'s cycle: the

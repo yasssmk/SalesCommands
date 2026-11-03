@@ -184,8 +184,10 @@ export default function ActivitySignalsTab({
       // Étape 5: a person of a DC is validated WITH its stakeholder — the
       // People flow (Link / contact shortcut / Create), never the generic
       // validate (refused by the server for a People of a DC). 8b-1: without
-      // a DC, the generic validate below, as any signal.
-      if (signalType === "people" && signalCycleId(signal)) {
+      // a DC, the generic validate below, as any signal. 8c-0 (c): a pending
+      // People of a campaign-born DC's sequence (links_on_validate, server)
+      // is validated by the passage's rule — the generic validate too.
+      if (signalType === "people" && signalCycleId(signal) && !signal.links_on_validate) {
         openDrawer(
           <PeopleValidateFlow
             signal={signal}

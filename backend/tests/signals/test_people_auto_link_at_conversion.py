@@ -122,3 +122,73 @@ def test_the_contact_wins_over_the_name(authed_api_a, account, user_a):
     dc = _start_decision_cycle(authed_api_a, call)
     tricky.refresh_from_db()
     assert tricky.stakeholder_id == Stakeholder.objects.get(decision_cycle=dc, contact=paul).id
+
+
+# =============================================================================
+# 8c-0 (c) — a PENDING People of the sequence: ✓ applies the SAME rule
+# =============================================================================
+
+def test_a_pending_people_of_the_sequence_is_linked_by_the_rule_at_its_validation(
+    authed_api_a, account, user_a,
+):
+    """PO (c): ✓ on a PENDING People whose source activity belongs to the
+    sequence of a DC born from a campaign -> the passage's rule
+    (link_people_signal_automatically), no flow: same name -> the existing
+    stakeholder; else a new one."""
+    from app_modules.decision_cycles.models import Stakeholder
+    ca = _campaign_account(account, user_a)
+    first = _prospect_activity(ca, user_a, 'Lea', outcome='SUCCESSFUL')
+    second = _prospect_activity(ca, user_a, 'Hugo')
+    _people(first, user_a, 'Marc', status=SignalStatus.VALIDATED)
+    pending_marc = _people(second, user_a, 'MARC')
+    pending_zoe = _people(second, user_a, 'Zoé')
+    dc = _start_decision_cycle(authed_api_a, first)
+    marc_st = Stakeholder.objects.get(decision_cycle=dc, full_name_normalized='marc')
+
+    rows = {r['id']: r for r in authed_api_a.get(
+        '/module-signals/people/', {'decision_cycle': str(dc.id)}).json().get('results', [])}
+    assert rows[str(pending_marc.id)]['links_on_validate'] is True
+
+    for ps in (pending_marc, pending_zoe):
+        r = authed_api_a.post(f'/module-signals/people/{ps.id}/validate/')
+        assert r.status_code == 200, r.content
+        ps.refresh_from_db()
+        assert ps.status == SignalStatus.VALIDATED
+    assert pending_marc.stakeholder_id == marc_st.id
+    zoe_st = Stakeholder.objects.get(pk=pending_zoe.stakeholder_id)
+    assert zoe_st.decision_cycle_id == dc.id and zoe_st.full_name == 'Zoé'
+    assert Stakeholder.objects.filter(decision_cycle=dc).count() == 2
+
+
+def test_a_pending_people_of_a_dc_outside_a_campaign_birth_keeps_resolve(
+    authed_api_a, account, user_a,
+):
+    """✓ elsewhere: unchanged — the generic validate stays refused (resolve)."""
+    activity = _plain_activity(account, user_a)
+    cycle = _cycle(account, user_a)
+    _patch_cycle(authed_api_a, activity, cycle)
+    ps = _people(activity, user_a, 'Marc', decision_cycle=cycle)
+    body = authed_api_a.get(f'/module-signals/people/{ps.id}/').json()
+    detail = body.get('data', body)
+    assert detail['links_on_validate'] is False
+    r = authed_api_a.post(f'/module-signals/people/{ps.id}/validate/')
+    assert r.status_code == 400
+    ps.refresh_from_db()
+    assert ps.status == SignalStatus.PENDING and ps.stakeholder_id is None
+
+
+def test_a_campaign_activity_linked_to_a_dc_not_born_from_its_sequence_keeps_resolve(
+    authed_api_a, account, user_a,
+):
+    """The rule needs a DC BORN from the People's campaign sequence: a campaign
+    activity simply linked to another DC keeps resolve."""
+    ca = _campaign_account(account, user_a)
+    call = _prospect_activity(ca, user_a, 'Lea', outcome='SUCCESSFUL')
+    other = _plain_activity(account, user_a, title='Elsewhere')
+    cycle = _cycle(account, user_a)
+    _patch_cycle(authed_api_a, other, cycle)               # the DC has an activity
+    _patch_cycle(authed_api_a, call, cycle)                # not born from the sequence
+    ps = _people(call, user_a, 'Marc', decision_cycle=cycle)
+    body = authed_api_a.get(f'/module-signals/people/{ps.id}/').json()
+    assert body.get('data', body)['links_on_validate'] is False
+    assert authed_api_a.post(f'/module-signals/people/{ps.id}/validate/').status_code == 400
