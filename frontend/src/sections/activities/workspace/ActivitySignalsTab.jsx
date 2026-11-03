@@ -503,6 +503,12 @@ export default function ActivitySignalsTab({
           onValidate={isLocked ? undefined : handleValidate}
           onReject={isLocked ? undefined : handleReject}
           renderExtra={renderLinkToDeal}
+          // 8c-1: Validated opens by itself when it holds a People to link.
+          autoExpandStatuses={
+            !isLocked && flatSignals.some((s) => s._signalType === "people" && needsLinkToDeal(s))
+              ? ["VALIDATED"]
+              : undefined
+          }
           emptyMessage="No signals for this activity"
         />
       )}

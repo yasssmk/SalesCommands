@@ -375,6 +375,28 @@ describe("« Link to the deal » — a validated People without stakeholder, onc
     expect(validateSignal).not.toHaveBeenCalled();
   });
 
+  // 8c-1 (PO): the « Validated » section OPENS by itself when it holds a
+  // People to link (VALIDATED, with a DC, no stakeholder); else folded.
+  it("the Validated section opens by itself when a People needs « Link to the deal »", () => {
+    renderValidated();
+    expect(screen.getByText("Marc Dupont")).toBeInTheDocument();          // no click
+    expect(within(personRow()).getByRole("button", { name: "Link to the deal" })).toBeInTheDocument();
+  });
+
+  it("otherwise it stays folded (a People already affiliated)", () => {
+    renderValidated({ stakeholder: "st-marc" });
+    expect(screen.queryByText("Marc Dupont")).toBeNull();
+    expect(screen.getByText("Validated")).toBeInTheDocument();
+  });
+
+  it("it opens when a revalidation brings a People to link (Start Decision Cycle)", () => {
+    const view = renderValidated({ cycle: null });                     // no DC yet: folded
+    expect(screen.queryByText("Marc Dupont")).toBeNull();
+    mockOtherSignals = [PAIN, withCycle({ ...PERSON, status: "VALIDATED", stakeholder: null }, "dc-1")];
+    view.rerender(<WorkspaceCoque><ActivityWorkspacePage /></WorkspaceCoque>);
+    expect(screen.getByText("Marc Dupont")).toBeInTheDocument();
+  });
+
   it("no action for a People already affiliated, nor without a DC, nor still pending", async () => {
     renderValidated({ stakeholder: "st-marc" });
     expect(linkAction()).toBeNull();
