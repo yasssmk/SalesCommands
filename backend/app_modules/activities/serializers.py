@@ -17,6 +17,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import Activity
+from .services.participant_rules import check_participant_minimum, resolve_contacts
 from .constants import ActivityStatus, NoNextStepReason
 from .services import ActivitySequenceService, SequenceScope
 # The invited users: ONE validation + ONE notification, shared with
@@ -983,24 +984,15 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 attrs.update(next_step_text_and_date_defaults(next_step_signal, attrs))
             
             # =================================================================
-            # REQUIRED: At least one contact
+            # PARTICIPANTS — THE rule (services/participant_rules.py, étape 7):
+            # contacts of the account; a type with people (MEETING / CALL /
+            # EMAIL / DEMO) needs at least one participant, the others none.
             # =================================================================
-            contact_ids = attrs.pop('contact_ids', [])
-            if not contact_ids:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='At least one contact')
-                )
-            
-            contacts = Contact.objects.filter(
-                id__in=contact_ids,
-                client_id=client_id,
-                account=account
+            contacts = resolve_contacts(
+                attrs.pop('contact_ids', []), client_id=client_id, account=account,
             )
-            if contacts.count() != len(contact_ids):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field='Some contacts not found or do not belong to this account')
-                )
-            attrs['_contacts'] = list(contacts)
+            check_participant_minimum(attrs.get('activity_type'), len(contacts))
+            attrs['_contacts'] = contacts
             
             # =================================================================
             # REQUIRED: At least one date (scheduled_date OR due_date)
@@ -1271,30 +1263,32 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 attrs['scheduled_time'] = None
             
             # =================================================================
-            # CONTACTS VALIDATION (cannot be empty)
+            # PARTICIPANTS — THE rule (services/participant_rules.py, étape 7),
+            # on the FINAL state, whenever the type or the participants change
+            # (also a type-only PATCH). An unrelated edit (title…) never
+            # re-checks — a campaign account-level activity (0 contact,
+            # system exception) stays editable. Meeting -> Task keeps them.
             # =================================================================
+            # A campaign activity's participants are set (and locked, COND-1
+            # above) by the campaign — the system exception extends to it: its
+            # type can change without the rep being able to add anyone.
+            participants_touched = (
+                not instance.campaign_id
+                and ('contact_ids' in attrs or 'activity_type' in attrs)
+            )
             if 'contact_ids' in attrs:
                 contact_ids = attrs.pop('contact_ids')
                 if contact_ids is not None:
-                    # Dedup (order-preserving) so a repeated-but-valid id is
-                    # collapsed instead of failing the count-check below with a
-                    # misleading "not found"; the check still catches ids that
-                    # truly don't exist.
-                    contact_ids = list(dict.fromkeys(contact_ids))
-                    if len(contact_ids) == 0:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.REQUIRED_FIELD.format(field='At least one contact')
-                        )
-                    contacts = Contact.objects.filter(
-                        id__in=contact_ids,
-                        client_id=client_id,
-                        account=account
+                    attrs['_contacts'] = resolve_contacts(
+                        contact_ids, client_id=client_id, account=account,
                     )
-                    if contacts.count() != len(contact_ids):
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.INVALID_FIELD.format(field='Some contacts not found')
-                        )
-                    attrs['_contacts'] = list(contacts)
+            if participants_touched:
+                final_type = attrs.get('activity_type', instance.activity_type)
+                final_contacts = (
+                    len(attrs['_contacts']) if '_contacts' in attrs
+                    else instance.contacts.count()
+                )
+                check_participant_minimum(final_type, final_contacts)
             
             # =================================================================
             # OWNER VALIDATION

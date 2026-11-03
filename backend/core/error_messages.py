@@ -188,7 +188,21 @@ class ValidationErrorMessages:
 
 class ActivityErrorMessages:
     """Activity specific error messages"""
-    
+
+    # Participants (sprint « Cycle de vie des contacts », étape 7) —
+    # activities/services/participant_rules.py
+    PARTICIPANT_REQUIRED = _(
+        "A meeting, call, email or demo needs at least one participant "
+        "(a contact or a stakeholder)."
+    )
+    PARTICIPANT_CONTACT_INVALID = _(
+        "Some contacts were not found or do not belong to this account."
+    )
+    PARTICIPANT_STAKEHOLDER_INVALID = _(
+        "Only the stakeholders of this activity's decision cycle that are not "
+        "contacts yet can take part."
+    )
+
     # Status transitions
     CANNOT_COMPLETE_CANCELLED = _("Cannot complete a cancelled activity")
     CANNOT_CANCEL_COMPLETED = _("Cannot cancel a completed activity")

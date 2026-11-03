@@ -82,6 +82,20 @@ class NoNextStepReason(models.TextChoices):
 # Mirrored in frontend/src/utils/activityTypes.js (ActivityModal pre-fill) —
 # keep both in sync.
 
+# Sprint « Cycle de vie des contacts », étape 7 — the activity types "with
+# people" (mirrored in frontend/src/utils/activityTypes.js, PEOPLE_ACTIVITY_
+# TYPES — keep both in sync). ONE constant drives the three rules:
+#   * at least one participant (a contact or a stakeholder) —
+#     services/participant_rules.py; the other types: no minimum;
+#   * the "no way to contact" alert in Context (per contact participant);
+#   * the names a next step cites pre-fill participants (else description).
+PEOPLE_ACTIVITY_TYPES = frozenset({
+    ActivityType.MEETING,
+    ActivityType.CALL,
+    ActivityType.EMAIL,
+    ActivityType.DEMO,
+})
+
 # D6: the next step's date is WHEN the activity happens for these types
 # (scheduled_date); for every other type it is a deadline (due_date).
 SCHEDULED_DATE_ACTIVITY_TYPES = frozenset({

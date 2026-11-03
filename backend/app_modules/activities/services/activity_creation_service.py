@@ -25,6 +25,7 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from ..models import Activity
 from ..constants import ActivityStatus
 from .activity_invitations import notify_invited_users, resolve_invited_users
+from .participant_rules import check_participant_minimum, resolve_contacts
 from .next_step_materialization import (
     mark_next_step_materialised,
     next_step_activity_fields,
@@ -159,6 +160,18 @@ class ActivityCreationService:
                     'contact_id': str(contact.id),
                     'account_id': str(account_id),
                 })
+
+            # ==================================================================
+            # PARTICIPANTS — THE rule (services/participant_rules.py, étape 7):
+            # the contacts belong to the account (this path filtered on the
+            # tenant only before); a type with people needs at least one
+            # participant — the inline contact counts. A refusal rolls the
+            # inline contact back (atomic).
+            # ==================================================================
+            participants = resolve_contacts(
+                contact_ids, client_id=self.client_id, account=account,
+            )
+            check_participant_minimum(activity_data.get('activity_type'), len(participants))
 
             # ==================================================================
             # STEP 2: Create DecisionCycle (if inline_cycle provided)

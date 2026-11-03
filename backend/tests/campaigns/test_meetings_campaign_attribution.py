@@ -42,6 +42,16 @@ TODAY = timezone.now().date()
 CWE_URL = '/module-activities/create-with-entities/'
 
 
+
+def _participant(account):
+    """Sprint « Cycle de vie des contacts », étape 7: a CALL / MEETING needs
+    at least one participant on every path (participant_rules) — a contact of
+    the account, created here."""
+    from app_modules.contacts.models import Contact
+    c = Contact(account=account, first_name='Pat', last_name='Participant')
+    c.save(client_id=account.client_id)
+    return str(c.id)
+
 def _campaign(owner, ca, name='Camp'):
     c = Campaign(name=name, campaign_type=CampaignType.OUTBOUND, owner=owner,
                  executor=owner, planned_start_date=TODAY,
@@ -177,7 +187,7 @@ class TestContractRealModalPath:
             'activity': {
                 'title': 'Meeting', 'activity_type': ActivityType.MEETING,
                 'status': ActivityStatus.COMPLETED, 'account_id': str(account.id),
-                'contact_ids': [], 'decision_step_id': None, 'outcome': 'SUCCESSFUL',
+                'contact_ids': [_participant(account)], 'decision_step_id': None, 'outcome': 'SUCCESSFUL',
                 'source_activity_id': str(src.id),
             },
             'inline_cycle': {'name': 'MtgCycle', 'description': None},
