@@ -32,7 +32,7 @@ from ..services.next_step_link_service import (
     link_candidates,
     link_differences,
 )
-from ..services.next_step_cited_names import next_step_cited_contacts
+from ..services.next_step_cited_names import next_step_cited_participants
 from .base_views import BaseSignalViewSet
 
 
@@ -106,18 +106,24 @@ class NextStepSignalViewSet(BaseSignalViewSet):
         by the activity pre-fill. get_object() keeps the tenant scope
         (another tenant -> 404).
         """
-        from app_modules.activities.serializers import ActivityContactSerializer
+        from app_modules.activities.serializers import (
+            ActivityContactSerializer, ActivityStakeholderSerializer,
+        )
 
         signal = self.get_object()
+        # Étape 7: a name without contact may propose a non-converted
+        # stakeholder of the next step's cycle (next_step_cited_participants).
         return Response({
             'success': True,
             'data': {
                 'cited': [
                     {
-                        'name':    name,
-                        'contact': ActivityContactSerializer(contact).data if contact else None,
+                        'name':        name,
+                        'contact':     ActivityContactSerializer(contact).data if contact else None,
+                        'stakeholder': (ActivityStakeholderSerializer(stakeholder).data
+                                        if stakeholder else None),
                     }
-                    for name, contact in next_step_cited_contacts(signal)
+                    for name, contact, stakeholder in next_step_cited_participants(signal)
                 ],
             },
         })

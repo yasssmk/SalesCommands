@@ -910,6 +910,27 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
 
         return Response({'success': True, 'data': result})
 
+    @action(detail=True, methods=['get'], url_path='stakeholders')
+    def stakeholders(self, request, pk=None):
+        """
+        GET /decision-cycles/{id}/stakeholders/ — sprint « Cycle de vie des
+        contacts », étape 7: the NON-converted stakeholders of the cycle
+        (contact NULL), the ones an activity of the cycle may take as
+        participants (Activity.stakeholders). A converted one is a contact.
+        """
+        from app_modules.activities.serializers import ActivityStakeholderSerializer
+        instance = self.get_object()
+        rows = (
+            instance.stakeholders
+            .filter(contact__isnull=True)
+            .select_related('department')
+            .order_by('full_name_normalized', 'created_at')
+        )
+        return Response({
+            'success': True,
+            'data': ActivityStakeholderSerializer(rows, many=True).data,
+        })
+
     @action(detail=True, methods=['get'], url_path='readiness')
     def readiness(self, request, pk=None):
         """

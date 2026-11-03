@@ -213,6 +213,7 @@ describe("13.2 — conversion mode: a NEW cycle only, the contact pre-filled", (
         scheduled_time: null,
         due_date: null,
         contact_ids: ["c-1"],
+        stakeholder_ids: [],
         invited_user_ids: [],
         account_id: "acc-1",
         decision_cycle_id: null,

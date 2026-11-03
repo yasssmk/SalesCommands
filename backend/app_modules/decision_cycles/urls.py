@@ -60,6 +60,9 @@ def get_urlpatterns():
         path('<uuid:pk>/people/', DecisionCycleViewSet.as_view({
             'get': 'people'
         }), name='cycle-people'),
+        path('<uuid:pk>/stakeholders/', DecisionCycleViewSet.as_view({
+            'get': 'stakeholders'
+        }), name='cycle-stakeholders'),
 
         path('<uuid:pk>/readiness/', DecisionCycleViewSet.as_view({
             'get': 'readiness'

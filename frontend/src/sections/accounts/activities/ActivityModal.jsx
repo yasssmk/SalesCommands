@@ -77,6 +77,7 @@ import {
 } from "utils/displayError";
 import {
   activityDefaultsFromNextStep,
+  PEOPLE_ACTIVITY_TYPES,
 } from "utils/activityTypes";
 
 // A YYYY-MM-DD pre-fill value → the pickers' dayjs (null stays null).
@@ -236,11 +237,17 @@ export default function ActivityModal({
       setSubmitting(true);
 
       try {
-        // Guard: at least one contact (selected or inline)
-        if (values.contact_ids.length === 0 && !values.has_inline_contact) {
+        // Guard (étape 7): a type with people (PEOPLE_ACTIVITY_TYPES, mirror
+        // of the backend rule) needs at least one participant — selected or
+        // inline; the other types none. This modal has no stakeholder picker.
+        if (
+          PEOPLE_ACTIVITY_TYPES.has(values.activity_type)
+          && values.contact_ids.length === 0
+          && !values.has_inline_contact
+        ) {
           formik.setFieldError(
             "contact_ids",
-            "At least one contact is required",
+            "At least one participant is required",
           );
           formik.setFieldTouched("contact_ids", true, false);
           setSubmitting(false);

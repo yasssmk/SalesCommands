@@ -49,6 +49,7 @@ import dayjs from "dayjs";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
+import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -56,6 +57,7 @@ import Divider from "@mui/material/Divider";
 import FormHelperText from "@mui/material/FormHelperText";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
@@ -80,12 +82,13 @@ import {
 import {
   useGetDecisionCyclesByAccount,
   useGetDecisionStepsByCycle,
+  useGetDCStakeholders,
   PIPELINE_STEP_LABELS,
 } from "api/accounts/decisionCycles";
 import { useNextStepCitedContacts } from "api/signals/signals";
 import { useAuth } from "hooks/useAuth";
 import { personName, personNameAndEmail } from "utils/personLabel";
-import { activityDefaultsFromNextStep } from "utils/activityTypes";
+import { activityDefaultsFromNextStep, PEOPLE_ACTIVITY_TYPES } from "utils/activityTypes";
 import { InlineContactForm, InlineCycleForm } from "sections/accounts/activities/components";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
@@ -123,12 +126,28 @@ const FIELD_RULES = {
 
 const DATE_PAIR = [["scheduled_date", "due_date"]];
 
+// Sprint « Cycle de vie des contacts », étape 7 — THE participant rule, on
+// PEOPLE_ACTIVITY_TYPES (mirror of the backend constant): MEETING / CALL /
+// EMAIL / DEMO need at least one participant (a contact, a stakeholder, the
+// contact created on the fly); the other types none. The server enforces the
+// same rule (participant_rules).
+export const PARTICIPANT_REQUIRED = "At least one participant is required";
+const participantsRule = Yup.array().test(
+  "participants",
+  PARTICIPANT_REQUIRED,
+  function hasParticipant(contacts) {
+    const { activity_type: type, stakeholders, inline_contact: inline } = this.parent;
+    if (!PEOPLE_ACTIVITY_TYPES.has(type)) return true;
+    return (contacts?.length || 0) + (stakeholders?.length || 0) + (inline ? 1 : 0) > 0;
+  },
+);
+
 const validationSchema = Yup.object(
   {
     ...FIELD_RULES,
     // owner is NOT NULL backend — Formik keeps the invariant, never sends null.
     owner: Yup.object().nullable().required("An owner is required"),
-    contacts: Yup.array().min(1, "At least one contact is required"),
+    contacts: participantsRule,
   },
   DATE_PAIR,
 );
@@ -138,11 +157,7 @@ const validationSchema = Yup.object(
 const createValidationSchema = Yup.object(
   {
     ...FIELD_RULES,
-    contacts: Yup.array().when("inline_contact", {
-      is: (inline) => Boolean(inline),
-      then: (schema) => schema,
-      otherwise: (schema) => schema.min(1, "At least one contact is required"),
-    }),
+    contacts: participantsRule,
     decision_step_id: Yup.string().when("decision_cycle_id", {
       is: (cycle) => Boolean(cycle),
       then: (schema) => schema.required("Please select a step for this cycle"),
@@ -384,13 +399,18 @@ function PeopleSection({
   ownerReadOnly = false,
   allowInlineContact = false,
   mentionedNames = [],
+  cycleId = null,
 }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const [addOwner, setAddOwner] = useState(false);
   const [addInvited, setAddInvited] = useState(false);
   const [addContact, setAddContact] = useState(false);
+  const [addStakeholder, setAddStakeholder] = useState(false);
   const [addInlineContact, setAddInlineContact] = useState(false);
+  // Étape 7: the non-converted stakeholders of the activity's DC — the ones it
+  // may take as participants (a converted one is a contact).
+  const { stakeholders: cycleStakeholders } = useGetDCStakeholders(cycleId);
 
   const caption = (t, withHint = false) => (
     <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
@@ -418,6 +438,17 @@ function PeopleSection({
 
   const invited = values.invited || [];
   const contacts = values.contacts || [];
+  const stakeholders = values.stakeholders || [];
+  const stakeholderOptions = (cycleStakeholders || []).filter(
+    (x) => !stakeholders.some((y) => y.id === x.id),
+  );
+  // The marker of the single list: « Contact » / « Not yet a contact ».
+  const contactSuffix = (c) => ["Contact", c.department_name].filter(Boolean).join(" · ");
+  const stakeholderName = (x) => x.display_name || x.full_name || x.department?.name || "";
+  const stakeholderSuffix = (x) =>
+    ["Not yet a contact", x.display_name !== x.department?.name ? x.department?.name : null]
+      .filter(Boolean)
+      .join(" · ");
   // The owner: « First Last · email » (the shared label, 5.9b).
   const ownerLabel = personNameAndEmail(values.owner);
   const ownerSuffix = ownerLabel.email || undefined;
@@ -492,24 +523,71 @@ function PeopleSection({
         ))}
       </Box>
 
-      {/* External contacts — removable list, min 1 */}
-      <Box>
-        {caption("External contacts")}
+      {/* Stakeholders — ONE list (étape 7): the account contacts + the
+          non-converted stakeholders of the activity's DC, each marked
+          « Contact » / « Not yet a contact ». At least one participant for
+          PEOPLE_ACTIVITY_TYPES (Formik + the server). */}
+      <Box data-testid="stakeholders-list">
+        {caption("Stakeholders")}
         {locked
-          ? (contacts.length
-              ? contacts.map((c) => (
-                  <PersonRow key={c.id} name={personName(c)} suffix={c.department_name || undefined} />
-                ))
+          ? (contacts.length || stakeholders.length
+              ? [
+                  ...contacts.map((c) => (
+                    <Box key={c.id} data-testid={`participant-${c.id}`}>
+                      <PersonRow name={personName(c)} suffix={contactSuffix(c)} />
+                    </Box>
+                  )),
+                  ...stakeholders.map((x) => (
+                    <Box key={x.id} data-testid={`participant-${x.id}`}>
+                      <PersonRow name={stakeholderName(x)} suffix={stakeholderSuffix(x)} />
+                    </Box>
+                  )),
+                ]
               : emptyLine("None"))
-          : contacts.map((c) => (
-              <PersonEditRow
-                key={c.id}
-                name={personName(c)}
-                suffix={c.department_name || undefined}
-                onRemove={() => setFieldValue("contacts", contacts.filter((x) => x.id !== c.id))}
-                removeTestId={`remove-contact-${c.id}`}
-              />
-            ))}
+          : [
+              ...contacts.map((c) => (
+                <Box key={c.id} data-testid={`participant-${c.id}`}>
+                  <PersonEditRow
+                    name={personName(c)}
+                    suffix={contactSuffix(c)}
+                    onRemove={() => setFieldValue("contacts", contacts.filter((x) => x.id !== c.id))}
+                    removeTestId={`remove-contact-${c.id}`}
+                  />
+                </Box>
+              )),
+              ...stakeholders.map((x) => (
+                <Box key={x.id} data-testid={`participant-${x.id}`}>
+                  <PersonEditRow
+                    name={stakeholderName(x)}
+                    suffix={stakeholderSuffix(x)}
+                    onRemove={() =>
+                      setFieldValue("stakeholders", stakeholders.filter((y) => y.id !== x.id))
+                    }
+                    removeTestId={`remove-stakeholder-${x.id}`}
+                  />
+                </Box>
+              )),
+            ]}
+        {!locked && addStakeholder && (
+          <Autocomplete
+            data-testid="stakeholder-select"
+            options={stakeholderOptions}
+            getOptionLabel={(x) => stakeholderName(x)}
+            isOptionEqualToValue={(a, b) => a.id === b.id}
+            value={null}
+            openOnFocus
+            onChange={(_event, picked) => {
+              if (picked && !stakeholders.some((y) => y.id === picked.id)) {
+                setFieldValue("stakeholders", [...stakeholders, picked]);
+              }
+              setAddStakeholder(false);
+            }}
+            renderInput={(params) => (
+              <TextField {...params} size="small" placeholder="Search stakeholders…" autoFocus />
+            )}
+            noOptionsText="No stakeholder to add"
+          />
+        )}
         {!locked && addContact && (
           <AsyncContactSelect
             data-testid="contact-select"
@@ -549,6 +627,8 @@ function PeopleSection({
             drawer's: theme spacing 1), never stuck together (5.8g). */}
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" data-testid="contact-add-actions">
           {!locked && !addContact && addButton(() => setAddContact(true), "add-contact", "Add contact")}
+          {!locked && cycleId && !addStakeholder &&
+            addButton(() => setAddStakeholder(true), "add-stakeholder", "Add stakeholder")}
           {allowInlineContact && !values.inline_contact && !addInlineContact &&
             addButton(() => setAddInlineContact(true), "add-inline-contact", "New contact")}
         </Stack>
@@ -576,6 +656,9 @@ PeopleSection.propTypes = {
   allowInlineContact: PropTypes.bool,
   /** Creation from a next step: the cited names no contact matched. */
   mentionedNames: PropTypes.arrayOf(PropTypes.string),
+  /** Étape 7: the activity's decision cycle — its non-converted stakeholders
+      can be added (none without a cycle). */
+  cycleId: PropTypes.string,
   values: PropTypes.object.isRequired,
   setFieldValue: PropTypes.func.isRequired,
   errors: PropTypes.object.isRequired,
@@ -679,6 +762,8 @@ function ActivityForm({
             owner: user || null,
             invited: [],
             contacts: defaults.contacts,
+            // Étape 7: the non-converted stakeholders of the DC (cited ones).
+            stakeholders: defaults.stakeholders || [],
             inline_contact: null,
             // Conversion: the NEW cycle created inline ({ name, step_stage }).
             inline_cycle: null,
@@ -701,6 +786,7 @@ function ActivityForm({
             owner: activity?.owner_detail || null,
             invited: activity?.invited_users_detail || [],
             contacts: activity?.contacts_detail || [],
+            stakeholders: activity?.stakeholders_detail || [],
             outcome: activity?.outcome || null,
           },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -721,6 +807,7 @@ function ActivityForm({
           : null,
       due_date: fmtDate(values.due_date),
       contact_ids: (values.contacts || []).map((c) => c.id),
+      stakeholder_ids: (values.stakeholders || []).map((x) => x.id),
       invited_user_ids: (values.invited || []).map((u) => u.id),
       account_id: accountId,
       decision_cycle_id: values.decision_cycle_id || null,
@@ -797,6 +884,7 @@ function ActivityForm({
         payload.owner_id = values.owner?.id ?? null;
         payload.invited_user_ids = (values.invited || []).map((u) => u.id);
         payload.contact_ids = (values.contacts || []).map((c) => c.id);
+        payload.stakeholder_ids = (values.stakeholders || []).map((x) => x.id);
       }
       if (editsOutcome && values.outcome !== (activity.outcome || null)) {
         payload.outcome = values.outcome;
@@ -819,6 +907,19 @@ function ActivityForm({
   });
 
   const { values, errors, setFieldValue } = formik;
+
+  // Étape 7: a stakeholder belongs to ONE cycle — choosing another cycle in
+  // the creation drawer drops the stakeholders of the previous one (the server
+  // refuses them).
+  const chosenCycle = isCreate ? values.decision_cycle_id || null : null;
+  useEffect(() => {
+    if (!isCreate) return;
+    const kept = (values.stakeholders || []).filter(
+      (x) => chosenCycle && String(x.decision_cycle) === String(chosenCycle),
+    );
+    if (kept.length !== (values.stakeholders || []).length) setFieldValue("stakeholders", kept);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chosenCycle]);
 
   // Creation: the account's cycles, and the chosen cycle's steps.
   const { cycles } = useGetDecisionCyclesByAccount(isCreate ? accountId : null);
@@ -999,6 +1100,7 @@ function ActivityForm({
             ownerReadOnly={isCreate}
             allowInlineContact={isCreate}
             mentionedNames={isCreate ? defaults.mentionedNames : []}
+            cycleId={(isCreate ? values.decision_cycle_id : activity?.decision_cycle) || null}
           />
         </Stack>
       </Stack>

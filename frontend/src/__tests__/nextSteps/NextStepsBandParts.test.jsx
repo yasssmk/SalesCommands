@@ -1320,6 +1320,7 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
       scheduled_time: null,
       due_date: "2026-10-23",
       contact_ids: ["c-1", "c-9"],
+      stakeholder_ids: [],
       invited_user_ids: [],
       account_id: "acc-1",
       decision_cycle_id: "dc-1",

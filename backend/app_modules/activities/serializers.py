@@ -94,6 +94,7 @@ class ActivityStakeholderSerializer(serializers.Serializer):
     full_name = serializers.CharField(read_only=True)
     department = serializers.SerializerMethodField()
     is_linked = serializers.SerializerMethodField()
+    decision_cycle = serializers.UUIDField(source='decision_cycle_id', read_only=True)
 
     def get_department(self, obj):
         d = obj.department

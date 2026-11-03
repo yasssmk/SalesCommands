@@ -88,6 +88,8 @@ vi.mock("hooks/useAuth", () => ({
 vi.mock("api/accounts/decisionCycles", () => ({
   useGetDecisionCyclesByAccount: () => ({ cycles: [], cyclesLoading: false }),
   useGetDecisionStepsByCycle: () => ({ steps: [], stepsLoading: false }),
+  // Étape 7: the non-converted stakeholders of the DC (the drawer's picker).
+  useGetDCStakeholders: () => ({ stakeholders: [], stakeholdersLoading: false }),
 }));
 vi.mock("api/signals/aggregatedSignals", () => ({
   default: vi.fn(() => ({
