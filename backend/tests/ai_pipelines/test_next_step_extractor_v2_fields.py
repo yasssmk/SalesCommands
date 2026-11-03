@@ -30,6 +30,16 @@ pytestmark = pytest.mark.django_db
 TRANSCRIPT = 'Jordan Lee: on se revoit après la revue, avant vendredi.'
 
 
+
+def _participant(account):
+    """Sprint « Cycle de vie des contacts », étape 7: a CALL / MEETING needs at
+    least one participant on every path (participant_rules) — a contact of
+    the account whose name collides with no name these tests read."""
+    from app_modules.contacts.models import Contact
+    c = Contact(account=account, first_name='Zz', last_name='Participant')
+    c.save(client_id=account.client_id)
+    return str(c.id)
+
 def _ns(title='Relire la revue', **fields):
     return {
         'suggested_title': title, 'suggested_activity_type': 'TASK',
@@ -72,13 +82,15 @@ def deal(account, user_a):
     service = ActivityCreationService(user_a, account.client_id)
     first = service.create_with_entities(
         activity_data={'account_id': str(account.id), 'title': 'Découverte',
-                       'activity_type': ActivityType.CALL, 'status': ActivityStatus.COMPLETED},
+                       'activity_type': ActivityType.CALL, 'status': ActivityStatus.COMPLETED,
+                       'contact_ids': [_participant(account)]},
         inline_cycle={'name': 'Deal Acme'}, inline_step_stage='QUALIFICATION',
     )
     cycle = first['cycle']
     conversation = service.create_with_entities(activity_data={
         'account_id': str(account.id), 'title': 'Atelier', 'activity_type': ActivityType.MEETING,
         'status': ActivityStatus.COMPLETED, 'decision_cycle_id': str(cycle.id),
+        'contact_ids': [_participant(account)],
         'decision_step_id': str(cycle.steps.get(stage='BUSINESS_CASE').id),
     })['activity']
     return conversation, first['activity'], cycle
@@ -155,7 +167,8 @@ class TestStepRef:
             return ActivityCreationService(user, acc.client_id).create_with_entities(
                 activity_data={'account_id': str(acc.id), 'title': title,
                                'activity_type': ActivityType.MEETING,
-                               'status': ActivityStatus.COMPLETED},
+                               'status': ActivityStatus.COMPLETED,
+                               'contact_ids': [_participant(acc)]},
                 inline_cycle={'name': title}, inline_step_stage='QUALIFICATION',
             )
         new_deal(user_b, other_tenant_account, 'Other tenant deal')

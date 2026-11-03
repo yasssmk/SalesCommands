@@ -29,6 +29,16 @@ pytestmark = pytest.mark.django_db
 TRANSCRIPT = 'Jordan Lee: on se revoit après la revue.'
 
 
+
+def _participant(account):
+    """Sprint « Cycle de vie des contacts », étape 7: a CALL / MEETING needs at
+    least one participant on every path (participant_rules) — a contact of
+    the account whose name collides with no name these tests read."""
+    from app_modules.contacts.models import Contact
+    c = Contact(account=account, first_name='Zz', last_name='Participant')
+    c.save(client_id=account.client_id)
+    return str(c.id)
+
 def _compact(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
@@ -76,7 +86,8 @@ def deal(account, user_a):
     created = ActivityCreationService(user_a, account.client_id).create_with_entities(
         activity_data={'account_id': str(account.id), 'title': 'Atelier ROI',
                        'activity_type': ActivityType.MEETING,
-                       'status': ActivityStatus.COMPLETED},
+                       'status': ActivityStatus.COMPLETED,
+                       'contact_ids': [_participant(account)]},
         inline_cycle={'name': 'Deal Acme'}, inline_step_stage='BUSINESS_CASE',
     )
     conversation, cycle = created['activity'], created['cycle']
@@ -128,7 +139,8 @@ class TestDecisionCycleContext:
         created = ActivityCreationService(user_a, account.client_id).create_with_entities(
             activity_data={'account_id': str(account.id), 'title': 'Atelier ROI',
                            'activity_type': ActivityType.MEETING,
-                           'status': ActivityStatus.COMPLETED},
+                           'status': ActivityStatus.COMPLETED,
+                           'contact_ids': [_participant(account)]},
             inline_cycle={'name': 'Deal Acme'}, inline_step_stage='BUSINESS_CASE',
         )
         conversation = created['activity']
