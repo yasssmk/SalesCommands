@@ -2,7 +2,7 @@
 //
 // Sprint Next steps 5.8c (PO rule: a next step neither creates nor describes
 // any person) — the deduced participants (B2, 5.8a/5.8b) are WITHDRAWN: the
-// the external people column (7c: « Stakeholders ») of the Context section, on the Activity workspace PAGE
+// the external people column (7d-2: « External team ») of the Context section, on the Activity workspace PAGE
 // as really rendered, are the activity's own contacts (contacts_detail) again,
 // even if a payload still carried `participants`. A contact row opens the
 // Contact fiche in the coque, as before.
@@ -90,8 +90,8 @@ const PARTICIPANTS = [
 ];
 
 // The column: its label (Typography) sits in the ColumnHeader Stack.
-// 7c: the column is headed « Stakeholders ».
-const external = () => screen.getByText("Stakeholders").parentElement.parentElement;
+// 7d-2: the column is headed « External team » (the pair of « Internal team »).
+const external = () => screen.getByText("External team").parentElement.parentElement;
 
 afterEach(() => cleanup());
 

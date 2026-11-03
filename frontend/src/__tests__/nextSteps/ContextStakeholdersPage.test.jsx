@@ -1,8 +1,9 @@
 // frontend/src/__tests__/nextSteps/ContextStakeholdersPage.test.jsx
 //
-// Sprint « Cycle de vie des contacts », étape 7 (4) / 7c — the Context section
-// of the Activity workspace PAGE, column « Stakeholders » (7c: the header; no
-// « Not yet a contact » marker — no distinction shown at the activity level):
+// Sprint « Cycle de vie des contacts », étape 7 (4) / 7c / 7d-2 — the Context
+// section of the Activity workspace PAGE, column « External team » (7d-2: the
+// pair of « Internal team »; no « Not yet a contact » marker — no distinction
+// shown at the activity level):
 // the SAME list as the drawer = the activity's contacts + its non-converted DC
 // stakeholders; a department-only stakeholder shows the department only. The « no way to contact » alert: PER contact participant without email
 // nor phone (contacts_detail.is_reachable, computed by the server), ONLY for
@@ -90,16 +91,18 @@ const NOWAY = { id: "c-2", first_name: "Nina", last_name: "Noway", full_name: "N
                 job_title: null, department_name: null, is_reachable: false };
 const REACHABLE = { ...THOMAS, is_reachable: true };
 
-const column = () => screen.getByText("Stakeholders").parentElement.parentElement;
+const column = () => screen.getByText("External team").parentElement.parentElement;
 const MENTION = "No email or phone";
 
 afterEach(() => cleanup());
 
-describe("Context — « Stakeholders » = contacts + non-converted stakeholders, unmarked (7c)", () => {
-  it("the column header reads « Stakeholders » (no « External contacts »)", () => {
+describe("Context — « External team » = contacts + non-converted stakeholders, unmarked (7c / 7d-2)", () => {
+  it("the column header reads « External team », the pair of « Internal team »", () => {
     mockActivity = activityWith(undefined, { contacts_detail: [REACHABLE], stakeholders_detail: [MARC] });
     render(<ActivityWorkspacePage />);
-    expect(screen.getByText("Stakeholders")).toBeInTheDocument();
+    expect(screen.getByText("External team")).toBeInTheDocument();
+    expect(screen.getByText("Internal team")).toBeInTheDocument();
+    expect(screen.queryByText("Stakeholders")).toBeNull();
     expect(screen.queryByText("External contacts")).toBeNull();
   });
 

@@ -5,7 +5,7 @@
 //   header: (i) "Context" (bold)
 //   Details: Objective | Scheduled (bold values), then Description (bold)
 //   ── hairline ──
-//   People: Internal team | Stakeholders (7c; ex « External contacts ») — bold name + inline suffix (no
+//   People: Internal team | External team (7d-2) — bold name + inline suffix (no
 //           avatar). External contact names look clickable (pointer + hover) but
 //           carry no handler yet — the drawer is wired in a later sprint. No
 //           email/phone on the rows.
@@ -410,9 +410,10 @@ export default function ActivityContextSection({ activity }) {
           </Box>
 
           <Box>
-            {/* 7c (PO): « Stakeholders » — the contacts and the non-converted
-                stakeholders, no distinction shown at the activity level. */}
-            <ColumnHeader label="Stakeholders" />
+            {/* 7d-2 (PO): « External team », the pair of « Internal team » —
+                the contacts and the non-converted stakeholders, no
+                distinction shown at the activity level (7c). */}
+            <ColumnHeader label="External team" />
             {contacts.length > 0 || stakeholders.length > 0 ? (
               <Stack spacing={0.5}>
                 {contacts.map((c) => (
