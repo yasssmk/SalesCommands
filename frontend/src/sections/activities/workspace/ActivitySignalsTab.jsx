@@ -50,11 +50,18 @@ import EditTechStackContent from "sections/activities/workspace/EditTechStackCon
 import EditCompetitorContent from "sections/activities/workspace/EditCompetitorContent";
 import PeopleValidateFlow from "sections/activities/workspace/PeopleValidateFlow";
 import { isActivitySignalsLocked } from "utils/activitySignalsLock";
+import ClickablePill from "components/chips/ClickablePill";
 
-// Sprint « Cycle de vie des contacts », étape 5: a People signal is validated
-// WITH its stakeholder of the decision cycle — impossible without one.
-export const PEOPLE_NO_CYCLE_REASON =
-  "Validable once the activity is linked to a decision cycle";
+// Sprint « Cycle de vie des contacts », étape 5 / 8b-1 (PO): a People signal
+// OF A DECISION CYCLE is validated WITH its stakeholder (PeopleValidateFlow →
+// resolve); without a DC it is validated like any signal (true / false). The
+// signal's own DC (source_context.decision_cycle — the server's rule reads
+// signal.decision_cycle): a campaign activity converted keeps no DC itself.
+const signalCycleId = (signal) => signal?.source_context?.decision_cycle?.id || null;
+// « Link to the deal »: a People VALIDATED without stakeholder (validated
+// before its activity joined a DC) — never affiliated automatically.
+export const needsLinkToDeal = (signal) =>
+  signal?.status === "VALIDATED" && !signal?.stakeholder && Boolean(signalCycleId(signal));
 
 // The activity flat view shows qualification (pain/objective/impact) plus
 // tech-stack, blockers, constraints, competitors and people — next-steps live
@@ -101,9 +108,6 @@ export default function ActivitySignalsTab({
   const isLocked = isActivitySignalsLocked(activity);
   const activityId = activity?.id;
   const accountId = activity?.account;
-  // Étape 5: without a decision cycle a person cannot be validated (no
-  // stakeholder to resolve to) — the ✓ and the detail's Validate say why.
-  const peopleBlockedReason = activity?.decision_cycle ? null : PEOPLE_NO_CYCLE_REASON;
 
   // Choices for edit forms
   const { choices, choicesLoading } = useGetSignalChoices();
@@ -165,23 +169,23 @@ export default function ActivitySignalsTab({
           isLocked={isLocked}
           currentActivityId={activityId}
           headerInCoque={coqueOwnsHeader}
-          validateBlockedReason={signalType === "people" ? peopleBlockedReason : null}
         />,
         coqueOwnsHeader
           ? { title: getSignalTypeLabel(signalType), status: signal.status, statusMap: SIGNAL_STATUS_PILL }
           : undefined,
       );
     },
-    [openDrawer, isLocked, activityId, peopleBlockedReason],
+    [openDrawer, isLocked, activityId],
   );
 
   // Handlers
   const handleValidate = useCallback(
     async (signal, signalType) => {
-      // Étape 5: a person is validated WITH its stakeholder of the DC — the
+      // Étape 5: a person of a DC is validated WITH its stakeholder — the
       // People flow (Link / contact shortcut / Create), never the generic
-      // validate (refused by the server for People).
-      if (signalType === "people") {
+      // validate (refused by the server for a People of a DC). 8b-1: without
+      // a DC, the generic validate below, as any signal.
+      if (signalType === "people" && signalCycleId(signal)) {
         openDrawer(
           <PeopleValidateFlow
             signal={signal}
@@ -208,6 +212,46 @@ export default function ActivitySignalsTab({
       }
     },
     [mutateAll, mutateCounts, openSignalDetail, openDrawer],
+  );
+
+  // 8b-1 — « Link to the deal »: the SAME PeopleValidateFlow (resolve), on a
+  // People already VALIDATED without stakeholder; its status is untouched.
+  const handleLinkToDeal = useCallback(
+    (signal) => {
+      openDrawer(
+        <PeopleValidateFlow
+          signal={signal}
+          onBack={() => openSignalDetail(signal, "people")}
+          onResolved={(updated) => {
+            displaySuccessSnackbar("Person linked to the deal");
+            mutateAll();
+            mutateCounts?.();
+            openSignalDetail({ ...signal, ...updated }, "people");
+          }}
+        />,
+        { title: "Link to the deal" },
+      );
+    },
+    [mutateAll, mutateCounts, openSignalDetail, openDrawer],
+  );
+
+  // The row's 3rd line (SignalsValidationList renderExtra → SignalLine extra,
+  // the Next steps band's pattern): the orange « Link to the deal » action.
+  const renderLinkToDeal = useCallback(
+    (signal, type) =>
+      !isLocked && type === "people" && needsLinkToDeal(signal) ? (
+        <ClickablePill
+          tone="warning"
+          label="Link to the deal"
+          data-testid={`link-to-deal-${signal.id}`}
+          onClick={(e) => {
+            e?.stopPropagation?.();
+            handleLinkToDeal(signal);
+          }}
+          sx={{ mt: 0.75 }}
+        />
+      ) : null,
+    [isLocked, handleLinkToDeal],
   );
 
   const handleReject = useCallback(
@@ -458,9 +502,7 @@ export default function ActivitySignalsTab({
           onSelect={handleSelect}
           onValidate={isLocked ? undefined : handleValidate}
           onReject={isLocked ? undefined : handleReject}
-          getValidateDisabledReason={(_signal, type) =>
-            type === "people" ? peopleBlockedReason : null
-          }
+          renderExtra={renderLinkToDeal}
           emptyMessage="No signals for this activity"
         />
       )}

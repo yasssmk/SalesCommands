@@ -36,7 +36,6 @@ export default function SignalDetailPanel({
   currentActivityId,
   inlineClose,
   headerInCoque,
-  validateBlockedReason,
 }) {
   const router = useRouter();
   const { closeDrawer } = useWorkspaceDrawer();
@@ -65,7 +64,6 @@ export default function SignalDetailPanel({
       headerInCoque={headerInCoque}
       isLocked={isLocked}
       currentActivityId={currentActivityId}
-      validateBlockedReason={validateBlockedReason}
     />
   );
 }
@@ -90,5 +88,4 @@ SignalDetailPanel.propTypes = {
   headerInCoque: PropTypes.bool,
   /** Étape 5: a reason disabling Validate (People without a decision cycle),
       shown as a notice in the detail. */
-  validateBlockedReason: PropTypes.string,
 };

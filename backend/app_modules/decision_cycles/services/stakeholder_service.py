@@ -94,6 +94,9 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
     Affiliation (attach_signal) then validation (SignalManager.validate), in
     ONE transaction: a refusal rolls everything back. Never creates a
     Contact; no role step (the first role becomes current_signal).
+    8b-1 (PO): a People VALIDATED without stakeholder (validated before its
+    activity joined a DC) is affiliated only — « Link to the deal », its
+    status untouched; a People already affiliated is refused.
 
     Raises:
         StandardizedValidationError (400) on every business refusal.
@@ -109,7 +112,10 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
     chosen = [c for c in (stakeholder_id, contact_id, create) if c not in (None, '')]
     if len(chosen) != 1:
         raise StandardizedValidationError(SignalErrorMessages.PEOPLE_RESOLVE_ONE_CHOICE)
-    if people_signal.status != SignalStatus.PENDING:
+    link_only = people_signal.status == SignalStatus.VALIDATED
+    if link_only and people_signal.stakeholder_id:
+        raise StandardizedValidationError(SignalErrorMessages.PEOPLE_ALREADY_AFFILIATED)
+    if people_signal.status not in (SignalStatus.PENDING, SignalStatus.VALIDATED):
         raise StandardizedValidationError(SignalErrorMessages.NOT_PENDING_VALIDATED)
     cycle = _signal_cycle_or_refuse(people_signal)
     client_id = people_signal.client_id
@@ -145,6 +151,8 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
         stakeholder.save(user=user, client_id=client_id)
 
     attach_signal(people_signal, stakeholder)
+    if link_only:
+        return people_signal
     return SignalManager.validate(people_signal, user=user)
 
 

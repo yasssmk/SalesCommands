@@ -369,11 +369,13 @@ class SignalManager:
         if isinstance(signal, NextStepSignal):
             cls._check_next_step_has_one_activity(signal)
 
-        # Sprint « Cycle de vie des contacts », étape 5: a People signal is
-        # validated WITH its DC stakeholder (POST /people/{id}/resolve/,
+        # Sprint « Cycle de vie des contacts », étape 5: a People signal of a
+        # DC is validated WITH its DC stakeholder (POST /people/{id}/resolve/,
         # stakeholder_service.resolve_people_signal, which affiliates then
-        # validates in one transaction) — never alone.
-        if isinstance(signal, PeopleSignal) and not signal.stakeholder_id:
+        # validates in one transaction) — never alone. 8b-1 (PO): WITHOUT a
+        # DC, a People is validated (true / false) like any signal.
+        if (isinstance(signal, PeopleSignal) and signal.decision_cycle_id
+                and not signal.stakeholder_id):
             raise StandardizedValidationError(
                 SignalErrorMessages.PEOPLE_REQUIRES_STAKEHOLDER
             )

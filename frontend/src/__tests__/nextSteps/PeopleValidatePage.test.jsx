@@ -6,8 +6,10 @@
 // the generic ResolutionFlow) — Link (a stakeholder of the DC, or the shortcut
 // « an account contact »), the exact match « Proposed » and pre-selected, or
 // Create a « not linked » stakeholder; the generic validate is never called
-// for People. Without a decision cycle: the action is disabled with the
-// mention « Validable once the activity is linked to a decision cycle ».
+// for People of a DC. 8b-1 (PO): WITHOUT a decision cycle, a People is
+// validated (true / false) by the generic validate, like any signal; once its
+// activity joins a DC, a VALIDATED People without stakeholder carries an
+// orange « Link to the deal » action opening the SAME flow (resolve).
 // The page, the Signals band, its detail, the flow and the coque are REAL;
 // data hooks and API calls are mocked (harness of SignalsBandLock.test.jsx).
 
@@ -213,6 +215,11 @@ const CONTACTS = [
     proposed: false },
 ];
 
+const withCycle = (signal, cycle) => ({
+  ...signal,
+  source_context: { ...signal.source_context, decision_cycle: cycle ? { id: cycle, name: "Deal" } : null },
+});
+
 const renderPage = ({ cycle = "dc-1", stakeholders = STAKEHOLDERS, contacts = CONTACTS } = {}) => {
   mockActivity = {
     id: "act-1", title: "Atelier", activity_type: "MEETING", status: "COMPLETED",
@@ -221,7 +228,8 @@ const renderPage = ({ cycle = "dc-1", stakeholders = STAKEHOLDERS, contacts = CO
     next_planned_step: null,
   };
   mockNextSteps = [];
-  mockOtherSignals = [PAIN, PERSON];
+  // The signal's own DC (source_context.decision_cycle, as the server sends).
+  mockOtherSignals = [PAIN, withCycle(PERSON, cycle)];
   mockResolution = { hasCycle: Boolean(cycle), stakeholders: cycle ? stakeholders : [],
                      contacts: cycle ? contacts : [], candidatesLoading: false };
   mockResolveResult = { success: true, data: { ...PERSON, status: "VALIDATED", stakeholder: "st-marc" } };
@@ -317,24 +325,64 @@ describe("People validation = signal → stakeholder (étape 5)", () => {
   });
 });
 
-describe("People without a decision cycle (étape 5)", () => {
-  const MENTION = "Validable once the activity is linked to a decision cycle";
-
-  it("the row ✓ is disabled, with the mention", async () => {
+describe("People without a decision cycle — validated like any signal (8b-1)", () => {
+  it("the row ✓ is enabled and validates directly (generic validate, no flow)", async () => {
     renderPage({ cycle: null });
     const button = within(personRow()).getByLabelText("Validate signal");
-    expect(button).toBeDisabled();
-    fireEvent.mouseOver(button.parentElement);
-    expect(await screen.findByText(MENTION)).toBeInTheDocument();
-    // The other types are unaffected.
-    expect(within(rowOf("Manual reporting")).getByLabelText("Validate signal")).not.toBeDisabled();
+    expect(button).not.toBeDisabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(validateSignal).toHaveBeenCalledWith("people", "ps-1"));
+    expect(screen.queryByTestId("people-validate-flow")).toBeNull();
+    expect(resolvePeopleSignal).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Validable once/)).toBeNull();
   });
 
-  it("the detail's Validate is disabled, with the mention", async () => {
+  it("the detail's Validate validates directly too, no mention", async () => {
     renderPage({ cycle: null });
     fireEvent.click(personRow());
     const coque = await screen.findByTestId("coque-panel");
-    expect(within(coque).getByRole("button", { name: /Validate/ })).toBeDisabled();
-    expect(within(coque).getByText(MENTION)).toBeInTheDocument();
+    const validate = within(coque).getByRole("button", { name: /Validate/ });
+    expect(validate).not.toBeDisabled();
+    expect(within(coque).queryByText(/Validable once/)).toBeNull();
+    fireEvent.click(validate);
+    await waitFor(() => expect(validateSignal).toHaveBeenCalledWith("people", "ps-1"));
+  });
+});
+
+describe("« Link to the deal » — a validated People without stakeholder, once in a DC (8b-1)", () => {
+  const renderValidated = ({ cycle = "dc-1", stakeholder = null } = {}) => {
+    renderPage({ cycle });
+    mockOtherSignals = [PAIN, withCycle({ ...PERSON, status: "VALIDATED", stakeholder }, cycle)];
+    cleanup();
+    return render(<ActivityWorkspacePage />);
+  };
+  // The Validated section is folded by default (SignalsValidationList).
+  const linkAction = () => {
+    if (!screen.queryByText("Marc Dupont")) fireEvent.click(screen.getByText("Validated"));
+    return within(personRow()).queryByRole("button", { name: "Link to the deal" });
+  };
+
+  it("the row carries « Link to the deal »; it opens the SAME People flow and resolves", async () => {
+    renderValidated();
+    fireEvent.click(linkAction());
+    const flow = await screen.findByTestId("people-validate-flow");
+    fireEvent.click(within(flow).getByLabelText("Create a new stakeholder"));
+    next(flow);
+    confirm(flow);
+    await waitFor(() =>
+      expect(resolvePeopleSignal).toHaveBeenCalledWith("ps-1", { create: { full_name: "Marc Dupont" } }),
+    );
+    expect(validateSignal).not.toHaveBeenCalled();
+  });
+
+  it("no action for a People already affiliated, nor without a DC, nor still pending", async () => {
+    renderValidated({ stakeholder: "st-marc" });
+    expect(linkAction()).toBeNull();
+    cleanup();
+    renderValidated({ cycle: null });
+    expect(linkAction()).toBeNull();
+    cleanup();
+    renderPage();                                   // PENDING in a DC: the ✓ + flow
+    expect(linkAction()).toBeNull();
   });
 });

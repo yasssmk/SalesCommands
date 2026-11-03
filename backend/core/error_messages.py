@@ -502,8 +502,13 @@ class SignalErrorMessages:
         "stakeholder."
     )
     PEOPLE_REQUIRES_DECISION_CYCLE = _(
-        "This person can be validated once the activity is linked to a "
-        "decision cycle."
+        "This person can be linked to the deal once the activity is linked "
+        "to a decision cycle."
+    )
+    # 8b-1: resolve « Link to the deal » on a People already affiliated.
+    PEOPLE_ALREADY_AFFILIATED = _(
+        "This person is already linked to a stakeholder of the decision "
+        "cycle."
     )
     PEOPLE_RESOLVE_ONE_CHOICE = _(
         "Choose exactly one: an existing stakeholder, an account contact or "

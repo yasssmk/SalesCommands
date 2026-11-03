@@ -67,10 +67,14 @@ class PeopleSignalViewSet(BaseSignalViewSet):
     # =========================================================================
 
     def validate_signal(self, request, pk=None):
-        """A People signal is validated WITH its stakeholder (resolve):
-        the generic validate would bypass that rule — refused."""
-        self.get_object()                     # 404 / scope first
-        raise StandardizedValidationError(SignalErrorMessages.PEOPLE_REQUIRES_STAKEHOLDER)
+        """A People signal of a DC is validated WITH its stakeholder
+        (resolve): the generic validate would bypass that rule — refused.
+        8b-1 (PO): WITHOUT a DC, the generic validate (true / false), as
+        any signal."""
+        instance = self.get_object()          # 404 / scope first
+        if instance.decision_cycle_id:
+            raise StandardizedValidationError(SignalErrorMessages.PEOPLE_REQUIRES_STAKEHOLDER)
+        return super().validate_signal(request, pk=pk)
 
     @action(detail=True, methods=['post'], url_path='resolve')
     @transaction.atomic
