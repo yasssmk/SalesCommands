@@ -185,6 +185,65 @@ def get_or_create_contact_stakeholder(cycle, contact, user):
     return stakeholder
 
 
+def stakeholder_matches(stakeholder, *, contact_id, name):
+    """
+    THE exact-match rule of a stakeholder for a person (resolution_candidates'
+    « proposed », 8c-0's automatic link): the same contact, or the same
+    normalised name. Étape 5b, ONE naming rule: a linked stakeholder is
+    matched on its CONTACT's normalised name only (a stale full_name never
+    matches it); a non-converted one on its full_name.
+    """
+    from app_modules.signals.models import PeopleSignal
+    normalize = PeopleSignal._normalize_full_name
+    own_name = (normalize(_contact_full_name(stakeholder.contact)) if stakeholder.contact
+                else stakeholder.full_name_normalized)
+    return bool(
+        (contact_id and stakeholder.contact_id == contact_id)
+        or (name and own_name == name)
+    )
+
+
+@transaction.atomic
+def link_people_signal_automatically(people_signal, user):
+    """
+    8c-0 (PO): at the passage campaign -> DC, a VALIDATED People of the
+    sequence is linked to a stakeholder of its DC without confirmation:
+      * a stakeholder of the same contact, else of the same normalised name
+        (stakeholder_matches) -> attach_signal to it;
+      * else a new one: its contact's (get_or_create_contact_stakeholder) if
+        the signal has one, else from its name and/or department.
+    A signal already affiliated, without DC, or with nothing to name a
+    stakeholder by is left as is. Returns the stakeholder or None.
+    """
+    from ..models import Stakeholder
+
+    if people_signal.stakeholder_id or not people_signal.decision_cycle_id:
+        return None
+    cycle = people_signal.decision_cycle
+    contact_id = people_signal.target_contact_id
+    name = people_signal.full_name_normalized
+    stakeholders = list(
+        Stakeholder.objects
+        .filter(decision_cycle_id=cycle.id, client_id=people_signal.client_id)
+        .select_related('contact')
+        .order_by('created_at', 'id')
+    )
+    stakeholder = (
+        next((s for s in stakeholders if contact_id and s.contact_id == contact_id), None)
+        or next((s for s in stakeholders if stakeholder_matches(s, contact_id=None, name=name)), None)
+    )
+    if stakeholder is None:
+        if contact_id:
+            stakeholder = get_or_create_contact_stakeholder(cycle, people_signal.target_contact, user)
+        elif people_signal.full_name or people_signal.target_department_id:
+            stakeholder = Stakeholder(decision_cycle=cycle, full_name=(people_signal.full_name or '')[:255],
+                                      department=people_signal.target_department)
+            stakeholder.save(user=user, client_id=people_signal.client_id)
+        else:
+            return None
+    return attach_signal(people_signal, stakeholder)
+
+
 def resolution_candidates(people_signal):
     """
     What the rep can resolve `people_signal` to:
@@ -214,15 +273,7 @@ def resolution_candidates(people_signal):
     taken_contacts = {s.contact_id for s in stakeholders if s.contact_id}
 
     def _stakeholder_row(s):
-        # Étape 5b, ONE naming rule: a linked stakeholder is matched on its
-        # CONTACT's normalised name only (a stale full_name never proposes
-        # it); a non-converted one on its full_name.
-        own_name = (normalize(_contact_full_name(s.contact)) if s.contact
-                    else s.full_name_normalized)
-        proposed = bool(
-            (contact_id and s.contact_id == contact_id)
-            or (name and own_name == name)
-        )
+        proposed = stakeholder_matches(s, contact_id=contact_id, name=name)
         current = s.current_signal
         return {
             'id': str(s.id),

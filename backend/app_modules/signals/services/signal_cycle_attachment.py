@@ -86,6 +86,8 @@ class AttachmentResult:
     cycle_id: object = None
     attached: dict = field(default_factory=dict)
     kept_on_other_cycle: dict = field(default_factory=dict)
+    # 8c-0: People linked to a stakeholder at the passage campaign -> DC.
+    people_linked: int = 0
 
     @property
     def total_attached(self):
@@ -94,6 +96,20 @@ class AttachmentResult:
     @property
     def total_kept(self):
         return sum(self.kept_on_other_cycle.values())
+
+
+def _source_campaign_account_id(activity):
+    """The campaign_account of the activity `activity` was created FROM, or
+    None — set = the passage campaign -> DC (« Start Decision Cycle »)."""
+    from app_modules.activities.models import Activity
+    if not activity.source_activity_id:
+        return None
+    return (
+        Activity.objects
+        .filter(pk=activity.source_activity_id, client_id=activity.client_id)
+        .values_list('campaign_account_id', flat=True)
+        .first()
+    )
 
 
 def source_activity_ids(activity):
@@ -107,12 +123,7 @@ def source_activity_ids(activity):
     ids = {activity.pk}
     source_id = activity.source_activity_id
     if source_id:
-        campaign_account_id = (
-            Activity.objects
-            .filter(pk=source_id, client_id=activity.client_id)
-            .values_list('campaign_account_id', flat=True)
-            .first()
-        )
+        campaign_account_id = _source_campaign_account_id(activity)
         if campaign_account_id:
             ids.update(
                 Activity.objects
@@ -157,6 +168,12 @@ def attach_signals_to_activity_cycle(activity, *, dry_run=False):
         if kept:
             result.kept_on_other_cycle[signal_type] = kept
 
+    # 8c-0 (PO): at the passage campaign -> DC, every VALIDATED People of the
+    # sequence is linked to a stakeholder of the DC (stakeholder_service —
+    # THE match rule); PENDING ones keep resolve. Elsewhere: unchanged.
+    if not dry_run and _source_campaign_account_id(activity):
+        result.people_linked = _link_sequence_people(activity, ids, cycle_id)
+
     if result.attached or result.kept_on_other_cycle:
         logger.info(
             'signals_attached_to_cycle',
@@ -181,6 +198,34 @@ def attach_signals_to_activity_cycle(activity, *, dry_run=False):
     if result.attached and not dry_run:
         _refresh_after_commit(activity.client_id, cycle_id)
     return result
+
+
+def _link_sequence_people(activity, ids, cycle_id):
+    """The VALIDATED People of the sequence, on the cycle, not yet affiliated
+    -> link_people_signal_automatically, oldest first. Returns the count."""
+    from app_modules.decision_cycles.services.stakeholder_service import (
+        link_people_signal_automatically,
+    )
+    from app_modules.signals.constants import SignalStatus
+    from app_modules.signals.models import PeopleSignal
+
+    linked = 0
+    people = (
+        PeopleSignal.objects
+        .filter(client_id=activity.client_id, source_activity_id__in=ids,
+                decision_cycle_id=cycle_id, status=SignalStatus.VALIDATED,
+                stakeholder__isnull=True)
+        .select_related('decision_cycle', 'target_contact', 'target_department')
+        .order_by('created_at', 'id')
+    )
+    for people_signal in people:
+        if link_people_signal_automatically(people_signal, activity.owner):
+            linked += 1
+    if linked:
+        logger.info('people_linked_at_conversion', extra={
+            'activity_id': str(activity.pk), 'cycle_id': str(cycle_id), 'linked': linked,
+        })
+    return linked
 
 
 def _refresh_after_commit(client_id, cycle_id):

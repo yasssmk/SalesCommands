@@ -19,9 +19,9 @@ from rest_framework import status
 from app_modules.signals.constants import SignalStatus
 from tests.signals.test_people_resolve import URL, _cycle, _people, _resolve
 from tests.signals.test_signal_cycle_attachment import (
-    _campaign_account,
-    _prospect_activity,
-    _start_decision_cycle,
+    _cycle as _attach_cycle,
+    _patch_cycle,
+    _plain_activity,
 )
 
 
@@ -57,26 +57,27 @@ def test_with_a_cycle_the_people_stays_subject_to_resolve(authed_api_a, account,
     assert ps.status == SignalStatus.PENDING
 
 
-def test_validated_without_cycle_then_start_decision_cycle_then_link_to_the_deal(
+def test_validated_without_cycle_then_linked_to_a_dc_later_then_link_to_the_deal(
     authed_api_a, account, user_a,
 ):
-    """The whole PO scenario: ✓ without DC -> Start Decision Cycle -> the
-    validated People has the DC and no stakeholder (never auto-affiliated) ->
-    resolve affiliates it, its status and validation untouched."""
+    """The PO scenario outside the campaign -> DC passage (8c-0 links that
+    one automatically): ✓ without DC -> the activity linked to a DC later ->
+    the validated People has the DC and no stakeholder (never auto-affiliated
+    here) -> resolve affiliates it, its status and validation untouched."""
     from app_modules.decision_cycles.models import Stakeholder
     from app_modules.signals.models import PeopleSignal
-    ca = _campaign_account(account, user_a)
-    call = _prospect_activity(ca, user_a, 'Lea', outcome='SUCCESSFUL')
-    ps = _people(call, user_a, cycle=None, name='Marc')
+    activity = _plain_activity(account, user_a)
+    ps = _people(activity, user_a, cycle=None, name='Marc')
     assert _validate(authed_api_a, ps).status_code == 200
     ps.refresh_from_db()
     validated_at = ps.validated_at
 
-    dc = _start_decision_cycle(authed_api_a, call)
+    dc = _attach_cycle(account, user_a)
+    _patch_cycle(authed_api_a, activity, dc)
     ps.refresh_from_db()
     assert ps.decision_cycle_id == dc.id
     assert ps.status == SignalStatus.VALIDATED
-    assert ps.stakeholder_id is None                       # never automatic
+    assert ps.stakeholder_id is None                       # never automatic here
     assert not Stakeholder.objects.filter(decision_cycle=dc).exists()
 
     r = _resolve(authed_api_a, ps, {'create': {'full_name': 'Marc'}})
