@@ -12,7 +12,10 @@
 //     stakeholder -> contact_ids; a non-converted stakeholder -> stakeholder_ids;
 //   - PEOPLE_ACTIVITY_TYPES: at least one participant; the other types none;
 //   - a next step (DEMO included) pre-fills its cited names as participants.
-// The REAL EditActivityContent; the API hooks / calls mocked.
+// 7d-1: the picker IS the standard AsyncContactSelect (server search, 20 per
+// page) — the account contacts + the NON-converted stakeholders of the DC,
+// both searched on the server; a converted stakeholder only under its contact.
+// The REAL EditActivityContent and AsyncContactSelect; the API hooks mocked.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, act, within, waitFor } from "@testing-library/react";
@@ -35,6 +38,11 @@ const PAUL = { id: "st-paul", display_name: "Paul X", full_name: "", department:
 
 let mockStakeholders = [MARC, FINANCE, PAUL];
 let mockContacts = [JANE, ZOE, PAUL_C];
+// The hooks' calls are recorded: the picker must search the SERVER.
+const mockContactsHook = vi.fn(() => ({ contacts: mockContacts, contactsLoading: false }));
+const mockStakeholdersHook = vi.fn((cycleId) => ({
+  stakeholders: cycleId ? mockStakeholders : [], stakeholdersLoading: false,
+}));
 let mockCited = [];
 
 vi.mock("@mui/x-date-pickers/DatePicker", async () => {
@@ -73,13 +81,11 @@ vi.mock("api/accounts/decisionCycles", async (importOriginal) => ({
   useGetDecisionStepsByCycle: () => ({
     steps: [{ id: STEP, name: "Qualification", order: 1, is_current: true }], stepsLoading: false,
   }),
-  useGetDCStakeholders: (cycleId) => ({
-    stakeholders: cycleId ? mockStakeholders : [], stakeholdersLoading: false,
-  }),
+  useGetDCStakeholders: (...args) => mockStakeholdersHook(...args),
 }));
 vi.mock("api/businessData/contacts", async (importOriginal) => ({
   ...(await importOriginal()),
-  useGetContacts: () => ({ contacts: mockContacts, contactsLoading: false }),
+  useGetContacts: (...args) => mockContactsHook(...args),
 }));
 vi.mock("api/signals/signals", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -145,11 +151,25 @@ describe("Edit activity — ONE « Add stakeholder », no distinction shown (7c)
     expect(optionNames().sort()).toEqual(["Finance", "Jane Doe", "Marc", "Paul X", "Zoe Martin"]);
   });
 
-  it("a converted stakeholder is offered from the DC even when its contact is not in the contacts read", () => {
+  it("a converted stakeholder is offered only under its contact (never as a stakeholder)", () => {
     mockContacts = [JANE];
     renderCreate();
     openPicker();
-    expect(optionNames().sort()).toEqual(["Finance", "Jane Doe", "Marc", "Paul X"]);
+    expect(optionNames().sort()).toEqual(["Finance", "Jane Doe", "Marc"]);
+  });
+
+  it("the standard AsyncContactSelect: a server search on the contacts AND the DC's non-converted stakeholders", async () => {
+    renderCreate();
+    openPicker();
+    const input = within(screen.getByTestId("stakeholder-select")).getByRole("combobox");
+    fireEvent.change(input, { target: { value: "ma" } });
+    await waitFor(() =>
+      expect(mockContactsHook).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "ma", pageSize: 20, filters: { account_id: "acc-1" } }),
+      ), { timeout: 2000 });
+    expect(mockStakeholdersHook).toHaveBeenLastCalledWith(DC, { search: "ma", converted: false });
+    // never the 100 contacts read of 7c
+    expect(mockContactsHook.mock.calls.some(([o]) => o?.pageSize === 100)).toBe(false);
   });
 
   it("without a DC: the account contacts", () => {

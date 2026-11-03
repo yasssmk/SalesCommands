@@ -111,8 +111,10 @@ const PAUL_ST = { id: "st-paul", display_name: "Paul X", full_name: "", departme
                   decision_cycle: "44444444-4444-4444-8444-444444444444" };
 const ZOE = { id: "c-zoe", first_name: "Zoe", last_name: "Martin", full_name: "Zoe Martin" };
 let serverActivity;
+let fetchedUrls = [];
 const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
+  fetchedUrls.push(url);
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
   if (url.startsWith(`/contacts/${C_ID}/`)) return Promise.resolve({ data: THOMAS });
   if (url.startsWith(`/decision_cycles/${DC_ID}/stakeholders/`)) {
@@ -191,6 +193,8 @@ const openPicker = (root) => {
 };
 const optionNames = async () => (await screen.findAllByRole("option")).map((o) => o.textContent);
 
+beforeEach(() => { fetchedUrls = []; });
+
 describe("Edit activity on the page — ONE « Add stakeholder », no distinction (7c)", () => {
   it("create (« + Add next step » → Meeting): the DC's stakeholders + the account contacts, unmarked", async () => {
     renderPage(dcActivity({ contacts_detail: [] }));
@@ -226,5 +230,27 @@ describe("Edit activity on the page — ONE « Add stakeholder », no distinctio
     expect(within(drawer).getByTestId("participant-st-marc").textContent).not.toMatch(/Not yet a contact/);
     expect(within(drawer).getByTestId("participant-st-fin")).toHaveTextContent("Finance");
     expect(within(drawer).queryByTestId("add-contact")).toBeNull();
+  });
+});
+
+// 7d-1 — the picker is the standard AsyncContactSelect: a SERVER search, on the
+// account contacts AND the DC's non-converted stakeholders (never the 7c read
+// of 100 contacts).
+describe("« Add stakeholder » searches the server (7d-1)", () => {
+  it("typing searches the contacts and the non-converted stakeholders on the server", async () => {
+    renderPage(dcActivity({ contacts_detail: [] }));
+    fireEvent.click(await screen.findByRole("button", { name: "+ Add next step" }));
+    fireEvent.click(within(screen.getByTestId("add-next-step-types")).getByRole("button", { name: "Meeting" }));
+    const create = await within(coque()).findByTestId("activity-create");
+    openPicker(create);
+    const input = within(within(create).getByTestId("stakeholder-select")).getByRole("combobox");
+    fireEvent.change(input, { target: { value: "Ma" } });
+    await waitFor(() => {
+      expect(fetchedUrls.some((u) => u.startsWith("/contacts/") && u.includes(`account_id=${ACC_ID}`)
+        && u.includes("search=Ma") && u.includes("page_size=20"))).toBe(true);
+      expect(fetchedUrls.some((u) => u.startsWith(`/decision_cycles/${DC_ID}/stakeholders/`)
+        && u.includes("converted=false") && u.includes("search=Ma"))).toBe(true);
+    }, { timeout: 2000 });
+    expect(fetchedUrls.some((u) => u.startsWith("/contacts/") && u.includes("page_size=100"))).toBe(false);
   });
 });

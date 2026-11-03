@@ -1095,13 +1095,19 @@ export function useGetDCPeople(cycleId) {
  * @param {string|null} cycleId - UUID of the cycle (null → disabled)
  * @returns {Object} { stakeholders, stakeholdersLoading, stakeholdersError }
  */
-export function useGetDCStakeholders(cycleId) {
+export function useGetDCStakeholders(cycleId, { search = '', converted } = {}) {
   const { tenantId } = useAuth();
 
+  // 7d-1: optional server search (?search=) and ?converted=false (the
+  // « Add stakeholder » picker); without them, the URL is unchanged.
   const swrKey = useMemo(() => {
     if (!cycleId || !isValidUUID(cycleId)) return null;
-    return tenantKey(endpoints.cycleStakeholders(cycleId), tenantId);
-  }, [cycleId, tenantId]);
+    const params = new URLSearchParams();
+    if (converted === false) params.append('converted', 'false');
+    if (search) params.append('search', search);
+    const qs = params.toString();
+    return tenantKey(`${endpoints.cycleStakeholders(cycleId)}${qs ? `?${qs}` : ''}`, tenantId);
+  }, [cycleId, tenantId, search, converted]);
 
   const { data, isLoading, error } = useSWR(swrKey, {
     revalidateOnFocus: false,

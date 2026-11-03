@@ -90,11 +90,16 @@ vi.mock("components/AsyncSelection/AsyncUserSelect", () => ({
     );
   },
 }));
-// 7c: ONE « Add stakeholder » picker, fed by the account contacts (no DC here).
+// 7c / 7d-1: ONE « Add stakeholder » picker (the standard AsyncContactSelect),
+// fed by the account contacts (no DC here).
 vi.mock("api/businessData/contacts", async (orig) => ({
   ...(await orig()),
   useGetContacts: () => ({
-    contacts: [{ id: "c1", full_name: "Cara Contact" }, { id: "c9", full_name: "Picked Contact" }],
+    // first / last names: the standard AsyncContactSelect's label (7d-1).
+    contacts: [
+      { id: "c1", first_name: "Cara", last_name: "Contact", full_name: "Cara Contact" },
+      { id: "c9", first_name: "Picked", last_name: "Contact", full_name: "Picked Contact" },
+    ],
     contactsLoading: false,
   }),
 }));

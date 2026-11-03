@@ -49,7 +49,6 @@ import dayjs from "dayjs";
 
 // MUI
 import { useTheme } from "@mui/material/styles";
-import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -82,11 +81,9 @@ import {
 import {
   useGetDecisionCyclesByAccount,
   useGetDecisionStepsByCycle,
-  useGetDCStakeholders,
   PIPELINE_STEP_LABELS,
 } from "api/accounts/decisionCycles";
 import { useNextStepCitedContacts } from "api/signals/signals";
-import { useGetContacts } from "api/businessData/contacts";
 import { useAuth } from "hooks/useAuth";
 import { personName, personNameAndEmail } from "utils/personLabel";
 import {
@@ -101,6 +98,7 @@ import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import PersonRow from "components/display/PersonRow";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
+import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import OutcomeSelector from "components/outcomes/OutcomeSelector";
 import {
   CALLBACK_OUTCOME,
@@ -418,16 +416,6 @@ function PeopleSection({
   const [addOwner, setAddOwner] = useState(false);
   const [addInvited, setAddInvited] = useState(false);
   const [addStakeholder, setAddStakeholder] = useState(false);
-  // Étape 7c (PO): ONE « Add stakeholder » list, no distinction shown — every
-  // stakeholder of the activity's DC (converted or not) + the account
-  // contacts not yet stakeholders of it; without a DC, the account contacts.
-  const { stakeholders: cycleStakeholders } = useGetDCStakeholders(cycleId);
-  const contactsQuery = useMemo(
-    () => (accountId ? { page: 1, pageSize: 100, filters: { account_id: accountId } } : null),
-    [accountId],
-  );
-  const { contacts: accountContacts } = useGetContacts(contactsQuery);
-
   const caption = (t, withHint = false) => (
     <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
       {t}
@@ -460,28 +448,20 @@ function PeopleSection({
   const contactSuffix = (c) => c.department_name || undefined;
   const stakeholderSuffix = (x) =>
     (x.department?.name && x.department.name !== stakeholderName(x) ? x.department.name : undefined);
-  // The picker's options. The distinction stays INTERNAL: a contact or a
-  // converted stakeholder joins values.contacts (contact_ids), a non-converted
+  // The picker (7d-1): the STANDARD AsyncContactSelect — a server search on
+  // the account contacts + the NON-converted stakeholders of the activity's
+  // DC (a converted one only under its contact); no visible distinction. It
+  // stays INTERNAL: a contact joins values.contacts (contact_ids), a
   // stakeholder values.stakeholders (stakeholder_ids).
-  const pickedContactIds = new Set(contacts.map((c) => String(c.id)));
-  const pickedStakeholderIds = new Set(stakeholders.map((x) => String(x.id)));
-  const dcRows = cycleId ? cycleStakeholders || [] : [];
-  const convertedContactIds = new Set(dcRows.filter((x) => x.contact).map((x) => String(x.contact.id)));
-  const pickerOptions = [
-    ...dcRows
-      .filter((x) => (x.contact ? !pickedContactIds.has(String(x.contact.id)) : !pickedStakeholderIds.has(String(x.id))))
-      .map((x) => ({ key: `s-${x.id}`, label: stakeholderName(x), stakeholder: x })),
-    ...(accountContacts || [])
-      .filter((c) => !convertedContactIds.has(String(c.id)) && !pickedContactIds.has(String(c.id)))
-      .map((c) => ({ key: `c-${c.id}`, label: personName(c), contact: c })),
-  ].sort((a, b) => a.label.localeCompare(b.label));
-  const addPicked = (opt) => {
-    if (!opt) return;
-    const contact = opt.contact || opt.stakeholder?.contact;
-    if (contact) {
-      if (!pickedContactIds.has(String(contact.id))) setFieldValue("contacts", [...contacts, contact]);
-    } else if (!pickedStakeholderIds.has(String(opt.stakeholder.id))) {
-      setFieldValue("stakeholders", [...stakeholders, opt.stakeholder]);
+  const addPicked = (picked) => {
+    if (!picked) return;
+    const { _kind: kind, ...row } = picked;
+    if (kind === "stakeholder") {
+      if (!stakeholders.some((y) => String(y.id) === String(row.id))) {
+        setFieldValue("stakeholders", [...stakeholders, row]);
+      }
+    } else if (!contacts.some((c) => String(c.id) === String(row.id))) {
+      setFieldValue("contacts", [...contacts, row]);
     }
   };
   // The owner: « First Last · email » (the shared label, 5.9b).
@@ -604,25 +584,20 @@ function PeopleSection({
               )),
             ]}
         {!locked && addStakeholder && (
-          <Autocomplete
+          <AsyncContactSelect
             data-testid="stakeholder-select"
-            options={pickerOptions}
-            getOptionLabel={(o) => o.label}
-            isOptionEqualToValue={(a, b) => a.key === b.key}
-            renderOption={(props, o) => (
-              <li {...props} key={o.key}>
-                {o.label}
-              </li>
-            )}
             value={null}
-            openOnFocus
+            stakeholdersCycleId={cycleId || null}
+            filters={{ account_id: accountId }}
+            excludeIds={[...contacts.map((c) => c.id), ...stakeholders.map((x) => x.id)]}
             onChange={(_event, picked) => {
               addPicked(picked);
               setAddStakeholder(false);
             }}
-            renderInput={(params) => (
-              <TextField {...params} size="small" placeholder="Search stakeholders…" autoFocus />
-            )}
+            label=""
+            placeholder="Search stakeholders…"
+            autoFocus
+            openOnFocus
             noOptionsText="No stakeholder to add"
           />
         )}

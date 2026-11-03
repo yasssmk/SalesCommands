@@ -161,3 +161,35 @@ def test_a_name_with_a_contact_keeps_the_contact(authed_api_a, account, user_a):
     row = _cited(authed_api_a, ns)['Jane Doe']
     assert row['contact']['id'] == str(jane.id)
     assert row['stakeholder'] is None
+
+
+# =============================================================================
+# 7d-1 — the « Add stakeholder » picker searches the server
+# =============================================================================
+
+def test_the_picker_reads_the_non_converted_stakeholders_only(authed_api_a, account, user_a):
+    """?converted=false: a converted stakeholder is offered once, under its
+    contact (the contacts search), never as a stakeholder."""
+    cycle = _cycle(account, user_a)
+    marc = _stakeholder(cycle, user_a, full_name='Marc')
+    _stakeholder(cycle, user_a, contact=_contact(account, user_a, 'Paul', 'X'))
+    r = authed_api_a.get(f'/decision_cycles/{cycle.id}/stakeholders/?converted=false')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    assert [s['id'] for s in r.json()['data']] == [str(marc.id)]
+
+
+def test_the_picker_searches_the_stakeholders_on_the_server(authed_api_a, account, user_a):
+    """?search=: case insensitive on the name, or the department (the
+    contacts search's rule — icontains, accents as typed)."""
+    from app_modules.core_modules.models import StandardDepartment
+    finance, _ = StandardDepartment.objects.get_or_create(name='Finance')
+    cycle = _cycle(account, user_a)
+    zoe = _stakeholder(cycle, user_a, full_name='Zoé Martin')
+    _stakeholder(cycle, user_a, full_name='Marc')
+    fin = _stakeholder(cycle, user_a, department=finance)
+    ids = lambda q: {s['id'] for s in authed_api_a.get(
+        f'/decision_cycles/{cycle.id}/stakeholders/?converted=false&search={q}').json()['data']}
+    assert ids('ZOÉ') == {str(zoe.id)}
+    assert ids('MART') == {str(zoe.id)}
+    assert ids('fin') == {str(fin.id)}
+    assert len(ids('')) == 3
