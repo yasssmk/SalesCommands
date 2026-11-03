@@ -914,16 +914,17 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
     def stakeholders(self, request, pk=None):
         """
         GET /decision-cycles/{id}/stakeholders/ — sprint « Cycle de vie des
-        contacts », étape 7: the NON-converted stakeholders of the cycle
-        (contact NULL), the ones an activity of the cycle may take as
-        participants (Activity.stakeholders). A converted one is a contact.
+        contacts », étapes 7 / 7c: EVERY stakeholder of the cycle, the
+        activity drawer's single « Add stakeholder » picker. A converted one
+        (is_linked, with its `contact`) is taken by an activity as that
+        contact (contact_ids); a non-converted one as a stakeholder
+        (stakeholder_ids) — the distinction stays internal.
         """
         from app_modules.activities.serializers import ActivityStakeholderSerializer
         instance = self.get_object()
         rows = (
             instance.stakeholders
-            .filter(contact__isnull=True)
-            .select_related('department')
+            .select_related('department', 'contact', 'contact__standard_department')
             .order_by('full_name_normalized', 'created_at')
         )
         return Response({

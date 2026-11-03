@@ -95,6 +95,9 @@ class ActivityStakeholderSerializer(serializers.Serializer):
     department = serializers.SerializerMethodField()
     is_linked = serializers.SerializerMethodField()
     decision_cycle = serializers.UUIDField(source='decision_cycle_id', read_only=True)
+    # Étape 7c: the contact of a converted stakeholder (None otherwise) — the
+    # drawer takes a converted stakeholder as that contact.
+    contact = serializers.SerializerMethodField()
 
     def get_department(self, obj):
         d = obj.department
@@ -102,6 +105,9 @@ class ActivityStakeholderSerializer(serializers.Serializer):
 
     def get_is_linked(self, obj):
         return bool(obj.contact_id)
+
+    def get_contact(self, obj):
+        return ActivityContactSerializer(obj.contact).data if obj.contact_id else None
 
 
 class ActivityUserSerializer(serializers.ModelSerializer):

@@ -1,11 +1,12 @@
 # backend/tests/decision_cycles/test_dc_stakeholders_and_cited.py
 """
-Sprint « Cycle de vie des contacts », étape 7 (3), backend side of the
-activity drawer's single « Stakeholders » list:
+Sprint « Cycle de vie des contacts », étapes 7 (3) / 7c, backend side of
+the activity drawer's single « Add stakeholder » picker:
 
-  * GET /decision_cycles/{id}/stakeholders/ — the NON-converted stakeholders
-    of the cycle (contact NULL), the ones an activity may take as
-    participants: display_name, department, is_linked False, decision_cycle;
+  * GET /decision_cycles/{id}/stakeholders/ — EVERY stakeholder of the cycle
+    (7c), converted ones with their `contact` (taken by an activity as that
+    contact) and non-converted ones (taken as stakeholders): display_name,
+    department, is_linked, contact, decision_cycle;
   * GET /module-signals/next-steps/{id}/cited-contacts/ — each cited name
     comes with its account contact (as before) OR, without contact, with the
     non-converted stakeholder of the next step's cycle it designates: the
@@ -84,22 +85,30 @@ def _cited(api, ns):
 # DC stakeholders endpoint
 # =============================================================================
 
-def test_the_cycle_lists_its_non_converted_stakeholders(authed_api_a, account, user_a):
+def test_the_cycle_lists_all_its_stakeholders_converted_with_their_contact(
+    authed_api_a, account, user_a,
+):
+    """Étape 7c (PO): the drawer's ONE « Add stakeholder » picker offers every
+    stakeholder of the DC — converted (sent as its contact) or not."""
     from app_modules.core_modules.models import StandardDepartment
     sales, _ = StandardDepartment.objects.get_or_create(name='Sales')
     cycle = _cycle(account, user_a)
     marc = _stakeholder(cycle, user_a, full_name='Marc')
     dept = _stakeholder(cycle, user_a, department=sales)
-    _stakeholder(cycle, user_a, contact=_contact(account, user_a, 'Paul', 'X'))     # converted
+    paul_contact = _contact(account, user_a, 'Paul', 'X')
+    paul = _stakeholder(cycle, user_a, contact=paul_contact)                      # converted
     _stakeholder(_cycle(account, user_a, 'Other'), user_a, full_name='Elsewhere')  # other cycle
     r = authed_api_a.get(f'/decision_cycles/{cycle.id}/stakeholders/')
     assert r.status_code == status.HTTP_200_OK, r.content
     rows = {s['id']: s for s in r.json()['data']}
-    assert set(rows) == {str(marc.id), str(dept.id)}
+    assert set(rows) == {str(marc.id), str(dept.id), str(paul.id)}
     assert rows[str(marc.id)]['display_name'] == 'Marc'
-    assert rows[str(marc.id)]['is_linked'] is False
+    assert rows[str(marc.id)]['is_linked'] is False and rows[str(marc.id)]['contact'] is None
     assert rows[str(marc.id)]['decision_cycle'] == str(cycle.id)
     assert rows[str(dept.id)]['department']['id'] == sales.id
+    assert rows[str(paul.id)]['is_linked'] is True
+    assert rows[str(paul.id)]['contact']['id'] == str(paul_contact.id)
+    assert rows[str(paul.id)]['display_name'] == 'Paul X'
 
 
 def test_another_tenant_cannot_read_them(authed_api_b, account, user_a):
