@@ -42,6 +42,7 @@ import Typography from "@mui/material/Typography";
 
 // Icons
 import InfoCircleOutlined from "@ant-design/icons/InfoCircleOutlined";
+import WarningOutlined from "@ant-design/icons/WarningOutlined";
 import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 
 // Primitives
@@ -49,7 +50,7 @@ import Surface from "components/display/Surface";
 import LabeledValue from "components/display/LabeledValue";
 import PersonRow from "components/display/PersonRow";
 import { formatShortDate } from "components/signals/SignalLine";
-import { getActivityTypeIcon } from "utils/activityTypes";
+import { getActivityTypeIcon, PEOPLE_ACTIVITY_TYPES } from "utils/activityTypes";
 import { ACTIVITY_OVERDUE_LABEL, ACTIVITY_OVERDUE_CHIP_COLORS } from "api/accounts/activities";
 
 // Drawer — clicking a person opens its read-only fiche in the coque
@@ -315,6 +316,11 @@ export default function ActivityContextSection({ activity }) {
   const ownerLabel = personNameAndEmail(owner);
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
+  // Étape 7: the SAME list as the drawer — the contacts + the non-converted
+  // DC stakeholders; the « no way to contact » alert for the types with
+  // people only (PEOPLE_ACTIVITY_TYPES).
+  const stakeholders = activity.stakeholders_detail || [];
+  const alertsReachability = PEOPLE_ACTIVITY_TYPES.has(activity.activity_type);
   // A conversation already shown by the provenance line (its source
   // activity) is not repeated as « From next step » (5.9b).
   const provenanceActivityId = activity.source_activity_detail?.id || null;
@@ -405,22 +411,58 @@ export default function ActivityContextSection({ activity }) {
 
           <Box>
             <ColumnHeader label="External contacts" />
-            {contacts.length > 0 ? (
+            {contacts.length > 0 || stakeholders.length > 0 ? (
               <Stack spacing={0.5}>
                 {contacts.map((c) => (
-                  <PersonRow
-                    key={c.id}
-                    interactive
-                    onClick={() =>
-                      openDrawer(
-                        <ContactDrawerContent contactId={c.id} activity={activity} />,
-                        { title: "Contact" },
-                      )
-                    }
-                    name={personName(c)}
-                    suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
-                  />
+                  <Box key={c.id}>
+                    <PersonRow
+                      interactive
+                      onClick={() =>
+                        openDrawer(
+                          <ContactDrawerContent contactId={c.id} activity={activity} />,
+                          { title: "Contact" },
+                        )
+                      }
+                      name={personName(c)}
+                      suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
+                    />
+                    {/* Étape 7: no email nor phone (server-side is_reachable) —
+                        information in orange, never an error; types with
+                        people only. */}
+                    {alertsReachability && c.is_reachable === false && (
+                      <Stack
+                        direction="row"
+                        spacing={0.5}
+                        alignItems="center"
+                        data-testid={`ctx-no-contact-means-${c.id}`}
+                        sx={{ color: theme.palette.warning.main }}
+                      >
+                        <WarningOutlined style={{ fontSize: theme.iconSizes.sm }} />
+                        <Typography variant="caption" sx={{ color: "inherit" }}>
+                          No email or phone
+                        </Typography>
+                      </Stack>
+                    )}
+                  </Box>
                 ))}
+                {stakeholders.map((x) => {
+                  // A department-only stakeholder: the department only.
+                  const departmentOnly = !x.full_name && Boolean(x.department);
+                  return (
+                    <Box key={x.id} data-testid={`ctx-stakeholder-${x.id}`}>
+                      {departmentOnly ? (
+                        <Typography variant="body2" sx={{ fontWeight: "medium" }}>
+                          {x.department.name}
+                        </Typography>
+                      ) : (
+                        <PersonRow
+                          name={x.display_name || x.full_name}
+                          suffix={["Not yet a contact", x.department?.name].filter(Boolean).join(" · ")}
+                        />
+                      )}
+                    </Box>
+                  );
+                })}
               </Stack>
             ) : (
               <Typography variant="body2" sx={emptyItalic}>
