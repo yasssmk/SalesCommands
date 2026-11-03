@@ -538,12 +538,13 @@ function PeopleSection({
         ))}
       </Box>
 
-      {/* Stakeholders — ONE list (étape 7): the account contacts + the
-          non-converted stakeholders of the activity's DC, each marked
-          « Contact » / « Not yet a contact ». At least one participant for
-          PEOPLE_ACTIVITY_TYPES (Formik + the server). */}
+      {/* External team — ONE list (étapes 7 / 7c): the account contacts +
+          the non-converted stakeholders of the activity's DC, no distinction
+          shown. Headed « External team » as the Context column (PO, after
+          7d). At least one participant for PEOPLE_ACTIVITY_TYPES (Formik +
+          the server). */}
       <Box data-testid="stakeholders-list">
-        {caption("Stakeholders")}
+        {caption("External team")}
         {locked
           ? (contacts.length || stakeholders.length
               ? [

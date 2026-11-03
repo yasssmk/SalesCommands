@@ -142,7 +142,9 @@ describe("Edit activity — ONE « Add stakeholder », no distinction shown (7c)
     expect(within(people()).getByTestId("add-stakeholder")).toBeInTheDocument();
     expect(within(people()).queryByTestId("add-contact")).toBeNull();
     expect(within(people()).queryByTestId("add-inline-contact")).toBeNull();
-    expect(within(people()).getByText("Stakeholders")).toBeInTheDocument();
+    // PO (after 7d): the list is headed « External team », as in Context.
+    expect(within(people()).getByText("External team")).toBeInTheDocument();
+    expect(within(people()).queryByText("Stakeholders")).toBeNull();
   });
 
   it("the list (A): the DC's stakeholders (converted or not) + the account contacts not yet stakeholders", () => {

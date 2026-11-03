@@ -202,7 +202,9 @@ describe("Edit activity on the page — ONE « Add stakeholder », no distinctio
     fireEvent.click(within(screen.getByTestId("add-next-step-types")).getByRole("button", { name: "Meeting" }));
     const create = await within(coque()).findByTestId("activity-create");
     const list = within(create).getByTestId("stakeholders-list");
-    expect(within(list).getByText("Stakeholders")).toBeInTheDocument();
+    // PO (after 7d): « External team », homogeneous with the Context column.
+    expect(within(list).getByText("External team")).toBeInTheDocument();
+    expect(within(list).queryByText("Stakeholders")).toBeNull();
     expect(within(create).queryByTestId("add-contact")).toBeNull();
     expect(within(create).queryByTestId("add-inline-contact")).toBeNull();
     openPicker(create);
