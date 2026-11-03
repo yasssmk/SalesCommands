@@ -154,6 +154,11 @@ const validationSchema = Yup.object(
   DATE_PAIR,
 );
 
+// 8c-3 — the conversion's « New cycle » choice in the cycle selector (the
+// InlineCycleForm below), never sent.
+const NEW_CYCLE = "__new__";
+const isExistingCycle = (cycle) => Boolean(cycle) && cycle !== NEW_CYCLE;
+
 // Creation: the owner is the creator (read-only, never sent); at least one
 // participant on PEOPLE_ACTIVITY_TYPES; a step once a cycle is chosen.
 const createValidationSchema = Yup.object(
@@ -161,7 +166,7 @@ const createValidationSchema = Yup.object(
     ...FIELD_RULES,
     contacts: participantsRule,
     decision_step_id: Yup.string().when("decision_cycle_id", {
-      is: (cycle) => Boolean(cycle),
+      is: isExistingCycle,
       then: (schema) => schema.required("Please select a step for this cycle"),
       otherwise: (schema) => schema.nullable(),
     }),
@@ -169,11 +174,16 @@ const createValidationSchema = Yup.object(
   DATE_PAIR,
 );
 
-// Conversion (5.13, "Start Decision Cycle"): the cycle is ALWAYS a NEW one —
-// created inline, the only way the backend stamps its source_campaign (the
-// DECISION_CYCLES objective) — and Save waits for it.
+// Conversion (5.13, "Start Decision Cycle"; 8c-3 revises « always a NEW
+// one »): an EXISTING open cycle of the account (its step required, as
+// above — source_campaign NOT stamped), or a NEW one created inline (the only
+// way the backend stamps its source_campaign, the DECISION_CYCLES objective)
+// — Save waits for the choice.
 const conversionValidationSchema = createValidationSchema.shape({
-  inline_cycle: Yup.object().nullable().required("A new decision cycle is required"),
+  inline_cycle: Yup.object().nullable().when("decision_cycle_id", {
+    is: (cycle) => !isExistingCycle(cycle),
+    then: (schema) => schema.required("A new decision cycle is required"),
+  }),
 });
 
 // ==============================|| HELPERS ||============================== //
@@ -781,16 +791,26 @@ function ActivityForm({
       stakeholder_ids: (values.stakeholders || []).map((x) => x.id),
       invited_user_ids: (values.invited || []).map((u) => u.id),
       account_id: accountId,
-      decision_cycle_id: values.decision_cycle_id || null,
+      decision_cycle_id: isExistingCycle(values.decision_cycle_id) ? values.decision_cycle_id : null,
       decision_step_id: values.decision_step_id || null,
     };
     if (nextStep?.id) payload.next_step_signal_id = nextStep.id;
     // The activity this one is created FROM (5.13: a campaign activity
     // converted into a Decision Cycle) — both creation paths carry it.
     if (sourceActivityId) payload.source_activity_id = sourceActivityId;
-    // Conversion: always create-with-entities — the new cycle (its name) and
-    // its starting step; the backend creates the cycle, stamps its
+    // Conversion: always create-with-entities. 8c-3 — an existing cycle: the
+    // activity in it (payload decision_cycle_id + step + source_activity_id),
+    // no inline cycle, source_campaign untouched. Else the new cycle (its
+    // name) and its starting step; the backend creates the cycle, stamps its
     // source_campaign and attaches the activity to that step.
+    if (conversion && isExistingCycle(values.decision_cycle_id)) {
+      return createActivityWithEntities({
+        activity: payload,
+        inline_contact: null,
+        inline_cycle: null,
+        inline_step_stage: null,
+      });
+    }
     if (conversion) {
       return createActivityWithEntities({
         activity: payload,
@@ -892,6 +912,13 @@ function ActivityForm({
     () => (cycles || []).map((c) => ({ value: String(c.id), label: c.name })),
     [cycles],
   );
+  // 8c-3 — conversion: the account's OPEN cycles (no outcome — the pattern of
+  // DecisionCycleCardsList / AddToCampaignModal) FIRST, then « New cycle ».
+  const openCycleOptions = useMemo(
+    () => (cycles || []).filter((c) => !c.outcome).map((c) => ({ value: String(c.id), label: c.name })),
+    [cycles],
+  );
+  const conversionOffersCycles = isCreate && conversion && openCycleOptions.length > 0;
   const stepOptions = useMemo(
     () =>
       [...(steps || [])]
@@ -977,10 +1004,44 @@ function ActivityForm({
             </Box>
           )}
 
-          {/* Conversion (5.13): a NEW decision cycle only — the inline cycle form
+          {/* Conversion (8c-3): the account's open cycles first, then « New
+              cycle » — the drawer's cycle and step selectors (below, reused);
+              no open cycle: the new cycle directly, as before. */}
+          {conversionOffersCycles && (
+            <>
+              <InlineEditableValue
+                name="decision_cycle"
+                label="Decision cycle"
+                type="select"
+                options={[...openCycleOptions, { value: NEW_CYCLE, label: "New cycle" }]}
+                value={values.decision_cycle_id}
+                onChange={(v) => {
+                  setFieldValue("decision_cycle_id", v);
+                  setFieldValue("decision_step_id", "");
+                }}
+                placeholder="Choose a decision cycle"
+              />
+              {isExistingCycle(values.decision_cycle_id) && (
+                <InlineEditableValue
+                  name="decision_step"
+                  label="DC step"
+                  type="select"
+                  options={stepOptions}
+                  value={values.decision_step_id}
+                  onChange={(v) => setFieldValue("decision_step_id", v)}
+                  placeholder="No step"
+                  error={Boolean(errors.decision_step_id)}
+                  helperText={errors.decision_step_id}
+                />
+              )}
+            </>
+          )}
+
+          {/* Conversion (5.13): a NEW decision cycle — the inline cycle form
               (name + starting step, in pills), then the cycle as a removable
               row (the inline contact's pattern). */}
-          {isCreate && conversion && (
+          {isCreate && conversion &&
+            (!conversionOffersCycles || values.decision_cycle_id === NEW_CYCLE) && (
             <Box data-testid="conversion-cycle">
               <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
                 Decision cycle

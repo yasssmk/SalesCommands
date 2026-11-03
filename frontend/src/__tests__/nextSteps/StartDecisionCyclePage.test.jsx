@@ -106,9 +106,21 @@ const BORN = {
 };
 
 let serverActivity;
+// 8c-3: the account's cycles (by-account) and the steps of a cycle.
+let accountCycles = [];
+const DC_ALPHA = "44444444-4444-4444-8444-444444444441";
+const STEP_ALPHA = "55555555-5555-4555-8555-555555555551";
 const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
+  if (url.startsWith(`/decision_cycles/by-account/${ACC_ID}`)) {
+    return Promise.resolve({ data: { results: accountCycles, count: accountCycles.length } });
+  }
+  if (url.startsWith("/decision_cycles/steps/") && url.includes(DC_ALPHA)) {
+    return Promise.resolve({ data: { results: [
+      { id: STEP_ALPHA, name: "Qualification", order: 1, is_current: true, cycle: DC_ALPHA },
+    ], count: 1 } });
+  }
   return Promise.resolve({ data: { results: [], count: 0 } });
 };
 
@@ -128,6 +140,7 @@ const coque = () => screen.getByTestId("coque-panel");
 
 beforeEach(() => {
   serverActivity = campaignActivity;
+  accountCycles = [];
   api.post.mockImplementation(async () => {
     serverActivity = { ...campaignActivity, next_planned_step: BORN };
     return { success: true, data: { data: { activity: { id: "act-born" } } } };
@@ -191,5 +204,97 @@ describe("Start Decision Cycle — the pill, the drawer, the born DC (5.13.3)", 
     expect(line.textContent).toBe("In decision cycle Deal Acme › Discovery meeting · Technical Fit · 12 Nov 2026");
     // The coque closes (its Collapse exit transition, then unmounted).
     await waitFor(() => expect(screen.queryByTestId("coque-panel")).toBeNull());
+  });
+});
+
+// 8c-3 (PO, revises 5.13 « always a new DC »): in conversion mode the drawer
+// proposes the account's OPEN cycles FIRST, then « New cycle » (the current
+// InlineCycleForm) — the drawer's own cycle selector (InlineEditableValue
+// decision_cycle) and step selector, reused. No open cycle: unchanged.
+describe("Start Decision Cycle — an existing open DC proposed first (8c-3)", () => {
+  // The drawer read afresh at each query (the coque re-renders it as the
+  // account's cycles arrive).
+  const drawerNow = () => within(coque()).getByTestId("activity-create");
+  const openStart = async () => {
+    fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
+    return { get el() { return drawerNow(); } };
+  };
+  const findInDrawer = (testId) => waitFor(() => within(drawerNow()).getByTestId(testId));
+  const pickCycle = async (drawer, label) => {
+    fireEvent.click(await findInDrawer("inline-read-decision_cycle"));
+    fireEvent.click(await screen.findByRole("option", { name: label }));
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  };
+  const fillTitleAndDate = (drawer) => {
+    fireEvent.click(within(drawer.el).getByTestId("inline-read-title"));
+    fireEvent.change(within(drawer.el).getByTestId("inline-input-title"), { target: { value: "Discovery meeting" } });
+    fireEvent.click(within(drawer.el).getByTestId("inline-read-date"));
+    fireEvent.change(screen.getByLabelText("Scheduled date"), { target: { value: "2026-11-12" } });
+    fireEvent.click(screen.getByTestId("date-confirm"));
+  };
+
+  beforeEach(async () => {
+    accountCycles = [
+      { id: DC_ALPHA, name: "Deal Alpha", outcome: null },
+      { id: "44444444-4444-4444-8444-444444444449", name: "Won deal", outcome: "WON" },
+    ];
+    // The account's cycles already in the default SWR cache (the real hook's
+    // key): the drawer has them at mount, deterministic.
+    await swrMutate([`/decision_cycles/by-account/${ACC_ID}/`, "t-1"],
+                    { data: { results: accountCycles, count: accountCycles.length } },
+                    { revalidate: false });
+  });
+
+  it("the open cycles first, then « New cycle » (a closed one is not offered)", async () => {
+    renderPage();
+    const drawer = await openStart();
+    fireEvent.click(await findInDrawer("inline-read-decision_cycle"));
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(options).toEqual(["Deal Alpha", "New cycle"]);
+  });
+
+  it("an existing cycle: the activity is created in it, from the campaign activity, the CTA disappears", async () => {
+    api.post.mockImplementation(async () => {
+      serverActivity = { ...campaignActivity, next_planned_step: {
+        ...BORN, decision_cycle: { id: DC_ALPHA, name: "Deal Alpha" } } };
+      return { success: true, data: { data: { activity: { id: "act-born" } } } };
+    });
+    renderPage();
+    const drawer = await openStart();
+    fillTitleAndDate(drawer);
+    await pickCycle(drawer, "Deal Alpha");
+    expect(await findInDrawer("inline-read-decision_step")).toHaveTextContent("Qualification");
+    expect(within(drawer.el).queryByPlaceholderText("Cycle name *")).toBeNull();
+    const save = within(coque()).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    const [url, body] = api.post.mock.calls[0];
+    expect(url).toMatch(/create-with-entities/);
+    expect(body.activity).toMatchObject({
+      decision_cycle_id: DC_ALPHA, decision_step_id: STEP_ALPHA, source_activity_id: ACT_ID,
+    });
+    expect(body.inline_cycle).toBeUndefined();          // no inline cycle sent (the client drops it)
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Start Decision Cycle" })).toBeNull());
+  });
+
+  it("« New cycle »: the current InlineCycleForm, the payload as before", async () => {
+    renderPage();
+    const drawer = await openStart();
+    fillTitleAndDate(drawer);
+    await pickCycle(drawer, "New cycle");
+    const cycle = within(drawer.el).getByTestId("conversion-cycle");
+    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    await within(cycle).findByText("Deal Acme");
+    const save = within(coque()).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    const body = api.post.mock.calls[0][1];
+    expect(body.inline_cycle).toEqual({ name: "Deal Acme" });
+    expect(body.activity.decision_cycle_id).toBeNull();
+    expect(body.activity.source_activity_id).toBe(ACT_ID);
   });
 });
