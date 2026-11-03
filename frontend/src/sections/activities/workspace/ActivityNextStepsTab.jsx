@@ -194,6 +194,12 @@ export default function ActivityNextStepsTab({
   // converts: the conversion mode of 5.13, from this activity, a NEW cycle
   // inline. Otherwise (a manual next step): the standard behaviour — the list
   // refreshes and the coque closes.
+  // The origin activity's step (7c) — the detail payload carries its id, the
+  // list payload an object.
+  const originStepId =
+    activity?.decision_step_detail?.id ??
+    (typeof activity?.decision_step === "object" ? activity?.decision_step?.id : activity?.decision_step) ??
+    null;
   const openCreate = useCallback(
     ({ nextStep = null, activityType, onCancel } = {}) => {
       const converts = !cycleId;
@@ -207,6 +213,8 @@ export default function ActivityNextStepsTab({
           initialContacts={converts ? activity?.contacts_detail || [] : []}
           nextStep={nextStep}
           activityType={activityType}
+          // 7c: the step default falls back on the origin activity's step.
+          originStepId={originStepId}
           onCreated={() => {
             if (nextStep) {
               showFromServer(nextStep);
@@ -221,7 +229,7 @@ export default function ActivityNextStepsTab({
         { title: converts ? "Start Decision Cycle" : "New activity" },
       );
     },
-    [openDrawer, accountId, cycleId, activityId, activity?.contacts_detail, showFromServer, mutateAll, mutateCounts, closeDrawer],
+    [openDrawer, accountId, cycleId, activityId, activity?.contacts_detail, originStepId, showFromServer, mutateAll, mutateCounts, closeDrawer],
   );
 
   // The validation flow (5.6), in the coque: step 1 = Create or Link. Opened by
