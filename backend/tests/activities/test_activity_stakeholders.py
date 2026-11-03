@@ -173,6 +173,24 @@ def test_contacts_carry_is_reachable(authed_api_a, account, user_a):
                      str(none.id): False, str(linkedin.id): False}
 
 
+def test_stakeholders_carry_is_reachable_a_non_converted_one_never_is(authed_api_a, account, user_a):
+    """8b-2: the « No email or phone » alert covers EVERY participant — a
+    non-converted stakeholder has no email nor phone: is_reachable False,
+    computed server-side on stakeholders_detail (and on the DC stakeholders
+    endpoint, the same serializer: a converted one reads its contact)."""
+    cycle = _cycle(account, user_a)
+    marc = _stakeholder(cycle, user_a, full_name='Marc')
+    pk = authed_api_a.post(URL, _payload(account, cycle, stakeholder_ids=[marc.id]),
+                           format='json').json()['data']['id']
+    rows = _detail(authed_api_a, pk)['stakeholders_detail']
+    assert [(r['id'], r['is_reachable']) for r in rows] == [(str(marc.id), False)]
+    mail = _contact(account, user_a, 'Mail', 'Only', email='m@x.io')
+    paul = _stakeholder(cycle, user_a, contact=mail)
+    listed = {r['id']: r['is_reachable'] for r in
+              authed_api_a.get(f'/decision_cycles/{cycle.id}/stakeholders/').json()['data']}
+    assert listed == {str(marc.id): False, str(paul.id): True}
+
+
 def test_changing_the_cycle_drops_the_stakeholders_of_the_old_one(authed_api_a, account, user_a):
     """A stakeholder belongs to ONE cycle: an activity moved to another cycle
     (without stakeholder_ids) keeps its contacts, loses the old cycle's

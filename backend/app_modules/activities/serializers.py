@@ -98,6 +98,10 @@ class ActivityStakeholderSerializer(serializers.Serializer):
     # Étape 7c: the contact of a converted stakeholder (None otherwise) — the
     # drawer takes a converted stakeholder as that contact.
     contact = serializers.SerializerMethodField()
+    # 8b-2: the « No email or phone » rule for every participant — a
+    # non-converted stakeholder has neither (False); a converted one reads
+    # its contact (Contact.has_email_or_phone, as ActivityContactSerializer).
+    is_reachable = serializers.SerializerMethodField()
 
     def get_department(self, obj):
         d = obj.department
@@ -108,6 +112,9 @@ class ActivityStakeholderSerializer(serializers.Serializer):
 
     def get_contact(self, obj):
         return ActivityContactSerializer(obj.contact).data if obj.contact_id else None
+
+    def get_is_reachable(self, obj):
+        return bool(obj.contact_id and obj.contact.has_email_or_phone)
 
 
 class ActivityUserSerializer(serializers.ModelSerializer):

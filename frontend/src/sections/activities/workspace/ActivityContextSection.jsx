@@ -321,6 +321,25 @@ export default function ActivityContextSection({ activity }) {
   // people only (PEOPLE_ACTIVITY_TYPES).
   const stakeholders = activity.stakeholders_detail || [];
   const alertsReachability = PEOPLE_ACTIVITY_TYPES.has(activity.activity_type);
+  // Étape 7 / 8b-2: no email nor phone (server-side is_reachable) — ONE
+  // alert, the same for every participant (a contact or a non-converted
+  // stakeholder, no distinction): information in orange, never an error;
+  // types with people only.
+  const reachabilityAlert = (person) =>
+    alertsReachability && person.is_reachable === false ? (
+      <Stack
+        direction="row"
+        spacing={0.5}
+        alignItems="center"
+        data-testid={`ctx-no-contact-means-${person.id}`}
+        sx={{ color: theme.palette.warning.main }}
+      >
+        <WarningOutlined style={{ fontSize: theme.iconSizes.sm }} />
+        <Typography variant="caption" sx={{ color: "inherit" }}>
+          No email or phone
+        </Typography>
+      </Stack>
+    ) : null;
   // A conversation already shown by the provenance line (its source
   // activity) is not repeated as « From next step » (5.9b).
   const provenanceActivityId = activity.source_activity_detail?.id || null;
@@ -429,23 +448,7 @@ export default function ActivityContextSection({ activity }) {
                       name={personName(c)}
                       suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
                     />
-                    {/* Étape 7: no email nor phone (server-side is_reachable) —
-                        information in orange, never an error; types with
-                        people only. */}
-                    {alertsReachability && c.is_reachable === false && (
-                      <Stack
-                        direction="row"
-                        spacing={0.5}
-                        alignItems="center"
-                        data-testid={`ctx-no-contact-means-${c.id}`}
-                        sx={{ color: theme.palette.warning.main }}
-                      >
-                        <WarningOutlined style={{ fontSize: theme.iconSizes.sm }} />
-                        <Typography variant="caption" sx={{ color: "inherit" }}>
-                          No email or phone
-                        </Typography>
-                      </Stack>
-                    )}
+                    {reachabilityAlert(c)}
                   </Box>
                 ))}
                 {stakeholders.map((x) => {
@@ -463,6 +466,7 @@ export default function ActivityContextSection({ activity }) {
                           suffix={x.department?.name || undefined}
                         />
                       )}
+                      {reachabilityAlert(x)}
                     </Box>
                   );
                 })}

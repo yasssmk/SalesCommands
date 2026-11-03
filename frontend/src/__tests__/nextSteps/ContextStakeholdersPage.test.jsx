@@ -148,6 +148,33 @@ describe("Context — the « no way to contact » alert (étape 7)", () => {
     expect(within(column()).getByTestId("ctx-no-contact-means-c-2")).toBeInTheDocument();
   });
 
+  // 8b-2 (PO): EVERY participant without email nor phone — a contact OR a
+  // non-converted stakeholder (is_reachable false, server-side): ONE message,
+  // the same for both, the same component, no distinction.
+  it("a non-converted stakeholder carries the SAME alert as a contact", () => {
+    mockActivity = activityWith(undefined, {
+      contacts_detail: [NOWAY],
+      stakeholders_detail: [{ ...MARC, is_reachable: false }, { ...FINANCE, is_reachable: false }],
+    });
+    render(<ActivityWorkspacePage />);
+    const contactAlert = within(column()).getByTestId("ctx-no-contact-means-c-2");
+    for (const id of ["st-marc", "st-fin"]) {
+      const alert = within(column()).getByTestId(`ctx-no-contact-means-${id}`);
+      expect(alert.textContent).toBe(contactAlert.textContent);
+      expect(alert.textContent).toBe(MENTION);
+      expect(alert).toHaveStyle({ color: testTheme.palette.warning.main });
+      expect(alert.innerHTML).toBe(contactAlert.innerHTML);   // the same component
+    }
+  });
+
+  it("a stakeholder in a TASK carries no alert", () => {
+    mockActivity = activityWith(undefined, {
+      activity_type: "TASK", contacts_detail: [], stakeholders_detail: [{ ...MARC, is_reachable: false }],
+    });
+    render(<ActivityWorkspacePage />);
+    expect(within(column()).queryByTestId("ctx-no-contact-means-st-marc")).toBeNull();
+  });
+
   it.each(["TASK", "LINKEDIN", "OTHER"])("a %s carries no alert", (type) => {
     mockActivity = activityWith(undefined, { activity_type: type, contacts_detail: [NOWAY] });
     render(<ActivityWorkspacePage />);
