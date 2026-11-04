@@ -233,7 +233,7 @@ describe("« + Add next step » from a DC activity — the DC pre-filled, unchan
     const section = within(create).getByTestId("activity-cycle-section");
     expect(await within(section).findByText("Deal Acme")).toBeInTheDocument();
     expect(within(section).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
-    expect(within(section).queryByRole("button", { name: /Create new cycle/ })).toBeNull();
+    expect(within(section).queryByRole("button", { name: "New cycle" })).toBeNull();
   });
 });
 

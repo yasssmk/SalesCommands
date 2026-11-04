@@ -926,7 +926,7 @@ function ActivityForm({
 
   // Creation: the account's cycles (the label of a cycle pre-filled from a DC
   // activity), and the chosen cycle's steps.
-  const { cycles } = useGetDecisionCyclesByAccount(isCreate ? accountId : null);
+  const { cycles, cyclesLoading } = useGetDecisionCyclesByAccount(isCreate ? accountId : null);
   // 8d-2: the cycle chosen in section 1 (an object for the Async select; a
   // pre-filled id gets its name from the account's cycles).
   const currentCycle = values.decision_cycle
@@ -934,8 +934,24 @@ function ActivityForm({
       ? { id: values.decision_cycle_id,
           name: (cycles || []).find((c) => String(c.id) === String(values.decision_cycle_id))?.name || "" }
       : null);
-  // Conversion: the InlineCycleForm opened by « Create new cycle ».
-  const [showInlineCycle, setShowInlineCycle] = useState(false);
+  // 8f-2 — conversion: the « Existing cycle / New cycle » mode. Until the
+  // user picks one: Existing, New when the account has no open cycle (the
+  // `!c.outcome` rule of DecisionCycleCardsList / AddToCampaignModal).
+  const [chosenCycleMode, setChosenCycleMode] = useState(null);
+  const hasOpenCycle = (cycles || []).some((c) => !c.outcome);
+  const cycleMode = chosenCycleMode ?? (!cyclesLoading && !hasOpenCycle ? "new" : "existing");
+  // The When section's handleMode pattern: an empty toggle value is ignored;
+  // switching ERASES the other mode's value (ONE update — several
+  // setFieldValue would validate on stale values).
+  const handleCycleMode = (_e, mode) => {
+    if (!mode) return;
+    setChosenCycleMode(mode);
+    if (mode === "new") {
+      formik.setValues({ ...values, decision_cycle: null, decision_cycle_id: "", decision_step_id: "" });
+    } else {
+      formik.setValues({ ...values, inline_cycle: null });
+    }
+  };
   // 8e-2 (PO): a conversion saves only with an existing cycle or a new cycle
   // created — Save disabled meanwhile (from the mount, not only once Formik
   // has validated), with an info notice. The existing cycle's step stays
@@ -1005,13 +1021,23 @@ function ActivityForm({
               )}
             </>
           )}
+          {/* 8f-2 (PO) — conversion: ONE exclusive toggle « Existing cycle /
+              New cycle » — the When section's ToggleButtonGroup (DateGroup),
+              same component, same behaviour: switching mode ERASES the other
+              mode's value (handleCycleMode). Default: Existing, New when the
+              account has no open cycle. */}
+          {isCreate && conversion && (
+            <ToggleButtonGroup value={cycleMode} exclusive onChange={handleCycleMode} size="small">
+              <ToggleButton value="existing">Existing cycle</ToggleButton>
+              <ToggleButton value="new">New cycle</ToggleButton>
+            </ToggleButtonGroup>
+          )}
           {/* 8d-2 — the cycle: the standard AsyncDecisionCycleSelect (server
               search, the account's OPEN cycles, newest update first) on the
               click-to-edit pattern (EditPeopleContent's contact). Pre-filled
-              only from a DC activity (decisionCycleId, unchanged); nothing
-              pre-selected in conversion nor in a free creation. Hidden once a
-              new cycle is created (the old ActivityModal's behaviour). */}
-          {isCreate && !values.inline_cycle && (
+              only from a DC activity (decisionCycleId, greyed — 8e-3);
+              nothing pre-selected in conversion. */}
+          {isCreate && (!conversion || cycleMode === "existing") && (
             <InlineEditableValue
               name="decision_cycle"
               label="Decision cycle"
@@ -1048,9 +1074,8 @@ function ActivityForm({
               )}
             />
           )}
-          {/* The step: required once an existing cycle is chosen; hidden while
-              a new cycle is being created. */}
-          {isCreate && isExistingCycle(values.decision_cycle_id) && !values.inline_cycle && !showInlineCycle && (
+          {/* The step: required once an existing cycle is chosen. */}
+          {isCreate && isExistingCycle(values.decision_cycle_id) && (!conversion || cycleMode === "existing") && (
             <InlineEditableValue
               name="decision_step"
               label="DC step"
@@ -1063,11 +1088,10 @@ function ActivityForm({
               helperText={errors.decision_step_id}
             />
           )}
-          {/* Conversion — « Create new cycle » (the old ActivityModal's way):
-              the existing InlineCycleForm; once saved, the cycle chosen is
-              emptied, the step hidden, and the new cycle is a removable row
-              (the drawer's confirmation pattern — the inline contact's). */}
-          {isCreate && conversion && (values.inline_cycle || showInlineCycle) && (
+          {/* « New cycle »: the existing InlineCycleForm, then the new cycle as a
+              removable row (the drawer's confirmation pattern — the inline
+              contact's); Remove → the form again. */}
+          {isCreate && conversion && cycleMode === "new" && (
             <Box data-testid="conversion-cycle">
               <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
                 New decision cycle
@@ -1081,27 +1105,10 @@ function ActivityForm({
                 />
               ) : (
                 <InlineCycleForm
-                  onSave={({ name, step_stage }) => {
-                    // ONE update (several setFieldValue would validate on
-                    // stale values): the new cycle, the chosen one emptied.
-                    formik.setValues({
-                      ...values,
-                      inline_cycle: { name, step_stage },
-                      decision_cycle: null,
-                      decision_cycle_id: "",
-                      decision_step_id: "",
-                    });
-                    setShowInlineCycle(false);
-                  }}
-                  onCancel={() => setShowInlineCycle(false)}
+                  onSave={({ name, step_stage }) => setFieldValue("inline_cycle", { name, step_stage })}
                 />
               )}
             </Box>
-          )}
-          {isCreate && conversion && !values.inline_cycle && !showInlineCycle && (
-            <AddActionButton onClick={() => setShowInlineCycle(true)} testId="create-new-cycle">
-              Create new cycle
-            </AddActionButton>
           )}
           {/* 8e-2: the rule said in an INFO notice (a business rule, not an
               error — the shared InfoNotice, as SignalsValidationList's). */}

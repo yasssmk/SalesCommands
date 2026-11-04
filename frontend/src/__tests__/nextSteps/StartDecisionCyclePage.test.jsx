@@ -117,6 +117,10 @@ const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
   fetchedUrls.push(url);
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
+  // 8f-2: the account's cycles (the default mode: Existing when one is open).
+  if (url.startsWith(`/decision_cycles/by-account/${ACC_ID}`)) {
+    return Promise.resolve({ data: { results: accountCycles, count: accountCycles.length } });
+  }
   if (url.startsWith("/decision_cycles/?")) {
     const q = new URLSearchParams(url.split("?")[1]).get("search") || "";
     const rows = accountCycles.filter((c) => c.name.toLowerCase().includes(q.toLowerCase()));
@@ -142,13 +146,22 @@ const renderPage = () =>
     </SWRConfig>,
   );
 
+// The account's cycles in the default SWR cache (the real hook's key; the
+// hook dedupes for 10 s, so a cleared entry would not refetch): the drawer has
+// them at mount, deterministic (8f-2: they decide the default mode).
+const primeAccountCycles = () =>
+  swrMutate([`/decision_cycles/by-account/${ACC_ID}/`, "t-1"],
+            { data: { results: accountCycles, count: accountCycles.length } },
+            { revalidate: false });
+
 const startPill = () => screen.getByRole("button", { name: "Start Decision Cycle" });
 const coque = () => screen.getByTestId("coque-panel");
 
-beforeEach(() => {
+beforeEach(async () => {
   serverActivity = campaignActivity;
   accountCycles = [];
   fetchedUrls = [];
+  await primeAccountCycles();
   api.post.mockImplementation(async () => {
     serverActivity = { ...campaignActivity, next_planned_step: BORN };
     return { success: true, data: { data: { activity: { id: "act-born" } } } };
@@ -175,10 +188,11 @@ describe("Start Decision Cycle — the pill, the drawer, the born DC (5.13.3)", 
     const drawer = within(coque()).getByTestId("activity-create");
     expect(within(coque()).getByTestId("coque-title")).toHaveTextContent("Start Decision Cycle");
     expect(within(drawer).getByTestId("inline-read-type")).toHaveTextContent("Meeting");
-    // 8d-2: the cycle section — an existing cycle (nothing pre-selected) or
-    // « Create new cycle ».
-    expect(within(drawer).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Choose a decision cycle");
-    expect(within(drawer).getByRole("button", { name: /Create new cycle/ })).toBeInTheDocument();
+    // 8f-2: the toggle « Existing cycle / New cycle » — no open cycle on the
+    // account: « New cycle » by default, the inline cycle form.
+    await waitFor(() =>
+      expect(within(coque()).getByRole("button", { name: "New cycle" })).toHaveAttribute("aria-pressed", "true"));
+    expect(within(coque()).getByTestId("conversion-cycle")).toBeInTheDocument();
     expect(within(drawer).getByText("Thomas Lefèvre")).toBeInTheDocument();
     expect(screen.queryByTestId("activity-modal-mounted")).toBeNull();
   });
@@ -192,9 +206,8 @@ describe("Start Decision Cycle — the pill, the drawer, the born DC (5.13.3)", 
     fireEvent.click(within(drawer).getByTestId("inline-read-date"));
     fireEvent.change(screen.getByLabelText("Scheduled date"), { target: { value: "2026-11-12" } });
     fireEvent.click(screen.getByTestId("date-confirm"));
-    // 8d-2: the new cycle opens from « Create new cycle » (the old modal's way).
-    fireEvent.click(within(drawer).getByRole("button", { name: /Create new cycle/ }));
-    const cycle = within(drawer).getByTestId("conversion-cycle");
+    // 8f-2: no open cycle on the account → « New cycle » by default.
+    const cycle = await waitFor(() => within(drawer).getByTestId("conversion-cycle"));
     fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
     fireEvent.click(within(cycle).getByRole("button", { name: "Technical Fit" }));
     fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
@@ -224,7 +237,7 @@ describe("Start Decision Cycle — the pill, the drawer, the born DC (5.13.3)", 
 // newest update first, NOTHING pre-selected) OR « Create new cycle » (the
 // existing InlineCycleForm; once created: the cycle chosen emptied, the step
 // hidden, the confirmation row with Remove), as the old ActivityModal.
-describe("Start Decision Cycle — an existing DC or « Create new cycle » (8d-2)", () => {
+describe("Start Decision Cycle — an existing DC or a new cycle (8d-2 / 8f-2)", () => {
   const drawerNow = () => within(coque()).getByTestId("activity-create");
   const openStart = async () => {
     fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
@@ -246,11 +259,12 @@ describe("Start Decision Cycle — an existing DC or « Create new cycle » (8d-
   };
   const listUrls = () => fetchedUrls.filter((u) => u.startsWith("/decision_cycles/?"));
 
-  beforeEach(() => {
+  beforeEach(async () => {
     accountCycles = [
       { id: DC_ALPHA, name: "Deal Alpha", outcome: null },
       { id: "44444444-4444-4444-8444-444444444442", name: "Deal Beta", outcome: null },
     ];
+    await primeAccountCycles();
   });
 
   it("nothing pre-selected; the server search: the account, the OPEN cycles, newest update first", async () => {
@@ -297,22 +311,20 @@ describe("Start Decision Cycle — an existing DC or « Create new cycle » (8d-
     await waitFor(() => expect(screen.queryByRole("button", { name: "Start Decision Cycle" })).toBeNull());
   });
 
-  it("« Create new cycle »: the chosen cycle emptied, the step hidden, the confirmation row with Remove; inline_cycle sent", async () => {
+  it("« New cycle »: the existing cycle and its step emptied, the confirmation row with Remove; inline_cycle only", async () => {
     renderPage();
     await openStart();
     fillTitleAndDate();
     openCycleSearch();
     fireEvent.click(await screen.findByRole("option", { name: "Deal Alpha" }));
     await waitFor(() => within(drawerNow()).getByTestId("inline-read-decision_step"));
-    fireEvent.click(within(drawerNow()).getByRole("button", { name: /Create new cycle/ }));
-    // the form open: the step hidden already (the old modal's behaviour)
+    fireEvent.click(within(drawerNow()).getByRole("button", { name: "New cycle" }));
+    expect(within(drawerNow()).queryByTestId("inline-read-decision_cycle")).toBeNull();
     expect(within(drawerNow()).queryByTestId("inline-read-decision_step")).toBeNull();
     const cycle = within(drawerNow()).getByTestId("conversion-cycle");
     fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
     fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
     await within(cycle).findByText("Deal Acme");
-    expect(within(drawerNow()).queryByTestId("inline-read-decision_cycle")).toBeNull();
-    expect(within(drawerNow()).queryByTestId("inline-read-decision_step")).toBeNull();
     const save = within(coque()).getByRole("button", { name: "Save" });
     await waitFor(() => expect(save).toBeEnabled());
     fireEvent.click(save);
@@ -324,16 +336,17 @@ describe("Start Decision Cycle — an existing DC or « Create new cycle » (8d-
     expect(body.activity.source_activity_id).toBe(ACT_ID);
   });
 
-  it("Remove: back to the choice (an existing cycle or « Create new cycle »)", async () => {
+  it("Remove: back to the new-cycle form (still « New cycle »)", async () => {
     renderPage();
     await openStart();
-    fireEvent.click(within(drawerNow()).getByRole("button", { name: /Create new cycle/ }));
+    fireEvent.click(within(drawerNow()).getByRole("button", { name: "New cycle" }));
     const cycle = within(drawerNow()).getByTestId("conversion-cycle");
     fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
     fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
     await within(cycle).findByText("Deal Acme");
     fireEvent.click(within(drawerNow()).getByTestId("remove-inline-cycle"));
-    expect(within(drawerNow()).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Choose a decision cycle");
+    expect(within(drawerNow()).getByPlaceholderText("Cycle name *")).toBeInTheDocument();
+    expect(within(drawerNow()).getByRole("button", { name: "New cycle" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("the People section follows the cycle chosen in section 1 (its stakeholders)", async () => {
@@ -374,8 +387,9 @@ describe("The cycle select never empties the cycle (8e-1)", () => {
   };
   const cycleRead = () => within(drawerNow()).getByTestId("inline-read-decision_cycle");
 
-  beforeEach(() => {
+  beforeEach(async () => {
     accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: null }];
+    await primeAccountCycles();
   });
 
   it("no X to empty it", async () => {
@@ -416,8 +430,9 @@ describe("Conversion: Save waits for a cycle, with an info notice (8e-2)", () =>
   };
   const NOTICE = "Choose an existing decision cycle or create a new one to save this activity.";
 
-  beforeEach(() => {
+  beforeEach(async () => {
     accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: null }];
+    await primeAccountCycles();
   });
 
   it("at once: Save disabled, the info notice shown (info, not an error)", async () => {
@@ -448,12 +463,107 @@ describe("Conversion: Save waits for a cycle, with an info notice (8e-2)", () =>
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
     fillTitleAndDate();
-    fireEvent.click(within(drawerNow()).getByRole("button", { name: /Create new cycle/ }));
+    fireEvent.click(within(drawerNow()).getByRole("button", { name: "New cycle" }));
     const cycle = within(drawerNow()).getByTestId("conversion-cycle");
     fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
     fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
     await within(cycle).findByText("Deal Acme");
     await waitFor(() => expect(save()).toBeEnabled());
     expect(within(drawerNow()).queryByTestId("cycle-required-notice")).toBeNull();
+  });
+});
+
+// 8f-2 (PO): ONE exclusive toggle « Existing cycle / New cycle » — the When
+// section's ToggleButtonGroup (same component, same behaviour): switching
+// mode ERASES the other mode's value (UI and payload); the default is
+// Existing, New when the account has no open cycle.
+describe("The exclusive « Existing cycle / New cycle » toggle (8f-2)", () => {
+  const drawerNow = () => within(coque()).getByTestId("activity-create");
+  const toggle = (name) => within(drawerNow()).getByRole("button", { name });
+  const openStart = async () => {
+    fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
+  };
+  const pickAlpha = async () => {
+    fireEvent.click(await waitFor(() => within(drawerNow()).getByTestId("inline-read-decision_cycle")));
+    const input = within(drawerNow()).getByRole("combobox");
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Deal Alpha" }));
+    await waitFor(() => within(drawerNow()).getByTestId("inline-read-decision_step"));
+  };
+  const createInline = async () => {
+    const cycle = within(drawerNow()).getByTestId("conversion-cycle");
+    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    await within(cycle).findByText("Deal Acme");
+  };
+
+  it("an open cycle on the account: the toggle, « Existing cycle » by default, the select empty", async () => {
+    accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: null }];
+    await primeAccountCycles();
+    renderPage();
+    await openStart();
+    await waitFor(() => expect(toggle("Existing cycle")).toHaveAttribute("aria-pressed", "true"));
+    expect(toggle("New cycle")).toHaveAttribute("aria-pressed", "false");
+    expect(within(drawerNow()).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Choose a decision cycle");
+    expect(within(drawerNow()).queryByTestId("conversion-cycle")).toBeNull();
+  });
+
+  it("no open cycle on the account (a closed one only): « New cycle » by default", async () => {
+    accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: "WON" }];
+    await primeAccountCycles();
+    renderPage();
+    await openStart();
+    await waitFor(() => expect(toggle("New cycle")).toHaveAttribute("aria-pressed", "true"));
+    expect(within(drawerNow()).getByTestId("conversion-cycle")).toBeInTheDocument();
+  });
+
+  it("Existing → New → Existing: the cycle and step chosen are erased", async () => {
+    accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: null }];
+    await primeAccountCycles();
+    renderPage();
+    await openStart();
+    await pickAlpha();
+    fireEvent.click(toggle("New cycle"));
+    fireEvent.click(toggle("Existing cycle"));
+    expect(within(drawerNow()).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Choose a decision cycle");
+    expect(within(drawerNow()).queryByTestId("inline-read-decision_step")).toBeNull();
+  });
+
+  it("New (created) → Existing → New: the new cycle is erased (the form again)", async () => {
+    accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: null }];
+    await primeAccountCycles();
+    renderPage();
+    await openStart();
+    fireEvent.click(toggle("New cycle"));
+    await createInline();
+    fireEvent.click(toggle("Existing cycle"));
+    fireEvent.click(toggle("New cycle"));
+    expect(within(drawerNow()).queryByTestId("remove-inline-cycle")).toBeNull();
+    expect(within(drawerNow()).getByPlaceholderText("Cycle name *")).toBeInTheDocument();
+  });
+
+  it("New created then back to Existing + a cycle: the payload has NO inline_cycle", async () => {
+    accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: null }];
+    await primeAccountCycles();
+    renderPage();
+    await openStart();
+    const d = drawerNow();
+    fireEvent.click(within(d).getByTestId("inline-read-title"));
+    fireEvent.change(within(d).getByTestId("inline-input-title"), { target: { value: "Discovery meeting" } });
+    fireEvent.click(within(d).getByTestId("inline-read-date"));
+    fireEvent.change(screen.getByLabelText("Scheduled date"), { target: { value: "2026-11-12" } });
+    fireEvent.click(screen.getByTestId("date-confirm"));
+    fireEvent.click(toggle("New cycle"));
+    await createInline();
+    fireEvent.click(toggle("Existing cycle"));
+    await pickAlpha();
+    const save = within(coque()).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    const body = api.post.mock.calls[0][1];
+    expect(body.inline_cycle).toBeUndefined();
+    expect(body.activity).toMatchObject({ decision_cycle_id: DC_ALPHA, decision_step_id: STEP_ALPHA });
   });
 });
