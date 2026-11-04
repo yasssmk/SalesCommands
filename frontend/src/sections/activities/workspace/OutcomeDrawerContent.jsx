@@ -24,6 +24,7 @@ import dayjs from "dayjs";
 
 // MUI
 import Box from "@mui/material/Box";
+import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
@@ -38,6 +39,7 @@ import { completeActivity } from "api/accounts/activities";
 import { revalidateCampaignPlaylist } from "api/campaigns/campaigns";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import SectionHeader from "components/display/SectionHeader";
 import OutcomeSelector from "components/outcomes/OutcomeSelector";
 import { CALLBACK_OUTCOME as CALLBACK } from "utils/outcomes";
 
@@ -92,10 +94,10 @@ export default function OutcomeDrawerContent({ activity, onSaved }) {
       saveLabel="Complete"
     >
       <Stack spacing={2}>
+        {/* ---- SECTION 1 — Outcome: the pills, then the callback date when it
+            shows. Numbered sections (lot 3 / 13c, TD-239 — PO: every drawer). ---- */}
+        <SectionHeader index={1} title="Outcome" subtitle="How did it go?" />
         <Box>
-          <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
-            Outcome
-          </Typography>
           <OutcomeSelector
             activityType={activity?.activity_type}
             value={outcome}
@@ -123,10 +125,11 @@ export default function OutcomeDrawerContent({ activity, onSaved }) {
           </Box>
         )}
 
+        <Divider />
+
+        {/* ---- SECTION 2 — Note (optional). The section header labels it. ---- */}
+        <SectionHeader index={2} title="Note" subtitle="Optional — what to remember." />
         <Box>
-          <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
-            Note
-          </Typography>
           <TextField
             fullWidth
             multiline
