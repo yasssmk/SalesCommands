@@ -25,6 +25,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
+import { sectionHeaders } from "../_utils/sectionHeaders";
 import { testTheme } from "../_utils/aphoriqTheme";
 
 const mockPush = vi.fn();
@@ -861,6 +862,26 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
     await waitFor(() => expect(attachNextStepToActivity).toHaveBeenCalled());
   };
   const sentUpdates = () => attachNextStepToActivity.mock.calls[0][2];
+
+  // Lot 3 / 13d (TD-239, PO: every drawer) — each step's title is a numbered
+  // SectionHeader, numbered as the stepper (1 Resolution · 2 Activity · 3
+  // Differences).
+  it("TD-239: each step's title is a numbered section, numbered as the stepper", async () => {
+    const numbered = () =>
+      sectionHeaders(screen.getByTestId(FLOW)).map(({ index, title }) => `${index} ${title}`);
+    mockCandidates = CANDIDATES;
+    renderPage(dcActivity(), [richPending()]);
+    fireEvent.click(within(rowOf("Send the DPA and SOC 2 report")).getByLabelText("Validate signal"));
+    await screen.findByTestId(FLOW);
+    expect(numbered()).toEqual(["1 How do you resolve this next step?"]);
+    fireEvent.click(screen.getByRole("radio", { name: "Link to an existing activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByTestId("link-candidates");
+    expect(numbered()).toEqual(["2 Which activity does this next step become?"]);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByTestId("link-differences");
+    expect(numbered()).toEqual(["3 What should change on “Call Thomas”?"]);
+  });
 
   it("step 2: the candidates in the SERVER order, the first 'Proposed' and pre-selected", async () => {
     const list = await openStep2();

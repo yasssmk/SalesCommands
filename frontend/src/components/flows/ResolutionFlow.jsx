@@ -16,6 +16,8 @@
 //                           candidates the caller's predicate marks.
 // The caller owns the state (step, choice, selection) and the confirmation —
 // nothing here knows what a next step or a person is.
+// Step titles (lot 3 / 13d, TD-239 — PO: the numbered-section design in every
+// drawer): a SectionHeader, `index` = the step's number in the stepper.
 
 "use client";
 
@@ -30,6 +32,7 @@ import Typography from "@mui/material/Typography";
 
 // Project
 import StatusPill from "components/chips/StatusPill";
+import SectionHeader from "components/display/SectionHeader";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import WizardStepper from "sections/activities/signals/wizard/WizardStepper";
 import { SCOPE_PILL_COLORS } from "utils/objectiveScope";
@@ -75,12 +78,10 @@ ResolutionFlow.propTypes = {
 
 // ==============================|| STEP — RESOLUTION CHOICE ||============================== //
 
-export function ResolutionChoiceStep({ title, options, choice, onChoice, note }) {
+export function ResolutionChoiceStep({ index, title, options, choice, onChoice, note }) {
   return (
     <>
-      <Typography variant="subtitle1" sx={{ fontWeight: "medium", mb: 1 }}>
-        {title}
-      </Typography>
+      <SectionHeader index={index} title={title} sx={{ mb: 1 }} />
       <RadioGroup value={choice ?? ""} onChange={(e) => onChoice(e.target.value)}>
         {options.map((o) => (
           <FormControlLabel
@@ -102,6 +103,8 @@ export function ResolutionChoiceStep({ title, options, choice, onChoice, note })
 }
 
 ResolutionChoiceStep.propTypes = {
+  /** The step's number in the stepper (the SectionHeader badge). */
+  index: PropTypes.number,
   title: PropTypes.node.isRequired,
   /** [{ value, label, disabled? }] in display order. */
   options: PropTypes.arrayOf(
@@ -120,6 +123,7 @@ ResolutionChoiceStep.propTypes = {
 // ==============================|| STEP — CANDIDATES ||============================== //
 
 export function CandidateList({
+  index,
   title,
   candidates,
   selectedId,
@@ -133,9 +137,7 @@ export function CandidateList({
 }) {
   return (
     <Stack spacing={1.5} data-testid={testId}>
-      <Typography variant="subtitle1" sx={{ fontWeight: "medium" }}>
-        {title}
-      </Typography>
+      <SectionHeader index={index} title={title} />
       {candidates.length === 0 && emptyText && (
         <Typography variant="body2" color="text.secondary">
           {emptyText}
@@ -173,6 +175,8 @@ export function CandidateList({
 }
 
 CandidateList.propTypes = {
+  /** The step's number in the stepper (the SectionHeader badge). */
+  index: PropTypes.number,
   title: PropTypes.node.isRequired,
   /** [{ id, … }] in display order. */
   candidates: PropTypes.arrayOf(PropTypes.object).isRequired,

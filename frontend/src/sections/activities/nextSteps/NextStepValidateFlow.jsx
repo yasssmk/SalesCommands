@@ -51,6 +51,7 @@ import { attachNextStepToActivity, useNextStepLinkCandidates } from "api/signals
 import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import { displayErrorSnackbar } from "utils/displayError";
 import ActivityMiniCard from "components/cards/activities/ActivityMiniCard";
+import SectionHeader from "components/display/SectionHeader";
 import ResolutionFlow, {
   CandidateList,
   ResolutionChoiceStep,
@@ -281,6 +282,7 @@ NextStepValidateFlow.propTypes = {
 function ResolutionStep({ choice, onChoice, canLink, loading, hasCycle }) {
   return (
     <ResolutionChoiceStep
+      index={STEP.RESOLUTION + 1}
       title="How do you resolve this next step?"
       options={[
         { value: NEXT_STEP_RESOLUTION.CREATE, label: "Create the activity" },
@@ -311,6 +313,7 @@ ResolutionStep.propTypes = {
 function CandidatesStep({ candidates, selectedId, onSelect }) {
   return (
     <CandidateList
+      index={STEP.CANDIDATES + 1}
       title="Which activity does this next step become?"
       candidates={candidates}
       selectedId={selectedId}
@@ -360,9 +363,7 @@ function DifferencesStep({ candidate, decisions, onChange }) {
 
   return (
     <Stack spacing={2} data-testid="link-differences">
-      <Typography variant="subtitle1" sx={{ fontWeight: "medium" }}>
-        What should change on “{candidate.title}”?
-      </Typography>
+      <SectionHeader index={STEP.DIFFERENCES + 1} title={`What should change on “${candidate.title}”?`} />
 
       {/* Single choices — Keep (default) or Use proposed. */}
       {CHOICE_FIELDS.filter((f) => diff[f.key]).map((f) => (

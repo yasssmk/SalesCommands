@@ -34,6 +34,7 @@ import Typography from "@mui/material/Typography";
 import { resolvePeopleSignal, usePeopleResolutionCandidates } from "api/signals/signals";
 import { useGetContactChoices } from "api/businessData/contacts";
 import { displayErrorSnackbar } from "utils/displayError";
+import SectionHeader from "components/display/SectionHeader";
 import ResolutionFlow, {
   CandidateList,
   ResolutionChoiceStep,
@@ -139,6 +140,7 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
     <ResolutionFlow steps={FLOW_STEPS} activeStep={step} bar={bar} testId="people-validate-flow">
       {step === STEP.RESOLUTION && (
         <ResolutionChoiceStep
+          index={STEP.RESOLUTION + 1}
           title="Who is this person in the decision cycle?"
           options={[
             {
@@ -156,6 +158,7 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
 
       {step === STEP.DETAILS && choice === PEOPLE_RESOLUTION.LINK && (
         <CandidateList
+          index={STEP.DETAILS + 1}
           title="Who is this person?"
           candidates={candidates}
           selectedId={currentId}
@@ -179,9 +182,7 @@ export default function PeopleValidateFlow({ signal, onBack, onResolved }) {
 
       {step === STEP.DETAILS && choice === PEOPLE_RESOLUTION.CREATE && (
         <Stack spacing={2} data-testid="people-create-stakeholder">
-          <Typography variant="subtitle1" sx={{ fontWeight: "medium" }}>
-            New stakeholder (not linked to a contact)
-          </Typography>
+          <SectionHeader index={STEP.DETAILS + 1} title="New stakeholder (not linked to a contact)" />
           <TextField
             id="people-create-name"
             label="Name"

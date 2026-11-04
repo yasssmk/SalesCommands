@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
+import { sectionHeaders } from "../_utils/sectionHeaders";
 
 const mockPush = vi.fn();
 let mockActivity;
@@ -248,6 +249,25 @@ const confirm = (flow) => fireEvent.click(within(flow).getByRole("button", { nam
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe("People validation = signal → stakeholder (étape 5)", () => {
+  // Lot 3 / 13d (TD-239, PO: every drawer) — each step's title is a numbered
+  // SectionHeader, numbered as the stepper (1 Resolution · 2 Stakeholder).
+  it("TD-239: each step's title is a numbered section, numbered as the stepper", async () => {
+    const numbered = (flow) => sectionHeaders(flow).map(({ index, title }) => `${index} ${title}`);
+    renderPage();
+    let flow = await openFlowFromRow();
+    expect(numbered(flow)).toEqual(["1 Who is this person in the decision cycle?"]);
+    fireEvent.click(within(flow).getByLabelText("Link to an existing stakeholder or contact"));
+    next(flow);
+    await within(flow).findByTestId("people-candidates");
+    expect(numbered(flow)).toEqual(["2 Who is this person?"]);
+    cleanup();
+    renderPage();
+    flow = await openFlowFromRow();
+    fireEvent.click(within(flow).getByLabelText("Create a new stakeholder"));
+    next(flow);
+    expect(numbered(flow)).toEqual(["2 New stakeholder (not linked to a contact)"]);
+  });
+
   it("the row ✓ opens the People flow, never the generic validate", async () => {
     renderPage();
     const flow = await openFlowFromRow();
