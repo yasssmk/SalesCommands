@@ -949,61 +949,38 @@ function ActivityForm({
       }
     >
       <Stack spacing={2.5} data-testid={isCreate ? "activity-create" : undefined}>
-        {/* ---- SECTION 1 — Activity: Title + Type (+ outcome / cycle) ---- */}
-        <Stack spacing={1.5}>
-          <SectionHeader index={1} title="Activity" subtitle="What the activity is." />
-          <InlineEditableValue
-            name="title"
-            label="Title"
-            value={values.title}
-            onChange={(v) => setFieldValue("title", v)}
-            placeholder="Untitled"
-            error={Boolean(errors.title)}
-            helperText={errors.title}
-          />
-          <InlineEditableValue
-            name="type"
-            label="Type"
-            type="select"
-            options={TYPE_OPTIONS}
-            value={values.activity_type}
-            onChange={(v) => {
-              setFieldValue("activity_type", v);
-              // 7c — at creation the date field follows the type: a
-              // scheduling type takes the date as its scheduled date, the
-              // others as their due date (still modifiable in « When »).
-              if (isCreate) {
-                if (SCHEDULED_DATE_ACTIVITY_TYPES.has(v)) {
-                  if (!values.scheduled_date && values.due_date) {
-                    setFieldValue("scheduled_date", values.due_date);
-                    setFieldValue("due_date", null);
-                  }
-                } else if (values.scheduled_date) {
-                  setFieldValue("due_date", values.scheduled_date);
-                  setFieldValue("scheduled_date", null);
-                  setFieldValue("scheduled_time", null);
-                }
-              }
-              // 5.17b — an outcome the new type does not offer is cleared.
-              if (editsOutcome && values.outcome && !getOutcomesForType(v).includes(values.outcome)) {
-                setFieldValue("outcome", null);
-              }
-            }}
-          />
-          {editsOutcome && (
-            <Box>
-              <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
-                Outcome
-              </Typography>
-              <OutcomeSelector
-                activityType={values.activity_type}
-                value={values.outcome}
-                onChange={(o) => setFieldValue("outcome", o)}
-                exclude={outcomeExclude}
+        {/* ---- SECTION 1 — Decision cycle (8d-1, PO): its OWN section, FIRST
+            — the People list depends on the cycle chosen. Creation: editable;
+            edition: read-only (cycle + step; no change of cycle in this
+            sprint). ---- */}
+        <Stack spacing={1.5} data-testid="activity-cycle-section">
+          <SectionHeader index={1} title="Decision cycle" subtitle="The deal the activity belongs to." />
+          {!isCreate && (
+            <>
+              <InlineEditableValue
+                name="decision_cycle"
+                label="Decision cycle"
+                value={activity?.decision_cycle_detail?.name || ""}
+                onChange={() => {}}
+                placeholder="No decision cycle"
+                disabled
               />
-            </Box>
+              {activity?.decision_cycle && (
+                <InlineEditableValue
+                  name="decision_step"
+                  label="DC step"
+                  value={
+                    activity?.decision_step_detail?.name ||
+                    (typeof activity?.decision_step === "object" ? activity?.decision_step?.name : "") ||
+                    ""
+                  }
+                  onChange={() => {}}
+                  placeholder="No step"
+                  disabled
+                />
+              )}
+            </>
           )}
-
           {/* Conversion (8c-3): the account's open cycles first, then « New
               cycle » — the drawer's cycle and step selectors (below, reused);
               no open cycle: the new cycle directly, as before. */}
@@ -1095,9 +1072,68 @@ function ActivityForm({
 
         <Divider />
 
-        {/* ---- SECTION 2 — When: Date & time ---- */}
+        {/* ---- SECTION 2 — Activity: Title + Type (+ outcome) ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={2} title="When" subtitle="The date it is scheduled or due." />
+          <SectionHeader index={2} title="Activity" subtitle="What the activity is." />
+          <InlineEditableValue
+            name="title"
+            label="Title"
+            value={values.title}
+            onChange={(v) => setFieldValue("title", v)}
+            placeholder="Untitled"
+            error={Boolean(errors.title)}
+            helperText={errors.title}
+          />
+          <InlineEditableValue
+            name="type"
+            label="Type"
+            type="select"
+            options={TYPE_OPTIONS}
+            value={values.activity_type}
+            onChange={(v) => {
+              setFieldValue("activity_type", v);
+              // 7c — at creation the date field follows the type: a
+              // scheduling type takes the date as its scheduled date, the
+              // others as their due date (still modifiable in « When »).
+              if (isCreate) {
+                if (SCHEDULED_DATE_ACTIVITY_TYPES.has(v)) {
+                  if (!values.scheduled_date && values.due_date) {
+                    setFieldValue("scheduled_date", values.due_date);
+                    setFieldValue("due_date", null);
+                  }
+                } else if (values.scheduled_date) {
+                  setFieldValue("due_date", values.scheduled_date);
+                  setFieldValue("scheduled_date", null);
+                  setFieldValue("scheduled_time", null);
+                }
+              }
+              // 5.17b — an outcome the new type does not offer is cleared.
+              if (editsOutcome && values.outcome && !getOutcomesForType(v).includes(values.outcome)) {
+                setFieldValue("outcome", null);
+              }
+            }}
+          />
+          {editsOutcome && (
+            <Box>
+              <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
+                Outcome
+              </Typography>
+              <OutcomeSelector
+                activityType={values.activity_type}
+                value={values.outcome}
+                onChange={(o) => setFieldValue("outcome", o)}
+                exclude={outcomeExclude}
+              />
+            </Box>
+          )}
+
+        </Stack>
+
+        <Divider />
+
+        {/* ---- SECTION 3 — When: Date & time ---- */}
+        <Stack spacing={1.5}>
+          <SectionHeader index={3} title="When" subtitle="The date it is scheduled or due." />
           <DateGroup
             values={values}
             setFieldValue={setFieldValue}
@@ -1115,9 +1151,9 @@ function ActivityForm({
 
         <Divider />
 
-        {/* ---- SECTION 3 — Purpose: Objective + Description ---- */}
+        {/* ---- SECTION 4 — Purpose: Objective + Description ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={3} title="Purpose" subtitle="What the activity is for." />
+          <SectionHeader index={4} title="Purpose" subtitle="What the activity is for." />
           <InlineEditableValue
             name="objective"
             label="Objective"
@@ -1137,9 +1173,9 @@ function ActivityForm({
 
         <Divider />
 
-        {/* ---- SECTION 4 — People: editable owner / invited / contacts (draft + global save) ---- */}
+        {/* ---- SECTION 5 — People: editable owner / invited / contacts (draft + global save) ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={4} title="People" subtitle="Who owns it, who is invited, who it is with." />
+          <SectionHeader index={5} title="People" subtitle="Who owns it, who is invited, who it is with." />
           <PeopleSection
             values={values}
             setFieldValue={setFieldValue}

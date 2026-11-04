@@ -169,7 +169,8 @@ const expectSignalDesign = (drawer, titles) => {
   expect(within(drawer).queryByTestId("group-filet")).toBeNull();
 };
 
-const ACTIVITY_SECTIONS = ["Activity", "When", "Purpose", "People"];
+// 8d-1: the Decision cycle section first.
+const ACTIVITY_SECTIONS = ["Decision cycle", "Activity", "When", "Purpose", "People"];
 
 // The real header's ⋯ menu → Edit.
 const openEditActivity = async () => {

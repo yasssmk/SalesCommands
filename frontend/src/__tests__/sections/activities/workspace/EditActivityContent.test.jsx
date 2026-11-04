@@ -157,7 +157,8 @@ describe("EditActivityContent — SE-b structure", () => {
   // 5.18 (PO): the Edit signal design — MUI Dividers between the sections.
   it("separates the sections with Dividers (the Edit signal design), no hairline filet", () => {
     const { container } = renderEdit();
-    expect(container.querySelectorAll("hr.MuiDivider-root")).toHaveLength(3);
+    // 8d-1: 5 sections (Decision cycle first) → 4 Dividers.
+    expect(container.querySelectorAll("hr.MuiDivider-root")).toHaveLength(4);
     expect(screen.queryByTestId("group-filet")).toBeNull();
   });
 

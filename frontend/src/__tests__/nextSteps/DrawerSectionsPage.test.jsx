@@ -147,7 +147,10 @@ const expectSignalDesign = (drawer, titles) => {
   expect(within(drawer).queryByTestId("group-filet")).toBeNull();
 };
 
-const ACTIVITY_SECTIONS = ["Activity", "When", "Purpose", "People"];
+// 8d-1 (PO): the decision cycle has its OWN section, FIRST (the People list
+// depends on the cycle chosen): 1 Decision cycle → 2 Activity → 3 When →
+// 4 Purpose → 5 People — in every mode.
+const ACTIVITY_SECTIONS = ["Decision cycle", "Activity", "When", "Purpose", "People"];
 
 // The real header's ⋯ menu → Edit.
 const openEditActivity = async () => {
@@ -163,7 +166,7 @@ afterEach(() => {
 });
 
 describe("Edit activity — the Edit signal design (5.18)", () => {
-  it("edit mode: numbered sections 1-4, the shared SectionHeader, Dividers", async () => {
+  it("edit mode: numbered sections 1-5, the shared SectionHeader, Dividers", async () => {
     renderPage(activity());
     const drawer = await openEditActivity();
     expect(within(drawer).getByTestId("coque-title")).toHaveTextContent("Edit activity");
@@ -185,6 +188,25 @@ describe("Edit activity — the Edit signal design (5.18)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
     const create = await within(coque()).findByTestId("activity-create");
     expectSignalDesign(create, ACTIVITY_SECTIONS);
+  });
+
+  it("edit mode: the « Decision cycle » section is READ-ONLY (cycle + step, no editor)", async () => {
+    renderPage(dcActivity({ decision_step: "st-2", decision_step_detail: { id: "st-2", name: "Technical Fit" } }));
+    const drawer = await openEditActivity();
+    const section = within(drawer).getByTestId("activity-cycle-section");
+    expect(within(section).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
+    expect(within(section).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
+    fireEvent.click(within(section).getByTestId("inline-read-decision_cycle"));
+    fireEvent.click(within(section).getByTestId("inline-read-decision_step"));
+    expect(within(section).queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("edit mode outside a DC: the section reads « No decision cycle »", async () => {
+    renderPage(activity());
+    const drawer = await openEditActivity();
+    const section = within(drawer).getByTestId("activity-cycle-section");
+    expect(within(section).getByTestId("inline-read-decision_cycle")).toHaveTextContent("No decision cycle");
   });
 });
 
