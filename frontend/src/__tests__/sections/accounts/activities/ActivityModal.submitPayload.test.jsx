@@ -322,9 +322,10 @@ describe("ActivityModal — the inline cycle form is the shared one (5.13)", () 
     expect(pills.map((p) => p.textContent)).toEqual([
       "Qualification", "Technical Fit", "Solution Validation", "Business Case", "Closing",
     ]);
-    fireEvent.change(screen.getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
+    fireEvent.click(screen.getByTestId("inline-read-cycle_name"));
+    fireEvent.change(screen.getByTestId("inline-input-cycle_name"), { target: { value: "Deal Acme" } });
     fireEvent.click(screen.getByTestId("stage-pill-BUSINESS_CASE"));
-    clickButton(/Create Cycle/);
+    fireEvent.click(screen.getByTestId("inline-cycle-confirm"));
     expect(await screen.findByText(/Starting at:/)).toHaveTextContent("Starting at: Business Case");
   });
 });

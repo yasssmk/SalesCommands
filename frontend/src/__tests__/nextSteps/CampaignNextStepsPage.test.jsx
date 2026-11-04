@@ -221,9 +221,10 @@ describe("A SUCCESSFUL campaign activity — no DC born yet (5.14b)", () => {
     const drawer = drawerNow();
 
     const cycle = within(drawer).getByTestId("conversion-cycle");
-    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycle).getByTestId("inline-input-cycle_name"), { target: { value: "Deal Acme" } });
     fireEvent.click(within(cycle).getByRole("button", { name: "Technical Fit" }));
-    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycle).getByTestId("inline-cycle-confirm"));
     await within(cycle).findByText("Deal Acme");
     const save = within(coque()).getByRole("button", { name: "Save" });
     await waitFor(() => expect(save).toBeEnabled());

@@ -156,9 +156,10 @@ describe("13.2 / 8d-2 — conversion mode: the new cycle, the contact pre-filled
     fireEvent.click(screen.getByTestId("date-confirm"));
   };
   const createCycle = (name = "Deal Acme", stage = "Technical Fit") => {
-    fireEvent.change(within(cycleZone()).getByPlaceholderText("Cycle name *"), { target: { value: name } });
+    fireEvent.click(within(cycleZone()).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycleZone()).getByTestId("inline-input-cycle_name"), { target: { value: name } });
     fireEvent.click(within(cycleZone()).getByRole("button", { name: stage }));
-    fireEvent.click(within(cycleZone()).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycleZone()).getByTestId("inline-cycle-confirm"));
   };
 
   it("no open cycle on the account: « New cycle » by default, the form at once", () => {
@@ -166,7 +167,7 @@ describe("13.2 / 8d-2 — conversion mode: the new cycle, the contact pre-filled
     expect(within(drawer()).getByRole("button", { name: "New cycle" })).toHaveAttribute("aria-pressed", "true");
     expect(within(drawer()).queryByTestId("inline-read-decision_cycle")).toBeNull();
     expect(within(drawer()).getByTestId("conversion-cycle")).toBeInTheDocument();
-    expect(within(cycleZone()).getByPlaceholderText("Cycle name *")).toBeInTheDocument();
+    expect(within(cycleZone()).getByTestId("inline-read-cycle_name")).toBeInTheDocument();
   });
 
   it("the starting step in PILLS: the 5 steps the backend creates, in order, Qualification chosen", () => {
@@ -201,7 +202,7 @@ describe("13.2 / 8d-2 — conversion mode: the new cycle, the contact pre-filled
     const row = (await within(cycleZone()).findByText("Deal Acme")).closest("p");
     expect(row.textContent).toBe("Deal Acme · new cycle · Technical Fit");
     fireEvent.click(within(drawer()).getByTestId("remove-inline-cycle"));
-    expect(within(drawer()).getByPlaceholderText("Cycle name *")).toBeInTheDocument();
+    expect(within(drawer()).getByTestId("inline-read-cycle_name")).toBeInTheDocument();
     await waitFor(() => expect(saveButton()).toBeDisabled());
   });
 

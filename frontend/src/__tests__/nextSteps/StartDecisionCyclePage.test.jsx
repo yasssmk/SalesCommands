@@ -208,9 +208,10 @@ describe("Start Decision Cycle — the pill, the drawer, the born DC (5.13.3)", 
     fireEvent.click(screen.getByTestId("date-confirm"));
     // 8f-2: no open cycle on the account → « New cycle » by default.
     const cycle = await waitFor(() => within(drawer).getByTestId("conversion-cycle"));
-    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycle).getByTestId("inline-input-cycle_name"), { target: { value: "Deal Acme" } });
     fireEvent.click(within(cycle).getByRole("button", { name: "Technical Fit" }));
-    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycle).getByTestId("inline-cycle-confirm"));
     await within(cycle).findByText("Deal Acme");
     const save = within(coque()).getByRole("button", { name: "Save" });
     await waitFor(() => expect(save).toBeEnabled());
@@ -322,8 +323,9 @@ describe("Start Decision Cycle — an existing DC or a new cycle (8d-2 / 8f-2)",
     expect(within(drawerNow()).queryByTestId("inline-read-decision_cycle")).toBeNull();
     expect(within(drawerNow()).queryByTestId("inline-read-decision_step")).toBeNull();
     const cycle = within(drawerNow()).getByTestId("conversion-cycle");
-    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
-    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycle).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycle).getByTestId("inline-input-cycle_name"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByTestId("inline-cycle-confirm"));
     await within(cycle).findByText("Deal Acme");
     const save = within(coque()).getByRole("button", { name: "Save" });
     await waitFor(() => expect(save).toBeEnabled());
@@ -341,11 +343,12 @@ describe("Start Decision Cycle — an existing DC or a new cycle (8d-2 / 8f-2)",
     await openStart();
     fireEvent.click(within(drawerNow()).getByRole("button", { name: "New cycle" }));
     const cycle = within(drawerNow()).getByTestId("conversion-cycle");
-    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
-    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycle).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycle).getByTestId("inline-input-cycle_name"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByTestId("inline-cycle-confirm"));
     await within(cycle).findByText("Deal Acme");
     fireEvent.click(within(drawerNow()).getByTestId("remove-inline-cycle"));
-    expect(within(drawerNow()).getByPlaceholderText("Cycle name *")).toBeInTheDocument();
+    expect(within(drawerNow()).getByTestId("inline-read-cycle_name")).toBeInTheDocument();
     expect(within(drawerNow()).getByRole("button", { name: "New cycle" })).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -465,8 +468,9 @@ describe("Conversion: Save waits for a cycle, with an info notice (8e-2)", () =>
     fillTitleAndDate();
     fireEvent.click(within(drawerNow()).getByRole("button", { name: "New cycle" }));
     const cycle = within(drawerNow()).getByTestId("conversion-cycle");
-    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
-    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycle).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycle).getByTestId("inline-input-cycle_name"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByTestId("inline-cycle-confirm"));
     await within(cycle).findByText("Deal Acme");
     await waitFor(() => expect(save()).toBeEnabled());
     expect(within(drawerNow()).queryByTestId("cycle-required-notice")).toBeNull();
@@ -493,8 +497,9 @@ describe("The exclusive « Existing cycle / New cycle » toggle (8f-2)", () => {
   };
   const createInline = async () => {
     const cycle = within(drawerNow()).getByTestId("conversion-cycle");
-    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
-    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycle).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycle).getByTestId("inline-input-cycle_name"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByTestId("inline-cycle-confirm"));
     await within(cycle).findByText("Deal Acme");
   };
 
@@ -540,7 +545,7 @@ describe("The exclusive « Existing cycle / New cycle » toggle (8f-2)", () => {
     fireEvent.click(toggle("Existing cycle"));
     fireEvent.click(toggle("New cycle"));
     expect(within(drawerNow()).queryByTestId("remove-inline-cycle")).toBeNull();
-    expect(within(drawerNow()).getByPlaceholderText("Cycle name *")).toBeInTheDocument();
+    expect(within(drawerNow()).getByTestId("inline-read-cycle_name")).toBeInTheDocument();
   });
 
   it("New created then back to Existing + a cycle: the payload has NO inline_cycle", async () => {
