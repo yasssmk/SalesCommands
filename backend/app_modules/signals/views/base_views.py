@@ -223,6 +223,11 @@ class BaseSignalViewSet(
                 'source_activity',
                 'validated_by',
                 'requested_by',
+                # 8g-5 (TD-12): the provenance block, as the list (8g-4).
+                'source_activity__decision_cycle',
+                'source_activity__campaign',
+                'source_activity__decision_step',
+                *self._own_provenance_fks(qs.model),
             ).prefetch_related(
                 # source_activity exposes its linked contacts (and each
                 # contact's standard_department) through the enriched
@@ -585,3 +590,21 @@ class SignalChoicesView(APIView):
                 'people_influences': _choices(InfluenceLevel),
             },
         })
+
+
+def signal_viewset_queryset(viewset_cls, request, action='list'):
+    """
+    A signal type's queryset exactly as its ViewSet serves it (tenant + owner
+    scoping, the domain-validity gate, select_related / prefetch for the
+    action) — for callers that read signals outside that ViewSet's own
+    endpoints: the aggregated list (aggregated_signal_view) and the replay of
+    a cached analysis (activity_extraction_view, 8g-5 / TD-12).
+    """
+    vs = viewset_cls()
+    vs.request      = request
+    vs.action       = action
+    vs.args         = ()
+    vs.kwargs       = {}
+    vs.format_kwarg = None
+    return vs.get_queryset()
+

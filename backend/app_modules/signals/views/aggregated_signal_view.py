@@ -70,6 +70,7 @@ from app_modules.signals.serializers import (
     ConstraintSignalListSerializer,
     CompetitorSignalListSerializer,
 )
+from .base_views import signal_viewset_queryset
 from .pain_signal_views import PainSignalViewSet
 from .objective_signal_views import ObjectiveSignalViewSet
 from .impact_signal_views import ImpactSignalViewSet
@@ -291,14 +292,7 @@ class AggregatedSignalListView(BaseAPIView):
         on the multi-department target_departments M2M (sub-step 1b), the other
         _HAS_DEPARTMENT types still on the single target_department FK.
         """
-        vs = viewset_cls()
-        vs.request      = request
-        vs.action       = 'list'
-        vs.args         = ()
-        vs.kwargs       = {}
-        vs.format_kwarg = None
-
-        qs = vs.get_queryset()
+        qs = signal_viewset_queryset(viewset_cls, request, 'list')
         if account_id:
             qs = qs.filter(account_id=account_id)
         elif decision_cycle_id:

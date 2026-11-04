@@ -591,16 +591,18 @@ class ActivityExtractionView(BaseAPIView):
 
     @staticmethod
     def _serialize_cached_qualif_signals(run, ser_ctx):
-        """Re-query signals from DB for a cached qualification run."""
-        from app_modules.signals.models import (
-            PainSignal,
-            ObjectiveSignal,
-            ImpactSignal,
-            TechStackSignal,
-            BlockerSignal,
-            ConstraintSignal,
-            PeopleSignal,
-        )
+        """Re-query signals from DB for a cached qualification run — 8g-5
+        (TD-12): through each type ViewSet's own queryset (the aggregated
+        view's pattern: base_views.signal_viewset_queryset, detail action),
+        so the detail serializers read preloaded relations (no N+1)."""
+        from app_modules.signals.views.base_views import signal_viewset_queryset
+        from app_modules.signals.views.blocker_signal_views import BlockerSignalViewSet
+        from app_modules.signals.views.constraint_signal_views import ConstraintSignalViewSet
+        from app_modules.signals.views.impact_signal_views import ImpactSignalViewSet
+        from app_modules.signals.views.objective_signal_views import ObjectiveSignalViewSet
+        from app_modules.signals.views.pain_signal_views import PainSignalViewSet
+        from app_modules.signals.views.people_signal_views import PeopleSignalViewSet
+        from app_modules.signals.views.tech_stack_signal_views import TechStackSignalViewSet
         activity = run.source_activity
         if activity is None:
             return {
@@ -609,13 +611,20 @@ class ActivityExtractionView(BaseAPIView):
                 'people': [],
             }
 
-        pain = PainSignal.objects.filter(source_activity=activity, source_run=run)
-        objective = ObjectiveSignal.objects.filter(source_activity=activity, source_run=run)
-        impact = ImpactSignal.objects.filter(source_activity=activity, source_run=run)
-        techstack = TechStackSignal.objects.filter(source_activity=activity, source_run=run)
-        blocker = BlockerSignal.objects.filter(source_activity=activity, source_run=run)
-        constraint = ConstraintSignal.objects.filter(source_activity=activity, source_run=run)
-        people = PeopleSignal.objects.filter(source_activity=activity, source_run=run)
+        request = ser_ctx.get('request')
+
+        def cached(viewset_cls):
+            return signal_viewset_queryset(viewset_cls, request, 'retrieve').filter(
+                source_activity=activity, source_run=run,
+            )
+
+        pain = cached(PainSignalViewSet)
+        objective = cached(ObjectiveSignalViewSet)
+        impact = cached(ImpactSignalViewSet)
+        techstack = cached(TechStackSignalViewSet)
+        blocker = cached(BlockerSignalViewSet)
+        constraint = cached(ConstraintSignalViewSet)
+        people = cached(PeopleSignalViewSet)
 
         return {
             'pain':       PainSignalDetailSerializer(
