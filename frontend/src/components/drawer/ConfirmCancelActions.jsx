@@ -7,7 +7,7 @@
 //   - right-aligned row, small IconButtons, success ✓ / error ✗ tokens;
 //   - test ids  <testIdBase>-confirm / <testIdBase>-cancel;
 //   - aria      "Confirm <label>" / "Discard <label>".
-// EditActivityContent's DateGroup still carries its own copy (TD-267).
+// EditActivityContent's DateGroup uses it too (lot 3 / 9, TD-267: its copy removed).
 
 "use client";
 

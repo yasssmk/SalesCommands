@@ -288,6 +288,10 @@ describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATC
     // in edit: confirm + cancel controls present
     expect(screen.getByTestId("date-confirm")).toBeInTheDocument();
     expect(screen.getByTestId("date-cancel")).toBeInTheDocument();
+    // Lot 3 / 9 (TD-267): THE shared ✓/✗ row (ConfirmCancelActions) — its
+    // aria contract "Confirm <label>" / "Discard <label>".
+    expect(screen.getByRole("button", { name: "Confirm date" })).toBe(screen.getByTestId("date-confirm"));
+    expect(screen.getByRole("button", { name: "Discard date" })).toBe(screen.getByTestId("date-cancel"));
     // change the scheduled date via the stubbed picker (label "Scheduled date")
     fireEvent.click(screen.getByTestId("pick-Scheduled date"));
     // validate the section

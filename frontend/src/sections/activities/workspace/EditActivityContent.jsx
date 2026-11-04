@@ -60,7 +60,6 @@ import TextField from "@mui/material/TextField";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
-import CheckOutlined from "@ant-design/icons/CheckOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
@@ -97,6 +96,7 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import InfoNotice from "components/display/InfoNotice";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
+import ConfirmCancelActions from "components/drawer/ConfirmCancelActions";
 import PersonRow from "components/display/PersonRow";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
@@ -310,27 +310,9 @@ function DateGroup({ values, setFieldValue, locked = false, emptyMode = "schedul
             )}
           </Stack>
 
-          {/* ✓ validate (keep draft) / ✗ discard (restore) — local read/edit only. */}
-          <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
-            <IconButton
-              size="small"
-              onClick={confirm}
-              data-testid="date-confirm"
-              aria-label="Confirm date"
-              sx={{ color: "success.main" }}
-            >
-              <CheckOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={cancel}
-              data-testid="date-cancel"
-              aria-label="Discard date changes"
-              sx={{ color: "error.main" }}
-            >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-          </Stack>
+          {/* ✓ validate (keep draft) / ✗ discard (restore) — local read/edit only.
+              THE shared row (components/drawer/ConfirmCancelActions.jsx, TD-267). */}
+          <ConfirmCancelActions onConfirm={confirm} onCancel={cancel} testIdBase="date" label="date" />
         </Stack>
       </LocalizationProvider>
     );
