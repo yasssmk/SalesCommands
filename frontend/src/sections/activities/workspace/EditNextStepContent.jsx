@@ -43,6 +43,7 @@ import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import InlineDateField from "components/drawer/InlineDateField";
 import { NEXT_STEP_TITLE_MAX_LENGTH } from "sections/activities/signals/signalValidationRules";
+import { SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
 
 // "Carried by" is a boolean on the model; the select holds these two keys.
 const CARRIED_BY = { PROSPECT: "PROSPECT", SELLER: "SELLER" };
@@ -269,7 +270,7 @@ export default function EditNextStepContent({
             type="textarea"
             value={values.source_quote}
             onChange={set("source_quote")}
-            placeholder="No source quote"
+            placeholder={SIGNAL_NO_SOURCE_QUOTE}
           />
         </Stack>
       </Stack>

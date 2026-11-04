@@ -49,6 +49,7 @@ import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
 // Target date — the shared chassis date field (moved from this file, D1).
 import InlineDateField from "components/drawer/InlineDateField";
 import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
+import { SIGNAL_NO_NOTES, SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS (reproduced from InlineObjectiveForm) ||=========== //
 
@@ -358,7 +359,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
             type="textarea"
             value={values.notes}
             onChange={set("notes")}
-            placeholder="No notes"
+            placeholder={SIGNAL_NO_NOTES}
           />
         </Stack>
 
@@ -377,7 +378,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
             type="textarea"
             value={values.source_quote}
             onChange={set("source_quote")}
-            placeholder="No source quote"
+            placeholder={SIGNAL_NO_SOURCE_QUOTE}
           />
         </Stack>
       </Stack>

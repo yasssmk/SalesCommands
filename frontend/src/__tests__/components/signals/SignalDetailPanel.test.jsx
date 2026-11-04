@@ -1334,7 +1334,7 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
       <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,
     );
     const contact = screen.getByTestId("people-contact");
-    expect(contact).toHaveTextContent("No contact linked");
+    expect(contact).toHaveTextContent("No contact attributed");
     expect(contact).not.toHaveTextContent("Paula Participant");
     expect(screen.getAllByText("Paula Participant")).toHaveLength(1);
     expect(within(screen.getByTestId("people-source")).getByText("Paula Participant")).toBeInTheDocument();
@@ -1351,7 +1351,7 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
     expect(within(contact).getByText("Sophie Martin")).toBeInTheDocument();
     expect(contact).toHaveTextContent("CFO");
     expect(contact).toHaveTextContent("Finance");
-    expect(contact).not.toHaveTextContent("No contact linked");
+    expect(contact).not.toHaveTextContent("No contact attributed");
   });
 
   it("P7: influence null → 'Not assessed'; empty notes → 'No notes'; no department → placeholder", () => {

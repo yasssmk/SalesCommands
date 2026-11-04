@@ -36,7 +36,7 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
-import { formatContact } from "sections/activities/signals/utils/signalDisplay";
+import { formatContact, SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
 import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
 
 // ==============================|| HELPERS ||============================== //
@@ -200,7 +200,7 @@ export default function EditObjectionContent({ objection, accountId, onSaved, on
             type="textarea"
             value={values.source_quote}
             onChange={set("source_quote")}
-            placeholder="No source quote"
+            placeholder={SIGNAL_NO_SOURCE_QUOTE}
           />
         </Stack>
       </Stack>

@@ -666,7 +666,7 @@ describe("ActivitySignalsTab — flat forced (SIG-2)", () => {
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(updateSignal).not.toHaveBeenCalled();
     expect(screen.getByTestId("people-detail-body")).toBeInTheDocument();
-    expect(screen.getByTestId("people-contact")).toHaveTextContent("No contact linked");
+    expect(screen.getByTestId("people-contact")).toHaveTextContent("No contact attributed");
   });
 
   // People S4 — the Activity list renders a People line 1 as an identity:

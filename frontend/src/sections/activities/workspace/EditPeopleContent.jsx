@@ -46,7 +46,7 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
-import { formatContact } from "sections/activities/signals/utils/signalDisplay";
+import { formatContact, SIGNAL_NO_NOTES, SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
 import { withEmptyOption } from "utils/selectOptions";
 
 // ==============================|| HELPERS ||============================== //
@@ -300,7 +300,7 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
             type="textarea"
             value={values.notes}
             onChange={set("notes")}
-            placeholder="No notes"
+            placeholder={SIGNAL_NO_NOTES}
           />
         </Stack>
 
@@ -315,7 +315,7 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
             type="textarea"
             value={values.source_quote}
             onChange={set("source_quote")}
-            placeholder="No source quote"
+            placeholder={SIGNAL_NO_SOURCE_QUOTE}
           />
         </Stack>
       </Stack>

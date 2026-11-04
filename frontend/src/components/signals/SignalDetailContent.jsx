@@ -53,6 +53,9 @@ import {
   getUsageScopeLabel,
   NEXT_STEP_UNKNOWN,
   USAGE_SCOPE,
+  SIGNAL_NO_CONTACT,
+  SIGNAL_NO_NOTES,
+  SIGNAL_NO_SOURCE_QUOTE,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // Shared per-type detail blocks — the single rendering of each type's
@@ -573,7 +576,7 @@ function ObjectiveDetailView({
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No source quote
+            {SIGNAL_NO_SOURCE_QUOTE}
           </Typography>
         )}
         {contacts.length > 0 && (
@@ -756,7 +759,7 @@ function PainDetailView({
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No source quote
+            {SIGNAL_NO_SOURCE_QUOTE}
           </Typography>
         )}
         {contacts.length > 0 && (
@@ -953,7 +956,7 @@ function ImpactDetailView({
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No source quote
+            {SIGNAL_NO_SOURCE_QUOTE}
           </Typography>
         )}
         {contacts.length > 0 && (
@@ -1141,7 +1144,7 @@ function ConstraintDetailView({
           </Typography>
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No notes
+            {SIGNAL_NO_NOTES}
           </Typography>
         )}
 
@@ -1154,7 +1157,7 @@ function ConstraintDetailView({
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No source quote
+            {SIGNAL_NO_SOURCE_QUOTE}
           </Typography>
         )}
         {contacts.length > 0 && (
@@ -1308,7 +1311,7 @@ function ObjectionDetailView({
             <ContactInline contact={signal.contact} variant="body2" />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No contact attributed
+              {SIGNAL_NO_CONTACT}
             </Typography>
           )}
         </Box>
@@ -1323,7 +1326,7 @@ function ObjectionDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {contacts.length > 0 && (
@@ -1488,7 +1491,7 @@ function CompetitorDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {contacts.length > 0 && (
@@ -1665,7 +1668,7 @@ function PeopleDetailView({
             </Typography>
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No notes
+              {SIGNAL_NO_NOTES}
             </Typography>
           )}
         </Box>
@@ -1681,7 +1684,7 @@ function PeopleDetailView({
               <ContactInline contact={signal.target_contact} variant="body2" />
             ) : (
               <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-                No contact linked
+                {SIGNAL_NO_CONTACT}
               </Typography>
             )}
           </Box>
@@ -1701,7 +1704,7 @@ function PeopleDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {/* TD-279: the server evidence check of the quote — a warning-tone
@@ -1919,7 +1922,7 @@ function TechStackDetailView({
             </Typography>
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No notes
+              {SIGNAL_NO_NOTES}
             </Typography>
           )}
         </Box>
@@ -1934,7 +1937,7 @@ function TechStackDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {contacts.length > 0 && (
@@ -2153,7 +2156,7 @@ function NextStepDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {/* 3.6: the server check of the quote — the People values and pill. */}

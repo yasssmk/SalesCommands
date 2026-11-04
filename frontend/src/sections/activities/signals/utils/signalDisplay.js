@@ -57,6 +57,14 @@ export function getNextStepCitedNames(signal) {
 // An empty next step field reads this, in full (TechStack rule).
 export const NEXT_STEP_UNKNOWN = "Unknown";
 
+// Lot 3 / 5 (TD-259) — the placeholders of an empty signal field, ONE
+// definition for the detail (SignalDetailContent), the edit drawers
+// (Edit*Content) and the compact cards. A signal without an attributed
+// contact reads SIGNAL_NO_CONTACT — never a participant fallback (TD-254).
+export const SIGNAL_NO_SOURCE_QUOTE = "No source quote";
+export const SIGNAL_NO_NOTES = "No notes";
+export const SIGNAL_NO_CONTACT = "No contact attributed";
+
 // A TechStack signal's usage, with the PO rule "the departments PRIME over the
 // scale": when at least one usage department is designated, the department
 // names are the usage and the scale is not shown. Shared by TechDetailBlock

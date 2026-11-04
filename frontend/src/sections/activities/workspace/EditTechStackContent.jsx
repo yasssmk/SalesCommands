@@ -58,6 +58,8 @@ import ScopeDepartmentsField, { toDepartmentObjects } from "components/drawer/Sc
 import {
   USAGE_SCOPE,
   getUsageScopeLabel,
+  SIGNAL_NO_NOTES,
+  SIGNAL_NO_SOURCE_QUOTE,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| CONSTANTS ||============================== //
@@ -382,7 +384,7 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
             type="textarea"
             value={values.notes}
             onChange={set("notes")}
-            placeholder="No notes"
+            placeholder={SIGNAL_NO_NOTES}
           />
         </Stack>
 
@@ -397,7 +399,7 @@ export default function EditTechStackContent({ techstack, accountId, onSaved, on
             type="textarea"
             value={values.source_quote}
             onChange={set("source_quote")}
-            placeholder="No source quote"
+            placeholder={SIGNAL_NO_SOURCE_QUOTE}
           />
         </Stack>
       </Stack>

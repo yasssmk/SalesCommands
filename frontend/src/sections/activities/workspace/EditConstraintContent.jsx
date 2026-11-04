@@ -52,6 +52,7 @@ import StatusPill from "components/chips/StatusPill";
 import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS, SCOPE_PILL_COLORS } from "utils/objectiveScope";
 import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
 import { withEmptyOption } from "utils/selectOptions";
+import { SIGNAL_NO_NOTES, SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -449,7 +450,7 @@ export default function EditConstraintContent({ constraint, accountId, onSaved, 
             type="textarea"
             value={values.notes}
             onChange={set("notes")}
-            placeholder="No notes"
+            placeholder={SIGNAL_NO_NOTES}
           />
         </Stack>
 
@@ -464,7 +465,7 @@ export default function EditConstraintContent({ constraint, accountId, onSaved, 
             type="textarea"
             value={values.source_quote}
             onChange={set("source_quote")}
-            placeholder="No source quote"
+            placeholder={SIGNAL_NO_SOURCE_QUOTE}
           />
         </Stack>
       </Stack>
