@@ -51,6 +51,7 @@ import {
   NEXT_STEPS_BAND_QUERY,
   hasSuggestedNextSteps,
   hasNextStepsBand,
+  showsCampaignConversion,
 } from "utils/nextStepsBand";
 import { isActivitySignalsLocked, TRANSCRIPT_FIELD } from "utils/activitySignalsLock";
 
@@ -115,6 +116,12 @@ export default function ActivityWorkspacePage() {
     () => bandNextSteps.filter((s) => s.status === "PENDING").length,
     [bandNextSteps],
   );
+  // 8f-1 (PO): « Start Decision Cycle » shown (showsCampaignConversion — the
+  // CTA's OWN condition, one source) is an action to take: the band halo
+  // reads it as one more item to validate — the SAME SignalsHaloBox, no new
+  // style; the DC born, the CTA (and the highlight) go. The header counter
+  // is unchanged (next steps only).
+  const conversionToTake = showsCampaignConversion(activity) ? 1 : 0;
 
   // Pipeline runner — owned here so pipelineState is accessible to header (F4)
   const pipelineRunner = usePipelineRunner({
@@ -344,8 +351,8 @@ export default function ActivityWorkspacePage() {
               activity, or the campaign conversion) — the Preparation model. */}
           {hasNextStepsBand(activity) && (
             <SignalsHaloBox
-              pendingCount={nextStepsPendingCount}
-              totalSignals={bandNextSteps.length}
+              pendingCount={nextStepsPendingCount + conversionToTake}
+              totalSignals={bandNextSteps.length + conversionToTake}
               data-testid="next-steps-halo"
             >
               <ActivityNextStepsBand
