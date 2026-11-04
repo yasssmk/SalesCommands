@@ -17,11 +17,12 @@
 // like every other drawer (P-CONTACT-EDIT). "See signals" stays a body link
 // (inert for now).
 //
-// Layout (maquette Drawer_People): identity (avatar + name + job · dept) — rule
-// — coordinates (email / phone / linkedin, a line dropped when empty) —
-// "Involved in N activities" encart (only inside a DC, from the qualified
-// entry) — rule — decision role (only when a role is known). Theme tokens only,
-// no hardcoded hex/px.
+// Layout — the numbered sections of the edit drawer (EditContactContent; lot 3
+// / 13a, TD-239, PO « ce design pour TOUS les drawers »): §1 Identity (avatar +
+// name + job · dept) — §2 Contact (email / phone / linkedin, placeholders) —
+// §3 Role in the decision (the role, placeholder when unknown, then the
+// "Involved in N activities" encart inside a DC) — then "See signals". Theme
+// tokens only, no hardcoded hex/px.
 
 "use client";
 
@@ -31,6 +32,7 @@ import PropTypes from "prop-types";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
+import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -46,6 +48,7 @@ import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import { useGetContact } from "api/businessData/contacts";
 import { useGetDCPeople } from "api/accounts/decisionCycles";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import SectionHeader from "components/display/SectionHeader";
 import Surface from "components/display/Surface";
 import CoordinateRow from "components/display/CoordinateRow";
 import EditContactContent from "sections/activities/workspace/EditContactContent";
@@ -67,20 +70,6 @@ function fullName(contact) {
     `${contact?.first_name || ""} ${contact?.last_name || ""}`.trim() ||
     contact?.email ||
     "Contact"
-  );
-}
-
-// A themed hairline rule (same form as the Context card's GroupRule).
-function Rule() {
-  const aq = useTheme().aphoriQ;
-  return (
-    <Box
-      sx={{
-        borderTopStyle: "solid",
-        borderTopWidth: aq.border.width.hairline,
-        borderTopColor: aq.border.color,
-      }}
-    />
   );
 }
 
@@ -158,7 +147,10 @@ export default function ContactDrawerContent({ contactId, activity }) {
   return (
     <DrawerContentLayout readActions={{ onEdit: handleEdit }}>
       <Stack spacing={2}>
-        {/* Identity — avatar | name block (grows). Edit moved to the bottom bar. */}
+        {/* ---- SECTION 1 — Identity: avatar | name block (grows). Edit moved to
+            the bottom bar. Numbered sections = the edit drawer's
+            (EditContactContent — lot 3 / 13a, TD-239). ---- */}
+        <SectionHeader index={1} title="Identity" subtitle="Who the contact is." />
         <Stack direction="row" spacing={2} alignItems="center" data-testid="contact-identity-row">
           <Box
             aria-hidden
@@ -190,10 +182,11 @@ export default function ContactDrawerContent({ contactId, activity }) {
           </Box>
         </Stack>
 
-        <Rule />
+        <Divider />
 
-        {/* Coordinates — the 3 lines are ALWAYS shown, two columns, with a
-            "No …" placeholder when a channel is empty. */}
+        {/* ---- SECTION 2 — Contact: the 3 coordinate lines are ALWAYS shown,
+            two columns, with a "No …" placeholder when a channel is empty. ---- */}
+        <SectionHeader index={2} title="Contact" subtitle="How to reach them." />
         <Stack spacing={1}>
           <CoordinateRow
             icon={MailOutlined}
@@ -219,26 +212,13 @@ export default function ContactDrawerContent({ contactId, activity }) {
           />
         </Stack>
 
-        {/* Involved in N activities — shown for any contact inside a DC (even
-            0). Absent outside a DC (campaign activity → no deal, no count). */}
-        {inDC && (
-          <Surface data-testid="contact-activities" level="level1" radius="lg" sx={{ p: 1.5 }}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <TeamOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
-              <Typography variant="body2" color="text.primary">
-                Involved in{" "}
-                <Box component="span" sx={{ fontWeight: "bold" }}>
-                  {activityCount}
-                </Box>{" "}
-                activit{activityCount === 1 ? "y" : "ies"} in this deal
-              </Typography>
-            </Stack>
-          </Surface>
-        )}
 
-        {/* Decision role — ALWAYS present (rule + block); a placeholder invites
-            qualifying the contact when no role is known yet. */}
-        <Rule />
+        <Divider />
+
+        {/* ---- SECTION 3 — Role in the decision: ALWAYS present; a placeholder
+            invites qualifying the contact when no role is known yet. Then the
+            deal involvement (inside a DC). ---- */}
+        <SectionHeader index={3} title="Role in the decision" subtitle="Their role in this decision cycle." />
         <Box data-testid="contact-role">
           <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
             Role in the decision
@@ -259,6 +239,23 @@ export default function ContactDrawerContent({ contactId, activity }) {
             </Typography>
           )}
         </Box>
+
+        {/* Involved in N activities — shown for any contact inside a DC (even
+            0). Absent outside a DC (campaign activity → no deal, no count). */}
+        {inDC && (
+          <Surface data-testid="contact-activities" level="level1" radius="lg" sx={{ p: 1.5 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TeamOutlined style={{ fontSize: theme.iconSizes.sm, color: aq.text.muted }} />
+              <Typography variant="body2" color="text.primary">
+                Involved in{" "}
+                <Box component="span" sx={{ fontWeight: "bold" }}>
+                  {activityCount}
+                </Box>{" "}
+                activit{activityCount === 1 ? "y" : "ies"} in this deal
+              </Typography>
+            </Stack>
+          </Surface>
+        )}
 
         {/* Bottom action — the only one in the body, inert for now. */}
         <Box

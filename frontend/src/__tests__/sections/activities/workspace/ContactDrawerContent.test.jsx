@@ -41,6 +41,7 @@ vi.mock("api/accounts/decisionCycles", () => ({
 
 import Typography from "@mui/material/Typography";
 import ThemeCustomization from "themes/index";
+import { sectionOf, sectionTitles } from "../../../_utils/sectionHeaders";
 import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
 
 function rulesForElement(el) {
@@ -311,5 +312,29 @@ describe("ContactDrawerContent — loading", () => {
     mockDCPeople({ qualified: [], unqualified: [] });
     renderFiche();
     expect(screen.getByTestId("contact-loading")).toBeInTheDocument();
+  });
+});
+
+// ==============================|| LOT 3 / 13a (TD-239) — NUMBERED SECTIONS ||============================== //
+// PO (MAJ 5.18): « ce design pour TOUS les drawers » — the read fiche gets the
+// numbered SectionHeaders of its edit drawer (EditContactContent: Identity ·
+// Contact · Role in the decision). « See signals » stays below the sections.
+
+describe("ContactDrawerContent — numbered sections, as the edit drawer (TD-239)", () => {
+  it("§1 Identity · §2 Contact · §3 Role in the decision", () => {
+    mockContact();
+    mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
+    const { container } = renderFiche();
+    expect(sectionTitles(container)).toEqual(["Identity", "Contact", "Role in the decision"]);
+  });
+
+  it("each block sits in its section", () => {
+    mockContact();
+    mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
+    const { container } = renderFiche();
+    expect(sectionOf(container, screen.getByTestId("contact-identity-row"))).toBe(1);
+    expect(sectionOf(container, screen.getByText("Email"))).toBe(2);
+    expect(sectionOf(container, screen.getByTestId("contact-role"))).toBe(3);
+    expect(sectionOf(container, screen.getByTestId("contact-activities"))).toBe(3);
   });
 });

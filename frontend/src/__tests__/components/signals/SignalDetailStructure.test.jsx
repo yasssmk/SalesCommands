@@ -7,35 +7,18 @@
 //   Pain       — §1 What's the pain? · §2 Which scope? · §3 Related tool (+ notes) · §4 Source quote
 //   Constraint — §1 What's the constraint? · §2 Rigidity · §3 Which scope? · §4 Notes · §5 Source quote
 //   People     — §1 Who is this person? (contact, name, department) · §2 What is their role? · §3 Source quote
-// sectionHeaders: same helper as EditCompetitorContent.test.jsx (C2b).
+// sectionHeaders: the shared helper of the C2b parity test (_utils/sectionHeaders).
 
 import { describe, it, expect, afterEach } from "vitest";
 import { render as rtlRender, screen, cleanup } from "@testing-library/react";
 import AphoriqTheme from "../../_utils/aphoriqTheme";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
+import { sectionOf, sectionTitles } from "../../_utils/sectionHeaders";
 
 const render = (ui) => rtlRender(ui, { wrapper: AphoriqTheme });
 afterEach(() => cleanup());
 
-function sectionHeaders(root) {
-  return [...root.querySelectorAll(".MuiChip-label")]
-    .filter((label) => /^\d+$/.test(label.textContent))
-    .map((label) => {
-      const row = label.closest(".MuiChip-root").parentElement;
-      return { index: label.textContent, title: row.textContent.slice(label.textContent.length), el: row };
-    });
-}
-
-// `el` sits in section n (1-based): after its header, before the next one.
-function sectionOf(container, el) {
-  const headers = sectionHeaders(container).map((h) => h.el);
-  const after = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-  let n = 0;
-  headers.forEach((h, i) => { if (after(h, el)) n = i + 1; });
-  return n;
-}
-
-const titles = (container) => sectionHeaders(container).map(({ title }) => title);
+const titles = sectionTitles;
 
 describe("Pain detail — the edit's structure", () => {
   const PAIN = {
