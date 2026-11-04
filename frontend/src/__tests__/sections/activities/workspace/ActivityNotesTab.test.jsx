@@ -45,6 +45,7 @@ vi.mock('utils/displayError', () => ({
 
 import ActivityNotesTab from 'sections/activities/workspace/ActivityNotesTab';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
+import AphoriqTheme from '../../../_utils/aphoriqTheme';
 
 // ==============================|| TEST DATA ||============================== //
 
@@ -84,7 +85,7 @@ const defaultProps = {
 // ==============================|| HELPERS ||============================== //
 
 function renderTab(overrides = {}) {
-  return render(<ActivityNotesTab {...defaultProps} {...overrides} />);
+  return render(<AphoriqTheme><ActivityNotesTab {...defaultProps} {...overrides} /></AphoriqTheme>);
 }
 
 // ==============================|| TESTS ||============================== //

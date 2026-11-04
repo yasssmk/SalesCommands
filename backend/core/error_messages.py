@@ -199,6 +199,11 @@ class ActivityErrorMessages:
         "This activity is cancelled: its signals and its AI analysis are locked."
     )
 
+    # Transcript lock (8g-7, TD-25) — ai_pipelines/services/analysis_state.py
+    TRANSCRIPT_LOCKED = _(
+        "This activity has been analysed: its transcript can no longer be changed."
+    )
+
     # Dates (8g-1, TD-230) — activities/services/date_rules.py
     DATES_EXCLUSIVE = _(
         "An activity has a scheduled date or a due date, not both."

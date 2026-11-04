@@ -16,9 +16,10 @@ import Typography from '@mui/material/Typography';
 
 // project imports
 import EditableTextBlock from 'components/EditableTextBlock';
+import InfoNotice from 'components/display/InfoNotice';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import RunAIAnalysisButton, { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
-import { isActivitySignalsLocked, TRANSCRIPT_FIELD } from 'utils/activitySignalsLock';
+import { isTranscriptLocked, TRANSCRIPT_FIELD } from 'utils/activitySignalsLock';
 
 // assets
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
@@ -138,8 +139,10 @@ export default function ActivityNotesTab({
           isLocked={isLocked}
         />
 
-        {/* Transcript section — its own lock (CANCELLED only, 5.12d): a
-            transcript can be added after the call. The notes keep isLocked. */}
+        {/* Transcript section — its own lock (5.12d: CANCELLED, so a
+            transcript can be added after the call; 8g-7: or ANALYSED — no
+            re-run, the transcript stays the analysed one). The notes keep
+            isLocked. */}
         <EditableTextBlock
           label="Transcript"
           field={TRANSCRIPT_FIELD}
@@ -148,8 +151,13 @@ export default function ActivityNotesTab({
           placeholder="Paste the call transcript or email content here..."
           showCharCount
           onSave={onSave}
-          isLocked={isActivitySignalsLocked(activity)}
+          isLocked={isTranscriptLocked(activity, lastRun)}
         />
+        {lastRun && (
+          <InfoNotice data-testid="transcript-analysed-notice">
+            This transcript has already been analysed: it can no longer be changed.
+          </InfoNotice>
+        )}
 
         {/* Last analyzed caption */}
         {renderLastRunCaption()}

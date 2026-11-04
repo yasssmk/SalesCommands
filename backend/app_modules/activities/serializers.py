@@ -1292,6 +1292,17 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     )
 
             # =================================================================
+            # TRANSCRIPT LOCK (8g-7, TD-25)
+            # =================================================================
+            # Once an analysis succeeded, the transcript is the analysed one:
+            # no change (no re-run). THE « analysed » rule of the last-run
+            # endpoint / wizard — ai_pipelines/services/analysis_state.py.
+            if 'transcript' in attrs and (attrs['transcript'] or '') != (instance.transcript or ''):
+                from app_modules.ai_pipelines.services.analysis_state import is_activity_analysed
+                if is_activity_analysed(instance):
+                    raise StandardizedValidationError(ActivityErrorMessages.TRANSCRIPT_LOCKED)
+
+            # =================================================================
             # STATUS CHANGE LOGIC
             # =================================================================
             new_status = attrs.get('status')

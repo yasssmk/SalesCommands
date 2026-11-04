@@ -36,6 +36,7 @@ from permissions.mixins import ScopedPermission
 from app_modules.activities.models import Activity
 from app_modules.ai_pipelines.constants import AIPipelineType
 from app_modules.ai_pipelines.models import AIPipelineRun
+from app_modules.ai_pipelines.services.analysis_state import analysed_runs
 
 
 def _serialize_run(run):
@@ -88,13 +89,9 @@ class LastRunView(BaseAPIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # THE « analysed » definition (8g-7) — services/analysis_state.py.
         base_qs = (
-            AIPipelineRun.objects
-            .filter(
-                client_id=client_id,
-                source_activity=activity,
-                status__in=('SUCCESS', 'PARTIAL'),
-            )
+            analysed_runs(activity, client_id)
             .select_related('created_by')
             .order_by('-created_at')
         )
