@@ -157,6 +157,12 @@ vi.mock("api/accounts/decisionCycles", async (importOriginal) => ({
              { id: "dc-2", name: "Deal Other", is_active: true }],
     cyclesLoading: false,
   })),
+  // 8d-2: the Async select's hook (server search on the open cycles).
+  useGetDecisionCycles: vi.fn(() => ({
+    cycles: [{ id: "dc-1", name: "Deal Acme", outcome: null },
+             { id: "dc-2", name: "Deal Other", outcome: null }],
+    cyclesLoading: false,
+  })),
   useGetDecisionStepsByCycle: vi.fn(() => ({
     steps: [
       { id: "step-4", name: "Technical Fit", order: 4 },
@@ -1192,7 +1198,11 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     const create = await openCreateFromFlow();
     expect(within(create).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
     expect(within(create).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
+    // 8d-2: modifiable through the standard AsyncDecisionCycleSelect.
     fireEvent.click(within(create).getByTestId("inline-read-decision_cycle"));
+    const input = within(within(create).getByTestId("decision-cycle-select")).getByRole("combobox");
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(screen.getByRole("option", { name: "Deal Other" })).toBeInTheDocument();
   });
 

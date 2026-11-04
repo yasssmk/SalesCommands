@@ -123,6 +123,9 @@ let mockCited = [];
 const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
+  if (url.startsWith(`/decision_cycles/by-account/${ACC_ID}`)) {
+    return Promise.resolve({ data: { results: [{ id: DC_ID, name: "Deal Acme", outcome: null }], count: 1 } });
+  }
   if (url.startsWith("/decision_cycles/steps/")) {
     return Promise.resolve({ data: { results: url.includes(DC_ID) ? STEPS : [], count: 3 } });
   }
@@ -217,6 +220,17 @@ describe("« + Add next step » — the date field follows the type", () => {
     const create = await addNextStep("Task");
     await changeType(create, "Phone Call");
     expect(dateLabel(create)).toMatch(/^Scheduled/);
+  });
+});
+
+describe("« + Add next step » from a DC activity — the DC pre-filled, unchanged (8d-2)", () => {
+  it("section 1 « Decision cycle » shows the activity's DC, pre-filled", async () => {
+    renderPage();
+    const create = await addNextStep("Meeting");
+    const section = within(create).getByTestId("activity-cycle-section");
+    expect(await within(section).findByText("Deal Acme")).toBeInTheDocument();
+    expect(within(section).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
+    expect(within(section).queryByRole("button", { name: /Create new cycle/ })).toBeNull();
   });
 });
 

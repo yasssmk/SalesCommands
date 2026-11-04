@@ -212,12 +212,10 @@ describe("A SUCCESSFUL campaign activity — no DC born yet (5.14b)", () => {
     expect(within(coque()).getByTestId("coque-title")).toHaveTextContent("Start Decision Cycle");
     expect(within(drawerNow()).getByTestId("inline-read-title")).toHaveTextContent("Security review");
     expect(within(drawerNow()).getByText("Thomas Lefèvre")).toBeInTheDocument();
-    // 8c-3: the account's open cycle (Deal Acme) is proposed first, then
-    // « New cycle » — chosen here: the inline cycle, as before.
-    fireEvent.click(await waitFor(() => within(drawerNow()).getByTestId("inline-read-decision_cycle")));
-    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["Deal Acme", "New cycle"]);
-    fireEvent.click(screen.getByRole("option", { name: "New cycle" }));
-    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    // 8d-2: an existing cycle (nothing pre-selected) or « Create new cycle »
+    // — chosen here: the inline cycle, as before.
+    expect(within(drawerNow()).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Choose a decision cycle");
+    fireEvent.click(within(drawerNow()).getByRole("button", { name: /Create new cycle/ }));
     const drawer = drawerNow();
 
     const cycle = within(drawer).getByTestId("conversion-cycle");

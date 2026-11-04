@@ -99,6 +99,7 @@ import InlineEditableValue from "components/drawer/InlineEditableValue";
 import PersonRow from "components/display/PersonRow";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
+import AsyncDecisionCycleSelect from "components/AsyncSelection/AsyncDecisionCycleSelect";
 import OutcomeSelector from "components/outcomes/OutcomeSelector";
 import {
   CALLBACK_OUTCOME,
@@ -154,10 +155,8 @@ const validationSchema = Yup.object(
   DATE_PAIR,
 );
 
-// 8c-3 — the conversion's « New cycle » choice in the cycle selector (the
-// InlineCycleForm below), never sent.
-const NEW_CYCLE = "__new__";
-const isExistingCycle = (cycle) => Boolean(cycle) && cycle !== NEW_CYCLE;
+// An existing cycle is chosen (8d-2: the new one is inline_cycle, apart).
+const isExistingCycle = (cycle) => Boolean(cycle);
 
 // Creation: the owner is the creator (read-only, never sent); at least one
 // participant on PEOPLE_ACTIVITY_TYPES; a step once a cycle is chosen.
@@ -407,6 +406,30 @@ PersonEditRow.propTypes = {
   removeTestId: PropTypes.string.isRequired,
 };
 
+// The drawer's « + Add … » action (the People section's, 8d-2: also « Create
+// new cycle ») — ONE look: a text button with the plus icon, in the accent.
+function AddActionButton({ onClick, testId, children }) {
+  const theme = useTheme();
+  return (
+    <Button
+      variant="text"
+      size="small"
+      onClick={onClick}
+      data-testid={testId}
+      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+      sx={{ color: theme.aphoriQ.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
+    >
+      {children}
+    </Button>
+  );
+}
+
+AddActionButton.propTypes = {
+  onClick: PropTypes.func.isRequired,
+  testId: PropTypes.string,
+  children: PropTypes.node,
+};
+
 // The editable People section — draft only; the drawer's global Save PATCHes.
 // owner: single required slot (× empties it visually, but Formik keeps owner
 // required so a null owner_id is never sent). invited: optional removable list.
@@ -438,16 +461,9 @@ function PeopleSection({
     </Typography>
   );
   const addButton = (onClick, testId, label) => (
-    <Button
-      variant="text"
-      size="small"
-      onClick={onClick}
-      data-testid={testId}
-      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
-      sx={{ color: aq.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
-    >
+    <AddActionButton onClick={onClick} testId={testId}>
       {label}
-    </Button>
+    </AddActionButton>
   );
 
   const invited = values.invited || [];
@@ -750,6 +766,8 @@ function ActivityForm({
             stakeholders: defaults.stakeholders || [],
             // Conversion: the NEW cycle created inline ({ name, step_stage }).
             inline_cycle: null,
+            // 8d-2: the cycle object chosen in the Async select (label).
+            decision_cycle: null,
             decision_cycle_id: decisionCycleId || "",
             // Chosen once the cycle's steps are read (effect below): the
             // next step's proposal if it is one of them, else the origin
@@ -905,20 +923,19 @@ function ActivityForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chosenCycle]);
 
-  // Creation: the account's cycles, and the chosen cycle's steps.
+  // Creation: the account's cycles (the label of a cycle pre-filled from a DC
+  // activity), and the chosen cycle's steps.
   const { cycles } = useGetDecisionCyclesByAccount(isCreate ? accountId : null);
+  // 8d-2: the cycle chosen in section 1 (an object for the Async select; a
+  // pre-filled id gets its name from the account's cycles).
+  const currentCycle = values.decision_cycle
+    || (values.decision_cycle_id
+      ? { id: values.decision_cycle_id,
+          name: (cycles || []).find((c) => String(c.id) === String(values.decision_cycle_id))?.name || "" }
+      : null);
+  // Conversion: the InlineCycleForm opened by « Create new cycle ».
+  const [showInlineCycle, setShowInlineCycle] = useState(false);
   const { steps } = useGetDecisionStepsByCycle(isCreate ? values.decision_cycle_id : null);
-  const cycleOptions = useMemo(
-    () => (cycles || []).map((c) => ({ value: String(c.id), label: c.name })),
-    [cycles],
-  );
-  // 8c-3 — conversion: the account's OPEN cycles (no outcome — the pattern of
-  // DecisionCycleCardsList / AddToCampaignModal) FIRST, then « New cycle ».
-  const openCycleOptions = useMemo(
-    () => (cycles || []).filter((c) => !c.outcome).map((c) => ({ value: String(c.id), label: c.name })),
-    [cycles],
-  );
-  const conversionOffersCycles = isCreate && conversion && openCycleOptions.length > 0;
   const stepOptions = useMemo(
     () =>
       [...(steps || [])]
@@ -981,47 +998,63 @@ function ActivityForm({
               )}
             </>
           )}
-          {/* Conversion (8c-3): the account's open cycles first, then « New
-              cycle » — the drawer's cycle and step selectors (below, reused);
-              no open cycle: the new cycle directly, as before. */}
-          {conversionOffersCycles && (
-            <>
-              <InlineEditableValue
-                name="decision_cycle"
-                label="Decision cycle"
-                type="select"
-                options={[...openCycleOptions, { value: NEW_CYCLE, label: "New cycle" }]}
-                value={values.decision_cycle_id}
-                onChange={(v) => {
-                  setFieldValue("decision_cycle_id", v);
-                  setFieldValue("decision_step_id", "");
-                }}
-                placeholder="Choose a decision cycle"
-              />
-              {isExistingCycle(values.decision_cycle_id) && (
-                <InlineEditableValue
-                  name="decision_step"
-                  label="DC step"
-                  type="select"
-                  options={stepOptions}
-                  value={values.decision_step_id}
-                  onChange={(v) => setFieldValue("decision_step_id", v)}
-                  placeholder="No step"
-                  error={Boolean(errors.decision_step_id)}
-                  helperText={errors.decision_step_id}
+          {/* 8d-2 — the cycle: the standard AsyncDecisionCycleSelect (server
+              search, the account's OPEN cycles, newest update first) on the
+              click-to-edit pattern (EditPeopleContent's contact). Pre-filled
+              only from a DC activity (decisionCycleId, unchanged); nothing
+              pre-selected in conversion nor in a free creation. Hidden once a
+              new cycle is created (the old ActivityModal's behaviour). */}
+          {isCreate && !values.inline_cycle && (
+            <InlineEditableValue
+              name="decision_cycle"
+              label="Decision cycle"
+              value={currentCycle}
+              formatValue={(c) => c?.name || ""}
+              onChange={(cycle) => {
+                setFieldValue("decision_cycle", cycle || null);
+                setFieldValue("decision_cycle_id", cycle ? String(cycle.id) : "");
+                setFieldValue("decision_step_id", "");
+              }}
+              placeholder={conversion ? "Choose a decision cycle" : "No decision cycle"}
+              renderEditor={({ value, onChange, commit }) => (
+                <AsyncDecisionCycleSelect
+                  data-testid="decision-cycle-select"
+                  accountId={accountId}
+                  value={value}
+                  onChange={(_event, cycle) => {
+                    onChange(cycle ?? null);
+                    commit();
+                  }}
+                  label=""
+                  autoFocus
+                  openOnFocus
                 />
               )}
-            </>
+            />
           )}
-
-          {/* Conversion (5.13): a NEW decision cycle — the inline cycle form
-              (name + starting step, in pills), then the cycle as a removable
-              row (the inline contact's pattern). */}
-          {isCreate && conversion &&
-            (!conversionOffersCycles || values.decision_cycle_id === NEW_CYCLE) && (
+          {/* The step: required once an existing cycle is chosen; hidden while
+              a new cycle is being created. */}
+          {isCreate && isExistingCycle(values.decision_cycle_id) && !values.inline_cycle && !showInlineCycle && (
+            <InlineEditableValue
+              name="decision_step"
+              label="DC step"
+              type="select"
+              options={stepOptions}
+              value={values.decision_step_id}
+              onChange={(v) => setFieldValue("decision_step_id", v)}
+              placeholder="No step"
+              error={Boolean(errors.decision_step_id)}
+              helperText={errors.decision_step_id}
+            />
+          )}
+          {/* Conversion — « Create new cycle » (the old ActivityModal's way):
+              the existing InlineCycleForm; once saved, the cycle chosen is
+              emptied, the step hidden, and the new cycle is a removable row
+              (the drawer's confirmation pattern — the inline contact's). */}
+          {isCreate && conversion && (values.inline_cycle || showInlineCycle) && (
             <Box data-testid="conversion-cycle">
               <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-                Decision cycle
+                New decision cycle
               </Typography>
               {values.inline_cycle ? (
                 <PersonEditRow
@@ -1032,41 +1065,27 @@ function ActivityForm({
                 />
               ) : (
                 <InlineCycleForm
-                  onSave={({ name, step_stage }) => setFieldValue("inline_cycle", { name, step_stage })}
+                  onSave={({ name, step_stage }) => {
+                    // ONE update (several setFieldValue would validate on
+                    // stale values): the new cycle, the chosen one emptied.
+                    formik.setValues({
+                      ...values,
+                      inline_cycle: { name, step_stage },
+                      decision_cycle: null,
+                      decision_cycle_id: "",
+                      decision_step_id: "",
+                    });
+                    setShowInlineCycle(false);
+                  }}
+                  onCancel={() => setShowInlineCycle(false)}
                 />
               )}
             </Box>
           )}
-
-          {/* Creation: the decision cycle (pre-filled, modifiable) and its step. */}
-          {isCreate && !conversion && (
-            <>
-              <InlineEditableValue
-                name="decision_cycle"
-                label="Decision cycle"
-                type="select"
-                options={[{ value: "", label: "No decision cycle" }, ...cycleOptions]}
-                value={values.decision_cycle_id}
-                onChange={(v) => {
-                  setFieldValue("decision_cycle_id", v);
-                  setFieldValue("decision_step_id", "");
-                }}
-                placeholder="No decision cycle"
-              />
-              {values.decision_cycle_id && (
-                <InlineEditableValue
-                  name="decision_step"
-                  label="DC step"
-                  type="select"
-                  options={stepOptions}
-                  value={values.decision_step_id}
-                  onChange={(v) => setFieldValue("decision_step_id", v)}
-                  placeholder="No step"
-                  error={Boolean(errors.decision_step_id)}
-                  helperText={errors.decision_step_id}
-                />
-              )}
-            </>
+          {isCreate && conversion && !values.inline_cycle && !showInlineCycle && (
+            <AddActionButton onClick={() => setShowInlineCycle(true)} testId="create-new-cycle">
+              Create new cycle
+            </AddActionButton>
           )}
         </Stack>
 
