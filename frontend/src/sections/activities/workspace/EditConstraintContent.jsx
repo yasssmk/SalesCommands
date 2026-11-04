@@ -12,7 +12,8 @@
 //     NO what/dimension (legacy), NO metric/impact_type.
 //   - SCOPE: Constraint has NO scope_level. The Company/Department pills are a
 //     PURE UI AFFORDANCE (kept in the form's local `scope_level` field to drive
-//     show/hide of the department multi-select) and are NEVER persisted. The
+//     show/hide of the departments — THE shared ScopeDepartmentsField gesture,
+//     TD-271) and are NEVER persisted. The
 //     payload emits ONLY target_departments (ids when Department, [] when
 //     Company). No scope_level, no FK.
 //
@@ -21,21 +22,15 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
 
 // MUI
-import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
-
-// Icons
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -45,11 +40,10 @@ import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
-import MultiSelectFilter from "components/filters/MultiSelectFilter";
-import StatusPill from "components/chips/StatusPill";
 // Reuse the SHARED scope constants + pill colour tokens (objectiveScope is NOT
 // modified). For Constraint the pills are a pure UI affordance (no scope_level).
-import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS, SCOPE_PILL_COLORS } from "utils/objectiveScope";
+import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS } from "utils/objectiveScope";
+import ScopeDepartmentsField, { toDepartmentObjects } from "components/drawer/ScopeDepartmentsField";
 import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
 import { withEmptyOption } from "utils/selectOptions";
 import { SIGNAL_NO_NOTES, SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
@@ -59,19 +53,6 @@ import { SIGNAL_NO_NOTES, SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/sig
 function resolveLabel(options, value) {
   if (!value || !options) return null;
   return options.find((o) => o.value === value)?.label ?? value;
-}
-
-// Normalise the detail payload's target_departments ([{id,name}] | [id]) to the
-// list of {value,label} OBJECTS the form holds (ids kept as strings — str(d.id)).
-function toDepartmentObjects(list) {
-  if (!Array.isArray(list)) return [];
-  return list
-    .map((d) =>
-      typeof d === "object"
-        ? { value: String(d?.id), label: d?.name ?? String(d?.id) }
-        : { value: String(d), label: String(d) },
-    )
-    .filter((d) => d.value && d.value !== "undefined");
 }
 
 // ==============================|| VALIDATION ||============================== //
@@ -201,62 +182,6 @@ export default function EditConstraintContent({ constraint, accountId, onSaved, 
   const { values, errors, setFieldValue } = formik;
   const set = (name) => (v) => setFieldValue(name, v);
 
-  const theme = useTheme();
-  const isDepartment = values.scope_level === OBJECTIVE_SCOPE.DEPARTMENT;
-
-  // "+ add department" gesture state.
-  const [adding, setAdding] = useState(false);
-  const [staged, setStaged] = useState([]);
-
-  // Company/Department affordance: exactly one pill pressed. Company MASKS the
-  // departments (does NOT clear them) — re-selecting Department restores them.
-  // The payload derives target_departments from the affordance (Company → []).
-  const chooseScope = (key) => {
-    if (!key || key === values.scope_level) return;
-    setFieldValue("scope_level", key);
-    if (key === OBJECTIVE_SCOPE.BUSINESS) {
-      setStaged([]);
-      setAdding(false);
-    }
-  };
-
-  const availableOptions = departmentOptions.filter(
-    (o) => !(values.target_departments || []).some((d) => d.value === o.value),
-  );
-
-  const addButton = (onClick, testId, label) => (
-    <Button
-      variant="text"
-      size="small"
-      onClick={onClick}
-      data-testid={testId}
-      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
-      sx={{ color: theme.aphoriQ?.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
-    >
-      {label}
-    </Button>
-  );
-
-  const commitStaged = () => {
-    const chosen = departmentOptions.filter((o) => staged.includes(o.value));
-    const existing = values.target_departments || [];
-    const merged = [...existing];
-    chosen.forEach((o) => {
-      if (!merged.some((d) => d.value === o.value)) {
-        merged.push({ value: o.value, label: o.label });
-      }
-    });
-    setFieldValue("target_departments", merged);
-    setStaged([]);
-    setAdding(false);
-  };
-
-  const removeDept = (value) =>
-    setFieldValue(
-      "target_departments",
-      (values.target_departments || []).filter((d) => d.value !== value),
-    );
-
   return (
     <DrawerContentLayout
       onSave={formik.handleSubmit}
@@ -326,117 +251,21 @@ export default function EditConstraintContent({ constraint, accountId, onSaved, 
             subtitle="Company-wide, or one or more departments."
           />
 
-          {/* Company | Department pills — pure UI affordance driving the
-              department multi-select. No scope_level is persisted for Constraint. */}
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap data-testid="constraint-scope-pills">
-            {SCOPE_PILL_OPTIONS.map(({ key, label }) => {
-              const isActive = values.scope_level === key;
-              const c = isActive ? SCOPE_PILL_COLORS.active : SCOPE_PILL_COLORS.inactive;
-              return (
-                <StatusPill
-                  key={key}
-                  data-testid={`scope-pill-${key}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={isActive}
-                  onClick={() => chooseScope(key)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      chooseScope(key);
-                    }
-                  }}
-                  label={label}
-                  colorText={c.colorText}
-                  colorBg={c.colorBg}
-                  sx={{ cursor: "pointer" }}
-                />
-              );
-            })}
-          </Stack>
-
-          {isDepartment && (
-            <Box data-testid="constraint-departments-field" sx={{ pt: 1 }}>
-              {values.target_departments.length > 0 && (
-                <Stack
-                  direction="row"
-                  spacing={0.5}
-                  flexWrap="wrap"
-                  useFlexGap
-                  sx={{ mb: 1.5 }}
-                  data-testid="constraint-department-pills"
-                >
-                  {values.target_departments.map((d) => (
-                    <StatusPill
-                      key={d.value}
-                      data-testid={`dept-pill-${d.value}`}
-                      colorText={SCOPE_PILL_COLORS.active.colorText}
-                      colorBg={SCOPE_PILL_COLORS.active.colorBg}
-                      label={
-                        <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
-                          {d.label}
-                          <Box
-                            component="span"
-                            role="button"
-                            tabIndex={0}
-                            aria-label={`Remove ${d.label}`}
-                            data-testid={`remove-dept-${d.value}`}
-                            onClick={() => removeDept(d.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                removeDept(d.value);
-                              }
-                            }}
-                            sx={{ display: "inline-flex", cursor: "pointer" }}
-                          >
-                            <CloseOutlined style={{ fontSize: theme.iconSizes.xs }} />
-                          </Box>
-                        </Box>
-                      }
-                    />
-                  ))}
-                </Stack>
-              )}
-
-              {adding ? (
-                <Box data-testid="constraint-add-department-picker">
-                  <MultiSelectFilter
-                    label="Departments"
-                    options={availableOptions}
-                    value={staged}
-                    onChange={setStaged}
-                    placeholder="Select departments…"
-                    size="small"
-                  />
-                  <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={commitStaged}
-                      disabled={staged.length === 0}
-                      data-testid="confirm-add-departments"
-                    >
-                      Add
-                    </Button>
-                    <Button
-                      variant="text"
-                      size="small"
-                      onClick={() => {
-                        setStaged([]);
-                        setAdding(false);
-                      }}
-                      data-testid="cancel-add-departments"
-                    >
-                      Cancel
-                    </Button>
-                  </Stack>
-                </Box>
-              ) : (
-                addButton(() => setAdding(true), "add-department", "Add department")
-              )}
-            </Box>
-          )}
+          {/* The shared exclusive-scope gesture (components/drawer/ScopeDepartmentsField.jsx,
+              as EditTechStackContent — TD-271): Company | Department pills; the
+              department scope shows the chosen departments as pills + "+ add
+              department". Company MASKS the departments (not cleared); the payload
+              sends [] for it. NEVER required. */}
+          <ScopeDepartmentsField
+            scopeOptions={SCOPE_PILL_OPTIONS}
+            scope={values.scope_level}
+            onScopeChange={set("scope_level")}
+            departmentScope={OBJECTIVE_SCOPE.DEPARTMENT}
+            departments={values.target_departments}
+            onDepartmentsChange={set("target_departments")}
+            departmentOptions={departmentOptions}
+            testIdPrefix="constraint"
+          />
         </Stack>
 
         <Divider />

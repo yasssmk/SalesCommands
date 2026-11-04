@@ -17,8 +17,8 @@
 // choices emit INTEGER ids, signal payloads STRING ids — the caller stringifies
 // its options, and toDepartmentObjects normalises the signal payload).
 //
-// Used by EditTechStackContent only for now; Pain / Impact / Constraint keep
-// their inline copy (migration tracked in TECH_DEBT).
+// Used by EditTechStackContent (usage scope) and Pain / Impact / Constraint
+// (Company | Department scope, lot 3 / 7 — TD-271: their inline copies removed).
 
 "use client";
 

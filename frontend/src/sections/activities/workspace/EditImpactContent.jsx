@@ -8,8 +8,8 @@
 // id, payload); onSaved(updatedSignal) returns to the Impact detail.
 //
 // Scope model is IDENTICAL to Pain (Impact scope == Pain scope): two EXCLUSIVE
-// scope pills Company | Department (rendered locally with the shared StatusPill +
-// objectiveScope tokens; ObjectiveScopePill itself is NOT used/modified here),
+// scope pills Company | Department (THE shared ScopeDepartmentsField gesture,
+// TD-271, with the objectiveScope options),
 // Company → scope_level BUSINESS with departments MASKED (not cleared), Department
 // → a "+ add department" grouped multi-select whose options EXCLUDE the already
 // chosen, chosen departments as real pills each with a ×. Departments are stored
@@ -29,22 +29,16 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
 
 // MUI
-import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-
-// Icons
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -54,11 +48,8 @@ import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
-import MultiSelectFilter from "components/filters/MultiSelectFilter";
-import StatusPill from "components/chips/StatusPill";
-// Reuse the SHARED scope constants + pill colour tokens (objectiveScope is NOT
-// modified — ObjectiveScopePill/Objective keep using them unchanged).
-import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS, SCOPE_PILL_COLORS } from "utils/objectiveScope";
+import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS } from "utils/objectiveScope";
+import ScopeDepartmentsField, { toDepartmentObjects } from "components/drawer/ScopeDepartmentsField";
 import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
 import { withEmptyOption } from "utils/selectOptions";
 import { SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
@@ -68,19 +59,6 @@ import { SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signal
 function resolveLabel(options, value) {
   if (!value || !options) return null;
   return options.find((o) => o.value === value)?.label ?? value;
-}
-
-// Normalise the detail payload's target_departments ([{id,name}] | [id]) to the
-// list of {value,label} OBJECTS the form holds (ids kept as strings — str(d.id)).
-function toDepartmentObjects(list) {
-  if (!Array.isArray(list)) return [];
-  return list
-    .map((d) =>
-      typeof d === "object"
-        ? { value: String(d?.id), label: d?.name ?? String(d?.id) }
-        : { value: String(d), label: String(d) },
-    )
-    .filter((d) => d.value && d.value !== "undefined");
 }
 
 // ==============================|| VALIDATION ||============================== //
@@ -242,71 +220,6 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
   const { values, errors, setFieldValue } = formik;
   const set = (name) => (v) => setFieldValue(name, v);
 
-  const theme = useTheme();
-  const isDepartment = values.scope_level === OBJECTIVE_SCOPE.DEPARTMENT;
-
-  // "+ add department" gesture state: the trigger opens a grouped multi-select
-  // whose staged ids are committed as pills on confirm.
-  const [adding, setAdding] = useState(false);
-  const [staged, setStaged] = useState([]);
-
-  // Exclusive scope choice: scope_level is a single value, so exactly one pill is
-  // pressed. Company MASKS the departments (the pills + "+ add" block only render
-  // for DEPARTMENT) but does NOT clear them from the form — re-selecting Department
-  // brings them back untouched. The × on a pill stays the only way to remove one.
-  // The payload derives target_departments from scope_level (Company → []), so the
-  // memorised-but-hidden list never leaks into a Company save.
-  const chooseScope = (key) => {
-    if (!key || key === values.scope_level) return;
-    setFieldValue("scope_level", key);
-    if (key === OBJECTIVE_SCOPE.BUSINESS) {
-      // Collapse the (now hidden) "+ add" picker UI — but keep the departments.
-      setStaged([]);
-      setAdding(false);
-    }
-  };
-
-  // The "+ add department" menu never re-proposes an already-chosen department.
-  const availableOptions = departmentOptions.filter(
-    (o) => !(values.target_departments || []).some((d) => d.value === o.value),
-  );
-
-  // Local "+ add" trigger — same gesture/tokens as EditPainContent's
-  // "+ add department" (text button + PlusOutlined, accent colour).
-  const addButton = (onClick, testId, label) => (
-    <Button
-      variant="text"
-      size="small"
-      onClick={onClick}
-      data-testid={testId}
-      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
-      sx={{ color: theme.aphoriQ?.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
-    >
-      {label}
-    </Button>
-  );
-
-  // Commit the staged ids as {value,label} objects (dedup by value), then close.
-  const commitStaged = () => {
-    const chosen = departmentOptions.filter((o) => staged.includes(o.value));
-    const existing = values.target_departments || [];
-    const merged = [...existing];
-    chosen.forEach((o) => {
-      if (!merged.some((d) => d.value === o.value)) {
-        merged.push({ value: o.value, label: o.label });
-      }
-    });
-    setFieldValue("target_departments", merged);
-    setStaged([]);
-    setAdding(false);
-  };
-
-  const removeDept = (value) =>
-    setFieldValue(
-      "target_departments",
-      (values.target_departments || []).filter((d) => d.value !== value),
-    );
-
   // Live "Domain × Dimension" recap (guidance, mirror of Pain).
   const canonicalPreview = useMemo(() => {
     if (!values.what || !values.dimension) return null;
@@ -409,125 +322,21 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
             subtitle="Company-wide, or one or more departments."
           />
 
-          {/* Two EXCLUSIVE scope pills (Company | Department) — same StatusPill as
-              the department pills below. scope_level is a single value, so exactly
-              one is pressed. Rendered locally (ObjectiveScopePill is untouched and
-              still used by Objective); we reuse its shared options + colour tokens. */}
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap data-testid="impact-scope-pills">
-            {SCOPE_PILL_OPTIONS.map(({ key, label }) => {
-              const isActive = values.scope_level === key;
-              const c = isActive ? SCOPE_PILL_COLORS.active : SCOPE_PILL_COLORS.inactive;
-              return (
-                <StatusPill
-                  key={key}
-                  data-testid={`scope-pill-${key}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={isActive}
-                  onClick={() => chooseScope(key)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      chooseScope(key);
-                    }
-                  }}
-                  label={label}
-                  colorText={c.colorText}
-                  colorBg={c.colorBg}
-                  sx={{ cursor: "pointer" }}
-                />
-              );
-            })}
-          </Stack>
-
-          {/* Department scope → the chosen departments as REAL pills (StatusPill,
-              each with a × to remove it) + the "+ add department" gesture. NEVER
-              required. */}
-          {isDepartment && (
-            <Box data-testid="impact-departments-field" sx={{ pt: 1 }}>
-              {values.target_departments.length > 0 && (
-                <Stack
-                  direction="row"
-                  spacing={0.5}
-                  flexWrap="wrap"
-                  useFlexGap
-                  // Section-consistent vertical gap (matches the §scope Stack
-                  // spacing) between the chosen department pills and the selector.
-                  sx={{ mb: 1.5 }}
-                  data-testid="impact-department-pills"
-                >
-                  {values.target_departments.map((d) => (
-                    <StatusPill
-                      key={d.value}
-                      data-testid={`dept-pill-${d.value}`}
-                      colorText={SCOPE_PILL_COLORS.active.colorText}
-                      colorBg={SCOPE_PILL_COLORS.active.colorBg}
-                      label={
-                        <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
-                          {d.label}
-                          <Box
-                            component="span"
-                            role="button"
-                            tabIndex={0}
-                            aria-label={`Remove ${d.label}`}
-                            data-testid={`remove-dept-${d.value}`}
-                            onClick={() => removeDept(d.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                removeDept(d.value);
-                              }
-                            }}
-                            sx={{ display: "inline-flex", cursor: "pointer" }}
-                          >
-                            <CloseOutlined style={{ fontSize: theme.iconSizes.xs }} />
-                          </Box>
-                        </Box>
-                      }
-                    />
-                  ))}
-                </Stack>
-              )}
-
-              {adding ? (
-                <Box data-testid="impact-add-department-picker">
-                  {/* Options EXCLUDE already-chosen departments (no duplicates). */}
-                  <MultiSelectFilter
-                    label="Departments"
-                    options={availableOptions}
-                    value={staged}
-                    onChange={setStaged}
-                    placeholder="Select departments…"
-                    size="small"
-                  />
-                  <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={commitStaged}
-                      disabled={staged.length === 0}
-                      data-testid="confirm-add-departments"
-                    >
-                      Add
-                    </Button>
-                    <Button
-                      variant="text"
-                      size="small"
-                      onClick={() => {
-                        setStaged([]);
-                        setAdding(false);
-                      }}
-                      data-testid="cancel-add-departments"
-                    >
-                      Cancel
-                    </Button>
-                  </Stack>
-                </Box>
-              ) : (
-                addButton(() => setAdding(true), "add-department", "Add department")
-              )}
-            </Box>
-          )}
+          {/* The shared exclusive-scope gesture (components/drawer/ScopeDepartmentsField.jsx,
+              as EditTechStackContent — TD-271): Company | Department pills; the
+              department scope shows the chosen departments as pills + "+ add
+              department". Company MASKS the departments (not cleared); the payload
+              sends [] for it. NEVER required. */}
+          <ScopeDepartmentsField
+            scopeOptions={SCOPE_PILL_OPTIONS}
+            scope={values.scope_level}
+            onScopeChange={set("scope_level")}
+            departmentScope={OBJECTIVE_SCOPE.DEPARTMENT}
+            departments={values.target_departments}
+            onDepartmentsChange={set("target_departments")}
+            departmentOptions={departmentOptions}
+            testIdPrefix="impact"
+          />
         </Stack>
 
         <Divider />
