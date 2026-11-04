@@ -594,7 +594,7 @@ EditImpactContent.propTypes = {
     metric_text: PropTypes.string,
     source_quote: PropTypes.string,
   }).isRequired,
-  /** Account the impact belongs to (reserved for future scoped pickers). */
+  /** Account the impact belongs to — passed by the caller, currently unused. */
   accountId: PropTypes.string,
   /** Fired after a successful save with the updated signal — the caller
       revalidates and returns to the detail. Absent → the drawer closes (legacy). */

@@ -145,10 +145,10 @@ export default function ActivitySignalsTab({
   const openSignalDetail = useCallback(
     (signal, signalType) => {
       const h = detailHandlersRef.current;
-      // Standard-chassis types (Objective, Pain) have their header (title +
-      // status pill + ×) owned by the COQUE (UI-1): pass title + status + the
-      // shared status map, and tell the panel to suppress its in-content header.
-      // Other types keep the panel's own (flush) header.
+      // Every signal type of the band (the 8 standard-chassis types, since
+      // Competitor C2) has its header (title + status pill + ×) owned by the
+      // COQUE (UI-1): pass title + status + the shared status map, and tell the
+      // panel to suppress its in-content header.
       const coqueOwnsHeader =
         signalType === "objective" ||
         signalType === "pain" ||
@@ -288,9 +288,11 @@ export default function ActivitySignalsTab({
 
   const handleEdit = useCallback(
     (signal, signalType) => {
-      // SIG-5d: Objective edits go to the new drawer (DrawerContentLayout +
-      // scope pill + editable source_quote) via the single coque. Every other
-      // type keeps the legacy SignalEditDrawer dialog untouched.
+      // Every signal type of the band edits in its chassis drawer via the single
+      // coque (8 types since Competitor C2). The legacy SignalEditDrawer
+      // fallback at the end is no longer reached on Activity (TD-206).
+      // SIG-5d: Objective (DrawerContentLayout + scope pill + editable
+      // source_quote).
       if (signalType === "objective") {
         openDrawer(
           <EditObjectiveContent
@@ -309,8 +311,7 @@ export default function ActivitySignalsTab({
         return;
       }
       // S3: Pain edits go to the new chassis drawer (mirror of Objective) — the
-      // M2M department multi-select lives inside. Other types stay on the legacy
-      // SignalEditDrawer dialog below.
+      // M2M department multi-select lives inside.
       if (signalType === "pain") {
         openDrawer(
           <EditPainContent
@@ -329,8 +330,7 @@ export default function ActivitySignalsTab({
         return;
       }
       // S3: Impact edits go to the new chassis drawer (mirror of Pain) — the
-      // Metrics fields + M2M department multi-select live inside. Other types
-      // stay on the legacy SignalEditDrawer dialog below.
+      // Metrics fields + M2M department multi-select live inside.
       if (signalType === "impact") {
         openDrawer(
           <EditImpactContent

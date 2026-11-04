@@ -1072,7 +1072,7 @@ describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", ()
     expect(screen.queryByText("Firm")).not.toBeInTheDocument();
   });
 
-  it("S2: notes masked when empty → 'No notes'", () => {
+  it("S2: empty notes → the 'No notes' placeholder", () => {
     const noNotes = { ...MOCK_CONSTRAINT_CHASSIS, id: "c-nonotes", notes: "" };
     render(<SignalDetailPanel signal={noNotes} signalType="constraints" />);
     expect(screen.getByText("No notes")).toBeInTheDocument();

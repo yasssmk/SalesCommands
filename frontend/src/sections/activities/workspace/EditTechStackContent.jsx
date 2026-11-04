@@ -421,7 +421,7 @@ EditTechStackContent.propTypes = {
     notes: PropTypes.string,
     source_quote: PropTypes.string,
   }).isRequired,
-  /** Account the signal belongs to (reserved for future scoped pickers). */
+  /** Account the signal belongs to — passed by the caller, currently unused. */
   accountId: PropTypes.string,
   /** Fired after a successful save with the updated signal — the caller
       revalidates and returns to the detail. Absent → the drawer closes. */

@@ -1127,7 +1127,7 @@ function ConstraintDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Notes (masked when empty). The section header already
+        {/* Section 3 — Notes (« No notes » placeholder when empty). The section header already
             labels it, so render the value plainly (no redundant "Notes" label). */}
         <SectionHeader index={3} title="Notes" sx={{ mb: 1 }} />
         {signal.notes ? (
