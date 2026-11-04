@@ -48,6 +48,7 @@ import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
 
 // Target date — the shared chassis date field (moved from this file, D1).
 import InlineDateField from "components/drawer/InlineDateField";
+import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
 
 // ==============================|| HELPERS (reproduced from InlineObjectiveForm) ||=========== //
 
@@ -61,7 +62,10 @@ function resolveLabel(options, value) {
 const validationSchema = Yup.object({
   summary: Yup.string()
     .trim()
-    .min(10, "Summary must be at least 10 characters")
+    .min(
+      SIGNAL_SUMMARY_MIN_LENGTH,
+      `Summary must be at least ${SIGNAL_SUMMARY_MIN_LENGTH} characters`,
+    )
     .required("Summary is required"),
   what: Yup.string().required("Domain is required"),
   dimension: Yup.string().required("Dimension is required"),

@@ -209,3 +209,29 @@ describe("EditConstraintContent (S3)", () => {
     expect(closeDrawer).not.toHaveBeenCalled();
   });
 });
+
+// Lot 3 / 3 (TD-275) — THE summary minimum of the signal drawers,
+// SIGNAL_SUMMARY_MIN_LENGTH (signalValidationRules.js), same test as
+// EditObjectionContent.test.jsx « E5: summary < 10 characters ».
+describe("summary minimum (SIGNAL_SUMMARY_MIN_LENGTH = 10)", () => {
+  const typeSummary = async (value) => {
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
+    fireEvent.change(screen.getByTestId("inline-input-summary"), { target: { value } });
+    await act(async () => {});
+  };
+
+  it("9 characters → Save disabled, no PATCH", async () => {
+    vi.mocked(updateSignal).mockClear();
+    renderEdit();
+    await typeSummary("Too short");
+    expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /save/i })); });
+    expect(updateSignal).not.toHaveBeenCalled();
+  });
+
+  it("10 characters → Save enabled", async () => {
+    renderEdit();
+    await typeSummary("Long enoug");
+    expect(screen.getByRole("button", { name: /save/i })).toBeEnabled();
+  });
+});

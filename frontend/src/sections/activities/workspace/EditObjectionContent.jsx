@@ -37,6 +37,7 @@ import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import { formatContact } from "sections/activities/signals/utils/signalDisplay";
+import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -59,7 +60,10 @@ function toCompactContact(contact) {
 const validationSchema = Yup.object({
   summary: Yup.string()
     .trim()
-    .min(10, "Summary must be at least 10 characters")
+    .min(
+      SIGNAL_SUMMARY_MIN_LENGTH,
+      `Summary must be at least ${SIGNAL_SUMMARY_MIN_LENGTH} characters`,
+    )
     .required("Summary is required"),
   contact: Yup.object().nullable(),
   source_quote: Yup.string().nullable(),

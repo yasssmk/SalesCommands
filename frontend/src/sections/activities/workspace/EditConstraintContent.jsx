@@ -50,6 +50,7 @@ import StatusPill from "components/chips/StatusPill";
 // Reuse the SHARED scope constants + pill colour tokens (objectiveScope is NOT
 // modified). For Constraint the pills are a pure UI affordance (no scope_level).
 import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS, SCOPE_PILL_COLORS } from "utils/objectiveScope";
+import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -79,7 +80,10 @@ function toDepartmentObjects(list) {
 const validationSchema = Yup.object({
   summary: Yup.string()
     .trim()
-    .min(10, "Summary must be at least 10 characters")
+    .min(
+      SIGNAL_SUMMARY_MIN_LENGTH,
+      `Summary must be at least ${SIGNAL_SUMMARY_MIN_LENGTH} characters`,
+    )
     .required("Summary is required"),
   nature: Yup.string().required("Nature is required"),
   rigidity: Yup.string().nullable(),
