@@ -198,9 +198,17 @@ class BaseSignalViewSet(
         if self.action == 'list':
             # Universal FKs only — concrete ViewSets add type-specific
             # select_related on top via super().get_queryset() chaining.
+            # 8g-4 (TD-256): + what the standardised provenance block reads
+            # (SignalSourceSerializer: signal.decision_cycle / campaign, else
+            # source_activity.decision_cycle / campaign / decision_step) —
+            # without it, one query per signal on the aggregated list.
             qs = qs.select_related(
                 'account',
                 'source_activity',
+                'source_activity__decision_cycle',
+                'source_activity__campaign',
+                'source_activity__decision_step',
+                *self._own_provenance_fks(qs.model),
             ).prefetch_related(
                 # The standardised `source_context` block exposed by
                 # BaseSignalListSerializer reads source_activity.contacts
@@ -225,6 +233,20 @@ class BaseSignalViewSet(
             )
 
         return qs
+
+    @staticmethod
+    def _own_provenance_fks(model):
+        """The signal's OWN decision_cycle / campaign FKs when the model has
+        them as real columns (TechStack shadows them to None: not a field)."""
+        names = []
+        for name in ('decision_cycle', 'campaign'):
+            try:
+                field = model._meta.get_field(name)
+            except Exception:  # noqa: BLE001 — absent / shadowed on this model
+                continue
+            if getattr(field, 'many_to_one', False):
+                names.append(name)
+        return names
 
     def filter_queryset(self, queryset):
         """
