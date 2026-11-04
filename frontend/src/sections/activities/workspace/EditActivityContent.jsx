@@ -1026,6 +1026,9 @@ function ActivityForm({
                 setFieldValue("decision_step_id", "");
               }}
               placeholder={conversion ? "Choose a decision cycle" : "No decision cycle"}
+              // 8e-3: from an activity of a DC, the cycle is the origin's —
+              // shown, greyed (InlineEditableValue disabled, as in edition).
+              disabled={!conversion && Boolean(decisionCycleId)}
               renderEditor={({ value, onChange, commit }) => (
                 <AsyncDecisionCycleSelect
                   data-testid="decision-cycle-select"

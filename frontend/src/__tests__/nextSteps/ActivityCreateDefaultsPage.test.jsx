@@ -123,6 +123,9 @@ let mockCited = [];
 const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
+  if (url.startsWith("/contacts/") && url.includes(ACC_ID)) {
+    return Promise.resolve({ data: { results: [THOMAS], count: 1 } });
+  }
   if (url.startsWith(`/decision_cycles/by-account/${ACC_ID}`)) {
     return Promise.resolve({ data: { results: [{ id: DC_ID, name: "Deal Acme", outcome: null }], count: 1 } });
   }
@@ -231,6 +234,47 @@ describe("« + Add next step » from a DC activity — the DC pre-filled, unchan
     expect(await within(section).findByText("Deal Acme")).toBeInTheDocument();
     expect(within(section).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
     expect(within(section).queryByRole("button", { name: /Create new cycle/ })).toBeNull();
+  });
+});
+
+// 8e-3 (PO): from an activity of a DC (« + Add next step » / ✓ Create), the
+// « Decision cycle » section is GREYED — the DC shown, not modifiable (the
+// existing InlineEditableValue `disabled`, as in edition); the step stays
+// modifiable; the payload carries the origin DC.
+describe("From a DC activity: the DC greyed, the step modifiable (8e-3)", () => {
+  const expectGreyedDc = (create) => {
+    const section = within(create).getByTestId("activity-cycle-section");
+    fireEvent.click(within(section).getByTestId("inline-read-decision_cycle"));
+    expect(within(section).queryByTestId("decision-cycle-select")).toBeNull();
+    expect(within(section).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
+    return section;
+  };
+
+  it("« + Add next step »: DC shown and not modifiable; the step modifiable", async () => {
+    renderPage();
+    const create = await addNextStep("Meeting");
+    await within(create).findByText("Deal Acme");
+    const section = expectGreyedDc(create);
+    fireEvent.click(await within(section).findByTestId("inline-read-decision_step"));
+    fireEvent.click(await screen.findByRole("option", { name: "Proposal" }));
+    await waitFor(() => expect(within(section).getByTestId("inline-read-decision_step")).toHaveTextContent("Proposal"));
+  });
+
+  it("✓ Create: DC shown and not modifiable; payload = the origin DC", async () => {
+    mockNextSteps = [nextStep({ suggested_activity_type: "MEETING", suggested_due_date: "2026-11-20",
+                                suggested_decision_step: STEP_P, suggested_people_names: ["Thomas Lefèvre"] })];
+    mockCited = [{ name: "Thomas Lefèvre", contact: THOMAS, stakeholder: null }];
+    api.get.mockResolvedValue({ success: true, data: { data: mockNextSteps[0] } });
+    renderPage();
+    const create = await validateAndCreate();
+    await within(create).findByText("Deal Acme");
+    expectGreyedDc(create);
+    const save = within(coque()).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith("/module-activities/", expect.anything()));
+    const body = api.post.mock.calls.find(([u]) => u === "/module-activities/")[1];
+    expect(body).toMatchObject({ decision_cycle_id: DC_ID, decision_step_id: STEP_P });
   });
 });
 

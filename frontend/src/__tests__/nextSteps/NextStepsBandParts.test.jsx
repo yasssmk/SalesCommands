@@ -1194,16 +1194,16 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(within(create).getByTestId("mentioned-names")).toHaveTextContent("Mentioned: Karim Benali");
   });
 
-  it("the DC is pre-filled from the context and modifiable; the step = the proposed one", async () => {
+  // 8e-3 (PO): from a DC activity, the DC is the origin's — shown, greyed;
+  // the step stays modifiable.
+  it("the DC is pre-filled from the context, greyed; the step = the proposed one, modifiable", async () => {
     const create = await openCreateFromFlow();
     expect(within(create).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
     expect(within(create).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
-    // 8d-2: modifiable through the standard AsyncDecisionCycleSelect.
     fireEvent.click(within(create).getByTestId("inline-read-decision_cycle"));
-    const input = within(within(create).getByTestId("decision-cycle-select")).getByRole("combobox");
-    fireEvent.focus(input);
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(screen.getByRole("option", { name: "Deal Other" })).toBeInTheDocument();
+    expect(within(create).queryByTestId("decision-cycle-select")).toBeNull();
+    fireEvent.click(within(create).getByTestId("inline-read-decision_step"));
+    expect(screen.getByRole("option", { name: "Business Case" })).toBeInTheDocument();
   });
 
   it("the owner = the user's NAME, read-only", async () => {
