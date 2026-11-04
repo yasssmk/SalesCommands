@@ -105,7 +105,18 @@ const validationSchema = Yup.object(
           schema.required("Scheduled date or due date is required"),
         otherwise: (schema) => schema.nullable(),
       }),
-    due_date: Yup.date().nullable().typeError("Please select a valid date"),
+    // 8g-1b: exactly one date — the server's rule (date_rules.py, 8g-1)
+    // and its message (DATES_EXCLUSIVE): a scheduled date OR a due date.
+    due_date: Yup.date()
+      .nullable()
+      .typeError("Please select a valid date")
+      .test(
+        "dates-exclusive",
+        "An activity has a scheduled date or a due date, not both.",
+        function notBoth(dueDate) {
+          return !(dueDate && this.parent.scheduled_date);
+        },
+      ),
     contact_ids: Yup.array().of(Yup.string()),
     has_inline_contact: Yup.boolean(),
     decision_cycle_id: Yup.string().nullable(),
