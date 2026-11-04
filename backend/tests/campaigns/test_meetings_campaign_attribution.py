@@ -189,6 +189,7 @@ class TestContractRealModalPath:
                 'status': ActivityStatus.COMPLETED, 'account_id': str(account.id),
                 'contact_ids': [_participant(account)], 'decision_step_id': None, 'outcome': 'SUCCESSFUL',
                 'source_activity_id': str(src.id),
+                'scheduled_date': '2026-11-01',  # 8g-1 (TD-230): one date
             },
             'inline_cycle': {'name': 'MtgCycle', 'description': None},
             'inline_step_stage': 'QUALIFICATION',

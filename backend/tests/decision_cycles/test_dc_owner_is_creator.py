@@ -87,6 +87,7 @@ def test_path2_create_with_entities_owner_is_creator(ca, creator, account, accou
             'title': 'Follow up',
             'activity_type': 'CALL',
             'contact_ids': [str(participant.id)],
+            'scheduled_date': '2026-11-01',  # 8g-1 (TD-230): one date
         },
         inline_cycle={'name': 'From campaign'},
     )

@@ -83,7 +83,9 @@ def deal(account, user_a):
     first = service.create_with_entities(
         activity_data={'account_id': str(account.id), 'title': 'Découverte',
                        'activity_type': ActivityType.CALL, 'status': ActivityStatus.COMPLETED,
-                       'contact_ids': [_participant(account)]},
+                       'contact_ids': [_participant(account)],
+                       'scheduled_date': '2026-11-01',  # 8g-1 (TD-230): one date
+                       },
         inline_cycle={'name': 'Deal Acme'}, inline_step_stage='QUALIFICATION',
     )
     cycle = first['cycle']
@@ -92,6 +94,7 @@ def deal(account, user_a):
         'status': ActivityStatus.COMPLETED, 'decision_cycle_id': str(cycle.id),
         'contact_ids': [_participant(account)],
         'decision_step_id': str(cycle.steps.get(stage='BUSINESS_CASE').id),
+        'scheduled_date': '2026-11-01',  # 8g-1 (TD-230): one date
     })['activity']
     return conversation, first['activity'], cycle
 
@@ -168,7 +171,9 @@ class TestStepRef:
                 activity_data={'account_id': str(acc.id), 'title': title,
                                'activity_type': ActivityType.MEETING,
                                'status': ActivityStatus.COMPLETED,
-                               'contact_ids': [_participant(acc)]},
+                               'contact_ids': [_participant(acc)],
+                               'scheduled_date': '2026-11-01',  # 8g-1 (TD-230): one date
+                               },
                 inline_cycle={'name': title}, inline_step_stage='QUALIFICATION',
             )
         new_deal(user_b, other_tenant_account, 'Other tenant deal')

@@ -17,6 +17,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import Activity
+from .services.date_rules import check_activity_dates
 from .services.participant_rules import (
     check_participant_minimum, resolve_contacts, resolve_stakeholders,
 )
@@ -1044,15 +1045,10 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             # (the stakeholders and the minimum: once the cycle is known, below)
             
             # =================================================================
-            # REQUIRED: At least one date (scheduled_date OR due_date)
+            # DATES — THE rule (services/date_rules.py, 8g-1): one date, a
+            # scheduled date OR a due date (create-with-entities: the same).
             # =================================================================
-            scheduled_date = attrs.get('scheduled_date')
-            due_date = attrs.get('due_date')
-            
-            if not scheduled_date and not due_date:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='Scheduled date or due date')
-                )
+            check_activity_dates(attrs.get('scheduled_date'), attrs.get('due_date'))
             
             # =================================================================
             # Validate invited_users (optional)

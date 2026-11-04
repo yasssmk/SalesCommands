@@ -96,6 +96,8 @@ def _base_activity(account, **extra):
         'status': ActivityStatus.PLANNED,
         'account_id': str(account.id),
         'contact_ids': [_participant(account)],
+        # 8g-1 (TD-230): one date per activity, on both create paths.
+        'scheduled_date': '2026-12-01',
     }
     payload.update(extra)
     return payload

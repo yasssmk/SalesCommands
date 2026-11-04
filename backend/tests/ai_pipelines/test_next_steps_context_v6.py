@@ -87,7 +87,9 @@ def deal(account, user_a):
         activity_data={'account_id': str(account.id), 'title': 'Atelier ROI',
                        'activity_type': ActivityType.MEETING,
                        'status': ActivityStatus.COMPLETED,
-                       'contact_ids': [_participant(account)]},
+                       'contact_ids': [_participant(account)],
+                       'scheduled_date': '2026-11-01',  # 8g-1 (TD-230): one date
+                       },
         inline_cycle={'name': 'Deal Acme'}, inline_step_stage='BUSINESS_CASE',
     )
     conversation, cycle = created['activity'], created['cycle']
@@ -140,7 +142,9 @@ class TestDecisionCycleContext:
             activity_data={'account_id': str(account.id), 'title': 'Atelier ROI',
                            'activity_type': ActivityType.MEETING,
                            'status': ActivityStatus.COMPLETED,
-                           'contact_ids': [_participant(account)]},
+                           'contact_ids': [_participant(account)],
+                           'scheduled_date': '2026-11-01',  # 8g-1 (TD-230): one date
+                           },
             inline_cycle={'name': 'Deal Acme'}, inline_step_stage='BUSINESS_CASE',
         )
         conversation = created['activity']

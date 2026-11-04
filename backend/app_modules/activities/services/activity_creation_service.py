@@ -25,6 +25,7 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from ..models import Activity
 from ..constants import ActivityStatus
 from .activity_invitations import notify_invited_users, resolve_invited_users
+from .date_rules import check_activity_dates
 from .participant_rules import (
     check_participant_minimum, resolve_contacts, resolve_stakeholders,
 )
@@ -267,6 +268,9 @@ class ActivityCreationService:
             check_participant_minimum(
                 activity_data.get('activity_type'), len(participants) + len(stakeholders),
             )
+            # DATES — THE rule (date_rules.py, 8g-1 / TD-230): one date, as the
+            # POST serializer (after the next step's date default above).
+            check_activity_dates(activity_data.get('scheduled_date'), activity_data.get('due_date'))
 
             # ==================================================================
             # STEP 4: Create Activity

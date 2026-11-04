@@ -51,6 +51,8 @@ class TestCreateActivityWithInlineCycle:
                 'account_id': str(account.id),
                 'contact_ids': [_participant(account)],
                 'decision_step_id': None,
+                # 8g-1 (TD-230): one date per activity, on both create paths.
+                'scheduled_date': '2026-12-01',
             },
             'inline_cycle': {
                 'name': 'New cycle from modal',

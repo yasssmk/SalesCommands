@@ -189,6 +189,11 @@ class ValidationErrorMessages:
 class ActivityErrorMessages:
     """Activity specific error messages"""
 
+    # Dates (8g-1, TD-230) — activities/services/date_rules.py
+    DATES_EXCLUSIVE = _(
+        "An activity has a scheduled date or a due date, not both."
+    )
+
     # Participants (sprint « Cycle de vie des contacts », étape 7) —
     # activities/services/participant_rules.py
     PARTICIPANT_REQUIRED = _(
