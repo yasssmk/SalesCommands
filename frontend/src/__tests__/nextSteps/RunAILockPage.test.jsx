@@ -121,9 +121,10 @@ describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
     mockActivity = dcActivity({ status: "COMPLETED" });
     render(<ActivityWorkspacePage />);
     openSource();
-    expect(sourceRunAI()).toBeEnabled();
-    // 5.12c (3): the Source keeps its MUI button (no visible change there).
-    expect(sourceRunAI()).toHaveClass("MuiButton-root");
+    expect(sourceRunAI()).not.toHaveAttribute("aria-disabled");
+    // Lot 3 / 11 (TD-302, PO) replaces 5.12c (3): the Source's Run AI is the
+    // shared pill too (in the band header), no MUI button any more.
+    expect(sourceRunAI()).not.toHaveClass("MuiButton-root");
   });
 
   it("COMPLETED: the Next steps band's Run AI is available", () => {
@@ -139,7 +140,7 @@ describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
     mockActivity = dcActivity({ status: "CANCELLED" });
     render(<ActivityWorkspacePage />);
     openSource();
-    expect(sourceRunAI()).toBeDisabled();
+    expect(sourceRunAI()).toHaveAttribute("aria-disabled", "true");
     const band = bandRunAI();
     expect(band.disabled || band.getAttribute("aria-disabled") === "true").toBe(true);
   });
@@ -252,5 +253,41 @@ describe("The transcript — locked once analysed (8g-7)", () => {
     expect(screen.queryByTestId("transcript-analysed-notice")).toBeNull();
     fireEvent.click(screen.getByText(/We agreed on a security review/));
     expect(screen.getAllByRole("textbox").length).toBeGreaterThan(0);
+  });
+});
+
+// ==============================|| LOT 3 / 11 (TD-302) — THE SOURCE BAND'S RUN AI ||============================== //
+// PO: the Source band's Run AI is a PILL placed as the other bands' actions —
+// in the band header (CollapsibleStrip `meta`), as the Next steps band's
+// « + Add next step » (ActivityNextStepsBand.jsx). Visible while folded; a
+// click opens the wizard without toggling the band.
+
+const sourceHeader = () => screen.getByText("Source").closest("[aria-expanded]");
+
+describe("The Source band's Run AI — a pill in the band header (TD-302)", () => {
+  it("is in the header, as a pill, while the band is folded", () => {
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    expect(sourceHeader()).toHaveAttribute("aria-expanded", "false");
+    const pill = within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" });
+    expect(pill).not.toHaveClass("MuiButton-root");
+    expect(pill).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("a click opens the wizard and does not unfold the band", async () => {
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    await act(async () => {
+      fireEvent.click(within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" }));
+    });
+    expect(screen.getByText(/Select objectives/)).toBeInTheDocument();
+    expect(sourceHeader()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("CANCELLED: the pill is disabled", () => {
+    mockActivity = dcActivity({ status: "CANCELLED" });
+    render(<ActivityWorkspacePage />);
+    const pill = within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" });
+    expect(pill).toHaveAttribute("aria-disabled", "true");
   });
 });

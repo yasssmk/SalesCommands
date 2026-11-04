@@ -79,7 +79,6 @@ const defaultProps = {
   isLocked: false,
   pipelineRunner: makePipelineRunner(),
   lastRun: null,
-  runsByPipeline: { TRANSCRIPT_SIGNALS: null, NEXT_STEPS: null },
 };
 
 // ==============================|| HELPERS ||============================== //
@@ -122,27 +121,6 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByTestId('etb-charcount-transcript')).toBeInTheDocument();
   });
 
-  it('enables Run AI Analysis button with sufficient transcript', () => {
-    renderTab();
-
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).not.toBeDisabled();
-  });
-
-  it('disables Run AI Analysis when transcript is empty', () => {
-    renderTab({ activity: { ...mockActivity, transcript: '' } });
-
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).toBeDisabled();
-  });
-
-  it('disables Run AI Analysis when transcript < 50 chars', () => {
-    renderTab({ activity: { ...mockActivity, transcript: 'Short' } });
-
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).toBeDisabled();
-  });
-
   // 5.12d (1) — the transcript has its own lock (CANCELLED only); the notes
   // keep the page lock (isLocked).
   it('disables the notes when isLocked; the transcript only on CANCELLED', () => {
@@ -159,73 +137,15 @@ describe('ActivityNotesTab', () => {
   // 5.12c (5) — PO: the AI action is locked ONLY on a CANCELLED activity
   // (isActivitySignalsLocked); the page lock (isLocked: COMPLETED or
   // CANCELLED) keeps locking the notes only (the transcript: 5.12d).
-  it('disables Run AI Analysis on a CANCELLED activity', () => {
-    renderTab({ isLocked: true, activity: { ...mockActivity, status: 'CANCELLED' } });
-
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).toBeDisabled();
-  });
-
-  it('keeps Run AI Analysis available on a COMPLETED activity (page-locked)', () => {
+  it('on a COMPLETED activity (page-locked): notes locked, transcript editable', () => {
     renderTab({ isLocked: true, activity: { ...mockActivity, status: 'COMPLETED' } });
 
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).not.toBeDisabled();
     // The notes keep the page lock; the transcript is editable (5.12d).
     expect(screen.getByTestId('etb-input-outcome_notes')).toBeDisabled();
     expect(screen.getByTestId('etb-input-transcript')).not.toBeDisabled();
   });
 
-  it('opens wizard when Run AI Analysis is clicked', async () => {
-    renderTab();
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('Run AI Analysis'));
-    });
-
-    expect(screen.getByText(/Select objectives/)).toBeInTheDocument();
-  });
-
-  it('shows "Analyzing…" button when pipeline is running', () => {
-    renderTab({
-      pipelineRunner: makePipelineRunner({ state: PIPELINE_STATE.RUNNING }),
-    });
-
-    const btn = screen.getByText('Analyzing…').closest('button');
-    expect(btn).toBeDisabled();
-  });
-
-  it('shows Run AI Analysis button after pipeline success', () => {
-    renderTab({
-      pipelineRunner: makePipelineRunner({
-        state: PIPELINE_STATE.SUCCESS,
-        result: {
-          qualification_run: { created_signals_count: 5 },
-          next_steps_run: { created_signals_count: 3 },
-        },
-      }),
-    });
-
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).not.toBeDisabled();
-  });
-
-  it('shows Run AI Analysis button after pipeline partial', () => {
-    renderTab({
-      pipelineRunner: makePipelineRunner({
-        state: PIPELINE_STATE.PARTIAL,
-        result: {
-          qualification_run: { created_signals_count: 3 },
-          next_steps_run: { created_signals_count: 0 },
-        },
-      }),
-    });
-
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).not.toBeDisabled();
-  });
-
-  it('shows error alert and Run AI Analysis button after pipeline error', () => {
+  it('shows the error alert after pipeline error', () => {
     renderTab({
       pipelineRunner: makePipelineRunner({
         state: PIPELINE_STATE.ERROR,
@@ -233,8 +153,6 @@ describe('ActivityNotesTab', () => {
       }),
     });
 
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).not.toBeDisabled();
     expect(screen.getByText('LLM provider error')).toBeInTheDocument();
   });
 
@@ -263,8 +181,6 @@ describe('ActivityNotesTab', () => {
       },
     });
 
-    const btn = screen.getByText('Run AI Analysis').closest('button');
-    expect(btn).not.toBeDisabled();
     expect(screen.getByText(/Last analyzed on/)).toBeInTheDocument();
   });
 
@@ -288,8 +204,12 @@ describe('ActivityNotesTab', () => {
     expect(screen.getByText('Network error')).toBeInTheDocument();
   });
 
-  it('clicking "Try again" opens the wizard', async () => {
+  // Lot 3 / 11 (TD-302): the wizard is the band header pill's (the page owns
+  // its open state) — "Try again" asks for it, under the pill's predicate.
+  it('clicking "Try again" opens the wizard (onOpenWizard)', async () => {
+    const onOpenWizard = vi.fn();
     renderTab({
+      onOpenWizard,
       pipelineRunner: makePipelineRunner({
         state: PIPELINE_STATE.ERROR,
         error: 'Network error',
@@ -300,7 +220,25 @@ describe('ActivityNotesTab', () => {
       fireEvent.click(screen.getByText('Try again'));
     });
 
-    expect(screen.getByText(/Select objectives/)).toBeInTheDocument();
+    expect(onOpenWizard).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Try again" does nothing when the AI action is unavailable (CANCELLED)', async () => {
+    const onOpenWizard = vi.fn();
+    renderTab({
+      onOpenWizard,
+      activity: { ...mockActivity, status: 'CANCELLED' },
+      pipelineRunner: makePipelineRunner({ state: PIPELINE_STATE.ERROR, error: 'Network error' }),
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Try again'));
+    });
+    expect(onOpenWizard).not.toHaveBeenCalled();
+  });
+
+  it('no Run AI action in the tab any more (it is in the band header)', () => {
+    renderTab();
+    expect(screen.queryByText('Run AI Analysis')).toBeNull();
   });
 
   // F8-3: Dismissible error Alert
@@ -319,29 +257,6 @@ describe('ActivityNotesTab', () => {
   });
 
   // F8-3: Polling progress caption
-  it('shows polling progress when running with pollProgress', () => {
-    renderTab({
-      pipelineRunner: makePipelineRunner({
-        state: PIPELINE_STATE.RUNNING,
-        pollProgress: { attempt: 3, max: 12 },
-      }),
-    });
-
-    expect(screen.getByText('Analyzing…')).toBeInTheDocument();
-    expect(screen.getByText('Polling for result (3/12)…')).toBeInTheDocument();
-  });
-
-  it('does not show polling progress when running without pollProgress', () => {
-    renderTab({
-      pipelineRunner: makePipelineRunner({
-        state: PIPELINE_STATE.RUNNING,
-      }),
-    });
-
-    expect(screen.getByText('Analyzing…')).toBeInTheDocument();
-    expect(screen.queryByText(/Polling for result/)).not.toBeInTheDocument();
-  });
-
   // F8-3-FIX: Failed/stuck run banner
   it('shows warning banner with static message when latestRun is failed', () => {
     renderTab({

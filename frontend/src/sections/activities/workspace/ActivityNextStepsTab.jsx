@@ -28,9 +28,7 @@ import NextStepActivityLine, {
   getResolvedActivity,
 } from "sections/activities/nextSteps/NextStepActivityLine";
 import CampaignConversionCta from "sections/activities/nextSteps/CampaignConversionCta";
-import RunAIAnalysisButton, {
-  RUN_AI_TRIGGER_VARIANTS,
-} from "sections/activities/workspace/RunAIAnalysisButton";
+import RunAIAnalysisButton from "sections/activities/workspace/RunAIAnalysisButton";
 import { formatShortDate } from "components/signals/SignalLine";
 import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import ClickablePill from "components/chips/ClickablePill";
@@ -132,7 +130,6 @@ export default function ActivityNextStepsTab({
           lastRun={lastRun}
           runsByPipeline={runsByPipeline}
           defaultObjectives={NEXT_STEPS_ONLY_OBJECTIVES}
-          variant={RUN_AI_TRIGGER_VARIANTS.PILL}
         />
       )}
     </Box>

@@ -49,6 +49,8 @@ vi.mock("components/WorkspaceHeader", () => ({ default: () => <div data-testid="
 vi.mock("sections/activities/workspace/ActivityHeader", () => ({ default: () => ({ modals: null }) }));
 vi.mock("sections/activities/workspace/ActivityPreparationTab", () => ({ default: () => null }));
 vi.mock("sections/activities/workspace/ActivityNotesTab", () => ({ default: () => null }));
+// The Source band's Run AI pill (its header, lot 3 / 11) — not under test here.
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({ default: () => null }));
 vi.mock("sections/activities/workspace/ActivitySignalsTab", () => ({
   default: () => null,
   ACTIVITY_FLAT_TYPES: ["pain"],

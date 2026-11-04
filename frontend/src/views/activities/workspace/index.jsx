@@ -4,7 +4,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // MUI
 import Box from "@mui/material/Box";
@@ -42,6 +42,7 @@ import { getVisibleTabs } from "sections/activities/workspace/ActivityTabs";
 import ActivityContextSection from "sections/activities/workspace/ActivityContextSection";
 import ActivityPreparationTab from "sections/activities/workspace/ActivityPreparationTab";
 import ActivityNotesTab from "sections/activities/workspace/ActivityNotesTab";
+import RunAIAnalysisButton from "sections/activities/workspace/RunAIAnalysisButton";
 import ActivitySignalsTab, {
   ACTIVITY_FLAT_TYPES,
 } from "sections/activities/workspace/ActivitySignalsTab";
@@ -130,6 +131,10 @@ export default function ActivityWorkspacePage() {
       mutateCounts();
     },
   });
+
+  // The Source band's Run AI wizard — opened by the band's header pill and by
+  // the band body's "Try again" (lot 3 / 11, TD-302).
+  const [sourceWizardOpen, setSourceWizardOpen] = useState(false);
 
   // Activity is locked when completed or cancelled — workspace becomes read-only
   const isLocked =
@@ -307,11 +312,31 @@ export default function ActivityWorkspacePage() {
             </CollapsibleStrip>
           )}
 
-          {/* Source — transcript / notes (interim: the former Notes tab) */}
+          {/* Source — transcript / notes (interim: the former Notes tab). Its
+              Run AI is a pill in the band header, as the other bands' actions
+              (the Next steps band's « + Add next step », ActivityNextStepsBand:
+              ClickablePill in `meta`, clicks kept off the header toggle) —
+              lot 3 / 11, TD-302. Same lock (CANCELLED only) and wizard. */}
           <CollapsibleStrip
             title="Source"
             icon={FileTextOutlined}
             defaultExpanded={false}
+            meta={
+              <Box
+                component="span"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <RunAIAnalysisButton
+                  activity={activity}
+                  pipelineRunner={pipelineRunner}
+                  lastRun={lastRun}
+                  runsByPipeline={runsByPipeline}
+                  open={sourceWizardOpen}
+                  onOpenChange={setSourceWizardOpen}
+                />
+              </Box>
+            }
           >
             <ActivityNotesTab
               activity={activity}
@@ -320,7 +345,7 @@ export default function ActivityWorkspacePage() {
               pipelineRunner={pipelineRunner}
               lastRun={lastRun}
               latestRun={latestRun}
-              runsByPipeline={runsByPipeline}
+              onOpenWizard={() => setSourceWizardOpen(true)}
             />
           </CollapsibleStrip>
 
