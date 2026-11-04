@@ -788,6 +788,12 @@ function ActivityForm({
             contacts: activity?.contacts_detail || [],
             stakeholders: activity?.stakeholders_detail || [],
             outcome: activity?.outcome || null,
+            // 8f-3: the step, modifiable in edition (the cycle stays greyed).
+            decision_step_id: String(
+              activity?.decision_step_detail?.id
+              ?? (typeof activity?.decision_step === "object" ? activity?.decision_step?.id : activity?.decision_step)
+              ?? "",
+            ),
           },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activity?.id, defaults],
@@ -892,6 +898,12 @@ function ActivityForm({
       if (editsOutcome && values.outcome !== (activity.outcome || null)) {
         payload.outcome = values.outcome;
       }
+      // 8f-3: the step of the activity's cycle, when changed (PATCH
+      // decision_step_id — the cycle unchanged, so no stakeholder leaves:
+      // ActivityUpdateSerializer drops them on a CYCLE change only).
+      if (activity?.decision_cycle && values.decision_step_id !== initialValues.decision_step_id) {
+        payload.decision_step_id = values.decision_step_id || null;
+      }
       try {
         const result = await updateActivity(activity.id, payload);
         if (result?.success) {
@@ -958,7 +970,9 @@ function ActivityForm({
   // required by the Yup rule above (its own message on the step field).
   const conversionNeedsCycle =
     isCreate && conversion && !values.inline_cycle && !isExistingCycle(values.decision_cycle_id);
-  const { steps } = useGetDecisionStepsByCycle(isCreate ? values.decision_cycle_id : null);
+  const { steps } = useGetDecisionStepsByCycle(
+    isCreate ? values.decision_cycle_id : activity?.decision_cycle || null,
+  );
   const stepOptions = useMemo(
     () =>
       [...(steps || [])]
@@ -1005,18 +1019,25 @@ function ActivityForm({
                 placeholder="No decision cycle"
                 disabled
               />
+              {/* 8f-3: the step MODIFIABLE (the creation's select). */}
               {activity?.decision_cycle && (
                 <InlineEditableValue
                   name="decision_step"
                   label="DC step"
-                  value={
-                    activity?.decision_step_detail?.name ||
-                    (typeof activity?.decision_step === "object" ? activity?.decision_step?.name : "") ||
-                    ""
+                  type="select"
+                  options={
+                    stepOptions.length
+                      ? stepOptions
+                      : [{
+                          value: values.decision_step_id,
+                          label: activity?.decision_step_detail?.name
+                            || (typeof activity?.decision_step === "object" ? activity?.decision_step?.name : "")
+                            || "",
+                        }]
                   }
-                  onChange={() => {}}
+                  value={values.decision_step_id}
+                  onChange={(v) => setFieldValue("decision_step_id", v)}
                   placeholder="No step"
-                  disabled
                 />
               )}
             </>

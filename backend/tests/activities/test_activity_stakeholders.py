@@ -191,6 +191,26 @@ def test_stakeholders_carry_is_reachable_a_non_converted_one_never_is(authed_api
     assert listed == {str(marc.id): False, str(paul.id): True}
 
 
+def test_changing_only_the_step_keeps_the_stakeholders(authed_api_a, account, user_a):
+    """8f-3: the step is modifiable in edition — PATCH decision_step_id alone
+    (the cycle unchanged) never drops a stakeholder: they leave on a CYCLE
+    change only (ActivityUpdateSerializer)."""
+    from app_modules.decision_cycles.constants import PipelineStep
+    from app_modules.decision_cycles.models import DecisionStep
+    cycle = _cycle(account, user_a)
+    other_step = DecisionStep(cycle=cycle, name='Technical Fit', stage=PipelineStep.TECHNICAL_FIT, order=2)
+    other_step.save(user=user_a, client_id=account.client_id)
+    marc = _stakeholder(cycle, user_a, full_name='Marc')
+    pk = authed_api_a.post(URL, _payload(account, cycle, stakeholder_ids=[marc.id]),
+                           format='json').json()['data']['id']
+    r = authed_api_a.patch(f'{URL}{pk}/', {'decision_step_id': str(other_step.id)}, format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    data = _detail(authed_api_a, pk)
+    assert [x['id'] for x in data['stakeholders_detail']] == [str(marc.id)]
+    from app_modules.activities.models import Activity
+    assert Activity.objects.get(pk=pk).decision_step_id == other_step.id
+
+
 def test_changing_the_cycle_drops_the_stakeholders_of_the_old_one(authed_api_a, account, user_a):
     """A stakeholder belongs to ONE cycle: an activity moved to another cycle
     (without stakeholder_ids) keeps its contacts, loses the old cycle's
