@@ -1011,6 +1011,9 @@ function ActivityForm({
               value={currentCycle}
               formatValue={(c) => c?.name || ""}
               onChange={(cycle) => {
+                // 8e-1: the same cycle again (Escape restores it) changes
+                // nothing — the step chosen is kept.
+                if (cycle && String(cycle.id) === String(values.decision_cycle_id)) return;
                 setFieldValue("decision_cycle", cycle || null);
                 setFieldValue("decision_cycle_id", cycle ? String(cycle.id) : "");
                 setFieldValue("decision_step_id", "");
@@ -1020,6 +1023,9 @@ function ActivityForm({
                 <AsyncDecisionCycleSelect
                   data-testid="decision-cycle-select"
                   accountId={accountId}
+                  // 8e-1: chosen or replaced, never emptied here (MUI's own
+                  // prop, through AsyncSelect's pass-through).
+                  disableClearable
                   value={value}
                   onChange={(_event, cycle) => {
                     onChange(cycle ?? null);

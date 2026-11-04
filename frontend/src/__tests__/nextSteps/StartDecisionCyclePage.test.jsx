@@ -112,6 +112,7 @@ let accountCycles = [];
 let fetchedUrls = [];
 const DC_ALPHA = "44444444-4444-4444-8444-444444444441";
 const STEP_ALPHA = "55555555-5555-4555-8555-555555555551";
+const STEP_ALPHA_2 = "55555555-5555-4555-8555-555555555552";
 const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
   fetchedUrls.push(url);
@@ -124,7 +125,8 @@ const fetcher = (key) => {
   if (url.startsWith("/decision_cycles/steps/") && url.includes(DC_ALPHA)) {
     return Promise.resolve({ data: { results: [
       { id: STEP_ALPHA, name: "Qualification", order: 1, is_current: true, cycle: DC_ALPHA },
-    ], count: 1 } });
+      { id: STEP_ALPHA_2, name: "Technical Fit", order: 2, is_current: false, cycle: DC_ALPHA },
+    ], count: 2 } });
   }
   return Promise.resolve({ data: { results: [], count: 0 } });
 };
@@ -345,5 +347,56 @@ describe("Start Decision Cycle — an existing DC or « Create new cycle » (8d-
     fireEvent.keyDown(input, { key: "ArrowDown" });
     await waitFor(() =>
       expect(fetchedUrls.some((u) => u.startsWith(`/decision_cycles/${DC_ALPHA}/stakeholders/`))).toBe(true));
+  });
+});
+
+// 8e-1 (PO): closing the cycle select (X, Escape, a click elsewhere) NEVER
+// changes the value — the cycle stays (and so does the step chosen); in the
+// drawer the cycle is chosen or replaced, never emptied.
+describe("The cycle select never empties the cycle (8e-1)", () => {
+  const drawerNow = () => within(coque()).getByTestId("activity-create");
+  const openCycleSearch = () => {
+    fireEvent.click(within(drawerNow()).getByTestId("inline-read-decision_cycle"));
+    const input = within(drawerNow()).getByRole("combobox");
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    return input;
+  };
+  const chooseAlphaThenTechnicalFit = async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
+    openCycleSearch();
+    fireEvent.click(await screen.findByRole("option", { name: "Deal Alpha" }));
+    fireEvent.click(await waitFor(() => within(drawerNow()).getByTestId("inline-read-decision_step")));
+    fireEvent.click(await screen.findByRole("option", { name: "Technical Fit" }));
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    expect(within(drawerNow()).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
+  };
+  const cycleRead = () => within(drawerNow()).getByTestId("inline-read-decision_cycle");
+
+  beforeEach(() => {
+    accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: null }];
+  });
+
+  it("no X to empty it", async () => {
+    await chooseAlphaThenTechnicalFit();
+    openCycleSearch();
+    expect(within(drawerNow()).queryByTitle("Clear")).toBeNull();
+  });
+
+  it("Escape: the cycle AND the step chosen stay", async () => {
+    await chooseAlphaThenTechnicalFit();
+    const input = openCycleSearch();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(cycleRead()).toHaveTextContent("Deal Alpha");
+    expect(within(drawerNow()).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
+  });
+
+  it("a click elsewhere: the cycle stays", async () => {
+    await chooseAlphaThenTechnicalFit();
+    const input = openCycleSearch();
+    fireEvent.blur(input);
+    expect(cycleRead()).toHaveTextContent("Deal Alpha");
+    expect(within(drawerNow()).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
   });
 });
