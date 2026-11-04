@@ -6,6 +6,7 @@ import PropTypes from "prop-types";
 import { useState } from "react";
 
 // MUI
+import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -14,9 +15,6 @@ import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 
-// Icon size token (the project's iconSizes source — used directly so the row
-// needs no theme wrapper). sm = 14px.
-import IconSizes from "themes/iconSizes";
 
 // Icons
 import {
@@ -41,7 +39,6 @@ import {
 import { ACTIVITY_TYPE_LABELS } from "api/accounts/activities";
 import { getActivityTypeIcon } from "utils/activityTypes";
 
-const ICON_SIZES = IconSizes();
 
 // Light status treatment — reuses the design-system `light` Chip variant
 // (tinted background + light border, see themes/overrides/Chip.js) with a
@@ -204,6 +201,11 @@ export default function SignalLine({
   showPeopleIdentity = false,
   extra = null,
 }) {
+  // Compact visuals from the theme (lot 3 / 12, TD-265): icon sizes, the muted
+  // text colour, the compact / mini chip tokens.
+  const theme = useTheme();
+  const aq = theme.aphoriQ;
+  const metaIconStyle = { fontSize: theme.iconSizes.xs, color: aq.text.muted };
   const isRejected = signal.status === "REJECTED";
 
   const message = getMessage(signal, signalType);
@@ -330,7 +332,7 @@ export default function SignalLine({
             sx={{ flexShrink: 0 }}
             data-testid="next-step-line-type"
           >
-            <nextStepMeta.TypeIcon style={{ fontSize: 12, color: "#8c8c8c" }} />
+            <nextStepMeta.TypeIcon style={metaIconStyle} />
             <Typography variant="caption" color="text.secondary" noWrap>
               {nextStepMeta.typeLabel}
             </Typography>
@@ -346,7 +348,7 @@ export default function SignalLine({
             sx={{ flexShrink: 0 }}
             data-testid="next-step-line-date"
           >
-            <CalendarOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+            <CalendarOutlined style={metaIconStyle} />
             <Typography variant="caption" color="text.secondary" noWrap>
               {nextStepMeta.dateLabel}
             </Typography>
@@ -361,7 +363,7 @@ export default function SignalLine({
             alignItems="center"
             sx={{ flexShrink: 0 }}
           >
-            <CalendarOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+            <CalendarOutlined style={metaIconStyle} />
             <Typography variant="caption" color="text.secondary" noWrap>
               {dateLabel}
             </Typography>
@@ -376,14 +378,14 @@ export default function SignalLine({
             alignItems="center"
             sx={{ flexShrink: 1, minWidth: 0, maxWidth: 320 }}
           >
-            <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
+            <UserOutlined style={metaIconStyle} />
             <ContactInline contact={contacts[0]} variant="caption" noWrap />
             {showContactOverflow && extraContacts > 0 && (
               <Chip
                 label={`+${extraContacts}`}
                 size="small"
                 variant="outlined"
-                sx={{ height: 18, fontSize: "0.65rem" }}
+                sx={aq.chip.mini}
               />
             )}
           </Stack>
@@ -396,7 +398,7 @@ export default function SignalLine({
             label={signal.nature_display}
             size="small"
             variant="outlined"
-            sx={{ height: 20, fontSize: "0.68rem", flexShrink: 0 }}
+            sx={{ ...aq.chip.compact, flexShrink: 0 }}
           />
         )}
 
@@ -410,7 +412,7 @@ export default function SignalLine({
             label={scopeLabel}
             size="small"
             variant="outlined"
-            sx={{ height: 20, fontSize: "0.68rem", flexShrink: 0 }}
+            sx={{ ...aq.chip.compact, flexShrink: 0 }}
           />
         )}
 
@@ -426,8 +428,8 @@ export default function SignalLine({
             color={statusConfig.color}
             variant="light"
             size="small"
-            icon={<statusConfig.Icon style={{ fontSize: 12 }} />}
-            sx={{ height: 20, fontSize: "0.68rem", flexShrink: 0 }}
+            icon={<statusConfig.Icon style={{ fontSize: theme.iconSizes.xs }} />}
+            sx={{ ...aq.chip.compact, flexShrink: 0 }}
           />
         )}
       </Stack>
@@ -458,9 +460,9 @@ export default function SignalLine({
                 onClick={(e) => runAction("validate", onValidate, e)}
               >
                 {busy === "validate" ? (
-                  <CircularProgress size={ICON_SIZES.sm} color="inherit" />
+                  <CircularProgress size={theme.iconSizes.sm} color="inherit" />
                 ) : (
-                  <CheckOutlined style={{ fontSize: ICON_SIZES.sm }} />
+                  <CheckOutlined style={{ fontSize: theme.iconSizes.sm }} />
                 )}
               </IconButton>
             </span>
@@ -475,9 +477,9 @@ export default function SignalLine({
                 onClick={(e) => runAction("reject", onReject, e)}
               >
                 {busy === "reject" ? (
-                  <CircularProgress size={ICON_SIZES.sm} color="inherit" />
+                  <CircularProgress size={theme.iconSizes.sm} color="inherit" />
                 ) : (
-                  <CloseOutlined style={{ fontSize: ICON_SIZES.sm }} />
+                  <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
                 )}
               </IconButton>
             </span>

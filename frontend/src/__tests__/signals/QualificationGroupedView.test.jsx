@@ -6,8 +6,9 @@
 // collapsible (open by default); rows are informational.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
+import AphoriqTheme, { testTheme } from "../_utils/aphoriqTheme";
 import AccordionOverride from "themes/overrides/Accordion";
 import AccordionSummaryOverride from "themes/overrides/AccordionSummary";
 import AccordionDetailsOverride from "themes/overrides/AccordionDetails";
@@ -19,11 +20,17 @@ import AccordionDetailsOverride from "themes/overrides/AccordionDetails";
 const themed = createTheme({
   palette: { secondary: { lighter: "#f4f6f8", light: "#d9d9d9", main: "#8c8c8c" } },
 });
+// SignalLine's compact tokens (lot 3 / 12, TD-265) — the project namespaces.
+themed.aphoriQ = testTheme.aphoriQ;
+themed.iconSizes = testTheme.iconSizes;
 themed.components = {
   ...AccordionOverride(themed),
   ...AccordionSummaryOverride(themed),
   ...AccordionDetailsOverride(themed),
 };
+// SignalLine reads its compact tokens from the theme (lot 3 / 12, TD-265):
+// the app always renders under it.
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 const renderThemed = (ui) => render(<ThemeProvider theme={themed}>{ui}</ThemeProvider>);
 
 // ==============================|| MOCKS ||============================== //
