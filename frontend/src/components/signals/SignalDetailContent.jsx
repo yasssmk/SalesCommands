@@ -392,6 +392,16 @@ ReadField.propTypes = { label: PropTypes.string, value: PropTypes.node };
 // A label/value ROW: muted label on the LEFT, value on the RIGHT (2-column,
 // value right-aligned). Used for scope + metrics, where each field is a short
 // scalar read as "Label ………… Value".
+// The muted italic placeholder of an empty ReadRow value (People influence /
+// department, Constraint rigidity — lot 3 / 8, hoisted from the People detail).
+function placeholder(text) {
+  return (
+    <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
+      {text}
+    </Box>
+  );
+}
+
 function ReadRow({ label, value }) {
   if (value === null || value === undefined || value === "") return null;
   return (
@@ -636,8 +646,10 @@ ObjectiveDetailView.propTypes = {
 //      recap + canonical_key). The theme lives in the recap, so there is NO
 //      separate Theme row (mirror of Objective, which has no Theme row).
 //   2. Scope     — Scope + Department(s) (M2M, the sole legitimate difference vs
-//      Objective) + Category + the optional related-tool mention.
-//   3. Source    — the source quote + origin contact(s), bold/muted like Objective.
+//      Objective) + Category.
+//   3. Related tool — the related-tool mention + the notes (placeholders when
+//      empty): the edit drawer's §3 (TD-276, the detail follows the edit).
+//   4. Source    — the source quote + origin contact(s), bold/muted like Objective.
 // Pain has NO Metrics section (that is Impact). The Edit button is present but
 // its wiring stays the legacy path until the Pain edit lands (S3).
 function PainDetailView({
@@ -742,19 +754,25 @@ function PainDetailView({
         <Divider sx={{ my: 2 }} />
 
         {/* Section 2 — Scope + Department(s) (M2M, the sole difference vs Objective)
-            + Category + optional related tool. */}
+            + Category. */}
         <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
         <ReadRow label="Scope level" value={signal.scope_level_display} />
         <ReadRow label="Department(s)" value={departments} />
         <ReadRow label="Category" value={signal.signal_category_display} />
-        <ReadRow label="Related tool" value={signal.related_techstack_mention} />
-        <ReadRow label="Notes" value={signal.notes} />
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Source: the quote + who said it, with an optional link to
+        {/* Section 3 — Related tool + Notes: the edit drawer's §3 (TD-276, the
+            detail follows the edit's structure). */}
+        <SectionHeader index={3} title="Related tool" sx={{ mb: 1 }} />
+        <ReadRow label="Related tool" value={signal.related_techstack_mention || placeholder("No related tool")} />
+        <ReadRow label="Notes" value={signal.notes || placeholder(SIGNAL_NO_NOTES)} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Source: the quote + who said it, with an optional link to
             the origin activity. Same treatment as the Objective detail. */}
-        <SectionHeader index={3} title="Source" sx={{ mb: 1 }} />
+        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
@@ -1010,14 +1028,16 @@ ImpactDetailView.propTypes = {
 //   - NO canonical_key / NO what×dimension axis (what/dimension are legacy
 //     nullable, NOT authored/shown). It DOES reuse SignalSummaryBox (fond
 //     distinct, homogeneous with Pain/Impact), but with a Constraint meta and
-//     NO canonical_key: recap = "This is an {nature} constraint · Rigidity:
-//     {rigidity}" (nature bold via axisPreview + article="an"; rigidity a plain
-//     suffix via recapSuffix, omitted when empty).
+//     NO canonical_key: recap = "This is an {nature} constraint" (nature bold
+//     via axisPreview + article="an").
+//   - Sections = the edit drawer's (TD-276): §1 Summary → §2 Rigidity
+//     (optional/clearable since S1a, « No rigidity » placeholder) → §3 Scope →
+//     §4 Notes → §5 Source.
 //   - NO scope_level (the scope IS the presence/absence of target_departments)
-//     → §2 Scope has no "Scope level" row, only Department(s).
+//     → §3 Scope has no "Scope level" row, only Department(s).
 //   - signal_category shadow-overridden to None → NO Category row.
-//   - nature (required) + rigidity (optional/clearable since S1a) live in the
-//     box meta, NOT a separate Classification section.
+//   - nature (required) lives in the box meta, NOT a separate Classification
+//     section.
 // PO section order (4): Summary (box) → Scope → Notes → Source.
 function ConstraintDetailView({
   signal,
@@ -1043,10 +1063,6 @@ function ConstraintDetailView({
   // Rigidity: {rigidity}" — nature in bold (axisPreview), rigidity as a plain
   // suffix AFTER "constraint" (omitted when empty). NO canonical_key.
   const natureRecap = signal.nature_display || null;
-  const rigiditySuffix = signal.rigidity_display
-    ? ` · Rigidity: ${signal.rigidity_display}`
-    : undefined;
-
   const contacts = signal.source_context?.contacts ?? [];
   const originActivityId = signal.source_context?.activity?.id ?? null;
   // View-origin link only when the origin activity is NOT the one we're viewing.
@@ -1107,16 +1123,16 @@ function ConstraintDetailView({
         )}
 
         {/* Section 1 — Summary: the SHARED summary box (same fond distinct as
-            Pain/Impact). Meta = "This is an {nature} constraint · Rigidity: {rigidity}"
-            (nature/rigidity in bold, article "an"). NO canonical_key (Constraint
-            has none) — the box omits it when canonicalKey is absent. */}
+            Pain/Impact). Meta = "This is an {nature} constraint" (article "an");
+            the rigidity has its own section (§2, as the edit — TD-276). NO
+            canonical_key (Constraint has none) — the box omits it when
+            canonicalKey is absent. */}
         <SectionHeader index={1} title="Summary" sx={{ mb: 1 }} />
         <SignalSummaryBox
           summary={signal.summary}
           axisPreview={natureRecap}
           axisNoun="constraint"
           article="an"
-          recapSuffix={rigiditySuffix}
           boxTestId="constraint-summary-box"
           summaryTestId="constraint-summary-text"
           separatorTestId="constraint-summary-separator"
@@ -1124,15 +1140,21 @@ function ConstraintDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — Scope: Department(s) (M2M). Constraint has no scope_level. */}
-        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
+        {/* Section 2 — Rigidity: the edit drawer's §2 (TD-276). */}
+        <SectionHeader index={2} title="Rigidity" sx={{ mb: 1 }} />
+        <ReadRow label="Rigidity" value={signal.rigidity_display || placeholder("No rigidity")} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Scope: Department(s) (M2M). Constraint has no scope_level. */}
+        <SectionHeader index={3} title="Scope" sx={{ mb: 1 }} />
         <ReadRow label="Department(s)" value={departments} />
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Notes (« No notes » placeholder when empty). The section header already
+        {/* Section 4 — Notes (« No notes » placeholder when empty). The section header already
             labels it, so render the value plainly (no redundant "Notes" label). */}
-        <SectionHeader index={3} title="Notes" sx={{ mb: 1 }} />
+        <SectionHeader index={4} title="Notes" sx={{ mb: 1 }} />
         {signal.notes ? (
           <Typography
             variant="body2"
@@ -1150,9 +1172,9 @@ function ConstraintDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 4 — Source: the quote + who said it, with an optional link to
+        {/* Section 5 — Source: the quote + who said it, with an optional link to
             the origin activity. Same treatment as the Pain/Impact detail. */}
-        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        <SectionHeader index={5} title="Source" sx={{ mb: 1 }} />
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
@@ -1545,11 +1567,13 @@ CompetitorDetailView.propTypes = {
 // Deltas from Objection:
 //   - NO summary on People → the shared summary box carries the person headline
 //     "Name — Role (Department)" (getPeopleHeadline).
+//   - §1 Person: the headline box, then the contact — target_contact ONLY, NO
+//     fallback on the participants (as Objection "Raised by"); placeholder
+//     when null — and the department (the edit's « Who is this person? »,
+//     TD-276).
 //   - §2 Role: role / influence / why (notes = the LLM's justification of the
 //     role); placeholders when empty (Constraint pattern).
-//   - §3 Contact: target_contact ONLY — NO fallback on the participants (as
-//     Objection "Raised by"); placeholder when null. Department below it.
-// PO section order (4): Person (box) → Role → Contact → Source.
+// Section order (3, the edit drawer's — TD-276): Person → Role → Source.
 function PeopleDetailView({
   signal,
   onValidate,
@@ -1576,11 +1600,6 @@ function PeopleDetailView({
   );
   const evidenceStatus = signal.metadata?.evidence_check?.status;
 
-  const placeholder = (text) => (
-    <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
-      {text}
-    </Box>
-  );
 
   return (
     <Box data-testid="people-detail-body">
@@ -1642,6 +1661,24 @@ function PeopleDetailView({
           boxTestId="people-summary-box"
           summaryTestId="people-summary-text"
         />
+        {/* The contact (target_contact ONLY — NO participant fallback, as
+            Objection "Raised by", TD-254) + the department, in §1 as the edit's
+            « Who is this person? » (TD-276). */}
+        <Box data-testid="people-contact" sx={{ mt: 1.5 }}>
+          <Box sx={{ mb: 1 }}>
+            {signal.target_contact ? (
+              <ContactInline contact={signal.target_contact} variant="body2" />
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                {SIGNAL_NO_CONTACT}
+              </Typography>
+            )}
+          </Box>
+          <ReadRow
+            label="Department"
+            value={signal.target_department?.name || placeholder("No department")}
+          />
+        </Box>
 
         <Divider sx={{ my: 2 }} />
 
@@ -1675,30 +1712,9 @@ function PeopleDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Contact: target_contact ONLY. NO participant fallback (as
-            Objection "Raised by", TD-254). Placeholder when empty. Department below. */}
-        <SectionHeader index={3} title="Contact" sx={{ mb: 1 }} />
-        <Box data-testid="people-contact">
-          <Box sx={{ mb: 1 }}>
-            {signal.target_contact ? (
-              <ContactInline contact={signal.target_contact} variant="body2" />
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-                {SIGNAL_NO_CONTACT}
-              </Typography>
-            )}
-          </Box>
-          <ReadRow
-            label="Department"
-            value={signal.target_department?.name || placeholder("No department")}
-          />
-        </Box>
-
-        <Divider sx={{ my: 2 }} />
-
-        {/* Section 4 — Source: the quote + who said it, with an optional link to
+        {/* Section 3 — Source: the quote + who said it, with an optional link to
             the origin activity. Same treatment as the Objection detail. */}
-        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        <SectionHeader index={3} title="Source" sx={{ mb: 1 }} />
         <Box data-testid="people-source">
           {signal.source_quote ? (
             <SourceQuoteBlock quote={signal.source_quote} />

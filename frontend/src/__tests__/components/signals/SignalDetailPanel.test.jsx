@@ -235,21 +235,21 @@ describe("SignalDetailPanel", () => {
     expect(screen.getAllByText("Pierre Dupont").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("S3-fix: the related tool is shown on the detail when present, hidden when empty", () => {
-    // Present → the "Related tool" row and its value render (detail/edit parity).
+  it("S3-fix / TD-276: the related tool has its own section (§3, as the edit) — placeholder when empty", () => {
+    // Present → the §3 title + the "Related tool" row and its value.
     const { unmount } = render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
-    expect(screen.getByText("Related tool")).toBeInTheDocument();
+    expect(screen.getAllByText("Related tool")).toHaveLength(2);
     expect(screen.getByText("Excel")).toBeInTheDocument();
     unmount();
 
-    // Empty → the row is hidden (ReadRow drops empty values).
+    // Empty → the edit's placeholder (the section is never blank).
     render(
       <SignalDetailPanel
         signal={{ ...MOCK_PAIN, related_techstack_mention: "" }}
         signalType="pain"
       />,
     );
-    expect(screen.queryByText("Related tool")).not.toBeInTheDocument();
+    expect(screen.getByText("No related tool")).toBeInTheDocument();
   });
 
   it("Pain detail uses the standard title header, suppressed when the coque owns it", () => {
@@ -970,7 +970,7 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
     // The detail still renders (summary box present, meta carries the nature)
     // but no department text leaks.
     expect(screen.getByTestId("constraint-summary-box")).toHaveTextContent(
-      /This is an\s+Regulatory\s+constraint · Rigidity: Firm/,
+      /This is an\s+Regulatory\s+constraint/,
     );
     expect(screen.queryByText("Sales")).not.toBeInTheDocument();
   });
@@ -1039,14 +1039,17 @@ describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", ()
     expect(screen.getByTestId("constraint-detail-body")).toBeInTheDocument();
     expect(screen.getByTestId("constraint-summary-box")).toBeInTheDocument();
     expect(screen.getByTestId("constraint-summary-text")).toBeInTheDocument();
-    // Meta recap: "This is an {nature} constraint · Rigidity: {rigidity}"
-    // (nature in bold; rigidity a plain suffix after "constraint").
+    // Meta recap: "This is an {nature} constraint" (nature in bold). TD-276:
+    // the rigidity left the meta for its own section (§2, as the edit).
     const box = screen.getByTestId("constraint-summary-box");
-    expect(box).toHaveTextContent(/This is an\s+Security\s+constraint · Rigidity: Firm/);
+    expect(box).toHaveTextContent(/This is an\s+Security\s+constraint/);
+    expect(box).not.toHaveTextContent("Rigidity");
     // nature carried in the box meta as the bold node.
     expect(screen.getByText("Security")).toBeInTheDocument();
-    // 4 sections: Summary → Scope → Notes → Source. NO Classification.
+    // 5 sections (TD-276, the edit's): Summary → Rigidity → Scope → Notes →
+    // Source. NO Classification.
     expect(screen.getByText("Summary")).toBeInTheDocument();
+    expect(screen.getAllByText("Rigidity")).toHaveLength(2);   // §2 title + its row
     expect(screen.getByText("Scope")).toBeInTheDocument();
     expect(screen.getByText("Notes")).toBeInTheDocument();
     expect(screen.getByText("Source")).toBeInTheDocument();
@@ -1190,9 +1193,9 @@ describe("SignalDetailPanel — Objection on the chassis (Activity, S1)", () => 
 // ==== People S2 — People detail on the standard chassis (Activity) ====
 // Clone of the Objection chassis: same gate (currentActivityId, only the
 // Activity coque passes it) so DC/Account Flat keep the flush PeopleDetails.
-// 4 sections: Person (summary box "Name — Role (Department)") → Role (role,
-// influence, why) → Contact (target_contact ONLY, no participant fallback;
-// department) → Source.
+// 3 sections since TD-276 (the edit's structure): Person (summary box "Name —
+// Role (Department)" + the contact — target_contact ONLY, no participant
+// fallback — and the department) → Role (role, influence, why) → Source.
 describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
   const MOCK_PEOPLE_CHASSIS = {
     id: "people-chassis",
@@ -1211,7 +1214,7 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
     },
   };
 
-  it("P1: people + currentActivityId (no leading/trailing) → people chassis, 4 sections", () => {
+  it("P1: people + currentActivityId (no leading/trailing) → people chassis, 3 sections (TD-276)", () => {
     render(
       <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,
     );
@@ -1220,8 +1223,9 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
     expect(screen.getByText("Person")).toBeInTheDocument();
     // "Role": §2 title + the Role field label.
     expect(screen.getAllByText("Role")).toHaveLength(2);
-    // "Contact": §3 title + the Source participants caption (one participant).
-    expect(screen.getAllByText("Contact")).toHaveLength(2);
+    // TD-276: no separate "Contact" section (the contact is in §1, as the
+    // edit) — "Contact" is only the Source participants caption.
+    expect(screen.getAllByText("Contact")).toHaveLength(1);
     expect(screen.getByText("Source")).toBeInTheDocument();
     // Flush markers absent.
     expect(screen.queryByText("ROLE")).not.toBeInTheDocument();
