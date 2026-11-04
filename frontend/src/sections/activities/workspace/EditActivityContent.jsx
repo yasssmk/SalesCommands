@@ -94,6 +94,7 @@ import {
 import { InlineCycleForm } from "sections/accounts/activities/components";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import InfoNotice from "components/display/InfoNotice";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import PersonRow from "components/display/PersonRow";
@@ -935,6 +936,12 @@ function ActivityForm({
       : null);
   // Conversion: the InlineCycleForm opened by « Create new cycle ».
   const [showInlineCycle, setShowInlineCycle] = useState(false);
+  // 8e-2 (PO): a conversion saves only with an existing cycle or a new cycle
+  // created — Save disabled meanwhile (from the mount, not only once Formik
+  // has validated), with an info notice. The existing cycle's step stays
+  // required by the Yup rule above (its own message on the step field).
+  const conversionNeedsCycle =
+    isCreate && conversion && !values.inline_cycle && !isExistingCycle(values.decision_cycle_id);
   const { steps } = useGetDecisionStepsByCycle(isCreate ? values.decision_cycle_id : null);
   const stepOptions = useMemo(
     () =>
@@ -961,7 +968,7 @@ function ActivityForm({
       onCancel={() => (onCancel ? onCancel() : closeDrawer())}
       saveDisabled={
         isCreate
-          ? !formik.isValid || formik.isSubmitting
+          ? !formik.isValid || formik.isSubmitting || conversionNeedsCycle
           : !formik.isValid || !formik.dirty || formik.isSubmitting
       }
     >
@@ -1092,6 +1099,13 @@ function ActivityForm({
             <AddActionButton onClick={() => setShowInlineCycle(true)} testId="create-new-cycle">
               Create new cycle
             </AddActionButton>
+          )}
+          {/* 8e-2: the rule said in an INFO notice (a business rule, not an
+              error — the shared InfoNotice, as SignalsValidationList's). */}
+          {conversionNeedsCycle && (
+            <InfoNotice data-testid="cycle-required-notice">
+              Choose an existing decision cycle or create a new one to save this activity.
+            </InfoNotice>
           )}
         </Stack>
 

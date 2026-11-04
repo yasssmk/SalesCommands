@@ -400,3 +400,60 @@ describe("The cycle select never empties the cycle (8e-1)", () => {
     expect(within(drawerNow()).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
   });
 });
+
+// 8e-2 (PO): in conversion, « Save » stays disabled while there is neither an
+// existing cycle (+ its step) nor a new cycle created — with an INFO notice
+// (InfoNotice, the info role: a business rule, not an error).
+describe("Conversion: Save waits for a cycle, with an info notice (8e-2)", () => {
+  const drawerNow = () => within(coque()).getByTestId("activity-create");
+  const save = () => within(coque()).getByRole("button", { name: "Save" });
+  const fillTitleAndDate = () => {
+    fireEvent.click(within(drawerNow()).getByTestId("inline-read-title"));
+    fireEvent.change(within(drawerNow()).getByTestId("inline-input-title"), { target: { value: "Discovery meeting" } });
+    fireEvent.click(within(drawerNow()).getByTestId("inline-read-date"));
+    fireEvent.change(screen.getByLabelText("Scheduled date"), { target: { value: "2026-11-12" } });
+    fireEvent.click(screen.getByTestId("date-confirm"));
+  };
+  const NOTICE = "Choose an existing decision cycle or create a new one to save this activity.";
+
+  beforeEach(() => {
+    accountCycles = [{ id: DC_ALPHA, name: "Deal Alpha", outcome: null }];
+  });
+
+  it("at once: Save disabled, the info notice shown (info, not an error)", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
+    expect(save()).toBeDisabled();                                   // even before any input
+    fillTitleAndDate();
+    await waitFor(() => expect(save()).toBeDisabled());
+    const notice = within(drawerNow()).getByTestId("cycle-required-notice");
+    expect(notice).toHaveTextContent(NOTICE);
+    expect(notice.querySelector('[aria-label="info-circle"]')).not.toBeNull();   // InfoNotice
+  });
+
+  it("an existing cycle + its step: Save enabled, the notice gone", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
+    fillTitleAndDate();
+    fireEvent.click(within(drawerNow()).getByTestId("inline-read-decision_cycle"));
+    const input = within(drawerNow()).getByRole("combobox");
+    fireEvent.focus(input);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Deal Alpha" }));
+    await waitFor(() => expect(save()).toBeEnabled());
+    expect(within(drawerNow()).queryByTestId("cycle-required-notice")).toBeNull();
+  });
+
+  it("a new cycle created: Save enabled, the notice gone", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
+    fillTitleAndDate();
+    fireEvent.click(within(drawerNow()).getByRole("button", { name: /Create new cycle/ }));
+    const cycle = within(drawerNow()).getByTestId("conversion-cycle");
+    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    await within(cycle).findByText("Deal Acme");
+    await waitFor(() => expect(save()).toBeEnabled());
+    expect(within(drawerNow()).queryByTestId("cycle-required-notice")).toBeNull();
+  });
+});
