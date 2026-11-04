@@ -189,6 +189,11 @@ class ValidationErrorMessages:
 class ActivityErrorMessages:
     """Activity specific error messages"""
 
+    # One born cycle (8g-3, TD-296) — activity_sequence_service.guard_decision_cycle_birth
+    DECISION_CYCLE_ALREADY_BORN = _(
+        "A decision cycle was already started from this campaign activity."
+    )
+
     # Signals lock (8g-2, TD-297) — activities/services/signals_lock.py
     SIGNALS_LOCKED = _(
         "This activity is cancelled: its signals and its AI analysis are locked."

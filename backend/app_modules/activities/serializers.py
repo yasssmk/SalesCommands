@@ -17,6 +17,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import Activity
+from .services.activity_sequence_service import guard_decision_cycle_birth
 from .services.date_rules import check_activity_dates
 from .services.participant_rules import (
     check_participant_minimum, resolve_contacts, resolve_stakeholders,
@@ -1173,6 +1174,15 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         # already applied to the empty fields in validate()).
         if next_step_signal:
             validated_data.update(next_step_activity_fields(next_step_signal))
+
+        # 8g-3 (TD-296): ONE cycle born from a campaign activity — the source
+        # locked, a second birth refused (before the activity is created).
+        source = validated_data.get('source_activity')
+        if source is not None:
+            guard_decision_cycle_birth(
+                source.id, client_id=client_id,
+                cycle_id=getattr(validated_data.get('decision_cycle'), 'id', None),
+            )
 
         # Create instance
         instance = Activity(**validated_data)

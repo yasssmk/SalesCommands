@@ -25,6 +25,7 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from ..models import Activity
 from ..constants import ActivityStatus
 from .activity_invitations import notify_invited_users, resolve_invited_users
+from .activity_sequence_service import guard_decision_cycle_birth
 from .date_rules import check_activity_dates
 from .participant_rules import (
     check_participant_minimum, resolve_contacts, resolve_stakeholders,
@@ -150,6 +151,12 @@ class ActivityCreationService:
             # it is written exactly once, on a cycle that did not exist before.
             # A cycle that already exists is NEVER re-parented — see _create_cycle.
             origin_campaign_id = self._campaign_of(source_activity_id)
+            # 8g-3 (TD-296): ONE cycle born from a campaign activity — the
+            # source locked, a second birth refused (before anything is created).
+            guard_decision_cycle_birth(
+                source_activity_id, client_id=self.client_id,
+                cycle_id=cycle_id, creates_cycle=bool(inline_cycle),
+            )
             
             # ==================================================================
             # STEP 1: Create Contact (if inline_contact provided)
