@@ -189,6 +189,11 @@ class ValidationErrorMessages:
 class ActivityErrorMessages:
     """Activity specific error messages"""
 
+    # Signals lock (8g-2, TD-297) — activities/services/signals_lock.py
+    SIGNALS_LOCKED = _(
+        "This activity is cancelled: its signals and its AI analysis are locked."
+    )
+
     # Dates (8g-1, TD-230) — activities/services/date_rules.py
     DATES_EXCLUSIVE = _(
         "An activity has a scheduled date or a due date, not both."

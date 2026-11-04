@@ -361,6 +361,9 @@ class SignalManager:
         Raises:
             StandardizedValidationError when any guard fails.
         """
+        # 8g-2 (TD-297): a CANCELLED activity locks its signals (the
+        # front rule, server side — activities/services/signals_lock.py).
+        cls._check_activity_unlocked(signal)
         if signal.status != SignalStatus.PENDING:
             raise StandardizedValidationError(
                 SignalErrorMessages.NOT_PENDING_VALIDATED
@@ -389,6 +392,11 @@ class SignalManager:
     # =========================================================================
     # REJECT
     # =========================================================================
+
+    @staticmethod
+    def _check_activity_unlocked(signal):
+        from app_modules.activities.services.signals_lock import check_activity_signals_unlocked
+        check_activity_signals_unlocked(getattr(signal, 'source_activity', None))
 
     @staticmethod
     def _check_next_step_has_one_activity(signal):
@@ -430,6 +438,9 @@ class SignalManager:
         Raises:
             StandardizedValidationError if signal is not PENDING.
         """
+        # 8g-2 (TD-297): a CANCELLED activity locks its signals (the
+        # front rule, server side — activities/services/signals_lock.py).
+        cls._check_activity_unlocked(signal)
         if signal.status != SignalStatus.PENDING:
             raise StandardizedValidationError(
                 SignalErrorMessages.NOT_PENDING_REJECTED
@@ -468,6 +479,9 @@ class SignalManager:
         Raises:
             StandardizedValidationError if signal is already PENDING.
         """
+        # 8g-2 (TD-297): a CANCELLED activity locks its signals (the
+        # front rule, server side — activities/services/signals_lock.py).
+        cls._check_activity_unlocked(signal)
         if signal.status == SignalStatus.PENDING:
             raise StandardizedValidationError(
                 SignalErrorMessages.ALREADY_PENDING

@@ -109,6 +109,11 @@ def resolve_people_signal(people_signal, user, *, stakeholder_id=None, contact_i
     from app_modules.signals.services.signal_manager import SignalManager
     from ..models import Stakeholder
 
+    # 8g-2 (TD-297): a CANCELLED activity locks its signals — the link-only
+    # path below never reaches SignalManager.validate, so the rule is here too.
+    from app_modules.activities.services.signals_lock import check_activity_signals_unlocked
+    check_activity_signals_unlocked(people_signal.source_activity)
+
     chosen = [c for c in (stakeholder_id, contact_id, create) if c not in (None, '')]
     if len(chosen) != 1:
         raise StandardizedValidationError(SignalErrorMessages.PEOPLE_RESOLVE_ONE_CHOICE)

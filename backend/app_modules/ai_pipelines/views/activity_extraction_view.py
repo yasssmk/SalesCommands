@@ -168,6 +168,10 @@ class ActivityExtractionView(BaseAPIView):
         validated = input_serializer.validated_data
 
         activity   = validated['activity']
+        # 8g-2 (TD-297): a CANCELLED activity is not analysed (the front rule
+        # of the bands, server side — activities/services/signals_lock.py).
+        from app_modules.activities.services.signals_lock import check_activity_signals_unlocked
+        check_activity_signals_unlocked(activity)
         transcript = validated['transcript']
         client_id  = validated['client_id']
         client_id_str = str(client_id)
