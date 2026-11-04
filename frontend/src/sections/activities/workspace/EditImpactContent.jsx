@@ -60,6 +60,7 @@ import StatusPill from "components/chips/StatusPill";
 // modified — ObjectiveScopePill/Objective keep using them unchanged).
 import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS, SCOPE_PILL_COLORS } from "utils/objectiveScope";
 import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
+import { withEmptyOption } from "utils/selectOptions";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -117,7 +118,7 @@ export default function EditImpactContent({ impact, accountId, onSaved, onCancel
   // impact_type is optional & clearable (Voie B) → prepend an empty option so a
   // rep can clear a mis-categorised value.
   const impactTypeOptions = useMemo(
-    () => [{ value: "", label: "—" }, ...(choices?.impact_types ?? [])],
+    () => withEmptyOption(choices?.impact_types),
     [choices?.impact_types],
   );
 

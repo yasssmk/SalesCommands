@@ -47,11 +47,9 @@ import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
 import { formatContact } from "sections/activities/signals/utils/signalDisplay";
+import { withEmptyOption } from "utils/selectOptions";
 
 // ==============================|| HELPERS ||============================== //
-
-// Empty option prepended to the clearable selects (mirror of EditConstraintContent).
-const EMPTY_OPTION = { value: "", label: "—" };
 
 function resolveLabel(options, value) {
   if (!value || !options) return null;
@@ -109,7 +107,7 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
   const roleOptions = choices?.people_roles ?? [];
   // influence is OPTIONAL & clearable → prepend the empty "—" option.
   const influenceOptions = useMemo(
-    () => [EMPTY_OPTION, ...(choices?.people_influences ?? [])],
+    () => withEmptyOption(choices?.people_influences),
     [choices?.people_influences],
   );
   // Stringified so they line up with the string ids of the signal payload.
@@ -123,7 +121,7 @@ export default function EditPeopleContent({ people, accountId, onSaved, onCancel
   );
   // department is OPTIONAL & clearable → prepend the empty "—" option.
   const departmentSelectOptions = useMemo(
-    () => [EMPTY_OPTION, ...departmentOptions],
+    () => withEmptyOption(departmentOptions),
     [departmentOptions],
   );
 

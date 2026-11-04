@@ -51,6 +51,7 @@ import StatusPill from "components/chips/StatusPill";
 // modified). For Constraint the pills are a pure UI affordance (no scope_level).
 import { OBJECTIVE_SCOPE, SCOPE_PILL_OPTIONS, SCOPE_PILL_COLORS } from "utils/objectiveScope";
 import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
+import { withEmptyOption } from "utils/selectOptions";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -104,7 +105,7 @@ export default function EditConstraintContent({ constraint, accountId, onSaved, 
   // rigidity is OPTIONAL & clearable → prepend an empty "—" option (mirror of
   // Impact's human_impact) so a rep can clear it (backend allow_blank, S1a).
   const rigidityOptions = useMemo(
-    () => [{ value: "", label: "—" }, ...(choices?.rigidities ?? [])],
+    () => withEmptyOption(choices?.rigidities),
     [choices?.rigidities],
   );
 
