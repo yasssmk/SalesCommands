@@ -64,6 +64,18 @@ describe('RunAIWizard', () => {
       expect(screen.getByText(/Next-step suggestions/)).toBeInTheDocument();
     });
 
+    // Lot 3 / 11b (TD-258): the qualification option lists the types the
+    // pipeline REALLY extracts (8, transcript_signals.py _STAGES), labels read
+    // from utils/signalTypes.js — no hard-coded (and stale) list.
+    it('lists the 8 qualification types really extracted, with their shared labels', () => {
+      renderWizard();
+      expect(
+        screen.getByText(
+          'Qualification signals (Pain, Objective, Impact, Tech Stack, Objection, Constraint, Competitor, People)',
+        ),
+      ).toBeInTheDocument();
+    });
+
     it('enables Continue when at least one option is checked', () => {
       renderWizard();
 

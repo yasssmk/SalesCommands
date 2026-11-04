@@ -37,7 +37,7 @@ import {
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
-import { getSignalTypeLabel } from "utils/signalTypes";
+import { getSignalTypeLabel, QUALIFICATION_SIGNAL_TYPES } from "utils/signalTypes";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
@@ -63,19 +63,10 @@ const signalCycleId = (signal) => signal?.source_context?.decision_cycle?.id || 
 export const needsLinkToDeal = (signal) =>
   signal?.status === "VALIDATED" && !signal?.stakeholder && Boolean(signalCycleId(signal));
 
-// The activity flat view shows qualification (pain/objective/impact) plus
-// tech-stack, blockers, constraints, competitors and people — next-steps live
-// in their own tab and are excluded.
-export const ACTIVITY_FLAT_TYPES = [
-  "pain",
-  "objective",
-  "impact",
-  "tech-stack",
-  "blockers",
-  "constraints",
-  "competitors",
-  "people",
-];
+// The activity flat view shows the types of the qualification analysis
+// (QUALIFICATION_SIGNAL_TYPES, utils/signalTypes — ONE list) — next-steps
+// live in their own band and are excluded.
+export const ACTIVITY_FLAT_TYPES = QUALIFICATION_SIGNAL_TYPES;
 
 // The validation worklist always loads all 3 statuses — the Rejected section is
 // part of it (no "include rejected" opt-in anymore).
