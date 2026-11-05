@@ -492,16 +492,18 @@ class ScopedQuerysetMixin:
             raise Http404(f"No {model.__name__} matches the given query.")
         
         # STEP 2: Check if object is in scoped queryset (permission check)
-        scoped_qs = self.get_queryset()
-        
-        if not scoped_qs.filter(pk=pk).exists():
+        # STEP 3: … and return it FROM that queryset (8g-6d): the ViewSet's
+        # get_queryset carries the action's select_related / prefetch_related
+        # (e.g. the activity detail's stakeholders); returning the bare
+        # instance fetched in STEP 1 dropped them all (N+1 on the detail).
+        # Same query count as the former exists() check.
+        scoped_obj = self.get_queryset().filter(pk=pk).first()
+        if scoped_obj is None:
             # Object exists in tenant but not in user's scope → 403
             raise StandardizedPermissionDenied(
                 CoreErrorMessages.PERMISSION_DENIED
             )
-        
-        # STEP 3: Object exists and user has permission → return it
-        return obj
+        return scoped_obj
     
     def get_objects_for_bulk(self, ids: list) -> dict:
         """

@@ -16,6 +16,7 @@ from django.db.models import Prefetch, Count
 from django.utils import timezone
 
 from app_modules.contacts.models import Contact
+from app_modules.decision_cycles.models import Stakeholder
 
 from core.exceptions import StandardizedValidationError
 from core.error_messages import CoreErrorMessages, ActivityErrorMessages, CampaignModuleErrorMessages
@@ -218,7 +219,18 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             ).prefetch_related(
                 'contacts',
                 'contacts__standard_department',
-                'invited_users'
+                'invited_users',
+                # 8g-6d — stakeholders_detail reads, per stakeholder, its
+                # department, its contact and its role on current_signal
+                # (ActivityStakeholderSerializer): joined once here (the
+                # detail's get_object filters this queryset — no refetch).
+                Prefetch(
+                    'stakeholders',
+                    queryset=Stakeholder.objects.select_related(
+                        'current_signal', 'department', 'contact',
+                        'contact__standard_department',
+                    ),
+                ),
             )
         else:
             # Default: the custom list actions (by_account, my_activities,
