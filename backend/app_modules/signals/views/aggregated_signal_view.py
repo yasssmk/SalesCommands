@@ -39,6 +39,10 @@ Query params:
     blockers / next-steps) are EXCLUDED when this filter is active.
   - contact (optional)      — Contact UUID; only signals whose source_activity
     includes that contact. Applies to all types.
+  - stakeholder (optional)  — Stakeholder UUID (a NON-converted DC
+    stakeholder); only signals whose source_activity counts it among its
+    participants (Activity.stakeholders). Applies to all types — modelled on
+    `contact` (8g-6, « See signals »).
   - scope (optional)        — scope_level (BUSINESS / DEPARTMENT / PERSONAL);
     only signals with that scope_level. Types without scope_level (people /
     constraints / tech-stack / blockers / next-steps) are EXCLUDED when active.
@@ -196,6 +200,7 @@ class AggregatedSignalListView(BaseAPIView):
         # source_activity.contacts.
         department        = request.query_params.get('department')
         contact           = request.query_params.get('contact')
+        stakeholder       = request.query_params.get('stakeholder')
         scope             = request.query_params.get('scope')
 
         # Exactly one scope must be given.
@@ -236,6 +241,14 @@ class AggregatedSignalListView(BaseAPIView):
                 raise StandardizedValidationError(
                     "The 'contact' filter must be a valid UUID."
                 )
+        stakeholder_id = None
+        if stakeholder:
+            try:
+                stakeholder_id = str(uuid.UUID(str(stakeholder)))
+            except (ValueError, TypeError, AttributeError):
+                raise StandardizedValidationError(
+                    "The 'stakeholder' filter must be a valid UUID."
+                )
         if scope and scope not in ScopeLevel.values:
             raise StandardizedValidationError(
                 "The 'scope' filter must be one of: "
@@ -262,7 +275,7 @@ class AggregatedSignalListView(BaseAPIView):
                 viewset_cls, request,
                 account_id, decision_cycle_id, activity_id, status_filters,
                 department_id, contact_id, scope,
-                slug=slug,
+                slug=slug, stakeholder_id=stakeholder_id,
             )
             for obj in qs:
                 obj._signal_type = slug
@@ -280,6 +293,7 @@ class AggregatedSignalListView(BaseAPIView):
         self, viewset_cls, request,
         account_id, decision_cycle_id, activity_id, status_filters,
         department_id=None, contact_id=None, scope=None, slug=None,
+        stakeholder_id=None,
     ):
         """
         Reuse a per-type ViewSet's get_queryset (tenant + owner scoping +
@@ -319,4 +333,9 @@ class AggregatedSignalListView(BaseAPIView):
             # filter matches each signal at most once (single-value), so no
             # duplicates are introduced. contacts are already prefetched.
             qs = qs.filter(source_activity__contacts=contact_id)
+        if stakeholder_id:
+            # Same for a NON-converted stakeholder (Activity.stakeholders M2M,
+            # single value → no duplicates). Tenant: the ViewSet queryset;
+            # account: the scope above.
+            qs = qs.filter(source_activity__stakeholders=stakeholder_id)
         return qs
