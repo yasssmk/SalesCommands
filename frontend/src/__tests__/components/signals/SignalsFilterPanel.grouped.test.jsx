@@ -88,3 +88,26 @@ describe("SignalsFilterPanel — blockers type label", () => {
     expect(screen.queryByLabelText("Blocker")).not.toBeInTheDocument();
   });
 });
+
+// 8h — the panel reads THE type filter definition (utils/filters/signalFilters):
+// same options, same order, same behaviour; the label drift « Next Step » is
+// gone (the central label « Next step »).
+describe("SignalsFilterPanel — the shared type definition (8h)", () => {
+  const ALL = ["pain", "objective", "impact", "tech-stack", "blockers", "next-steps",
+    "people", "constraints", "competitors"];
+
+  it("lists the surface's types in the definition's order, with the central labels", () => {
+    render(<SignalsFilterPanel {...BASE} availableTypes={ALL} />);
+    const labels = screen.getAllByRole("checkbox").map((c) => c.closest("label")?.textContent).filter(Boolean);
+    expect(labels.slice(0, 9)).toEqual(["Pain", "Objective", "Impact", "Tech Stack", "Objection", "Next step",
+      "People", "Constraint", "Competitor"]);
+    expect(screen.queryByLabelText("Next Step")).toBeNull();
+  });
+
+  it("a click still toggles the pending types (behaviour unchanged)", () => {
+    const onFilterChange = vi.fn();
+    render(<SignalsFilterPanel {...BASE} availableTypes={ALL} onFilterChange={onFilterChange} />);
+    screen.getByLabelText("Next step").click();
+    expect(onFilterChange).toHaveBeenCalledWith("types", ["next-steps"]);
+  });
+});
