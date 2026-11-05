@@ -38,8 +38,11 @@ Query params:
   - department (optional)   — StandardDepartment id; only signals whose
     target_department matches. Types without target_department (tech-stack /
     blockers / next-steps) are EXCLUDED when this filter is active.
-  - contact (optional)      — Contact UUID; only signals whose source_activity
-    includes that contact. Applies to all types.
+  - contact (optional)      — Contact UUID; what the contact SAID: the signals
+    whose source_activity includes that contact, UNION the signals it
+    explicitly AUTHORED (_AUTHOR_CONTACT_FIELD — today Objection « Raised
+    by »; 8g-6f). Applies to all types. A subject / owner FK is never an
+    author; never a fallback on the participants (TD-254).
   - stakeholder (optional)  — Stakeholder UUID (a NON-converted DC
     stakeholder); only signals whose source_activity counts it among its
     participants (Activity.stakeholders). Applies to all types — modelled on
@@ -54,6 +57,8 @@ Response envelope matches the per-type list endpoints:
 """
 
 import uuid
+
+from django.db.models import Q
 
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
@@ -86,6 +91,15 @@ from .next_step_signal_views import NextStepSignalViewSet
 from .people_signal_views import PeopleSignalViewSet
 from .constraint_signal_views import ConstraintSignalViewSet
 from .competitor_signal_views import CompetitorSignalViewSet
+
+
+# 8g-6f — the signal types whose model names the contact who SAID it (the
+# AUTHOR), by field. ONE definition, read by the `contact` filter. Audit:
+# BlockerSignal.contact = « Raised by » (the author). Not authors:
+# PeopleSignal.target_contact / .stakeholder (the SUBJECT),
+# ObjectiveSignal.target_contact (the OWNER), NextStepSignal.suggested_contacts
+# (proposed attendees). No signal names a stakeholder as its author.
+_AUTHOR_CONTACT_FIELD = {'blockers': 'contact'}
 
 
 def _reject_unknown(values, allowed, message):
@@ -348,10 +362,18 @@ class AggregatedSignalListView(BaseAPIView):
         if scope:
             qs = qs.filter(scope_level=scope)
         if contact_id:
-            # A signal whose origin activity includes this contact. The m2m
-            # filter matches each signal at most once (single-value), so no
-            # duplicates are introduced. contacts are already prefetched.
-            qs = qs.filter(source_activity__contacts=contact_id)
+            # A signal whose origin activity includes this contact (single
+            # value m2m filter → no duplicates) — or, for a type that names
+            # its author, a signal this contact AUTHORED (8g-6f). The OR over
+            # the participants join yields one row per participant for an
+            # authored signal → distinct().
+            author_field = _AUTHOR_CONTACT_FIELD.get(slug)
+            if author_field:
+                qs = qs.filter(
+                    Q(source_activity__contacts=contact_id) | Q(**{f'{author_field}_id': contact_id})
+                ).distinct()
+            else:
+                qs = qs.filter(source_activity__contacts=contact_id)
         if stakeholder_id:
             # Same for a NON-converted stakeholder (Activity.stakeholders M2M,
             # single value → no duplicates). Tenant: the ViewSet queryset;
