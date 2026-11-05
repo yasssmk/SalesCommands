@@ -153,7 +153,7 @@ describe("« See signals » — a contact (8g-6)", () => {
     expect(await within(coque()).findByTestId("contact-identity-row")).toBeInTheDocument();
   });
 
-  it("a click opens the signal's detail (read-only); its Back returns to the fiche", async () => {
+  it("a click opens the signal's detail (read-only); Back → the list → Back → the fiche (8g-6e)", async () => {
     mockActivity = activity();
     render(<ActivityWorkspacePage />);
     fireEvent.click(screen.getByText("Thomas Lefèvre"));
@@ -161,6 +161,8 @@ describe("« See signals » — a contact (8g-6)", () => {
     fireEvent.click(await within(coque()).findByText("Reporting takes three weeks"));
     expect(await within(coque()).findByTestId("pain-summary-box")).toBeInTheDocument();
     expect(within(coque()).queryByRole("button", { name: /Validate/ })).toBeNull();
+    fireEvent.click(within(coque()).getByRole("button", { name: "Back" }));
+    expect(await within(coque()).findByText("Reporting takes three weeks")).toBeInTheDocument();
     fireEvent.click(within(coque()).getByRole("button", { name: "Back" }));
     expect(await within(coque()).findByTestId("contact-identity-row")).toBeInTheDocument();
   });
@@ -230,5 +232,35 @@ describe("« See signals » — the inline type filter (8h)", () => {
     fireEvent.click(typePill("Pain"));
     fireEvent.click(typePill("People"));
     expect(lastTypes()).toEqual(QUALIFICATION_SIGNAL_TYPES);
+  });
+});
+
+// ==============================|| 8g-6e — BACK, ONE LEVEL AT A TIME ||============================== //
+// The drawer has no stack: the detail's Back re-opens the LIST (the onBack
+// pattern) with its filter state; the list's Back re-opens the fiche.
+
+describe("« See signals » — Back goes up one level at a time (8g-6e)", () => {
+  it("detail → Back → the list, same type pressed, same request → Back → the fiche", async () => {
+    mockActivity = activity();
+    render(<ActivityWorkspacePage />);
+    fireEvent.click(screen.getByText("Thomas Lefèvre"));
+    seeSignals();
+    await within(coque()).findByText("Reporting takes three weeks");
+    const typePill = (label) => within(screen.getByRole("group", { name: "Type" })).getByRole("button", { name: label });
+    fireEvent.click(typePill("Pain"));
+    expect(personCalls().slice(-1)[0].signalTypes).toEqual(["pain"]);
+
+    fireEvent.click(within(coque()).getByText("Reporting takes three weeks"));
+    await within(coque()).findByTestId("pain-summary-box");
+    mockAggregated.mockClear();
+    fireEvent.click(within(coque()).getByRole("button", { name: "Back" }));
+
+    expect(await within(coque()).findByText("Reporting takes three weeks")).toBeInTheDocument();
+    expect(within(coque()).getByText("Signals from conversations with Thomas Lefèvre")).toBeInTheDocument();
+    expect(typePill("Pain")).toHaveAttribute("aria-pressed", "true");
+    expect(personCalls().slice(-1)[0]).toMatchObject({ contact: "c-1", signalTypes: ["pain"] });
+
+    fireEvent.click(within(coque()).getByRole("button", { name: "Back" }));
+    expect(await within(coque()).findByTestId("contact-identity-row")).toBeInTheDocument();
   });
 });

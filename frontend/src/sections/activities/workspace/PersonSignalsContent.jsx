@@ -12,8 +12,10 @@
 //     QUALIFICATION_TYPE_FILTER) — the chosen types go to the server
 //     (signal_type, repeated, via toQueryParams); none chosen = the 8;
 //   - the shared SignalsValidationList, READ-ONLY (no validate / reject);
-//   - a click → the signal's detail, read-only, whose « Back » (like this
-//     list's — the read bar's onBack) returns to the person's fiche.
+//   - a click → the signal's detail, read-only. Back goes up ONE level at a
+//     time (8g-6e): the detail's Back re-opens this list with its filter
+//     state (initialFilters — the drawer has no stack: the onBack pattern of
+//     ActivitySignalsTab), the list's Back re-opens the person's fiche.
 // Honest wording: « from conversations with », never « said by ».
 
 "use client";
@@ -55,9 +57,10 @@ export default function PersonSignalsContent({
   personName,
   currentActivityId,
   onBack,
+  initialFilters,
 }) {
   const { openDrawer } = useWorkspaceDrawer();
-  const [filters, setFilters] = useState({ types: [] });
+  const [filters, setFilters] = useState(() => initialFilters ?? { types: [] });
   const params = toQueryParams([QUALIFICATION_TYPE_FILTER], filters);
   const { signals, loading } = useAggregatedSignals({
     accountId,
@@ -68,13 +71,28 @@ export default function PersonSignalsContent({
     pageSize: 100,
   });
 
+  // The detail's Back: this list again, same person, same filters.
+  const reopenList = () =>
+    openDrawer(
+      <PersonSignalsContent
+        accountId={accountId}
+        contactId={contactId}
+        stakeholderId={stakeholderId}
+        personName={personName}
+        currentActivityId={currentActivityId}
+        onBack={onBack}
+        initialFilters={filters}
+      />,
+      { title: personSignalsTitle(personName) },
+    );
+
   const openDetail = (signal, signalType) =>
     openDrawer(
       <PersonSignalDetail
         signal={signal}
         signalType={signalType}
         isLocked
-        onBack={onBack}
+        onBack={reopenList}
         currentActivityId={currentActivityId}
         headerInCoque
       />,
@@ -113,4 +131,6 @@ PersonSignalsContent.propTypes = {
   currentActivityId: PropTypes.string,
   /** « Back » → the person's fiche. */
   onBack: PropTypes.func.isRequired,
+  /** The filter state to open with (the detail's Back restores it). */
+  initialFilters: PropTypes.shape({ types: PropTypes.arrayOf(PropTypes.string) }),
 };
