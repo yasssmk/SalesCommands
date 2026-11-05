@@ -195,3 +195,40 @@ describe("« See signals » — a non-converted stakeholder (8g-6)", () => {
     expect(await within(coque()).findByTestId("contact-role")).toHaveTextContent("Champion");
   });
 });
+
+// ==============================|| 8h — THE INLINE TYPE FILTER ||============================== //
+// The first use of the inline filter pattern: the 8 qualification types as
+// pills (QUALIFICATION_TYPE_FILTER); none = the 8; the server request carries
+// the chosen types (signal_type, repeated).
+
+describe("« See signals » — the inline type filter (8h)", () => {
+  const openList = async () => {
+    mockActivity = activity();
+    render(<ActivityWorkspacePage />);
+    fireEvent.click(screen.getByText("Thomas Lefèvre"));
+    seeSignals();
+    await within(coque()).findByText("Reporting takes three weeks");
+  };
+  const typePill = (label) => within(screen.getByRole("group", { name: "Type" })).getByRole("button", { name: label });
+  const lastTypes = () => personCalls().slice(-1)[0].signalTypes;
+
+  it("the 8 qualification types as pills; none chosen = the 8", async () => {
+    await openList();
+    const pills = within(screen.getByRole("group", { name: "Type" })).getAllByRole("button");
+    expect(pills.map((p) => p.textContent)).toEqual(
+      ["Pain", "Objective", "Impact", "Tech Stack", "Objection", "Constraint", "Competitor", "People"],
+    );
+    expect(lastTypes()).toEqual(QUALIFICATION_SIGNAL_TYPES);
+  });
+
+  it("a click → the request with that type; 2 pills → 2 values; back to none → the 8", async () => {
+    await openList();
+    fireEvent.click(typePill("Pain"));
+    expect(lastTypes()).toEqual(["pain"]);
+    fireEvent.click(typePill("People"));
+    expect(lastTypes()).toEqual(["pain", "people"]);
+    fireEvent.click(typePill("Pain"));
+    fireEvent.click(typePill("People"));
+    expect(lastTypes()).toEqual(QUALIFICATION_SIGNAL_TYPES);
+  });
+});

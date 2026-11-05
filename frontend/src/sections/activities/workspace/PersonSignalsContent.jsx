@@ -8,6 +8,9 @@
 //     person filter (contact / stakeholder — the activities it took part in),
 //     PENDING + VALIDATED (no rejected), the 8 qualification types
 //     (QUALIFICATION_SIGNAL_TYPES — no next steps);
+//   - 8h: the inline type filter (InlinePillsFilter on
+//     QUALIFICATION_TYPE_FILTER) — the chosen types go to the server
+//     (signal_type, repeated, via toQueryParams); none chosen = the 8;
 //   - the shared SignalsValidationList, READ-ONLY (no validate / reject);
 //   - a click → the signal's detail, read-only, whose « Back » (like this
 //     list's — the read bar's onBack) returns to the person's fiche.
@@ -16,6 +19,10 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useState } from "react";
+
+// MUI
+import Stack from "@mui/material/Stack";
 
 // Project
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
@@ -25,7 +32,10 @@ import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
-import { getSignalTypeLabel, QUALIFICATION_SIGNAL_TYPES } from "utils/signalTypes";
+import InlinePillsFilter from "components/filters/InlinePillsFilter";
+import { getSignalTypeLabel } from "utils/signalTypes";
+import { toQueryParams } from "utils/filters/filterDefinitions";
+import { QUALIFICATION_TYPE_FILTER } from "utils/filters/signalFilters";
 
 export const PERSON_SIGNAL_STATUSES = ["PENDING", "VALIDATED"];
 
@@ -47,12 +57,14 @@ export default function PersonSignalsContent({
   onBack,
 }) {
   const { openDrawer } = useWorkspaceDrawer();
+  const [filters, setFilters] = useState({ types: [] });
+  const params = toQueryParams([QUALIFICATION_TYPE_FILTER], filters);
   const { signals, loading } = useAggregatedSignals({
     accountId,
     contact: contactId,
     stakeholder: stakeholderId,
     statuses: PERSON_SIGNAL_STATUSES,
-    signalTypes: QUALIFICATION_SIGNAL_TYPES,
+    signalTypes: params.signal_type,
     pageSize: 100,
   });
 
@@ -71,12 +83,19 @@ export default function PersonSignalsContent({
 
   return (
     <DrawerContentLayout readActions={{ onBack, isLocked: true }}>
-      <SignalsValidationList
-        signals={signals ?? []}
-        loading={loading}
-        onSelect={openDetail}
-        emptyMessage={`No signals from conversations with ${personName}`}
-      />
+      <Stack spacing={2}>
+        <InlinePillsFilter
+          definition={QUALIFICATION_TYPE_FILTER}
+          value={filters.types}
+          onChange={(types) => setFilters((f) => ({ ...f, types }))}
+        />
+        <SignalsValidationList
+          signals={signals ?? []}
+          loading={loading}
+          onSelect={openDetail}
+          emptyMessage={`No signals from conversations with ${personName}`}
+        />
+      </Stack>
     </DrawerContentLayout>
   );
 }
