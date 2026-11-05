@@ -33,6 +33,7 @@ export default function SignalDetailPanel({
   onEdit,
   onReopen,
   isLocked,
+  onBack,
   currentActivityId,
   inlineClose,
   headerInCoque,
@@ -63,6 +64,7 @@ export default function SignalDetailPanel({
       onClose={inlineClose ? closeDrawer : undefined}
       headerInCoque={headerInCoque}
       isLocked={isLocked}
+      onBack={onBack}
       currentActivityId={currentActivityId}
     />
   );
@@ -78,6 +80,8 @@ SignalDetailPanel.propTypes = {
   onEdit: PropTypes.func,
   onReopen: PropTypes.func,
   isLocked: PropTypes.bool,
+  /** Optional « Back » in the read bar (8g-6). */
+  onBack: PropTypes.func,
   /** The activity currently being viewed (Activity surface); absent on DC/Account. */
   currentActivityId: PropTypes.string,
   /** Objective detail on the Activity coque: render the close (×) in the detail

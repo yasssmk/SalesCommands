@@ -52,6 +52,7 @@ import SectionHeader from "components/display/SectionHeader";
 import Surface from "components/display/Surface";
 import CoordinateRow from "components/display/CoordinateRow";
 import EditContactContent from "sections/activities/workspace/EditContactContent";
+import PersonSignalsContent, { personSignalsTitle } from "sections/activities/workspace/PersonSignalsContent";
 
 // ==============================|| HELPERS ||============================== //
 
@@ -75,16 +76,29 @@ function fullName(contact) {
 
 // ==============================|| CONTACT DRAWER CONTENT ||============================== //
 
-export default function ContactDrawerContent({ contactId, activity }) {
+export default function ContactDrawerContent({ contactId, activity, stakeholder }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const { openDrawer } = useWorkspaceDrawer();
 
   // Hooks are always called (no conditional hooks); the DC people fetch is a
   // no-op when the activity carries no decision_cycle (campaign activity).
-  const { contact, contactLoading, contactError } = useGetContact(contactId);
+  // 8g-6: a STAKEHOLDER fiche reads its data from the stakeholder itself —
+  // both fetches are no-ops then (null keys).
+  const { contact: fetchedContact, contactLoading, contactError } = useGetContact(
+    stakeholder ? null : contactId,
+  );
   const cycleId = activity?.decision_cycle || null;
-  const { people } = useGetDCPeople(cycleId);
+  const { people } = useGetDCPeople(stakeholder ? null : cycleId);
+  // A non-converted stakeholder as the fiche's person: its name (or its
+  // department, a department-only stakeholder), no coordinates.
+  const contact = stakeholder
+    ? {
+        full_name: stakeholder.display_name || stakeholder.department?.name || "",
+        department_name:
+          stakeholder.display_name && stakeholder.department ? stakeholder.department.name : null,
+      }
+    : fetchedContact;
 
   // The contact in DC people. The role lives on the QUALIFIED entry
   // (target_contact); activity_count lives on BOTH the qualified and the
@@ -96,10 +110,10 @@ export default function ContactDrawerContent({ contactId, activity }) {
     qualified.find((q) => q?.target_contact?.id === contactId) || null;
   const unqualifiedEntry =
     unqualified.find((u) => u?.contact?.id === contactId) || null;
-  const inDC = Boolean(cycleId);
+  const inDC = Boolean(cycleId) && !stakeholder;
 
   // ---- loading / error (no crash, discreet) ----
-  if (contactLoading) {
+  if (!stakeholder && contactLoading) {
     return (
       <DrawerContentLayout>
         <Box
@@ -112,7 +126,7 @@ export default function ContactDrawerContent({ contactId, activity }) {
     );
   }
 
-  if (contactError || !contact) {
+  if (!stakeholder && (contactError || !contact)) {
     return (
       <DrawerContentLayout>
         <Typography variant="body2" sx={{ color: aq.text.muted }}>
@@ -125,12 +139,17 @@ export default function ContactDrawerContent({ contactId, activity }) {
   const jobDept = [contact.job_title, contact.department_name].filter(Boolean).join(" · ");
 
   // Role comes from the qualified entry; may be absent (unqualified / no DC).
-  const roleLabel = qualifiedEntry
-    ? qualifiedEntry.role_display || qualifiedEntry.role
-    : null;
-  const influenceLabel = qualifiedEntry
-    ? qualifiedEntry.influence_display || qualifiedEntry.influence
-    : null;
+  // A stakeholder carries its own (read on its current signal, server-side).
+  const roleLabel = stakeholder
+    ? stakeholder.role_display || null
+    : qualifiedEntry
+      ? qualifiedEntry.role_display || qualifiedEntry.role
+      : null;
+  const influenceLabel = stakeholder
+    ? stakeholder.influence_display || null
+    : qualifiedEntry
+      ? qualifiedEntry.influence_display || qualifiedEntry.influence
+      : null;
 
   // Deal activity count: whichever entry carries the contact (qualified OR
   // unqualified), else 0. The encart shows for any contact inside a DC.
@@ -144,8 +163,31 @@ export default function ContactDrawerContent({ contactId, activity }) {
       title: "Edit contact",
     });
 
+  // 8g-6 — « See signals »: the signals from conversations with this person
+  // (PersonSignalsContent, mounted — so requested — only now); its Back
+  // re-opens this fiche.
+  const personName = fullName(contact);
+  const reopenFiche = () =>
+    openDrawer(
+      <ContactDrawerContent contactId={contactId} activity={activity} stakeholder={stakeholder} />,
+      { title: stakeholder ? "Stakeholder" : "Contact" },
+    );
+  const handleSeeSignals = () =>
+    openDrawer(
+      <PersonSignalsContent
+        accountId={activity?.account}
+        contactId={stakeholder ? undefined : contactId}
+        stakeholderId={stakeholder?.id}
+        personName={personName}
+        currentActivityId={activity?.id}
+        onBack={reopenFiche}
+      />,
+      { title: personSignalsTitle(personName) },
+    );
+
   return (
-    <DrawerContentLayout readActions={{ onEdit: handleEdit }}>
+    // A stakeholder has no edit (no bar); a contact's Edit is in the bar.
+    <DrawerContentLayout readActions={stakeholder ? undefined : { onEdit: handleEdit }}>
       <Stack spacing={2}>
         {/* ---- SECTION 1 — Identity: avatar | name block (grows). Edit moved to
             the bottom bar. Numbered sections = the edit drawer's
@@ -257,14 +299,18 @@ export default function ContactDrawerContent({ contactId, activity }) {
           </Surface>
         )}
 
-        {/* Bottom action — the only one in the body, inert for now. */}
+        {/* Bottom action — « See signals » (8g-6). */}
         <Box
           component="span"
           data-testid="contact-signals-link"
           role="button"
           tabIndex={0}
-          onClick={() => {
-            // future: browse this contact's / department's signals in place
+          onClick={handleSeeSignals}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleSeeSignals();
+            }
           }}
           sx={{
             color: aq.accent,
@@ -286,7 +332,17 @@ export default function ContactDrawerContent({ contactId, activity }) {
 
 ContactDrawerContent.propTypes = {
   /** UUID of the contact whose durable fiche is shown. */
-  contactId: PropTypes.string.isRequired,
+  contactId: PropTypes.string,
   /** The activity the fiche was opened from — supplies decision_cycle. */
   activity: PropTypes.object,
+  /** 8g-6: a NON-converted stakeholder (activity.stakeholders_detail) — the
+      fiche shows it instead of fetching a contact: same sections, its name
+      (or department), its role, « See signals »; no coordinates, no Edit. */
+  stakeholder: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    display_name: PropTypes.string,
+    department: PropTypes.shape({ name: PropTypes.string }),
+    role_display: PropTypes.string,
+    influence_display: PropTypes.string,
+  }),
 };

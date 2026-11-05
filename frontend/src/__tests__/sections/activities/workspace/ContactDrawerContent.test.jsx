@@ -212,15 +212,16 @@ describe("ContactDrawerContent — Edit in the bottom action bar (no inline penc
   });
 });
 
-describe("ContactDrawerContent — See signals at the bottom (inert)", () => {
-  it("shows 'See signals', inert (no crash on click)", () => {
+describe("ContactDrawerContent — See signals at the bottom (8g-6)", () => {
+  it("'See signals' opens the signals from conversations with the contact", () => {
     mockContact();
     mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
     renderFiche();
-    const signals = screen.getByTestId("contact-signals-link");
-    expect(signals).toBeInTheDocument();
-    fireEvent.click(signals);
-    expect(signals).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("contact-signals-link"));
+    expect(openDrawerMock).toHaveBeenCalledTimes(1);
+    const [node, opts] = openDrawerMock.mock.calls[0];
+    expect(node.props).toMatchObject({ contactId: "c1", stakeholderId: undefined });
+    expect(opts.title).toMatch(/^Signals from conversations with /);
   });
 });
 

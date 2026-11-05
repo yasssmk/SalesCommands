@@ -452,6 +452,7 @@ function ObjectiveDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const isPending = signal.status === "PENDING";
@@ -524,6 +525,7 @@ function ObjectiveDetailView({
             onReopen: () => onReopen?.(signal, "objective"),
             status: signal.status,
             isLocked,
+            onBack,
             validateDisabled,
           }}
         >
@@ -662,6 +664,7 @@ function PainDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -723,6 +726,7 @@ function PainDetailView({
           onReopen: () => onReopen?.(signal, "pain"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -852,6 +856,7 @@ function ImpactDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -912,6 +917,7 @@ function ImpactDetailView({
           onReopen: () => onReopen?.(signal, "impact"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1049,6 +1055,7 @@ function ConstraintDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1107,6 +1114,7 @@ function ConstraintDetailView({
           onReopen: () => onReopen?.(signal, "constraints"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1246,6 +1254,7 @@ function ObjectionDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1298,6 +1307,7 @@ function ObjectionDetailView({
           onReopen: () => onReopen?.(signal, "blockers"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1416,6 +1426,7 @@ function CompetitorDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1468,6 +1479,7 @@ function CompetitorDetailView({
           onReopen: () => onReopen?.(signal, "competitors"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1584,6 +1596,7 @@ function PeopleDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1638,6 +1651,7 @@ function PeopleDetailView({
           onReopen: () => onReopen?.(signal, "people"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1807,6 +1821,7 @@ function TechStackDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1869,6 +1884,7 @@ function TechStackDetailView({
           onReopen: () => onReopen?.(signal, "tech-stack"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -2035,6 +2051,7 @@ function NextStepDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -2109,6 +2126,7 @@ function NextStepDetailView({
           status: signal.status,
           // Rule 2.1: a resolved next step is read-only.
           isLocked: isLocked || Boolean(resolvedActivity),
+          onBack,
           validateDisabled,
         }}
       >
@@ -2258,6 +2276,7 @@ export default function SignalDetailContent({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
   leadingAction,
   trailingAction,
@@ -2277,6 +2296,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2299,6 +2319,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2320,6 +2341,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2341,6 +2363,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2362,6 +2385,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2383,6 +2407,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2405,6 +2430,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2426,6 +2452,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2446,6 +2473,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2519,6 +2547,7 @@ export default function SignalDetailContent({
             onReopen: () => onReopen?.(signal, signalType),
             status: signal.status,
             isLocked,
+            onBack,
             validateDisabled,
           }}
         />
@@ -2545,6 +2574,9 @@ SignalDetailContent.propTypes = {
       in-content title + pill + × are suppressed. */
   headerInCoque: PropTypes.bool,
   isLocked: PropTypes.bool,
+  /** Optional « Back » in the read bar (8g-6: the person's signals → their
+      fiche). */
+  onBack: PropTypes.func,
   /** The activity currently being viewed — used to hide the "View origin
       activity" link when the signal's origin IS that activity. Optional;
       absent on DC/Account surfaces (link always shown there). */

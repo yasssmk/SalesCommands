@@ -477,19 +477,23 @@ export default function ActivityContextSection({ activity }) {
                 {stakeholders.map((x) => {
                   // A department-only stakeholder: the department only.
                   const departmentOnly = !x.full_name && Boolean(x.department);
+                  // 8g-6: a click opens its fiche — the contact fiche's
+                  // sections on the stakeholder (name or department, role,
+                  // « See signals »), as a contact's click opens its fiche.
+                  const openStakeholder = () =>
+                    openDrawer(
+                      <ContactDrawerContent stakeholder={x} activity={activity} />,
+                      { title: "Stakeholder" },
+                    );
                   return (
                     <Box key={x.id} data-testid={`ctx-stakeholder-${x.id}`}>
                       <PersonLine alert={reachabilityAlert(x)}>
-                        {departmentOnly ? (
-                          <Typography variant="body2" sx={{ fontWeight: "medium" }}>
-                            {x.department.name}
-                          </Typography>
-                        ) : (
-                          <PersonRow
-                            name={x.display_name || x.full_name}
-                            suffix={x.department?.name || undefined}
-                          />
-                        )}
+                        <PersonRow
+                          interactive
+                          onClick={openStakeholder}
+                          name={departmentOnly ? x.department.name : x.display_name || x.full_name}
+                          suffix={departmentOnly ? undefined : x.department?.name || undefined}
+                        />
                       </PersonLine>
                     </Box>
                   );
