@@ -104,6 +104,24 @@ class ActivityStakeholderSerializer(serializers.Serializer):
     # non-converted stakeholder has neither (False); a converted one reads
     # its contact (Contact.has_email_or_phone, as ActivityContactSerializer).
     is_reachable = serializers.SerializerMethodField()
+    # 8g-6 (TD-232): the role of the stakeholder fiche — READ on its
+    # current_signal (the role is never copied onto the stakeholder); None
+    # when it has none.
+    role = serializers.SerializerMethodField()
+    role_display = serializers.SerializerMethodField()
+    influence_display = serializers.SerializerMethodField()
+
+    def get_role(self, obj):
+        sig = obj.current_signal
+        return sig.role if sig else None
+
+    def get_role_display(self, obj):
+        sig = obj.current_signal
+        return sig.get_role_display() if sig else None
+
+    def get_influence_display(self, obj):
+        sig = obj.current_signal
+        return sig.get_influence_display() if sig and sig.influence else None
 
     def get_department(self, obj):
         d = obj.department
