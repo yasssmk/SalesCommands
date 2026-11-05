@@ -41,7 +41,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
@@ -224,127 +224,123 @@ function LockedHint() {
 const dateModeOf = (values, emptyMode) =>
   values.scheduled_date ? "scheduled" : values.due_date ? "due" : emptyMode;
 
-function DateGroup({ values, setFieldValue, locked = false, emptyMode = "scheduled" }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
-  const [editing, setEditing] = useState(false);
-  const [mode, setMode] = useState(() => dateModeOf(values, emptyMode));
-  // Snapshot of the draft (date/time/mode) captured on entering edit — ✗ restores it.
-  const startRef = useRef(null);
-
-  const startEdit = () => {
-    if (locked) return;
-    const current = dateModeOf(values, emptyMode);
-    startRef.current = {
-      scheduled_date: values.scheduled_date,
-      scheduled_time: values.scheduled_time,
-      due_date: values.due_date,
-      mode: current,
-    };
-    setMode(current);
-    setEditing(true);
-  };
-
-  // ✓ — keep the current draft, just return to read (no PATCH; the global Save owns it).
-  const confirm = () => setEditing(false);
-
-  // ✗ — restore the pre-edit draft (date/time/mode) and return to read.
-  const cancel = () => {
-    const s = startRef.current;
-    if (s) {
-      setFieldValue("scheduled_date", s.scheduled_date);
-      setFieldValue("scheduled_time", s.scheduled_time);
-      setFieldValue("due_date", s.due_date);
-      setMode(s.mode);
-    }
-    setEditing(false);
-  };
+// Lot 3 / 9b (TD-267) — DateGroup is InlineEditableValue with a renderEditor
+// (the contact pattern, EditPeopleContent): read row, one click to open, ✓ =
+// commit, ✗ / Escape = cancel, focus leaving the editor keeps the draft. Its
+// value is the three date fields; the Scheduled / Due mode lives in the editor
+// (DateGroupEditor, re-derived from the dates at each opening), so a cancel —
+// the pattern restoring the start value — restores date / time / mode. The
+// pickers render inside the editor (popper disablePortal): a pick is not a
+// "focus left".
+function DateGroupEditor({ draft, setDraft, commit, cancel, emptyMode }) {
+  const [mode, setMode] = useState(() => dateModeOf(draft, emptyMode));
 
   const handleMode = (_e, val) => {
     if (!val) return;
     setMode(val);
-    if (val === "due") {
-      setFieldValue("scheduled_date", null);
-      setFieldValue("scheduled_time", null);
-    } else {
-      setFieldValue("due_date", null);
-    }
+    setDraft(
+      val === "due"
+        ? { ...draft, scheduled_date: null, scheduled_time: null }
+        : { ...draft, due_date: null },
+    );
   };
 
-  if (editing) {
-    const pickerLabel = mode === "scheduled" ? "Scheduled date" : "Due date";
-    return (
-      <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Stack spacing={1.5}>
-          <ToggleButtonGroup value={mode} exclusive onChange={handleMode} size="small">
-            <ToggleButton value="scheduled">Scheduled</ToggleButton>
-            <ToggleButton value="due">Due Date</ToggleButton>
-          </ToggleButtonGroup>
+  const pickerLabel = mode === "scheduled" ? "Scheduled date" : "Due date";
+  return (
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <Stack spacing={1.5}>
+        <ToggleButtonGroup value={mode} exclusive onChange={handleMode} size="small">
+          <ToggleButton value="scheduled">Scheduled</ToggleButton>
+          <ToggleButton value="due">Due Date</ToggleButton>
+        </ToggleButtonGroup>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <DatePicker
+              label={pickerLabel}
+              value={mode === "scheduled" ? draft.scheduled_date : draft.due_date}
+              onChange={(v) =>
+                setDraft(
+                  mode === "scheduled"
+                    ? { ...draft, scheduled_date: v, scheduled_time: v ? draft.scheduled_time : null }
+                    : { ...draft, due_date: v },
+                )
+              }
+              slotProps={{ textField: { fullWidth: true, size: "small" }, popper: { disablePortal: true } }}
+            />
+          </Box>
+          {mode === "scheduled" && (
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <DatePicker
-                label={pickerLabel}
-                value={mode === "scheduled" ? values.scheduled_date : values.due_date}
-                onChange={(v) => {
-                  if (mode === "scheduled") {
-                    setFieldValue("scheduled_date", v);
-                    if (!v) setFieldValue("scheduled_time", null);
-                  } else {
-                    setFieldValue("due_date", v);
-                  }
-                }}
-                slotProps={{ textField: { fullWidth: true, size: "small" } }}
+              <TimePicker
+                label="Scheduled time"
+                value={draft.scheduled_time}
+                onChange={(v) => setDraft({ ...draft, scheduled_time: v })}
+                disabled={!draft.scheduled_date}
+                slotProps={{ textField: { fullWidth: true, size: "small" }, popper: { disablePortal: true } }}
               />
             </Box>
-            {mode === "scheduled" && (
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <TimePicker
-                  label="Scheduled time"
-                  value={values.scheduled_time}
-                  onChange={(v) => setFieldValue("scheduled_time", v)}
-                  disabled={!values.scheduled_date}
-                  slotProps={{ textField: { fullWidth: true, size: "small" } }}
-                />
-              </Box>
-            )}
-          </Stack>
-
-          {/* ✓ validate (keep draft) / ✗ discard (restore) — local read/edit only.
-              THE shared row (components/drawer/ConfirmCancelActions.jsx, TD-267). */}
-          <ConfirmCancelActions onConfirm={confirm} onCancel={cancel} testIdBase="date" label="date" />
+          )}
         </Stack>
-      </LocalizationProvider>
-    );
-  }
+
+        {/* ✓ validate (keep draft) / ✗ discard (restore) — local read/edit only.
+            THE shared row (components/drawer/ConfirmCancelActions.jsx, TD-267). */}
+        <ConfirmCancelActions onConfirm={commit} onCancel={cancel} testIdBase="date" label="date" />
+      </Stack>
+    </LocalizationProvider>
+  );
+}
+
+DateGroupEditor.propTypes = {
+  draft: PropTypes.object.isRequired,
+  setDraft: PropTypes.func.isRequired,
+  commit: PropTypes.func.isRequired,
+  cancel: PropTypes.func.isRequired,
+  emptyMode: PropTypes.oneOf(["scheduled", "due"]),
+};
+
+function DateGroup({ values, setFieldValue, locked = false, emptyMode = "scheduled" }) {
+  const value = {
+    scheduled_date: values.scheduled_date,
+    scheduled_time: values.scheduled_time,
+    due_date: values.due_date,
+  };
+  const setValue = (next) => {
+    setFieldValue("scheduled_date", next.scheduled_date ?? null);
+    setFieldValue("scheduled_time", next.scheduled_time ?? null);
+    setFieldValue("due_date", next.due_date ?? null);
+  };
 
   const isScheduled = dateModeOf(values, emptyMode) === "scheduled";
-  const dateVal = isScheduled ? readDate(values.scheduled_date) : readDate(values.due_date);
-  const timeVal = isScheduled ? readTime(values.scheduled_time) : null;
-  const display = dateVal ? (timeVal ? `${dateVal} · ${timeVal}` : dateVal) : null;
+  const formatDates = (v) => {
+    const dateVal = isScheduled ? readDate(v.scheduled_date) : readDate(v.due_date);
+    const timeVal = isScheduled ? readTime(v.scheduled_time) : null;
+    return dateVal ? (timeVal ? `${dateVal} · ${timeVal}` : dateVal) : null;
+  };
 
   return (
-    <Box>
-      <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-        {isScheduled ? "Scheduled" : "Due date"}
-        {locked && <LockedHint />}
-      </Typography>
-      <Box
-        data-testid="inline-read-date"
-        onClick={startEdit}
-        sx={{ cursor: locked ? "default" : "pointer", py: 0.25 }}
-      >
-        {display ? (
-          <Typography variant="body2" color="text.primary">
-            {display}
-          </Typography>
-        ) : (
-          <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
-            No date set
-          </Typography>
-        )}
-      </Box>
-    </Box>
+    <InlineEditableValue
+      name="date"
+      label={
+        <>
+          {isScheduled ? "Scheduled" : "Due date"}
+          {locked && <LockedHint />}
+        </>
+      }
+      value={value}
+      onChange={setValue}
+      disabled={locked}
+      placeholder="No date set"
+      formatValue={formatDates}
+      renderEditor={({ value: draft, onChange: setDraft, commit, cancel }) => (
+        <DateGroupEditor
+          draft={draft}
+          setDraft={setDraft}
+          commit={commit}
+          cancel={cancel}
+          emptyMode={emptyMode}
+        />
+      )}
+    />
   );
 }
 

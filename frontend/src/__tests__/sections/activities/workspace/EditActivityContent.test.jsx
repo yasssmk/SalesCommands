@@ -319,6 +319,20 @@ describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATC
     expect(updateActivity).not.toHaveBeenCalled();
   });
 
+  // Lot 3 / 9b (TD-267): DateGroup on InlineEditableValue's renderEditor
+  // pattern — Escape anywhere in the editor cancels like ✗ (date/time/mode).
+  it("Escape in the date editor restores the date/time/mode, like ✗", async () => {
+    renderEdit(); // scheduled 2026-09-10 14:30
+    fireEvent.click(screen.getByTestId("inline-read-date"));
+    fireEvent.click(screen.getByRole("button", { name: /due date/i }));
+    fireEvent.click(screen.getByTestId("pick-Due date"));
+    fireEvent.keyDown(screen.getByTestId("pick-Due date"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("pick-Due date")).not.toBeInTheDocument());
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.getByText(/Sep 10, 2026 · 2:30 PM/)).toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
   it("✓ keeps the draft so the GLOBAL Save then PATCHes the confirmed date", async () => {
     renderEdit();
     fireEvent.click(screen.getByTestId("inline-read-date"));

@@ -117,6 +117,24 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(screen.getByTestId("target-date-cancel")).toBeInTheDocument();
   });
 
+  // Lot 3 / 9b (TD-267): InlineDateField on InlineEditableValue's renderEditor
+  // pattern — Escape anywhere in the editor cancels (back to read).
+  it("✗ (Discard target date) returns to read", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-target_date"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard target date" }));
+    expect(screen.queryByTestId("target-date-confirm")).toBeNull();
+    expect(screen.getByText("31 Dec 2026")).toBeInTheDocument();
+  });
+
+  it("Escape in the target date editor cancels: back to read", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-target_date"));
+    fireEvent.keyDown(screen.getByLabelText("Target date"), { key: "Escape" });
+    expect(screen.queryByTestId("target-date-confirm")).toBeNull();
+    expect(screen.getByTestId("inline-read-target_date")).toBeInTheDocument();
+  });
+
   it("keeps the 3 section subtitles and the Domain × Dimension recap", () => {
     renderEdit();
     expect(screen.getByText("Describe the objective and pick its canonical axes.")).toBeInTheDocument();
