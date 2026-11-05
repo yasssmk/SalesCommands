@@ -461,6 +461,10 @@ class SignalErrorMessages:
     ALREADY_PENDING          = _("Signal is already pending.")
     NOT_EDITABLE             = _("Cannot edit a signal with status '{status}'.")
     INVALID_SIGNAL_TYPE      = _("Invalid signal type: '{signal_type}'.")
+    # 8h — the aggregated list's repeatable filters (inline filter pattern):
+    # an invalid value is refused, never ignored (no silent empty list).
+    INVALID_TYPE_FILTER      = _("Invalid signal type filter: '{value}'. Allowed: {allowed}.")
+    INVALID_STATUS_FILTER    = _("Invalid status filter: '{value}'. Allowed: {allowed}.")
     SOURCE_CONTACT_REQUIRED  = _("A source contact is required for this signal type.")
     SOURCE_ACTIVITY_REQUIRED = _("A source activity is required for this signal type.")
 

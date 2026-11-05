@@ -32,6 +32,7 @@ Query params:
     (PENDING + VALIDATED); REJECTED is returned only when explicitly requested.
   - signal_type (optional, repeatable) — restrict to these frontend type
     slugs (e.g. ?signal_type=pain&signal_type=impact). Empty = all types.
+    An unknown slug / status → 400 (8h; formerly ignored).
   - ordering (optional)     — one of the frontend sort keys: date-desc
     (default) / date-asc / status / type / theme.
   - department (optional)   — StandardDepartment id; only signals whose
@@ -59,9 +60,10 @@ from rest_framework.permissions import IsAuthenticated
 
 from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
+from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 from permissions.mixins import ScopedPermission
-from app_modules.signals.constants import DEFAULT_LIST_STATUSES, ScopeLevel
+from app_modules.signals.constants import DEFAULT_LIST_STATUSES, ScopeLevel, SignalStatus
 
 from app_modules.signals.serializers import (
     PainSignalListSerializer,
@@ -84,6 +86,15 @@ from .next_step_signal_views import NextStepSignalViewSet
 from .people_signal_views import PeopleSignalViewSet
 from .constraint_signal_views import ConstraintSignalViewSet
 from .competitor_signal_views import CompetitorSignalViewSet
+
+
+def _reject_unknown(values, allowed, message):
+    """The standard 400 for the first value of `values` not in `allowed`."""
+    for value in values or ():
+        if value not in allowed:
+            raise StandardizedValidationError(
+                message.format(value=value, allowed=', '.join(allowed))
+            )
 
 
 # (frontend slug, ViewSet class, List serializer) — the slug is what the
@@ -255,8 +266,16 @@ class AggregatedSignalListView(BaseAPIView):
                 + ", ".join(ScopeLevel.values) + "."
             )
 
+        # 8h — the repeatable filters: an invalid value is a 400 (centralised
+        # message), never ignored — a misspelt option would read as « no
+        # signal ». The front filter definitions are checked against these
+        # sets (test_aggregated_filter_validation.py, the contract test).
+        _reject_unknown(requested_types, [t[0] for t in _TYPES],
+                        SignalErrorMessages.INVALID_TYPE_FILTER)
+        _reject_unknown(status_filters, list(SignalStatus.values),
+                        SignalErrorMessages.INVALID_STATUS_FILTER)
+
         # Optionally narrow to a subset of types (the type filter sends this).
-        # Unknown slugs are ignored.
         types = _TYPES
         if requested_types:
             wanted = set(requested_types)
