@@ -163,11 +163,14 @@ class TestDashboardNPlusOneRedBaseline:
         print(f"  COUNT(*) over module_activities (dup total-activities 2x): {act_counts}")
         print("=" * 66 + "\n")
 
-        # ---- Executor block is now O(1): the slope collapsed from 6 to 1, and the
-        # residual 1 is get_summary's own campaign.executor load (not the N+1).
-        assert executor_slope == 1, f"executor slope expected 1, got {executor_slope}"
+        # ---- Executor block is now O(1): the slope collapsed from 6 to 1, then
+        # to 0 (8g-6d) — the residual 1 was get_summary's own campaign.executor
+        # load, served since by the campaign queryset's select_related now that
+        # ScopedQuerysetMixin.get_object returns the instance FROM the scoped
+        # queryset (it used to return a bare re-fetched instance).
+        assert executor_slope == 0, f"executor slope expected 0, got {executor_slope}"
         assert n1 == 14, f"1-executor dashboard expected 14 queries, got {n1}"
-        assert n2 == 15, f"2-executor dashboard expected 15 queries, got {n2}"
+        assert n2 == 14, f"2-executor dashboard expected 14 queries, got {n2}"
         # ---- Dedup complete: no bare COUNT(*) over campaign_accounts remains (all
         # totals/statuses derive from the shared GROUP BY). Breaking the reuse makes
         # these climb back.
