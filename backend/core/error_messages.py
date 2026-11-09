@@ -199,6 +199,13 @@ class ActivityErrorMessages:
         "This activity is cancelled: its signals and its AI analysis are locked."
     )
 
+    # Source lock (sprint « Source / Notes », 1.1) — activities/services/
+    # signals_lock.py, read by ActivityUpdateSerializer: the notes and the
+    # transcript of a CANCELLED activity
+    SOURCE_LOCKED = _(
+        "This activity is cancelled: its notes and transcript can no longer be changed."
+    )
+
     # Transcript lock (8g-7, TD-25) — ai_pipelines/services/analysis_state.py
     TRANSCRIPT_LOCKED = _(
         "This activity has been analysed: its transcript can no longer be changed."

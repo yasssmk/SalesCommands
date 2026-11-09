@@ -87,8 +87,8 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
     outcome_notes = models.TextField(
         blank=True,
         null=True,
-        verbose_name=_('Outcome Notes'),
-        help_text=_('Notes about the activity result')
+        verbose_name=_('Notes'),
+        help_text=_('Notes of the activity, filled throughout its lifecycle')
     )
 
     no_answer_count = models.PositiveSmallIntegerField(

@@ -1310,6 +1310,22 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                     )
 
             # =================================================================
+            # SOURCE LOCK (sprint « Source / Notes », 1.1)
+            # =================================================================
+            # The notes and the transcript of a CANCELLED activity can no
+            # longer change — THE lock of the signal bands
+            # (services/signals_lock.py, mirror of the front
+            # utils/activitySignalsLock.js). A re-sent unchanged value is no
+            # change. PLANNED / ON_HOLD / COMPLETED stay editable.
+            from .services.signals_lock import is_activity_signals_locked
+            if is_activity_signals_locked(instance):
+                for source_field in ('outcome_notes', 'transcript'):
+                    if source_field in attrs and (
+                        (attrs[source_field] or '') != (getattr(instance, source_field) or '')
+                    ):
+                        raise StandardizedValidationError(ActivityErrorMessages.SOURCE_LOCKED)
+
+            # =================================================================
             # TRANSCRIPT LOCK (8g-7, TD-25)
             # =================================================================
             # Once an analysis succeeded, the transcript is the analysed one:
