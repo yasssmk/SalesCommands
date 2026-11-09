@@ -467,16 +467,19 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
     # METHODS
     # ==========================================================================
     
-    def complete(self, outcome=None, notes=None, user=None):
+    def complete(self, outcome=None, user=None):
         """
         Mark activity as completed.
 
         Step status is NOT updated here — it is derived automatically
         by StepStatusDerivationService from activity data on read.
 
+        The activity's notes (outcome_notes) are never touched: they are
+        filled throughout the lifecycle, never at closure (sprint
+        « Source / Notes »).
+
         Args:
             outcome: ActivityOutcome choice
-            notes: Optional outcome notes
             user: User completing the activity
         """
         self.status = ActivityStatus.COMPLETED
@@ -484,23 +487,18 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
 
         if outcome:
             self.outcome = outcome
-        if notes:
-            self.outcome_notes = notes
 
         self.save(user=user)
-    
-    
-    def cancel(self, notes=None, user=None):
+
+
+    def cancel(self, user=None):
         """
-        Cancel the activity.
-        
+        Cancel the activity. Its notes (outcome_notes) are never touched
+        (sprint « Source / Notes »: no cancellation reason).
+
         Args:
-            notes: Optional cancellation reason
             user: User cancelling the activity
         """
         self.status = ActivityStatus.CANCELLED
-        
-        if notes:
-            self.outcome_notes = notes
-        
+
         self.save(user=user)

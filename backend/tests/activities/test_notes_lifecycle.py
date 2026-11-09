@@ -97,3 +97,117 @@ def test_the_field_is_the_activity_notes():
     field = Activity._meta.get_field('outcome_notes')
     assert str(field.verbose_name) == 'Notes'
     assert str(field.help_text) == 'Notes of the activity, filled throughout its lifecycle'
+
+
+# =============================================================================
+# 1.2 — no note at closure (PO, Q-i): complete / cancel / process_result /
+# log-response / record-no-answer no longer take a note. A key still sent
+# (`outcome_notes` / `notes`) is ignored like any unknown key: the note
+# written during the activity stays INTACT. Through the real endpoints.
+# =============================================================================
+
+from tests.activities.test_next_planned_step import _days, chain  # noqa: E402,F401
+
+
+NOTE = 'N — call takeaways'
+
+
+def _with_note(activity):
+    from app_modules.activities.models import Activity
+    Activity.objects.filter(id=activity.id).update(outcome_notes=NOTE)
+    activity.refresh_from_db()
+    return activity
+
+
+def _note_of(activity):
+    activity.refresh_from_db()
+    return activity.outcome_notes
+
+
+def _in_progress(activity):
+    from app_modules.campaigns.models import CampaignAccount, CampaignContact
+    CampaignContact.objects.filter(id=activity.campaign_contact_id).update(status='IN_PROGRESS')
+    CampaignAccount.objects.filter(id=activity.campaign_account_id).update(status='IN_PROGRESS')
+
+
+@pytest.mark.parametrize('payload', [
+    {'outcome': 'SUCCESSFUL'},
+    {'outcome': 'SUCCESSFUL', 'outcome_notes': 'X'},
+    {'outcome': 'SUCCESSFUL', 'notes': 'X'},
+], ids=['no-key', 'outcome_notes-key', 'notes-alias'])
+def test_complete_keeps_the_note(authed_api_a, account, user_a, payload):
+    activity = _with_note(_activity(account, user_a))
+    r = authed_api_a.post(f'{URL}{activity.id}/complete/', payload, format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    assert activity.__class__.objects.get(id=activity.id).status == ActivityStatus.COMPLETED
+    assert _note_of(activity) == NOTE
+
+
+def test_completing_an_already_completed_activity_keeps_the_note(authed_api_a, account, user_a):
+    activity = _with_note(_activity(account, user_a, ActivityStatus.COMPLETED))
+    r = authed_api_a.post(f'{URL}{activity.id}/complete/',
+                          {'outcome': 'FOLLOW_UP_NEEDED', 'outcome_notes': 'X'}, format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    activity.refresh_from_db()
+    assert activity.outcome == 'FOLLOW_UP_NEEDED'
+    assert activity.outcome_notes == NOTE
+
+
+@pytest.mark.parametrize('payload', [{}, {'notes': 'Reason'}, {'outcome_notes': 'Reason'}],
+                         ids=['no-key', 'notes-key', 'outcome_notes-key'])
+def test_cancel_keeps_the_note(authed_api_a, account, user_a, payload):
+    activity = _with_note(_activity(account, user_a))
+    r = authed_api_a.post(f'{URL}{activity.id}/cancel/', payload, format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    activity.refresh_from_db()
+    assert activity.status == ActivityStatus.CANCELLED
+    assert activity.outcome_notes == NOTE
+
+
+def test_completing_a_campaign_step_keeps_the_note(authed_api_a, chain):
+    # /complete/ on a PLANNED campaign activity → CampaignExecutionService.process_result
+    step = _with_note(chain(1, date=_days(0)))
+    chain(2, date=_days(3))
+    _in_progress(step)
+    r = authed_api_a.post(f'{URL}{step.id}/complete/',
+                          {'outcome': 'NOT_INTERESTED', 'outcome_notes': 'X'}, format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    step.refresh_from_db()
+    assert step.status == ActivityStatus.COMPLETED
+    assert step.outcome_notes == NOTE
+
+
+def test_the_exhausted_no_answer_keeps_the_note(authed_api_a, chain):
+    # The last allowed no-answer → process_result(NO_ANSWER).
+    from app_modules.activities.models import Activity
+    from app_modules.campaigns.config.settings import CONFIG
+    step = _with_note(chain(1, date=_days(0)))
+    _in_progress(step)
+    Activity.objects.filter(id=step.id).update(no_answer_count=CONFIG.limits.max_retry_attempts - 1)
+    r = authed_api_a.post(f'{URL}{step.id}/record-no-answer/', {'outcome_notes': 'X'}, format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    step.refresh_from_db()
+    assert step.status == ActivityStatus.COMPLETED
+    assert step.outcome == 'NO_ANSWER'
+    assert step.outcome_notes == NOTE
+
+
+def test_a_logged_response_keeps_the_note(authed_api_a, chain):
+    step = _with_note(chain(1, ActivityStatus.COMPLETED, _days(-2)))
+    chain(2, date=_days(1))
+    _in_progress(step)
+    r = authed_api_a.post(f'/campaigns/{step.campaign_id}/log-response/',
+                          {'activity_id': str(step.id), 'response': 'NEGATIVE', 'notes': 'X'},
+                          format='json')
+    assert r.status_code == status.HTTP_200_OK, r.content
+    step.refresh_from_db()
+    assert step.outcome == 'NOT_INTERESTED'
+    assert step.outcome_notes == NOTE
+
+
+def test_the_closure_methods_take_no_note():
+    # No phantom field: the note parameter is REMOVED, not ignored.
+    import inspect
+    from app_modules.activities.models import Activity
+    assert 'notes' not in inspect.signature(Activity.complete).parameters
+    assert 'notes' not in inspect.signature(Activity.cancel).parameters

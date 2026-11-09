@@ -1116,7 +1116,8 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                                                   CALLBACK_REQUESTED | NO_RESPONSE
             - response_date:   date  (optional) — required when response is MEETING_BOOKED
                                                   or CALLBACK_REQUESTED (YYYY-MM-DD)
-            - notes:           str   (optional)
+        No note at closure (sprint « Source / Notes »): the activity's notes
+        are never written here; a note key still sent is ignored.
         Delegates entirely to CampaignExecutionService.process_result():
         updates activity outcome, CampaignAccount state, and cancels downstream
         sequence activities when the outcome is terminal.
@@ -1130,7 +1131,6 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         response = request.data.get('response')
         response_date = request.data.get('response_date')
         callback_time = request.data.get('callback_time')
-        notes = request.data.get('notes', '')
 
         if not activity_id:
             raise StandardizedValidationError(
@@ -1170,7 +1170,6 @@ class CampaignViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         )
         service.process_result(activity, {
             'outcome': outcome,
-            'outcome_notes': notes or None,
             'callback_date': response_date if response == 'CALLBACK_REQUESTED' else None,
             'callback_time': callback_time if response == 'CALLBACK_REQUESTED' else None,
         })

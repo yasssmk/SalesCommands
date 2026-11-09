@@ -607,11 +607,16 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         
         Body:
             - outcome (optional): ActivityOutcome choice
-            - outcome_notes (optional): Outcome notes
-        
+            - callback_date (optional, campaign activity)
+
+        The activity's notes (outcome_notes) are never written here: they are
+        filled throughout the lifecycle (PATCH), never at closure (sprint
+        « Source / Notes »). A note key still sent is ignored, as any
+        unknown key.
+
         Behavior:
             - If not completed: completes the activity with outcome
-            - If already completed: updates outcome and outcome_notes only
+            - If already completed: updates the outcome only
             - If cancelled: returns error
         
         Note: Cycle-level close (WON/LOST/ON_HOLD) is handled by
@@ -649,8 +654,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                     )
         
         outcome = request.data.get('outcome')
-        outcome_notes = request.data.get('outcome_notes') or request.data.get('notes')
-        
+
         # Validate outcome if provided
         if outcome and outcome not in ActivityOutcome.values:
             raise StandardizedValidationError(
@@ -668,9 +672,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             
             if outcome is not None:
                 activity.outcome = outcome
-            if outcome_notes is not None:
-                activity.outcome_notes = outcome_notes
-            
+
             activity.save(user=request.user)
             
             audit_log(
@@ -694,12 +696,11 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 )
                 exec_service.process_result(activity, {
                     'outcome': outcome,
-                    'outcome_notes': outcome_notes,
                     'callback_date': request.data.get('callback_date'),
                 })
             else:
                 # Standalone activity — complete directly
-                activity.complete(outcome=outcome, notes=outcome_notes, user=request.user)
+                activity.complete(outcome=outcome, user=request.user)
 
             audit_log(
                 event='activity_complete_success',
@@ -776,7 +777,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         if activity.no_answer_count >= max_attempts:
             # Threshold reached — delegate to CampaignExecutionService so
             # _persist_next_activity_schedule() and chain cascade are triggered.
-            outcome_notes = request.data.get('outcome_notes')
+            # No note at closure (sprint « Source / Notes »).
             from app_modules.campaigns.services.campaign_execution_service import CampaignExecutionService
             exec_service = CampaignExecutionService(
                 user=request.user,
@@ -784,7 +785,6 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
             )
             exec_service.process_result(activity, {
                 'outcome': ActivityOutcome.NO_ANSWER,
-                'outcome_notes': outcome_notes,
             })
             logger.info("activity_call_no_answer_exhausted", extra={
                 **ctx,
@@ -910,9 +910,10 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
         Cancel activity.
         
         POST /activities/{id}/cancel/
-        
-        Body:
-            - notes (optional): Cancellation reason
+
+        No body: there is no cancellation reason, and the activity's notes
+        (outcome_notes) are never touched (sprint « Source / Notes »). A note
+        key still sent is ignored, as any unknown key.
         """
         ctx = ctx_from_request(request)
         activity = self.get_object()
@@ -933,8 +934,7 @@ class ActivityViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, viewset
                 ActivityErrorMessages.ALREADY_CANCELLED
             )
         
-        notes = request.data.get('notes')
-        activity.cancel(notes=notes, user=request.user)
+        activity.cancel(user=request.user)
         
         # Audit log
         audit_log(
