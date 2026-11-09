@@ -20,7 +20,7 @@ import {
 
 // Project imports
 import SignalStatusChip from "components/chips/SignalStatusChip";
-import { getContact, formatContact } from "./utils/signalDisplay";
+import { getContact, formatContact, SIGNAL_NO_CONTACT } from "./utils/signalDisplay";
 
 // ==============================|| BLOCKER COMPACT CARD ||============================== //
 
@@ -110,7 +110,7 @@ export default function BlockerCompactCard({
       <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 0.75 }}>
         <UserOutlined style={{ fontSize: 12, color: "#8c8c8c" }} />
         <Typography variant="caption" color="text.secondary">
-          {contactName || "No contact attributed"}
+          {contactName || SIGNAL_NO_CONTACT}
         </Typography>
       </Stack>
     </Box>

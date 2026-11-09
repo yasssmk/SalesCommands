@@ -294,6 +294,23 @@ describe("EditContactContent — role in the decision (DC only)", () => {
     expect(screen.getByTestId("inline-read-influence")).toHaveTextContent("High");
   });
 
+  // Sprint « Cycle de vie des contacts », étape 1: the server returns the
+  // contact's roles MOST RECENT first; the role is pre-filled from the FIRST
+  // entry (the latest role), never from an older one of the stack.
+  it("pre-fills the role from the FIRST qualified entry (server order = most recent first)", () => {
+    mockDCPeople({
+      qualified: [
+        { ...QUALIFIED, role: "DECISION_MAKER", role_display: "Decision Maker",
+          influence: "LOW", influence_display: "Low", created_at: "2026-11-02T10:00:00Z" },
+        { ...QUALIFIED, created_at: "2026-11-01T10:00:00Z" },
+      ],
+      unqualified: [],
+    });
+    renderEdit({ activity: DC_ACTIVITY });
+    expect(screen.getByTestId("inline-read-role")).toHaveTextContent("Decision Maker");
+    expect(screen.getByTestId("inline-read-influence")).toHaveTextContent(/Low/);
+  });
+
   it("changing the role and saving writes a MANUAL people signal, then revalidates", async () => {
     mockDCPeople({ qualified: [QUALIFIED], unqualified: [] });
     renderEdit({ activity: DC_ACTIVITY });

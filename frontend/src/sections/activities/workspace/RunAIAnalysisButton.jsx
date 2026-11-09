@@ -8,10 +8,10 @@
 //
 // `label` and `defaultObjectives` (the objectives checked when the wizard
 // opens) let another entry point reuse it — the Next steps band: « Run AI on
-// transcript », next steps only (5.12 B). `variant` (5.12c) — the trigger:
-// "button" (default, the Source band) or "pill" (the shared ClickablePill,
-// the Next steps band's actions). Only the trigger changes: the same
-// availability predicate, wizard, runner and "Analyzing…" state.
+// transcript », next steps only (5.12 B). The trigger is the shared
+// ClickablePill (5.12c) for every entry point since lot 3 / 11 (TD-302): the
+// Source band shows it in its header, as the other bands' actions — the
+// former MUI "button" variant had no user left and is gone.
 //
 // The lock (5.12c, PO): the AI action is locked ONLY on a CANCELLED activity —
 // isActivitySignalsLocked (utils/activitySignalsLock), the lock of the signal
@@ -30,8 +30,6 @@ import PropTypes from 'prop-types';
 import { useState } from 'react';
 
 // material-ui
-import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -40,17 +38,11 @@ import Typography from '@mui/material/Typography';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
 import { isActivitySignalsLocked } from 'utils/activitySignalsLock';
 import RunAIWizard from 'sections/activities/workspace/RunAIWizard';
-
-// assets
-import ExperimentOutlined from '@ant-design/icons/ExperimentOutlined';
 import ClickablePill from 'components/chips/ClickablePill';
 
 // ==============================|| CONSTANTS ||============================== //
 
 export const MIN_TRANSCRIPT_LENGTH = 50;
-
-// The trigger of the action.
-export const RUN_AI_TRIGGER_VARIANTS = { BUTTON: 'button', PILL: 'pill' };
 
 // The Run AI action is available: the activity not locked (CANCELLED only,
 // isActivitySignalsLocked), a long enough transcript, no run in progress.
@@ -73,7 +65,6 @@ export default function RunAIAnalysisButton({
   onOpenChange,
   label = 'Run AI Analysis',
   defaultObjectives,
-  variant = RUN_AI_TRIGGER_VARIANTS.BUTTON,
 }) {
   const { run, state: pipelineState, pollProgress } = pipelineRunner;
   const activityId = activity?.id ?? null;
@@ -126,23 +117,11 @@ export default function RunAIAnalysisButton({
             ? `Transcript too short (min ${MIN_TRANSCRIPT_LENGTH} characters)`
             : '';
 
-    const isPill = variant === RUN_AI_TRIGGER_VARIANTS.PILL;
-
     if (effectiveState === 'running') {
       const isPolling = Boolean(pollProgress && pollProgress.max > 0);
       return (
-        <Stack spacing={0.5} alignItems={isPill ? 'flex-start' : 'flex-end'}>
-          {isPill ? (
-            <ClickablePill label="Analyzing…" active disabled />
-          ) : (
-            <Button
-              variant="contained"
-              disabled
-              startIcon={<CircularProgress size={16} color="inherit" />}
-            >
-              Analyzing…
-            </Button>
-          )}
+        <Stack spacing={0.5} alignItems="flex-start">
+          <ClickablePill label="Analyzing…" active disabled />
           {isPolling && (
             <Typography variant="caption" color="text.secondary">
               Polling for result ({pollProgress.attempt}/{pollProgress.max})…
@@ -155,23 +134,12 @@ export default function RunAIAnalysisButton({
     return (
       <Tooltip title={canRunAI ? '' : tooltipTitle}>
         <span>
-          {isPill ? (
-            <ClickablePill
-              label={label}
-              active
-              onClick={handleOpenWizard}
-              disabled={!canRunAI}
-            />
-          ) : (
-            <Button
-              variant="contained"
-              onClick={handleOpenWizard}
-              disabled={!canRunAI}
-              startIcon={<ExperimentOutlined />}
-            >
-              {label}
-            </Button>
-          )}
+          <ClickablePill
+            label={label}
+            active
+            onClick={handleOpenWizard}
+            disabled={!canRunAI}
+          />
         </span>
       </Tooltip>
     );
@@ -244,8 +212,6 @@ RunAIAnalysisButton.propTypes = {
   onOpenChange: PropTypes.func,
   /** The button label (default: "Run AI Analysis"). */
   label: PropTypes.string,
-  /** The trigger: "button" (default) or "pill" (RUN_AI_TRIGGER_VARIANTS). */
-  variant: PropTypes.oneOf(Object.values(RUN_AI_TRIGGER_VARIANTS)),
   /** The objectives checked when the wizard opens (RunAIWizard). */
   defaultObjectives: PropTypes.shape({
     qualification: PropTypes.bool,

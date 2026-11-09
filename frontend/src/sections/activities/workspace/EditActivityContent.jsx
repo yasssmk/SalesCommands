@@ -29,8 +29,8 @@
 // rule applies (5.14a).
 //
 // Sprint Next steps 5.8d — CREATION mode (mode="create"): the SAME form, a
-// second submit (createActivity, or createActivityWithEntities with a contact
-// created on the fly — InlineContactForm). Pre-filled by
+// second submit (createActivity; createActivityWithEntities for a conversion).
+// No person is created from this drawer (7c). Pre-filled by
 // activityDefaultsFromNextStep (the single 2.2b source; + the cited names'
 // account contacts, the others recalled as "Mentioned"). Extra fields: the
 // decision cycle (pre-filled from the context, modifiable) and its step (the
@@ -41,7 +41,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useFormik } from "formik";
 import * as Yup from "yup";
@@ -56,10 +56,10 @@ import Divider from "@mui/material/Divider";
 import FormHelperText from "@mui/material/FormHelperText";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
-import CheckOutlined from "@ant-design/icons/CheckOutlined";
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
 import PlusOutlined from "@ant-design/icons/PlusOutlined";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
@@ -85,15 +85,22 @@ import {
 import { useNextStepCitedContacts } from "api/signals/signals";
 import { useAuth } from "hooks/useAuth";
 import { personName, personNameAndEmail } from "utils/personLabel";
-import { activityDefaultsFromNextStep } from "utils/activityTypes";
-import { InlineContactForm, InlineCycleForm } from "sections/accounts/activities/components";
+import {
+  activityDefaultsFromNextStep,
+  PEOPLE_ACTIVITY_TYPES,
+  SCHEDULED_DATE_ACTIVITY_TYPES,
+} from "utils/activityTypes";
+import { InlineCycleForm } from "sections/accounts/activities/components";
 import { displaySuccessSnackbar, displayErrorSnackbar } from "utils/displayError";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import InfoNotice from "components/display/InfoNotice";
 import SectionHeader from "components/display/SectionHeader";
 import InlineEditableValue from "components/drawer/InlineEditableValue";
+import ConfirmCancelActions from "components/drawer/ConfirmCancelActions";
 import PersonRow from "components/display/PersonRow";
 import AsyncUserSelect from "components/AsyncSelection/AsyncUserSelect";
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
+import AsyncDecisionCycleSelect from "components/AsyncSelection/AsyncDecisionCycleSelect";
 import OutcomeSelector from "components/outcomes/OutcomeSelector";
 import {
   CALLBACK_OUTCOME,
@@ -123,28 +130,43 @@ const FIELD_RULES = {
 
 const DATE_PAIR = [["scheduled_date", "due_date"]];
 
+// Sprint « Cycle de vie des contacts », étape 7 — THE participant rule, on
+// PEOPLE_ACTIVITY_TYPES (mirror of the backend constant): MEETING / CALL /
+// EMAIL / DEMO need at least one participant (a contact or a stakeholder);
+// the other types none. The server enforces the
+// same rule (participant_rules).
+export const PARTICIPANT_REQUIRED = "At least one participant is required";
+const participantsRule = Yup.array().test(
+  "participants",
+  PARTICIPANT_REQUIRED,
+  function hasParticipant(contacts) {
+    const { activity_type: type, stakeholders } = this.parent;
+    if (!PEOPLE_ACTIVITY_TYPES.has(type)) return true;
+    return (contacts?.length || 0) + (stakeholders?.length || 0) > 0;
+  },
+);
+
 const validationSchema = Yup.object(
   {
     ...FIELD_RULES,
     // owner is NOT NULL backend — Formik keeps the invariant, never sends null.
     owner: Yup.object().nullable().required("An owner is required"),
-    contacts: Yup.array().min(1, "At least one contact is required"),
+    contacts: participantsRule,
   },
   DATE_PAIR,
 );
 
+// An existing cycle is chosen (8d-2: the new one is inline_cycle, apart).
+const isExistingCycle = (cycle) => Boolean(cycle);
+
 // Creation: the owner is the creator (read-only, never sent); at least one
-// contact — selected, or created on the fly; a step once a cycle is chosen.
+// participant on PEOPLE_ACTIVITY_TYPES; a step once a cycle is chosen.
 const createValidationSchema = Yup.object(
   {
     ...FIELD_RULES,
-    contacts: Yup.array().when("inline_contact", {
-      is: (inline) => Boolean(inline),
-      then: (schema) => schema,
-      otherwise: (schema) => schema.min(1, "At least one contact is required"),
-    }),
+    contacts: participantsRule,
     decision_step_id: Yup.string().when("decision_cycle_id", {
-      is: (cycle) => Boolean(cycle),
+      is: isExistingCycle,
       then: (schema) => schema.required("Please select a step for this cycle"),
       otherwise: (schema) => schema.nullable(),
     }),
@@ -152,11 +174,16 @@ const createValidationSchema = Yup.object(
   DATE_PAIR,
 );
 
-// Conversion (5.13, "Start Decision Cycle"): the cycle is ALWAYS a NEW one —
-// created inline, the only way the backend stamps its source_campaign (the
-// DECISION_CYCLES objective) — and Save waits for it.
+// Conversion (5.13, "Start Decision Cycle"; 8c-3 revises « always a NEW
+// one »): an EXISTING open cycle of the account (its step required, as
+// above — source_campaign NOT stamped), or a NEW one created inline (the only
+// way the backend stamps its source_campaign, the DECISION_CYCLES objective)
+// — Save waits for the choice.
 const conversionValidationSchema = createValidationSchema.shape({
-  inline_cycle: Yup.object().nullable().required("A new decision cycle is required"),
+  inline_cycle: Yup.object().nullable().when("decision_cycle_id", {
+    is: (cycle) => !isExistingCycle(cycle),
+    then: (schema) => schema.required("A new decision cycle is required"),
+  }),
 });
 
 // ==============================|| HELPERS ||============================== //
@@ -192,143 +219,128 @@ function LockedHint() {
 // flips to an inline toggle (scheduled|due, exclusive) + the active picker(s).
 // Switching the toggle clears the OTHER date (and scheduled_time when leaving
 // scheduled) — mechanics cloned from UnifiedDateSection.
-function DateGroup({ values, setFieldValue, locked = false }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
-  const [editing, setEditing] = useState(false);
-  const [mode, setMode] = useState(values.scheduled_date || !values.due_date ? "scheduled" : "due");
-  // Snapshot of the draft (date/time/mode) captured on entering edit — ✗ restores it.
-  const startRef = useRef(null);
+// emptyMode (7c): the field used while no date is set — at creation it
+// follows the type (SCHEDULED_DATE_ACTIVITY_TYPES -> scheduled, else due).
+const dateModeOf = (values, emptyMode) =>
+  values.scheduled_date ? "scheduled" : values.due_date ? "due" : emptyMode;
 
-  const startEdit = () => {
-    if (locked) return;
-    startRef.current = {
-      scheduled_date: values.scheduled_date,
-      scheduled_time: values.scheduled_time,
-      due_date: values.due_date,
-      mode,
-    };
-    setEditing(true);
-  };
-
-  // ✓ — keep the current draft, just return to read (no PATCH; the global Save owns it).
-  const confirm = () => setEditing(false);
-
-  // ✗ — restore the pre-edit draft (date/time/mode) and return to read.
-  const cancel = () => {
-    const s = startRef.current;
-    if (s) {
-      setFieldValue("scheduled_date", s.scheduled_date);
-      setFieldValue("scheduled_time", s.scheduled_time);
-      setFieldValue("due_date", s.due_date);
-      setMode(s.mode);
-    }
-    setEditing(false);
-  };
+// Lot 3 / 9b (TD-267) — DateGroup is InlineEditableValue with a renderEditor
+// (the contact pattern, EditPeopleContent): read row, one click to open, ✓ =
+// commit, ✗ / Escape = cancel, focus leaving the editor keeps the draft. Its
+// value is the three date fields; the Scheduled / Due mode lives in the editor
+// (DateGroupEditor, re-derived from the dates at each opening), so a cancel —
+// the pattern restoring the start value — restores date / time / mode. The
+// pickers render inside the editor (popper disablePortal): a pick is not a
+// "focus left".
+function DateGroupEditor({ draft, setDraft, commit, cancel, emptyMode }) {
+  const [mode, setMode] = useState(() => dateModeOf(draft, emptyMode));
 
   const handleMode = (_e, val) => {
     if (!val) return;
     setMode(val);
-    if (val === "due") {
-      setFieldValue("scheduled_date", null);
-      setFieldValue("scheduled_time", null);
-    } else {
-      setFieldValue("due_date", null);
-    }
+    setDraft(
+      val === "due"
+        ? { ...draft, scheduled_date: null, scheduled_time: null }
+        : { ...draft, due_date: null },
+    );
   };
 
-  if (editing) {
-    const pickerLabel = mode === "scheduled" ? "Scheduled date" : "Due date";
-    return (
-      <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Stack spacing={1.5}>
-          <ToggleButtonGroup value={mode} exclusive onChange={handleMode} size="small">
-            <ToggleButton value="scheduled">Scheduled</ToggleButton>
-            <ToggleButton value="due">Due Date</ToggleButton>
-          </ToggleButtonGroup>
+  const pickerLabel = mode === "scheduled" ? "Scheduled date" : "Due date";
+  return (
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <Stack spacing={1.5}>
+        <ToggleButtonGroup value={mode} exclusive onChange={handleMode} size="small">
+          <ToggleButton value="scheduled">Scheduled</ToggleButton>
+          <ToggleButton value="due">Due Date</ToggleButton>
+        </ToggleButtonGroup>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <DatePicker
+              label={pickerLabel}
+              value={mode === "scheduled" ? draft.scheduled_date : draft.due_date}
+              onChange={(v) =>
+                setDraft(
+                  mode === "scheduled"
+                    ? { ...draft, scheduled_date: v, scheduled_time: v ? draft.scheduled_time : null }
+                    : { ...draft, due_date: v },
+                )
+              }
+              slotProps={{ textField: { fullWidth: true, size: "small" }, popper: { disablePortal: true } }}
+            />
+          </Box>
+          {mode === "scheduled" && (
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <DatePicker
-                label={pickerLabel}
-                value={mode === "scheduled" ? values.scheduled_date : values.due_date}
-                onChange={(v) => {
-                  if (mode === "scheduled") {
-                    setFieldValue("scheduled_date", v);
-                    if (!v) setFieldValue("scheduled_time", null);
-                  } else {
-                    setFieldValue("due_date", v);
-                  }
-                }}
-                slotProps={{ textField: { fullWidth: true, size: "small" } }}
+              <TimePicker
+                label="Scheduled time"
+                value={draft.scheduled_time}
+                onChange={(v) => setDraft({ ...draft, scheduled_time: v })}
+                disabled={!draft.scheduled_date}
+                slotProps={{ textField: { fullWidth: true, size: "small" }, popper: { disablePortal: true } }}
               />
             </Box>
-            {mode === "scheduled" && (
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <TimePicker
-                  label="Scheduled time"
-                  value={values.scheduled_time}
-                  onChange={(v) => setFieldValue("scheduled_time", v)}
-                  disabled={!values.scheduled_date}
-                  slotProps={{ textField: { fullWidth: true, size: "small" } }}
-                />
-              </Box>
-            )}
-          </Stack>
-
-          {/* ✓ validate (keep draft) / ✗ discard (restore) — local read/edit only. */}
-          <Stack direction="row" justifyContent="flex-end" spacing={0.5}>
-            <IconButton
-              size="small"
-              onClick={confirm}
-              data-testid="date-confirm"
-              aria-label="Confirm date"
-              sx={{ color: "success.main" }}
-            >
-              <CheckOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-            <IconButton
-              size="small"
-              onClick={cancel}
-              data-testid="date-cancel"
-              aria-label="Discard date changes"
-              sx={{ color: "error.main" }}
-            >
-              <CloseOutlined style={{ fontSize: theme.iconSizes.sm }} />
-            </IconButton>
-          </Stack>
+          )}
         </Stack>
-      </LocalizationProvider>
-    );
-  }
 
-  const isScheduled = Boolean(values.scheduled_date) || !values.due_date;
-  const dateVal = isScheduled ? readDate(values.scheduled_date) : readDate(values.due_date);
-  const timeVal = isScheduled ? readTime(values.scheduled_time) : null;
-  const display = dateVal ? (timeVal ? `${dateVal} · ${timeVal}` : dateVal) : null;
+        {/* ✓ validate (keep draft) / ✗ discard (restore) — local read/edit only.
+            THE shared row (components/drawer/ConfirmCancelActions.jsx, TD-267). */}
+        <ConfirmCancelActions onConfirm={commit} onCancel={cancel} testIdBase="date" label="date" />
+      </Stack>
+    </LocalizationProvider>
+  );
+}
+
+DateGroupEditor.propTypes = {
+  draft: PropTypes.object.isRequired,
+  setDraft: PropTypes.func.isRequired,
+  commit: PropTypes.func.isRequired,
+  cancel: PropTypes.func.isRequired,
+  emptyMode: PropTypes.oneOf(["scheduled", "due"]),
+};
+
+function DateGroup({ values, setFieldValue, locked = false, emptyMode = "scheduled" }) {
+  const value = {
+    scheduled_date: values.scheduled_date,
+    scheduled_time: values.scheduled_time,
+    due_date: values.due_date,
+  };
+  const setValue = (next) => {
+    setFieldValue("scheduled_date", next.scheduled_date ?? null);
+    setFieldValue("scheduled_time", next.scheduled_time ?? null);
+    setFieldValue("due_date", next.due_date ?? null);
+  };
+
+  const isScheduled = dateModeOf(values, emptyMode) === "scheduled";
+  const formatDates = (v) => {
+    const dateVal = isScheduled ? readDate(v.scheduled_date) : readDate(v.due_date);
+    const timeVal = isScheduled ? readTime(v.scheduled_time) : null;
+    return dateVal ? (timeVal ? `${dateVal} · ${timeVal}` : dateVal) : null;
+  };
 
   return (
-    <Box>
-      <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-        {isScheduled ? "Scheduled" : "Due date"}
-        {locked && <LockedHint />}
-      </Typography>
-      <Box
-        data-testid="inline-read-date"
-        onClick={startEdit}
-        sx={{ cursor: locked ? "default" : "pointer", py: 0.25 }}
-      >
-        {display ? (
-          <Typography variant="body2" color="text.primary">
-            {display}
-          </Typography>
-        ) : (
-          <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
-            No date set
-          </Typography>
-        )}
-      </Box>
-    </Box>
+    <InlineEditableValue
+      name="date"
+      label={
+        <>
+          {isScheduled ? "Scheduled" : "Due date"}
+          {locked && <LockedHint />}
+        </>
+      }
+      value={value}
+      onChange={setValue}
+      disabled={locked}
+      placeholder="No date set"
+      formatValue={formatDates}
+      renderEditor={({ value: draft, onChange: setDraft, commit, cancel }) => (
+        <DateGroupEditor
+          draft={draft}
+          setDraft={setDraft}
+          commit={commit}
+          cancel={cancel}
+          emptyMode={emptyMode}
+        />
+      )}
+    />
   );
 }
 
@@ -336,6 +348,8 @@ DateGroup.propTypes = {
   values: PropTypes.object.isRequired,
   setFieldValue: PropTypes.func.isRequired,
   locked: PropTypes.bool,
+  /** The field used while no date is set: "scheduled" | "due". */
+  emptyMode: PropTypes.oneOf(["scheduled", "due"]),
 };
 
 // ==============================|| PEOPLE PLACEHOLDER (SE-c) ||============================== //
@@ -371,6 +385,30 @@ PersonEditRow.propTypes = {
   removeTestId: PropTypes.string.isRequired,
 };
 
+// The drawer's « + Add … » action (the People section's, 8d-2: also « Create
+// new cycle ») — ONE look: a text button with the plus icon, in the accent.
+function AddActionButton({ onClick, testId, children }) {
+  const theme = useTheme();
+  return (
+    <Button
+      variant="text"
+      size="small"
+      onClick={onClick}
+      data-testid={testId}
+      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
+      sx={{ color: theme.aphoriQ.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
+    >
+      {children}
+    </Button>
+  );
+}
+
+AddActionButton.propTypes = {
+  onClick: PropTypes.func.isRequired,
+  testId: PropTypes.string,
+  children: PropTypes.node,
+};
+
 // The editable People section — draft only; the drawer's global Save PATCHes.
 // owner: single required slot (× empties it visually, but Formik keeps owner
 // required so a null owner_id is never sent). invited: optional removable list.
@@ -382,16 +420,14 @@ function PeopleSection({
   accountId,
   locked = false,
   ownerReadOnly = false,
-  allowInlineContact = false,
   mentionedNames = [],
+  cycleId = null,
 }) {
   const theme = useTheme();
   const aq = theme.aphoriQ;
   const [addOwner, setAddOwner] = useState(false);
   const [addInvited, setAddInvited] = useState(false);
-  const [addContact, setAddContact] = useState(false);
-  const [addInlineContact, setAddInlineContact] = useState(false);
-
+  const [addStakeholder, setAddStakeholder] = useState(false);
   const caption = (t, withHint = false) => (
     <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.5 }}>
       {t}
@@ -404,20 +440,35 @@ function PeopleSection({
     </Typography>
   );
   const addButton = (onClick, testId, label) => (
-    <Button
-      variant="text"
-      size="small"
-      onClick={onClick}
-      data-testid={testId}
-      startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
-      sx={{ color: aq.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
-    >
+    <AddActionButton onClick={onClick} testId={testId}>
       {label}
-    </Button>
+    </AddActionButton>
   );
 
   const invited = values.invited || [];
   const contacts = values.contacts || [];
+  const stakeholders = values.stakeholders || [];
+  const stakeholderName = (x) => x.display_name || x.full_name || x.department?.name || "";
+  // No « Contact » / « Not yet a contact » marker (7c): only the department.
+  const contactSuffix = (c) => c.department_name || undefined;
+  const stakeholderSuffix = (x) =>
+    (x.department?.name && x.department.name !== stakeholderName(x) ? x.department.name : undefined);
+  // The picker (7d-1): the STANDARD AsyncContactSelect — a server search on
+  // the account contacts + the NON-converted stakeholders of the activity's
+  // DC (a converted one only under its contact); no visible distinction. It
+  // stays INTERNAL: a contact joins values.contacts (contact_ids), a
+  // stakeholder values.stakeholders (stakeholder_ids).
+  const addPicked = (picked) => {
+    if (!picked) return;
+    const { _kind: kind, ...row } = picked;
+    if (kind === "stakeholder") {
+      if (!stakeholders.some((y) => String(y.id) === String(row.id))) {
+        setFieldValue("stakeholders", [...stakeholders, row]);
+      }
+    } else if (!contacts.some((c) => String(c.id) === String(row.id))) {
+      setFieldValue("contacts", [...contacts, row]);
+    }
+  };
   // The owner: « First Last · email » (the shared label, 5.9b).
   const ownerLabel = personNameAndEmail(values.owner);
   const ownerSuffix = ownerLabel.email || undefined;
@@ -492,65 +543,74 @@ function PeopleSection({
         ))}
       </Box>
 
-      {/* External contacts — removable list, min 1 */}
-      <Box>
-        {caption("External contacts")}
+      {/* External team — ONE list (étapes 7 / 7c): the account contacts +
+          the non-converted stakeholders of the activity's DC, no distinction
+          shown. Headed « External team » as the Context column (PO, after
+          7d). At least one participant for PEOPLE_ACTIVITY_TYPES (Formik +
+          the server). */}
+      <Box data-testid="stakeholders-list">
+        {caption("External team")}
         {locked
-          ? (contacts.length
-              ? contacts.map((c) => (
-                  <PersonRow key={c.id} name={personName(c)} suffix={c.department_name || undefined} />
-                ))
+          ? (contacts.length || stakeholders.length
+              ? [
+                  ...contacts.map((c) => (
+                    <Box key={c.id} data-testid={`participant-${c.id}`}>
+                      <PersonRow name={personName(c)} suffix={contactSuffix(c)} />
+                    </Box>
+                  )),
+                  ...stakeholders.map((x) => (
+                    <Box key={x.id} data-testid={`participant-${x.id}`}>
+                      <PersonRow name={stakeholderName(x)} suffix={stakeholderSuffix(x)} />
+                    </Box>
+                  )),
+                ]
               : emptyLine("None"))
-          : contacts.map((c) => (
-              <PersonEditRow
-                key={c.id}
-                name={personName(c)}
-                suffix={c.department_name || undefined}
-                onRemove={() => setFieldValue("contacts", contacts.filter((x) => x.id !== c.id))}
-                removeTestId={`remove-contact-${c.id}`}
-              />
-            ))}
-        {!locked && addContact && (
+          : [
+              ...contacts.map((c) => (
+                <Box key={c.id} data-testid={`participant-${c.id}`}>
+                  <PersonEditRow
+                    name={personName(c)}
+                    suffix={contactSuffix(c)}
+                    onRemove={() => setFieldValue("contacts", contacts.filter((x) => x.id !== c.id))}
+                    removeTestId={`remove-contact-${c.id}`}
+                  />
+                </Box>
+              )),
+              ...stakeholders.map((x) => (
+                <Box key={x.id} data-testid={`participant-${x.id}`}>
+                  <PersonEditRow
+                    name={stakeholderName(x)}
+                    suffix={stakeholderSuffix(x)}
+                    onRemove={() =>
+                      setFieldValue("stakeholders", stakeholders.filter((y) => y.id !== x.id))
+                    }
+                    removeTestId={`remove-stakeholder-${x.id}`}
+                  />
+                </Box>
+              )),
+            ]}
+        {!locked && addStakeholder && (
           <AsyncContactSelect
-            data-testid="contact-select"
+            data-testid="stakeholder-select"
             value={null}
-            excludeIds={contacts.map((c) => c.id)}
-            onChange={(_event, contact) => {
-              // dedup guard — never push a contact already selected (belt + braces)
-              if (contact && !contacts.some((x) => x.id === contact.id)) {
-                setFieldValue("contacts", [...contacts, contact]);
-              }
-              setAddContact(false);
-            }}
+            stakeholdersCycleId={cycleId || null}
             filters={{ account_id: accountId }}
-            label=""
-            placeholder="Search contacts…"
-          />
-        )}
-        {/* Creation: a contact created on the fly (create-with-entities). */}
-        {allowInlineContact && values.inline_contact && (
-          <PersonEditRow
-            name={personName(values.inline_contact)}
-            suffix="new contact"
-            onRemove={() => setFieldValue("inline_contact", null)}
-            removeTestId="remove-inline-contact"
-          />
-        )}
-        {allowInlineContact && !values.inline_contact && addInlineContact && (
-          <InlineContactForm
-            onSave={(contact) => {
-              setFieldValue("inline_contact", contact);
-              setAddInlineContact(false);
+            excludeIds={[...contacts.map((c) => c.id), ...stakeholders.map((x) => x.id)]}
+            onChange={(_event, picked) => {
+              addPicked(picked);
+              setAddStakeholder(false);
             }}
-            onCancel={() => setAddInlineContact(false)}
+            label=""
+            placeholder="Search stakeholders…"
+            autoFocus
+            openOnFocus
+            noOptionsText="No stakeholder to add"
           />
         )}
-        {/* The add actions — one row, the standard gap between actions (the
-            drawer's: theme spacing 1), never stuck together (5.8g). */}
+        {/* ONE add action (7c): no person is created from this drawer. */}
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" data-testid="contact-add-actions">
-          {!locked && !addContact && addButton(() => setAddContact(true), "add-contact", "Add contact")}
-          {allowInlineContact && !values.inline_contact && !addInlineContact &&
-            addButton(() => setAddInlineContact(true), "add-inline-contact", "New contact")}
+          {!locked && !addStakeholder &&
+            addButton(() => setAddStakeholder(true), "add-stakeholder", "Add stakeholder")}
         </Stack>
         {/* Creation from a next step: the names cited no contact matched. */}
         {mentionedNames.length > 0 && (
@@ -572,10 +632,11 @@ PeopleSection.propTypes = {
   locked: PropTypes.bool,
   /** Creation: the owner (the creator) is shown, not editable. */
   ownerReadOnly: PropTypes.bool,
-  /** Creation: a contact can be created on the fly (InlineContactForm). */
-  allowInlineContact: PropTypes.bool,
   /** Creation from a next step: the cited names no contact matched. */
   mentionedNames: PropTypes.arrayOf(PropTypes.string),
+  /** Étape 7: the activity's decision cycle — its non-converted stakeholders
+      can be added (none without a cycle). */
+  cycleId: PropTypes.string,
   values: PropTypes.object.isRequired,
   setFieldValue: PropTypes.func.isRequired,
   errors: PropTypes.object.isRequired,
@@ -622,6 +683,7 @@ function ActivityForm({
   nextStep,
   activityType,
   sourceActivityId,
+  originStepId = null,
   conversion = false,
   initialContacts = [],
   citedContacts = [],
@@ -679,16 +741,17 @@ function ActivityForm({
             owner: user || null,
             invited: [],
             contacts: defaults.contacts,
-            inline_contact: null,
+            // Étape 7: the non-converted stakeholders of the DC (cited ones).
+            stakeholders: defaults.stakeholders || [],
             // Conversion: the NEW cycle created inline ({ name, step_stage }).
             inline_cycle: null,
+            // 8d-2: the cycle object chosen in the Async select (label).
+            decision_cycle: null,
             decision_cycle_id: decisionCycleId || "",
-            // The next step's proposed step (a step of its own cycle — the
-            // server checks it), else the cycle's current one (effect below).
-            decision_step_id:
-              decisionCycleId && nextStep?.suggested_decision_step
-                ? String(nextStep.suggested_decision_step)
-                : "",
+            // Chosen once the cycle's steps are read (effect below): the
+            // next step's proposal if it is one of them, else the origin
+            // activity's step, else the current one (7c).
+            decision_step_id: "",
           }
         : {
             title: activity?.title || "",
@@ -701,7 +764,14 @@ function ActivityForm({
             owner: activity?.owner_detail || null,
             invited: activity?.invited_users_detail || [],
             contacts: activity?.contacts_detail || [],
+            stakeholders: activity?.stakeholders_detail || [],
             outcome: activity?.outcome || null,
+            // 8f-3: the step, modifiable in edition (the cycle stays greyed).
+            decision_step_id: String(
+              activity?.decision_step_detail?.id
+              ?? (typeof activity?.decision_step === "object" ? activity?.decision_step?.id : activity?.decision_step)
+              ?? "",
+            ),
           },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activity?.id, defaults],
@@ -721,34 +791,38 @@ function ActivityForm({
           : null,
       due_date: fmtDate(values.due_date),
       contact_ids: (values.contacts || []).map((c) => c.id),
+      stakeholder_ids: (values.stakeholders || []).map((x) => x.id),
       invited_user_ids: (values.invited || []).map((u) => u.id),
       account_id: accountId,
-      decision_cycle_id: values.decision_cycle_id || null,
+      decision_cycle_id: isExistingCycle(values.decision_cycle_id) ? values.decision_cycle_id : null,
       decision_step_id: values.decision_step_id || null,
     };
     if (nextStep?.id) payload.next_step_signal_id = nextStep.id;
     // The activity this one is created FROM (5.13: a campaign activity
     // converted into a Decision Cycle) — both creation paths carry it.
     if (sourceActivityId) payload.source_activity_id = sourceActivityId;
-    // Conversion: always create-with-entities — the new cycle (its name) and
-    // its starting step; the backend creates the cycle, stamps its
+    // Conversion: always create-with-entities. 8c-3 — an existing cycle: the
+    // activity in it (payload decision_cycle_id + step + source_activity_id),
+    // no inline cycle, source_campaign untouched. Else the new cycle (its
+    // name) and its starting step; the backend creates the cycle, stamps its
     // source_campaign and attaches the activity to that step.
+    if (conversion && isExistingCycle(values.decision_cycle_id)) {
+      return createActivityWithEntities({
+        activity: payload,
+        inline_contact: null,
+        inline_cycle: null,
+        inline_step_stage: null,
+      });
+    }
     if (conversion) {
       return createActivityWithEntities({
         activity: payload,
-        inline_contact: values.inline_contact || null,
+        inline_contact: null,
         inline_cycle: { name: values.inline_cycle.name },
         inline_step_stage: values.inline_cycle.step_stage,
       });
     }
-    return values.inline_contact
-      ? createActivityWithEntities({
-          activity: payload,
-          inline_contact: values.inline_contact,
-          inline_cycle: null,
-          inline_step_stage: null,
-        })
-      : createActivity(payload);
+    return createActivity(payload);
   };
 
   const formik = useFormik({
@@ -797,9 +871,16 @@ function ActivityForm({
         payload.owner_id = values.owner?.id ?? null;
         payload.invited_user_ids = (values.invited || []).map((u) => u.id);
         payload.contact_ids = (values.contacts || []).map((c) => c.id);
+        payload.stakeholder_ids = (values.stakeholders || []).map((x) => x.id);
       }
       if (editsOutcome && values.outcome !== (activity.outcome || null)) {
         payload.outcome = values.outcome;
+      }
+      // 8f-3: the step of the activity's cycle, when changed (PATCH
+      // decision_step_id — the cycle unchanged, so no stakeholder leaves:
+      // ActivityUpdateSerializer drops them on a CYCLE change only).
+      if (activity?.decision_cycle && values.decision_step_id !== initialValues.decision_step_id) {
+        payload.decision_step_id = values.decision_step_id || null;
       }
       try {
         const result = await updateActivity(activity.id, payload);
@@ -820,12 +901,55 @@ function ActivityForm({
 
   const { values, errors, setFieldValue } = formik;
 
-  // Creation: the account's cycles, and the chosen cycle's steps.
-  const { cycles } = useGetDecisionCyclesByAccount(isCreate ? accountId : null);
-  const { steps } = useGetDecisionStepsByCycle(isCreate ? values.decision_cycle_id : null);
-  const cycleOptions = useMemo(
-    () => (cycles || []).map((c) => ({ value: String(c.id), label: c.name })),
-    [cycles],
+  // Étape 7: a stakeholder belongs to ONE cycle — choosing another cycle in
+  // the creation drawer drops the stakeholders of the previous one (the server
+  // refuses them).
+  const chosenCycle = isCreate ? values.decision_cycle_id || null : null;
+  useEffect(() => {
+    if (!isCreate) return;
+    const kept = (values.stakeholders || []).filter(
+      (x) => chosenCycle && String(x.decision_cycle) === String(chosenCycle),
+    );
+    if (kept.length !== (values.stakeholders || []).length) setFieldValue("stakeholders", kept);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chosenCycle]);
+
+  // Creation: the account's cycles (the label of a cycle pre-filled from a DC
+  // activity), and the chosen cycle's steps.
+  const { cycles, cyclesLoading } = useGetDecisionCyclesByAccount(isCreate ? accountId : null);
+  // 8d-2: the cycle chosen in section 1 (an object for the Async select; a
+  // pre-filled id gets its name from the account's cycles).
+  const currentCycle = values.decision_cycle
+    || (values.decision_cycle_id
+      ? { id: values.decision_cycle_id,
+          name: (cycles || []).find((c) => String(c.id) === String(values.decision_cycle_id))?.name || "" }
+      : null);
+  // 8f-2 — conversion: the « Existing cycle / New cycle » mode. Until the
+  // user picks one: Existing, New when the account has no open cycle (the
+  // `!c.outcome` rule of DecisionCycleCardsList / AddToCampaignModal).
+  const [chosenCycleMode, setChosenCycleMode] = useState(null);
+  const hasOpenCycle = (cycles || []).some((c) => !c.outcome);
+  const cycleMode = chosenCycleMode ?? (!cyclesLoading && !hasOpenCycle ? "new" : "existing");
+  // The When section's handleMode pattern: an empty toggle value is ignored;
+  // switching ERASES the other mode's value (ONE update — several
+  // setFieldValue would validate on stale values).
+  const handleCycleMode = (_e, mode) => {
+    if (!mode) return;
+    setChosenCycleMode(mode);
+    if (mode === "new") {
+      formik.setValues({ ...values, decision_cycle: null, decision_cycle_id: "", decision_step_id: "" });
+    } else {
+      formik.setValues({ ...values, inline_cycle: null });
+    }
+  };
+  // 8e-2 (PO): a conversion saves only with an existing cycle or a new cycle
+  // created — Save disabled meanwhile (from the mount, not only once Formik
+  // has validated), with an info notice. The existing cycle's step stays
+  // required by the Yup rule above (its own message on the step field).
+  const conversionNeedsCycle =
+    isCreate && conversion && !values.inline_cycle && !isExistingCycle(values.decision_cycle_id);
+  const { steps } = useGetDecisionStepsByCycle(
+    isCreate ? values.decision_cycle_id : activity?.decision_cycle || null,
   );
   const stepOptions = useMemo(
     () =>
@@ -834,15 +958,17 @@ function ActivityForm({
         .map((st) => ({ value: String(st.id), label: st.name })),
     [steps],
   );
-  // The step: the next step's proposal when it is a step of the chosen cycle,
-  // else the cycle's CURRENT step (mirror of the backend default,
-  // next_step_materialization.py — as ActivityModal).
+  // The step (7c): the next step's proposal when it is a step of the chosen
+  // cycle, else the ORIGIN activity's step when it is one (« + Add next step »
+  // / ✓ Create from an activity), else the cycle's CURRENT step — mirror of
+  // the backend default next_step_materialization.next_step_step_default.
   useEffect(() => {
     if (!isCreate || values.decision_step_id || !steps?.length) return;
-    const proposed = steps.find((st) => String(st.id) === String(nextStep?.suggested_decision_step));
-    const chosen = proposed || steps.find((st) => st.is_current);
+    const find = (id) => (id ? steps.find((st) => String(st.id) === String(id)) : undefined);
+    const chosen =
+      find(nextStep?.suggested_decision_step) || find(originStepId) || steps.find((st) => st.is_current);
     if (chosen) setFieldValue("decision_step_id", String(chosen.id));
-  }, [isCreate, steps, values.decision_step_id, nextStep?.suggested_decision_step, setFieldValue]);
+  }, [isCreate, steps, values.decision_step_id, nextStep?.suggested_decision_step, originStepId, setFieldValue]);
 
   return (
     <DrawerContentLayout
@@ -850,14 +976,153 @@ function ActivityForm({
       onCancel={() => (onCancel ? onCancel() : closeDrawer())}
       saveDisabled={
         isCreate
-          ? !formik.isValid || formik.isSubmitting
+          ? !formik.isValid || formik.isSubmitting || conversionNeedsCycle
           : !formik.isValid || !formik.dirty || formik.isSubmitting
       }
     >
       <Stack spacing={2.5} data-testid={isCreate ? "activity-create" : undefined}>
-        {/* ---- SECTION 1 — Activity: Title + Type (+ outcome / cycle) ---- */}
+        {/* ---- SECTION 1 — Decision cycle (8d-1, PO): its OWN section, FIRST
+            — the People list depends on the cycle chosen. Creation: editable;
+            edition: read-only (cycle + step; no change of cycle in this
+            sprint). ---- */}
+        <Stack spacing={1.5} data-testid="activity-cycle-section">
+          <SectionHeader index={1} title="Decision cycle" subtitle="The deal the activity belongs to." />
+          {!isCreate && (
+            <>
+              <InlineEditableValue
+                name="decision_cycle"
+                label="Decision cycle"
+                value={activity?.decision_cycle_detail?.name || ""}
+                onChange={() => {}}
+                placeholder="No decision cycle"
+                disabled
+              />
+              {/* 8f-3: the step MODIFIABLE (the creation's select). */}
+              {activity?.decision_cycle && (
+                <InlineEditableValue
+                  name="decision_step"
+                  label="DC step"
+                  type="select"
+                  options={
+                    stepOptions.length
+                      ? stepOptions
+                      : [{
+                          value: values.decision_step_id,
+                          label: activity?.decision_step_detail?.name
+                            || (typeof activity?.decision_step === "object" ? activity?.decision_step?.name : "")
+                            || "",
+                        }]
+                  }
+                  value={values.decision_step_id}
+                  onChange={(v) => setFieldValue("decision_step_id", v)}
+                  placeholder="No step"
+                />
+              )}
+            </>
+          )}
+          {/* 8f-2 (PO) — conversion: ONE exclusive toggle « Existing cycle /
+              New cycle » — the When section's ToggleButtonGroup (DateGroup),
+              same component, same behaviour: switching mode ERASES the other
+              mode's value (handleCycleMode). Default: Existing, New when the
+              account has no open cycle. */}
+          {isCreate && conversion && (
+            <ToggleButtonGroup value={cycleMode} exclusive onChange={handleCycleMode} size="small">
+              <ToggleButton value="existing">Existing cycle</ToggleButton>
+              <ToggleButton value="new">New cycle</ToggleButton>
+            </ToggleButtonGroup>
+          )}
+          {/* 8d-2 — the cycle: the standard AsyncDecisionCycleSelect (server
+              search, the account's OPEN cycles, newest update first) on the
+              click-to-edit pattern (EditPeopleContent's contact). Pre-filled
+              only from a DC activity (decisionCycleId, greyed — 8e-3);
+              nothing pre-selected in conversion. */}
+          {isCreate && (!conversion || cycleMode === "existing") && (
+            <InlineEditableValue
+              name="decision_cycle"
+              label="Decision cycle"
+              value={currentCycle}
+              formatValue={(c) => c?.name || ""}
+              onChange={(cycle) => {
+                // 8e-1: the same cycle again (Escape restores it) changes
+                // nothing — the step chosen is kept.
+                if (cycle && String(cycle.id) === String(values.decision_cycle_id)) return;
+                setFieldValue("decision_cycle", cycle || null);
+                setFieldValue("decision_cycle_id", cycle ? String(cycle.id) : "");
+                setFieldValue("decision_step_id", "");
+              }}
+              placeholder={conversion ? "Choose a decision cycle" : "No decision cycle"}
+              // 8e-3: from an activity of a DC, the cycle is the origin's —
+              // shown, greyed (InlineEditableValue disabled, as in edition).
+              disabled={!conversion && Boolean(decisionCycleId)}
+              renderEditor={({ value, onChange, commit }) => (
+                <AsyncDecisionCycleSelect
+                  data-testid="decision-cycle-select"
+                  accountId={accountId}
+                  // 8e-1: chosen or replaced, never emptied here (MUI's own
+                  // prop, through AsyncSelect's pass-through).
+                  disableClearable
+                  value={value}
+                  onChange={(_event, cycle) => {
+                    onChange(cycle ?? null);
+                    commit();
+                  }}
+                  label=""
+                  autoFocus
+                  openOnFocus
+                />
+              )}
+            />
+          )}
+          {/* The step: required once an existing cycle is chosen. */}
+          {isCreate && isExistingCycle(values.decision_cycle_id) && (!conversion || cycleMode === "existing") && (
+            <InlineEditableValue
+              name="decision_step"
+              label="DC step"
+              type="select"
+              options={stepOptions}
+              value={values.decision_step_id}
+              onChange={(v) => setFieldValue("decision_step_id", v)}
+              placeholder="No step"
+              error={Boolean(errors.decision_step_id)}
+              helperText={errors.decision_step_id}
+            />
+          )}
+          {/* « New cycle »: the existing InlineCycleForm, then the new cycle as a
+              removable row (the drawer's confirmation pattern — the inline
+              contact's); Remove → the form again. */}
+          {isCreate && conversion && cycleMode === "new" && (
+            <Box data-testid="conversion-cycle">
+              <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
+                New decision cycle
+              </Typography>
+              {values.inline_cycle ? (
+                <PersonEditRow
+                  name={values.inline_cycle.name}
+                  suffix={`new cycle · ${PIPELINE_STEP_LABELS[values.inline_cycle.step_stage]}`}
+                  onRemove={() => setFieldValue("inline_cycle", null)}
+                  removeTestId="remove-inline-cycle"
+                />
+              ) : (
+                <InlineCycleForm
+                  onSave={({ name, step_stage }) => setFieldValue("inline_cycle", { name, step_stage })}
+                />
+              )}
+            </Box>
+          )}
+          {/* 8e-2: the rule said in an INFO notice (a business rule, not an
+              error — the shared InfoNotice, as SignalsValidationList's). */}
+          {conversionNeedsCycle && (
+            <InfoNotice data-testid="cycle-required-notice">
+              Choose an existing decision cycle or create a new one to save this activity.
+            </InfoNotice>
+          )}
+        </Stack>
+
+        <Divider />
+
+        {/* ---- SECTION 2 — Activity: Title + Type (+ outcome) ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={1} title="Activity" subtitle="What the activity is." />
+          <SectionHeader index={2} title="Activity" subtitle="What the activity is." />
           <InlineEditableValue
             name="title"
             label="Title"
@@ -875,6 +1140,21 @@ function ActivityForm({
             value={values.activity_type}
             onChange={(v) => {
               setFieldValue("activity_type", v);
+              // 7c — at creation the date field follows the type: a
+              // scheduling type takes the date as its scheduled date, the
+              // others as their due date (still modifiable in « When »).
+              if (isCreate) {
+                if (SCHEDULED_DATE_ACTIVITY_TYPES.has(v)) {
+                  if (!values.scheduled_date && values.due_date) {
+                    setFieldValue("scheduled_date", values.due_date);
+                    setFieldValue("due_date", null);
+                  }
+                } else if (values.scheduled_date) {
+                  setFieldValue("due_date", values.scheduled_date);
+                  setFieldValue("scheduled_date", null);
+                  setFieldValue("scheduled_time", null);
+                }
+              }
               // 5.17b — an outcome the new type does not offer is cleared.
               if (editsOutcome && values.outcome && !getOutcomesForType(v).includes(values.outcome)) {
                 setFieldValue("outcome", null);
@@ -895,67 +1175,21 @@ function ActivityForm({
             </Box>
           )}
 
-          {/* Conversion (5.13): a NEW decision cycle only — the inline cycle form
-              (name + starting step, in pills), then the cycle as a removable
-              row (the inline contact's pattern). */}
-          {isCreate && conversion && (
-            <Box data-testid="conversion-cycle">
-              <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-                Decision cycle
-              </Typography>
-              {values.inline_cycle ? (
-                <PersonEditRow
-                  name={values.inline_cycle.name}
-                  suffix={`new cycle · ${PIPELINE_STEP_LABELS[values.inline_cycle.step_stage]}`}
-                  onRemove={() => setFieldValue("inline_cycle", null)}
-                  removeTestId="remove-inline-cycle"
-                />
-              ) : (
-                <InlineCycleForm
-                  onSave={({ name, step_stage }) => setFieldValue("inline_cycle", { name, step_stage })}
-                />
-              )}
-            </Box>
-          )}
-
-          {/* Creation: the decision cycle (pre-filled, modifiable) and its step. */}
-          {isCreate && !conversion && (
-            <>
-              <InlineEditableValue
-                name="decision_cycle"
-                label="Decision cycle"
-                type="select"
-                options={[{ value: "", label: "No decision cycle" }, ...cycleOptions]}
-                value={values.decision_cycle_id}
-                onChange={(v) => {
-                  setFieldValue("decision_cycle_id", v);
-                  setFieldValue("decision_step_id", "");
-                }}
-                placeholder="No decision cycle"
-              />
-              {values.decision_cycle_id && (
-                <InlineEditableValue
-                  name="decision_step"
-                  label="DC step"
-                  type="select"
-                  options={stepOptions}
-                  value={values.decision_step_id}
-                  onChange={(v) => setFieldValue("decision_step_id", v)}
-                  placeholder="No step"
-                  error={Boolean(errors.decision_step_id)}
-                  helperText={errors.decision_step_id}
-                />
-              )}
-            </>
-          )}
         </Stack>
 
         <Divider />
 
-        {/* ---- SECTION 2 — When: Date & time ---- */}
+        {/* ---- SECTION 3 — When: Date & time ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={2} title="When" subtitle="The date it is scheduled or due." />
-          <DateGroup values={values} setFieldValue={setFieldValue} locked={isCampaign} />
+          <SectionHeader index={3} title="When" subtitle="The date it is scheduled or due." />
+          <DateGroup
+            values={values}
+            setFieldValue={setFieldValue}
+            locked={isCampaign}
+            emptyMode={
+              isCreate && !SCHEDULED_DATE_ACTIVITY_TYPES.has(values.activity_type) ? "due" : "scheduled"
+            }
+          />
           {Boolean(errors.scheduled_date) && (
             <Typography variant="caption" color="error">
               {errors.scheduled_date}
@@ -965,9 +1199,9 @@ function ActivityForm({
 
         <Divider />
 
-        {/* ---- SECTION 3 — Purpose: Objective + Description ---- */}
+        {/* ---- SECTION 4 — Purpose: Objective + Description ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={3} title="Purpose" subtitle="What the activity is for." />
+          <SectionHeader index={4} title="Purpose" subtitle="What the activity is for." />
           <InlineEditableValue
             name="objective"
             label="Objective"
@@ -987,9 +1221,9 @@ function ActivityForm({
 
         <Divider />
 
-        {/* ---- SECTION 4 — People: editable owner / invited / contacts (draft + global save) ---- */}
+        {/* ---- SECTION 5 — People: editable owner / invited / contacts (draft + global save) ---- */}
         <Stack spacing={1.5}>
-          <SectionHeader index={4} title="People" subtitle="Who owns it, who is invited, who it is with." />
+          <SectionHeader index={5} title="People" subtitle="Who owns it, who is invited, who it is with." />
           <PeopleSection
             values={values}
             setFieldValue={setFieldValue}
@@ -997,8 +1231,8 @@ function ActivityForm({
             accountId={accountId}
             locked={isCampaign}
             ownerReadOnly={isCreate}
-            allowInlineContact={isCreate}
             mentionedNames={isCreate ? defaults.mentionedNames : []}
+            cycleId={(isCreate ? values.decision_cycle_id : activity?.decision_cycle) || null}
           />
         </Stack>
       </Stack>
@@ -1037,6 +1271,8 @@ EditActivityContent.propTypes = {
   activityType: PropTypes.string,
   /** Create: the activity this one is created from (source_activity_id). */
   sourceActivityId: PropTypes.string,
+  /** 7c: the origin activity's step — the step default after the next step's proposal. */
+  originStepId: PropTypes.string,
   /** Create: "Start Decision Cycle" — a NEW cycle only, created inline (5.13). */
   conversion: PropTypes.bool,
   /** Create: contacts added to the pre-fill (the source activity's). */

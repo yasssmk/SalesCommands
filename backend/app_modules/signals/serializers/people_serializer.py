@@ -54,6 +54,11 @@ from .base_serializer import (
 class _PeopleDisplayMixin:
     """Shared SerializerMethodField implementations for People serializers."""
 
+    def get_links_on_validate(self, obj):
+        """8c-0 (c): ✓ validates by the passage's rule — stakeholder_service."""
+        from app_modules.decision_cycles.services.stakeholder_service import links_on_validate
+        return links_on_validate(obj)
+
     def get_role_display(self, obj):
         return obj.get_role_display() if obj.role else None
 
@@ -134,6 +139,7 @@ class PeopleSignalListSerializer(_PeopleDisplayMixin, BaseSignalListSerializer):
     """
 
     role_display       = serializers.SerializerMethodField()
+    links_on_validate = serializers.SerializerMethodField()
     influence_display  = serializers.SerializerMethodField()
     target_contact     = serializers.SerializerMethodField()
     target_department  = serializers.SerializerMethodField()
@@ -149,6 +155,12 @@ class PeopleSignalListSerializer(_PeopleDisplayMixin, BaseSignalListSerializer):
             'influence', 'influence_display',
             'target_contact',
             'target_department',
+            # Sprint « Cycle de vie des contacts », étape 5: the DC
+            # stakeholder the observation is affiliated to (read-only — set
+            # by POST /people/{id}/resolve/).
+            'stakeholder',
+            # 8c-0 (c): ✓ validates by the passage's rule (no flow).
+            'links_on_validate',
             'notes',
         ]
         read_only_fields = fields
@@ -170,6 +182,7 @@ class PeopleSignalDetailSerializer(_PeopleDisplayMixin, BaseSignalDetailSerializ
     """
 
     role_display       = serializers.SerializerMethodField()
+    links_on_validate = serializers.SerializerMethodField()
     influence_display  = serializers.SerializerMethodField()
     target_contact     = serializers.SerializerMethodField()
     target_department  = serializers.SerializerMethodField()
@@ -185,6 +198,12 @@ class PeopleSignalDetailSerializer(_PeopleDisplayMixin, BaseSignalDetailSerializ
             'influence', 'influence_display',
             'target_contact',
             'target_department',
+            # Sprint « Cycle de vie des contacts », étape 5: the DC
+            # stakeholder the observation is affiliated to (read-only — set
+            # by POST /people/{id}/resolve/).
+            'stakeholder',
+            # 8c-0 (c): ✓ validates by the passage's rule (no flow).
+            'links_on_validate',
             'notes',
         ]
         read_only_fields = fields

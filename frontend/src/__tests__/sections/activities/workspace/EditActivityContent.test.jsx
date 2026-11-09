@@ -8,10 +8,18 @@
 // People is a read-only placeholder here (made editable in SE-c).
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import dayjs from "dayjs";
 
 afterEach(() => cleanup());
+
+// 7c: « Add stakeholder » → the picker, opened.
+const openStakeholderPicker = () => {
+  fireEvent.click(screen.getByTestId("add-stakeholder"));
+  const input = within(screen.getByTestId("stakeholder-select")).getByRole("combobox");
+  fireEvent.focus(input);
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+};
 
 vi.mock("next/font/google", () => ({
   Public_Sans: () => ({ className: "mock", style: { fontFamily: "mock" } }),
@@ -82,26 +90,18 @@ vi.mock("components/AsyncSelection/AsyncUserSelect", () => ({
     );
   },
 }));
-vi.mock("components/AsyncSelection/AsyncContactSelect", () => ({
-  default: (props) => {
-    const tid = props["data-testid"];
-    return (
-      <div>
-        <button
-          type="button"
-          data-testid={tid}
-          data-exclude={JSON.stringify(props.excludeIds || [])}
-          onClick={() => props.onChange({}, { id: "c9", full_name: "Picked Contact" })}
-        >
-          pick
-        </button>
-        {/* returns an ALREADY-present contact (c1) to exercise the dedup guard */}
-        <button type="button" data-testid={`${tid}-dup`} onClick={() => props.onChange({}, { id: "c1", full_name: "Cara Contact" })}>
-          pick-dup
-        </button>
-      </div>
-    );
-  },
+// 7c / 7d-1: ONE « Add stakeholder » picker (the standard AsyncContactSelect),
+// fed by the account contacts (no DC here).
+vi.mock("api/businessData/contacts", async (orig) => ({
+  ...(await orig()),
+  useGetContacts: () => ({
+    // first / last names: the standard AsyncContactSelect's label (7d-1).
+    contacts: [
+      { id: "c1", first_name: "Cara", last_name: "Contact", full_name: "Cara Contact" },
+      { id: "c9", first_name: "Picked", last_name: "Contact", full_name: "Picked Contact" },
+    ],
+    contactsLoading: false,
+  }),
 }));
 
 import ThemeCustomization from "themes/index";
@@ -157,7 +157,8 @@ describe("EditActivityContent — SE-b structure", () => {
   // 5.18 (PO): the Edit signal design — MUI Dividers between the sections.
   it("separates the sections with Dividers (the Edit signal design), no hairline filet", () => {
     const { container } = renderEdit();
-    expect(container.querySelectorAll("hr.MuiDivider-root")).toHaveLength(3);
+    // 8d-1: 5 sections (Decision cycle first) → 4 Dividers.
+    expect(container.querySelectorAll("hr.MuiDivider-root")).toHaveLength(4);
     expect(screen.queryByTestId("group-filet")).toBeNull();
   });
 
@@ -287,6 +288,10 @@ describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATC
     // in edit: confirm + cancel controls present
     expect(screen.getByTestId("date-confirm")).toBeInTheDocument();
     expect(screen.getByTestId("date-cancel")).toBeInTheDocument();
+    // Lot 3 / 9 (TD-267): THE shared ✓/✗ row (ConfirmCancelActions) — its
+    // aria contract "Confirm <label>" / "Discard <label>".
+    expect(screen.getByRole("button", { name: "Confirm date" })).toBe(screen.getByTestId("date-confirm"));
+    expect(screen.getByRole("button", { name: "Discard date" })).toBe(screen.getByTestId("date-cancel"));
     // change the scheduled date via the stubbed picker (label "Scheduled date")
     fireEvent.click(screen.getByTestId("pick-Scheduled date"));
     // validate the section
@@ -311,6 +316,20 @@ describe("EditActivityContent — date section ✓/✗ (local read/edit, no PATC
     expect(screen.getByText("Scheduled")).toBeInTheDocument();
     expect(screen.getByText(/Sep 10, 2026 · 2:30 PM/)).toBeInTheDocument();
     expect(screen.queryByText(/Oct 1, 2026/)).not.toBeInTheDocument();
+    expect(updateActivity).not.toHaveBeenCalled();
+  });
+
+  // Lot 3 / 9b (TD-267): DateGroup on InlineEditableValue's renderEditor
+  // pattern — Escape anywhere in the editor cancels like ✗ (date/time/mode).
+  it("Escape in the date editor restores the date/time/mode, like ✗", async () => {
+    renderEdit(); // scheduled 2026-09-10 14:30
+    fireEvent.click(screen.getByTestId("inline-read-date"));
+    fireEvent.click(screen.getByRole("button", { name: /due date/i }));
+    fireEvent.click(screen.getByTestId("pick-Due date"));
+    fireEvent.keyDown(screen.getByTestId("pick-Due date"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("pick-Due date")).not.toBeInTheDocument());
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.getByText(/Sep 10, 2026 · 2:30 PM/)).toBeInTheDocument();
     expect(updateActivity).not.toHaveBeenCalled();
   });
 
@@ -371,13 +390,13 @@ describe("EditActivityContent — People (draft + global save, no per-row PATCH)
     expect(updateActivity).not.toHaveBeenCalled();
   });
 
-  it("contacts min 1: removing the only contact blocks Save; adding one restores it", async () => {
+  it("participants min 1: removing the only contact blocks Save; « Add stakeholder » restores it", async () => {
     renderEdit();
     const save = screen.getByRole("button", { name: /save/i });
     fireEvent.click(screen.getByTestId("remove-contact-c1"));
     await waitFor(() => expect(save).toBeDisabled());
-    fireEvent.click(screen.getByTestId("add-contact"));
-    fireEvent.click(screen.getByTestId("contact-select")); // {id:"c9"}
+    openStakeholderPicker();
+    fireEvent.click(screen.getByRole("option", { name: "Picked Contact" }));
     expect(screen.getByTestId("remove-contact-c9")).toBeInTheDocument();
     expect(updateActivity).not.toHaveBeenCalled();
   });
@@ -408,19 +427,19 @@ describe("EditActivityContent — no duplicate user/contact (exclusion + dedup)"
     expect(updateActivity).not.toHaveBeenCalled();
   });
 
-  it("adding an already-present contact does NOT create a duplicate row", () => {
+  it("a contact already a participant is not offered again (no duplicate row)", () => {
     renderEdit();
-    fireEvent.click(screen.getByTestId("add-contact"));
-    fireEvent.click(screen.getByTestId("contact-select-dup")); // picks c1 (already a contact)
+    openStakeholderPicker();
+    const names = screen.getAllByRole("option").map((o) => o.textContent);
+    expect(names).toEqual(["Picked Contact"]);
     expect(screen.getAllByText("Cara Contact")).toHaveLength(1);
     expect(updateActivity).not.toHaveBeenCalled();
   });
 
-  it("the contact selector excludes the already-selected contact ids", () => {
+  it("no « Add contact », no « New contact » (7c: no person created from the drawer)", () => {
     renderEdit();
-    fireEvent.click(screen.getByTestId("add-contact"));
-    const excl = JSON.parse(screen.getByTestId("contact-select").getAttribute("data-exclude"));
-    expect(excl).toContain("c1");
+    expect(screen.queryByTestId("add-contact")).toBeNull();
+    expect(screen.queryByTestId("add-inline-contact")).toBeNull();
   });
 
   it("the invited selector excludes the current invited AND the owner", () => {

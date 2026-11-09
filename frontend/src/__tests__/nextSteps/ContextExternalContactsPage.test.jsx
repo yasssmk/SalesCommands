@@ -2,7 +2,7 @@
 //
 // Sprint Next steps 5.8c (PO rule: a next step neither creates nor describes
 // any person) — the deduced participants (B2, 5.8a/5.8b) are WITHDRAWN: the
-// "External contacts" of the Context section, on the Activity workspace PAGE
+// the external people column (7d-2: « External team ») of the Context section, on the Activity workspace PAGE
 // as really rendered, are the activity's own contacts (contacts_detail) again,
 // even if a payload still carried `participants`. A contact row opens the
 // Contact fiche in the coque, as before.
@@ -49,6 +49,8 @@ vi.mock("components/WorkspaceHeader", () => ({ default: () => <div data-testid="
 vi.mock("sections/activities/workspace/ActivityHeader", () => ({ default: () => ({ modals: null }) }));
 vi.mock("sections/activities/workspace/ActivityPreparationTab", () => ({ default: () => null }));
 vi.mock("sections/activities/workspace/ActivityNotesTab", () => ({ default: () => null }));
+// The Source band's Run AI pill (its header, lot 3 / 11) — not under test here.
+vi.mock("sections/activities/workspace/RunAIAnalysisButton", () => ({ default: () => null }));
 vi.mock("sections/activities/workspace/ActivitySignalsTab", () => ({
   default: () => null,
   ACTIVITY_FLAT_TYPES: ["pain"],
@@ -90,7 +92,8 @@ const PARTICIPANTS = [
 ];
 
 // The column: its label (Typography) sits in the ColumnHeader Stack.
-const external = () => screen.getByText("External contacts").parentElement.parentElement;
+// 7d-2: the column is headed « External team » (the pair of « Internal team »).
+const external = () => screen.getByText("External team").parentElement.parentElement;
 
 afterEach(() => cleanup());
 

@@ -111,6 +111,7 @@ export default function SignalsValidationList({
   onValidate,
   onReject,
   renderExtra,
+  autoExpandStatuses,
   showTypeHeaders = true,
   loading = false,
   emptyMessage = "No signals found for this activity",
@@ -146,12 +147,16 @@ export default function SignalsValidationList({
           // remain (P2): the worklist then shows only Validated / Rejected.
           if (!sectionSignals.length) return null;
 
+          // 8c-1: a status the caller asks to open (e.g. Validated holding a
+          // People to link) opens — CollapsibleStrip's defaultExpanded, the
+          // key remounting it when the request comes or goes (a revalidation).
+          const autoExpanded = Boolean(autoExpandStatuses?.includes(status));
           return (
             <CollapsibleStrip
-              key={status}
+              key={autoExpanded ? `${status}-auto` : status}
               title={title}
               titleColor={titleColor}
-              defaultExpanded={defaultExpanded}
+              defaultExpanded={defaultExpanded || autoExpanded}
               meta={
                 sectionSignals.length ? (
                   // The count takes the section's status colour (not muted).
@@ -229,6 +234,8 @@ SignalsValidationList.propTypes = {
   onReject: PropTypes.func,
   /** Optional (signal, signalType) => node — SignalLine's 3rd line (`extra`). */
   renderExtra: PropTypes.func,
+  /** Optional statuses whose section opens by itself (8c-1); else defaults. */
+  autoExpandStatuses: PropTypes.arrayOf(PropTypes.oneOf(["PENDING", "VALIDATED", "REJECTED"])),
   /** The type-group headers (default true); false for a single-type list. */
   showTypeHeaders: PropTypes.bool,
   loading: PropTypes.bool,

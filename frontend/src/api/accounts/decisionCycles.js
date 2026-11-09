@@ -219,6 +219,8 @@ const endpoints = {
   
   // Cycle sub-resources
   cyclePeople: (id) => `/decision_cycles/${id}/people/`,
+  // Étape 7: the NON-converted stakeholders of a cycle (activity participants).
+  cycleStakeholders: (id) => `/decision_cycles/${id}/stakeholders/`,
   cycleProducts: (id) => `/decision_cycles/${id}/products/`,
   cycleProductDetail: (cycleId, productId) => `/decision_cycles/${cycleId}/products/${productId}/`,
   cycleReadiness: (id) => `/decision_cycles/${id}/readiness/`,
@@ -1080,6 +1082,47 @@ export function useGetDCPeople(cycleId) {
     }),
     [data, isLoading, error, isValidating, mutate],
   );
+}
+
+/**
+ * DC STAKEHOLDERS (sprint « Cycle de vie des contacts », étape 7)
+ *
+ * GET /decision_cycles/{id}/stakeholders/ — the NON-converted stakeholders of
+ * the cycle (contact NULL): the ones an activity of the cycle may take as
+ * participants (a converted one is a contact). [{ id, display_name,
+ * full_name, department, is_linked, decision_cycle }].
+ *
+ * @param {string|null} cycleId - UUID of the cycle (null → disabled)
+ * @returns {Object} { stakeholders, stakeholdersLoading, stakeholdersError }
+ */
+export function useGetDCStakeholders(cycleId, { search = '', converted } = {}) {
+  const { tenantId } = useAuth();
+
+  // 7d-1: optional server search (?search=) and ?converted=false (the
+  // « Add stakeholder » picker); without them, the URL is unchanged.
+  const swrKey = useMemo(() => {
+    if (!cycleId || !isValidUUID(cycleId)) return null;
+    const params = new URLSearchParams();
+    if (converted === false) params.append('converted', 'false');
+    if (search) params.append('search', search);
+    const qs = params.toString();
+    return tenantKey(`${endpoints.cycleStakeholders(cycleId)}${qs ? `?${qs}` : ''}`, tenantId);
+  }, [cycleId, tenantId, search, converted]);
+
+  const { data, isLoading, error } = useSWR(swrKey, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+  });
+
+  return useMemo(() => {
+    // A list — or a paginated shape ({results}) — always read as an array.
+    const raw = data?.data ?? data;
+    return {
+      stakeholders: Array.isArray(raw) ? raw : raw?.results ?? [],
+      stakeholdersLoading: isLoading,
+      stakeholdersError: error,
+    };
+  }, [data, isLoading, error]);
 }
 
 // ==============================|| DC WORKSPACE — PRODUCTS ||============================== //

@@ -14,22 +14,23 @@
 //   - ✓ / ✗ test ids .......... <name with "-">-confirm / -cancel  (target-date-confirm)
 //   - ✓ / ✗ aria-labels ....... "Confirm <label lowercased>" / "Discard <label lowercased>"
 //   - empty read text ......... `emptyText` (default "No date set" — Objective)
-// Still a copy of the InlineEditableValue mechanics (TD-267) — moving it to
-// renderEditor is tracked there.
+// Lot 3 / 9b (TD-267): no longer a copy of the click-to-edit mechanics — it
+// is InlineEditableValue with a `renderEditor` (the contact pattern,
+// EditPeopleContent): read row, one click to open, ✓ = commit, ✗ / Escape =
+// cancel (restore), focus leaving the editor keeps the draft. The picker's
+// calendar renders inside the editor (popper disablePortal) so a pick never
+// reads as "focus left".
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useRef } from "react";
+
+// Project — the shared click-to-edit field + ✓ / ✗ row.
+import InlineEditableValue from "components/drawer/InlineEditableValue";
+import ConfirmCancelActions from "components/drawer/ConfirmCancelActions";
 
 // MUI
-import { useTheme } from "@mui/material/styles";
-import Box from "@mui/material/Box";
 import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
-
-// Project — the shared ✓ / ✗ row (also used by the TechStack start year).
-import ConfirmCancelActions from "components/drawer/ConfirmCancelActions";
 
 // Date picker — the project's standard component (@mui/x-date-pickers + dayjs),
 // same as EditActivityContent / OutcomeDrawerContent.
@@ -38,68 +39,40 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs from "dayjs";
 
-export default function InlineDateField({ label, name, value, onChange, emptyText = "No date set" }) {
-  const theme = useTheme();
-  const aq = theme.aphoriQ;
-  const [editing, setEditing] = useState(false);
-  const startRef = useRef(null);
+const formatDate = (value) => (value ? dayjs(value).format("D MMM YYYY") : null);
 
+export default function InlineDateField({ label, name, value, onChange, emptyText = "No date set" }) {
   const testIdBase = name.replace(/_/g, "-");
   const labelLower = label.toLowerCase();
 
-  const startEdit = () => {
-    startRef.current = value;
-    setEditing(true);
-  };
-  const confirm = () => setEditing(false);
-  const cancel = () => {
-    onChange(startRef.current ?? "");
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Stack spacing={1}>
-          <DatePicker
-            label={label}
-            value={value ? dayjs(value) : null}
-            onChange={(v) => onChange(v && v.isValid() ? v.format("YYYY-MM-DD") : "")}
-            slotProps={{ textField: { fullWidth: true, size: "small" } }}
-          />
-          <ConfirmCancelActions
-            onConfirm={confirm}
-            onCancel={cancel}
-            testIdBase={testIdBase}
-            label={labelLower}
-          />
-        </Stack>
-      </LocalizationProvider>
-    );
-  }
-
-  const display = value ? dayjs(value).format("D MMM YYYY") : null;
   return (
-    <Box>
-      <Typography variant="caption" sx={{ color: aq.text.muted, display: "block", mb: 0.25 }}>
-        {label}
-      </Typography>
-      <Box
-        data-testid={`inline-read-${name}`}
-        onClick={startEdit}
-        sx={{ cursor: "pointer", py: 0.25 }}
-      >
-        {display ? (
-          <Typography variant="body2" color="text.primary">
-            {display}
-          </Typography>
-        ) : (
-          <Typography variant="body2" sx={{ color: aq.text.subtle, fontStyle: "italic" }}>
-            {emptyText}
-          </Typography>
-        )}
-      </Box>
-    </Box>
+    <InlineEditableValue
+      name={name}
+      label={label}
+      value={value}
+      // The form keeps "" for an unset date (a cancel restores "" too).
+      onChange={(v) => onChange(v ?? "")}
+      placeholder={emptyText}
+      formatValue={formatDate}
+      renderEditor={({ value: draft, onChange: setDraft, commit, cancel }) => (
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
+          <Stack spacing={1}>
+            <DatePicker
+              label={label}
+              value={draft ? dayjs(draft) : null}
+              onChange={(v) => setDraft(v && v.isValid() ? v.format("YYYY-MM-DD") : "")}
+              slotProps={{ textField: { fullWidth: true, size: "small" }, popper: { disablePortal: true } }}
+            />
+            <ConfirmCancelActions
+              onConfirm={commit}
+              onCancel={cancel}
+              testIdBase={testIdBase}
+              label={labelLower}
+            />
+          </Stack>
+        </LocalizationProvider>
+      )}
+    />
   );
 }
 

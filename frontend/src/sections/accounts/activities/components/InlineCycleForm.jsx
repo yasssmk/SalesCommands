@@ -2,20 +2,17 @@ import PropTypes from 'prop-types';
 
 // material-ui
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
 // third-party
 import { useFormik } from 'formik';
 import * as Yup from 'yup';
 
-// icons
-import CloseOutlined from '@ant-design/icons/CloseOutlined';
-
 // project imports
 import ClickablePill from 'components/chips/ClickablePill';
+import InlineEditableValue from 'components/drawer/InlineEditableValue';
+import ConfirmCancelActions from 'components/drawer/ConfirmCancelActions';
 import { PIPELINE_STEPS_ORDER, PIPELINE_STEP_LABELS } from 'api/accounts/decisionCycles';
 
 // ==============================|| PIPELINE STEPS ||============================== //
@@ -26,6 +23,13 @@ import { PIPELINE_STEPS_ORDER, PIPELINE_STEP_LABELS } from 'api/accounts/decisio
 // (api/accounts/decisionCycles) — no local list any more. Chosen in pills: the
 // scope pills' single-choice pattern (ScopeDepartmentsField — ClickablePill,
 // active + pressed).
+//
+// Lot 3 / 10 (TD-305) — the drawer's validation pattern: the name is an
+// InlineEditableValue (read → click → edit, the required message under it — as
+// the summary of the Edit*Content drawers) and the form is validated /
+// discarded by THE shared ✓/✗ row (components/drawer/ConfirmCancelActions,
+// as EditTechStackContent's start-year editor). ✗ calls onCancel when given;
+// without it (the conversion: the cycle is mandatory) ✗ discards the draft.
 
 // ==============================|| VALIDATION SCHEMA ||============================== //
 
@@ -55,7 +59,8 @@ export default function InlineCycleForm({ onSave, onCancel }) {
     }
   });
 
-  const { values, errors, touched, handleChange, handleBlur, handleSubmit, setFieldValue } = formik;
+  const { values, errors, touched, handleSubmit, setFieldValue, resetForm } = formik;
+  const nameError = touched.name && errors.name;
 
   return (
     <Box sx={{ pt: 1, pb: 2 }}>
@@ -63,17 +68,14 @@ export default function InlineCycleForm({ onSave, onCancel }) {
         <Typography variant="body2" color="text.secondary">
           Quick create a new decision cycle
         </Typography>
-        <TextField
-          fullWidth
-          id="name"
-          name="name"
+        <InlineEditableValue
+          name="cycle_name"
+          label="Cycle name"
           value={values.name}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          placeholder="Cycle name *"
-          error={Boolean(touched.name && errors.name)}
-          helperText={touched.name && errors.name}
-          autoFocus
+          onChange={(v) => setFieldValue('name', v)}
+          placeholder="Required"
+          error={Boolean(nameError)}
+          helperText={nameError || undefined}
         />
         {/* The starting step — one pill per step, a single choice. */}
         <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap data-testid="stage-pills">
@@ -91,16 +93,12 @@ export default function InlineCycleForm({ onSave, onCancel }) {
             );
           })}
         </Stack>
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
-          {onCancel && (
-            <Button type="button" size="small" onClick={onCancel} startIcon={<CloseOutlined />}>
-              Cancel
-            </Button>
-          )}
-          <Button type="button" size="small" variant="contained" onClick={handleSubmit}>
-            Create Cycle
-          </Button>
-        </Stack>
+        <ConfirmCancelActions
+          onConfirm={handleSubmit}
+          onCancel={onCancel ?? (() => resetForm())}
+          testIdBase="inline-cycle"
+          label="new cycle"
+        />
       </Stack>
     </Box>
   );
@@ -108,6 +106,7 @@ export default function InlineCycleForm({ onSave, onCancel }) {
 
 InlineCycleForm.propTypes = {
   onSave: PropTypes.func.isRequired,
-  /** Optional: no Cancel when the cycle is mandatory (the conversion). */
+  /** ✗ — optional: absent when the cycle is mandatory (the conversion), ✗
+      then discards the draft. */
   onCancel: PropTypes.func
 };

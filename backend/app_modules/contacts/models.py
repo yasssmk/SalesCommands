@@ -198,6 +198,21 @@ class Contact(ModuleBaseModel, ClientScopeManager.ModelMixin, ContactDetailsMixi
         return self
 
     # ==========================================================================
+    # EMAIL OR PHONE — the "no way to contact" alert of an activity
+    # ==========================================================================
+
+    @property
+    def has_email_or_phone(self):
+        """
+        Sprint « Cycle de vie des contacts », étape 7: a participant can be
+        reached when it has an email OR a phone — each channel counted only
+        when non-NULL AND non-empty, the presence logic of filter_reachable
+        below (whose enrollment predicate also counts LinkedIn; the activity
+        alert does not, PO: "ni email ni téléphone").
+        """
+        return bool((self.email or '').strip() or (str(self.phone_number or '')).strip())
+
+    # ==========================================================================
     # ENROLLMENT REACHABILITY — single source of the channel predicate
     # ==========================================================================
 

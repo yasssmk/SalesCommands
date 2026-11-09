@@ -43,6 +43,22 @@ export const SIGNAL_TYPE_META = {
 // Canonical slug list (stable order — same as the API vocabulary).
 export const SIGNAL_TYPE_SLUGS = Object.keys(SIGNAL_TYPE_META);
 
+// The types the qualification analysis REALLY extracts (backend
+// ai_pipelines/pipelines/transcript_signals.py _STAGES: pain + impact,
+// objective, techstack, blocker, constraint, competitor, people) — every type
+// but the next steps (their own pipeline). Read by the activity Signals band
+// (ACTIVITY_FLAT_TYPES) and the Run AI wizard's option (lot 3 / 11b, TD-258).
+export const QUALIFICATION_SIGNAL_TYPES = [
+  "pain",
+  "objective",
+  "impact",
+  "tech-stack",
+  "blockers",
+  "constraints",
+  "competitors",
+  "people",
+];
+
 // ==============================|| RESOLVERS ||============================== //
 
 /**

@@ -10,6 +10,9 @@
 // action. `disabled` (5.12c) — an unavailable action: aria-disabled, out of
 // the tab order, no click / key, the theme's disabled opacity. Other props
 // (data-testid, sx…) pass through to StatusPill.
+// `tone` (optional, 8b-1): "warning" — an orange INFORMATION action (e.g. the
+// Signals band's « Link to the deal »), the theme's warning role; absent →
+// the scope pill colours above.
 
 "use client";
 
@@ -19,8 +22,12 @@ import PropTypes from "prop-types";
 import StatusPill from "components/chips/StatusPill";
 import { SCOPE_PILL_COLORS } from "utils/objectiveScope";
 
-export default function ClickablePill({ label, onClick, active = false, pressed, disabled = false, sx, ...rest }) {
-  const c = active ? SCOPE_PILL_COLORS.active : SCOPE_PILL_COLORS.inactive;
+const TONE_COLORS = {
+  warning: { colorText: "warning.main", colorBg: "warning.lighter" },
+};
+
+export default function ClickablePill({ label, onClick, active = false, pressed, disabled = false, tone, sx, ...rest }) {
+  const c = TONE_COLORS[tone] || (active ? SCOPE_PILL_COLORS.active : SCOPE_PILL_COLORS.inactive);
   return (
     <StatusPill
       role="button"
@@ -57,5 +64,7 @@ ClickablePill.propTypes = {
   pressed: PropTypes.bool,
   /** An unavailable action (aria-disabled, no click / key). */
   disabled: PropTypes.bool,
+  /** Optional colour role: "warning" (an orange information action). */
+  tone: PropTypes.oneOf(["warning"]),
   sx: PropTypes.object,
 };

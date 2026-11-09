@@ -5,10 +5,9 @@
 //   - a row of EXCLUSIVE scope pills (StatusPill + the shared objectiveScope
 //     colour tokens) — the scope is a single value, exactly one pill pressed;
 //   - for the department scope: the chosen departments as REAL pills, each with
-//     a × to remove it, plus a "+ add department" trigger (same gesture as
-//     EditActivityContent's "+ add contact") opening a grouped multi-select whose
-//     options EXCLUDE the already-chosen departments; on confirm the staged
-//     departments join the pills;
+//     a × to remove it, plus a "+ add department" trigger opening a grouped
+//     multi-select whose options EXCLUDE the already-chosen departments — THE
+//     PillsField gesture (components/drawer/PillsField.jsx, TD-303);
 //   - any other scope MASKS the departments (they are not cleared, so switching
 //     back restores them) — the caller's payload sends [] for those scopes;
 //   - `deselectable` (opt-in, default false = Pain behaviour): a click on the
@@ -18,30 +17,20 @@
 // choices emit INTEGER ids, signal payloads STRING ids — the caller stringifies
 // its options, and toDepartmentObjects normalises the signal payload).
 //
-// Used by EditTechStackContent only for now; Pain / Impact / Constraint keep
-// their inline copy (migration tracked in TECH_DEBT).
+// Used by EditTechStackContent (usage scope) and Pain / Impact / Constraint
+// (Company | Department scope, lot 3 / 7 — TD-271: their inline copies removed).
 
 "use client";
 
 import PropTypes from "prop-types";
-import { useState } from "react";
 
 // MUI
-import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
-import FormHelperText from "@mui/material/FormHelperText";
 import Stack from "@mui/material/Stack";
 
-// Icons
-import PlusOutlined from "@ant-design/icons/PlusOutlined";
-import CloseOutlined from "@ant-design/icons/CloseOutlined";
-
 // Project
-import MultiSelectFilter from "components/filters/MultiSelectFilter";
-import StatusPill from "components/chips/StatusPill";
 import ClickablePill from "components/chips/ClickablePill";
-import { SCOPE_PILL_COLORS } from "utils/objectiveScope";
+import PillsField from "components/drawer/PillsField";
 
 // Normalise a signal payload's department list ([{id,name}] | [id]) to the
 // list of {value,label} OBJECTS the form holds (ids kept as strings).
@@ -68,13 +57,7 @@ export default function ScopeDepartmentsField({
   error,
   deselectable = false,
 }) {
-  const theme = useTheme();
   const isDepartment = scope === departmentScope;
-
-  // "+ add department" gesture state: the trigger opens a grouped multi-select
-  // whose staged ids are committed as pills on confirm.
-  const [adding, setAdding] = useState(false);
-  const [staged, setStaged] = useState([]);
 
   // Exclusive scope choice. A non-department scope MASKS the departments (the
   // pills + "+ add" block only render for the department scope) but does NOT
@@ -85,39 +68,12 @@ export default function ScopeDepartmentsField({
       // Opt-in: the active pill toggles off (no scope chosen).
       if (!deselectable) return;
       onScopeChange(null);
-      setStaged([]);
-      setAdding(false);
       return;
     }
+    // Leaving the department scope unmounts the (now hidden) "+ add" picker,
+    // which collapses it — the departments themselves are kept.
     onScopeChange(key);
-    if (key !== departmentScope) {
-      // Collapse the (now hidden) "+ add" picker UI — but keep the departments.
-      setStaged([]);
-      setAdding(false);
-    }
   };
-
-  // The "+ add department" menu never re-proposes an already-chosen department.
-  const availableOptions = departmentOptions.filter(
-    (o) => !(departments || []).some((d) => d.value === o.value),
-  );
-
-  // Commit the staged ids as {value,label} objects (dedup by value), then close.
-  const commitStaged = () => {
-    const chosen = departmentOptions.filter((o) => staged.includes(o.value));
-    const merged = [...(departments || [])];
-    chosen.forEach((o) => {
-      if (!merged.some((d) => d.value === o.value)) {
-        merged.push({ value: o.value, label: o.label });
-      }
-    });
-    onDepartmentsChange(merged);
-    setStaged([]);
-    setAdding(false);
-  };
-
-  const removeDept = (value) =>
-    onDepartmentsChange((departments || []).filter((d) => d.value !== value));
 
   return (
     <>
@@ -145,101 +101,28 @@ export default function ScopeDepartmentsField({
       </Stack>
 
       {/* Department scope → the chosen departments as REAL pills (each with a ×)
-          + the "+ add department" gesture. */}
+          + the "+ add department" gesture: THE PillsField gesture (TD-303),
+          the drawers' test hooks kept through testIds. */}
       {isDepartment && (
         <Box data-testid={`${testIdPrefix}-departments-field`} sx={{ pt: 1 }}>
-          {departments.length > 0 && (
-            <Stack
-              direction="row"
-              spacing={0.5}
-              flexWrap="wrap"
-              useFlexGap
-              sx={{ mb: 1.5 }}
-              data-testid={`${testIdPrefix}-department-pills`}
-            >
-              {departments.map((d) => (
-                <StatusPill
-                  key={d.value}
-                  data-testid={`dept-pill-${d.value}`}
-                  colorText={SCOPE_PILL_COLORS.active.colorText}
-                  colorBg={SCOPE_PILL_COLORS.active.colorBg}
-                  label={
-                    <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}>
-                      {d.label}
-                      <Box
-                        component="span"
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Remove ${d.label}`}
-                        data-testid={`remove-dept-${d.value}`}
-                        onClick={() => removeDept(d.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            removeDept(d.value);
-                          }
-                        }}
-                        sx={{ display: "inline-flex", cursor: "pointer" }}
-                      >
-                        <CloseOutlined style={{ fontSize: theme.iconSizes.xs }} />
-                      </Box>
-                    </Box>
-                  }
-                />
-              ))}
-            </Stack>
-          )}
-
-          {adding ? (
-            <Box data-testid={`${testIdPrefix}-add-department-picker`}>
-              {/* Options EXCLUDE already-chosen departments (no duplicates). */}
-              <MultiSelectFilter
-                label="Departments"
-                options={availableOptions}
-                value={staged}
-                onChange={setStaged}
-                placeholder="Select departments…"
-                size="small"
-              />
-              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={commitStaged}
-                  disabled={staged.length === 0}
-                  data-testid="confirm-add-departments"
-                >
-                  Add
-                </Button>
-                <Button
-                  variant="text"
-                  size="small"
-                  onClick={() => {
-                    setStaged([]);
-                    setAdding(false);
-                  }}
-                  data-testid="cancel-add-departments"
-                >
-                  Cancel
-                </Button>
-              </Stack>
-            </Box>
-          ) : (
-            // "+ add" trigger — same gesture/tokens as EditActivityContent's
-            // "+ add contact" (text button + PlusOutlined, accent colour).
-            <Button
-              variant="text"
-              size="small"
-              onClick={() => setAdding(true)}
-              data-testid="add-department"
-              startIcon={<PlusOutlined style={{ fontSize: theme.iconSizes.sm }} />}
-              sx={{ color: theme.aphoriQ?.accent, px: 0, justifyContent: "flex-start", textTransform: "none" }}
-            >
-              Add department
-            </Button>
-          )}
-
-          {error && <FormHelperText error>{error}</FormHelperText>}
+          <PillsField
+            name="department"
+            items={departments}
+            onChange={onDepartmentsChange}
+            options={departmentOptions}
+            addLabel="Add department"
+            pickerLabel="Departments"
+            placeholder="Select departments…"
+            error={error}
+            testIds={{
+              pills: `${testIdPrefix}-department-pills`,
+              pill: "dept-pill",
+              remove: "remove-dept",
+              picker: `${testIdPrefix}-add-department-picker`,
+              confirm: "confirm-add-departments",
+              cancel: "cancel-add-departments",
+            }}
+          />
         </Box>
       )}
     </>

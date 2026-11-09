@@ -24,6 +24,16 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 _URL = '/module-activities/create-with-entities/'
 
 
+
+def _participant(account):
+    """Sprint « Cycle de vie des contacts », étape 7: a CALL / MEETING needs
+    at least one participant on every path (participant_rules) — a contact of
+    the account, created here."""
+    from app_modules.contacts.models import Contact
+    c = Contact(account=account, first_name='Pat', last_name='Participant')
+    c.save(client_id=account.client_id)
+    return str(c.id)
+
 @pytest.mark.django_db
 class TestCreateActivityWithInlineCycle:
 
@@ -39,8 +49,10 @@ class TestCreateActivityWithInlineCycle:
                 'activity_type': ActivityType.CALL,
                 'status': ActivityStatus.PLANNED,
                 'account_id': str(account.id),
-                'contact_ids': [],
+                'contact_ids': [_participant(account)],
                 'decision_step_id': None,
+                # 8g-1 (TD-230): one date per activity, on both create paths.
+                'scheduled_date': '2026-12-01',
             },
             'inline_cycle': {
                 'name': 'New cycle from modal',

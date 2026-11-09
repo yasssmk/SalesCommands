@@ -420,3 +420,18 @@ describe("EditTechStackContent (T2b)", () => {
     expect(updated.is_to_replace).toBe(true);
   });
 });
+
+// Sprint « Cycle de vie des contacts », étape 2c — NO scope (PO): no scope
+// pills in the edit drawer, no scope in the payload.
+describe("EditTechStackContent — no scope (étape 2c)", () => {
+  it("renders no scope pills and never sends a scope", async () => {
+    renderEdit({ ...TECH, scope: "DEAL" });
+    expect(screen.queryByTestId("techstack-tech-scope-pills")).not.toBeInTheDocument();
+    expect(screen.queryByText("Account-wide")).not.toBeInTheDocument();
+    expect(screen.queryByText("This deal")).not.toBeInTheDocument();
+    editNotes("x");
+    await save();
+    const [, , patch] = updateSignal.mock.calls[0];
+    expect(patch).not.toHaveProperty("scope");
+  });
+});

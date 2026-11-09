@@ -99,13 +99,12 @@ describe("13.1 — the creation drawer sends source_activity_id", () => {
     expect(createActivity.mock.calls[0][0].source_activity_id).toBe("act-camp");
   });
 
-  it("createActivityWithEntities (a contact created inline): the activity carries source_activity_id", async () => {
+  it("no contact created inline (7c): outside the conversion, createActivity only", async () => {
     renderDrawer({ sourceActivityId: "act-camp" });
-    fireEvent.click(within(screen.getByTestId("activity-create")).getByTestId("add-inline-contact"));
-    fireEvent.click(screen.getByRole("button", { name: "save inline contact" }));
+    expect(within(screen.getByTestId("activity-create")).queryByTestId("add-inline-contact")).toBeNull();
     fireEvent.click(saveButton());
-    await waitFor(() => expect(createActivityWithEntities).toHaveBeenCalledTimes(1));
-    expect(createActivityWithEntities.mock.calls[0][0].activity.source_activity_id).toBe("act-camp");
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivityWithEntities).not.toHaveBeenCalled();
   });
 
   it("without sourceActivityId: no source_activity_id key (the payload as before)", async () => {
@@ -118,7 +117,10 @@ describe("13.1 — the creation drawer sends source_activity_id", () => {
 
 // ==============================|| 13.2 — THE CONVERSION MODE ||============================== //
 
-describe("13.2 — conversion mode: a NEW cycle only, the contact pre-filled", () => {
+// 8d-2 (PO): the conversion offers an EXISTING open cycle (Async select) OR
+// a new cycle (8f-2: the exclusive « Existing cycle / New cycle » toggle; the
+// InlineCycleForm in New mode — the default when the account has no open cycle).
+describe("13.2 / 8d-2 — conversion mode: the new cycle, the contact pre-filled", () => {
   // No next step here: nothing cited — the contact can only come from
   // initialContacts (the campaign activity's).
   beforeEach(() => { mockCited = []; });
@@ -139,7 +141,13 @@ describe("13.2 — conversion mode: a NEW cycle only, the contact pre-filled", (
       </WorkspaceCoque>,
     );
   const drawer = () => screen.getByTestId("activity-create");
-  const cycleZone = () => within(drawer()).getByTestId("conversion-cycle");
+  // « New cycle » (8f-2 toggle) when the form is not shown yet.
+  const cycleZone = () => {
+    if (!within(drawer()).queryByTestId("conversion-cycle")) {
+      fireEvent.click(within(drawer()).getByRole("button", { name: "New cycle" }));
+    }
+    return within(drawer()).getByTestId("conversion-cycle");
+  };
   const fillTitleAndDate = () => {
     fireEvent.click(within(drawer()).getByTestId("inline-read-title"));
     fireEvent.change(within(drawer()).getByTestId("inline-input-title"), { target: { value: "Discovery meeting" } });
@@ -148,15 +156,18 @@ describe("13.2 — conversion mode: a NEW cycle only, the contact pre-filled", (
     fireEvent.click(screen.getByTestId("date-confirm"));
   };
   const createCycle = (name = "Deal Acme", stage = "Technical Fit") => {
-    fireEvent.change(within(cycleZone()).getByPlaceholderText("Cycle name *"), { target: { value: name } });
+    fireEvent.click(within(cycleZone()).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycleZone()).getByTestId("inline-input-cycle_name"), { target: { value: name } });
     fireEvent.click(within(cycleZone()).getByRole("button", { name: stage }));
-    fireEvent.click(within(cycleZone()).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycleZone()).getByTestId("inline-cycle-confirm"));
   };
 
-  it("no existing cycle to pick: the new-cycle form is shown instead", () => {
+  it("no open cycle on the account: « New cycle » by default, the form at once", () => {
     renderConversion();
+    expect(within(drawer()).getByRole("button", { name: "New cycle" })).toHaveAttribute("aria-pressed", "true");
     expect(within(drawer()).queryByTestId("inline-read-decision_cycle")).toBeNull();
-    expect(within(cycleZone()).getByPlaceholderText("Cycle name *")).toBeInTheDocument();
+    expect(within(drawer()).getByTestId("conversion-cycle")).toBeInTheDocument();
+    expect(within(cycleZone()).getByTestId("inline-read-cycle_name")).toBeInTheDocument();
   });
 
   it("the starting step in PILLS: the 5 steps the backend creates, in order, Qualification chosen", () => {
@@ -190,8 +201,8 @@ describe("13.2 — conversion mode: a NEW cycle only, the contact pre-filled", (
     createCycle();
     const row = (await within(cycleZone()).findByText("Deal Acme")).closest("p");
     expect(row.textContent).toBe("Deal Acme · new cycle · Technical Fit");
-    fireEvent.click(within(cycleZone()).getByTestId("remove-inline-cycle"));
-    expect(within(cycleZone()).getByPlaceholderText("Cycle name *")).toBeInTheDocument();
+    fireEvent.click(within(drawer()).getByTestId("remove-inline-cycle"));
+    expect(within(drawer()).getByTestId("inline-read-cycle_name")).toBeInTheDocument();
     await waitFor(() => expect(saveButton()).toBeDisabled());
   });
 
@@ -213,6 +224,7 @@ describe("13.2 — conversion mode: a NEW cycle only, the contact pre-filled", (
         scheduled_time: null,
         due_date: null,
         contact_ids: ["c-1"],
+        stakeholder_ids: [],
         invited_user_ids: [],
         account_id: "acc-1",
         decision_cycle_id: null,

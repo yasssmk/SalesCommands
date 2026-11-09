@@ -53,6 +53,16 @@ PAST = TODAY - timedelta(days=7)
 FUTURE = TODAY + timedelta(days=7)
 
 
+
+def _participant(account):
+    """Sprint « Cycle de vie des contacts », étape 7: a CALL / MEETING needs
+    at least one participant on every path (participant_rules) — a contact of
+    the account, created here."""
+    from app_modules.contacts.models import Contact
+    c = Contact(account=account, first_name='Pat', last_name='Participant')
+    c.save(client_id=account.client_id)
+    return str(c.id)
+
 def _payload(account, *, due_date=None, scheduled_date=None, title='Call',
              cycle_name='Cycle from modal'):
     """The exact shape ActivityModal posts when it creates a cycle inline."""
@@ -61,7 +71,7 @@ def _payload(account, *, due_date=None, scheduled_date=None, title='Call',
         'activity_type': ActivityType.CALL,
         'status': ActivityStatus.PLANNED,
         'account_id': str(account.id),
-        'contact_ids': [],
+        'contact_ids': [_participant(account)],
         'decision_step_id': None,
     }
     if due_date is not None:
@@ -109,21 +119,24 @@ class TestDueDateDoesNotCrashTheResponse:
         self, authed_api_a, account,
     ):
         """The TYPE is the fix, not the absence of a 500: scheduled_date never
-        crashed (is_scheduled only null-checks it) but was equally a string."""
+        crashed (is_scheduled only null-checks it) but was equally a string.
+        8g-1 (TD-230): ONE date per activity — each date checked on its own."""
         resp = authed_api_a.post(
-            _URL,
-            _payload(account, due_date=FUTURE, scheduled_date=TODAY,
-                     title='Typed call'),
-            format='json',
+            _URL, _payload(account, due_date=FUTURE, title='Typed call'), format='json',
         )
-
         assert resp.status_code == status.HTTP_201_CREATED, resp.content
-
         activity = Activity.objects.get(id=resp.json()['data']['activity']['id'])
         assert activity.due_date == FUTURE
-        assert activity.scheduled_date == TODAY
         # is_overdue must be computable on the freshly returned instance too.
         assert activity.is_overdue is False
+
+        resp = authed_api_a.post(
+            _URL, _payload(account, scheduled_date=TODAY, title='Typed meeting',
+                           cycle_name='Second typed cycle'), format='json',
+        )
+        assert resp.status_code == status.HTTP_201_CREATED, resp.content
+        activity = Activity.objects.get(id=resp.json()['data']['activity']['id'])
+        assert activity.scheduled_date == TODAY
 
 
 @pytest.mark.django_db
@@ -197,11 +210,11 @@ class TestUnchangedBehaviour:
         assert activity.is_overdue is False
 
     def test_an_activity_without_any_date_is_not_overdue(
-        self, authed_api_a, account,
+        self, account, user_a,
     ):
-        resp = authed_api_a.post(
-            _URL, _payload(account, title='Undated'), format='json',
-        )
-
-        assert resp.status_code == status.HTTP_201_CREATED, resp.content
-        assert resp.json()['data']['activity']['is_overdue'] is False
+        """8g-1 (TD-230): the API refuses an undated activity now — the
+        property is checked on the model (a system-written activity)."""
+        activity = Activity(title='Undated', activity_type='TASK', status='PLANNED',
+                            account=account, owner=user_a)
+        activity.save(user=user_a, client_id=account.client_id)
+        assert activity.is_overdue is False

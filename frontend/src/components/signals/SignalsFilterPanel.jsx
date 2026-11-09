@@ -32,7 +32,8 @@ import Typography from "@mui/material/Typography";
 
 // project imports
 import AsyncContactSelect from "components/AsyncSelection/AsyncContactSelect";
-import { getSignalTypeLabel } from "utils/signalTypes";
+import { restrictFilter } from "utils/filters/filterDefinitions";
+import { SIGNAL_TYPE_FILTER } from "utils/filters/signalFilters";
 
 // icons
 import CloseOutlined from "@ant-design/icons/CloseOutlined";
@@ -45,19 +46,9 @@ const SCOPE_OPTIONS = [
   { value: "DEPARTMENT", label: "Department" },
 ];
 
-// The frontend type slugs + their display labels (matches SignalTypeChip).
-export const SIGNAL_TYPE_OPTIONS = [
-  { value: "pain", label: "Pain" },
-  { value: "objective", label: "Objective" },
-  { value: "impact", label: "Impact" },
-  { value: "tech-stack", label: "Tech Stack" },
-  // Objection S4: the type label reads the central constant ("Objection").
-  { value: "blockers", label: getSignalTypeLabel("blockers") },
-  { value: "next-steps", label: "Next Step" },
-  { value: "people", label: "People" },
-  { value: "constraints", label: "Constraint" },
-  { value: "competitors", label: "Competitor" },
-];
+// The type options: THE signal type definition (utils/filters/signalFilters,
+// 8h) — the same options / order / labels as the inline filters (its former
+// local copy here drifted: « Next Step »).
 
 // ==============================|| SIGNALS FILTER PANEL ||============================== //
 
@@ -84,9 +75,7 @@ export default function SignalsFilterPanel({
   const isGrouped = mode === "grouped";
   const showSecondaryFilters = !isGrouped || groupedFilters;
 
-  const typeOptions = SIGNAL_TYPE_OPTIONS.filter((o) =>
-    availableTypes.includes(o.value),
-  );
+  const typeOptions = restrictFilter(SIGNAL_TYPE_FILTER, availableTypes).options;
 
   const selectedTypes = pendingFilters?.types ?? [];
 

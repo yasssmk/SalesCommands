@@ -70,6 +70,7 @@ vi.mock("components/signals/SignalsHaloBox", () => ({ default: ({ children }) =>
 vi.mock("utils/displayError", () => ({ displaySuccessSnackbar: vi.fn(), displayErrorSnackbar: vi.fn() }));
 
 import ActivityWorkspacePage from "views/activities/workspace";
+import { api } from "utils/axiosClient";
 import SectionHeader from "components/display/SectionHeader";
 import AphoriqTheme from "../_utils/aphoriqTheme";
 
@@ -101,6 +102,13 @@ const fetcher = (key) => {
   const url = Array.isArray(key) ? key[0] : key;
   if (url.startsWith(`/module-activities/${ACT_ID}`)) return Promise.resolve({ data: serverActivity });
   if (url.startsWith(`/contacts/${C_ID}/`)) return Promise.resolve({ data: THOMAS });
+  if (url.startsWith("/decision_cycles/steps/") && url.includes(DC_ID)) {
+    return Promise.resolve({ data: { results: [
+      { id: "st-1", name: "Qualification", order: 1 },
+      { id: "st-2", name: "Technical Fit", order: 2 },
+      { id: "st-3", name: "Business Case", order: 3 },
+    ], count: 3 } });
+  }
   if (url.startsWith(`/decision_cycles/${DC_ID}/people/`)) {
     return Promise.resolve({ data: { qualified: [], unqualified: [] } });
   }
@@ -147,7 +155,10 @@ const expectSignalDesign = (drawer, titles) => {
   expect(within(drawer).queryByTestId("group-filet")).toBeNull();
 };
 
-const ACTIVITY_SECTIONS = ["Activity", "When", "Purpose", "People"];
+// 8d-1 (PO): the decision cycle has its OWN section, FIRST (the People list
+// depends on the cycle chosen): 1 Decision cycle → 2 Activity → 3 When →
+// 4 Purpose → 5 People — in every mode.
+const ACTIVITY_SECTIONS = ["Decision cycle", "Activity", "When", "Purpose", "People"];
 
 // The real header's ⋯ menu → Edit.
 const openEditActivity = async () => {
@@ -163,7 +174,7 @@ afterEach(() => {
 });
 
 describe("Edit activity — the Edit signal design (5.18)", () => {
-  it("edit mode: numbered sections 1-4, the shared SectionHeader, Dividers", async () => {
+  it("edit mode: numbered sections 1-5, the shared SectionHeader, Dividers", async () => {
     renderPage(activity());
     const drawer = await openEditActivity();
     expect(within(drawer).getByTestId("coque-title")).toHaveTextContent("Edit activity");
@@ -185,6 +196,58 @@ describe("Edit activity — the Edit signal design (5.18)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Start Decision Cycle" }));
     const create = await within(coque()).findByTestId("activity-create");
     expectSignalDesign(create, ACTIVITY_SECTIONS);
+  });
+
+  // 8f-3 (PO): in edition the DC stays GREYED, the step is MODIFIABLE (the
+  // creation's InlineEditableValue select) — saved by PATCH decision_step_id.
+  it("edit mode: the DC greyed, the step modifiable → PATCH decision_step_id", async () => {
+    api.patch.mockResolvedValue({ success: true, data: { data: {} } });
+    renderPage(dcActivity({ decision_step: "st-2", decision_step_detail: { id: "st-2", name: "Technical Fit" } }));
+    const drawer = await openEditActivity();
+    const section = within(drawer).getByTestId("activity-cycle-section");
+    expect(within(section).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
+    fireEvent.click(within(section).getByTestId("inline-read-decision_cycle"));
+    expect(within(section).queryByTestId("decision-cycle-select")).toBeNull();      // DC greyed
+    expect(within(section).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
+    fireEvent.click(within(section).getByTestId("inline-read-decision_step"));
+    fireEvent.click(await screen.findByRole("option", { name: "Business Case" }));
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    expect(within(section).getByTestId("inline-read-decision_step")).toHaveTextContent("Business Case");
+    const save = within(drawer).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(api.patch).toHaveBeenCalled());
+    const [url, body] = api.patch.mock.calls[0];
+    expect(url).toContain(ACT_ID);
+    expect(body.decision_step_id).toBe("st-3");
+    expect(body).not.toHaveProperty("decision_cycle_id");
+  });
+
+  it("edit mode, the step unchanged: no decision_step_id sent", async () => {
+    api.patch.mockResolvedValue({ success: true, data: { data: {} } });
+    renderPage(dcActivity({ decision_step: "st-2", decision_step_detail: { id: "st-2", name: "Technical Fit" } }));
+    const drawer = await openEditActivity();
+    fireEvent.click(within(drawer).getByTestId("inline-read-title"));
+    fireEvent.change(within(drawer).getByTestId("inline-input-title"), { target: { value: "Renamed" } });
+    const save = within(drawer).getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toBeEnabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(api.patch).toHaveBeenCalled());
+    expect(api.patch.mock.calls[0][1]).not.toHaveProperty("decision_step_id");
+  });
+
+  it("edit mode outside a DC: no step field", async () => {
+    renderPage(activity());
+    const drawer = await openEditActivity();
+    const section = within(drawer).getByTestId("activity-cycle-section");
+    expect(within(section).queryByTestId("inline-read-decision_step")).toBeNull();
+  });
+
+  it("edit mode outside a DC: the section reads « No decision cycle »", async () => {
+    renderPage(activity());
+    const drawer = await openEditActivity();
+    const section = within(drawer).getByTestId("activity-cycle-section");
+    expect(within(section).getByTestId("inline-read-decision_cycle")).toHaveTextContent("No decision cycle");
   });
 });
 

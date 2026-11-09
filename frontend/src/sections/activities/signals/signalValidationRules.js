@@ -8,8 +8,9 @@
  */
 
 // Edit-form limits (Sprint Competitor C2). Mirror of the backend model:
-// CompetitorSignal.competitor_name max_length (competitor_signal.py) and the
-// summary minimum the Objection edit already applies.
+// CompetitorSignal.competitor_name max_length (competitor_signal.py), and THE
+// summary minimum of every signal edit drawer (Pain, Impact, Constraint,
+// Objective, Objection, Competitor — lot 3 / 3, TD-275).
 export const COMPETITOR_NAME_MAX_LENGTH = 255;
 export const SIGNAL_SUMMARY_MIN_LENGTH = 10;
 // Sprint Next steps 5.5 — NextStepSignal.suggested_title max_length

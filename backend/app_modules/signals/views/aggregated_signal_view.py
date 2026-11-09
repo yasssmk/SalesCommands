@@ -32,13 +32,21 @@ Query params:
     (PENDING + VALIDATED); REJECTED is returned only when explicitly requested.
   - signal_type (optional, repeatable) — restrict to these frontend type
     slugs (e.g. ?signal_type=pain&signal_type=impact). Empty = all types.
+    An unknown slug / status → 400 (8h; formerly ignored).
   - ordering (optional)     — one of the frontend sort keys: date-desc
     (default) / date-asc / status / type / theme.
   - department (optional)   — StandardDepartment id; only signals whose
     target_department matches. Types without target_department (tech-stack /
     blockers / next-steps) are EXCLUDED when this filter is active.
-  - contact (optional)      — Contact UUID; only signals whose source_activity
-    includes that contact. Applies to all types.
+  - contact (optional)      — Contact UUID; what the contact SAID: the signals
+    whose source_activity includes that contact, UNION the signals it
+    explicitly AUTHORED (_AUTHOR_CONTACT_FIELD — today Objection « Raised
+    by »; 8g-6f). Applies to all types. A subject / owner FK is never an
+    author; never a fallback on the participants (TD-254).
+  - stakeholder (optional)  — Stakeholder UUID (a NON-converted DC
+    stakeholder); only signals whose source_activity counts it among its
+    participants (Activity.stakeholders). Applies to all types — modelled on
+    `contact` (8g-6, « See signals »).
   - scope (optional)        — scope_level (BUSINESS / DEPARTMENT / PERSONAL);
     only signals with that scope_level. Types without scope_level (people /
     constraints / tech-stack / blockers / next-steps) are EXCLUDED when active.
@@ -50,14 +58,17 @@ Response envelope matches the per-type list endpoints:
 
 import uuid
 
+from django.db.models import Q
+
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
 
 from core.apps_shared_methods import BaseAPIView
 from core.jwt_helpers import CustomJWTAuthentication
+from core.error_messages import SignalErrorMessages
 from core.exceptions import StandardizedValidationError
 from permissions.mixins import ScopedPermission
-from app_modules.signals.constants import DEFAULT_LIST_STATUSES, ScopeLevel
+from app_modules.signals.constants import DEFAULT_LIST_STATUSES, ScopeLevel, SignalStatus
 
 from app_modules.signals.serializers import (
     PainSignalListSerializer,
@@ -70,6 +81,7 @@ from app_modules.signals.serializers import (
     ConstraintSignalListSerializer,
     CompetitorSignalListSerializer,
 )
+from .base_views import signal_viewset_queryset
 from .pain_signal_views import PainSignalViewSet
 from .objective_signal_views import ObjectiveSignalViewSet
 from .impact_signal_views import ImpactSignalViewSet
@@ -79,6 +91,24 @@ from .next_step_signal_views import NextStepSignalViewSet
 from .people_signal_views import PeopleSignalViewSet
 from .constraint_signal_views import ConstraintSignalViewSet
 from .competitor_signal_views import CompetitorSignalViewSet
+
+
+# 8g-6f — the signal types whose model names the contact who SAID it (the
+# AUTHOR), by field. ONE definition, read by the `contact` filter. Audit:
+# BlockerSignal.contact = « Raised by » (the author). Not authors:
+# PeopleSignal.target_contact / .stakeholder (the SUBJECT),
+# ObjectiveSignal.target_contact (the OWNER), NextStepSignal.suggested_contacts
+# (proposed attendees). No signal names a stakeholder as its author.
+_AUTHOR_CONTACT_FIELD = {'blockers': 'contact'}
+
+
+def _reject_unknown(values, allowed, message):
+    """The standard 400 for the first value of `values` not in `allowed`."""
+    for value in values or ():
+        if value not in allowed:
+            raise StandardizedValidationError(
+                message.format(value=value, allowed=', '.join(allowed))
+            )
 
 
 # (frontend slug, ViewSet class, List serializer) — the slug is what the
@@ -195,6 +225,7 @@ class AggregatedSignalListView(BaseAPIView):
         # source_activity.contacts.
         department        = request.query_params.get('department')
         contact           = request.query_params.get('contact')
+        stakeholder       = request.query_params.get('stakeholder')
         scope             = request.query_params.get('scope')
 
         # Exactly one scope must be given.
@@ -235,14 +266,30 @@ class AggregatedSignalListView(BaseAPIView):
                 raise StandardizedValidationError(
                     "The 'contact' filter must be a valid UUID."
                 )
+        stakeholder_id = None
+        if stakeholder:
+            try:
+                stakeholder_id = str(uuid.UUID(str(stakeholder)))
+            except (ValueError, TypeError, AttributeError):
+                raise StandardizedValidationError(
+                    "The 'stakeholder' filter must be a valid UUID."
+                )
         if scope and scope not in ScopeLevel.values:
             raise StandardizedValidationError(
                 "The 'scope' filter must be one of: "
                 + ", ".join(ScopeLevel.values) + "."
             )
 
+        # 8h — the repeatable filters: an invalid value is a 400 (centralised
+        # message), never ignored — a misspelt option would read as « no
+        # signal ». The front filter definitions are checked against these
+        # sets (test_aggregated_filter_validation.py, the contract test).
+        _reject_unknown(requested_types, [t[0] for t in _TYPES],
+                        SignalErrorMessages.INVALID_TYPE_FILTER)
+        _reject_unknown(status_filters, list(SignalStatus.values),
+                        SignalErrorMessages.INVALID_STATUS_FILTER)
+
         # Optionally narrow to a subset of types (the type filter sends this).
-        # Unknown slugs are ignored.
         types = _TYPES
         if requested_types:
             wanted = set(requested_types)
@@ -261,7 +308,7 @@ class AggregatedSignalListView(BaseAPIView):
                 viewset_cls, request,
                 account_id, decision_cycle_id, activity_id, status_filters,
                 department_id, contact_id, scope,
-                slug=slug,
+                slug=slug, stakeholder_id=stakeholder_id,
             )
             for obj in qs:
                 obj._signal_type = slug
@@ -279,6 +326,7 @@ class AggregatedSignalListView(BaseAPIView):
         self, viewset_cls, request,
         account_id, decision_cycle_id, activity_id, status_filters,
         department_id=None, contact_id=None, scope=None, slug=None,
+        stakeholder_id=None,
     ):
         """
         Reuse a per-type ViewSet's get_queryset (tenant + owner scoping +
@@ -291,14 +339,7 @@ class AggregatedSignalListView(BaseAPIView):
         on the multi-department target_departments M2M (sub-step 1b), the other
         _HAS_DEPARTMENT types still on the single target_department FK.
         """
-        vs = viewset_cls()
-        vs.request      = request
-        vs.action       = 'list'
-        vs.args         = ()
-        vs.kwargs       = {}
-        vs.format_kwarg = None
-
-        qs = vs.get_queryset()
+        qs = signal_viewset_queryset(viewset_cls, request, 'list')
         if account_id:
             qs = qs.filter(account_id=account_id)
         elif decision_cycle_id:
@@ -321,8 +362,21 @@ class AggregatedSignalListView(BaseAPIView):
         if scope:
             qs = qs.filter(scope_level=scope)
         if contact_id:
-            # A signal whose origin activity includes this contact. The m2m
-            # filter matches each signal at most once (single-value), so no
-            # duplicates are introduced. contacts are already prefetched.
-            qs = qs.filter(source_activity__contacts=contact_id)
+            # A signal whose origin activity includes this contact (single
+            # value m2m filter → no duplicates) — or, for a type that names
+            # its author, a signal this contact AUTHORED (8g-6f). The OR over
+            # the participants join yields one row per participant for an
+            # authored signal → distinct().
+            author_field = _AUTHOR_CONTACT_FIELD.get(slug)
+            if author_field:
+                qs = qs.filter(
+                    Q(source_activity__contacts=contact_id) | Q(**{f'{author_field}_id': contact_id})
+                ).distinct()
+            else:
+                qs = qs.filter(source_activity__contacts=contact_id)
+        if stakeholder_id:
+            # Same for a NON-converted stakeholder (Activity.stakeholders M2M,
+            # single value → no duplicates). Tenant: the ViewSet queryset;
+            # account: the scope above.
+            qs = qs.filter(source_activity__stakeholders=stakeholder_id)
         return qs

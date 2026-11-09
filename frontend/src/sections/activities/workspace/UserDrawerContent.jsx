@@ -20,6 +20,7 @@ import PropTypes from "prop-types";
 import { useTheme } from "@mui/material/styles";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
+import Divider from "@mui/material/Divider";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 
@@ -29,6 +30,7 @@ import MailOutlined from "@ant-design/icons/MailOutlined";
 // Project
 import { useGetUser } from "api/admin/users";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
+import SectionHeader from "components/display/SectionHeader";
 import CoordinateRow from "components/display/CoordinateRow";
 
 // ==============================|| HELPERS ||============================== //
@@ -61,20 +63,6 @@ function initials(user) {
   if (two) return two.toUpperCase();
   const name = displayName(user);
   return name && name !== "Unnamed member" ? name.charAt(0).toUpperCase() : "?";
-}
-
-// A themed hairline rule (same form as the Contact fiche).
-function Rule() {
-  const aq = useTheme().aphoriQ;
-  return (
-    <Box
-      sx={{
-        borderTopStyle: "solid",
-        borderTopWidth: aq.border.width.hairline,
-        borderTopColor: aq.border.color,
-      }}
-    />
-  );
 }
 
 // ==============================|| USER DRAWER CONTENT ||============================== //
@@ -111,7 +99,9 @@ export default function UserDrawerContent({ userId }) {
   return (
     <DrawerContentLayout>
       <Stack spacing={2}>
-        {/* Identity — no edit pencil (read-only). */}
+        {/* ---- SECTION 1 — Identity: no edit pencil (read-only). Numbered
+            sections = the Contact fiche's first two (lot 3 / 13b, TD-239). ---- */}
+        <SectionHeader index={1} title="Identity" subtitle="Who the team member is." />
         <Stack direction="row" spacing={2} alignItems="center">
           <Box
             aria-hidden
@@ -149,9 +139,11 @@ export default function UserDrawerContent({ userId }) {
           </Box>
         </Stack>
 
-        <Rule />
+        <Divider />
 
-        {/* Coordinates — Email only (the User model has no phone / job title). */}
+        {/* ---- SECTION 2 — Contact: Email only (the User model has no phone /
+            job title). ---- */}
+        <SectionHeader index={2} title="Contact" subtitle="How to reach them." />
         <Stack spacing={1}>
           <CoordinateRow
             icon={MailOutlined}

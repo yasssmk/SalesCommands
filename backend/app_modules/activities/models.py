@@ -171,6 +171,19 @@ class Activity(ModuleBaseModel, ClientScopeManager.ModelMixin):
         verbose_name=_('Contacts'),
         help_text=_('Contacts involved in this activity')
     )
+
+    # Sprint « Cycle de vie des contacts », étape 3: the NON-converted DC
+    # stakeholders taking part (a name only, or a department only). A
+    # converted stakeholder is an Activity.contacts entry — contacts stays the
+    # truth of the contacts.
+    stakeholders = models.ManyToManyField(
+        'decision_cycles.Stakeholder',
+        related_name='activities',
+        blank=True,
+        verbose_name=_('Stakeholders'),
+        help_text=_('Non-converted decision-cycle stakeholders involved in '
+                    'this activity (converted ones are in contacts).')
+    )
     
     # ==========================================================================
     # RELATIONSHIPS - OWNERSHIP

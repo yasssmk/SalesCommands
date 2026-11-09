@@ -93,8 +93,15 @@ export function nextStepObjective(nextStep) {
 // only to create the activity — as contacts for the types below (a People's
 // target_contact or a name the server matched), in the description otherwise.
 
-// The types whose cited names become the activity's contacts.
-export const CITED_NAMES_AS_CONTACTS_TYPES = new Set(["MEETING", "CALL", "EMAIL"]);
+// Sprint « Cycle de vie des contacts », étape 7 — the activity types "with
+// people": MIRROR of backend/app_modules/activities/constants.py
+// PEOPLE_ACTIVITY_TYPES (keep both in sync). ONE constant drives three rules:
+//   * at least one participant (a contact or a stakeholder) — the drawer and
+//     ActivityModal follow it, the server enforces it (participant_rules);
+//   * the « no way to contact » alert in Context (per contact participant);
+//   * the names a next step cites pre-fill participants (else description).
+// It REPLACES CITED_NAMES_AS_CONTACTS_TYPES (MEETING / CALL / EMAIL): DEMO joins.
+export const PEOPLE_ACTIVITY_TYPES = new Set(["MEETING", "CALL", "EMAIL", "DEMO"]);
 
 export const NEXT_STEP_DESCRIPTION_PARTS_SEPARATOR = "\n\n";
 export const NEXT_STEP_MENTIONED_LABEL = "Mentioned: ";
@@ -110,23 +117,26 @@ const uniqueById = (contacts) => {
  * @param {Object} nextStep - a NextStepSignal payload
  * @param {Object} [context]
  * @param {string} [context.activityType] - the type imposed by the entry point
- * @param {Array<{name, contact}>} [context.citedContacts] - the names cited with
- *   the account contact the server matched (GET .../cited-contacts/, TD-279 rule)
+ * @param {Array<{name, contact, stakeholder}>} [context.citedContacts] - the names
+ *   cited with the account contact the server matched (GET .../cited-contacts/,
+ *   TD-279 rule) or, without contact, the non-converted DC stakeholder it
+ *   designates (étape 7)
  * @returns {{title, activity_type, scheduled_date, due_date, call_to_action,
- *   description, contacts, mentionedNames}} — dates as YYYY-MM-DD or null;
- *   contacts = contact objects; mentionedNames = names cited without a contact.
+ *   description, contacts, stakeholders, mentionedNames}} — dates as YYYY-MM-DD
+ *   or null; contacts = contact objects; stakeholders = non-converted DC
+ *   stakeholders; mentionedNames = names cited with neither.
  */
 export function activityDefaultsFromNextStep(nextStep, context = {}) {
   const activityType =
     context.activityType || nextStep?.suggested_activity_type || "MEETING";
   const date = nextStep?.suggested_due_date || null;
   const scheduled = SCHEDULED_DATE_ACTIVITY_TYPES.has(activityType);
-  const citedAsContacts = CITED_NAMES_AS_CONTACTS_TYPES.has(activityType);
+  const citedAsContacts = PEOPLE_ACTIVITY_TYPES.has(activityType);
 
-  // 2.2b: the next step's contacts. The PERSONS it cites become contacts —
+  // 2.2b: the next step's contacts. The PERSONS it cites become participants —
   // whether from a People's target_contact or matched from a name — ONLY for
-  // MEETING / CALL / EMAIL (PO rule, symmetric, 5.8h); the other types get
-  // their names in the description.
+  // PEOPLE_ACTIVITY_TYPES (MEETING / CALL / EMAIL / DEMO, étape 7); the other
+  // types get their names in the description.
   const cited = context.citedContacts || [];
   const contacts = uniqueById([
     ...(nextStep?.suggested_contacts || []),
@@ -137,8 +147,13 @@ export function activityDefaultsFromNextStep(nextStep, context = {}) {
         ]
       : []),
   ]);
+  // Étape 7: a name without contact may designate a non-converted stakeholder
+  // of the DC (server) — a participant too.
+  const stakeholders = citedAsContacts
+    ? uniqueById(cited.map((c) => (c.contact ? null : c.stakeholder)).filter(Boolean))
+    : [];
   const mentionedNames = citedAsContacts
-    ? cited.filter((c) => !c.contact).map((c) => c.name)
+    ? cited.filter((c) => !c.contact && !c.stakeholder).map((c) => c.name)
     : [];
 
   const citedNames = getNextStepCitedNames(nextStep);
@@ -161,6 +176,7 @@ export function activityDefaultsFromNextStep(nextStep, context = {}) {
     call_to_action: nextStepObjective(nextStep),
     description,
     contacts,
+    stakeholders,
     mentionedNames,
   };
 }

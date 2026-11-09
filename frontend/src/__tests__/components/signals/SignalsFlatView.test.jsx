@@ -1,8 +1,13 @@
 // frontend/src/__tests__/signals/SignalsFlatView.test.jsx
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import AphoriqTheme from "../../_utils/aphoriqTheme";
 import SignalsFlatView from "components/signals/SignalsFlatView";
+
+// SignalLine reads its compact tokens from the theme (lot 3 / 12, TD-265):
+// the app always renders under it.
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 afterEach(() => {
   cleanup();

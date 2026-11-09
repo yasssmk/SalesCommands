@@ -17,6 +17,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import Activity
+from .services.activity_sequence_service import guard_decision_cycle_birth
+from .services.date_rules import check_activity_dates
+from .services.participant_rules import (
+    check_participant_minimum, resolve_contacts, resolve_stakeholders,
+)
 from .constants import ActivityStatus, NoNextStepReason
 from .services import ActivitySequenceService, SequenceScope
 # The invited users: ONE validation + ONE notification, shared with
@@ -57,12 +62,16 @@ class ActivityContactSerializer(serializers.ModelSerializer):
     
     full_name = serializers.SerializerMethodField(read_only=True)
     department_name = serializers.SerializerMethodField(read_only=True)
+    # Étape 7: email OR phone (Contact.has_email_or_phone) — the Context
+    # "no way to contact" alert, computed server-side.
+    is_reachable = serializers.BooleanField(source='has_email_or_phone', read_only=True)
     
     class Meta:
         model = Contact
         fields = [
             'id', 'first_name', 'last_name', 'full_name',
-            'email', 'phone_number', 'job_title', 'department_name'
+            'email', 'phone_number', 'job_title', 'department_name',
+            'is_reachable',
         ]
         read_only_fields = fields
     
@@ -74,6 +83,59 @@ class ActivityContactSerializer(serializers.ModelSerializer):
         if obj.standard_department:
             return obj.standard_department.get_name_display()
         return None
+
+class ActivityStakeholderSerializer(serializers.Serializer):
+    """
+    Étape 7 (2): a non-converted DC stakeholder taking part in an activity —
+    its display_name (THE naming rule, Stakeholder.display_name), its
+    department, `is_linked` (always False on Activity.stakeholders: a
+    converted one is an Activity.contacts entry — kept for the UI marker).
+    """
+    id = serializers.UUIDField(read_only=True)
+    display_name = serializers.CharField(read_only=True)
+    full_name = serializers.CharField(read_only=True)
+    department = serializers.SerializerMethodField()
+    is_linked = serializers.SerializerMethodField()
+    decision_cycle = serializers.UUIDField(source='decision_cycle_id', read_only=True)
+    # Étape 7c: the contact of a converted stakeholder (None otherwise) — the
+    # drawer takes a converted stakeholder as that contact.
+    contact = serializers.SerializerMethodField()
+    # 8b-2: the « No email or phone » rule for every participant — a
+    # non-converted stakeholder has neither (False); a converted one reads
+    # its contact (Contact.has_email_or_phone, as ActivityContactSerializer).
+    is_reachable = serializers.SerializerMethodField()
+    # 8g-6 (TD-232): the role of the stakeholder fiche — READ on its
+    # current_signal (the role is never copied onto the stakeholder); None
+    # when it has none.
+    role = serializers.SerializerMethodField()
+    role_display = serializers.SerializerMethodField()
+    influence_display = serializers.SerializerMethodField()
+
+    def get_role(self, obj):
+        sig = obj.current_signal
+        return sig.role if sig else None
+
+    def get_role_display(self, obj):
+        sig = obj.current_signal
+        return sig.get_role_display() if sig else None
+
+    def get_influence_display(self, obj):
+        sig = obj.current_signal
+        return sig.get_influence_display() if sig and sig.influence else None
+
+    def get_department(self, obj):
+        d = obj.department
+        return {'id': d.id, 'name': d.get_name_display()} if d else None
+
+    def get_is_linked(self, obj):
+        return bool(obj.contact_id)
+
+    def get_contact(self, obj):
+        return ActivityContactSerializer(obj.contact).data if obj.contact_id else None
+
+    def get_is_reachable(self, obj):
+        return bool(obj.contact_id and obj.contact.has_email_or_phone)
+
 
 class ActivityUserSerializer(serializers.ModelSerializer):
     """
@@ -424,6 +486,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
     # Nested serializers for relations
     account_detail = ActivityAccountSerializer(source='account', read_only=True)
     contacts_detail = ActivityContactSerializer(source='contacts', many=True, read_only=True)
+    stakeholders_detail = ActivityStakeholderSerializer(source='stakeholders', many=True, read_only=True)
     owner_detail = ActivityUserSerializer(source='owner', read_only=True)
     invited_users_detail = ActivityUserSerializer(source='invited_users', many=True, read_only=True)
     decision_cycle_detail = ActivityDecisionCycleSerializer(source='decision_cycle', read_only=True)
@@ -483,7 +546,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
             'account', 'decision_cycle', 'decision_step',
             
             # Relations (nested for read)
-            'account_detail', 'contacts_detail', 'owner_detail', 
+            'account_detail', 'contacts_detail', 'stakeholders_detail', 'owner_detail', 
             'invited_users_detail',
             'decision_cycle_detail', 'decision_step_detail',
 
@@ -519,7 +582,7 @@ class ActivitySerializer(ClientScopeManager.SerializerMixin, serializers.ModelSe
 
         read_only_fields = [
             'id', 'activity_type_display', 'status_display', 'outcome_display',
-            'account_detail', 'contacts_detail', 'owner_detail',
+            'account_detail', 'contacts_detail', 'stakeholders_detail', 'owner_detail',
             'decision_cycle_detail', 'decision_step_detail',
             'previous_activity_info', 'next_activity_info', 'campaign_detail',
             'no_next_step_reason_display', 'has_next_in_sequence', 'effective_has_next_step',
@@ -888,6 +951,13 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         required=False,
         default=list
     )
+    # Étape 7 (2): the non-converted stakeholders of the activity's DC.
+    stakeholder_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False,
+        default=list
+    )
     invited_user_ids = serializers.ListField(
         child=serializers.UUIDField(),
         write_only=True,
@@ -911,7 +981,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'scheduled_date', 'scheduled_time', 'due_date',
 
             # Relations
-            'contact_ids', 'invited_user_ids',
+            'contact_ids', 'stakeholder_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
             'source_activity_id', 'next_step_signal_id',
 
@@ -983,35 +1053,21 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 attrs.update(next_step_text_and_date_defaults(next_step_signal, attrs))
             
             # =================================================================
-            # REQUIRED: At least one contact
+            # PARTICIPANTS — THE rule (services/participant_rules.py, étape 7):
+            # contacts of the account; a type with people (MEETING / CALL /
+            # EMAIL / DEMO) needs at least one participant, the others none.
             # =================================================================
-            contact_ids = attrs.pop('contact_ids', [])
-            if not contact_ids:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='At least one contact')
-                )
-            
-            contacts = Contact.objects.filter(
-                id__in=contact_ids,
-                client_id=client_id,
-                account=account
+            contacts = resolve_contacts(
+                attrs.pop('contact_ids', []), client_id=client_id, account=account,
             )
-            if contacts.count() != len(contact_ids):
-                raise StandardizedValidationError(
-                    CoreErrorMessages.INVALID_FIELD.format(field='Some contacts not found or do not belong to this account')
-                )
-            attrs['_contacts'] = list(contacts)
+            attrs['_contacts'] = contacts
+            # (the stakeholders and the minimum: once the cycle is known, below)
             
             # =================================================================
-            # REQUIRED: At least one date (scheduled_date OR due_date)
+            # DATES — THE rule (services/date_rules.py, 8g-1): one date, a
+            # scheduled date OR a due date (create-with-entities: the same).
             # =================================================================
-            scheduled_date = attrs.get('scheduled_date')
-            due_date = attrs.get('due_date')
-            
-            if not scheduled_date and not due_date:
-                raise StandardizedValidationError(
-                    CoreErrorMessages.REQUIRED_FIELD.format(field='Scheduled date or due date')
-                )
+            check_activity_dates(attrs.get('scheduled_date'), attrs.get('due_date'))
             
             # =================================================================
             # Validate invited_users (optional)
@@ -1096,6 +1152,20 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                         CoreErrorMessages.OBJECT_NOT_FOUND
                     )
 
+            # =================================================================
+            # PARTICIPANTS (étape 7) — the non-converted stakeholders of the
+            # activity's cycle, then THE minimum on contacts + stakeholders.
+            # =================================================================
+            cycle = attrs.get('decision_cycle')
+            stakeholders = resolve_stakeholders(
+                attrs.pop('stakeholder_ids', []), client_id=client_id,
+                decision_cycle_id=cycle.id if cycle else None,
+            )
+            check_participant_minimum(
+                attrs.get('activity_type'), len(contacts) + len(stakeholders),
+            )
+            attrs['_stakeholders'] = stakeholders
+
             return attrs
             
         except StandardizedValidationError:
@@ -1110,6 +1180,7 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         """Create activity with proper audit fields and M2M."""
         user = self.context.get('request').user if self.context.get('request') else None
         contacts = validated_data.pop('_contacts', [])
+        stakeholders = validated_data.pop('_stakeholders', [])
         invited_users = validated_data.pop('_invited_users', [])
         next_step_signal = validated_data.pop('_next_step_signal', None)
         client_id = validated_data.pop('client_id', None)
@@ -1122,6 +1193,15 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         if next_step_signal:
             validated_data.update(next_step_activity_fields(next_step_signal))
 
+        # 8g-3 (TD-296): ONE cycle born from a campaign activity — the source
+        # locked, a second birth refused (before the activity is created).
+        source = validated_data.get('source_activity')
+        if source is not None:
+            guard_decision_cycle_birth(
+                source.id, client_id=client_id,
+                cycle_id=getattr(validated_data.get('decision_cycle'), 'id', None),
+            )
+
         # Create instance
         instance = Activity(**validated_data)
         instance.save(user=user, client_id=client_id)
@@ -1129,6 +1209,10 @@ class ActivityCreateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         # Set M2M contacts
         if contacts:
             instance.contacts.set(contacts)
+
+        # Set M2M stakeholders (étape 7 (2): non-converted, of the cycle)
+        if stakeholders:
+            instance.stakeholders.set(stakeholders)
 
         # Set M2M invited_users
         if invited_users:
@@ -1164,6 +1248,12 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         write_only=True,
         required=False
     )
+    # Étape 7 (2): the non-converted stakeholders of the activity's DC.
+    stakeholder_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        write_only=True,
+        required=False
+    )
     invited_user_ids = serializers.ListField(
         child=serializers.UUIDField(),
         write_only=True,
@@ -1185,7 +1275,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             'next_step_agreed', 'no_next_step_reason',
             
             # Relations
-            'owner_id', 'contact_ids', 'invited_user_ids',
+            'owner_id', 'contact_ids', 'stakeholder_ids', 'invited_user_ids',
             'decision_cycle_id', 'decision_step_id',
             
             # Future fields
@@ -1210,7 +1300,7 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
             if instance.campaign_id:
                 locked = {
                     'scheduled_date', 'scheduled_time', 'due_date',
-                    'contact_ids', 'owner_id', 'invited_user_ids',
+                    'contact_ids', 'stakeholder_ids', 'owner_id', 'invited_user_ids',
                 }
                 if locked & set(attrs.keys()):
                     raise StandardizedValidationError(
@@ -1218,6 +1308,17 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                             detail='This field is set by the campaign and cannot be edited'
                         )
                     )
+
+            # =================================================================
+            # TRANSCRIPT LOCK (8g-7, TD-25)
+            # =================================================================
+            # Once an analysis succeeded, the transcript is the analysed one:
+            # no change (no re-run). THE « analysed » rule of the last-run
+            # endpoint / wizard — ai_pipelines/services/analysis_state.py.
+            if 'transcript' in attrs and (attrs['transcript'] or '') != (instance.transcript or ''):
+                from app_modules.ai_pipelines.services.analysis_state import is_activity_analysed
+                if is_activity_analysed(instance):
+                    raise StandardizedValidationError(ActivityErrorMessages.TRANSCRIPT_LOCKED)
 
             # =================================================================
             # STATUS CHANGE LOGIC
@@ -1271,30 +1372,29 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 attrs['scheduled_time'] = None
             
             # =================================================================
-            # CONTACTS VALIDATION (cannot be empty)
+            # PARTICIPANTS — THE rule (services/participant_rules.py, étape 7),
+            # on the FINAL state, whenever the type or the participants change
+            # (also a type-only PATCH). An unrelated edit (title…) never
+            # re-checks — a campaign account-level activity (0 contact,
+            # system exception) stays editable. Meeting -> Task keeps them.
             # =================================================================
+            # A campaign activity's participants are set (and locked, COND-1
+            # above) by the campaign — the system exception extends to it: its
+            # type can change without the rep being able to add anyone.
+            participants_touched = (
+                not instance.campaign_id
+                and ('contact_ids' in attrs or 'stakeholder_ids' in attrs
+                     or 'activity_type' in attrs)
+            )
             if 'contact_ids' in attrs:
                 contact_ids = attrs.pop('contact_ids')
                 if contact_ids is not None:
-                    # Dedup (order-preserving) so a repeated-but-valid id is
-                    # collapsed instead of failing the count-check below with a
-                    # misleading "not found"; the check still catches ids that
-                    # truly don't exist.
-                    contact_ids = list(dict.fromkeys(contact_ids))
-                    if len(contact_ids) == 0:
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.REQUIRED_FIELD.format(field='At least one contact')
-                        )
-                    contacts = Contact.objects.filter(
-                        id__in=contact_ids,
-                        client_id=client_id,
-                        account=account
+                    attrs['_contacts'] = resolve_contacts(
+                        contact_ids, client_id=client_id, account=account,
                     )
-                    if contacts.count() != len(contact_ids):
-                        raise StandardizedValidationError(
-                            CoreErrorMessages.INVALID_FIELD.format(field='Some contacts not found')
-                        )
-                    attrs['_contacts'] = list(contacts)
+            stakeholder_ids = attrs.pop('stakeholder_ids', None)
+            # (the stakeholders and the minimum: once the final cycle is
+            # known, at the end of validate)
             
             # =================================================================
             # OWNER VALIDATION
@@ -1399,8 +1499,37 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
                 raise StandardizedValidationError(
                     ActivityErrorMessages.STEP_REQUIRED_FOR_CYCLE
                 )
-        
-            
+
+            # =================================================================
+            # PARTICIPANTS (étape 7), on the FINAL cycle: the stakeholders sent
+            # are checked against it; when the cycle changes without
+            # stakeholder_ids, the stakeholders of another cycle leave (a
+            # stakeholder belongs to ONE cycle). Then THE minimum.
+            # =================================================================
+            effective_cycle_id = effective_cycle.id if effective_cycle else None
+            if stakeholder_ids is not None:
+                attrs['_stakeholders'] = resolve_stakeholders(
+                    stakeholder_ids, client_id=client_id,
+                    decision_cycle_id=effective_cycle_id,
+                )
+            elif effective_cycle_id != instance.decision_cycle_id:
+                current = list(instance.stakeholders.all())
+                kept = [x for x in current if x.decision_cycle_id == effective_cycle_id]
+                if len(kept) != len(current):
+                    attrs['_stakeholders'] = kept
+                    participants_touched = participants_touched or not instance.campaign_id
+            if participants_touched:
+                final_type = attrs.get('activity_type', instance.activity_type)
+                final_contacts = (
+                    len(attrs['_contacts']) if '_contacts' in attrs
+                    else instance.contacts.count()
+                )
+                final_stakeholders = (
+                    len(attrs['_stakeholders']) if '_stakeholders' in attrs
+                    else instance.stakeholders.count()
+                )
+                check_participant_minimum(final_type, final_contacts + final_stakeholders)
+
             return attrs
             
         except StandardizedValidationError:
@@ -1418,6 +1547,11 @@ class ActivityUpdateSerializer(ClientScopeManager.SerializerMixin, serializers.M
         contacts = validated_data.pop('_contacts', None)
         if contacts is not None:
             instance.contacts.set(contacts)
+
+        # Handle M2M stakeholders (étape 7 (2))
+        stakeholders = validated_data.pop('_stakeholders', None)
+        if stakeholders is not None:
+            instance.stakeholders.set(stakeholders)
         
         # Handle M2M invited_users
         invited_users = validated_data.pop('_invited_users', None)

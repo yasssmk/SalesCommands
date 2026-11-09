@@ -75,12 +75,19 @@ def test_path2_create_cycle_owner_is_creator(ca, creator, account, account_owner
 
 def test_path2_create_with_entities_owner_is_creator(ca, creator, account, account_owner_user):
     """End-to-end: the person who clicks (creator) owns the inline cycle."""
+    # Étape 7 (« Cycle de vie des contacts »): a CALL needs at least one
+    # participant on every path — a contact of the account.
+    from app_modules.contacts.models import Contact
+    participant = Contact(account=account, first_name='Pat', last_name='Participant')
+    participant.save(client_id=ca.id)
     svc = ActivityCreationService(user=creator, client_id=ca.id)
     result = svc.create_with_entities(
         activity_data={
             'account_id': str(account.id),
             'title': 'Follow up',
             'activity_type': 'CALL',
+            'contact_ids': [str(participant.id)],
+            'scheduled_date': '2026-11-01',  # 8g-1 (TD-230): one date
         },
         inline_cycle={'name': 'From campaign'},
     )

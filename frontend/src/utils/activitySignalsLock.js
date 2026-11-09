@@ -18,3 +18,12 @@ export function isActivitySignalsLocked(activity) {
 // (it feeds the AI action, locked on CANCELLED only): a transcript can be
 // added after the call. The other Source fields keep the page lock.
 export const TRANSCRIPT_FIELD = "transcript";
+
+// 8g-7 (TD-25, PO) — no re-run of an analysis: once an analysis SUCCEEDED,
+// the transcript is the analysed one and is locked. « Analysed » = `lastRun`
+// (the last SUCCESS|PARTIAL run of api/aiPipelines/lastRun.js, THE source of
+// the wizard's « already analysed »). MIRROR of the server guard
+// (backend ai_pipelines/services/analysis_state.py, read by the PATCH).
+export function isTranscriptLocked(activity, lastRun) {
+  return isActivitySignalsLocked(activity) || Boolean(lastRun);
+}

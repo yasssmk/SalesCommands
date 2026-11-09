@@ -40,6 +40,7 @@ import SectionHeader from "components/display/SectionHeader";
 import DrawerContentLayout from "components/drawer/DrawerContentLayout";
 import { getMissingFields } from "sections/activities/signals/signalValidationRules";
 import SignalIncompleteAlert from "components/signals/SignalIncompleteAlert";
+import InfoNotice from "components/display/InfoNotice";
 import {
   getTechSummary,
   getContact,
@@ -52,6 +53,9 @@ import {
   getUsageScopeLabel,
   NEXT_STEP_UNKNOWN,
   USAGE_SCOPE,
+  SIGNAL_NO_CONTACT,
+  SIGNAL_NO_NOTES,
+  SIGNAL_NO_SOURCE_QUOTE,
 } from "sections/activities/signals/utils/signalDisplay";
 
 // Shared per-type detail blocks — the single rendering of each type's
@@ -388,6 +392,16 @@ ReadField.propTypes = { label: PropTypes.string, value: PropTypes.node };
 // A label/value ROW: muted label on the LEFT, value on the RIGHT (2-column,
 // value right-aligned). Used for scope + metrics, where each field is a short
 // scalar read as "Label ………… Value".
+// The muted italic placeholder of an empty ReadRow value (People influence /
+// department, Constraint rigidity — lot 3 / 8, hoisted from the People detail).
+function placeholder(text) {
+  return (
+    <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
+      {text}
+    </Box>
+  );
+}
+
 function ReadRow({ label, value }) {
   if (value === null || value === undefined || value === "") return null;
   return (
@@ -438,6 +452,7 @@ function ObjectiveDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const isPending = signal.status === "PENDING";
@@ -457,7 +472,6 @@ function ObjectiveDetailView({
   const showOriginLink = Boolean(
     originActivityId && onOpenActivity && originActivityId !== currentActivityId,
   );
-  const hasMetrics = Boolean(signal.success_criteria || signal.target_date || signal.notes);
 
   return (
     <>
@@ -510,6 +524,7 @@ function ObjectiveDetailView({
             onReopen: () => onReopen?.(signal, "objective"),
             status: signal.status,
             isLocked,
+            onBack,
             validateDisabled,
           }}
         >
@@ -549,19 +564,12 @@ function ObjectiveDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Metrics (one discreet line when empty). */}
+        {/* Section 3 — Metrics: the edit's « How is success measured? » — each
+            field ALWAYS shown, the edit's placeholder when empty (8i-1). */}
         <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
-        {hasMetrics ? (
-          <>
-            <ReadRow label="Success criteria" value={signal.success_criteria} />
-            <ReadRow label="Target date" value={formatDate(signal.target_date)} />
-            <ReadRow label="Notes" value={signal.notes} />
-          </>
-        ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
-            No metrics defined
-          </Typography>
-        )}
+        <ReadRow label="Success criteria" value={signal.success_criteria || placeholder("No success criteria")} />
+        <ReadRow label="Target date" value={formatDate(signal.target_date) || placeholder("No date set")} />
+        <ReadRow label="Notes" value={signal.notes || placeholder(SIGNAL_NO_NOTES)} />
 
         <Divider sx={{ my: 2 }} />
 
@@ -572,7 +580,7 @@ function ObjectiveDetailView({
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No source quote
+            {SIGNAL_NO_SOURCE_QUOTE}
           </Typography>
         )}
         {contacts.length > 0 && (
@@ -632,8 +640,10 @@ ObjectiveDetailView.propTypes = {
 //      recap + canonical_key). The theme lives in the recap, so there is NO
 //      separate Theme row (mirror of Objective, which has no Theme row).
 //   2. Scope     — Scope + Department(s) (M2M, the sole legitimate difference vs
-//      Objective) + Category + the optional related-tool mention.
-//   3. Source    — the source quote + origin contact(s), bold/muted like Objective.
+//      Objective) + Category.
+//   3. Related tool — the related-tool mention + the notes (placeholders when
+//      empty): the edit drawer's §3 (TD-276, the detail follows the edit).
+//   4. Source    — the source quote + origin contact(s), bold/muted like Objective.
 // Pain has NO Metrics section (that is Impact). The Edit button is present but
 // its wiring stays the legacy path until the Pain edit lands (S3).
 function PainDetailView({
@@ -646,6 +656,7 @@ function PainDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -707,6 +718,7 @@ function PainDetailView({
           onReopen: () => onReopen?.(signal, "pain"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -738,24 +750,30 @@ function PainDetailView({
         <Divider sx={{ my: 2 }} />
 
         {/* Section 2 — Scope + Department(s) (M2M, the sole difference vs Objective)
-            + Category + optional related tool. */}
+            + Category. */}
         <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
         <ReadRow label="Scope level" value={signal.scope_level_display} />
         <ReadRow label="Department(s)" value={departments} />
         <ReadRow label="Category" value={signal.signal_category_display} />
-        <ReadRow label="Related tool" value={signal.related_techstack_mention} />
-        <ReadRow label="Notes" value={signal.notes} />
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Source: the quote + who said it, with an optional link to
+        {/* Section 3 — Related tool + Notes: the edit drawer's §3 (TD-276, the
+            detail follows the edit's structure). */}
+        <SectionHeader index={3} title="Related tool" sx={{ mb: 1 }} />
+        <ReadRow label="Related tool" value={signal.related_techstack_mention || placeholder("No related tool")} />
+        <ReadRow label="Notes" value={signal.notes || placeholder(SIGNAL_NO_NOTES)} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 4 — Source: the quote + who said it, with an optional link to
             the origin activity. Same treatment as the Objective detail. */}
-        <SectionHeader index={3} title="Source" sx={{ mb: 1 }} />
+        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No source quote
+            {SIGNAL_NO_SOURCE_QUOTE}
           </Typography>
         )}
         {contacts.length > 0 && (
@@ -813,7 +831,7 @@ PainDetailView.propTypes = {
 //      separate Theme row (mirror of Pain / Objective).
 //   2. Scope     — Scope level + Department(s) (M2M). Impact has NO Category
 //      (shadow-override), NO Notes, NO Related tool (proven absent on Impact).
-//   3. Metrics   — impact_type + metric_text (masked when empty). human_impact
+//   3. Metrics   — impact_type + metric_text (placeholders when empty, 8i-1). human_impact
 //      is NOT rendered on this surface (PO decision). Rendered with the chassis
 //      ReadRow (NOT ImpactDetailBlock, which is the flush-branch block and keeps
 //      human_impact).
@@ -830,6 +848,7 @@ function ImpactDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -890,6 +909,7 @@ function ImpactDetailView({
           onReopen: () => onReopen?.(signal, "impact"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -928,20 +948,16 @@ function ImpactDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Metrics: impact_type is OPTIONAL (S3-fix). When absent →
-            a single "No metric defined" line (no orphan metric row). When present
-            → impact_type + metric_text (masked if empty). */}
+        {/* Section 3 — Metrics: impact_type is OPTIONAL (S3-fix). */}
         <SectionHeader index={3} title="Metrics" sx={{ mb: 1 }} />
-        {signal.impact_type ? (
-          <>
-            <ReadRow label="Impact type" value={signal.impact_type_display} />
-            <ReadRow label="Impact description" value={signal.metric_text} />
-          </>
-        ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic", my: 1 }}>
-            No metric defined
-          </Typography>
-        )}
+        {/* 8i-1: both fields ALWAYS shown — the edit's « No impact type », the
+            detail's « No metric defined » for an empty description (a
+            description without a type no longer vanishes). */}
+        <ReadRow
+          label="Impact type"
+          value={(signal.impact_type && signal.impact_type_display) || placeholder("No impact type")}
+        />
+        <ReadRow label="Impact description" value={signal.metric_text || placeholder("No metric defined")} />
 
         <Divider sx={{ my: 2 }} />
 
@@ -952,7 +968,7 @@ function ImpactDetailView({
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No source quote
+            {SIGNAL_NO_SOURCE_QUOTE}
           </Typography>
         )}
         {contacts.length > 0 && (
@@ -1006,14 +1022,16 @@ ImpactDetailView.propTypes = {
 //   - NO canonical_key / NO what×dimension axis (what/dimension are legacy
 //     nullable, NOT authored/shown). It DOES reuse SignalSummaryBox (fond
 //     distinct, homogeneous with Pain/Impact), but with a Constraint meta and
-//     NO canonical_key: recap = "This is an {nature} constraint · Rigidity:
-//     {rigidity}" (nature bold via axisPreview + article="an"; rigidity a plain
-//     suffix via recapSuffix, omitted when empty).
+//     NO canonical_key: recap = "This is an {nature} constraint" (nature bold
+//     via axisPreview + article="an").
+//   - Sections = the edit drawer's (TD-276): §1 Summary → §2 Rigidity
+//     (optional/clearable since S1a, « No rigidity » placeholder) → §3 Scope →
+//     §4 Notes → §5 Source.
 //   - NO scope_level (the scope IS the presence/absence of target_departments)
-//     → §2 Scope has no "Scope level" row, only Department(s).
+//     → §3 Scope has no "Scope level" row, only Department(s).
 //   - signal_category shadow-overridden to None → NO Category row.
-//   - nature (required) + rigidity (optional/clearable since S1a) live in the
-//     box meta, NOT a separate Classification section.
+//   - nature (required) lives in the box meta, NOT a separate Classification
+//     section.
 // PO section order (4): Summary (box) → Scope → Notes → Source.
 function ConstraintDetailView({
   signal,
@@ -1025,6 +1043,7 @@ function ConstraintDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1039,10 +1058,6 @@ function ConstraintDetailView({
   // Rigidity: {rigidity}" — nature in bold (axisPreview), rigidity as a plain
   // suffix AFTER "constraint" (omitted when empty). NO canonical_key.
   const natureRecap = signal.nature_display || null;
-  const rigiditySuffix = signal.rigidity_display
-    ? ` · Rigidity: ${signal.rigidity_display}`
-    : undefined;
-
   const contacts = signal.source_context?.contacts ?? [];
   const originActivityId = signal.source_context?.activity?.id ?? null;
   // View-origin link only when the origin activity is NOT the one we're viewing.
@@ -1087,6 +1102,7 @@ function ConstraintDetailView({
           onReopen: () => onReopen?.(signal, "constraints"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1103,16 +1119,16 @@ function ConstraintDetailView({
         )}
 
         {/* Section 1 — Summary: the SHARED summary box (same fond distinct as
-            Pain/Impact). Meta = "This is an {nature} constraint · Rigidity: {rigidity}"
-            (nature/rigidity in bold, article "an"). NO canonical_key (Constraint
-            has none) — the box omits it when canonicalKey is absent. */}
+            Pain/Impact). Meta = "This is an {nature} constraint" (article "an");
+            the rigidity has its own section (§2, as the edit — TD-276). NO
+            canonical_key (Constraint has none) — the box omits it when
+            canonicalKey is absent. */}
         <SectionHeader index={1} title="Summary" sx={{ mb: 1 }} />
         <SignalSummaryBox
           summary={signal.summary}
           axisPreview={natureRecap}
           axisNoun="constraint"
           article="an"
-          recapSuffix={rigiditySuffix}
           boxTestId="constraint-summary-box"
           summaryTestId="constraint-summary-text"
           separatorTestId="constraint-summary-separator"
@@ -1120,15 +1136,21 @@ function ConstraintDetailView({
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 2 — Scope: Department(s) (M2M). Constraint has no scope_level. */}
-        <SectionHeader index={2} title="Scope" sx={{ mb: 1 }} />
+        {/* Section 2 — Rigidity: the edit drawer's §2 (TD-276). */}
+        <SectionHeader index={2} title="Rigidity" sx={{ mb: 1 }} />
+        <ReadRow label="Rigidity" value={signal.rigidity_display || placeholder("No rigidity")} />
+
+        <Divider sx={{ my: 2 }} />
+
+        {/* Section 3 — Scope: Department(s) (M2M). Constraint has no scope_level. */}
+        <SectionHeader index={3} title="Scope" sx={{ mb: 1 }} />
         <ReadRow label="Department(s)" value={departments} />
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Notes (masked when empty). The section header already
+        {/* Section 4 — Notes (« No notes » placeholder when empty). The section header already
             labels it, so render the value plainly (no redundant "Notes" label). */}
-        <SectionHeader index={3} title="Notes" sx={{ mb: 1 }} />
+        <SectionHeader index={4} title="Notes" sx={{ mb: 1 }} />
         {signal.notes ? (
           <Typography
             variant="body2"
@@ -1140,20 +1162,20 @@ function ConstraintDetailView({
           </Typography>
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No notes
+            {SIGNAL_NO_NOTES}
           </Typography>
         )}
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 4 — Source: the quote + who said it, with an optional link to
+        {/* Section 5 — Source: the quote + who said it, with an optional link to
             the origin activity. Same treatment as the Pain/Impact detail. */}
-        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        <SectionHeader index={5} title="Source" sx={{ mb: 1 }} />
         {signal.source_quote ? (
           <SourceQuoteBlock quote={signal.source_quote} />
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            No source quote
+            {SIGNAL_NO_SOURCE_QUOTE}
           </Typography>
         )}
         {contacts.length > 0 && (
@@ -1220,6 +1242,7 @@ function ObjectionDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1272,6 +1295,7 @@ function ObjectionDetailView({
           onReopen: () => onReopen?.(signal, "blockers"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1307,7 +1331,7 @@ function ObjectionDetailView({
             <ContactInline contact={signal.contact} variant="body2" />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No contact attributed
+              {SIGNAL_NO_CONTACT}
             </Typography>
           )}
         </Box>
@@ -1322,7 +1346,7 @@ function ObjectionDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {contacts.length > 0 && (
@@ -1390,6 +1414,7 @@ function CompetitorDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1442,6 +1467,7 @@ function CompetitorDetailView({
           onReopen: () => onReopen?.(signal, "competitors"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1487,7 +1513,7 @@ function CompetitorDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {contacts.length > 0 && (
@@ -1541,11 +1567,13 @@ CompetitorDetailView.propTypes = {
 // Deltas from Objection:
 //   - NO summary on People → the shared summary box carries the person headline
 //     "Name — Role (Department)" (getPeopleHeadline).
+//   - §1 Person: the headline box, then the contact — target_contact ONLY, NO
+//     fallback on the participants (as Objection "Raised by"); placeholder
+//     when null — and the department (the edit's « Who is this person? »,
+//     TD-276).
 //   - §2 Role: role / influence / why (notes = the LLM's justification of the
 //     role); placeholders when empty (Constraint pattern).
-//   - §3 Contact: target_contact ONLY — NO fallback on the participants (as
-//     Objection "Raised by"); placeholder when null. Department below it.
-// PO section order (4): Person (box) → Role → Contact → Source.
+// Section order (3, the edit drawer's — TD-276): Person → Role → Source.
 function PeopleDetailView({
   signal,
   onValidate,
@@ -1556,6 +1584,7 @@ function PeopleDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1572,11 +1601,6 @@ function PeopleDetailView({
   );
   const evidenceStatus = signal.metadata?.evidence_check?.status;
 
-  const placeholder = (text) => (
-    <Box component="span" sx={{ color: "text.secondary", fontStyle: "italic" }}>
-      {text}
-    </Box>
-  );
 
   return (
     <Box data-testid="people-detail-body">
@@ -1615,6 +1639,7 @@ function PeopleDetailView({
           onReopen: () => onReopen?.(signal, "people"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1638,6 +1663,24 @@ function PeopleDetailView({
           boxTestId="people-summary-box"
           summaryTestId="people-summary-text"
         />
+        {/* The contact (target_contact ONLY — NO participant fallback, as
+            Objection "Raised by", TD-254) + the department, in §1 as the edit's
+            « Who is this person? » (TD-276). */}
+        <Box data-testid="people-contact" sx={{ mt: 1.5 }}>
+          <Box sx={{ mb: 1 }}>
+            {signal.target_contact ? (
+              <ContactInline contact={signal.target_contact} variant="body2" />
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
+                {SIGNAL_NO_CONTACT}
+              </Typography>
+            )}
+          </Box>
+          <ReadRow
+            label="Department"
+            value={signal.target_department?.name || placeholder("No department")}
+          />
+        </Box>
 
         <Divider sx={{ my: 2 }} />
 
@@ -1664,43 +1707,22 @@ function PeopleDetailView({
             </Typography>
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No notes
+              {SIGNAL_NO_NOTES}
             </Typography>
           )}
         </Box>
 
         <Divider sx={{ my: 2 }} />
 
-        {/* Section 3 — Contact: target_contact ONLY. NO participant fallback (as
-            Objection "Raised by", TD-254). Placeholder when empty. Department below. */}
-        <SectionHeader index={3} title="Contact" sx={{ mb: 1 }} />
-        <Box data-testid="people-contact">
-          <Box sx={{ mb: 1 }}>
-            {signal.target_contact ? (
-              <ContactInline contact={signal.target_contact} variant="body2" />
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-                No contact linked
-              </Typography>
-            )}
-          </Box>
-          <ReadRow
-            label="Department"
-            value={signal.target_department?.name || placeholder("No department")}
-          />
-        </Box>
-
-        <Divider sx={{ my: 2 }} />
-
-        {/* Section 4 — Source: the quote + who said it, with an optional link to
+        {/* Section 3 — Source: the quote + who said it, with an optional link to
             the origin activity. Same treatment as the Objection detail. */}
-        <SectionHeader index={4} title="Source" sx={{ mb: 1 }} />
+        <SectionHeader index={3} title="Source" sx={{ mb: 1 }} />
         <Box data-testid="people-source">
           {signal.source_quote ? (
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {/* TD-279: the server evidence check of the quote — a warning-tone
@@ -1787,6 +1809,7 @@ function TechStackDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -1849,6 +1872,7 @@ function TechStackDetailView({
           onReopen: () => onReopen?.(signal, "tech-stack"),
           status: signal.status,
           isLocked,
+          onBack,
           validateDisabled,
         }}
       >
@@ -1918,7 +1942,7 @@ function TechStackDetailView({
             </Typography>
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No notes
+              {SIGNAL_NO_NOTES}
             </Typography>
           )}
         </Box>
@@ -1933,7 +1957,7 @@ function TechStackDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {contacts.length > 0 && (
@@ -2015,6 +2039,7 @@ function NextStepDetailView({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
 }) {
   const theme = useTheme();
@@ -2089,6 +2114,7 @@ function NextStepDetailView({
           status: signal.status,
           // Rule 2.1: a resolved next step is read-only.
           isLocked: isLocked || Boolean(resolvedActivity),
+          onBack,
           validateDisabled,
         }}
       >
@@ -2152,7 +2178,7 @@ function NextStepDetailView({
             <SourceQuoteBlock quote={signal.source_quote} />
           ) : (
             <Typography variant="body2" color="text.secondary" sx={{ fontStyle: "italic" }}>
-              No source quote
+              {SIGNAL_NO_SOURCE_QUOTE}
             </Typography>
           )}
           {/* 3.6: the server check of the quote — the People values and pill. */}
@@ -2238,6 +2264,7 @@ export default function SignalDetailContent({
   onClose,
   headerInCoque,
   isLocked,
+  onBack,
   currentActivityId,
   leadingAction,
   trailingAction,
@@ -2257,6 +2284,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2279,6 +2307,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2300,6 +2329,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2321,6 +2351,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2342,6 +2373,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2363,6 +2395,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2385,6 +2418,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2406,6 +2440,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2426,6 +2461,7 @@ export default function SignalDetailContent({
         onClose={onClose}
         headerInCoque={headerInCoque}
         isLocked={isLocked}
+        onBack={onBack}
         currentActivityId={currentActivityId}
       />
     );
@@ -2499,6 +2535,7 @@ export default function SignalDetailContent({
             onReopen: () => onReopen?.(signal, signalType),
             status: signal.status,
             isLocked,
+            onBack,
             validateDisabled,
           }}
         />
@@ -2525,6 +2562,9 @@ SignalDetailContent.propTypes = {
       in-content title + pill + × are suppressed. */
   headerInCoque: PropTypes.bool,
   isLocked: PropTypes.bool,
+  /** Optional « Back » in the read bar (8g-6: the person's signals → their
+      fiche). */
+  onBack: PropTypes.func,
   /** The activity currently being viewed — used to hide the "View origin
       activity" link when the signal's origin IS that activity. Optional;
       absent on DC/Account surfaces (link always shown there). */

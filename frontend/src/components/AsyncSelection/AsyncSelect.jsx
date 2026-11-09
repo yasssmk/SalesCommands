@@ -73,6 +73,7 @@ function AsyncSelect({
   minSearchLength = 0,   // Longueur min avant recherche (0 = immediate)
   debounceMs = 300,      // Délai de debounce
   filters = {},          // Additional filters to pass to hook
+  ordering,              // Optional server ordering passed to hook (only when set)
   
   // Pass-through MUI Autocomplete props
   ...autocompleteProps
@@ -111,7 +112,10 @@ function AsyncSelect({
     page: 1,
     pageSize,
     search: debouncedSearch,
-    filters
+    filters,
+    // Sprint « Cycle de vie des contacts », 8d-2: an optional server order,
+    // forwarded only when given — every other caller sends what it always did.
+    ...(ordering ? { ordering } : {}),
   });
   
   const data = hookResult[dataKey] || [];
@@ -230,7 +234,8 @@ AsyncSelect.propTypes = {
   pageSize: PropTypes.number,
   minSearchLength: PropTypes.number,
   debounceMs: PropTypes.number,
-  filters: PropTypes.object
+  filters: PropTypes.object,
+  ordering: PropTypes.string
 };
 
 export default AsyncSelect;

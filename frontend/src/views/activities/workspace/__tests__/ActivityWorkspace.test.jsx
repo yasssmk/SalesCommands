@@ -363,6 +363,7 @@ describe("ActivityWorkspacePage — tab-less stacked body", () => {
     setupRouter();
     setupActivity({ activity: null, activityError: { response: { status: 404 } } });
     renderPage();
-    expect(screen.getAllByText("Activity not found").length).toBeGreaterThanOrEqual(1);
+    // TD-15: exactly ONE message (getByText throws on 0 or several).
+    expect(screen.getByText("Activity not found")).toBeInTheDocument();
   });
 });

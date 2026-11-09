@@ -29,6 +29,7 @@ vi.mock("api/admin/users", () => ({
 
 import ThemeCustomization from "themes/index";
 import UserDrawerContent from "sections/activities/workspace/UserDrawerContent";
+import { sectionOf, sectionTitles } from "../../../_utils/sectionHeaders";
 
 const USER = {
   id: "u1",
@@ -146,5 +147,19 @@ describe("UserDrawerContent — loading / error", () => {
     useGetUser.mockReturnValue({ user: null, userLoading: false, userError: new Error("x") });
     renderFiche();
     expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
+  });
+});
+
+// ==============================|| LOT 3 / 13b (TD-239) — NUMBERED SECTIONS ||============================== //
+// PO (MAJ 5.18): the numbered-section design for every drawer — the team
+// member fiche has the Contact fiche's first two sections (no deal role).
+
+describe("UserDrawerContent — numbered sections (TD-239)", () => {
+  it("§1 Identity · §2 Contact, each block in its section", () => {
+    mockUser();
+    const { container } = renderFiche();
+    expect(sectionTitles(container)).toEqual(["Identity", "Contact"]);
+    expect(sectionOf(container, screen.getByTestId("user-name"))).toBe(1);
+    expect(sectionOf(container, screen.getByText("Email"))).toBe(2);
   });
 });

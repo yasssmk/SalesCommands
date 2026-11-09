@@ -8,7 +8,8 @@
 //   * useDCAllSignals fetches + tags the competitor type (slug 'competitors').
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render as rtlRender, screen, cleanup } from "@testing-library/react";
+import AphoriqTheme from "../_utils/aphoriqTheme";
 import { renderHook } from "@testing-library/react";
 
 // ==============================|| MOCKS (DC hook) ||============================== //
@@ -35,6 +36,10 @@ vi.mock("api/signals/signals", () => ({
 
 import SignalLine from "components/signals/SignalLine";
 import useDCAllSignals from "hooks/useDCAllSignals";
+
+// SignalLine reads its compact tokens from the theme (lot 3 / 12, TD-265):
+// the app always renders under it.
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 afterEach(() => cleanup());
 beforeEach(() => vi.clearAllMocks());

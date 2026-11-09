@@ -15,6 +15,68 @@
 - **Incohérence 37** / ligne 60 (« composants morts qui affichent des personnes ») : `ActivityOverviewTab` et `SignalDetailCard` **supprimés** au bloc 6 (`9d9a21fb`, `6b9cd617`) ; `DecisionStepDetail.jsx` existe toujours (TD-180).
 - Les autres points sont **inchangés**.
 
+## Sprint « Cycle de vie des contacts » (branche `feat/contact-lifecycle`)
+
+Périmètre réduit validé par le PO : surface **Activity** et workflow **next step ↔ people**. Le workflow complet
+est verrouillé par deux tests :
+- un test d'intégration backend par les vrais endpoints, avec seulement le LLM factice
+  (`backend/tests/ai_pipelines/test_contact_lifecycle_workflow.py`) ;
+- un test de vraie page front (`frontend/src/__tests__/nextSteps/ActivityCreateDefaultsPage.test.jsx`, « étape 8 »).
+
+### Résolu par ce sprint
+
+- **Rattachement au DC** (lignes 6, incohérences liées). Une activité liée à un DC lui donne ses signaux : un point
+  central, `signals/services/signal_cycle_attachment.py`. Sont concernés toute la séquence `campaign_account` d'une
+  activité de campagne convertie (« Start Decision Cycle »), PENDING et REJECTED compris, mais pas les NextStep
+  (`036173e`, `3c1eb72`).
+- **Incohérence 3** (« rôle actuel » choisi par tri alphabétique) : corrigée côté onglet People du DC. Le rôle
+  affiché est désormais le dernier rôle validé (`77f11c1`).
+- **Incohérences 5, 6, 7 et 35, en partie** : nouveau modèle **Stakeholder** du DC (`decision_cycles`), avec
+  migration des People VALIDATED (`6fffbc6`). Un stakeholder est soit **lié à un contact**, soit **non converti**
+  (nom et/ou département seuls). Un People se valide en choisissant son stakeholder, par
+  `POST /module-signals/people/{id}/resolve/` (`d6aee23`, `b1e9c6d`, flux générique `ResolutionFlow` `3931fae`) :
+  - **Link** vers un stakeholder existant ;
+  - **raccourci contact** : le stakeholder lié est créé ou réutilisé ;
+  - **Create** d'un stakeholder non converti, à partir d'un prénom seul ou d'un département.
+  Un People MANUAL avec contact rejoint son stakeholder (`92af93c`).
+- **Incohérence 9, en partie** : une seule règle de nom affiché pour un stakeholder (`display_name` : le contact
+  s'il est lié, sinon le nom, sinon le département). Le contact du stakeholder devient le `target_contact` du
+  signal (`bd8d191`).
+- **Incohérence 18, élargie** : une constante unique `PEOPLE_ACTIVITY_TYPES` (MEETING / CALL / EMAIL / DEMO), avec
+  son miroir front. Elle pilote trois choses :
+  - la règle « au moins un participant », sur tous les chemins (POST, PATCH, create-with-entities) ;
+  - le pré-remplissage des personnes citées ;
+  - l'alerte « No email or phone » du Context (`bce9ab6`).
+- **Lignes 22-28 et 33-34** : une activité peut avoir pour participants les stakeholders **non convertis** de son
+  DC (`Activity.stakeholders`, `stakeholder_ids`) ; un stakeholder lié y figure comme contact (`0632579`).
+  `cited-contacts` propose, pour chaque nom cité, son contact ou, à défaut, le stakeholder non converti qu'il
+  désigne (`71ad43f`).
+- **Surface Activity, sans distinction stakeholder / contact** (7c → 7e) :
+  - un seul bouton « Add stakeholder », qui est le composant standard `AsyncContactSelect`, étendu par une prop
+    optionnelle : recherche serveur sur les contacts du compte et sur les stakeholders non convertis du DC ;
+  - plus de création de personne depuis le drawer (« Add contact » et « New contact » retirés) ;
+  - aucun repère « Contact » / « Not yet a contact » ;
+  - libellé « External team » dans le drawer et dans le Context, en paire avec « Internal team »
+    (`3650e03`, `18dcd4e`, `db38cf7`, `bc3099d`) ;
+  - le payload garde la distinction en interne (`contact_ids` / `stakeholder_ids`).
+- **Valeurs par défaut d'une activité créée depuis une activité** (`3a86562`, `db5bfdb`) :
+  - le champ date suit le type (`SCHEDULED_DATE_ACTIVITY_TYPES` : date planifiée, sinon date d'échéance) ;
+  - l'étape est celle suggérée par le next step si elle appartient au DC, sinon celle de l'activité d'origine,
+    sinon l'étape courante (`next_step_step_default`, avec son miroir dans le drawer).
+
+### Reporté aux sprints DC / Account
+
+- **Conversion stakeholder → contact**, rôle à confirmer, « Involved in » : sprint DC.
+- **Incohérences 1, 2 et 4** : rôle et influence stockés à trois endroits ; le drawer contact et QualifyDialog
+  empilent des PS MANUAL sans activité source. Sprints DC / Account.
+- **Incohérences 8 à 13, 15, 17, 19-21, 23-34, 36-37** : inchangées par ce sprint.
+  - Note pour 23 : le drawer d'activité ne crée plus de contact à la volée, mais ActivityModal le fait encore.
+  - Note pour 17 : ActivityModal reste l'ancien chemin.
+- **Onglet People du DC et clusters** (lignes 10-17) : ils lisent encore les PS, pas les Stakeholder. Sprint DC.
+- **TD de clôture** :
+  - limiter les contacts / stakeholders d'un compte (~20) : sprint Surface Account ;
+  - N+1 `SELECT decision_cycles` sur `/module-signals/all/` (déjà sur main, 20 requêtes sur 39) : `select_related`.
+
 ## Inventaire (60 opérations) et incohérences (37)
 
 Préfixes : **B/** = `backend/app_modules/`, **F/** = `frontend/src/`. Objets : PS = PeopleSignal, C = Contact, U = User.

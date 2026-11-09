@@ -910,6 +910,40 @@ class DecisionCycleViewSet(OwnerScopeMixin, ScopedQuerysetMixin, BaseAPIView, vi
 
         return Response({'success': True, 'data': result})
 
+    @action(detail=True, methods=['get'], url_path='stakeholders')
+    def stakeholders(self, request, pk=None):
+        """
+        GET /decision-cycles/{id}/stakeholders/ — sprint « Cycle de vie des
+        contacts », étapes 7 / 7c: EVERY stakeholder of the cycle, the
+        activity drawer's single « Add stakeholder » picker. A converted one
+        (is_linked, with its `contact`) is taken by an activity as that
+        contact (contact_ids); a non-converted one as a stakeholder
+        (stakeholder_ids) — the distinction stays internal.
+
+        7d-1 — the picker (AsyncContactSelect) searches the server:
+          * ?converted=false — the non-converted ones only (a converted one is
+            offered once, under its contact, by the contacts search);
+          * ?search=<text> — case insensitive on the name or the department
+            (the contacts search's rule: icontains).
+        """
+        from app_modules.activities.serializers import ActivityStakeholderSerializer
+        instance = self.get_object()
+        rows = instance.stakeholders.all()
+        if request.query_params.get('converted') == 'false':
+            rows = rows.filter(contact__isnull=True)
+        search = (request.query_params.get('search') or '').strip()
+        if search:
+            rows = rows.filter(Q(full_name__icontains=search) | Q(department__name__icontains=search))
+        rows = (
+            rows
+            .select_related('department', 'contact', 'contact__standard_department')
+            .order_by('full_name_normalized', 'created_at')
+        )
+        return Response({
+            'success': True,
+            'data': ActivityStakeholderSerializer(rows, many=True).data,
+        })
+
     @action(detail=True, methods=['get'], url_path='readiness')
     def readiness(self, request, pk=None):
         """

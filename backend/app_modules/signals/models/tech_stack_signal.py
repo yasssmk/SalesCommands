@@ -31,11 +31,13 @@ TechStackSignal narrows the BaseSignal field set by shadow-overriding
 two inherited fields to `None`. Each override has a precise reason:
 
   * decision_cycle — RESTORED (no longer shadow-overridden).
-        A TechStack with decision_cycle=NULL represents a tool in place
-        at the account level (incumbent). A TechStack with a non-null
-        decision_cycle represents a tool being evaluated on that
-        specific deal (competitor in play). The distinction is driven
-        by the DC Workspace competitor model.
+        ROUTING only: every piece of information goes up through the DC
+        of its activity (copied at creation by SignalManager, then by the
+        activity → cycle attachment, services/signal_cycle_attachment.py).
+        It carries NO "in place / evaluated" meaning: a TechStack always
+        describes the ACCOUNT (which tool, who uses it) — relevant for the
+        account and every DC. A tool evaluated on a deal is a
+        CompetitorSignal, not a TechStack.
 
   * campaign = None
         Same logic — a campaign targets accounts, not their internal
@@ -158,7 +160,8 @@ class TechStackSignal(BaseSignal):
     # =========================================================================
     # See module docstring for the rationale of each override.
     # decision_cycle is no longer overridden — it is inherited from
-    # BaseSignal to support the account-level vs deal-level distinction.
+    # BaseSignal as ROUTING to the DC (everything goes up through the DC);
+    # it carries no "in place / evaluated" meaning (see module docstring).
     campaign          = None
     signal_category   = None
 

@@ -57,6 +57,7 @@ vi.mock("utils/displayError", () => ({ displaySuccessSnackbar, displayErrorSnack
 
 import ThemeCustomization from "themes/index";
 import OutcomeDrawerContent from "sections/activities/workspace/OutcomeDrawerContent";
+import { sectionOf, sectionTitles } from "../../../_utils/sectionHeaders";
 
 const CAMPAIGN_ACT = {
   id: "act-c",
@@ -155,5 +156,20 @@ describe("OutcomeDrawerContent — deal: no callback", () => {
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
     expect(closeDrawer).toHaveBeenCalled();
     expect(completeActivity).not.toHaveBeenCalled();
+  });
+});
+
+// ==============================|| LOT 3 / 13c (TD-239) — NUMBERED SECTIONS ||============================== //
+// PO (MAJ 5.18): the numbered-section design for every drawer — §1 Outcome
+// (the pills, then the callback date when it shows) · §2 Note.
+
+describe("OutcomeDrawerContent — numbered sections (TD-239)", () => {
+  it("§1 Outcome · §2 Note, each block in its section", async () => {
+    const { container } = renderDrawer(CAMPAIGN_ACT);
+    expect(sectionTitles(container)).toEqual(["Outcome", "Note"]);
+    expect(sectionOf(container, screen.getByTestId("outcome-pill-SUCCESSFUL"))).toBe(1);
+    expect(sectionOf(container, screen.getByTestId("outcome-note"))).toBe(2);
+    fireEvent.click(screen.getByTestId("outcome-pill-CALLBACK_REQUESTED"));
+    expect(sectionOf(container, await screen.findByTestId("pick-Callback date"))).toBe(1);
   });
 });

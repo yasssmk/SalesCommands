@@ -25,6 +25,7 @@ function buildUrl({
   ordering,
   department,
   contact,
+  stakeholder,
   scopeLevel,
   page,
   pageSize,
@@ -36,6 +37,8 @@ function buildUrl({
   if (ordering) q.append("ordering", ordering);
   if (department) q.append("department", String(department));
   if (contact) q.append("contact", String(contact));
+  // 8g-6: a NON-converted stakeholder (the activities it took part in).
+  if (stakeholder) q.append("stakeholder", String(stakeholder));
   if (scopeLevel) q.append("scope", String(scopeLevel));
   q.append("page", String(page));
   q.append("page_size", String(pageSize));
@@ -58,6 +61,8 @@ function buildUrl({
  * @param {string[]} [args.statuses]       restrict to these statuses
  * @param {string[]} [args.signalTypes]    restrict to these frontend slugs
  * @param {string} [args.ordering]         date-desc | date-asc | status | type | theme
+ * @param {string} [args.contact]          a Contact: the activities it took part in
+ * @param {string} [args.stakeholder]      a non-converted Stakeholder: same (8g-6)
  * @param {number} [args.page=1]
  * @param {number} [args.pageSize=20]
  */
@@ -70,6 +75,7 @@ export default function useAggregatedSignals({
   ordering,
   department,
   contact,
+  stakeholder,
   scope: scopeLevel,
   page = 1,
   pageSize = 20,
@@ -101,6 +107,7 @@ export default function useAggregatedSignals({
             ordering,
             department,
             contact,
+            stakeholder,
             scopeLevel,
             page,
             pageSize,
@@ -115,6 +122,7 @@ export default function useAggregatedSignals({
       ordering,
       department,
       contact,
+      stakeholder,
       scopeLevel,
       page,
       pageSize,

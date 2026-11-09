@@ -37,7 +37,7 @@ import {
 import SignalsValidationList from "components/signals/SignalsValidationList";
 import SignalDetailPanel from "components/signals/SignalDetailPanel";
 import { SIGNAL_STATUS_PILL } from "components/signals/signalStatusPill";
-import { getSignalTypeLabel } from "utils/signalTypes";
+import { getSignalTypeLabel, QUALIFICATION_SIGNAL_TYPES } from "utils/signalTypes";
 import { useWorkspaceDrawer } from "contexts/WorkspaceDrawerContext";
 import SignalEditDrawer from "components/signals/SignalEditDrawer";
 import EditObjectiveContent from "sections/activities/workspace/EditObjectiveContent";
@@ -48,21 +48,25 @@ import EditObjectionContent from "sections/activities/workspace/EditObjectionCon
 import EditPeopleContent from "sections/activities/workspace/EditPeopleContent";
 import EditTechStackContent from "sections/activities/workspace/EditTechStackContent";
 import EditCompetitorContent from "sections/activities/workspace/EditCompetitorContent";
+import PeopleValidateFlow from "sections/activities/workspace/PeopleValidateFlow";
 import { isActivitySignalsLocked } from "utils/activitySignalsLock";
+import ClickablePill from "components/chips/ClickablePill";
 
-// The activity flat view shows qualification (pain/objective/impact) plus
-// tech-stack, blockers, constraints, competitors and people — next-steps live
-// in their own tab and are excluded.
-export const ACTIVITY_FLAT_TYPES = [
-  "pain",
-  "objective",
-  "impact",
-  "tech-stack",
-  "blockers",
-  "constraints",
-  "competitors",
-  "people",
-];
+// Sprint « Cycle de vie des contacts », étape 5 / 8b-1 (PO): a People signal
+// OF A DECISION CYCLE is validated WITH its stakeholder (PeopleValidateFlow →
+// resolve); without a DC it is validated like any signal (true / false). The
+// signal's own DC (source_context.decision_cycle — the server's rule reads
+// signal.decision_cycle): a campaign activity converted keeps no DC itself.
+const signalCycleId = (signal) => signal?.source_context?.decision_cycle?.id || null;
+// « Link to the deal »: a People VALIDATED without stakeholder (validated
+// before its activity joined a DC) — never affiliated automatically.
+export const needsLinkToDeal = (signal) =>
+  signal?.status === "VALIDATED" && !signal?.stakeholder && Boolean(signalCycleId(signal));
+
+// The activity flat view shows the types of the qualification analysis
+// (QUALIFICATION_SIGNAL_TYPES, utils/signalTypes — ONE list) — next-steps
+// live in their own band and are excluded.
+export const ACTIVITY_FLAT_TYPES = QUALIFICATION_SIGNAL_TYPES;
 
 // The validation worklist always loads all 3 statuses — the Rejected section is
 // part of it (no "include rejected" opt-in anymore).
@@ -132,10 +136,10 @@ export default function ActivitySignalsTab({
   const openSignalDetail = useCallback(
     (signal, signalType) => {
       const h = detailHandlersRef.current;
-      // Standard-chassis types (Objective, Pain) have their header (title +
-      // status pill + ×) owned by the COQUE (UI-1): pass title + status + the
-      // shared status map, and tell the panel to suppress its in-content header.
-      // Other types keep the panel's own (flush) header.
+      // Every signal type of the band (the 8 standard-chassis types, since
+      // Competitor C2) has its header (title + status pill + ×) owned by the
+      // COQUE (UI-1): pass title + status + the shared status map, and tell the
+      // panel to suppress its in-content header.
       const coqueOwnsHeader =
         signalType === "objective" ||
         signalType === "pain" ||
@@ -168,6 +172,28 @@ export default function ActivitySignalsTab({
   // Handlers
   const handleValidate = useCallback(
     async (signal, signalType) => {
+      // Étape 5: a person of a DC is validated WITH its stakeholder — the
+      // People flow (Link / contact shortcut / Create), never the generic
+      // validate (refused by the server for a People of a DC). 8b-1: without
+      // a DC, the generic validate below, as any signal. 8c-0 (c): a pending
+      // People of a campaign-born DC's sequence (links_on_validate, server)
+      // is validated by the passage's rule — the generic validate too.
+      if (signalType === "people" && signalCycleId(signal) && !signal.links_on_validate) {
+        openDrawer(
+          <PeopleValidateFlow
+            signal={signal}
+            onBack={() => openSignalDetail(signal, "people")}
+            onResolved={(updated) => {
+              displaySuccessSnackbar("Person validated");
+              mutateAll();
+              mutateCounts?.();
+              openSignalDetail({ ...signal, ...updated, status: "VALIDATED" }, "people");
+            }}
+          />,
+          { title: "Validate person" },
+        );
+        return;
+      }
       const result = await validateSignal(signalType, signal.id);
       if (result.success) {
         displaySuccessSnackbar("Signal validated");
@@ -178,7 +204,47 @@ export default function ActivitySignalsTab({
         displayErrorSnackbar(result);
       }
     },
-    [mutateAll, mutateCounts, openSignalDetail],
+    [mutateAll, mutateCounts, openSignalDetail, openDrawer],
+  );
+
+  // 8b-1 — « Link to the deal »: the SAME PeopleValidateFlow (resolve), on a
+  // People already VALIDATED without stakeholder; its status is untouched.
+  const handleLinkToDeal = useCallback(
+    (signal) => {
+      openDrawer(
+        <PeopleValidateFlow
+          signal={signal}
+          onBack={() => openSignalDetail(signal, "people")}
+          onResolved={(updated) => {
+            displaySuccessSnackbar("Person linked to the deal");
+            mutateAll();
+            mutateCounts?.();
+            openSignalDetail({ ...signal, ...updated }, "people");
+          }}
+        />,
+        { title: "Link to the deal" },
+      );
+    },
+    [mutateAll, mutateCounts, openSignalDetail, openDrawer],
+  );
+
+  // The row's 3rd line (SignalsValidationList renderExtra → SignalLine extra,
+  // the Next steps band's pattern): the orange « Link to the deal » action.
+  const renderLinkToDeal = useCallback(
+    (signal, type) =>
+      !isLocked && type === "people" && needsLinkToDeal(signal) ? (
+        <ClickablePill
+          tone="warning"
+          label="Link to the deal"
+          data-testid={`link-to-deal-${signal.id}`}
+          onClick={(e) => {
+            e?.stopPropagation?.();
+            handleLinkToDeal(signal);
+          }}
+          sx={{ mt: 0.75 }}
+        />
+      ) : null,
+    [isLocked, handleLinkToDeal],
   );
 
   const handleReject = useCallback(
@@ -213,9 +279,11 @@ export default function ActivitySignalsTab({
 
   const handleEdit = useCallback(
     (signal, signalType) => {
-      // SIG-5d: Objective edits go to the new drawer (DrawerContentLayout +
-      // scope pill + editable source_quote) via the single coque. Every other
-      // type keeps the legacy SignalEditDrawer dialog untouched.
+      // Every signal type of the band edits in its chassis drawer via the single
+      // coque (8 types since Competitor C2). The legacy SignalEditDrawer
+      // fallback at the end is no longer reached on Activity (TD-206).
+      // SIG-5d: Objective (DrawerContentLayout + scope pill + editable
+      // source_quote).
       if (signalType === "objective") {
         openDrawer(
           <EditObjectiveContent
@@ -234,8 +302,7 @@ export default function ActivitySignalsTab({
         return;
       }
       // S3: Pain edits go to the new chassis drawer (mirror of Objective) — the
-      // M2M department multi-select lives inside. Other types stay on the legacy
-      // SignalEditDrawer dialog below.
+      // M2M department multi-select lives inside.
       if (signalType === "pain") {
         openDrawer(
           <EditPainContent
@@ -254,8 +321,7 @@ export default function ActivitySignalsTab({
         return;
       }
       // S3: Impact edits go to the new chassis drawer (mirror of Pain) — the
-      // Metrics fields + M2M department multi-select live inside. Other types
-      // stay on the legacy SignalEditDrawer dialog below.
+      // Metrics fields + M2M department multi-select live inside.
       if (signalType === "impact") {
         openDrawer(
           <EditImpactContent
@@ -429,6 +495,13 @@ export default function ActivitySignalsTab({
           onSelect={handleSelect}
           onValidate={isLocked ? undefined : handleValidate}
           onReject={isLocked ? undefined : handleReject}
+          renderExtra={renderLinkToDeal}
+          // 8c-1: Validated opens by itself when it holds a People to link.
+          autoExpandStatuses={
+            !isLocked && flatSignals.some((s) => s._signalType === "people" && needsLinkToDeal(s))
+              ? ["VALIDATED"]
+              : undefined
+          }
           emptyMessage="No signals for this activity"
         />
       )}

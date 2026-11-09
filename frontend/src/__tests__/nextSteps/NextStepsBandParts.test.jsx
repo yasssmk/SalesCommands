@@ -25,6 +25,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render as rtlRender, screen, fireEvent, cleanup, within, waitFor } from "@testing-library/react";
 import WorkspaceCoque from "../_utils/workspaceCoque";
+import { sectionHeaders } from "../_utils/sectionHeaders";
 import { testTheme } from "../_utils/aphoriqTheme";
 
 const mockPush = vi.fn();
@@ -155,6 +156,12 @@ vi.mock("api/accounts/decisionCycles", async (importOriginal) => ({
   useGetDecisionCyclesByAccount: vi.fn(() => ({
     cycles: [{ id: "dc-1", name: "Deal Acme", is_active: true },
              { id: "dc-2", name: "Deal Other", is_active: true }],
+    cyclesLoading: false,
+  })),
+  // 8d-2: the Async select's hook (server search on the open cycles).
+  useGetDecisionCycles: vi.fn(() => ({
+    cycles: [{ id: "dc-1", name: "Deal Acme", outcome: null },
+             { id: "dc-2", name: "Deal Other", outcome: null }],
     cyclesLoading: false,
   })),
   useGetDecisionStepsByCycle: vi.fn(() => ({
@@ -856,6 +863,26 @@ describe("Next steps band — the link flow, steps 2 and 3 (5.7)", () => {
   };
   const sentUpdates = () => attachNextStepToActivity.mock.calls[0][2];
 
+  // Lot 3 / 13d (TD-239, PO: every drawer) — each step's title is a numbered
+  // SectionHeader, numbered as the stepper (1 Resolution · 2 Activity · 3
+  // Differences).
+  it("TD-239: each step's title is a numbered section, numbered as the stepper", async () => {
+    const numbered = () =>
+      sectionHeaders(screen.getByTestId(FLOW)).map(({ index, title }) => `${index} ${title}`);
+    mockCandidates = CANDIDATES;
+    renderPage(dcActivity(), [richPending()]);
+    fireEvent.click(within(rowOf("Send the DPA and SOC 2 report")).getByLabelText("Validate signal"));
+    await screen.findByTestId(FLOW);
+    expect(numbered()).toEqual(["1 How do you resolve this next step?"]);
+    fireEvent.click(screen.getByRole("radio", { name: "Link to an existing activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByTestId("link-candidates");
+    expect(numbered()).toEqual(["2 Which activity does this next step become?"]);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByTestId("link-differences");
+    expect(numbered()).toEqual(["3 What should change on “Call Thomas”?"]);
+  });
+
   it("step 2: the candidates in the SERVER order, the first 'Proposed' and pre-selected", async () => {
     const list = await openStep2();
     const rows = within(list).getAllByTestId(/^link-candidate-/);
@@ -1188,12 +1215,16 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(within(create).getByTestId("mentioned-names")).toHaveTextContent("Mentioned: Karim Benali");
   });
 
-  it("the DC is pre-filled from the context and modifiable; the step = the proposed one", async () => {
+  // 8e-3 (PO): from a DC activity, the DC is the origin's — shown, greyed;
+  // the step stays modifiable.
+  it("the DC is pre-filled from the context, greyed; the step = the proposed one, modifiable", async () => {
     const create = await openCreateFromFlow();
     expect(within(create).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Deal Acme");
     expect(within(create).getByTestId("inline-read-decision_step")).toHaveTextContent("Technical Fit");
     fireEvent.click(within(create).getByTestId("inline-read-decision_cycle"));
-    expect(screen.getByRole("option", { name: "Deal Other" })).toBeInTheDocument();
+    expect(within(create).queryByTestId("decision-cycle-select")).toBeNull();
+    fireEvent.click(within(create).getByTestId("inline-read-decision_step"));
+    expect(screen.getByRole("option", { name: "Business Case" })).toBeInTheDocument();
   });
 
   it("the owner = the user's NAME, read-only", async () => {
@@ -1293,15 +1324,16 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     }
   });
 
-  // 5.8g (b) — "+ Add contact" / "+ New contact": the standard gap between
-  // actions (the drawer's actions: theme spacing 1), never stuck together.
-  it("'+ Add contact' and '+ New contact' sit apart with the standard gap", async () => {
+  // 7c (PO) — no person is created from the drawer, no distinction shown: the
+  // People actions row holds ONE « Add stakeholder » (no « Add contact », no
+  // « New contact »), the row keeping the standard gap (5.8g (b)).
+  it("ONE « Add stakeholder » action: no « Add contact », no « New contact »", async () => {
     const create = await openCreateFromFlow();
-    const add = within(create).getByTestId("add-contact");
-    const inline = within(create).getByTestId("add-inline-contact");
     const row = within(create).getByTestId("contact-add-actions");
-    expect(row).toContainElement(add);
-    expect(row).toContainElement(inline);
+    expect(row).toContainElement(within(create).getByTestId("add-stakeholder"));
+    expect(within(create).queryByTestId("add-contact")).toBeNull();
+    expect(within(create).queryByTestId("add-inline-contact")).toBeNull();
+    expect(within(row).getAllByRole("button")).toHaveLength(1);
     expect(row).toHaveStyle({ display: "flex", gap: testTheme.spacing(1) });
   });
 
@@ -1320,6 +1352,7 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
       scheduled_time: null,
       due_date: "2026-10-23",
       contact_ids: ["c-1", "c-9"],
+      stakeholder_ids: [],
       invited_user_ids: [],
       account_id: "acc-1",
       decision_cycle_id: "dc-1",
@@ -1329,17 +1362,12 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     expect(createActivityWithEntities).not.toHaveBeenCalled();
   });
 
-  it("a contact created on the fly goes through create-with-entities", async () => {
+  it("no contact created on the fly (7c): the creation never goes through create-with-entities", async () => {
     const create = await openCreateFromFlow();
-    fireEvent.click(within(create).getByTestId("add-inline-contact"));
-    fireEvent.click(screen.getByRole("button", { name: "save inline contact" }));
+    expect(within(create).queryByTestId("add-inline-contact")).toBeNull();
     fireEvent.click(saveButton());
-    await waitFor(() => expect(createActivityWithEntities).toHaveBeenCalledTimes(1));
-    const body = createActivityWithEntities.mock.calls[0][0];
-    expect(body.inline_contact).toEqual({ first_name: "Isabelle", last_name: "Roux" });
-    expect(body.inline_cycle).toBeNull();
-    expect(body.activity.next_step_signal_id).toBe("ns-rich");
-    expect(createActivity).not.toHaveBeenCalled();
+    await waitFor(() => expect(createActivity).toHaveBeenCalledTimes(1));
+    expect(createActivityWithEntities).not.toHaveBeenCalled();
   });
 
   it("Save is disabled only by an invalid form (title emptied)", async () => {
@@ -1366,7 +1394,10 @@ describe("Next steps band — the activity creation in the coque (5.8d)", () => 
     fireEvent.click(screen.getByRole("button", { name: "Start Decision Cycle" }));
     expect(screen.queryByTestId("activity-modal")).not.toBeInTheDocument();
     const create = screen.getByTestId("activity-create");
-    expect(within(create).getByTestId("conversion-cycle")).toBeInTheDocument();
+    // 8c-3: the account's open cycles first, then « New cycle » (the inline
+    // cycle form once chosen).
+    expect(within(create).getByTestId("inline-read-decision_cycle")).toBeInTheDocument();
+    expect(within(create).queryByTestId("conversion-cycle")).toBeNull();
   });
 
 });

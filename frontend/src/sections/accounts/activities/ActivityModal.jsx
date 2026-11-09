@@ -77,6 +77,7 @@ import {
 } from "utils/displayError";
 import {
   activityDefaultsFromNextStep,
+  PEOPLE_ACTIVITY_TYPES,
 } from "utils/activityTypes";
 
 // A YYYY-MM-DD pre-fill value → the pickers' dayjs (null stays null).
@@ -104,7 +105,18 @@ const validationSchema = Yup.object(
           schema.required("Scheduled date or due date is required"),
         otherwise: (schema) => schema.nullable(),
       }),
-    due_date: Yup.date().nullable().typeError("Please select a valid date"),
+    // 8g-1b: exactly one date — the server's rule (date_rules.py, 8g-1)
+    // and its message (DATES_EXCLUSIVE): a scheduled date OR a due date.
+    due_date: Yup.date()
+      .nullable()
+      .typeError("Please select a valid date")
+      .test(
+        "dates-exclusive",
+        "An activity has a scheduled date or a due date, not both.",
+        function notBoth(dueDate) {
+          return !(dueDate && this.parent.scheduled_date);
+        },
+      ),
     contact_ids: Yup.array().of(Yup.string()),
     has_inline_contact: Yup.boolean(),
     decision_cycle_id: Yup.string().nullable(),
@@ -236,11 +248,17 @@ export default function ActivityModal({
       setSubmitting(true);
 
       try {
-        // Guard: at least one contact (selected or inline)
-        if (values.contact_ids.length === 0 && !values.has_inline_contact) {
+        // Guard (étape 7): a type with people (PEOPLE_ACTIVITY_TYPES, mirror
+        // of the backend rule) needs at least one participant — selected or
+        // inline; the other types none. This modal has no stakeholder picker.
+        if (
+          PEOPLE_ACTIVITY_TYPES.has(values.activity_type)
+          && values.contact_ids.length === 0
+          && !values.has_inline_contact
+        ) {
           formik.setFieldError(
             "contact_ids",
-            "At least one contact is required",
+            "At least one participant is required",
           );
           formik.setFieldTouched("contact_ids", true, false);
           setSubmitting(false);

@@ -63,6 +63,41 @@ def born_decision_cycle(activity):
     return born.decision_cycle if born is not None else None
 
 
+def guard_decision_cycle_birth(source_activity_id, *, client_id, cycle_id=None, creates_cycle=False):
+    """
+    8g-3 (TD-296) — ONE decision cycle is born from a campaign activity.
+    Called by both creation paths (ActivityCreateSerializer.create,
+    ActivityCreationService.create_with_entities), inside their transaction,
+    BEFORE anything is created: locks the source activity (select_for_update
+    — a concurrent conversion waits here until the first commits), then
+    refuses a SECOND birth: a cycle already born from it (born_decision_cycle,
+    THE definition) and the new activity would put it in ANOTHER cycle (a new
+    inline one, or a different existing one). Joining the born cycle stays
+    allowed; an activity outside a campaign, or without any cycle, is not
+    concerned.
+
+    Raises:
+        StandardizedValidationError (DECISION_CYCLE_ALREADY_BORN).
+    """
+    from core.error_messages import ActivityErrorMessages
+    from core.exceptions import StandardizedValidationError
+    from ..models import Activity
+
+    if not source_activity_id or not (cycle_id or creates_cycle):
+        return
+    source = (
+        Activity.objects.select_for_update()
+        .filter(pk=source_activity_id, client_id=client_id)
+        .first()
+    )
+    if source is None or not source.campaign_id:
+        return
+    born = born_decision_cycle(source)
+    # A new inline cycle has no cycle_id yet: it always differs from the born one.
+    if born is not None and str(born.id) != str(cycle_id):
+        raise StandardizedValidationError(ActivityErrorMessages.DECISION_CYCLE_ALREADY_BORN)
+
+
 class SequenceScope(str, Enum):
     """
     Scope for activity sequence calculation.

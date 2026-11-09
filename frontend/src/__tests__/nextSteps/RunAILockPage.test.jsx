@@ -20,6 +20,8 @@ import AphoriqTheme from "../_utils/aphoriqTheme";
 let mockActivity;
 const mockRun = vi.fn();
 let mockPipelineState = "idle";
+// 8g-7: the last successful run (null = not analysed yet) — per test.
+let mockLastRun = null;
 
 vi.mock("next/font/google", () => ({
   Public_Sans: () => ({ className: "mock", style: { fontFamily: "mock" } }),
@@ -47,7 +49,7 @@ vi.mock("api/accounts/activities", async (importOriginal) => ({
 }));
 vi.mock("api/aiPipelines/lastRun", () => ({
   useGetLastExtractionRun: () => ({
-    lastRun: { id: "run-1" }, latestRun: null, runsByPipeline: {}, mutateLastRun: vi.fn(),
+    lastRun: mockLastRun, latestRun: null, runsByPipeline: {}, mutateLastRun: vi.fn(),
   }),
 }));
 vi.mock("api/signals/signalCounts", () => ({
@@ -112,19 +114,21 @@ const sourceRunAI = () => {
 };
 const bandRunAI = () => within(screen.getByTestId("next-steps-extraction")).getByRole("button", { name: "Run AI Analysis" });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); mockLastRun = null; });
 
 describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
   it("COMPLETED: the Source's Run AI is available", () => {
     mockActivity = dcActivity({ status: "COMPLETED" });
     render(<ActivityWorkspacePage />);
     openSource();
-    expect(sourceRunAI()).toBeEnabled();
-    // 5.12c (3): the Source keeps its MUI button (no visible change there).
-    expect(sourceRunAI()).toHaveClass("MuiButton-root");
+    expect(sourceRunAI()).not.toHaveAttribute("aria-disabled");
+    // Lot 3 / 11 (TD-302, PO) replaces 5.12c (3): the Source's Run AI is the
+    // shared pill too (in the band header), no MUI button any more.
+    expect(sourceRunAI()).not.toHaveClass("MuiButton-root");
   });
 
   it("COMPLETED: the Next steps band's Run AI is available", () => {
+    mockLastRun = { id: "run-1" };   // the Next steps band shows on an analysed activity
     mockActivity = dcActivity({ status: "COMPLETED" });
     render(<ActivityWorkspacePage />);
     expect(bandRunAI()).not.toHaveAttribute("aria-disabled", "true");
@@ -132,10 +136,11 @@ describe("Run AI — locked ONLY on CANCELLED, both bands (5.12c (5))", () => {
   });
 
   it("CANCELLED: both are locked", () => {
+    mockLastRun = { id: "run-1" };   // the Next steps band shows on an analysed activity
     mockActivity = dcActivity({ status: "CANCELLED" });
     render(<ActivityWorkspacePage />);
     openSource();
-    expect(sourceRunAI()).toBeDisabled();
+    expect(sourceRunAI()).toHaveAttribute("aria-disabled", "true");
     const band = bandRunAI();
     expect(band.disabled || band.getAttribute("aria-disabled") === "true").toBe(true);
   });
@@ -209,5 +214,80 @@ describe("The transcript — locked ONLY on CANCELLED (5.12d (1))", () => {
     openSource();
     fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
     expect(screen.getAllByRole("textbox").length).toBeGreaterThan(0);
+  });
+});
+
+// ==============================|| 8g-7 (TD-25) — ANALYSED: THE TRANSCRIPT IS LOCKED ||============================== //
+// PO: no re-run of an analysis; once an analysis SUCCEEDED, the transcript is
+// locked (read-only) with an info notice. « Analysed » = lastRun, THE source
+// of the wizard (RunAIWizard runsByPipeline, same last-run endpoint) — the
+// server refuses the PATCH on the same rule (ai_pipelines/services/
+// analysis_state.py). A failed analysis (no lastRun) leaves it editable.
+
+const ANALYSED_RUN = { id: "run-1", last_run_at: "2026-11-01T10:00:00Z", last_run_by: null };
+
+describe("The transcript — locked once analysed (8g-7)", () => {
+  it("analysed: the transcript is read-only, with the info notice", () => {
+    mockLastRun = ANALYSED_RUN;
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    openSource();
+    fireEvent.click(screen.getByText(/We agreed on a security review/));
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByTestId("transcript-analysed-notice")).toHaveTextContent(/already been analysed/);
+  });
+
+  it("analysed: the notes keep their own rule (editable on a PLANNED activity)", () => {
+    mockLastRun = ANALYSED_RUN;
+    mockActivity = dcActivity();
+    render(<ActivityWorkspacePage />);
+    openSource();
+    fireEvent.click(screen.getByText(NOTES_PLACEHOLDER));
+    expect(screen.getAllByRole("textbox").length).toBeGreaterThan(0);
+  });
+
+  it("not analysed (none or a failed run): editable, no notice", () => {
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    openSource();
+    expect(screen.queryByTestId("transcript-analysed-notice")).toBeNull();
+    fireEvent.click(screen.getByText(/We agreed on a security review/));
+    expect(screen.getAllByRole("textbox").length).toBeGreaterThan(0);
+  });
+});
+
+// ==============================|| LOT 3 / 11 (TD-302) — THE SOURCE BAND'S RUN AI ||============================== //
+// PO: the Source band's Run AI is a PILL placed as the other bands' actions —
+// in the band header (CollapsibleStrip `meta`), as the Next steps band's
+// « + Add next step » (ActivityNextStepsBand.jsx). Visible while folded; a
+// click opens the wizard without toggling the band.
+
+const sourceHeader = () => screen.getByText("Source").closest("[aria-expanded]");
+
+describe("The Source band's Run AI — a pill in the band header (TD-302)", () => {
+  it("is in the header, as a pill, while the band is folded", () => {
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    expect(sourceHeader()).toHaveAttribute("aria-expanded", "false");
+    const pill = within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" });
+    expect(pill).not.toHaveClass("MuiButton-root");
+    expect(pill).not.toHaveAttribute("aria-disabled");
+  });
+
+  it("a click opens the wizard and does not unfold the band", async () => {
+    mockActivity = dcActivity({ status: "COMPLETED" });
+    render(<ActivityWorkspacePage />);
+    await act(async () => {
+      fireEvent.click(within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" }));
+    });
+    expect(screen.getByText(/Select objectives/)).toBeInTheDocument();
+    expect(sourceHeader()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("CANCELLED: the pill is disabled", () => {
+    mockActivity = dcActivity({ status: "CANCELLED" });
+    render(<ActivityWorkspacePage />);
+    const pill = within(sourceHeader()).getByRole("button", { name: "Run AI Analysis" });
+    expect(pill).toHaveAttribute("aria-disabled", "true");
   });
 });

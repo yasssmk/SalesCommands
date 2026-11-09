@@ -26,6 +26,16 @@ FUTURE = TODAY + timedelta(days=3)
 _CREATE_URL = '/module-activities/create-with-entities/'
 
 
+
+def _participant(account):
+    """Sprint « Cycle de vie des contacts », étape 7: a CALL / MEETING needs
+    at least one participant on every path (participant_rules) — a contact of
+    the account, created here."""
+    from app_modules.contacts.models import Contact
+    c = Contact(account=account, first_name='Pat', last_name='Participant')
+    c.save(client_id=account.client_id)
+    return str(c.id)
+
 def _act(**kw):
     """An in-memory Activity carrying only the fields is_overdue reads."""
     return Activity(**kw)
@@ -83,7 +93,7 @@ class TestIsOverdueSerializerPath:
                 'activity_type': ActivityType.CALL,
                 'status': ActivityStatus.PLANNED,
                 'account_id': str(account.id),
-                'contact_ids': [],
+                'contact_ids': [_participant(account)],
                 'decision_step_id': None,
                 'scheduled_date': past.isoformat(),  # no due_date -> the DC case
             },

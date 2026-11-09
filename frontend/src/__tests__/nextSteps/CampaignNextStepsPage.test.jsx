@@ -207,17 +207,24 @@ describe("A SUCCESSFUL campaign activity — no DC born yet (5.14b)", () => {
 
   it("✓ → Create: the drawer in conversion mode, pre-filled from the next step, a new cycle inline", async () => {
     renderPage();
-    const drawer = await validateAndCreate();
+    await validateAndCreate();
+    const drawerNow = () => within(coque()).getByTestId("activity-create");
     expect(within(coque()).getByTestId("coque-title")).toHaveTextContent("Start Decision Cycle");
-    expect(within(drawer).getByTestId("inline-read-title")).toHaveTextContent("Security review");
-    expect(within(drawer).getByTestId("conversion-cycle")).toBeInTheDocument();
-    expect(within(drawer).queryByTestId("inline-read-decision_cycle")).toBeNull();
-    expect(within(drawer).getByText("Thomas Lefèvre")).toBeInTheDocument();
+    expect(within(drawerNow()).getByTestId("inline-read-title")).toHaveTextContent("Security review");
+    expect(within(drawerNow()).getByText("Thomas Lefèvre")).toBeInTheDocument();
+    // 8f-2: the toggle « Existing cycle / New cycle » (Existing by default:
+    // the account has an open cycle) — « New cycle » chosen here.
+    await waitFor(() => expect(within(drawerNow()).getByRole("button", { name: "Existing cycle" }))
+      .toHaveAttribute("aria-pressed", "true"));
+    expect(within(drawerNow()).getByTestId("inline-read-decision_cycle")).toHaveTextContent("Choose a decision cycle");
+    fireEvent.click(within(drawerNow()).getByRole("button", { name: "New cycle" }));
+    const drawer = drawerNow();
 
     const cycle = within(drawer).getByTestId("conversion-cycle");
-    fireEvent.change(within(cycle).getByPlaceholderText("Cycle name *"), { target: { value: "Deal Acme" } });
+    fireEvent.click(within(cycle).getByTestId("inline-read-cycle_name"));
+    fireEvent.change(within(cycle).getByTestId("inline-input-cycle_name"), { target: { value: "Deal Acme" } });
     fireEvent.click(within(cycle).getByRole("button", { name: "Technical Fit" }));
-    fireEvent.click(within(cycle).getByRole("button", { name: /Create Cycle/ }));
+    fireEvent.click(within(cycle).getByTestId("inline-cycle-confirm"));
     await within(cycle).findByText("Deal Acme");
     const save = within(coque()).getByRole("button", { name: "Save" });
     await waitFor(() => expect(save).toBeEnabled());

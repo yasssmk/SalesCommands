@@ -319,6 +319,16 @@ def get_urlpatterns():
             name='people-validate',
         ),
         path(
+            'people/<uuid:pk>/resolve/',
+            PeopleSignalViewSet.as_view({'post': 'resolve'}),
+            name='people-resolve',
+        ),
+        path(
+            'people/<uuid:pk>/resolution-candidates/',
+            PeopleSignalViewSet.as_view({'get': 'resolution_candidates'}),
+            name='people-resolution-candidates',
+        ),
+        path(
             'people/<uuid:pk>/reject/',
             PeopleSignalViewSet.as_view({'post': 'reject_signal'}),
             name='people-reject',

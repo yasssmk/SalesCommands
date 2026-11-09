@@ -153,6 +153,25 @@ class PeopleSignal(BaseSignal):
     )
 
     # =========================================================================
+    # STAKEHOLDER AFFILIATION (sprint « Cycle de vie des contacts », étape 3)
+    # =========================================================================
+
+    stakeholder = models.ForeignKey(
+        'decision_cycles.Stakeholder',
+        on_delete=models.SET_NULL,
+        related_name='signals',
+        null=True,
+        blank=True,
+        verbose_name=_('Stakeholder'),
+        help_text=_(
+            'The DC stakeholder this observation is affiliated to (set at '
+            'validation). The signal itself is never merged nor modified '
+            'otherwise (règle doublons); the stakeholder\'s current role is '
+            'read on its current_signal.'
+        ),
+    )
+
+    # =========================================================================
     # NARRATIVE CONTENT
     # =========================================================================
 

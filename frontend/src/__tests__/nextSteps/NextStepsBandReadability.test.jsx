@@ -387,6 +387,30 @@ describe("5.8f — the band halo: the same SignalsHaloBox as the Signals band", 
     expect(band()).toHaveAttribute("data-halo-color", "warning");
   });
 
+  // 8f-1 (PO): « Start Decision Cycle » shown (showsCampaignConversion, the
+  // CTA's own condition) → the band highlighted EXACTLY as with next steps to
+  // validate (the same SignalsHaloBox, warning); once the DC is born → none.
+  it("a SUCCESSFUL campaign activity with « Start Decision Cycle », no next step → the warning halo", () => {
+    renderPage(dcActivity({ decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL" }), []);
+    expect(screen.getByRole("button", { name: "Start Decision Cycle" })).toBeInTheDocument();
+    expect(band()).toHaveAttribute("data-halo-color", "warning");
+  });
+
+  it("the DC born from it (no CTA any more), no next step → no highlight", () => {
+    renderPage(dcActivity({
+      decision_cycle: null, campaign_detail: { id: "camp-1" }, outcome: "SUCCESSFUL",
+      next_planned_step: { source: "BORN_DECISION_CYCLE", decision_cycle: { id: "dc-born", name: "Deal" },
+                           activity: null },
+    }), []);
+    expect(screen.queryByRole("button", { name: "Start Decision Cycle" })).toBeNull();
+    expect(band()).toHaveAttribute("data-halo-color", "none");
+  });
+
+  it("an activity in a DC, no next step → no highlight (unchanged)", () => {
+    renderPage(dcActivity(), []);
+    expect(band()).toHaveAttribute("data-halo-color", "none");
+  });
+
   it("the Signals band halo is unchanged (its own types only)", () => {
     renderPage(dcActivity(), NEXT_STEPS, []);
     const halos = screen.getAllByTestId("signals-halo");

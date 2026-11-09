@@ -198,3 +198,16 @@ describe("TechStack detail on the chassis (Activity, T1)", () => {
     expect(screen.getByText("TOOL USAGE")).toBeInTheDocument();
   });
 });
+
+// Sprint « Cycle de vie des contacts », étape 2c — NO scope (PO): a TechStack
+// always describes the account; a tool evaluated on a deal is a Competitor.
+describe("TechStack detail — no scope (étape 2c)", () => {
+  it("§1 Technology shows the tool only: no « Scope » row, no scope label", () => {
+    renderChassis({ ...TECH, scope: "DEAL", scope_display: "This deal" });
+    const body = screen.getByTestId("techstack-detail-body");
+    expect(screen.queryByTestId("techstack-scope")).not.toBeInTheDocument();
+    expect(within(body).queryByText("Scope")).not.toBeInTheDocument();
+    expect(within(body).queryByText("This deal")).not.toBeInTheDocument();
+    expect(within(body).queryByText("Account-wide")).not.toBeInTheDocument();
+  });
+});

@@ -188,7 +188,41 @@ class ValidationErrorMessages:
 
 class ActivityErrorMessages:
     """Activity specific error messages"""
-    
+
+    # One born cycle (8g-3, TD-296) — activity_sequence_service.guard_decision_cycle_birth
+    DECISION_CYCLE_ALREADY_BORN = _(
+        "A decision cycle was already started from this campaign activity."
+    )
+
+    # Signals lock (8g-2, TD-297) — activities/services/signals_lock.py
+    SIGNALS_LOCKED = _(
+        "This activity is cancelled: its signals and its AI analysis are locked."
+    )
+
+    # Transcript lock (8g-7, TD-25) — ai_pipelines/services/analysis_state.py
+    TRANSCRIPT_LOCKED = _(
+        "This activity has been analysed: its transcript can no longer be changed."
+    )
+
+    # Dates (8g-1, TD-230) — activities/services/date_rules.py
+    DATES_EXCLUSIVE = _(
+        "An activity has a scheduled date or a due date, not both."
+    )
+
+    # Participants (sprint « Cycle de vie des contacts », étape 7) —
+    # activities/services/participant_rules.py
+    PARTICIPANT_REQUIRED = _(
+        "A meeting, call, email or demo needs at least one participant "
+        "(a contact or a stakeholder)."
+    )
+    PARTICIPANT_CONTACT_INVALID = _(
+        "Some contacts were not found or do not belong to this account."
+    )
+    PARTICIPANT_STAKEHOLDER_INVALID = _(
+        "Only the stakeholders of this activity's decision cycle that are not "
+        "contacts yet can take part."
+    )
+
     # Status transitions
     CANNOT_COMPLETE_CANCELLED = _("Cannot complete a cancelled activity")
     CANNOT_CANCEL_COMPLETED = _("Cannot cancel a completed activity")
@@ -427,6 +461,10 @@ class SignalErrorMessages:
     ALREADY_PENDING          = _("Signal is already pending.")
     NOT_EDITABLE             = _("Cannot edit a signal with status '{status}'.")
     INVALID_SIGNAL_TYPE      = _("Invalid signal type: '{signal_type}'.")
+    # 8h — the aggregated list's repeatable filters (inline filter pattern):
+    # an invalid value is refused, never ignored (no silent empty list).
+    INVALID_TYPE_FILTER      = _("Invalid signal type filter: '{value}'. Allowed: {allowed}.")
+    INVALID_STATUS_FILTER    = _("Invalid status filter: '{value}'. Allowed: {allowed}.")
     SOURCE_CONTACT_REQUIRED  = _("A source contact is required for this signal type.")
     SOURCE_ACTIVITY_REQUIRED = _("A source activity is required for this signal type.")
 
@@ -476,6 +514,39 @@ class SignalErrorMessages:
     NEXT_STEP_LINK_UPDATE_NOT_ALLOWED = _(
         "Linking a next step can only update the activity type, dates, step, "
         "objective, description and contacts."
+    )
+
+    # -----------------------------------------------------------------
+    # PeopleSignal — validated by choosing its stakeholder in the decision
+    # cycle (sprint « Cycle de vie des contacts », étape 5).
+    # -----------------------------------------------------------------
+    PEOPLE_REQUIRES_STAKEHOLDER = _(
+        "A person is validated by choosing who they are in the decision "
+        "cycle: an existing stakeholder, an account contact or a new "
+        "stakeholder."
+    )
+    PEOPLE_REQUIRES_DECISION_CYCLE = _(
+        "This person can be linked to the deal once the activity is linked "
+        "to a decision cycle."
+    )
+    # 8b-1: resolve « Link to the deal » on a People already affiliated.
+    PEOPLE_ALREADY_AFFILIATED = _(
+        "This person is already linked to a stakeholder of the decision "
+        "cycle."
+    )
+    PEOPLE_RESOLVE_ONE_CHOICE = _(
+        "Choose exactly one: an existing stakeholder, an account contact or "
+        "a new stakeholder."
+    )
+    PEOPLE_RESOLVE_STAKEHOLDER_INVALID = _(
+        "This stakeholder does not belong to the decision cycle of this "
+        "activity."
+    )
+    PEOPLE_RESOLVE_CONTACT_INVALID = _(
+        "This contact does not belong to the account of this activity."
+    )
+    PEOPLE_RESOLVE_CREATE_EMPTY = _(
+        "A new stakeholder needs a name or a department."
     )
 
     # -----------------------------------------------------------------

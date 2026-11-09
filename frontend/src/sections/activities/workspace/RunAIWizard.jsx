@@ -21,11 +21,16 @@ import Typography from '@mui/material/Typography';
 // project imports
 import MainCard from 'components/MainCard';
 import InfoNotice from 'components/display/InfoNotice';
+import { getSignalTypeLabel, QUALIFICATION_SIGNAL_TYPES } from 'utils/signalTypes';
 
 // assets
 import SendOutlined from '@ant-design/icons/SendOutlined';
 import ArrowLeftOutlined from '@ant-design/icons/ArrowLeftOutlined';
 import CheckCircleOutlined from '@ant-design/icons/CheckCircleOutlined';
+
+// The qualification option names the types the analysis REALLY extracts —
+// ONE list with their shared labels (utils/signalTypes, lot 3 / 11b, TD-258).
+const QUALIFICATION_TYPES_LABEL = QUALIFICATION_SIGNAL_TYPES.map(getSignalTypeLabel).join(', ');
 
 // ==============================|| CONSTANTS ||============================== //
 
@@ -98,7 +103,7 @@ function StepObjectives({
             label={
               <Stack direction="row" spacing={1} alignItems="center">
                 <Typography variant="body2">
-                  Qualification signals (Pain, Objective, Impact, TechStack, Blocker)
+                  Qualification signals ({QUALIFICATION_TYPES_LABEL})
                 </Typography>
                 {qualAlreadyExtracted && (
                   <Typography variant="caption" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

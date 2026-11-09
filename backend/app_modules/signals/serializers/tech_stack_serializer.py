@@ -11,16 +11,16 @@ Stack:
   TechStackSignalUpdateSerializer — restricted PATCH, merged-state checks
 
 Notes:
-  - The model shadow-overrides `decision_cycle`, `campaign`, and
-    `signal_category` to None on the concrete TechStackSignal — see
-    app_modules/signals/models/tech_stack_signal.py docstring for the
-    rationale of each. Of these three, only `signal_category` (and its
-    `signal_category_display` companion) is declared at the top level
-    of the base serializers, so it is the only one that requires
-    filtering. decision_cycle and campaign are no longer top-level
-    fields on the base — they live inside the `source_context` block
-    produced by SignalSourceSerializer, which already handles the
-    shadow-override at runtime via getattr() fallback.
+  - The model shadow-overrides `campaign` and `signal_category` to None
+    on the concrete TechStackSignal; decision_cycle is a real column —
+    ROUTING to the DC only (everything goes up through the DC), with no
+    "in place / evaluated" meaning: a TechStack describes the account, a
+    tool evaluated on a deal is a CompetitorSignal (see
+    app_modules/signals/models/tech_stack_signal.py). Only
+    `signal_category` (and its `signal_category_display` companion) is
+    declared at the top level of the base serializers, so it is the only
+    one that requires filtering. decision_cycle and campaign live inside
+    the `source_context` block produced by SignalSourceSerializer.
 
   - source_contact and source_department were previously shadow-overridden
     too. Both were retired from BaseSignal entirely during the

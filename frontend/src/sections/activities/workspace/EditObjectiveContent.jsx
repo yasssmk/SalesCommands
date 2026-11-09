@@ -48,6 +48,8 @@ import { OBJECTIVE_SCOPE } from "utils/objectiveScope";
 
 // Target date — the shared chassis date field (moved from this file, D1).
 import InlineDateField from "components/drawer/InlineDateField";
+import { SIGNAL_SUMMARY_MIN_LENGTH } from "sections/activities/signals/signalValidationRules";
+import { SIGNAL_NO_NOTES, SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| HELPERS (reproduced from InlineObjectiveForm) ||=========== //
 
@@ -61,7 +63,10 @@ function resolveLabel(options, value) {
 const validationSchema = Yup.object({
   summary: Yup.string()
     .trim()
-    .min(10, "Summary must be at least 10 characters")
+    .min(
+      SIGNAL_SUMMARY_MIN_LENGTH,
+      `Summary must be at least ${SIGNAL_SUMMARY_MIN_LENGTH} characters`,
+    )
     .required("Summary is required"),
   what: Yup.string().required("Domain is required"),
   dimension: Yup.string().required("Dimension is required"),
@@ -354,7 +359,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
             type="textarea"
             value={values.notes}
             onChange={set("notes")}
-            placeholder="No notes"
+            placeholder={SIGNAL_NO_NOTES}
           />
         </Stack>
 
@@ -373,7 +378,7 @@ export default function EditObjectiveContent({ objective, accountId, onSaved, on
             type="textarea"
             value={values.source_quote}
             onChange={set("source_quote")}
-            placeholder="No source quote"
+            placeholder={SIGNAL_NO_SOURCE_QUOTE}
           />
         </Stack>
       </Stack>
@@ -396,7 +401,7 @@ EditObjectiveContent.propTypes = {
     notes: PropTypes.string,
     source_quote: PropTypes.string,
   }).isRequired,
-  /** Account the objective belongs to (reserved for future scoped pickers). */
+  /** Account the objective belongs to — passed by the caller, currently unused. */
   accountId: PropTypes.string,
   /** Fired after a successful save with the updated signal — the caller
       revalidates and returns to the detail. Absent → the drawer closes (legacy). */

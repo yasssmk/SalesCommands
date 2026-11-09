@@ -235,21 +235,21 @@ describe("SignalDetailPanel", () => {
     expect(screen.getAllByText("Pierre Dupont").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("S3-fix: the related tool is shown on the detail when present, hidden when empty", () => {
-    // Present → the "Related tool" row and its value render (detail/edit parity).
+  it("S3-fix / TD-276: the related tool has its own section (§3, as the edit) — placeholder when empty", () => {
+    // Present → the §3 title + the "Related tool" row and its value.
     const { unmount } = render(<SignalDetailPanel signal={MOCK_PAIN} signalType="pain" />);
-    expect(screen.getByText("Related tool")).toBeInTheDocument();
+    expect(screen.getAllByText("Related tool")).toHaveLength(2);
     expect(screen.getByText("Excel")).toBeInTheDocument();
     unmount();
 
-    // Empty → the row is hidden (ReadRow drops empty values).
+    // Empty → the edit's placeholder (the section is never blank).
     render(
       <SignalDetailPanel
         signal={{ ...MOCK_PAIN, related_techstack_mention: "" }}
         signalType="pain"
       />,
     );
-    expect(screen.queryByText("Related tool")).not.toBeInTheDocument();
+    expect(screen.getByText("No related tool")).toBeInTheDocument();
   });
 
   it("Pain detail uses the standard title header, suppressed when the coque owns it", () => {
@@ -356,7 +356,7 @@ describe("SignalDetailPanel", () => {
     expect(screen.getByText(/impact:DATA:TIME/)).toBeInTheDocument();
   });
 
-  it("S3-fix: impact_type present — type + metric shown, metric masked when empty, human never shown", () => {
+  it("S3-fix / 8i-1: impact_type present — type shown, empty metric → « No metric defined », human never shown", () => {
     const bare = {
       ...MOCK_IMPACT_CHASSIS,
       id: "impact-bare",
@@ -367,18 +367,18 @@ describe("SignalDetailPanel", () => {
     };
     render(<SignalDetailPanel signal={bare} signalType="impact" />);
 
-    // impact_type present → its row shows; NOT the "No metric defined" line.
+    // impact_type present → its row shows.
     expect(screen.getByText("Impact type")).toBeInTheDocument();
     expect(screen.getByText("Time impact")).toBeInTheDocument();
-    expect(screen.queryByText("No metric defined")).not.toBeInTheDocument();
-    // metric_text masked when empty.
-    expect(screen.queryByText("Impact description")).not.toBeInTheDocument();
+    // 8i-1: an empty metric_text keeps its row, with the placeholder.
+    expect(screen.getByText("Impact description")).toBeInTheDocument();
+    expect(screen.getByText("No metric defined")).toBeInTheDocument();
     // human_impact is never rendered on the Activity chassis.
     expect(screen.queryByText("Human impact")).not.toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
 
-  it("S3-fix (a/c): impact_type EMPTY → 'No metric defined', metric_text + human_impact ABSENT", () => {
+  it("S3-fix (a/c) / 8i-1: impact_type EMPTY → « No impact type », metric_text KEPT, human_impact ABSENT", () => {
     const noType = {
       ...MOCK_IMPACT_CHASSIS,
       id: "impact-no-type",
@@ -389,10 +389,10 @@ describe("SignalDetailPanel", () => {
     };
     render(<SignalDetailPanel signal={noType} signalType="impact" />);
 
-    expect(screen.getByText("No metric defined")).toBeInTheDocument();
-    // No orphan metric / human rows.
-    expect(screen.queryByText("Impact type")).not.toBeInTheDocument();
-    expect(screen.queryByText("5 hours per week")).not.toBeInTheDocument();
+    // 8i-1: the type row reads the edit's placeholder; the description stays.
+    expect(screen.getByText("Impact type")).toBeInTheDocument();
+    expect(screen.getByText("No impact type")).toBeInTheDocument();
+    expect(screen.getByText("5 hours per week")).toBeInTheDocument();
     expect(screen.queryByText("Frustration")).not.toBeInTheDocument();
   });
 
@@ -596,7 +596,7 @@ describe("SignalDetailPanel", () => {
     expect(rule).not.toContain("border-radius:4px");
   });
 
-  it("P-PLACEHOLDER: objective detail empties (No metrics / No source quote) read in text.secondary, not disabled", () => {
+  it("P-PLACEHOLDER: objective detail empties (No success criteria / No source quote) read in text.secondary, not disabled", () => {
     const bare = {
       ...MOCK_OBJECTIVE,
       id: "o-ph",
@@ -606,9 +606,9 @@ describe("SignalDetailPanel", () => {
       source_quote: "",
     };
     render(<SignalDetailPanel signal={bare} signalType="objective" />);
-    expect(getComputedStyle(screen.getByText("No metrics defined")).color).toBe(testTheme.palette.text.secondary);
+    expect(getComputedStyle(screen.getByText("No success criteria")).color).toBe(testTheme.palette.text.secondary);
     expect(getComputedStyle(screen.getByText("No source quote")).color).toBe(testTheme.palette.text.secondary);
-    expect(getComputedStyle(screen.getByText("No metrics defined")).color).not.toBe(testTheme.palette.text.disabled);
+    expect(getComputedStyle(screen.getByText("No success criteria")).color).not.toBe(testTheme.palette.text.disabled);
   });
 
   it("UI-9: the low action bar and the content box are rendered by ONE DrawerContentLayout (shared chassis, like the edit drawers)", () => {
@@ -638,12 +638,16 @@ describe("SignalDetailPanel", () => {
     expect(getComputedStyle(line).color).not.toBe(testTheme.palette.text.disabled);
   });
 
-  it("SIG-5e-fix3: empty Metrics renders a single 'No metrics defined' line", () => {
+  // 8i-1 (PO, TD-276 extension) replaces SIG-5e-fix3's single line: each
+  // Metrics field stays, with the edit's placeholder.
+  it("8i-1: empty Metrics keeps each field with the edit's placeholder", () => {
     const noMetrics = { ...MOCK_OBJECTIVE, id: "o-nm", success_criteria: "", target_date: "", notes: "" };
     render(<SignalDetailPanel signal={noMetrics} signalType="objective" />);
-    expect(screen.getByText("No metrics defined")).toBeInTheDocument();
-    expect(screen.queryByText("Success criteria")).not.toBeInTheDocument();
-    expect(screen.queryByText("Target date")).not.toBeInTheDocument();
+    expect(screen.queryByText("No metrics defined")).not.toBeInTheDocument();
+    expect(screen.getByText("Success criteria")).toBeInTheDocument();
+    expect(screen.getByText("No success criteria")).toBeInTheDocument();
+    expect(screen.getByText("Target date")).toBeInTheDocument();
+    expect(screen.getByText("No date set")).toBeInTheDocument();
   });
 
   it("SIG-5e: 'View origin activity' hidden when the origin IS the current activity", () => {
@@ -970,7 +974,7 @@ describe("SignalDetailPanel — multi-department scope (SIG-4)", () => {
     // The detail still renders (summary box present, meta carries the nature)
     // but no department text leaks.
     expect(screen.getByTestId("constraint-summary-box")).toHaveTextContent(
-      /This is an\s+Regulatory\s+constraint · Rigidity: Firm/,
+      /This is an\s+Regulatory\s+constraint/,
     );
     expect(screen.queryByText("Sales")).not.toBeInTheDocument();
   });
@@ -1039,14 +1043,17 @@ describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", ()
     expect(screen.getByTestId("constraint-detail-body")).toBeInTheDocument();
     expect(screen.getByTestId("constraint-summary-box")).toBeInTheDocument();
     expect(screen.getByTestId("constraint-summary-text")).toBeInTheDocument();
-    // Meta recap: "This is an {nature} constraint · Rigidity: {rigidity}"
-    // (nature in bold; rigidity a plain suffix after "constraint").
+    // Meta recap: "This is an {nature} constraint" (nature in bold). TD-276:
+    // the rigidity left the meta for its own section (§2, as the edit).
     const box = screen.getByTestId("constraint-summary-box");
-    expect(box).toHaveTextContent(/This is an\s+Security\s+constraint · Rigidity: Firm/);
+    expect(box).toHaveTextContent(/This is an\s+Security\s+constraint/);
+    expect(box).not.toHaveTextContent("Rigidity");
     // nature carried in the box meta as the bold node.
     expect(screen.getByText("Security")).toBeInTheDocument();
-    // 4 sections: Summary → Scope → Notes → Source. NO Classification.
+    // 5 sections (TD-276, the edit's): Summary → Rigidity → Scope → Notes →
+    // Source. NO Classification.
     expect(screen.getByText("Summary")).toBeInTheDocument();
+    expect(screen.getAllByText("Rigidity")).toHaveLength(2);   // §2 title + its row
     expect(screen.getByText("Scope")).toBeInTheDocument();
     expect(screen.getByText("Notes")).toBeInTheDocument();
     expect(screen.getByText("Source")).toBeInTheDocument();
@@ -1072,7 +1079,7 @@ describe("SignalDetailPanel — Constraint on the chassis (TD-238 / S2-fix)", ()
     expect(screen.queryByText("Firm")).not.toBeInTheDocument();
   });
 
-  it("S2: notes masked when empty → 'No notes'", () => {
+  it("S2: empty notes → the 'No notes' placeholder", () => {
     const noNotes = { ...MOCK_CONSTRAINT_CHASSIS, id: "c-nonotes", notes: "" };
     render(<SignalDetailPanel signal={noNotes} signalType="constraints" />);
     expect(screen.getByText("No notes")).toBeInTheDocument();
@@ -1190,9 +1197,9 @@ describe("SignalDetailPanel — Objection on the chassis (Activity, S1)", () => 
 // ==== People S2 — People detail on the standard chassis (Activity) ====
 // Clone of the Objection chassis: same gate (currentActivityId, only the
 // Activity coque passes it) so DC/Account Flat keep the flush PeopleDetails.
-// 4 sections: Person (summary box "Name — Role (Department)") → Role (role,
-// influence, why) → Contact (target_contact ONLY, no participant fallback;
-// department) → Source.
+// 3 sections since TD-276 (the edit's structure): Person (summary box "Name —
+// Role (Department)" + the contact — target_contact ONLY, no participant
+// fallback — and the department) → Role (role, influence, why) → Source.
 describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
   const MOCK_PEOPLE_CHASSIS = {
     id: "people-chassis",
@@ -1211,7 +1218,7 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
     },
   };
 
-  it("P1: people + currentActivityId (no leading/trailing) → people chassis, 4 sections", () => {
+  it("P1: people + currentActivityId (no leading/trailing) → people chassis, 3 sections (TD-276)", () => {
     render(
       <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,
     );
@@ -1220,8 +1227,9 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
     expect(screen.getByText("Person")).toBeInTheDocument();
     // "Role": §2 title + the Role field label.
     expect(screen.getAllByText("Role")).toHaveLength(2);
-    // "Contact": §3 title + the Source participants caption (one participant).
-    expect(screen.getAllByText("Contact")).toHaveLength(2);
+    // TD-276: no separate "Contact" section (the contact is in §1, as the
+    // edit) — "Contact" is only the Source participants caption.
+    expect(screen.getAllByText("Contact")).toHaveLength(1);
     expect(screen.getByText("Source")).toBeInTheDocument();
     // Flush markers absent.
     expect(screen.queryByText("ROLE")).not.toBeInTheDocument();
@@ -1334,7 +1342,7 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
       <SignalDetailPanel signal={MOCK_PEOPLE_CHASSIS} signalType="people" currentActivityId="act-1" />,
     );
     const contact = screen.getByTestId("people-contact");
-    expect(contact).toHaveTextContent("No contact linked");
+    expect(contact).toHaveTextContent("No contact attributed");
     expect(contact).not.toHaveTextContent("Paula Participant");
     expect(screen.getAllByText("Paula Participant")).toHaveLength(1);
     expect(within(screen.getByTestId("people-source")).getByText("Paula Participant")).toBeInTheDocument();
@@ -1351,7 +1359,7 @@ describe("SignalDetailPanel — People on the chassis (Activity, S2)", () => {
     expect(within(contact).getByText("Sophie Martin")).toBeInTheDocument();
     expect(contact).toHaveTextContent("CFO");
     expect(contact).toHaveTextContent("Finance");
-    expect(contact).not.toHaveTextContent("No contact linked");
+    expect(contact).not.toHaveTextContent("No contact attributed");
   });
 
   it("P7: influence null → 'Not assessed'; empty notes → 'No notes'; no department → placeholder", () => {

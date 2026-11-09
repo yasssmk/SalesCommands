@@ -41,6 +41,7 @@ vi.mock("api/accounts/decisionCycles", () => ({
 
 import Typography from "@mui/material/Typography";
 import ThemeCustomization from "themes/index";
+import { sectionOf, sectionTitles } from "../../../_utils/sectionHeaders";
 import ContactDrawerContent from "sections/activities/workspace/ContactDrawerContent";
 
 function rulesForElement(el) {
@@ -211,15 +212,16 @@ describe("ContactDrawerContent — Edit in the bottom action bar (no inline penc
   });
 });
 
-describe("ContactDrawerContent — See signals at the bottom (inert)", () => {
-  it("shows 'See signals', inert (no crash on click)", () => {
+describe("ContactDrawerContent — See signals at the bottom (8g-6)", () => {
+  it("'See signals' opens the signals from conversations with the contact", () => {
     mockContact();
     mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
     renderFiche();
-    const signals = screen.getByTestId("contact-signals-link");
-    expect(signals).toBeInTheDocument();
-    fireEvent.click(signals);
-    expect(signals).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("contact-signals-link"));
+    expect(openDrawerMock).toHaveBeenCalledTimes(1);
+    const [node, opts] = openDrawerMock.mock.calls[0];
+    expect(node.props).toMatchObject({ contactId: "c1", stakeholderId: undefined });
+    expect(opts.title).toMatch(/^Signals from conversations with /);
   });
 });
 
@@ -264,6 +266,25 @@ describe("ContactDrawerContent — decision role (always present, placeholder if
     expect(role).toHaveTextContent("High");
   });
 
+  // Sprint « Cycle de vie des contacts », étape 1: GET /decision_cycles/{id}/people/
+  // returns a contact's validated roles MOST RECENT first; the fiche shows the
+  // FIRST one (the latest role), never another one of the stack.
+  it("shows the FIRST qualified entry of the contact (server order = most recent first)", () => {
+    mockContact();
+    mockDCPeople({
+      qualified: [
+        qualifiedEntry({ signal_id: "s2", role: "DECISION_MAKER", role_display: "Decision Maker",
+          influence: "LOW", influence_display: "Low", created_at: "2026-11-02T10:00:00Z" }),
+        qualifiedEntry({ signal_id: "s1", created_at: "2026-11-01T10:00:00Z" }),
+      ],
+      unqualified: [],
+    });
+    renderFiche();
+    const role = screen.getByTestId("contact-role");
+    expect(role).toHaveTextContent("Decision Maker");
+    expect(role).not.toHaveTextContent("Champion");
+  });
+
   it("shows 'No role defined' when the contact has no DC-people entry", () => {
     mockContact();
     mockDCPeople({ qualified: [], unqualified: [] });
@@ -292,5 +313,29 @@ describe("ContactDrawerContent — loading", () => {
     mockDCPeople({ qualified: [], unqualified: [] });
     renderFiche();
     expect(screen.getByTestId("contact-loading")).toBeInTheDocument();
+  });
+});
+
+// ==============================|| LOT 3 / 13a (TD-239) — NUMBERED SECTIONS ||============================== //
+// PO (MAJ 5.18): « ce design pour TOUS les drawers » — the read fiche gets the
+// numbered SectionHeaders of its edit drawer (EditContactContent: Identity ·
+// Contact · Role in the decision). « See signals » stays below the sections.
+
+describe("ContactDrawerContent — numbered sections, as the edit drawer (TD-239)", () => {
+  it("§1 Identity · §2 Contact · §3 Role in the decision", () => {
+    mockContact();
+    mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
+    const { container } = renderFiche();
+    expect(sectionTitles(container)).toEqual(["Identity", "Contact", "Role in the decision"]);
+  });
+
+  it("each block sits in its section", () => {
+    mockContact();
+    mockDCPeople({ qualified: [qualifiedEntry()], unqualified: [] });
+    const { container } = renderFiche();
+    expect(sectionOf(container, screen.getByTestId("contact-identity-row"))).toBe(1);
+    expect(sectionOf(container, screen.getByText("Email"))).toBe(2);
+    expect(sectionOf(container, screen.getByTestId("contact-role"))).toBe(3);
+    expect(sectionOf(container, screen.getByTestId("contact-activities"))).toBe(3);
   });
 });

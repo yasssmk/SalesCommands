@@ -1,10 +1,40 @@
 // components/AsyncSelection/AsyncContactSelect.jsx
 
 import PropTypes from 'prop-types';
+import { useMemo } from 'react';
 
 // project imports
 import AsyncSelect from './AsyncSelect';
 import { useGetContacts } from 'api/businessData/contacts';
+import { useGetDCStakeholders } from 'api/accounts/decisionCycles';
+
+// Sprint « Cycle de vie des contacts », 7d-1 — opt-in (prop
+// stakeholdersCycleId): the same list also offers the NON-converted
+// stakeholders of a decision cycle, both searched on the server, with no
+// visible distinction. A stakeholder option carries _kind: 'stakeholder'; a
+// converted stakeholder is offered once, under its contact (the contacts
+// search). Without the prop: the standard behaviour, untouched.
+const stakeholderLabel = (x) => x.display_name || x.full_name || x.department?.name || '';
+
+function useContactsWithStakeholders({ filters = {}, ...options }) {
+  const { stakeholders_cycle_id: cycleId, ...contactFilters } = filters;
+  const contactsResult = useGetContacts({ ...options, filters: contactFilters });
+  const { stakeholders, stakeholdersLoading } = useGetDCStakeholders(cycleId || null, {
+    search: options.search || '',
+    converted: false,
+  });
+  return useMemo(() => {
+    const rows = (stakeholders || [])
+      .filter((x) => !x.contact)
+      .map((x) => ({ ...x, _kind: 'stakeholder' }));
+    const contacts = contactsResult.contacts || [];
+    return {
+      ...contactsResult,
+      contacts: rows.length ? [...contacts, ...rows] : contacts,
+      contactsLoading: Boolean(contactsResult.contactsLoading || stakeholdersLoading),
+    };
+  }, [contactsResult, stakeholders, stakeholdersLoading]);
+}
 
 /**
  * ASYNC CONTACT SELECT - Wrapper for contact selection
@@ -46,8 +76,12 @@ function AsyncContactSelect({
   filters = {},
   pageSize = 20,
   excludeIds = [],
+  stakeholdersCycleId,
   ...props
 }) {
+  // 7d-1: defined (an id, or null without a cycle) -> contacts + stakeholders.
+  const withStakeholders = stakeholdersCycleId !== undefined;
+
   
   /**
    * Format contact label for Autocomplete
@@ -55,6 +89,7 @@ function AsyncContactSelect({
    */
   const getContactLabel = (contact) => {
     if (!contact) return '';
+    if (contact._kind === 'stakeholder') return stakeholderLabel(contact);
     
     const name = `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
     const jobTitle = contact.job_title || '';
@@ -83,7 +118,7 @@ function AsyncContactSelect({
   
   return (
     <AsyncSelect
-      useDataHook={useGetContacts}
+      useDataHook={withStakeholders ? useContactsWithStakeholders : useGetContacts}
       dataKey="contacts"
       loadingKey="contactsLoading"
       getOptionLabel={getContactLabel}
@@ -97,7 +132,7 @@ function AsyncContactSelect({
       helperText={helperText}
       pageSize={pageSize}
       minSearchLength={0}
-      filters={filters}
+      filters={withStakeholders ? { ...filters, stakeholders_cycle_id: stakeholdersCycleId } : filters}
       {...props}
     />
   );
@@ -115,7 +150,10 @@ AsyncContactSelect.propTypes = {
   helperText: PropTypes.string,
   filters: PropTypes.object,    // { account_id: 'uuid' } to filter by account
   pageSize: PropTypes.number,
-  excludeIds: PropTypes.array   // IDs to exclude from results
+  excludeIds: PropTypes.array,  // IDs to exclude from results
+  // 7d-1: also offer the non-converted stakeholders of this decision cycle
+  // (null: none — the account contacts only); undefined: standard behaviour.
+  stakeholdersCycleId: PropTypes.string
 };
 
 export default AsyncContactSelect;

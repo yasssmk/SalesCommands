@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("components/signals/SignalEditDrawer", () => ({ default: () => null }));
-import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, cleanup, act } from "@testing-library/react";
 
 // ==============================|| MOCKS ||============================== //
 
@@ -34,6 +34,10 @@ import SignalClusterDetailDrawer from "sections/accounts/signals/SignalClusterDe
 import { useGetClusterDetail } from "api/signals/signalClusters";
 import { reopenSignal } from "api/signals/signals";
 import AphoriqTheme from "../_utils/aphoriqTheme";
+
+// SignalLine reads its compact tokens from the theme (lot 3 / 12, TD-265):
+// the app always renders under it.
+const render = (ui, opts) => rtlRender(ui, { wrapper: AphoriqTheme, ...opts });
 
 const CLUSTER_SUMMARY = {
   canonical_key: "pain:OPS:TIME",

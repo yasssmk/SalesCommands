@@ -5,7 +5,7 @@
 //   header: (i) "Context" (bold)
 //   Details: Objective | Scheduled (bold values), then Description (bold)
 //   ── hairline ──
-//   People: Internal team | External contacts — bold name + inline suffix (no
+//   People: Internal team | External team (7d-2) — bold name + inline suffix (no
 //           avatar). External contact names look clickable (pointer + hover) but
 //           carry no handler yet — the drawer is wired in a later sprint. No
 //           email/phone on the rows.
@@ -42,6 +42,7 @@ import Typography from "@mui/material/Typography";
 
 // Icons
 import InfoCircleOutlined from "@ant-design/icons/InfoCircleOutlined";
+import WarningOutlined from "@ant-design/icons/WarningOutlined";
 import BranchesOutlined from "@ant-design/icons/BranchesOutlined";
 
 // Primitives
@@ -49,7 +50,7 @@ import Surface from "components/display/Surface";
 import LabeledValue from "components/display/LabeledValue";
 import PersonRow from "components/display/PersonRow";
 import { formatShortDate } from "components/signals/SignalLine";
-import { getActivityTypeIcon } from "utils/activityTypes";
+import { getActivityTypeIcon, PEOPLE_ACTIVITY_TYPES } from "utils/activityTypes";
 import { ACTIVITY_OVERDUE_LABEL, ACTIVITY_OVERDUE_CHIP_COLORS } from "api/accounts/activities";
 
 // Drawer — clicking a person opens its read-only fiche in the coque
@@ -101,6 +102,30 @@ function getSchedule(activity) {
 
 
 // ==============================|| SHARED SMALL PIECES ||============================== //
+
+// 8c-2 — a person of the « External team » column and its « No email or
+// phone » alert: on the SAME line from md, the alert under it on a narrow
+// screen (the responsive Stack direction pattern — EditActivityContent.jsx
+// DateGroup, the inline signal forms — at this card's md breakpoint, as
+// TwoColRow below).
+function PersonLine({ alert, children }) {
+  return (
+    <Stack
+      data-testid="ctx-person-line"
+      direction={{ xs: "column", md: "row" }}
+      alignItems={{ xs: "flex-start", md: "center" }}
+      columnGap={1}
+    >
+      {children}
+      {alert}
+    </Stack>
+  );
+}
+
+PersonLine.propTypes = {
+  alert: PropTypes.node,
+  children: PropTypes.node,
+};
 
 function TwoColRow({ children }) {
   return (
@@ -315,6 +340,30 @@ export default function ActivityContextSection({ activity }) {
   const ownerLabel = personNameAndEmail(owner);
   const invited = activity.invited_users_detail || [];
   const contacts = activity.contacts_detail || [];
+  // Étape 7: the SAME list as the drawer — the contacts + the non-converted
+  // DC stakeholders; the « no way to contact » alert for the types with
+  // people only (PEOPLE_ACTIVITY_TYPES).
+  const stakeholders = activity.stakeholders_detail || [];
+  const alertsReachability = PEOPLE_ACTIVITY_TYPES.has(activity.activity_type);
+  // Étape 7 / 8b-2: no email nor phone (server-side is_reachable) — ONE
+  // alert, the same for every participant (a contact or a non-converted
+  // stakeholder, no distinction): information in orange, never an error;
+  // types with people only.
+  const reachabilityAlert = (person) =>
+    alertsReachability && person.is_reachable === false ? (
+      <Stack
+        direction="row"
+        spacing={0.5}
+        alignItems="center"
+        data-testid={`ctx-no-contact-means-${person.id}`}
+        sx={{ color: theme.palette.warning.main }}
+      >
+        <WarningOutlined style={{ fontSize: theme.iconSizes.sm }} />
+        <Typography variant="caption" sx={{ color: "inherit" }}>
+          No email or phone
+        </Typography>
+      </Stack>
+    ) : null;
   // A conversation already shown by the provenance line (its source
   // activity) is not repeated as « From next step » (5.9b).
   const provenanceActivityId = activity.source_activity_detail?.id || null;
@@ -404,23 +453,51 @@ export default function ActivityContextSection({ activity }) {
           </Box>
 
           <Box>
-            <ColumnHeader label="External contacts" />
-            {contacts.length > 0 ? (
+            {/* 7d-2 (PO): « External team », the pair of « Internal team » —
+                the contacts and the non-converted stakeholders, no
+                distinction shown at the activity level (7c). */}
+            <ColumnHeader label="External team" />
+            {contacts.length > 0 || stakeholders.length > 0 ? (
               <Stack spacing={0.5}>
                 {contacts.map((c) => (
-                  <PersonRow
-                    key={c.id}
-                    interactive
-                    onClick={() =>
-                      openDrawer(
-                        <ContactDrawerContent contactId={c.id} activity={activity} />,
-                        { title: "Contact" },
-                      )
-                    }
-                    name={personName(c)}
-                    suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
-                  />
+                  <PersonLine key={c.id} alert={reachabilityAlert(c)}>
+                    <PersonRow
+                      interactive
+                      onClick={() =>
+                        openDrawer(
+                          <ContactDrawerContent contactId={c.id} activity={activity} />,
+                          { title: "Contact" },
+                        )
+                      }
+                      name={personName(c)}
+                      suffix={[c.job_title, c.department_name].filter(Boolean).join(" · ") || undefined}
+                    />
+                  </PersonLine>
                 ))}
+                {stakeholders.map((x) => {
+                  // A department-only stakeholder: the department only.
+                  const departmentOnly = !x.full_name && Boolean(x.department);
+                  // 8g-6: a click opens its fiche — the contact fiche's
+                  // sections on the stakeholder (name or department, role,
+                  // « See signals »), as a contact's click opens its fiche.
+                  const openStakeholder = () =>
+                    openDrawer(
+                      <ContactDrawerContent stakeholder={x} activity={activity} />,
+                      { title: "Stakeholder" },
+                    );
+                  return (
+                    <Box key={x.id} data-testid={`ctx-stakeholder-${x.id}`}>
+                      <PersonLine alert={reachabilityAlert(x)}>
+                        <PersonRow
+                          interactive
+                          onClick={openStakeholder}
+                          name={departmentOnly ? x.department.name : x.display_name || x.full_name}
+                          suffix={departmentOnly ? undefined : x.department?.name || undefined}
+                        />
+                      </PersonLine>
+                    </Box>
+                  );
+                })}
               </Stack>
             ) : (
               <Typography variant="body2" sx={emptyItalic}>

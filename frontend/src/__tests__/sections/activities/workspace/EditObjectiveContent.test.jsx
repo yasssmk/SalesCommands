@@ -117,6 +117,24 @@ describe("EditObjectiveContent (SIG-5d-fix2)", () => {
     expect(screen.getByTestId("target-date-cancel")).toBeInTheDocument();
   });
 
+  // Lot 3 / 9b (TD-267): InlineDateField on InlineEditableValue's renderEditor
+  // pattern — Escape anywhere in the editor cancels (back to read).
+  it("✗ (Discard target date) returns to read", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-target_date"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard target date" }));
+    expect(screen.queryByTestId("target-date-confirm")).toBeNull();
+    expect(screen.getByText("31 Dec 2026")).toBeInTheDocument();
+  });
+
+  it("Escape in the target date editor cancels: back to read", () => {
+    renderEdit();
+    fireEvent.click(screen.getByTestId("inline-read-target_date"));
+    fireEvent.keyDown(screen.getByLabelText("Target date"), { key: "Escape" });
+    expect(screen.queryByTestId("target-date-confirm")).toBeNull();
+    expect(screen.getByTestId("inline-read-target_date")).toBeInTheDocument();
+  });
+
   it("keeps the 3 section subtitles and the Domain × Dimension recap", () => {
     renderEdit();
     expect(screen.getByText("Describe the objective and pick its canonical axes.")).toBeInTheDocument();
@@ -282,5 +300,31 @@ describe("EditObjectiveContent — department on the click-to-edit pattern (one 
     });
     expect(updateSignal).toHaveBeenCalledTimes(1);
     expect(updateSignal.mock.calls[0][2].target_department).toBe("4");
+  });
+});
+
+// Lot 3 / 3 (TD-275) — THE summary minimum of the signal drawers,
+// SIGNAL_SUMMARY_MIN_LENGTH (signalValidationRules.js), same test as
+// EditObjectionContent.test.jsx « E5: summary < 10 characters ».
+describe("summary minimum (SIGNAL_SUMMARY_MIN_LENGTH = 10)", () => {
+  const typeSummary = async (value) => {
+    fireEvent.click(screen.getByTestId("inline-read-summary"));
+    fireEvent.change(screen.getByTestId("inline-input-summary"), { target: { value } });
+    await act(async () => {});
+  };
+
+  it("9 characters → Save disabled, no PATCH", async () => {
+    vi.mocked(updateSignal).mockClear();
+    renderEdit();
+    await typeSummary("Too short");
+    expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /save/i })); });
+    expect(updateSignal).not.toHaveBeenCalled();
+  });
+
+  it("10 characters → Save enabled", async () => {
+    renderEdit();
+    await typeSummary("Long enoug");
+    expect(screen.getByRole("button", { name: /save/i })).toBeEnabled();
   });
 });

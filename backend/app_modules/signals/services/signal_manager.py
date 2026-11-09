@@ -169,6 +169,19 @@ class SignalManager:
         for field_name, value in m2m_values.items():
             getattr(signal, field_name).set(value)
 
+        # Sprint « Cycle de vie des contacts », étape 5 (2): a MANUAL People
+        # signal typed WITH a contact in a DC (EditContactContent's role, the
+        # DC People tab) joins the stakeholder (dc, contact) — the user
+        # already chose the contact. The first role becomes its
+        # current_signal; a later one leaves it (« rôle à confirmer »).
+        if (isinstance(signal, PeopleSignal)
+                and signal.source == SignalSource.MANUAL
+                and signal.target_contact_id and signal.decision_cycle_id):
+            from app_modules.decision_cycles.services.stakeholder_service import (
+                join_contact_stakeholder,
+            )
+            join_contact_stakeholder(signal, user)
+
         return signal
 
     # -------------------------------------------------------------------------
@@ -348,6 +361,9 @@ class SignalManager:
         Raises:
             StandardizedValidationError when any guard fails.
         """
+        # 8g-2 (TD-297): a CANCELLED activity locks its signals (the
+        # front rule, server side — activities/services/signals_lock.py).
+        cls._check_activity_unlocked(signal)
         if signal.status != SignalStatus.PENDING:
             raise StandardizedValidationError(
                 SignalErrorMessages.NOT_PENDING_VALIDATED
@@ -355,6 +371,17 @@ class SignalManager:
 
         if isinstance(signal, NextStepSignal):
             cls._check_next_step_has_one_activity(signal)
+
+        # Sprint « Cycle de vie des contacts », étape 5: a People signal of a
+        # DC is validated WITH its DC stakeholder (POST /people/{id}/resolve/,
+        # stakeholder_service.resolve_people_signal, which affiliates then
+        # validates in one transaction) — never alone. 8b-1 (PO): WITHOUT a
+        # DC, a People is validated (true / false) like any signal.
+        if (isinstance(signal, PeopleSignal) and signal.decision_cycle_id
+                and not signal.stakeholder_id):
+            raise StandardizedValidationError(
+                SignalErrorMessages.PEOPLE_REQUIRES_STAKEHOLDER
+            )
 
         signal.status       = SignalStatus.VALIDATED
         signal.validated_by = user
@@ -365,6 +392,11 @@ class SignalManager:
     # =========================================================================
     # REJECT
     # =========================================================================
+
+    @staticmethod
+    def _check_activity_unlocked(signal):
+        from app_modules.activities.services.signals_lock import check_activity_signals_unlocked
+        check_activity_signals_unlocked(getattr(signal, 'source_activity', None))
 
     @staticmethod
     def _check_next_step_has_one_activity(signal):
@@ -406,6 +438,9 @@ class SignalManager:
         Raises:
             StandardizedValidationError if signal is not PENDING.
         """
+        # 8g-2 (TD-297): a CANCELLED activity locks its signals (the
+        # front rule, server side — activities/services/signals_lock.py).
+        cls._check_activity_unlocked(signal)
         if signal.status != SignalStatus.PENDING:
             raise StandardizedValidationError(
                 SignalErrorMessages.NOT_PENDING_REJECTED
@@ -444,6 +479,9 @@ class SignalManager:
         Raises:
             StandardizedValidationError if signal is already PENDING.
         """
+        # 8g-2 (TD-297): a CANCELLED activity locks its signals (the
+        # front rule, server side — activities/services/signals_lock.py).
+        cls._check_activity_unlocked(signal)
         if signal.status == SignalStatus.PENDING:
             raise StandardizedValidationError(
                 SignalErrorMessages.ALREADY_PENDING

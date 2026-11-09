@@ -45,7 +45,7 @@ import {
 // VALIDATED or REJECTED — so a decision can always be undone back to Pending.
 // Colours are theme ROLES only — never hardcoded. Shares position/size with the
 // edit bar (flex-end, size small).
-function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocked, validateDisabled }) {
+function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocked, validateDisabled, onBack }) {
   const isPending = status === "PENDING";
   // Terminal = a decision was made (validated OR rejected) → it can be reopened.
   // Checked explicitly (not `!isPending`) so a read bar with NO status — e.g. the
@@ -53,6 +53,13 @@ function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocke
   const isTerminal = status === "VALIDATED" || status === "REJECTED";
   return (
     <Box data-testid="drawer-actions" sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+      {/* 8g-6 — optional « Back » (the edit bar's Cancel / Back tokens), shown
+          even when locked: the person's signals go back to their fiche. */}
+      {onBack && (
+        <Button variant="text" color="inherit" size="small" onClick={onBack} sx={{ mr: "auto" }}>
+          Back
+        </Button>
+      )}
       {!isLocked && (
         <Button
           variant="outlined"
@@ -110,6 +117,8 @@ function ReadActionBar({ onEdit, onReject, onValidate, onReopen, status, isLocke
   );
 }
 ReadActionBar.propTypes = {
+  /** Optional « Back » (left of the bar). */
+  onBack: PropTypes.func,
   onEdit: PropTypes.func,
   onReject: PropTypes.func,
   onValidate: PropTypes.func,
@@ -209,6 +218,7 @@ DrawerContentLayout.propTypes = {
     status: PropTypes.string,
     isLocked: PropTypes.bool,
     validateDisabled: PropTypes.bool,
+    onBack: PropTypes.func,
   }),
   /** The field groups (the single content box's children). */
   children: PropTypes.node,

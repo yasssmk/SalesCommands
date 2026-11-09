@@ -90,6 +90,14 @@ export default function AphoriQ(theme) {
     accent: palette.primary.main,
     warningTint: palette.warning.lighter,
 
+    // --- Compact chips (lot 3 / 12, TD-265) — the small MUI Chips of a dense
+    //     row (SignalLine: nature / scope / status = compact, the « +N »
+    //     overflow = mini). Formerly literals copied per call site. ---
+    chip: {
+      compact: { height: 20, fontSize: "0.68rem" },
+      mini: { height: 18, fontSize: "0.65rem" },
+    },
+
     // --- Signal type colours — the DEDICATED palette for the 9 signal types
     //     (slugs aligned with api/signals/signals.js:30-40).
     //

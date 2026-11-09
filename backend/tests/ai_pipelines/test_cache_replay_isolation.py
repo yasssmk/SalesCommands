@@ -47,22 +47,15 @@ class TestCacheReplayIsolation:
         ), patch(
             'app_modules.ai_pipelines.views.activity_extraction_view.PeopleSignalDetailSerializer'
         ), patch(
-            'app_modules.signals.models.PainSignal.objects', mock_qs,
-        ), patch(
-            'app_modules.signals.models.ObjectiveSignal.objects', mock_qs,
-        ), patch(
-            'app_modules.signals.models.ImpactSignal.objects', mock_qs,
-        ), patch(
-            'app_modules.signals.models.TechStackSignal.objects', mock_qs,
-        ), patch(
-            'app_modules.signals.models.BlockerSignal.objects', mock_qs,
-        ), patch(
-            'app_modules.signals.models.ConstraintSignal.objects', mock_qs,
-        ), patch(
-            'app_modules.signals.models.PeopleSignal.objects', mock_qs,
+            # 8g-5 (TD-12): the replay reads each type through its ViewSet's
+            # queryset (base_views.signal_viewset_queryset) — still filtered
+            # by source_run, which is what this test guards.
+            'app_modules.signals.views.base_views.signal_viewset_queryset',
+            return_value=mock_qs,
         ):
             ActivityExtractionView._serialize_cached_qualif_signals(run, ser_ctx)
 
+            assert len(mock_qs.filter.call_args_list) == 7
             for call_args in mock_qs.filter.call_args_list:
                 assert call_args[1].get('source_run') == run, (
                     f"Expected source_run={run} in filter kwargs, "

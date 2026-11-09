@@ -43,6 +43,7 @@ import {
   COMPETITOR_NAME_MAX_LENGTH,
   SIGNAL_SUMMARY_MIN_LENGTH,
 } from "sections/activities/signals/signalValidationRules";
+import { SIGNAL_NO_SOURCE_QUOTE } from "sections/activities/signals/utils/signalDisplay";
 
 // ==============================|| VALIDATION ||============================== //
 //
@@ -161,7 +162,7 @@ export default function EditCompetitorContent({ competitor, onSaved, onCancel })
             type="textarea"
             value={values.source_quote}
             onChange={set("source_quote")}
-            placeholder="No source quote"
+            placeholder={SIGNAL_NO_SOURCE_QUOTE}
           />
         </Stack>
       </Stack>

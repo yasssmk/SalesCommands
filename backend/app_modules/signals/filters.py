@@ -30,7 +30,8 @@ Filter inventory by signal type
 
 Universal:
   status, source, signal_category, account, source_activity,
-  decision_cycle, campaign, canonical_key, source_contact
+  decision_cycle, campaign, canonical_key, source_contact,
+  source_stakeholder
   (decision_cycle / campaign / signal_category are shadow-overridden
    to None on TechStack — those filters are no-op on TechStack
    querysets.)
@@ -71,6 +72,9 @@ class SignalFilter(django_filters.FilterSet):
       canonical_key
 
     Derived filters (traverse source_activity to reach related entities):
+      source_stakeholder — filters via source_activity.stakeholders
+                       (m2m) — the same for a NON-converted DC
+                       stakeholder (8g-6).
       source_contact — filters via source_activity.contacts (m2m).
                        Returns signals whose source_activity has the
                        given contact as a participant. Replaces the
@@ -93,11 +97,13 @@ class SignalFilter(django_filters.FilterSet):
         needed here.
 
     Silently-absent fields on TechStackSignal:
-      - decision_cycle, campaign are shadow-overridden to None on the
-        concrete TechStackSignal model (they are not deal-scoped — see
-        the model docstring for the rationale). The `decision_cycle`
-        and `campaign` filters declared here are silently no-op on
-        TechStack querysets.
+      - campaign is shadow-overridden to None on the concrete
+        TechStackSignal model: the `campaign` filter declared here is
+        silently no-op on TechStack querysets. decision_cycle IS a real
+        column on TechStack (the `decision_cycle` filter applies): it is
+        routing to the DC only, with no "in place / evaluated" meaning —
+        a TechStack describes the account; a tool evaluated on a deal is
+        a CompetitorSignal.
 
     Note:
       When SignalClusterService groups Pain signals by canonical_key,
@@ -143,6 +149,12 @@ class SignalFilter(django_filters.FilterSet):
     #   - TechStack   : source_activity is optional → same.
     source_contact  = UUIDFilter(
         field_name='source_activity__contacts',
+        distinct=True,
+    )
+    # source_stakeholder — the same for a NON-converted DC stakeholder
+    # (Activity.stakeholders m2m; 8g-6 « See signals »).
+    source_stakeholder = UUIDFilter(
+        field_name='source_activity__stakeholders',
         distinct=True,
     )
 

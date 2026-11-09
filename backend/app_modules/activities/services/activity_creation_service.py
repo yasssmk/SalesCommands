@@ -25,6 +25,11 @@ from app_modules.decision_cycles.models import DecisionCycle, DecisionStep
 from ..models import Activity
 from ..constants import ActivityStatus
 from .activity_invitations import notify_invited_users, resolve_invited_users
+from .activity_sequence_service import guard_decision_cycle_birth
+from .date_rules import check_activity_dates
+from .participant_rules import (
+    check_participant_minimum, resolve_contacts, resolve_stakeholders,
+)
 from .next_step_materialization import (
     mark_next_step_materialised,
     next_step_activity_fields,
@@ -146,6 +151,12 @@ class ActivityCreationService:
             # it is written exactly once, on a cycle that did not exist before.
             # A cycle that already exists is NEVER re-parented — see _create_cycle.
             origin_campaign_id = self._campaign_of(source_activity_id)
+            # 8g-3 (TD-296): ONE cycle born from a campaign activity — the
+            # source locked, a second birth refused (before anything is created).
+            guard_decision_cycle_birth(
+                source_activity_id, client_id=self.client_id,
+                cycle_id=cycle_id, creates_cycle=bool(inline_cycle),
+            )
             
             # ==================================================================
             # STEP 1: Create Contact (if inline_contact provided)
@@ -159,6 +170,18 @@ class ActivityCreationService:
                     'contact_id': str(contact.id),
                     'account_id': str(account_id),
                 })
+
+            # ==================================================================
+            # PARTICIPANTS — THE rule (services/participant_rules.py, étape 7):
+            # the contacts belong to the account (this path filtered on the
+            # tenant only before); a type with people needs at least one
+            # participant — the inline contact counts. A refusal rolls the
+            # inline contact back (atomic).
+            # ==================================================================
+            participants = resolve_contacts(
+                contact_ids, client_id=self.client_id, account=account,
+            )
+            # (the stakeholders and the minimum: once the cycle is known, below)
 
             # ==================================================================
             # STEP 2: Create DecisionCycle (if inline_cycle provided)
@@ -241,6 +264,22 @@ class ActivityCreationService:
                 )
 
             # ==================================================================
+            # PARTICIPANTS (étape 7) — the non-converted stakeholders of the
+            # activity's cycle (an inline cycle is new: it has none), then THE
+            # minimum on contacts (inline one included) + stakeholders.
+            # ==================================================================
+            stakeholders = resolve_stakeholders(
+                activity_data.get('stakeholder_ids') or [],
+                client_id=self.client_id, decision_cycle_id=cycle_id,
+            )
+            check_participant_minimum(
+                activity_data.get('activity_type'), len(participants) + len(stakeholders),
+            )
+            # DATES — THE rule (date_rules.py, 8g-1 / TD-230): one date, as the
+            # POST serializer (after the next step's date default above).
+            check_activity_dates(activity_data.get('scheduled_date'), activity_data.get('due_date'))
+
+            # ==================================================================
             # STEP 4: Create Activity
             # ==================================================================
             activity = self._create_activity(
@@ -254,6 +293,8 @@ class ActivityCreationService:
             )
             if next_step_signal:
                 mark_next_step_materialised(next_step_signal, self.user)
+            if stakeholders:
+                activity.stakeholders.set(stakeholders)
 
             # The invited teammates, as the standard create path: set, then
             # notified on commit (the inviter skipped).

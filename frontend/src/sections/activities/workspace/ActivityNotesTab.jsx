@@ -16,9 +16,10 @@ import Typography from '@mui/material/Typography';
 
 // project imports
 import EditableTextBlock from 'components/EditableTextBlock';
+import InfoNotice from 'components/display/InfoNotice';
 import { PIPELINE_STATE } from 'hooks/usePipelineRunner';
-import RunAIAnalysisButton, { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
-import { isActivitySignalsLocked, TRANSCRIPT_FIELD } from 'utils/activitySignalsLock';
+import { canRunAIAnalysis } from 'sections/activities/workspace/RunAIAnalysisButton';
+import { isTranscriptLocked, TRANSCRIPT_FIELD } from 'utils/activitySignalsLock';
 
 // assets
 import CloseOutlined from '@ant-design/icons/CloseOutlined';
@@ -35,21 +36,21 @@ export default function ActivityNotesTab({
   pipelineRunner,
   lastRun,
   latestRun,
-  runsByPipeline,
+  onOpenWizard,
 }) {
   const transcript = activity?.transcript ?? '';
   const outcomeNotes = activity?.outcome_notes ?? '';
 
   const { state: pipelineState, result: pipelineResult, error: pipelineError, reset: resetPipeline } = pipelineRunner;
 
-  // --- Wizard open state (controlled: "Try again" opens it too) ---
-  const [wizardOpen, setWizardOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
-  // "Try again" opens the wizard under the same predicate as the button.
+  // "Try again" opens the wizard of the band's Run AI pill (in the Source
+  // header, lot 3 / 11 — the page owns its open state) under the same
+  // predicate as the pill.
   const handleOpenWizard = () => {
     if (canRunAIAnalysis(activity, pipelineState)) {
-      setWizardOpen(true);
+      onOpenWizard?.();
     }
   };
 
@@ -138,8 +139,10 @@ export default function ActivityNotesTab({
           isLocked={isLocked}
         />
 
-        {/* Transcript section — its own lock (CANCELLED only, 5.12d): a
-            transcript can be added after the call. The notes keep isLocked. */}
+        {/* Transcript section — its own lock (5.12d: CANCELLED, so a
+            transcript can be added after the call; 8g-7: or ANALYSED — no
+            re-run, the transcript stays the analysed one). The notes keep
+            isLocked. */}
         <EditableTextBlock
           label="Transcript"
           field={TRANSCRIPT_FIELD}
@@ -148,8 +151,13 @@ export default function ActivityNotesTab({
           placeholder="Paste the call transcript or email content here..."
           showCharCount
           onSave={onSave}
-          isLocked={isActivitySignalsLocked(activity)}
+          isLocked={isTranscriptLocked(activity, lastRun)}
         />
+        {lastRun && (
+          <InfoNotice data-testid="transcript-analysed-notice">
+            This transcript has already been analysed: it can no longer be changed.
+          </InfoNotice>
+        )}
 
         {/* Last analyzed caption */}
         {renderLastRunCaption()}
@@ -178,20 +186,6 @@ export default function ActivityNotesTab({
 
         {/* Extraction result */}
         {renderExtractionResult()}
-
-        {/* Run AI Analysis button (+ its 2-step wizard) */}
-        <Box display="flex" justifyContent="flex-end">
-          {/* The AI action has its own lock (CANCELLED only, 5.12c), as the
-              transcript (5.12d); the notes keep the page lock (isLocked). */}
-          <RunAIAnalysisButton
-            activity={activity}
-            pipelineRunner={pipelineRunner}
-            lastRun={lastRun}
-            runsByPipeline={runsByPipeline}
-            open={wizardOpen}
-            onOpenChange={setWizardOpen}
-          />
-        </Box>
       </Stack>
     </Box>
   );
@@ -221,5 +215,6 @@ ActivityNotesTab.propTypes = {
   }).isRequired,
   lastRun: PropTypes.object,
   latestRun: PropTypes.object,
-  runsByPipeline: PropTypes.object,
+  /** Opens the wizard of the Source band's Run AI pill ("Try again"). */
+  onOpenWizard: PropTypes.func,
 };

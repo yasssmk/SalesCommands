@@ -178,7 +178,8 @@ InlineEditableValue.propTypes = {
   /** Stable id used for the read/input test hooks. */
   name: PropTypes.string.isRequired,
   /** Muted caption shown above the value in both modes. */
-  label: PropTypes.string.isRequired,
+  /** The muted caption (a node: e.g. the date's lock hint, EditActivityContent). */
+  label: PropTypes.node.isRequired,
   /** Current (controlled) value — the parent owns the draft. */
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.bool, PropTypes.object]),
   /** Raised with the new value on every keystroke (a draft; no PATCH here). */

@@ -195,11 +195,16 @@ def current_decision_step(cycle):
 
 
 def next_step_step_default(signal, cycle):
-    """The step proposed by the next step when it belongs to `cycle`, else
-    the current step of `cycle` (computed, never stored on the signal)."""
+    """The step proposed by the next step when it belongs to `cycle`; else
+    (étape 7c) the step of its ORIGIN activity (the conversation) when it
+    belongs to `cycle`; else the current step of `cycle` (computed, never
+    stored on the signal). Mirrored by the activity drawer."""
     proposed = signal.suggested_decision_step
     if proposed is not None and proposed.cycle_id == cycle.id:
         return proposed
+    origin = signal.source_activity
+    if origin is not None and origin.decision_step_id and origin.decision_step.cycle_id == cycle.id:
+        return origin.decision_step
     return current_decision_step(cycle)
 
 
