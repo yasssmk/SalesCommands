@@ -1498,6 +1498,7 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Nex
 - **Prochain jalon** : le sprint **« Cycle de vie des contacts »** — voir la suite ci-dessous.
 
 #### Suite de la surface Activity (ordre PO, clôture Next steps)
+_(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cycle de vie des contacts) » plus bas ; conservée pour l'historique.)_
 1. ✅ **Next step** — LIVRÉ (fiche ci-dessus).
 2. ✅ **SMOKE GLOBAL TD-279 + Next steps** sur un **NOUVEAU transcript** — **FAIT par le PO le 2026-10-30** (analyse lancée sur une activité jamais analysée : OK) (une transcription déjà traitée n'est pas réanalysée : cache d'extraction, **TD-289**).
 3. **Sprint « Cycle de vie des contacts »** — **juste après, AVANT Prep call** (fiche dans « Nouveaux sprints »).
@@ -1509,6 +1510,39 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Nex
 9. **À LA FIN, une fois toute l'UX terminée** : **homogénéisation de l'UI et de la validation + gestion des erreurs** — **TD-272** + messages Formik, **et** le design des Edit signal pour **tous** les drawers (**TD-239**).
 10. **Fine-tuning IA**.
 - **Post-prod** : mode **« conseillé »** des next steps (fiche dans « Nouveaux sprints »).
+
+### Sprint « Cycle de vie des contacts » ✅ LIVRÉ (chantier UX Activity — EN COURS) — stakeholders du DC, drawer d'activité, « See signals » et finition de la surface Activity (branche `feat/contact-lifecycle`, `77f11c1`→`4e13b8a`, 84 commits, **✅ MERGÉ, PR #169**, merge `9bb36fc`)
+- **Objectif** : poser le cycle de vie des personnes (**signal People → stakeholder du DC → contact du compte**) et finir la surface Activity : drawer de création / édition, fiabilité backend, homogénéité.
+- **Décisions PO verrouillées** :
+  - **Valider un People = le rattacher à un stakeholder du DC** (lier un stakeholder ou un contact existant, ou créer un stakeholder « non lié ») ; lien automatique au passage campagne → DC.
+  - **« See signals » est un raccourci** : ce que la personne a **DIT** — signaux des activités où elle était présente + objections dont elle est l'**auteur** (« Raised by ») ; jamais de repli sur les participants pour attribuer (**TD-254**). La vue stratégique par personne / département / company relève de la **Surface DC**.
+  - **Le détail suit la structure de l'édition** pour tous les types ; un champ vide affiche le placeholder de l'édition (jamais masqué).
+  - **Une analyse réussie verrouille le transcript** (pas de re-run, relance MVP conservée — **TD-25**).
+  - **Une seule date** (planifiée OU échéance) à la création ; **un seul DC né** par activité de campagne.
+- **Livré** (chaque sous-étape : ROUGE par le vrai chemin — page ou endpoint réel — d'abord, puis VERT, non-vacuité par mutation ciblée vérifiée par `cmp`, régression ; STOP + validation PO) :
+  - **Modèle et backend** : Stakeholder (DC) relié aux signaux People ; `Activity.stakeholders` pour les personnes non converties ; migration des stakeholders existants. Rattachement au DC des signaux d'une séquence de campagne (+ commande `attach_signals_to_cycles --dry-run`). Validation People avec résolution vers un stakeholder ; lien automatique au passage campagne → DC.
+  - **Règles d'activité** : participants requis (MEETING / CALL / EMAIL / DEMO), joignabilité, une seule date sur les deux chemins de création (**TD-230**), un seul DC né par activité de campagne — verrou (**TD-296**), verrou serveur des activités annulées (**TD-297**), transcript verrouillé après analyse (**TD-25**).
+  - **Performance** : N+1 supprimés (liste des signaux **TD-256**, rejeu d'analyse **TD-12**, stakeholders) ; `ScopedQuerysetMixin.get_object` conserve désormais les préchargements (toutes les ViewSets concernées).
+  - **Filtres signaux** : paramètre `stakeholder`, objections dont le contact est l'auteur, 400 sur type / statut invalide (+ test de contrat front ⊆ serveur).
+  - **Drawer d'activité** : une seule liste « External team » (sélecteur standard, stakeholders du DC), alerte « No email or phone » ; section 1 « Decision cycle » (Existing / New cycle, DC ouverts triés par mise à jour, sans pré-sélection ; DC grisé depuis une activité de DC ; étape modifiable en édition ; Save bloqué sans DC en conversion) ; défauts de date et d'étape ; bande Next steps mise en avant quand « Start Decision Cycle » est proposé.
+  - **« See signals »** (**TD-232**) : depuis la fiche contact ou la nouvelle fiche stakeholder — signaux des activités où la personne était présente + objections dont elle est l'auteur ; filtre par type (premier usage du **pattern de filtre inline réutilisable** : définitions `utils/filters/`, `InlinePillsFilter`, `toQueryParams`) ; retour niveau par niveau.
+  - **Homogénéité (lot de TD)** : constantes partagées, champ de périmètre commun (Pain / Impact / Constraint), sections numérotées sur tous les drawers, détails alignés sur l'édition, Run AI en pill, 8 types dans l'assistant Run AI, champs de date sur le composant d'édition standard.
+- **Migrations** : `module_activities/0024` (`Activity.stakeholders`) ; `decision_cycles/0024` (Stakeholder) et `0025` (People → stakeholders, données) ; `module_signals/0049` puis `0050` (champ TechStack ajouté puis retiré) et `0051` (`PeopleSignal.stakeholder`).
+- **Validation (régression finale)** : **pytest** `tests/activities` + `tests/signals` + `tests/decision_cycles` + `tests/ai_pipelines` + `tests/campaigns` = **2351 / 2355**, **4 échecs de référence** (`test_create_requires_rigidity` — **TD-247** ; `test_callback_date_reschedule` ×3 — **TD-293**), **0 erreur** ; hors périmètre du sprint (bi, integration…) : les **22 échecs d'environnement** connus, identiques sur la base (**TD-33**, **TD-34**, **TD-36**, **TD-37**, **TD-77**, **TD-103**) ; **vitest 222 fichiers / 1964 tests verts** ; `makemigrations --check` propre.
+- **Dette** : **RESOLVED** (archivés) **TD-7** (décision PO : `suggested_contacts` conservé dormant), **TD-10**, **TD-12**, **TD-15**, **TD-16**, **TD-20**, **TD-25**, **TD-112**, **TD-218**, **TD-230**, **TD-232**, **TD-239**, **TD-244**, **TD-256**, **TD-257**, **TD-258**, **TD-259**, **TD-261**, **TD-265**, **TD-267**, **TD-271**, **TD-275**, **TD-276**, **TD-296**, **TD-297**, **TD-298**, **TD-302**, **TD-303**, **TD-305** ; **MAJ / reclassées** **TD-211**, **TD-231**, **TD-254** (Surface DC / Account), **TD-46**, **TD-47**, **TD-49**, **TD-219** (chantier prep call), **TD-99**, **TD-101**, **TD-164**, **TD-223**, **TD-224**, **TD-225**, **TD-290**, **TD-291**, **TD-293**, **TD-300** (surfaces Campagne / Account / DC / Territory), **TD-240**, **TD-272**, **TD-301** (passe UI finale Activity), **TD-120**, **TD-217** (transverse) ; **NOUVEAUX TD-308 → TD-314** (fusion des stakeholders, clôture de DC avec relance, attribution campagne DC créé / relancé, activités sans DC ni campagne, `buildUrlWithParams` → `toQueryParams`, « aucun type = tous » via `emptyMeans`, TechStack dans le prep call). Lien 403 vers une campagne hors scope : déjà **TD-294**.
+- **Notes pour les sprints suivants** (sans fiche dédiée ; les autres sont dans les fiches Workspace / DC, Surface Campaign, Prep call et Filtres) :
+  - **Surface Account** : visibilité des signaux People dans Account › Signals ; limiter contacts / stakeholders (~20 suffisent) ; règle « pas d'activité sans DC ni campagne » sur ses entrées (**TD-311**) ; **TD-307** : traiter la part Personnes de cette surface.
+  - **IA** : « qui a dit quoi » (attribuer l'auteur des pains / impacts / contraintes, comme l'objection) ; champs Objective non émis (`success_criteria`, `notes` — **TD-219**).
+  - **Test exhaustif du cycle de vie des signaux** : sprint à part, **après** l'IA et les surfaces Account / DC / Campagne — inclut la revérification d'ensemble du modèle Personnes (**TD-307**), notamment le cycle de vie des signaux People.
+  - **Scénario A→Z** (campagne → account) **après** la Surface Account.
+- **Prochain jalon** : le sprint **Source / Notes** — voir la suite ci-dessous.
+
+#### Suite de la surface Activity (ordre PO, clôture Cycle de vie des contacts)
+1. ✅ **Sprint « Cycle de vie des contacts »** — LIVRÉ (fiche ci-dessus).
+2. **Sprint Source / Notes** — à AUDITER au cadrage (fiche dans « Nouveaux sprints »).
+3. **Chantier prep call** — **TD-46**, **TD-47**, **TD-49**, **TD-219**, TechStack « discontinued » (**TD-314**) (fiche « Sprint Prep call — précisions PO »).
+4. **Passe UI finale Activity** — **avant la Surface DC**, pour un visuel validé (fiche dans « Nouveaux sprints »).
+5. **Surface DC** (fiche « Sprint Workspace / DC »).
 
 ---
 
@@ -1846,6 +1880,18 @@ possibles) :
   - **Lignes People du DC** : un People lié à un contact sans `full_name`
     affiche « — » → réutiliser `getPeopleName` / `showPeopleIdentity`
     (`SignalLine`, livrés au S4 People, aujourd'hui Activity uniquement).
+- **Notes (clôture Cycle de vie des contacts, 2026-11)** :
+  - **Vue stratégique des signaux** par **personne / département / company**
+    (« See signals » de l'Activity n'est qu'un raccourci).
+  - **Fusion des stakeholders** en double (**TD-308**) ; **conversion
+    stakeholder → contact** ; **clôture d'un DC avec relance planifiée**
+    (**TD-309**).
+  - **Écran Stakeholders** et **« Involved in »** (étapes 4 et 6 du sprint,
+    reportées ici) ; **rôles** (**TD-231**) ; drawers DC sans sections
+    numérotées (`StepDetailDrawer`, `DimensionDetailDrawer`,
+    `SignalClusterDetailDrawer`, ex-TD-239) ; « Raised by » sans repli
+    participant côté DC (**TD-254**).
+  - **Re-smoke** des étapes du sprint qui touchent l'écran DC.
 
 #### Sprint Objectifs — Vue (NOUVEAU 2026-08-21)
 - **Position** : **3ter** de l'ordre cible, **APRÈS** le sprint Workspace / DC.
@@ -2043,6 +2089,7 @@ possibles) :
   surface Activity), puis **Competitor**.
 
 #### Sprint « Cycle de vie des contacts » (NOUVEAU 2026-10 — décision PO, clôture Next steps)
+- **Statut** : ✅ **LIVRÉ** (PR #169, merge `9bb36fc`) — fiche dans « Sprints livrés ».
 - **Position** : **juste après le sprint Next steps** (et son smoke global), **AVANT Prep call**.
 - **Chaîne à couvrir** : **signal → DC** (origine campagne ?) **→ Account → Activity → Signal**.
 - **Le People signal devient un « contact signal »**.
@@ -2055,6 +2102,7 @@ possibles) :
 - **Objectif, critère de succès et sujets plus orientés VENTE** : l'**approche du meeting**, le **résultat à obtenir pour avancer le deal**, les **métriques importantes pour le prospect si elles sont connues**.
 - **Dans le sprint, pas en fine-tuning** (décision PO).
 - **Lien** : **TD-219** (Objective « how is success measured », nécessaire au prep call / email).
+- **Ajouts (clôture Cycle de vie des contacts)** : **TD-46** (brief multi-contact), **TD-47** (boucle visé / réalisé), **TD-49** (`Activity.primary_contact`), **TD-219** (la section « How is success measured? » existe ; l'IA n'émet ni `success_criteria` ni `notes`, `target_date` seulement depuis le prompt v2) ; **TechStack** : portée + « discontinued » (passé = *no longer used*, futur = sortie planifiée) — **TD-314**.
 
 #### Sprint Surface Campaign (NOUVEAU 2026-10 — décision PO, clôture Next steps)
 - **Règle produit** : **le but d'une campagne est de créer des DC** ; la **séquence** sert quand les gens **ne répondent pas** ; **pas de next step si et seulement si la séquence est encore active**.
@@ -2062,11 +2110,23 @@ possibles) :
 - **Dettes rattachées** : **TD-290** (prospect ON_HOLD qui reçoit SUCCESSFUL → 400), **TD-291** (Targeted : Log Response SUCCESSFUL sur un email COMPLETED → le prospect sort, pas de next step depuis l'écran campagne), **TD-292** (objectif de campagne limité à 500 caractères côté front), **TD-293** (3 échecs `test_callback_date_reschedule`, COND-1), **TD-294** (lien vers une campagne hors scope → 403), **TD-295** (commande `stop_orphan_campaign_sequences` à lancer en production) ; voir aussi **TD-223** (Log Result → drawer outcome) et **TD-101** (re-demande de callback).
 - **Position** (décision PO 2026-10-30) : **APRÈS la fin de la surface Activity** (après l'étape « Prérequis de clôture d'Activity », smoke A→Z), **AVANT le chantier DC / Account** — étape 7 de la « Suite de la surface Activity (ordre PO, clôture Next steps) ».
 - **Objectif PO** : **valider la surface Activity côté campagne**.
+- **Note (clôture Cycle de vie des contacts)** : **Campagne → DC** — vérifier que **TOUS** les signaux validés de la séquence rejoignent le DC ; attribution **DC créé / DC relancé** (**TD-310**).
+- **TD-307** : traiter la part Personnes de cette surface.
 
 #### Post-prod — Mode « conseillé » des next steps (NOUVEAU 2026-10 — décision PO)
 - **Position** : **POST-LAUNCH**.
 - **Objet** : un mode où l'IA **conseille** des next steps (pas seulement ceux dits dans la conversation), avec leur **justification**.
 - **Socle déjà posé, DORMANT** : type de pipeline **`NEXT_STEPS_ADVICE`** (`ai_pipelines/constants.py:100`, migration `module_ai_pipelines/0006`) — aucun pipeline ne le produit ; champ **`NextStepSignal.advice_rationale`** (migration `module_signals/0047`) — exposé par le serializer, **jamais affiché** (`EditNextStepContent.jsx:15`).
+
+#### Sprint Source / Notes (NOUVEAU 2026-11 — décision PO, clôture Cycle de vie des contacts)
+- **Position** : **prochain jalon**, avant le chantier prep call (étape 2 de la « Suite de la surface Activity (ordre PO, clôture Cycle de vie des contacts) »).
+- **Usage** : la section sert **PENDANT le call** (prise de notes) ou **juste après** (coller le transcript).
+- **Besoin PO** : **lire le plan de prep call ET prendre des notes en même temps** → repenser l'emplacement de Notes / Source (drawer ?).
+- **À AUDITER au cadrage** — rien de décidé.
+
+#### Passe UI finale Activity (NOUVEAU 2026-11 — décision PO, clôture Cycle de vie des contacts)
+- **Position** : après le chantier prep call, **AVANT la Surface DC** (pour un visuel validé).
+- **Contenu** : pills d'action dans les en-têtes de bande ; section « Decision cycle » trop chargée et nom du cycle peu visible ; zones cliquables (`InlineEditableValue`) mal distinguées du fond ; messages rouges (**TD-272**) ; libellé Run AI (**TD-301**) ; barre d'actions (**TD-240**).
 
 #### Sprint test (NOUVEAU 2026-08-21 — PRÉ-LAUNCH, DERNIER avant déploiement)
 - **Position** : après la phase fonctionnelle, **avant le déploiement** (voir
@@ -2669,6 +2729,13 @@ campagnes. **Le chip est la référence.**
     pas clair que le `filter_definition` supporte encore un critère DC.
   - Cadrage : ces critères sont l'input du sprint Filtres, construits
     backend + UI ENSEMBLE, zéro filtre mort.
+- **Note (clôture Cycle de vie des contacts)** : construire les **filtres des
+  comptes (Territory)** sur le **pattern inline** posé au sprint (définitions
+  `utils/filters/filterDefinitions.js` + `InlinePillsFilter` + `toQueryParams`,
+  paramètres répétés, `emptyMeans`) ; **filtrer les comptes par tech stack**
+  (discontinued, date de renouvellement) ; converger les 4 copies de
+  `buildUrlWithParams` (**TD-312**).
+- **TD-307** : traiter la part Personnes de cette surface (Territory / filtres).
 
 ### Sprint UI — Homogénéisation UI (EN DERNIER de la phase fonctionnelle)
 - **Objectif** : homogénéisation UI + FINIR TOUS LES MODALS.
