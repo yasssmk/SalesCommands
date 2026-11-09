@@ -1531,9 +1531,9 @@ _(⤷ SUPERSEDÉE par la « Suite de la surface Activity (ordre PO, clôture Cyc
 - **Validation (régression finale)** : **pytest** `tests/activities` + `tests/signals` + `tests/decision_cycles` + `tests/ai_pipelines` + `tests/campaigns` = **2351 / 2355**, **4 échecs de référence** (`test_create_requires_rigidity` — **TD-247** ; `test_callback_date_reschedule` ×3 — **TD-293**), **0 erreur** ; hors périmètre du sprint (bi, integration…) : les **22 échecs d'environnement** connus, identiques sur la base (**TD-33**, **TD-34**, **TD-36**, **TD-37**, **TD-77**, **TD-103**) ; **vitest 222 fichiers / 1964 tests verts** ; `makemigrations --check` propre.
 - **Dette** : **RESOLVED** (archivés) **TD-7** (décision PO : `suggested_contacts` conservé dormant), **TD-10**, **TD-12**, **TD-15**, **TD-16**, **TD-20**, **TD-25**, **TD-112**, **TD-218**, **TD-230**, **TD-232**, **TD-239**, **TD-244**, **TD-256**, **TD-257**, **TD-258**, **TD-259**, **TD-261**, **TD-265**, **TD-267**, **TD-271**, **TD-275**, **TD-276**, **TD-296**, **TD-297**, **TD-298**, **TD-302**, **TD-303**, **TD-305** ; **MAJ / reclassées** **TD-211**, **TD-231**, **TD-254** (Surface DC / Account), **TD-46**, **TD-47**, **TD-49**, **TD-219** (chantier prep call), **TD-99**, **TD-101**, **TD-164**, **TD-223**, **TD-224**, **TD-225**, **TD-290**, **TD-291**, **TD-293**, **TD-300** (surfaces Campagne / Account / DC / Territory), **TD-240**, **TD-272**, **TD-301** (passe UI finale Activity), **TD-120**, **TD-217** (transverse) ; **NOUVEAUX TD-308 → TD-314** (fusion des stakeholders, clôture de DC avec relance, attribution campagne DC créé / relancé, activités sans DC ni campagne, `buildUrlWithParams` → `toQueryParams`, « aucun type = tous » via `emptyMeans`, TechStack dans le prep call). Lien 403 vers une campagne hors scope : déjà **TD-294**.
 - **Notes pour les sprints suivants** (sans fiche dédiée ; les autres sont dans les fiches Workspace / DC, Surface Campaign, Prep call et Filtres) :
-  - **Surface Account** : visibilité des signaux People dans Account › Signals ; limiter contacts / stakeholders (~20 suffisent) ; règle « pas d'activité sans DC ni campagne » sur ses entrées (**TD-311**).
+  - **Surface Account** : visibilité des signaux People dans Account › Signals ; limiter contacts / stakeholders (~20 suffisent) ; règle « pas d'activité sans DC ni campagne » sur ses entrées (**TD-311**) ; **TD-307** : traiter la part Personnes de cette surface.
   - **IA** : « qui a dit quoi » (attribuer l'auteur des pains / impacts / contraintes, comme l'objection) ; champs Objective non émis (`success_criteria`, `notes` — **TD-219**).
-  - **Test exhaustif du cycle de vie des signaux** : sprint à part, **après** l'IA et les surfaces Account / DC / Campagne.
+  - **Test exhaustif du cycle de vie des signaux** : sprint à part, **après** l'IA et les surfaces Account / DC / Campagne — inclut la revérification d'ensemble du modèle Personnes (**TD-307**), notamment le cycle de vie des signaux People.
   - **Scénario A→Z** (campagne → account) **après** la Surface Account.
 - **Prochain jalon** : le sprint **Source / Notes** — voir la suite ci-dessous.
 
@@ -2111,6 +2111,7 @@ possibles) :
 - **Position** (décision PO 2026-10-30) : **APRÈS la fin de la surface Activity** (après l'étape « Prérequis de clôture d'Activity », smoke A→Z), **AVANT le chantier DC / Account** — étape 7 de la « Suite de la surface Activity (ordre PO, clôture Next steps) ».
 - **Objectif PO** : **valider la surface Activity côté campagne**.
 - **Note (clôture Cycle de vie des contacts)** : **Campagne → DC** — vérifier que **TOUS** les signaux validés de la séquence rejoignent le DC ; attribution **DC créé / DC relancé** (**TD-310**).
+- **TD-307** : traiter la part Personnes de cette surface.
 
 #### Post-prod — Mode « conseillé » des next steps (NOUVEAU 2026-10 — décision PO)
 - **Position** : **POST-LAUNCH**.
@@ -2734,6 +2735,7 @@ campagnes. **Le chip est la référence.**
   paramètres répétés, `emptyMeans`) ; **filtrer les comptes par tech stack**
   (discontinued, date de renouvellement) ; converger les 4 copies de
   `buildUrlWithParams` (**TD-312**).
+- **TD-307** : traiter la part Personnes de cette surface (Territory / filtres).
 
 ### Sprint UI — Homogénéisation UI (EN DERNIER de la phase fonctionnelle)
 - **Objectif** : homogénéisation UI + FINIR TOUS LES MODALS.
